@@ -457,3 +457,141 @@ fn fillet_continuity_is_nullable_and_rejects_a_resolved_non_boolean() {
         );
     }
 }
+
+fn sketch_point(
+    version: u8,
+    ordinal: u32,
+    tail: serde_json::Value,
+) -> TestResult<crate::sketch::PmDcSketchEntity> {
+    let serde_json::Value::Object(tail) = tail else {
+        return Err("point tail".into());
+    };
+    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    let mut kind = serde_json::json!({
+        "form": "point", "position": [0.0, 0.0], "endpoint_of": list, "center_of": list
+    });
+    kind.as_object_mut().ok_or("point kind")?.extend(tail);
+    let mut payload: crate::sketch::PmDcSketchEntityPayload =
+        serde_json::from_value(serde_json::json!({
+            "save_version_major": version,
+            "header": {
+                "header_value": 0, "header_id": 0, "next": PmDcReference::from_packed(0),
+                "flags": 0, "context": PmDcReference::from_packed(0), "source_index": 0
+            },
+            "entity_flags": 0, "sketch": PmDcReference::from_packed(0),
+            "kind": {
+                "form": "point", "position": [0.0, 0.0],
+                "endpoint_of": list, "center_of": list, "state": null, "associations": null
+            }
+        }))?;
+    payload.kind = serde_json::from_value(kind)?;
+    Ok(crate::record_identity::Located::new(
+        payload,
+        crate::record_identity::RecordTypeId::try_from(
+            "35df52ced011d0d20008ccbc0663dc09".to_owned(),
+        )?,
+        cadmpeg_ir::identity_key!("generated"),
+        ordinal,
+    ))
+}
+
+fn paired_tail(operands: [u32; 2]) -> serde_json::Value {
+    serde_json::json!({
+        "state": 2, "associations": null,
+        "paired": {
+            "scalar_metadata": [2, 0], "scalars": [0.25, 0.75],
+            "operand_metadata": [2, 7], "operands": operands.map(PmDcReference::from_packed)
+        }
+    })
+}
+
+fn sketch_records(data: &mut super::NativeData) -> TestResult {
+    for entity in &data.pm_dc_sketch_entities {
+        let ordinal = entity.identity.record_ordinal;
+        data.records.push(serde_json::from_value(serde_json::json!({
+            "id": format!("inventor:rse:record#generated-{ordinal}"),
+            "token": "generated", "ordinal": ordinal, "selector": 0, "type_index": 0,
+            "type_id": entity.identity.type_id.as_str(),
+            "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
+            "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": ""
+        }))?);
+    }
+    Ok(())
+}
+
+fn sketch_findings(data: &super::NativeData) -> Vec<cadmpeg_ir::report::check::Finding> {
+    let mut findings = Vec::new();
+    super::validate_sketches(data, &cadmpeg_ir::CadIr::empty(), &mut findings);
+    findings
+}
+
+#[test]
+fn paired_point_operands_require_sketch_entities_in_the_same_carrier() -> TestResult {
+    for operands in [[2, 3], [0x8000_0002, 0x8000_0003]] {
+        let mut data = empty_data();
+        data.pm_dc_sketch_entities
+            .push(sketch_point(25, 0, paired_tail(operands))?);
+        for ordinal in [1, 2] {
+            data.pm_dc_sketch_entities.push(sketch_point(
+                25,
+                ordinal,
+                serde_json::json!({"state": null, "associations": null}),
+            )?);
+        }
+        sketch_records(&mut data)?;
+        assert!(sketch_findings(&data).is_empty());
+        let nonentity_type = "114d8790d011f8d10008cabc0663dc09";
+        data.pm_dc_sketch_entities[2].identity.type_id =
+            crate::record_identity::RecordTypeId::try_from(nonentity_type.to_owned())?;
+        data.records[2].type_id = nonentity_type.into();
+        assert_eq!(sketch_findings(&data).len(), 1);
+        data.pm_dc_sketch_entities.pop();
+        data.records[2].type_id = "114d8790d011f8d10008cabc0663dc09".into();
+        assert_eq!(sketch_findings(&data).len(), 1);
+        data.pm_dc_sketch_entities[0] = sketch_point(25, 0, paired_tail([0, 2]))?;
+        assert_eq!(sketch_findings(&data).len(), 1);
+        data.pm_dc_sketch_entities[0] = sketch_point(25, 0, paired_tail([2, 4]))?;
+        assert_eq!(sketch_findings(&data).len(), 2);
+        data.pm_dc_sketch_entities[0] = sketch_point(25, 0, paired_tail([2, 3]))?;
+        data.records[2].token = "other".into();
+        assert_eq!(sketch_findings(&data).len(), 2);
+    }
+    Ok(())
+}
+
+#[test]
+fn native_validation_checks_point_tail_save_version() -> TestResult {
+    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    for version in [23, 25, 31] {
+        for (tail, valid) in [
+            (
+                serde_json::json!({"state": null, "associations": null}),
+                true,
+            ),
+            (
+                serde_json::json!({"state": 0, "associations": list}),
+                version < 25,
+            ),
+            (
+                serde_json::json!({"state": 0, "associations": list, "links": list}),
+                version >= 25,
+            ),
+            (
+                serde_json::json!({"state": 2, "associations": list}),
+                version < 25,
+            ),
+            (paired_tail([1, 1]), version >= 25),
+        ] {
+            let mut data = empty_data();
+            data.pm_dc_sketch_entities
+                .push(sketch_point(version, 0, tail)?);
+            sketch_records(&mut data)?;
+            assert_eq!(
+                sketch_findings(&data).is_empty(),
+                valid,
+                "version {version}"
+            );
+        }
+    }
+    Ok(())
+}

@@ -312,10 +312,31 @@ Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after t
 
 The planar entity types are:
 
-- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional u32 state plus type-2 association list. From segment major version 25, a point with a state stores a type-2 link list after the association list.
+- `35df52ced011d0d20008ccbc0663dc09`: point. It stores a two-f64 position, endpoint-of and center-of type-2 lists, and an optional association tail.
 - `3adf52ced011d0d20008ccbc0663dc09`: line. It stores a type-2 endpoint list, versioned auxiliary type-2 lists, and two-f64 origin and direction vectors.
 - `3bdf52ced011d0d20008ccbc0663dc09`: circle. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a positive f64 radius, and a u8 state.
 - `60d40745d111bee680006fb1e13554c7`: ellipse. It stores a type-2 point list, versioned auxiliary type-2 lists, a center-point reference, a two-f64 major-axis direction, positive f64 major and minor radii, and a u8 state.
+
+A point tail is absent or starts with `state:u32`. From segment major version 25, state 2 selects the paired association form. This form is:
+
+```text
+state u32 = 2
+scalar_marker u16[2] = [2, 0x3000]
+scalar_count u32 = 2
+scalar_metadata u32[2]
+scalar_values f64[2]
+operand_marker u16[2] = [2, 0x3000]
+operand_count u32 = 2
+operand_metadata u32[2]
+first_auxiliary_marker u16[2] = [2, 0x3000]
+first_auxiliary_count u32 = 0
+first_operand u32
+second_auxiliary_marker u16[2] = [2, 0x3000]
+second_auxiliary_count u32 = 0
+second_operand u32
+```
+
+The metadata words are opaque u32 values. The scalar values are finite and have no interval restriction. The two operands are packed PmDc entity references with the index and qualifier fields of section 11. The paired association tail ends the point record. Before segment major version 25, each state value precedes a type-2 association-reference list that ends the record. From version 25, state values other than 2 precede a type-2 association-reference list and a type-2 link-reference list. The stored position defines the solved point coordinates.
 
 The auxiliary lists of a line, circle, or ellipse are one type-2 list, or a u32 gate pair followed by its lists. Gate `1, 0` precedes one or two type-2 lists. Gate `0, 0` stores no list.
 
@@ -469,6 +490,10 @@ An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for i
 
 In chamfer forms 1 and 2, slot 1 selects the support-face collection. Slot 2 is a length parameter; slot 3 is a second length parameter; slot 10 is an angle parameter in radians. Form 1 uses the slot-2 distance and slot-10 angle. The distance is positive and the angle is strictly between zero and pi. Form 2 uses the two positive lengths in slots 2 and 3. Equal values in those two slots define equal setbacks on both support sides, independent of side order. The native oriented selection consists of the feature record, its slot-0 edge collection, its slot-1 support-face collection, and its slot-5 direction reversal.
 
+A revolve uses slot 0 for its part operation, slot 1 for its boundary patch, slot 2 for its axis, slot 3 for its extent, slot 4 for its angle parameter, slot 7 for its feature dimensions, and slot 17 for the result object collection. The feature label's sole participant identifies the owning planar sketch, and the boundary patch selects its profile as for an extrusion. Extent value 3 is a full revolution; the angle parameter does not apply to it.
+
+Type `896cf08ed1113c0460007cb801f31bb0` is a work axis. After the content header it stores `entity_flags:u32` and two u32 values; segment major versions above 21 add one u32 value. A type-2 reference list follows, then an optional u32 `0x203`, two f64 triples, and `state:u8`. The first triple is a point on the axis and the second is the span from that point to the other end of the axis segment, both in internal centimetres. The axis direction is the span direction. Origin work axes span from −1 to 1 along their direction.
+
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 8, 9, 16, 17, 21, and 24 identify its transform, extent, a direction, a Boolean, a placement, and the result object collection. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The placement transform translation uses internal centimetres. The direction record supplies the drilling direction. The placement record repeats the transform reference and retains its point and value references.
 
 Feature-label class `0619aa28d411c77a6000c4a4cae1fbb0` identifies a Thread annotation on selected cylindrical faces. Its generic feature record has nine property slots. Slot 0 is the face collection; it contains at least one face item. Slots 1, 2, and 6 are Boolean properties. Slots 3 and 4 are numeric parameter references. Slot 5 is an edge collection, and slot 8 is the feature-dimension collection. Slot 7 is a native property reference. A Thread annotation has no result object collection.
@@ -489,6 +514,7 @@ Feature-label class identifier `ecf481729c4d5f925f2192b4a83096ac` identifies Thi
 | 15 | Result object collection |
 
 Slot 6 supplies the thickness length in internal centimetres. Slot 12 supplies a dimensionless value; it is not a second thickness. Both parameters use the ownership rules of section 11. Part-operation value 3 selects a solid join, and value 2 selects a cut. Slot 0 supplies the selected support geometry through a selection list. Each non-null selection reference resolves in the same PmDc segment. These references do not identify faces of the final model body.
+
 Feature-label class identifier `12963cb8d1118a2860008bb801f31bb0` identifies a Shell operation. Slot 1 identifies the removed-face collection. An empty collection removes no face. Collection members are non-null and distinct by record index. Slot 2 identifies a selection list. Slot 3 identifies the wall-thickness length parameter, with units as defined in section 11. Slot 4 stores a reference. Slot 9 identifies the result object collection, whose members identify the output bodies.
 
 A result object collection contains one or more surface-body references. This ordered surface-body list is the feature's native result-body identity.
