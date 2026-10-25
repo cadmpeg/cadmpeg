@@ -3,6 +3,7 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 mod measured_geometry;
+mod mesh_placement;
 mod metadata_recovery;
 mod ring_traversal;
 mod visibility;

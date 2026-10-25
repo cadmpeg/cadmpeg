@@ -13,19 +13,23 @@ independently optional.
 
 The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
 retained document write regenerates the ZIP container deterministically, writes `Document.xml`
-first, preserves every unedited XML record and every named side entry, and serializes checked
+first, preserves the physical order of the retained side entries, preserves every unedited XML
+record and every named side entry, and serializes checked
 leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
 declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
 without a typed serializer is refused rather than flattening or discarding children.
 Retained-document transcoding across bands is explicitly refused: the writer regenerates no
 `Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
-by name rather than emitted. A preserving write of a source whose retained document graph is
+by name rather than emitted. A schema-2 object-input edit that requires recomputation is refused because its `Feature`
+declaration has no persisted pending-recompute flag. Document and cosmetic label edits remain
+available. A preserving write of a source whose retained document graph is
 unusable is refused with the source's own dialect and the catalog, never silently rewritten to
 schema 4.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
-recursive typed property values, and named side entries. It materializes the same native graph
-used by decoded documents before encoding. This permits general extension-object retention and
+recursive typed property values, and named side entries. New object declarations carry
+`Touched="1"` so ordinary native recomputation executes their construction. It materializes the
+same native graph used by decoded documents before encoding. This permits general extension-object retention and
 parametric core objects without requiring a source archive; unsupported semantics must be supplied
 as named records or rejected, never silently approximated.
 
@@ -66,6 +70,30 @@ name receives a unique suffixed name, and the returned name is the XML reference
 requesting the same source payload therefore receive separate archive members; a producer-created
 typed side entry has one requesting property or payload owner.
 
+Side-entry restoration is a forward-only request stream, not a lookup by entry name. Parsing
+`Document.xml` registers requests in restore order: the document string hasher, document
+properties, then object values and their property-owned payloads. Schema 2 uses `FeatureData`;
+schemas 3 and 4 use `ObjectData`. A shape registers its B-rep before its saved string hasher and
+element map. Each encountered ZIP member is matched only against the unconsumed suffix of the
+request stream. A match consumes that request and every earlier unconsumed request. An
+unregistered member is skipped. A member that registers a local XML reader consumes that reader's
+side-entry stream recursively before the parent resumes. Physical local-member order determines
+this stream; central-directory order does not.
+
+`GuiDocument.xml` is registered after the application document's requests. Its view-provider
+payloads belong to its local reader and follow it. Independent named records can be skipped
+without advancing the request stream. A retained archive keeps these physical order relations,
+including records whose internal request grammar is opaque. An identity-sorted native record
+arena does not define member order; local-header positions in the physical ledger do.
+
+A source-less document uses its emitted property order as its request order. Named payloads for
+these requests precede `GuiDocument.xml`; its payloads follow it in GUI request order. Unreferenced
+named payloads retain their supplied order after the registered streams. A source-less request
+must name an available payload. Distinct restoration requests require distinct member names,
+even when their payload bytes are equal: one member cannot satisfy two positions in the request
+stream. External document links do not register side-entry requests. A dependency reference to a
+shared string hasher uses its hasher index; it does not repeat a request for its member.
+
 `GuiDocument.xml` has at most one `ViewProviderData` container. `ViewProvider` names are unique.
 Each provider has one direct `Properties` container, and direct property names are unique within
 that container. Registered GUI property types define the cardinality of their value elements;
@@ -87,6 +115,14 @@ In schemas 3 and 4, `Objects.Count` equals the number of `Object` declarations. 
 has a unique `name` and a `type`. `ObjectData.Count` equals the number of `Object` value records.
 Each value record has a unique `name`. Declaration and value-record name sets are equal.
 Declaration order is object order. Redundant declaration, value-record, dependency, extension, property, and transient counts do not delimit XML elements. Element boundaries and unique names own their populations.
+
+In schemas 3 and 4, an object declaration's nonzero integer `Touched` attribute retains pending
+recomputation across document restoration. A changed input property with a retained cached shape
+requires this declaration state so ordinary recomputation updates the shape and its dependents.
+A property-value edit with no value change leaves the state unchanged. Document properties and
+object labels do not request object recomputation. Output status bits 7 and 27 and the static
+no-recompute status bit 23 exempt the property from requesting recomputation. Runtime status bit
+11 alone does not exempt it. Schema-2 feature declarations have no restored `Touched` state.
 
 The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
 enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object
@@ -235,8 +271,25 @@ one map owned by that property. Multiple exact-shape properties emit independent
 element-map carriers and independent side-entry requests; no carrier is shared across properties.
 An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
 is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
+A STEP replica of a two-dimensional pcurve uses the seven-parameter
+`CARTESIAN_TRANSFORMATION_OPERATOR_2D` sequence defined in the [STEP specification](step.md).
+AP203 edition 1 uses `CARTESIAN_TRANSFORMATION_OPERATOR` with the same sequence.
+Its inherited representation-item name, transformation name, and transformation
+description precede the two axes, local origin, and scale. A 3D replica adds the
+third axis after scale. A chart reflection retains the curve parameter and reverses
+the chart handedness; it does not reverse the curve parameter.
 For a bounded circle or ellipse edge, the neutral start parameter is wrapped into `[0, 2π)` and
 the serialized sweep is preserved. A full-period edge retains its serialized phase.
+A non-periodic B-spline's evaluable domain is bounded by its degree-th and pole-count-th expanded
+knots. A 3D edge endpoint outside that domain by at most `1e-12 * max(1, abs(boundary_knot))`
+normalizes to the boundary knot. Each normalization neighborhood is limited to one quarter of
+the domain width. Interior endpoints and larger excursions retain their values. Native edge
+ranges and knot values remain independently retained.
+
+A periodic B-spline pcurve's period is the positive width of its evaluable knot domain. Its
+coedge range retains the unwrapped phase and may cross the knot-domain seam. Point and derivative
+evaluation reduce the parameter by whole periods into that domain. A use spans at most one
+period in either direction; an explicit trimmed carrier keeps its own bounded interval.
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
@@ -683,8 +736,11 @@ direct `Sub` values; a zero-sub target has neither `sub` nor `count`, one sub us
 multiple subs use `count` with exactly that many direct leaf `Sub` elements. An empty `name` is an
 explicit null target occupying the connector slot. Nested or extra value roots, a link-list carrier,
 or multiple targets are malformed. `Angle`, `AngleMin`, and `AngleMax` are
-`App::PropertyAngle` properties with one `Float` value. `Distance`, `Distance2`, `LengthMin`, and
-`LengthMax` are `App::PropertyLength` properties with one `Float` value. `EnableAngleMin`,
+`App::PropertyAngle` or `App::PropertyFloat` properties with one `Float` value in degrees.
+`Distance`, `Distance2`, `LengthMin`, and `LengthMax` are `App::PropertyLength` or
+`App::PropertyFloat` properties with one `Float` value. Their values are in millimetres,
+except that an `Angle` joint's `Distance` value is in degrees. Its absolute value supplies
+the joint angle when no `Angle` property is present. `EnableAngleMin`,
 `EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`
 are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
 missing values, and duplicate values are malformed.
@@ -1228,6 +1284,18 @@ bounded, point indices must resolve, coordinates and bounds must be finite, and 
 truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
 when only the indexed triangle mesh is projected neutrally.
 
+Binary mesh coordinates are local to the owning object. Its `Placement` maps those coordinates
+to the immediate geometric container. Parent `App::Part` and link-group placements compose from
+outermost to innermost, followed by the mesh placement. An ordinary document group does not add
+a geometric parent transform. The mesh payload carries no second placement matrix.
+
+A mesh link uses its link placement, scale, array-element placement, and array-element scale in
+that order. `LinkTransform=true` then includes the prototype placement; false omits that root
+placement. Descendant placements of a linked geometric container remain relative to that
+container. Expanded arrays take element placement from their element objects; collapsed arrays
+take it from the saved placement list. Each use applies this composition once to the local
+vertices. The native mesh payload remains unchanged.
+
 `Points::PropertyPointKernel` contains exactly one direct `Points` value root. A duplicate or
 missing root is malformed. Its zero or one non-empty lowercase `file` attribute identifies the
 property's only side entry. A non-empty file attribute on another direct or nested value, or a
@@ -1758,3 +1826,26 @@ two-distance, and distance-angle dimensions plus the persisted reference-side re
 linear dimensions must be finite and positive, and their angle must lie strictly between zero and
 180 degrees. An absent selection or invalid dimensional law remains an attributable native
 operation rather than an unresolved neutral dress-up feature.
+
+## 12. Semantic validation
+
+A restored object graph, a saved geometry cache, and a recomputed design are separate semantic
+states. A successful document open does not imply that each property-owned payload restored.
+Geometry equivalence preserves each owning object's shape nullness, shape validity, solid, shell,
+face, wire, edge, and vertex counts, volume, area, length, bounds, and placement. Mesh equivalence
+preserves ordered vertices and facets together with the owning placement. Point equivalence
+preserves ordered coordinates and the persisted transform. Object identities, runtime types,
+dependencies, and declarative parameter values remain independent of these cached results.
+
+A native recompute returns the number of recomputed objects; zero does not denote an error.
+Recompute success also requires the participating objects to have no invalid or error state.
+A parameter edit changes the declarative value independently of the saved geometry cache. Full
+recomputation evaluates the edited design before a comparison of its resulting geometry. An
+unchanged cached-result comparison precedes recomputation so reconstruction does not hide a lost
+payload.
+
+Appearance ownership associates each view-provider binding with the exact-shape property of its
+source object. Whole-body appearance, per-face overrides, per-edge line styles, and per-vertex
+point styles have distinct targets. Each target resolves in its own topology arena; a declared
+override also retains its precedence over the whole-object appearance. An appearance asset's
+presence alone does not establish that target or precedence association.

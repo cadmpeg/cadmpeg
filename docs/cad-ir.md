@@ -144,6 +144,13 @@ Decoders convert kernel conventions at decode:
 
 NURBS surfaces store degrees, full knot vectors, pole counts, u-major control points, optional per-pole weights, periodicity flags, and whether the carrier's oriented normal is opposite `Pu × Pv`. NURBS curves store degree, full knot vector, ordered control points, optional weights, and periodicity. Knot values are finite and nondecreasing. Control-point coordinates are finite. Each knot vector has its pole count plus its degree plus one values. A present weight vector has one weight per pole. NURBS weights are finite and nonzero; negative weights are permitted. This holds for model-space, pcurve and polar NURBS carriers alike.
 
+A periodic NURBS pcurve and a periodic polar NURBS pcurve evaluate points and derivatives modulo
+the positive width of their effective knot domain. Placement and offset carriers retain that
+period. A coedge pcurve use preserves its unwrapped endpoint values, including a seam crossing,
+and spans at most one period in either direction with a relative span allowance of `1e-12`.
+An explicit nondegenerate trim restricts the use to its stated interval. A zero-width knot domain
+supplies no period and does not admit a periodic use.
+
 An intersection-curve support side has an optional pcurve binding. A binding contains its pcurve geometry and an optional explicit mapping range. The range endpoints are finite and distinct. Endpoint order defines mapping direction and may decrease. Supporting-surface presence is independent of pcurve presence.
 
 ## Procedural carriers

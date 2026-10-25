@@ -1986,18 +1986,13 @@ pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: FiniteReal) -> O
     if !curve.periodic() && !(lower..=upper).contains(&parameter.get()) {
         return None;
     }
-    let mapped = periodic_parameter(
+    canonical_periodic_parameter(
         curve.knots(),
         usize::try_from(curve.degree()).ok()?,
         curve.pole_count(),
         curve.periodic(),
         parameter,
-    )?;
-    Some(if curve.periodic() && mapped.get() == upper {
-        domain.finite_endpoints()[0]
-    } else {
-        mapped
-    })
+    )
 }
 
 /// Evaluate a possibly-rational B-spline curve over 2D `(u, v)` poles, or
@@ -3254,6 +3249,21 @@ fn nurbs_surface_support_sizes(surface: &NurbsSurface) -> Option<(usize, usize)>
         usize::try_from(surface.u_degree()).ok()?.checked_add(1)?,
         usize::try_from(surface.v_degree()).ok()?.checked_add(1)?,
     ))
+}
+
+fn canonical_periodic_parameter(
+    knots: &[f64],
+    degree: usize,
+    count: usize,
+    periodic: bool,
+    parameter: FiniteReal,
+) -> Option<FiniteReal> {
+    let mapped = periodic_parameter(knots, degree, count, periodic, parameter)?;
+    if periodic && mapped.get() == *knots.get(count)? {
+        FiniteReal::new(*knots.get(degree)?)
+    } else {
+        Some(mapped)
+    }
 }
 
 fn periodic_parameter(
@@ -8716,6 +8726,13 @@ fn pcurve_uv_unsettled(
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
             let poles = nurbs.pole_rows();
+            let parameter = canonical_periodic_parameter(
+                nurbs.knots(),
+                usize::try_from(nurbs.degree()).ok()?,
+                poles.count(),
+                nurbs.periodic(),
+                parameter,
+            )?;
             let weights = match poles {
                 crate::geometry::pcurve::PolarNurbsPoles::Polynomial { .. } => None,
                 crate::geometry::pcurve::PolarNurbsPoles::Rational { poles } => {
@@ -8918,6 +8935,13 @@ fn pcurve_uv_unsettled(
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let poles = nurbs.pole_rows();
+            let parameter = canonical_periodic_parameter(
+                nurbs.knots(),
+                usize::try_from(nurbs.degree()).ok()?,
+                poles.count(),
+                nurbs.periodic(),
+                parameter,
+            )?;
             let weights = match poles {
                 crate::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => None,
                 crate::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
