@@ -191,6 +191,7 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
+            scope_document_parameters(self.ctx, &mut component_ir.model)?;
             self.stack.push(format!("{}", reference.relative_path));
             let descendants = self.merge(
                 &mut component_ir,
@@ -270,6 +271,63 @@ fn reparent_component_roots(
             };
         }
     }
+    Ok(())
+}
+
+/// Gives document parameters an equation container before occurrence rescoping.
+/// The container is an entity the member decode did not admit, so it is
+/// charged here.
+fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
+    };
+
+    if model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.owner.is_some())
+    {
+        return Ok(());
+    }
+    ctx.charge_entities(1, "F3Z document parameter scope")?;
+    let owner = crate::ids::document_parameter_scope_id();
+    let first = model
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .min()
+        .unwrap_or(0);
+    for feature in &mut model.features {
+        feature.ordinal = feature
+            .ordinal
+            .checked_sub(first)
+            .and_then(|ordinal| ordinal.checked_add(1))
+            .ok_or_else(|| CodecError::malformed("merged F3Z feature ordinal exceeds u64::MAX"))?;
+    }
+    for parameter in &mut model.parameters {
+        if parameter.owner.is_none() {
+            parameter.owner = Some(owner.clone());
+        }
+    }
+    model.features.push(Feature {
+        id: owner,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::Equations,
+                children: TreeChildren::default(),
+            },
+        )),
+        native_ref: None,
+    });
     Ok(())
 }
 
