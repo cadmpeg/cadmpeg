@@ -463,7 +463,7 @@ impl<'a> Builder<'a> {
             ir,
             schema,
             model_name: "cadmpeg_model",
-            emitter: Emitter::new(),
+            emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
             bodies: ir

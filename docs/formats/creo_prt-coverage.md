@@ -531,10 +531,14 @@ that gate.
 - Positional `ActDatums` outlines require exactly one held coordinate. Outlines
   with zero or multiple held coordinate pairs remain unresolved instead of
   selecting an arbitrary plane normal.
-- Bounded plane-support prefixes `0f 18 e6 0f 18 10 18` and
-  `18 e4 10 e4 18 e5 0f 18` transfer their X-normal rank-two charts and three
-  following origin coordinates. Incomplete frames and frames with trailing
-  bytes remain unresolved.
+- Bounded positional `A 18 e6 B 18 C 18` plane images transfer their signed
+  X parameter and Y normal directions. The four eight-byte X-axis images
+  retain both signed in-plane support directions. Both families require
+  three following origin coordinates. Incomplete frames and frames with
+  trailing bytes remain unresolved.
+- Compact X-normal and Z-normal plane images retain their stored parameter
+  and normal signs. Native loop transfer reverses successor order and both
+  coedge senses to produce neutral boundary traversal.
 - Named and positional `ActDatums` outlines decode their shared bounded
   model-coordinate forms, including `73`, `9f`, `a5`, and `bb`, into complete
   corner coordinates. Both forms retain `45` and `5c` tokens as bounded slots
@@ -826,3 +830,9 @@ that gate.
 
 The current public score remains L1. Capabilities above L1 are extras
 until every cumulative gate through their level passes for a closed envelope.
+
+Same-ID operation candidates project only when the family, recipe, root schema
+class, and parent identifier agree. Disagreement retains the native candidates
+and reports `creo/feature.state-selection-unresolved`. Coverage and source
+metadata record `unresolved_feature_state_selection_count`. A consensus does
+not mark a repeated native candidate as current.

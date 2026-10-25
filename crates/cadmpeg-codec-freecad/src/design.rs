@@ -2612,6 +2612,9 @@ fn parse_constraints(
                 .transpose()?
                 .flatten();
         }
+        if definition.is_none() && type_code == Some(14) && all_resolved {
+            definition = symmetry_constraint(&resolved, entities);
+        }
         if definition.is_none() {
             if let Some(type_code) = type_code {
                 definition =
@@ -2660,6 +2663,70 @@ fn parse_constraints(
         });
     }
     Ok((constraints, parameters))
+}
+
+fn symmetry_constraint(
+    loci: &[SketchLocus],
+    entities: &[SketchEntity],
+) -> Option<SketchConstraintDefinitionInput> {
+    let [first, second, third] = loci else {
+        return None;
+    };
+    let entity = entities
+        .iter()
+        .find(|candidate| candidate.id() == locus_entity(third))?;
+    let first = copy_constraint_locus(first);
+    let second = copy_constraint_locus(second);
+    match third {
+        SketchLocus::Entity(axis)
+            if matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. }
+                    | SketchGeometryDefinition::ReferenceLine { .. }
+            ) =>
+        {
+            Some(SketchConstraintDefinitionInput::Symmetric {
+                first,
+                second,
+                axis: axis.clone(),
+            })
+        }
+        SketchLocus::Entity(_)
+            if !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            ) =>
+        {
+            None
+        }
+        // A line segment's mid position and a closed curve's endpoints are
+        // not neutral loci.
+        SketchLocus::Center(_)
+            if !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+                    | SketchGeometryDefinition::Arc { .. }
+                    | SketchGeometryDefinition::Ellipse { .. }
+                    | SketchGeometryDefinition::ExternalReference { .. }
+                    | SketchGeometryDefinition::Native { .. }
+            ) =>
+        {
+            None
+        }
+        SketchLocus::Start(_) | SketchLocus::End(_)
+            if matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+            ) =>
+        {
+            None
+        }
+        _ => Some(SketchConstraintDefinitionInput::PointSymmetric {
+            first,
+            second,
+            center: copy_constraint_locus(third),
+        }),
+    }
 }
 
 fn midpoint_constraint(
@@ -3209,22 +3276,6 @@ fn neutral_constraint(
                 return Ok(None);
             };
             SketchConstraintDefinitionInput::Weight { entity, parameter }
-        }
-        14 => {
-            let Some(first) = locus(0) else {
-                return Ok(None);
-            };
-            let Some(second) = locus(1) else {
-                return Ok(None);
-            };
-            let Some(axis) = entity(2) else {
-                return Ok(None);
-            };
-            SketchConstraintDefinitionInput::Symmetric {
-                first,
-                second,
-                axis,
-            }
         }
         _ => return Ok(None),
     }))
@@ -8216,8 +8267,9 @@ fn is_chamfer(kind: &str) -> bool {
 }
 /// Mark the bodies a document keeps only as intermediate shapes as not
 /// displayed: a feature's tool shape (any shape property other than `Shape`)
-/// and the shape of every member of a `PartDesign::Body`. A body shows its
-/// `Tip` result through its own `Shape`. Stored GUI visibility, applied later, wins.
+/// and the shape of every member of a `PartDesign::Body`, including its `Tip`.
+/// A body shows its `Tip` result through its own `Shape`. This runs after GUI
+/// transfer, so these structural roles win over stored member visibility.
 pub(crate) fn hide_intermediate_bodies(
     ir: &mut cadmpeg_ir::CadIr,
     objects: &[ObjectRecord],

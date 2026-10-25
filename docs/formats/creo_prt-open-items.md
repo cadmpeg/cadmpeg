@@ -674,7 +674,15 @@ B-rep orbit. The defined suffix grammar does not establish a direct stored
 vertex-coordinate fallback in another record family.
 
 **Need.** We must know any additional owner-qualified coordinate selector to
-place an orbit whose existing evidence does not select one point.
+place an orbit whose existing evidence does not select one point. For compact
+plane frames, we must distinguish the stored carrier point from the native
+parameter origin when mapped pcurve endpoints do not agree with adjacent
+carriers.
+
+**Conflict.** `placed_plane_surfaces` uses the complete local-system origin
+as the plane chart origin. Agreement of its normal coordinate establishes the
+carrier plane but does not establish the tangential parameter origin. The
+compact frame productions do not define a separate parameter-origin selector.
 
 ### TP-05. General rowless face-use binding
 
@@ -788,13 +796,7 @@ place an orbit whose existing evidence does not select one point.
 
 **Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
 
-**Conflict.** `operations` in `src/feature/operations.rs` projects the first
-same-ID candidate when none has a stored display name. When multiple candidates
-have stored display names, it uses the last candidate as the projection base,
-takes offsets from the first, and retains only selected fields on which the
-candidates agree. Stored order and display-name presence are not a decoded
-current-state selector, so neither projection establishes the current native
-state.
+**Conflict.** None.
 
 ### TP-19. `lo_array` roster semantics
 

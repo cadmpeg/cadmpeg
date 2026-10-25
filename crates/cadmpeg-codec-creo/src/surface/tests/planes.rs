@@ -917,11 +917,11 @@ fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
         .expect("complete frame");
     assert_eq!(
         slots,
-        [0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 6.0, -12.62, 0.0]
+        [0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 6.0, -12.62, 0.0]
     );
     let frame = plane_frame(&slots.map(Some));
     assert_eq!(frame.origin, Some([6.0, -12.62, 0.0]));
-    assert_eq!(frame.u_axis(), Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.u_axis(), Some([0.0, -1.0, 0.0]));
     assert_eq!(frame.normal(), Some([1.0, 0.0, 0.0]));
 }
 

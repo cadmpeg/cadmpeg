@@ -78,6 +78,10 @@ its result.
 Each headline names the format's dialect rows, which the format's own section
 lists. Every profile below describes the envelope its rows cover.
 
+A program reads the same headline with `cadmpeg_registry::headline_level`, which takes a format
+id or alias and returns the integer level declared in the format's `[format.<id>]` block of
+`crates/cadmpeg-registry/docs/dialect-support.toml`.
+
 ## Autodesk Inventor `.ipt` and `.iam`
 
 **Model:** CFB document with RSe segment databases, exact M/B record frames, OLE properties, Protein assets, external references, and an embedded part-kernel carrier

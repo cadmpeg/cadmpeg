@@ -15,6 +15,7 @@ use crate::report::{
     Severity,
 };
 
+const EPS_CARRIERS_PARAMETERIZATION_PERIODIC_PCURVE_SPAN: f64 = 1.0e-12;
 const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
@@ -1035,6 +1036,9 @@ pub(super) fn check_parameter_domains(
                     .parameter_domain(ctx)?
                     .map(crate::topology::IncreasingParameterInterval::endpoints);
                 match domain {
+                    Some(domain) if periodic_pcurve_domain(ctx, geometry)?.is_some() => {
+                        valid &= periodic_pcurve_range_in_domain(start, end, domain);
+                    }
                     Some([lower, upper]) => {
                         valid &= [start, end]
                             .into_iter()
@@ -1058,6 +1062,45 @@ pub(super) fn check_parameter_domains(
         }
     }
     Ok(())
+}
+
+fn periodic_pcurve_domain(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &PcurveGeometry,
+) -> Result<Option<crate::topology::IncreasingParameterInterval>, cadmpeg_core::decode::ResourceLimit>
+{
+    let _depth = ctx.enter_nested_limit("pcurve periodic domain nesting")?;
+    Ok(match geometry {
+        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => geometry.parameter_domain(ctx)?,
+        PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
+            geometry.parameter_domain(ctx)?
+        }
+        PcurveGeometry::Transformed(placed) => periodic_pcurve_domain(ctx, placed.basis())?,
+        PcurveGeometry::Offset(offset) => periodic_pcurve_domain(ctx, offset.basis())?,
+        PcurveGeometry::Trimmed(trimmed)
+            if trimmed.parameter_range().endpoints()[0]
+                == trimmed.parameter_range().endpoints()[1] =>
+        {
+            periodic_pcurve_domain(ctx, trimmed.basis())?
+        }
+        _ => None,
+    })
+}
+
+fn periodic_pcurve_range_in_domain(start: f64, end: f64, domain: [f64; 2]) -> bool {
+    crate::topology::IncreasingParameterInterval::new(domain)
+        .zip(crate::topology::IncreasingParameterInterval::new([
+            start.min(end),
+            start.max(end),
+        ]))
+        .is_some_and(|(domain, range)| {
+            range
+                .scaled_span()
+                .quotient(domain.scaled_span())
+                .is_ok_and(|ratio| {
+                    ratio.get() <= 1.0 + EPS_CARRIERS_PARAMETERIZATION_PERIODIC_PCURVE_SPAN
+                })
+        })
 }
 
 fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {

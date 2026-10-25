@@ -265,6 +265,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_OBJECTS`                             | `1_000_000`                                             | 2    | Object elements in `Document.xml`, counted in the parsed tree. Excess returns `NotImplemented`. Entities are charged separately in `container.rs`.                                                                                                                           |
 | `cadmpeg-codec-freecad`  | `src/persistence.rs`                               | `MAX_PROPERTY_VALUE_XML_BYTES`            | `16 * 1024 * 1024`                                      | 2    | Total of the overlapping value-XML ranges one property would copy. Excess keeps the exact XML, builds no value records and reports `PersistencePayloadUnresolved`.                                                                                                           |
+| `cadmpeg-codec-freecad` | `src/application_geometry/mesh_placement.rs` | `MAX_MESH_PLACEMENT_WORK` | `65_536` | 4 | Floor of mesh occurrence expansion visits; allowance is the larger of this floor and 64 times the combined native product and neutral occurrence row count. Exhaustion withholds the current complete mesh use and subsequent uses with blocking `geometry.mesh-placement-bounded`; independent source meshes remain. |
 | `cadmpeg-codec-freecad`  | `src/application_geometry.rs`                      | `MAX_ELEMENTS`                            | `1_000_000`                                             | 2    | Mesh point, facet and point-cloud counts. Excess is `Malformed`; the population is then checked against remaining payload bytes.                                                                                                                                             |
 | `cadmpeg-codec-freecad` | `src/brep/location_identity.rs` | `MAX_LOCATION_TERMS` | `65_536` | 4 | Canonical elementary datum terms in one location. Excess returns a local bound outcome; the caller withholds affected topology and reports a loss. Allocator failures remain decode errors. |
 | `cadmpeg-codec-freecad` | `src/brep/location_identity.rs` | `MAX_LOCATION_WORK` | `16_777_216` | 4 | Floor of term visits for one location table; allowance is the larger of this floor and 1,024 times its row count. Composition and power expansion charge the shared budget. Excess returns a local bound outcome; the caller withholds affected topology and reports a loss. |
@@ -478,16 +479,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 263.
+Production `MAX_*` constants: 264.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 33    |
 | 2    | Per-input bound            | 70    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 132   |
+| 4    | Local work cap             | 133   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 263   |
+|      | Total                      | 264   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -495,7 +496,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 15, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 18,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 

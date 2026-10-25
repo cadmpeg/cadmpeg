@@ -6,69 +6,9 @@
       "payload_sha256": "f9cdfc001752720ef9f54e6d1d815ba7a48b3023ad701a3203680b98bbd21a03"
     },
     {
-      "name": "Compound.Shape.Map.txt",
-      "payload_len": 360,
-      "payload_sha256": "611e8b1d33f9d7d39530d913eb92d0efb97c62cf0cf8ae3e74ff409e95206a2a"
-    },
-    {
-      "name": "Compound.Shape.brp",
-      "payload_len": 3562,
-      "payload_sha256": "937c3031ec7829e6f5d0cc17a7b6fc377845a0626499313cc1f6bfb5fa87726c"
-    },
-    {
-      "name": "CurveCarriers.Shape.Map.txt",
-      "payload_len": 452,
-      "payload_sha256": "5f95b62586346f360c8e369a12c53a002a137f1e9542f3212453747d7ee87d02"
-    },
-    {
-      "name": "CurveCarriers.Shape.brp",
-      "payload_len": 3018,
-      "payload_sha256": "56d51bb1d9cebd2d42f92db5f08f5eb21e2363a24524a96747f834ed73e6cab4"
-    },
-    {
-      "name": "Degenerate.Shape.brp",
-      "payload_len": 2572,
-      "payload_sha256": "69fa86d09f069f0b589fa84daf4a0ff2b1d9e92855c6942a33ce7832a01fab69"
-    },
-    {
-      "name": "FreeformSurface.Shape.brp",
-      "payload_len": 4967,
-      "payload_sha256": "adfa74db4623abc35c8c1358f000eca01f8f69a1d3accaf49fe6c6ea4a0239c7"
-    },
-    {
-      "name": "MultiShell.Shape.Map.txt",
-      "payload_len": 363,
-      "payload_sha256": "cf370027bf6ba9f86bf47c72878e041d35d1eaf1a69a2b52c861eb40b070fa1d"
-    },
-    {
-      "name": "MultiShell.Shape.brp",
-      "payload_len": 17399,
-      "payload_sha256": "03dd3195653a13e9f565e0cf9ab25474b7746ba738038701a4f337821d2465fd"
-    },
-    {
-      "name": "Revolved.Shape.brp",
-      "payload_len": 7339,
-      "payload_sha256": "2dbc86c94393c58ede754763becd501ebb62243774f8d813b53bdd8ee8bc2430"
-    },
-    {
-      "name": "Seam.Shape.brp",
-      "payload_len": 3367,
-      "payload_sha256": "a46f44e3789043c13c08f68c18619c1661376006b76d8d129d5075bb6dc7fb3f"
-    },
-    {
-      "name": "Sheet.Shape.brp",
-      "payload_len": 1947,
-      "payload_sha256": "cf51492e74aa54f893ee009dff591322c4f8ac3578c6e3057828e2e4c250d740"
-    },
-    {
       "name": "Solid.Shape.brp",
       "payload_len": 8938,
       "payload_sha256": "2dd5fdf3d645aa55dc60ddd17be781f4a544ef978afd8411a19acbfb3c484614"
-    },
-    {
-      "name": "Swept.Shape.brp",
-      "payload_len": 3117,
-      "payload_sha256": "da5f0b4416688ccc886fb5e54bda6d020365211e2814e85bba9a0940ed65bfc5"
     },
     {
       "name": "Void.Shape.brp",
@@ -76,9 +16,69 @@
       "payload_sha256": "852c5d682c9221788839f7e2b56ef5dca485b960f0ce47fb7267716b754b86ec"
     },
     {
+      "name": "Seam.Shape.brp",
+      "payload_len": 3367,
+      "payload_sha256": "a46f44e3789043c13c08f68c18619c1661376006b76d8d129d5075bb6dc7fb3f"
+    },
+    {
+      "name": "Degenerate.Shape.brp",
+      "payload_len": 2572,
+      "payload_sha256": "69fa86d09f069f0b589fa84daf4a0ff2b1d9e92855c6942a33ce7832a01fab69"
+    },
+    {
+      "name": "Sheet.Shape.brp",
+      "payload_len": 1947,
+      "payload_sha256": "cf51492e74aa54f893ee009dff591322c4f8ac3578c6e3057828e2e4c250d740"
+    },
+    {
       "name": "Wire.Shape.brp",
       "payload_len": 1109,
       "payload_sha256": "c026f7c86ec214558aba2af3e5bf256483d0883aeab5cc9fde1871883149459d"
+    },
+    {
+      "name": "Compound.Shape.brp",
+      "payload_len": 3562,
+      "payload_sha256": "937c3031ec7829e6f5d0cc17a7b6fc377845a0626499313cc1f6bfb5fa87726c"
+    },
+    {
+      "name": "Compound.Shape.Map.txt",
+      "payload_len": 360,
+      "payload_sha256": "611e8b1d33f9d7d39530d913eb92d0efb97c62cf0cf8ae3e74ff409e95206a2a"
+    },
+    {
+      "name": "MultiShell.Shape.brp",
+      "payload_len": 17399,
+      "payload_sha256": "03dd3195653a13e9f565e0cf9ab25474b7746ba738038701a4f337821d2465fd"
+    },
+    {
+      "name": "MultiShell.Shape.Map.txt",
+      "payload_len": 363,
+      "payload_sha256": "cf370027bf6ba9f86bf47c72878e041d35d1eaf1a69a2b52c861eb40b070fa1d"
+    },
+    {
+      "name": "CurveCarriers.Shape.brp",
+      "payload_len": 3018,
+      "payload_sha256": "56d51bb1d9cebd2d42f92db5f08f5eb21e2363a24524a96747f834ed73e6cab4"
+    },
+    {
+      "name": "CurveCarriers.Shape.Map.txt",
+      "payload_len": 452,
+      "payload_sha256": "5f95b62586346f360c8e369a12c53a002a137f1e9542f3212453747d7ee87d02"
+    },
+    {
+      "name": "FreeformSurface.Shape.brp",
+      "payload_len": 4967,
+      "payload_sha256": "adfa74db4623abc35c8c1358f000eca01f8f69a1d3accaf49fe6c6ea4a0239c7"
+    },
+    {
+      "name": "Revolved.Shape.brp",
+      "payload_len": 7339,
+      "payload_sha256": "2dbc86c94393c58ede754763becd501ebb62243774f8d813b53bdd8ee8bc2430"
+    },
+    {
+      "name": "Swept.Shape.brp",
+      "payload_len": 3117,
+      "payload_sha256": "da5f0b4416688ccc886fb5e54bda6d020365211e2814e85bba9a0940ed65bfc5"
     }
   ],
   "report": {

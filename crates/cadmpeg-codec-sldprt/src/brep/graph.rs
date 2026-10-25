@@ -1836,7 +1836,15 @@ fn decode_graph(
             })
             .transpose()?
             .flatten();
-        if parameter_range.is_some_and(|(_, reversed)| reversed) {
+        // An edge without a resolved range on a compact analytic curve takes its
+        // direction from the curve's orientation marker.
+        let against_curve = match parameter_range {
+            Some((_, reversed)) => reversed,
+            None => carriers
+                .curve(curve_attr)
+                .is_some_and(|carrier| carrier.carrier().runs_against_edges),
+        };
+        if against_curve {
             std::mem::swap(&mut start_id, &mut end_id);
             if let Some(endpoints) = edge_endpoint_positions.get_mut(&e) {
                 endpoints.swap(0, 1);
@@ -6973,6 +6981,7 @@ mod tests {
     #[test]
     fn line_edge_parameters_convert_from_metres_to_millimetres() {
         let carrier = crate::brep::CurveCarrier {
+            runs_against_edges: false,
             attr: 1,
             offset: 0,
             end: 0,
@@ -8593,6 +8602,9 @@ mod tests {
         assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);
     }
 }
+
+#[cfg(test)]
+mod curve_orientation_tests;
 
 #[cfg(test)]
 mod numerical_range_tests;

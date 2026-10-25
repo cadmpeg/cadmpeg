@@ -22,19 +22,19 @@
         "offset": "348",
         "parasolid_description": "feature input arc sketch",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sha256": "d266202f309440f57fded476d62ac6337806357510f22f83212a8ed6aa4714e6",
+        "sha256": "3ccfd9125d78ecc76143c1e3eac53edae3d762a0fbdfc5812fc677b3084f7b1a",
         "type_id": "0x00000045"
       },
       "compression": "deflate",
       "expanded": 1401,
       "name": "Contents/Config-0-ResolvedFeatures",
       "role": "block",
-      "stored": 471
+      "stored": 472
     },
     {
       "attributes": {
         "family": "unknown",
-        "offset": "883",
+        "offset": "884",
         "sha256": "a43790da2e3406f2bae4d13a1da4fc2358d0cba873bc096aed123d9ec60b1e64",
         "type_id": "0x00000042"
       },
@@ -47,7 +47,7 @@
     {
       "attributes": {
         "family": "unknown",
-        "offset": "1003",
+        "offset": "1004",
         "sha256": "a607e8d2c83c2f7280e62dfab609d47a3f5b4b72f22062db57ce0dcbbfc6f870",
         "type_id": "0x00000043"
       },
@@ -59,7 +59,7 @@
     },
     {
       "attributes": {
-        "offset": "1205",
+        "offset": "1206",
         "type_id": "0x00000020"
       },
       "compression": "none",
@@ -72,7 +72,7 @@
     },
     {
       "attributes": {
-        "offset": "1278",
+        "offset": "1279",
         "type_id": "0x00000045"
       },
       "compression": "none",
@@ -80,12 +80,12 @@
       "role": "directory-entry",
       "size": {
         "form": "payload_only",
-        "payload": 471
+        "payload": 472
       }
     },
     {
       "attributes": {
-        "offset": "1358",
+        "offset": "1359",
         "type_id": "0x00000042"
       },
       "compression": "none",
@@ -98,7 +98,7 @@
     },
     {
       "attributes": {
-        "offset": "1421",
+        "offset": "1422",
         "type_id": "0x00000043"
       },
       "compression": "none",

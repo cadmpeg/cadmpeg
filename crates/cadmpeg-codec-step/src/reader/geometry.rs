@@ -832,16 +832,33 @@ pub(super) fn decode(
         }
     }
     let mut transformation_operators2 = BTreeMap::new();
-    for (id, record) in exchange.entities("CARTESIAN_TRANSFORMATION_OPERATOR_2D") {
+    for (id, record) in exchange
+        .entities("CARTESIAN_TRANSFORMATION_OPERATOR_2D")
+        .chain(exchange.entities("CARTESIAN_TRANSFORMATION_OPERATOR"))
+        .filter(|(_, record)| {
+            record
+                .partial("CARTESIAN_TRANSFORMATION_OPERATOR_3D")
+                .is_none()
+        })
+    {
+        let name = if record
+            .partial("CARTESIAN_TRANSFORMATION_OPERATOR_2D")
+            .is_some()
+        {
+            "CARTESIAN_TRANSFORMATION_OPERATOR_2D"
+        } else {
+            "CARTESIAN_TRANSFORMATION_OPERATOR"
+        };
         if let Some(transform) =
-            cartesian_transformation_operator_2d(record, &points2, &directions2)
+            cartesian_transformation_operator_2d(record, name, &points2, &directions2)
         {
             transformation_operators2.insert(id, transform);
             typed.insert(id);
         } else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "CARTESIAN_TRANSFORMATION_OPERATOR_2D #{id} has invalid axes, origin, or scale"
-            )));
+            losses.push(
+                StepLossCode::DecodeWarning
+                    .note(format!("{name} #{id} has invalid axes, origin, or scale")),
+            );
         }
     }
     for (id, record) in exchange.entities("AXIS2_PLACEMENT_2D") {
@@ -2769,8 +2786,8 @@ fn transformation_parameter<'a>(
     let (attribute_count, offset) = match (name, parameters.len()) {
         ("CARTESIAN_TRANSFORMATION_OPERATOR_3D", 6) => (5, 1),
         ("CARTESIAN_TRANSFORMATION_OPERATOR_3D", 8) => (5, 3),
-        ("CARTESIAN_TRANSFORMATION_OPERATOR_2D", 5) => (4, 1),
-        ("CARTESIAN_TRANSFORMATION_OPERATOR_2D", 7) => (4, 3),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR" | "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 5) => (4, 1),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR" | "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 7) => (4, 3),
         _ => return None,
     };
     (index < attribute_count).then(|| &parameters[offset + index])
@@ -5955,28 +5972,17 @@ fn cartesian_transformation_operator(
 
 fn cartesian_transformation_operator_2d(
     record: &RawRecord,
+    name: &str,
     points: &BTreeMap<u64, Point2>,
     directions: &BTreeMap<u64, HypotDirection2>,
 ) -> Option<Transform2> {
-    let axis1 = transformation_direction(
-        record,
-        "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
-        0,
-        directions,
-    )
-    .ok()?;
-    let axis2 = transformation_direction(
-        record,
-        "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
-        1,
-        directions,
-    )
-    .ok()?;
+    let axis1 = transformation_direction(record, name, 0, directions).ok()?;
+    let axis2 = transformation_direction(record, name, 1, directions).ok()?;
     let (axis1, axis2) = base_axis_2d(axis1, axis2);
-    let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2)?
+    let origin = transformation_parameter(record, name, 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
-    let scale = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 3) {
+    let scale = match transformation_parameter(record, name, 3) {
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };

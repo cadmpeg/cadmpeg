@@ -155,6 +155,8 @@ pub(crate) enum CreoLossCode {
     FeatureRecognizedIncomplete,
     /// History feature definitions retain only source-native semantics.
     FeatureNativeSemantics,
+    /// Same-ID operation candidates disagree and have no current-state selector.
+    FeatureStateSelectionUnresolved,
     /// Typed history features retain an explicitly unresolved construction.
     FeatureConstructionUnresolved,
     /// Declared section segment rows did not decode.
@@ -261,6 +263,7 @@ impl CreoLossCode {
             Self::FeatureConstructionIncomplete => "feature.construction-incomplete",
             Self::FeatureRecognizedIncomplete => "feature.recognized-incomplete",
             Self::FeatureNativeSemantics => "feature.native-semantics",
+            Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
             Self::SectionSegmentMissing => "section.segment-missing",
             Self::SectionRelationMissing => "section.relation-missing",
@@ -346,6 +349,7 @@ impl CreoLossCode {
             | Self::FeatureConstructionIncomplete
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
+            | Self::FeatureStateSelectionUnresolved
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -430,6 +434,7 @@ impl CreoLossCode {
             | Self::FeatureConstructionIncomplete
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
+            | Self::FeatureStateSelectionUnresolved
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -544,6 +549,7 @@ mod tests {
                 "feature.construction-incomplete",
                 "feature.recognized-incomplete",
                 "feature.native-semantics",
+                "feature.state-selection-unresolved",
                 "feature.construction-unresolved",
                 "section.segment-missing",
                 "section.relation-missing",

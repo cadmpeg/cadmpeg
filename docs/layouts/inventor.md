@@ -493,3 +493,17 @@ Parsed by:
 | 64 | 4 | `second_auxiliary_marker` | `u16[2]` | little | spec | Marker words are 2 and 0x3000. |
 | 68 | 4 | `second_auxiliary_count` | `u32` | little | spec | second_auxiliary_count u32 · value `0` |
 | 72 | 4 | `second_operand` | `u32` | little | spec | second_operand u32 |
+
+## `pm_dc_edge_selector_prefix`
+
+Spec §13 · layout: byte offsets · size: 22 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | The fixed selector prefix after the content header contains |
+| 4 | 1 | `enabled` | `u8` | little | spec | The fixed selector prefix after the content header contains |
+| 5 | 1 | `form` | `u8` | little | spec | The fixed selector prefix after the content header contains |
+| 6 | 4 | `body_reference` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+| 10 | 4 | `topology` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+| 14 | 4 | `qualifier` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+| 18 | 4 | `naming_form` | `u32` | little | spec | The fixed selector prefix after the content header contains |

@@ -539,6 +539,7 @@ fn compact_carrier_shapes_decode() {
     }
     match parse_carrier(&circ, 0).unwrap() {
         Carrier::Curve(CurveCarrier {
+            runs_against_edges: false,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
             ..
         }) => {

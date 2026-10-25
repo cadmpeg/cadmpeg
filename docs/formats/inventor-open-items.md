@@ -235,6 +235,14 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Need.** Each feature requires its exact operands, side, thickness and bend rule, relief options, and result bodies before it can transfer to a neutral sheet-metal operation.
 
+### DE-09. Additional edge naming forms
+
+**Question.** Which selector forms and naming families resolve edge items outside the direct schema-44 matched-attribute form?
+
+**Known.** An edge-item index reference names a selector by its PmDc source index. A direct selector and an ASM matching attribute share a source index and an edge key. A generated attribute on the same edge supplies its generating feature and associative name. The archive can contain this edge after a later operation removes it from the active body.
+
+**Need.** Additional selector forms, secondary naming arrays, matched-attribute qualifiers, generated roles, and naming families require exact operands and joins before neutral edge resolution.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

@@ -27,6 +27,10 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 pub(crate) enum FreecadLossCode {
     /// A bounded archive payload cannot be opened; its stored bytes remain retained.
     ArchiveEntryUnreadable,
+    /// A mesh use has no complete neutral placement path.
+    MeshPlacementNotTransferred,
+    /// Mesh occurrence expansion reached its input-scaled local work cap.
+    MeshPlacementBounded,
     /// A property payload cannot enter the admitted persistence graph.
     PersistencePayloadUnresolved,
     /// An optional file reference has no readable archive payload.
@@ -82,6 +86,8 @@ impl FreecadLossCode {
     #[cfg(test)]
     const ALL: &'static [FreecadLossCode] = &[
         Self::ArchiveEntryUnreadable,
+        Self::MeshPlacementNotTransferred,
+        Self::MeshPlacementBounded,
         Self::PersistencePayloadUnresolved,
         Self::PersistenceSideEntryUnresolved,
         Self::PersistenceCountNoncanonical,
@@ -113,6 +119,8 @@ impl FreecadLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::MeshPlacementNotTransferred => "geometry.mesh-placement-not-transferred",
+            Self::MeshPlacementBounded => "geometry.mesh-placement-bounded",
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
@@ -148,7 +156,9 @@ impl FreecadLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::FeatureCyclicHistory
+            Self::MeshPlacementNotTransferred
+            | Self::MeshPlacementBounded
+            | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
@@ -178,6 +188,9 @@ impl FreecadLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::MeshPlacementNotTransferred | Self::MeshPlacementBounded => {
+                LossTaxonomy::GeometryNotTransferred
+            }
             Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
@@ -243,6 +256,8 @@ mod tests {
             codes,
             [
                 "source.archive-entry-unreadable",
+                "geometry.mesh-placement-not-transferred",
+                "geometry.mesh-placement-bounded",
                 "metadata.persistence-payload-unresolved",
                 "metadata.persistence-side-entry-unresolved",
                 "metadata.persistence-count-noncanonical",

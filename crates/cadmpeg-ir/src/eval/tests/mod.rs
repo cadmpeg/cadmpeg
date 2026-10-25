@@ -1895,3 +1895,5 @@ mod isocurves;
 mod admission_derivatives;
 
 mod differentials;
+
+mod periodic_pcurves;

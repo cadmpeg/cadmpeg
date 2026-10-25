@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Extrusion profile selections resolved through their profile wire bodies.
+//! Extrusion profile selections resolved through stored boundary loops.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -25,6 +25,8 @@ const NAMING_ATTRIBUTE: &str =
     "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
 /// Topology value of a naming attribute on an edge.
 const NAMED_EDGE: i64 = 2;
+const CUSTOM_NAMING_ATTRIBUTE: &str = "ATTRIB_CUSTOM-attrib";
+const CUSTOM_NAMING_FAMILY: &str = "INV_NMX_GEN_TAG";
 /// Entity type of an entity-style link that names a sketch curve.
 const CURVE_LINK_ENTITY_TYPE: u32 = 2;
 /// Entity type of an entity-style link that names a sketch block instance.
@@ -53,14 +55,14 @@ pub(super) struct ProfileEdge {
     middle: Option<Point3>,
 }
 
-/// One wire body of a profile-body record, keyed by its ASM body key.
+/// One profile boundary loop, keyed by its ASM body key.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ProfileWire {
     key: u64,
     edges: Vec<ProfileEdge>,
 }
 
-/// The wire bodies of one `PmDc` kernel-body record.
+/// The boundary loops of one `PmDc` kernel-body record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProfileBody {
     segment_token: IdentityKey,
@@ -171,13 +173,18 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         .collect::<HashMap<_, _>>();
     let mut names = HashMap::<&str, Vec<Option<EdgeName>>>::new();
     for attribute in &brep.attributes {
-        if let (AttributeTarget::Edge(edge), NAMING_ATTRIBUTE) =
-            (&attribute.target, attribute.name.as_str())
-        {
+        if let AttributeTarget::Edge(edge) = &attribute.target {
+            let naming = attribute.name == NAMING_ATTRIBUTE
+                || (attribute.name == CUSTOM_NAMING_ATTRIBUTE
+                    && matches!(attribute.values.get(5), Some(AttributeValue::String(family))
+                        if family == CUSTOM_NAMING_FAMILY));
+            if !naming {
+                continue;
+            }
             names
                 .entry(edge.as_str())
                 .or_default()
-                .push(edge_name(&attribute.values));
+                .push(edge_name(&attribute.name, &attribute.values));
         }
     }
     let region_bodies = brep
@@ -205,7 +212,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<HashMap<_, _>>();
-    let mut wires = Vec::new();
+    let mut rings = Vec::new();
     for wire in &brep.wire_topologies {
         let Some(key) = shell_bodies
             .get(wire.shell.as_str())
@@ -213,8 +220,38 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         else {
             continue;
         };
+        rings.push((*key, wire.members.edges().iter().collect::<Vec<_>>()));
+    }
+    let faces = brep
+        .faces
+        .iter()
+        .map(|face| (face.id.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let coedges = brep
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<HashMap<_, _>>();
+    for loop_ in &brep.loops {
+        let Some(key) = faces
+            .get(loop_.face.as_str())
+            .and_then(|face| shell_bodies.get(face.shell.as_str()))
+            .and_then(|body| keys.get(body))
+        else {
+            continue;
+        };
+        let members = loop_
+            .coedges()
+            .iter()
+            .map(|id| coedges.get(id.as_str()).map(|coedge| &coedge.edge))
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_default();
+        rings.push((*key, members));
+    }
+    let mut wires = Vec::new();
+    for (key, members) in rings {
         let mut wire_edges = Vec::new();
-        for id in wire.members.edges() {
+        for id in members {
             let Some((start, end)) = edges.get(id.as_str()).and_then(|edge| {
                 Some((
                     *vertices.get(edge.start.as_str())?,
@@ -251,7 +288,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
             });
         }
         wires.push(ProfileWire {
-            key: *key,
+            key,
             edges: wire_edges,
         });
     }
@@ -259,9 +296,17 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
 }
 
 /// The naming-type and associative-id integers of an edge naming attribute.
-fn edge_name(values: &[AttributeValue]) -> Option<EdgeName> {
+fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
     let [_, _, _, _, _, rest @ ..] = values else {
         return None;
+    };
+    let rest = match (attribute, rest) {
+        (NAMING_ATTRIBUTE, rest) => rest,
+        (
+            CUSTOM_NAMING_ATTRIBUTE,
+            [AttributeValue::String(family), AttributeValue::Integer(1), rest @ ..],
+        ) if family == CUSTOM_NAMING_FAMILY => rest,
+        _ => return None,
     };
     let integers = rest
         .iter()

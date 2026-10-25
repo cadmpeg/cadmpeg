@@ -111,6 +111,9 @@ mod tag {
 const COMPACT_REF_COUNT: usize = 5;
 const DELTAS_REF_STRIDE: usize = 3;
 const DELTAS_MARKER_OFFSET: usize = analytic::REFS + COMPACT_REF_COUNT * DELTAS_REF_STRIDE;
+/// Orientation marker of a compact analytic curve whose stored edge direction
+/// runs against the curve parameter.
+const MARKER_AGAINST_EDGES: u8 = 0x2b;
 
 /// f64 count for each analytic tag; `None` if the tag is not an analytic carrier.
 fn analytic_value_count(tt: u8) -> Option<usize> {
@@ -184,6 +187,9 @@ pub(crate) struct CurveCarrier {
     pub(crate) end: usize,
     pub(crate) geometry: CurveGeometry,
     parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// Whether the stored direction of an edge on this compact analytic
+    /// carrier runs against the curve parameter.
+    pub(crate) runs_against_edges: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -246,7 +252,8 @@ fn parse_carrier_at_marker(
         return None;
     }
 
-    decode_carrier_values(tt, vals, attr, off, end)
+    let runs_against_edges = body.get(marker_at) == Some(&MARKER_AGAINST_EDGES);
+    decode_carrier_values(tt, vals, attr, (off, end), runs_against_edges)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
@@ -278,8 +285,8 @@ fn decode_carrier_values(
     tt: u8,
     v: &[f64],
     attr: u16,
-    offset: usize,
-    end: usize,
+    (offset, end): (usize, usize),
+    runs_against_edges: bool,
 ) -> Option<Carrier> {
     let curve = |geometry| {
         Carrier::Curve(CurveCarrier {
@@ -288,6 +295,7 @@ fn decode_carrier_values(
             end,
             geometry,
             parameter_range: None,
+            runs_against_edges,
         })
     };
     let surface = |geometry| {

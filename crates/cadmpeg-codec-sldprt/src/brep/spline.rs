@@ -909,6 +909,7 @@ pub(crate) fn scan_curve_carriers(
             }
         };
         out.entry(attr).or_insert(CurveCarrier {
+            runs_against_edges: false,
             attr,
             offset: off,
             end: off + 2,
