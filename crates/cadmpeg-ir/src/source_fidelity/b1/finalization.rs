@@ -267,7 +267,7 @@ fn check_partition(ctx: &DecodeContext<'_>, partition: &StreamPartition) -> Resu
         .and_then(|count| count.checked_add(partition.b1().len()))
         .ok_or_else(|| CodecError::malformed("source closure interval count overflows"))?;
     let mut ranges = Vec::new();
-    reserve(ctx, &mut ranges, count)?;
+    ctx.reserve_working(&mut ranges, count, FINALIZE)?;
     ranges.extend(
         partition
             .reads()

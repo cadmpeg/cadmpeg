@@ -676,3 +676,114 @@ fn stream_default_policy_is_the_same_for_finalization_and_closure() {
         .check_b1_closure(&ctx, &conservative, "step", &partitions, &losses)
         .is_err());
 }
+
+fn closure_scratch_partition() -> StreamPartition {
+    StreamPartition {
+        stream: "file".into(),
+        byte_len: 4,
+        reads: vec![0..1],
+        exempt: vec![1..2],
+        b1: vec![2..4],
+    }
+}
+
+#[test]
+fn closure_validation_scratch_preserves_the_live_caller_output_allowance() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8;
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx).unwrap();
+    ctx.retain_bytes(3, "held decoded record").unwrap();
+    let mut output = session.buffer();
+    output.append(b"12", "live serialized output").unwrap();
+    let partition = closure_scratch_partition();
+    for _ in 0..3 {
+        check_partition(&ctx, &partition).unwrap();
+        assert_eq!(ctx.retained_bytes_available(), 3);
+        assert_eq!(ctx.resource_refusal(), None);
+        assert_eq!(output.as_bytes(), b"12");
+    }
+    session.finish().unwrap();
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn malformed_closure_remains_malformed_without_consuming_a_zero_retained_budget() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let valid = closure_scratch_partition();
+    check_partition(&ctx, &valid).unwrap();
+    let mut gap = closure_scratch_partition();
+    gap.b1 = vec![3..4];
+    let mut overlap = closure_scratch_partition();
+    overlap.b1 = vec![1..4];
+    for invalid in [gap, overlap] {
+        assert!(matches!(
+            check_partition(&ctx, &invalid),
+            Err(CodecError::Malformed(_))
+        ));
+        assert_eq!(ctx.retained_bytes_available(), 0);
+        assert_eq!(ctx.resource_refusal(), None);
+    }
+    assert_eq!(valid.reads(), &[0..1]);
+    assert_eq!(valid.exempt(), &[1..2]);
+    assert_eq!(valid.b1(), &[2..4]);
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn closure_working_reservation_preserves_an_existing_entity_refusal_even_when_empty() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let CodecError::ResourceLimit(refusal) =
+        ctx.charge_entities(1, "prior actual entity").unwrap_err()
+    else {
+        panic!("actual entity ceiling must refuse")
+    };
+    let nonempty = closure_scratch_partition();
+    let empty = StreamPartition {
+        stream: "file".into(),
+        byte_len: 0,
+        reads: Vec::new(),
+        exempt: Vec::new(),
+        b1: Vec::new(),
+    };
+    for partition in [nonempty, empty] {
+        assert!(
+            matches!(check_partition(&ctx, &partition), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+        );
+        assert_eq!(ctx.resource_refusal(), Some(refusal));
+    }
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+    );
+}
+
+#[test]
+fn closure_working_reservation_preserves_an_existing_allocation_refusal() {
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::for_encode(&arena, &DecodePolicy::service());
+    let mut values = Vec::<u64>::new();
+    let CodecError::ResourceLimit(refusal) = ctx
+        .reserve_working(&mut values, usize::MAX, "prior working overflow")
+        .unwrap_err()
+    else {
+        panic!("actual allocator capacity overflow must refuse")
+    };
+    assert_eq!(
+        refusal.reason,
+        cadmpeg_core::decode::ResourceFailure::AllocationFailed
+    );
+    assert!(
+        matches!(check_partition(&ctx, &closure_scratch_partition()), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+    );
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+    );
+}
