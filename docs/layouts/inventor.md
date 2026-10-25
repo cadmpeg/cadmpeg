@@ -481,3 +481,17 @@ Spec §13 · layout: byte offsets · size: 22 B
 | 10 | 4 | `topology` | `u32` | little | spec | The fixed selector prefix after the content header contains |
 | 14 | 4 | `qualifier` | `u32` | little | spec | The fixed selector prefix after the content header contains |
 | 18 | 4 | `naming_form` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+
+## `pm_dc_plate_side_fields`
+
+Spec §13 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `type_value` | `i16` | little | spec | Enumeration type; 2 for the plate thickness side. |
+| 2 | 2 | `value` | `u16` | little | spec | 0 selects thickness along the face-sketch normal. |
