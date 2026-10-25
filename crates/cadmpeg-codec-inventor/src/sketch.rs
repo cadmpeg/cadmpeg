@@ -2599,7 +2599,7 @@ fn placed_endpoint_refs(
     endpoint_refs
 }
 
-fn project_placement(
+pub(crate) fn project_placement(
     sketch: &PmDcSketch,
     transforms: &HashMap<(&str, u32), Option<&PmDcTransform>>,
     directions: &HashMap<(&str, u32), Option<&PmDcDirection>>,
