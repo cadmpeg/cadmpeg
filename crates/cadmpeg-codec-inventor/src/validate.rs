@@ -562,7 +562,27 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             ));
         }
     }
+    let entities = data
+        .pm_dc_sketch_entities
+        .iter()
+        .map(|entity| {
+            (
+                (
+                    entity.identity.segment_token.as_str(),
+                    entity.identity.record_ordinal,
+                ),
+                entity,
+            )
+        })
+        .collect::<HashMap<_, _>>();
     for entity in &data.pm_dc_sketch_entities {
+        if !entity.tail_matches_version() {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor point tail form does not match save_version_major".into(),
+                Some(entity.id()),
+            ));
+        }
         let mut references = vec![
             entity.header.next.index(),
             entity.header.context.index(),
@@ -592,8 +612,28 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                             add_list(links);
                         }
                     }
-                    PointTail::Paired(paired) => references
-                        .extend(paired.operands().iter().map(|reference| reference.index())),
+                    PointTail::Paired(paired) => {
+                        let token = entity.identity.segment_token.as_str();
+                        if !paired.operands().iter().all(|reference| {
+                            reference.index().checked_sub(1).is_some_and(|ordinal| {
+                                entities.get(&(token, ordinal)).is_some_and(|operand| {
+                                    let expected_type =
+                                        crate::pmdc::type_id_string(operand.kind.record_type_id());
+                                    record_is_exact(token, ordinal, &expected_type)
+                                        && operand.identity.type_id.as_str() == expected_type
+                                })
+                            })
+                        }) {
+                            findings.push(finding(
+                                Check::NativeLinks,
+                                "Inventor point paired operand does not resolve to a sketch entity"
+                                    .into(),
+                                Some(entity.id()),
+                            ));
+                        }
+                        references
+                            .extend(paired.operands().iter().map(|reference| reference.index()));
+                    }
                 }
             }
             PmDcSketchEntityKind::Line {

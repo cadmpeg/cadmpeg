@@ -5,8 +5,75 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
-use super::PointTail;
-use crate::pmdc::{reference_list, Cursor, PmDcReference};
+use super::{PmDcSketchEntityKind, PmDcSketchEntityPayload, PointTail, SketchInventory};
+use crate::loss::InventorLossCode;
+use crate::pmdc::{reference_list, Cursor, PmDcContentHeader, PmDcReference};
+
+#[derive(Deserialize)]
+pub(super) struct SketchEntityWire {
+    save_version_major: u8,
+    header: PmDcContentHeader,
+    entity_flags: u32,
+    sketch: PmDcReference,
+    kind: PmDcSketchEntityKind,
+}
+
+impl TryFrom<SketchEntityWire> for PmDcSketchEntityPayload {
+    type Error = &'static str;
+
+    fn try_from(wire: SketchEntityWire) -> Result<Self, Self::Error> {
+        let entity = Self {
+            save_version_major: wire.save_version_major,
+            header: wire.header,
+            entity_flags: wire.entity_flags,
+            sketch: wire.sketch,
+            kind: wire.kind,
+        };
+        if !entity.tail_matches_version() {
+            return Err("point tail form does not match save_version_major");
+        }
+        Ok(entity)
+    }
+}
+
+impl PmDcSketchEntityPayload {
+    pub(crate) fn tail_matches_version(&self) -> bool {
+        let PmDcSketchEntityKind::Point { tail, .. } = &self.kind else {
+            return true;
+        };
+        match tail {
+            PointTail::Absent => true,
+            PointTail::Paired(_) => self.save_version_major >= 25,
+            PointTail::Present { state, links, .. } => {
+                links.is_some() == (self.save_version_major >= 25)
+                    && (*state != 2 || self.save_version_major < 25)
+            }
+        }
+    }
+}
+
+pub(crate) fn paired_association_loss(
+    inventory: &SketchInventory,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let count = inventory
+        .entities
+        .iter()
+        .filter(|entity| {
+            matches!(
+                entity.kind,
+                PmDcSketchEntityKind::Point {
+                    tail: PointTail::Paired(_),
+                    ..
+                }
+            )
+        })
+        .count();
+    (count != 0).then(|| {
+        InventorLossCode::SketchPairedAssociationUnprojected.note(format!(
+            "{count} Inventor sketch-point paired association(s) remain native; scalar and operand roles are unresolved."
+        ))
+    })
+}
 
 /// The two scalars and two entity operands of a state-2 point tail, with the
 /// metadata words of both pair lists.
