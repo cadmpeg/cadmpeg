@@ -70,7 +70,7 @@ its result.
 | Siemens NX `.prt`                                 | L1    |
 | CATIA V5 `.CATPart`                               | L3    |
 | Creo Parametric `.prt`                            | L1    |
-| Creo View `.pvz`                                  | L0    |
+| Creo View `.pvz`                                  | L3    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -511,7 +511,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- generated: dialects pvz -->
 
-**Ladder: L0.**
+**Ladder: L3.**
 
 | Dialect        | Read                   | Write |
 | -------------- | ---------------------- | ----- |
@@ -524,7 +524,21 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 <!-- /generated: dialects pvz -->
 
-The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. Each exact stream becomes connected B-rep from bodies through vertices, with face regions, coedge senses, face sides, shells, and placed analytic and B-spline carriers in millimetres. The code-built golden packages cover every structure generation, the XML structure form, both exact-stream scalar widths, and closed solids with plane, cylinder, cone, and rational B-spline faces, a periodic seam, a singular apex, secondary pcurves, and inner loops; the neutral structural validation passes on each. No real `.pvz` file is in the repository or in `docs/evaluations.toml`. The proof criterion that real files exercise the scored level therefore holds at no level, and code-built fixtures do not pass a level (scoring rule 2). The format is at L0, the lowest level the registry declares. Connected B-rep is an extra above that score.
+The codec opens the ZIP framing, the `.pvs` stream directory, and the `.ol` stream directory, expands each GZIP stream under the decode caps and checks its CRC-32, classifies the package from the generation the `.pvs` member declares, and decodes product structure, exact B-rep, and tessellation. Every undecoded record family is named by a loss. Each exact stream becomes connected B-rep from bodies through vertices, with face regions, coedge senses, face sides, shells, and placed analytic and B-spline carriers in millimetres. Neutral structural validation passes on the decoded B-rep, and the solids convert to STEP. A package without exact streams carries placed tessellation and product structure. A geometry member with neither a tessellation stream nor an exact stream gives no body. Connected B-rep sets L3. No feature operation records transfer, which blocks L4. No evaluation covers `pvz:pvs-0302`; under scoring rule 2 that row is a named gap.
+
+These gaps remain:
+
+- A two-member radial ring can have two coedges with the same sense. The neutral check reports each such ring as a `coedge_pairing` warning.
+- Composite edge curves and pcurves have no parameterisation (PVZ-23). Their edges have no neutral curve (`pvz/exact.curve-untyped`), their coedges have no pcurve, and their loops stay open (`pvz/exact.loop-open`).
+- Secondary pcurves in the embedded B-spline domain are not written onto analytic faces (`pvz/exact.secondary-pcurve-omitted`).
+- Coedges on some B-spline faces miss the edge ends by more than the agreement band (PVZ-24, PVZ-42, `pvz/exact.endpoint-mismatch`).
+- Face records without a loop do not transfer (`pvz/exact.face-unbounded-omitted`).
+- Exact-stream records with tag `0x0a` or an undefined tag do not transfer (PVZ-22, `pvz/exact.record-uninterpreted`).
+- An `.ol` member that no definition names is not decoded (`pvz/geometry.member-unreferenced`).
+- Texture images, texture bindings, and decals are not decoded (PVZ-17), and texture coordinates are dropped (`pvz/tessellation.texture-coordinates-dropped`).
+- The patch-header face references are not decoded (PVZ-14), so appearances do not bind to exact faces and face colors do not transfer.
+- Edge tessellation does not transfer (`pvz/tessellation.edges-not-transferred`).
+- Loose `.pvs` and `.ol` files outside a package are not detected.
 
 ### Read profile
 

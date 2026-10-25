@@ -1548,6 +1548,16 @@ face may have this type. Section §5.5.19 defines `FACE.bounds` as
 `SET[1:?] OF FACE_BOUND`; its WR2 permits at most one `FACE_OUTER_BOUND`, and
 the outer role is optional. Other face bounds are not outer bounds.
 
+Section §5.5.19 defines the face domain as an oriented, connected, finite
+2-manifold, and the topological normal `n` such that each bound runs
+counterclockwise around the face when `n` points up: the face interior lies
+to the left of every oriented bound. Section §5.5.20 states in
+`FACE_SURFACE.same_sense` whether the surface normal agrees with `n`. A
+face with no `FACE_OUTER_BOUND` follows the same rule, and a single
+`FACE_BOUND` is not an outer bound. On an unbounded surface such as a
+`PLANE`, the region to the left of one bound that runs clockwise about `n` is
+not finite, so that bound set is not a face.
+
 Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
 `orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
 no additional explicit attributes. Therefore, in a complex instance, the
@@ -1725,7 +1735,18 @@ the deterministic projection for reproducible output, while layer membership,
 view identity, visibility, and all other consumers treat the sequence as a
 set of assigned items.
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
-`SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,
+`SHAPE_DEFINITION_REPRESENTATION`.
+CADIR decision: a body absent from every product definition's body list belongs
+to the model in model coordinates. Its shape items occur once in a body
+representation linked to the root product's shape representation by
+`SHAPE_REPRESENTATION_RELATIONSHIP`, without an occurrence transformation.
+Solid items without body placements use
+`ADVANCED_BREP_SHAPE_REPRESENTATION`; other items use `SHAPE_REPRESENTATION`
+and retain their body placements. Claimed bodies retain their product ownership
+and occurrence structure. One local root product owns the unclaimed bodies;
+a sole product definition is the root when the occurrence list is empty.
+Without a unique local root, a separate model product owns these bodies.
+Every body-producing representation,
 including `ADVANCED_BREP_REPRESENTATION` and
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`, uses the same
 source-root-to-body map. An `ADVANCED_BREP_REPRESENTATION` is typed when its

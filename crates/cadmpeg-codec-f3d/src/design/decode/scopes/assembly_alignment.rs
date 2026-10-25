@@ -23,6 +23,7 @@ use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 struct AsBuiltAlignmentDraft {
@@ -58,6 +59,59 @@ pub(super) fn exact_assembly_alignment(
         parameter_owners,
         &std::collections::HashMap::new(),
     )
+}
+
+use crate::layout::assembly_as_built_scope_owner_run as as_built;
+
+/// Whether a placement-ordered `As-built` scope stores its owner run: the u32
+/// additional-owner count at offset 43 is the count its frame length implies, the
+/// marked references after it name the owners after the four alignment owners
+/// in local order, the reference table has nine entries more than that count,
+/// the four alignment owners appear once and contiguously in it, and every
+/// additional owner appears in it.
+fn placement_ordered_owner_run(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    lanes: &[&DesignParameterOwner],
+    owners: &[crate::records::identity::Located<u32>],
+) -> bool {
+    let Some(count) =
+        crate::design::assembly::as_built_additional_owner_count(scope.frame_length())
+    else {
+        return false;
+    };
+    let Ok(start) = usize::try_from(scope.byte_offset()) else {
+        return false;
+    };
+    let stored = View::u32_le_at(bytes, start + as_built::ADDITIONAL_OWNER_COUNT);
+    let additional_owners = lanes.get(4..).unwrap_or_default();
+    let table = scope.reference_members();
+    let unextended_positions_hold = count != 0
+        || table
+            .values_in(5..9)
+            .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value)));
+    unextended_positions_hold
+        && stored.and_then(|stored| usize::try_from(stored).ok()) == Some(count)
+        && table.len() == 9 + count
+        && additional_owners.len() == count
+        && additional_owners
+            .iter()
+            .enumerate()
+            .all(|(ordinal, owner)| {
+                super::shared_frames::marked_record_reference(
+                    bytes,
+                    start + as_built::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal,
+                ) == Some(owner.record_index())
+                    && table.values().any(|value| *value == owner.record_index())
+            })
+        && (0..table.len())
+            .filter(|&at| {
+                table
+                    .values_in(at..at + owners.len())
+                    .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value)))
+            })
+            .count()
+            == 1
 }
 
 /// The alignment of an assembly scope. `stream_types` names the stream's
@@ -149,6 +203,12 @@ pub(super) fn exact_assembly_alignment_with_types(
         let (angle, offset, owners) = {
             if matches!(scope.frame_length(), 671 | 744 | 748)
                 && generation.operand_frame_variant().is_none()
+            {
+                return None;
+            }
+            // Only an `As-built` scope has the additional-owner run.
+            if matches!(scope.frame_length(), 422 | 444)
+                && scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt
             {
                 return None;
             }
@@ -271,6 +331,10 @@ pub(super) fn exact_assembly_alignment_with_types(
                     .take(owners.len())
                     .eq(owners.iter().map(|owner| &owner.value))
                 {
+                    return None;
+                }
+            } else if placement_ordered {
+                if !placement_ordered_owner_run(bytes, scope, &lanes, &owners) {
                     return None;
                 }
             } else if !scope
@@ -401,8 +465,32 @@ pub(super) fn exact_assembly_alignment_with_types(
                 Some(0) => Some(assembly::DesignJointFrameSense::Aligned),
                 _ => None,
             });
+        let additional_owner_run = if crate::design::assembly::placement_ordered_as_built_scope(
+            scope.frame_length(), scope.kind() == scope::DesignFeatureKind::AsBuilt,
+        ) {
+            let start = usize::try_from(scope.byte_offset()).ok()?;
+            let count_at = start + as_built::ADDITIONAL_OWNER_COUNT;
+            let count = View::u32_le_at(bytes, count_at)?;
+            let references = lanes.iter().skip(4).enumerate().map(|(ordinal, _)| {
+                let at = start + as_built::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal;
+                Some(crate::records::identity::Located {
+                    value: super::shared_frames::marked_record_reference(bytes, at)?,
+                    offset: cadmpeg_core::decode::u64_from_index(at),
+                })
+            }).collect::<Option<Vec<_>>>()?;
+            Some(assembly::DesignAssemblyOwnerRun {
+                count: crate::records::identity::Located {
+                    value: count,
+                    offset: cadmpeg_core::decode::u64_from_index(count_at),
+                },
+                references,
+            })
+        } else {
+            None
+        };
         DesignAssemblyAlignment::try_new(angle, offset, owners, form)
-            .and_then(|alignment| {
+            .and_then(|mut alignment| {
+                alignment.additional_owner_run = additional_owner_run;
                 alignment
                     .with_frame_sense(frame_sense)
                     .with_additional_members(additional_members)

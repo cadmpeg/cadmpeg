@@ -73,6 +73,8 @@ loss_codes! {
     NurbsTransformNonFinite => "geometry.nurbs-transform-non-finite",
     /// A boundary pcurve leaves the finite parameter domain of its support surface.
     BoundaryPcurveOutsideSupportDomain => "topology.boundary-pcurve-outside-support-domain",
+    /// An alternate boundary pcurve does not compose its model-space curve.
+    BoundaryPcurveDisagrees => "topology.boundary-pcurve-disagrees",
     /// A Type 144 boundary has no winding about its support normal and keeps its source traversal.
     BoundaryWindingUnresolved => "topology.boundary-winding-unresolved",
     /// A Directory Entry pointer did not resolve to the expected target.
@@ -166,6 +168,7 @@ impl IgesLossCode {
             | Self::SplineClaimRecovered
             | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
+            | Self::BoundaryPcurveDisagrees
             | Self::BoundaryWindingUnresolved
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
@@ -214,7 +217,9 @@ impl IgesLossCode {
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
-            Self::BoundaryPcurveOutsideSupportDomain => LossTaxonomy::SourceTopologyInvalid,
+            Self::BoundaryPcurveOutsideSupportDomain | Self::BoundaryPcurveDisagrees => {
+                LossTaxonomy::SourceTopologyInvalid
+            }
             Self::BoundaryWindingUnresolved => LossTaxonomy::TopologyGaugeSubstituted,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
@@ -313,6 +318,7 @@ mod tests {
                 "geometry.spline-claim-recovered",
                 "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",
+                "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",

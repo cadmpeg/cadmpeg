@@ -233,6 +233,45 @@ pub(crate) fn neutral_component_occurrence_id(
     )
 }
 
+/// Neutral occurrence whose native key also occurs in another Design stream.
+pub(crate) fn stream_component_occurrence_id(
+    stream: &str,
+    key: &impl crate::records::mesh::OccurrenceIdentity,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::identity_key!("stream")
+            .with_hex_bytes(stream.as_bytes())
+            .colon(key.occurrence_identity_key()),
+    )
+}
+
+/// Neutral root occurrence for a context shared by several Design streams.
+pub(crate) fn stream_root_occurrence_id(
+    stream: &str,
+    context: &crate::records::mesh::DesignRelaxedGuidText,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::identity_key!("stream")
+            .with_hex_bytes(stream.as_bytes())
+            .colon(cadmpeg_ir::identity_key!("root").dash(context.identity_key())),
+    )
+}
+
+/// Neutral nested occurrence identified by its complete containing path.
+pub(crate) fn nested_component_occurrence_id(
+    parent: &cadmpeg_ir::ids::OccurrenceId,
+    key: &impl crate::records::mesh::OccurrenceIdentity,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::ids::Identity::from(parent.clone())
+            .key()
+            .colon(key.occurrence_identity_key()),
+    )
+}
+
 /// Neutral root occurrence of a Design stream, keyed by the root component's
 /// naming-space UUID.
 pub(crate) fn neutral_root_occurrence_id(

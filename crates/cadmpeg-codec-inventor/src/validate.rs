@@ -1479,7 +1479,7 @@ fn face_property_is_admitted<'a>(
     let valid_item = |item: &PmDcFeatureProperty| {
         item.identity.type_id.as_str() == face_item_type
             && matches!(&item.kind, PmDcFeaturePropertyKind::FaceItem { index_references }
-                if index_references.marker() == 2 && !index_references.values().is_empty())
+                if index_references.marker() == 2)
     };
     match &property.kind {
         PmDcFeaturePropertyKind::FaceItem { .. } => valid_item(property),
