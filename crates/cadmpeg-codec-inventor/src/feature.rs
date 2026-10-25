@@ -3443,20 +3443,29 @@ fn references<'a>(
     }
 }
 
+/// First segment major version whose extent enumerations use type value 12.
+const EXTENT_TYPE_12_FIRST_MAJOR: u8 = 22;
+
 fn enum16(
     source: &PmDcFeature,
     slot: usize,
     family: PmDcFeatureEnumFamily,
     index: &ProjectionIndex<'_>,
 ) -> Option<u16> {
+    let property = slot_property(source, slot, index)?;
     let expected_type = match family {
         PmDcFeatureEnumFamily::PartOperation => 5,
+        PmDcFeatureEnumFamily::Extent
+            if property.save_version_major >= EXTENT_TYPE_12_FIRST_MAJOR =>
+        {
+            12
+        }
         PmDcFeatureEnumFamily::Extent => 11,
         PmDcFeatureEnumFamily::Hole => 3,
         PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => 2,
         PmDcFeatureEnumFamily::Auxiliary => return None,
     };
-    match slot_property(source, slot, index)?.kind {
+    match property.kind {
         PmDcFeaturePropertyKind::Enumeration {
             family: actual,
             type_value,
