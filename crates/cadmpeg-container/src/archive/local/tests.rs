@@ -147,6 +147,30 @@ fn unreadable_header_retains_unframed_tail_without_searching_for_signatures() {
 }
 
 #[test]
+fn incomplete_fixed_header_or_filename_has_an_actual_source_extent_without_an_entry_identity() {
+    let first = local(b"one", b"first");
+    let next = local(b"incomplete-name", b"second");
+    for length in [4, 17, 29, 32] {
+        let mut bytes = first.clone();
+        bytes.extend_from_slice(&next[..length]);
+        with_snapshot(&bytes, |ctx, archive| {
+            assert_eq!(archive.entries().len(), 1);
+            assert_eq!(archive.open(ctx, "one").unwrap().window(), b"first");
+            let header = archive.recovery_header().unwrap().unwrap();
+            assert_eq!(header.window(), &next[..length]);
+            assert_eq!(header.start(), first.len());
+            assert_eq!(header.end(), bytes.len());
+            assert!(archive.read_recovery_header(ctx).is_err());
+            let framing = archive.framing_views(ctx).unwrap();
+            for field in framing.iter().filter(|field| field.start() >= first.len()) {
+                assert!(field.end() <= bytes.len());
+            }
+            assert!(ctx.take_record_captures().unwrap().is_empty());
+        });
+    }
+}
+
+#[test]
 fn descriptor_without_sizes_ends_walk_at_unreadable_member() {
     let mut bytes = local(b"one", b"first");
     let start = bytes.len();

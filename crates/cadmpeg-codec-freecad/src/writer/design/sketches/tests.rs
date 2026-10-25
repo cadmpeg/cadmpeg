@@ -129,9 +129,25 @@ fn external_cache_indices_and_live_dependency_survive_synthesis() {
     sketch.set("Constraints", xml::property("Constraints", "Sketcher::PropertyConstraintList", "<ConstraintList count=\"1\"><Constrain Type=\"17\" First=\"-3\" FirstPos=\"0\"/></ConstraintList>"));
     let ir = decode(&[support.clone(), sketch]);
     assert_eq!(ir.model.sketch_entities.len(), 1);
+    assert_eq!(
+        ir.model.sketch_entities[0].endpoint_refs,
+        ["Edge1"],
+        "original live dependency"
+    );
     assert_eq!(ir.model.sketch_constraints.len(), 1);
     let mut objects = vec![support];
-    let mut names = HashMap::new();
+    // #215: local selectors must name an actual emitted declaration. The
+    // complete writer supplies this map; this unit caller supplies its peer.
+    let mut names = ir
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap()
+        .into_iter()
+        .filter(|native| objects.iter().any(|object| &object.name == native.name()))
+        .map(|object| (object.id().as_str().to_owned(), object.name().to_owned()))
+        .collect::<HashMap<_, _>>();
     let mut losses = Vec::new();
     write(&ir, &mut objects, &mut names, &mut losses).expect("write typed external cache");
     assert!(losses.is_empty(), "{losses:?}");

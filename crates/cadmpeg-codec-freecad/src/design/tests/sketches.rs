@@ -5,6 +5,7 @@ use cadmpeg_test_support::wire;
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -115,16 +116,25 @@ fn rejects_malformed_sketch_record_counts() {
 <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
 </GeometryList></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("count mismatch");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .expect("bad GeometryList count gives up only that value");
+    super::projection_assertions::assert_native_projection_from_failed_control(
+        &result, "Sketch", "Geometry",
+    );
+    assert!(result.ir().model.sketches.is_empty());
+    assert!(result.ir().model.sketch_entities.is_empty());
+    assert!(result.ir().model.sketch_constraints.is_empty());
+    let start = document.find("<GeometryList").unwrap();
+    let end = document.find("</GeometryList>").unwrap() + "</GeometryList>".len();
+    crate::test_support::source_fidelity::assert_failed_xml_parts(
+        &result,
+        document,
+        &[("freecad.property_value", &document[start..end])],
+    );
 }
 
 #[test]
@@ -303,16 +313,30 @@ fn rejects_nested_and_duplicate_sketch_value_roots() {
 <Property name="{property_name}" type="{type_name}">{value}</Property>
 </Properties></Object></ObjectData></Document>"#
             );
-            let error = FcstdCodec
+            let result = FcstdCodec
                 .decode(
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
                 )
-                .expect_err("misframed sketch value root");
-            assert!(matches!(
-                error,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-            ));
+                .expect("recover independent sketch value roots");
+            if value.starts_with("<Wrapper>") {
+                super::projection_assertions::assert_native_projection_from_failed_control(
+                    &result,
+                    "Sketch",
+                    property_name,
+                );
+                assert!(result.ir().model.sketches.is_empty());
+            } else {
+                super::projection_assertions::assert_failed_value(&result, "Sketch", property_name);
+                assert_eq!(result.ir().model.sketches.len(), 1);
+                assert!(result.ir().model.sketch_entities.is_empty());
+                assert!(result.ir().model.sketch_constraints.is_empty());
+                assert!(matches!(
+                    super::definition(&result, "Sketch"),
+                    FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+                ));
+            }
+            assert_valid_document(result.ir());
         }
     }
 }
@@ -348,7 +372,7 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
 </GeometryList></Property>
 </Properties></Object></ObjectData></Document>"#;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (ctx, _source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         document.as_bytes(),
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
@@ -357,9 +381,7 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
     let xml = crate::container::admit_document(&ctx, document.as_bytes()).expect("document XML");
     let graph = crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
         .expect("persistence graph");
-    let reader =
-        crate::property_reader::PropertyReader::source(&ctx, source, &graph.property_sources)
-            .expect("original property ranges");
+    let reader = crate::property_reader::PropertyReader::typed(&ctx);
     let sketch = &graph.objects[0];
     let owned = graph
         .properties
@@ -511,16 +533,65 @@ fn rejects_incomplete_present_sketch_placement() {
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
 <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0"/></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    // #224 and #215 §4.5 give up the incomplete value at its real
+    // property_value home; the independent geometry header still survives.
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("incomplete placement");
+        .expect("incomplete placement remains a bounded source failure");
+    assert!(decoded.ir().model.sketches.is_empty());
     assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+        decoded.ir().model.features[0].definition().operation(),
+        cadmpeg_ir::features::FeatureOperation::Native { .. }
     ));
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let placement = properties
+        .iter()
+        .find(|property| property.name == "Placement")
+        .unwrap();
+    assert!(placement.body.is_none());
+    assert!(properties
+        .iter()
+        .any(|property| property.name == "Geometry"
+            && property.values()[0].attributes["count"] == "0"));
+    let failed = decoded
+        .source_fidelity()
+        .parts()
+        .iter()
+        .filter(|(_, part)| {
+            part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].1.level().as_str(), "freecad.property_value");
+    let start = document.find("<PropertyPlacement ").unwrap();
+    let end = start + document[start..].find("/>").unwrap() + 2;
+    assert_eq!(failed[0].1.offset(), u64::try_from(start).unwrap());
+    assert_eq!(failed[0].1.byte_len(), u64::try_from(end - start).unwrap());
+    assert_eq!(
+        crate::test_support::source_fidelity::bytes(
+            decoded.source_fidelity(),
+            failed[0].0.as_str()
+        ),
+        &document.as_bytes()[start..end]
+    );
+    let errors = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].message.contains(&placement.id));
+    assert!(errors[0].message.contains("fcstd:design:sketch#Sketch"));
 }
 
 #[test]

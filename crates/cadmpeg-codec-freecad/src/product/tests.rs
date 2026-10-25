@@ -4,18 +4,17 @@
 use cadmpeg_test_support::assembly;
 
 use crate::native;
-use crate::product::{
-    list_layout, product_cycle_nodes, product_kind, product_record_index, read_real, ProductKind,
-    RealWidth,
-};
+use crate::product::{product_cycle_nodes, product_kind, product_record_index, ProductKind};
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
 
 mod graph_diagnostic_tests;
+mod semantic_helpers;
+use semantic_helpers::{assert_product_semantic_finding, assert_source_failure, decode_real_list};
 
 #[test]
 fn local_copy_on_change_target_maps_to_its_definition() {
@@ -123,13 +122,16 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(occurrence.element_count(), Some(2));
     assert_eq!(occurrence.link_transform(), Some(true));
     assert_eq!(occurrence.element_transforms().len(), 2);
-    assert_eq!(occurrence.element_transforms()[1].rows()[0][3], 4.0);
+    assert_eq!(
+        occurrence.element_transforms()[1].unwrap().rows()[0][3],
+        4.0
+    );
     assert_eq!(
         occurrence
             .element_scales()
             .iter()
             .copied()
-            .map(cadmpeg_ir::units::FiniteVector::get)
+            .map(|value| value.unwrap().get())
             .collect::<Vec<_>>(),
         &[[1.0; 3], [2.0; 3]]
     );
@@ -185,7 +187,10 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         assert_eq!(graph.effective_transform(&link.id), None);
     }
     // The native carrier retains every authored local frame and scale fact.
-    assert_eq!(occurrence.element_transforms()[0].rows()[0][3], 1.0);
+    assert_eq!(
+        occurrence.element_transforms()[0].unwrap().rows()[0][3],
+        1.0
+    );
     assert_eq!(occurrence.scale(), Some([2.0, 3.0, 4.0]));
     let properties = result
         .ir()
@@ -204,8 +209,9 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         .all(|property| property.name != "Placement" && property.name != "LinkPlacement"));
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
     assert_eq!(first_link.linked_subelements(), ["Face1"]);
-    assert_eq!(link_occurrences[0].visible, None);
-    assert_eq!(link_occurrences[1].visible, None);
+    // #213: an unknown transform leaves independently stated visibility held.
+    assert_eq!(link_occurrences[0].visible, Some(true));
+    assert_eq!(link_occurrences[1].visible, Some(false));
     assert!(first_link.element_component().is_some());
     assert_eq!(first_link.claim_child(), Some(true));
     let copy_on_change = first_link.copy_on_change().expect("copy-on-change state");
@@ -436,14 +442,7 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
         .arena_as::<native::PropertyRecord>("properties")
         .expect("properties");
     assert_eq!(properties.len(), 5);
-    assert!(properties.iter().any(|property| {
-        property.name == "Description"
-            && String::from_utf8_lossy(crate::test_support::source_fidelity::bytes(
-                result.source_fidelity(),
-                &property.id,
-            ))
-            .contains("<Wrapper>")
-    }));
+    semantic_helpers::assert_description_failure(&result, document, &properties);
     assert!(properties.iter().any(|property| {
         property.name == "PartNumber" && property.type_name == "App::PropertyInteger"
     }));
@@ -682,16 +681,43 @@ fn rejects_ambiguous_link_placement_without_policy() {
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="20" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("ambiguous placement carriers");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .unwrap();
+    let record = assert_product_semantic_finding(
+        decoded.ir(),
+        "LinkPlacement and Placement require a valid LinkTransform policy",
+    );
+    assert!(record.local_transform().is_none());
+    assert!(record.placement_property().is_none());
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<native::PropertyRecord>("properties")
+        .unwrap();
+    assert_eq!(
+        properties
+            .iter()
+            .find(|property| property.name == "Placement")
+            .unwrap()
+            .values()[0]
+            .attributes["Px"],
+        "20"
+    );
+    assert_eq!(
+        properties
+            .iter()
+            .find(|property| property.name == "LinkPlacement")
+            .unwrap()
+            .values()[0]
+            .attributes["Px"],
+        "2"
+    );
 }
 
 #[test]
@@ -709,16 +735,13 @@ fn rejects_ambiguous_link_prototype_carriers() {
   <Property name="LinkedObject" type="App::PropertyLinkList"><LinkList count="2"><Link value="First"/><Link value="Second"/></LinkList></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("multiple linked-object carriers");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .unwrap();
+    semantic_helpers::assert_multiple_prototype_carriers(&result);
 }
 
 #[test]
@@ -765,16 +788,25 @@ fn rejects_duplicate_product_carriers() {
  </Properties></Object>
 </ObjectData></Document>"#,
     ] {
-        let error = FcstdCodec
+        let result = FcstdCodec
             .decode(
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             )
-            .expect_err("duplicate product carrier");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .unwrap();
+        let value_duplicates = document.matches("<PropertyPlacement").count() == 2
+            && document.matches("name=\"Placement\"").count() == 1;
+        let level = if value_duplicates {
+            "freecad.property_value"
+        } else {
+            "freecad.property"
+        };
+        let levels = if value_duplicates {
+            vec![level]
+        } else {
+            vec![level, level]
+        };
+        assert_source_failure(&result, &levels, "Occurrence");
     }
 }
 
@@ -795,15 +827,13 @@ fn rejects_invalid_product_placement_values() {
 {placement}
 </Properties></Object></ObjectData></Document>"#
         );
-        assert!(matches!(
-            FcstdCodec.decode(
+        let result = FcstdCodec
+            .decode(
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+            )
+            .unwrap();
+        semantic_helpers::assert_invalid_placement(&result);
     }
 }
 
@@ -816,16 +846,13 @@ fn rejects_overlapping_product_membership_for_neutral_projection() {
  <Object name="Second"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
  <Object name="Member"><Properties Count="0"/></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
             &DecodeOptions::default(),
         )
-        .expect_err("overlapping product membership");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .unwrap();
+    semantic_helpers::assert_overlapping_members(&result);
 }
 
 #[test]
@@ -863,16 +890,29 @@ fn rejects_wrong_runtime_type_for_copy_on_change_policy() {
   <Property name="LinkCopyOnChange" type="App::PropertyInteger"><Integer value="2"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("wrong copy-on-change carrier type");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+        .unwrap();
+    assert_product_semantic_finding(
+        decoded.ir(),
+        "expected App::PropertyEnumeration for LinkCopyOnChange",
+    );
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<native::PropertyRecord>("properties")
+        .unwrap();
+    let property = properties
+        .iter()
+        .find(|property| property.name == "LinkCopyOnChange")
+        .unwrap();
+    assert_eq!(property.type_name, "App::PropertyInteger");
+    assert_eq!(property.values()[0].attributes["value"], "2");
 }
 
 #[test]
@@ -893,16 +933,45 @@ fn rejects_wrong_runtime_types_for_named_product_carriers() {
 {carrier}
 </Properties></Object></ObjectData></Document>"#
         );
-        let error = FcstdCodec
+        let decoded = FcstdCodec
             .decode(
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             )
-            .expect_err("wrong named product carrier type");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+            .unwrap();
+        if carrier.contains("name=\"LinkedObject\"") {
+            assert!(decoded
+                .source_fidelity()
+                .parts()
+                .values()
+                .any(|part| part.level().as_str() == "freecad.property"
+                    && matches!(
+                        part.state(),
+                        cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+                    )));
+        } else {
+            assert_product_semantic_finding(decoded.ir(), "has runtime type");
+            let properties = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<native::PropertyRecord>("properties")
+                .unwrap();
+            let name = carrier
+                .split("name=\"")
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap();
+            let property = properties
+                .iter()
+                .find(|property| property.name == name)
+                .unwrap();
+            assert!(carrier.contains(&format!("type=\"{}\"", property.type_name)));
+            assert!(!property.values().is_empty());
+        }
     }
 }
 
@@ -925,19 +994,23 @@ fn rejects_nonfinite_product_scale_at_source_admission() {
 {property}
 </Properties></Object></ObjectData></Document>"#
         );
-        let error = FcstdCodec
+        let result = FcstdCodec
             .decode(
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
             )
-            .expect_err("nonfinite product scale");
-        assert!(
-            matches!(
-                error,
-                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-            ),
-            "{name}: {error}"
-        );
+            .unwrap();
+        assert_source_failure(&result, &["freecad.property_value"], "Occurrence");
+        let properties = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<native::PropertyRecord>("properties")
+            .unwrap();
+        assert!(properties
+            .iter()
+            .any(|property| property.name == name && property.body.is_none()));
     }
 }
 
@@ -1048,19 +1121,16 @@ fn link_array_element_count_above_the_named_limit_is_malformed() {
             &DecodeOptions::default(),
         )
         .expect("small link array");
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(&stated_link_array(&(limit + 1).to_string()))),
             &DecodeOptions::default(),
         )
-        .expect_err("element count above MAX_LINK_ARRAY_ELEMENTS");
-    assert!(
-        matches!(
-            &error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-                if message.contains(&format!("exceeds {limit}"))
-        ),
-        "{error:?}"
+        .unwrap();
+    let record = assert_product_semantic_finding(result.ir(), &format!("exceeds {limit}"));
+    assert_eq!(
+        record.element_count(),
+        Some(u64::try_from(limit + 1).unwrap())
     );
 }
 
@@ -1113,11 +1183,18 @@ fn rejects_populated_link_arrays_when_element_count_is_zero() {
     ];
 
     for (array_property, entry) in cases {
-        assert!(matches!(
-            decode(array_property, entry),
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)))
-                if message.contains("inconsistent link-array counts")
-        ));
+        let decoded =
+            decode(array_property, entry).expect("readable array contradiction is validated");
+        let record =
+            assert_product_semantic_finding(decoded.ir(), "inconsistent link-array counts");
+        assert_eq!(record.element_count(), Some(0));
+        assert_eq!(
+            record.element_transforms().len()
+                + record.element_scales().len()
+                + record.element_visibility().len()
+                + record.element_objects().len(),
+            1
+        );
     }
 
     let zero = decode(
@@ -1393,11 +1470,10 @@ fn rejects_non_schema_link_carrier_aliases() {
             &DecodeOptions::default(),
         )
         .expect("source-only malformed prototype metadata");
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("unsupported link carrier document")));
+    assert!(result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("link uses ambiguous document carrier")));
+    assert_source_failure(&result, &["freecad.property_value"], "Link");
     let records = result
         .ir()
         .native
@@ -1455,11 +1531,10 @@ fn rejects_conflicting_xlink_subelement_carriers() {
             &DecodeOptions::default(),
         )
         .expect("source-only malformed prototype metadata");
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("both sub and count carriers")));
+    assert!(result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("XLink has conflicting or invalid subelement carriers")));
+    assert_source_failure(&result, &["freecad.property_value"], "Link");
     let records = result
         .ir()
         .native
@@ -1513,35 +1588,28 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
 
 #[test]
 fn real_lists_read_both_precisions_within_nonzero_view_bounds() {
-    for width in [RealWidth::Single, RealWidth::Double] {
+    for single in [true, false] {
         let mut bytes = vec![0xff; 9];
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         for value in [2.0_f32, -3.0, 4.0] {
-            match width {
-                RealWidth::Single => bytes.extend_from_slice(&value.to_le_bytes()),
-                RealWidth::Double => bytes.extend_from_slice(&f64::from(value).to_le_bytes()),
+            if single {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            } else {
+                bytes.extend_from_slice(&f64::from(value).to_le_bytes());
             }
         }
         let end = bytes.len();
         bytes.push(0xff);
-        let view = View::over_retained(&bytes).child(9, end).unwrap();
-        let rows = list_layout::<3>(view, "ScaleList")
-            .unwrap()
-            .map(|row| {
-                row.into_iter()
-                    .map(read_real)
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+        let (rows, failed) = decode_real_list(&bytes, 9, end);
         assert_eq!(rows, [[2.0, -3.0, 4.0]]);
-        assert!(list_layout::<3>(
-            View::over_retained(&bytes).child(9, end - 1).unwrap(),
-            "ScaleList"
-        )
-        .is_err());
+        assert!(!failed);
+        let (rows, failed) = decode_real_list(&bytes, 9, end - 1);
+        assert!(rows.is_empty());
+        assert!(failed);
     }
-    assert!(list_layout::<3>(View::over_retained(&[0; 3]), "ScaleList").is_err());
+    let (rows, failed) = decode_real_list(&[0; 3], 0, 3);
+    assert!(rows.is_empty());
+    assert!(failed);
 }
 
 #[test]
@@ -1583,7 +1651,13 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
             std::num::NonZeroU64::MIN
         ))
     );
-    assert_eq!(super::occurrence_count(occurrence).expect("count").get(), 1);
+    assert_eq!(
+        super::occurrence_count(occurrence)
+            .expect("count")
+            .unwrap()
+            .get(),
+        1
+    );
 
     // A stated zero with a populated carrier is an inconsistent link array.
     let populated = r#"<Document SchemaVersion="4" FileVersion="1">
@@ -1593,15 +1667,17 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
 <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
 <Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="ElementA"/></LinkList></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive(populated)),
             &DecodeOptions::default(),
         )
-        .expect_err("inconsistent link-array counts");
-    assert!(
-        error.to_string().contains("inconsistent link-array counts"),
-        "{error}"
+        .expect("readable populated zero-count array survives source admission");
+    let record = assert_product_semantic_finding(decoded.ir(), "inconsistent link-array counts");
+    assert_eq!(record.element_count(), Some(0));
+    assert_eq!(
+        record.element_objects(),
+        [native::native_id("object", "ElementA")]
     );
 }
 
@@ -1616,16 +1692,30 @@ fn malformed_copy_on_change_integer_is_rejected_at_source_admission() {
 <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="abc"/></Property>
 </Properties></Object>
 </ObjectData></Document>"#;
-    let error = FcstdCodec
+    let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
-        .expect_err("product decode rejects the malformed enum integer");
-    assert!(
-        error.to_string().contains("invalid enumeration Integer"),
-        "{error}"
-    );
+        .unwrap();
+    assert_source_failure(&result, &["freecad.property_value"], "Occurrence");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("invalid integer value")));
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(properties
+        .iter()
+        .any(|property| property.name == "LinkCopyOnChange"
+            && property.type_name == "App::PropertyEnumeration"
+            && property.body.is_none()));
 }
 
 #[test]
@@ -1648,7 +1738,7 @@ fn visibility_cardinality_is_rejected_when_element_count_is_absent() {
                 .flat_map(f64::to_le_bytes),
         );
     }
-    let error = FcstdCodec
+    let decoded = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
                 ("Document.xml", document.as_bytes()),
@@ -1656,11 +1746,11 @@ fn visibility_cardinality_is_rejected_when_element_count_is_absent() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect_err("product decode rejects inconsistent visibility cardinality");
-    assert!(
-        error.to_string().contains("inconsistent link-array counts"),
-        "{error}"
-    );
+        .expect("readable visibility contradiction is validated");
+    let record = assert_product_semantic_finding(decoded.ir(), "inconsistent link-array counts");
+    assert_eq!(record.element_count(), None);
+    assert_eq!(record.element_transforms().len(), 2);
+    assert_eq!(record.element_visibility(), [false]);
 }
 
 #[test]
@@ -1832,4 +1922,69 @@ fn ordinary_group_membership_does_not_compete_with_a_part_placement_parent() {
     );
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     assert_valid_document(decoded.ir());
+}
+
+#[test]
+fn readable_product_contradictions_preserve_native_fields_and_independent_products() {
+    for (property, expected) in [
+        (
+            r#"<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="-1"/></Property>"#,
+            "negative ElementCount",
+        ),
+        (
+            r#"<Property name="LinkCopyOnChangeTouched" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+            "copy_on_change payload requires copy_on_change policy",
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object name="Prototype" type="Part::Feature"/><Object name="Occurrence" type="App::Link"/><Object name="Peer" type="App::Part"/></Objects><ObjectData Count="3"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="2"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>{property}</Properties></Object><Object name="Peer"><Properties Count="0"/></Object></ObjectData></Document>"#
+        );
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let record = assert_product_semantic_finding(decoded.ir(), expected);
+        assert_eq!(record.element_count(), None);
+        let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+        let properties = namespace
+            .arena_as::<native::PropertyRecord>("properties")
+            .unwrap();
+        if expected == "negative ElementCount" {
+            assert_eq!(
+                properties
+                    .iter()
+                    .find(|property| property.name == "ElementCount")
+                    .unwrap()
+                    .values()[0]
+                    .attributes["value"],
+                "-1"
+            );
+        } else {
+            assert_eq!(record.copy_on_change(), None);
+            assert_eq!(record.copy_on_change_touched(), Some(true));
+        }
+        let peer = native::native_id("object", "Peer");
+        assert!(decoded
+            .ir()
+            .model
+            .product_definitions
+            .iter()
+            .any(|definition| definition.native_ref.as_deref() == Some(peer.as_str())));
+        assert!(decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .any(|occurrence| occurrence.native_ref.as_deref() == Some(peer.as_str())));
+        assert!(!decoded
+            .source_fidelity()
+            .parts()
+            .values()
+            .any(|part| matches!(
+                part.state(),
+                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+            )));
+    }
 }

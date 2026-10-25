@@ -15,16 +15,19 @@ pub mod provenance;
 /// Immutable owner-derived classes of unconsumed spans.
 pub mod classification;
 
+mod domain;
 /// Atomic B1 classification, report attribution and source closure.
 pub mod finalization;
+pub use domain::SourceRootDomain;
 
 const PARTITION: &str = "partition source byte coverage";
 
-/// Disjoint, sorted byte ranges covering one complete source stream.
+/// Disjoint, sorted byte ranges covering one proved source domain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamPartition {
     stream: String,
     byte_len: u64,
+    root: Option<SourceRootDomain>,
     reads: Vec<Range<u64>>,
     exempt: Vec<Range<u64>>,
     b1: Vec<Range<u64>>,
@@ -36,9 +39,28 @@ impl StreamPartition {
         &self.stream
     }
 
-    /// Complete length of the stream whose bytes were partitioned.
+    /// Complete physical stream length; the codec root domain may be bounded.
     pub const fn byte_len(&self) -> u64 {
         self.byte_len
+    }
+
+    /// Exact source window owned by this decode, in original stream coordinates.
+    pub fn domain(&self) -> Range<u64> {
+        self.root
+            .as_ref()
+            .map_or(0..self.byte_len, SourceRootDomain::range)
+    }
+
+    fn validate_domain(&self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        if let Some(root) = &self.root {
+            root.validate(ctx)?;
+            if root.stream() != self.stream || root.byte_len() != self.byte_len {
+                return Err(CodecError::malformed(
+                    "source partition has another root domain",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Bytes successfully consumed by records outside given-up parts.
@@ -73,16 +95,58 @@ pub fn partition_stream(
     insignificant: &[Range<u64>],
     given_up: &[Range<u64>],
 ) -> Result<StreamPartition, CodecError> {
+    partition(
+        ctx,
+        (stream, byte_len, 0..byte_len),
+        layouts,
+        framing,
+        insignificant,
+        given_up,
+    )
+}
+
+/// Partition the genuinely proved codec root without claiming its enclosing bytes.
+pub fn partition_root_stream(
+    ctx: &DecodeContext<'_>,
+    root: SourceRootDomain,
+    layouts: &BTreeMap<String, RecordLayout>,
+    framing: &[Range<u64>],
+    insignificant: &[Range<u64>],
+    given_up: &[Range<u64>],
+) -> Result<StreamPartition, CodecError> {
+    root.validate(ctx)?;
+    let mut partition = partition(
+        ctx,
+        (root.stream(), root.byte_len(), root.range()),
+        layouts,
+        framing,
+        insignificant,
+        given_up,
+    )?;
+    partition.root = Some(root);
+    Ok(partition)
+}
+
+fn partition(
+    ctx: &DecodeContext<'_>,
+    source: (&str, u64, Range<u64>),
+    layouts: &BTreeMap<String, RecordLayout>,
+    framing: &[Range<u64>],
+    insignificant: &[Range<u64>],
+    given_up: &[Range<u64>],
+) -> Result<StreamPartition, CodecError> {
+    let (stream, byte_len, domain) = source;
     if stream.is_empty() {
         return Err(CodecError::malformed(
             "source coverage requires a named stream",
         ));
     }
     for layout in layouts.values().filter(|layout| layout.stream() == stream) {
-        if layout
-            .offset()
-            .checked_add(layout.byte_len())
-            .is_none_or(|end| end > byte_len)
+        if layout.offset() < domain.start
+            || layout
+                .offset()
+                .checked_add(layout.byte_len())
+                .is_none_or(|end| end > domain.end)
         {
             return Err(CodecError::malformed(
                 "record extent exceeds its source stream",
@@ -98,10 +162,17 @@ pub fn partition_stream(
     let insignificant = normalize(ctx, insignificant.iter(), byte_len)?;
     let insignificant = difference(ctx, &insignificant, &given_up)?;
     let exempt = normalize(ctx, framing.iter().chain(&insignificant), byte_len)?;
+    for range in reads.iter().chain(&given_up).chain(&exempt) {
+        if range.start < domain.start || range.end > domain.end {
+            return Err(CodecError::malformed(
+                "source interval escapes its codec input domain",
+            ));
+        }
+    }
     let reads = difference(ctx, &reads, &given_up)?;
     let exempt = difference(ctx, &exempt, &reads)?;
     let covered = normalize(ctx, reads.iter().chain(&exempt), byte_len)?;
-    let b1 = difference(ctx, &[0..byte_len], &covered)?;
+    let b1 = difference(ctx, &[domain], &covered)?;
     let stream_bytes = u64_from_index(stream.len());
     ctx.retain_bytes(stream_bytes, PARTITION)?;
     let mut stream_name = String::new();
@@ -117,6 +188,7 @@ pub fn partition_stream(
     Ok(StreamPartition {
         stream: stream_name,
         byte_len,
+        root: None,
         reads,
         exempt,
         b1,

@@ -41,8 +41,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    // Non-ASCII code units are opaque. Only ASCII framing is interpreted;
-    // names are later compared as their exact source byte sequences.
+    // ASCII framing operates on code units; name boundaries below use actual
+    // XML Name characters while retaining the original encoded source bytes.
     fn unit(&self, position: usize) -> Option<u8> {
         match self.encoding {
             XmlEncoding::Utf8 => self.bytes.get(position).copied(),
@@ -66,6 +66,47 @@ impl<'a> Lexer<'a> {
                 .and_then(|at| self.unit(at))
                 == Some(*byte)
         })
+    }
+
+    fn character(&self, position: usize) -> Option<(char, usize)> {
+        match self.encoding {
+            XmlEncoding::Utf8 => {
+                let width = match *self.bytes.get(position)? {
+                    0..=0x7f => 1,
+                    0xc2..=0xdf => 2,
+                    0xe0..=0xef => 3,
+                    0xf0..=0xf4 => 4,
+                    _ => return None,
+                };
+                let raw = self.bytes.get(position..position.checked_add(width)?)?;
+                Some((std::str::from_utf8(raw).ok()?.chars().next()?, width))
+            }
+            XmlEncoding::Utf16Le | XmlEncoding::Utf16Be => {
+                let word = |at: usize| {
+                    // Offset probes navigate this bounded scanner input without
+                    // attributing a semantic read to any record producer.
+                    if self.encoding == XmlEncoding::Utf16Le {
+                        crate::decode::View::u16_le_at(self.bytes, at)
+                    } else {
+                        crate::decode::View::u16_be_at(self.bytes, at)
+                    }
+                };
+                let first = word(position)?;
+                let (code, width) = if (0xd800..=0xdbff).contains(&first) {
+                    let second = word(position.checked_add(2)?)?;
+                    if !(0xdc00..=0xdfff).contains(&second) {
+                        return None;
+                    }
+                    (
+                        0x10000 + (u32::from(first) - 0xd800) * 0x400 + u32::from(second) - 0xdc00,
+                        4,
+                    )
+                } else {
+                    (u32::from(first), 2)
+                };
+                Some((char::from_u32(code)?, width))
+            }
+        }
     }
 
     fn after(&self, position: usize, pattern: &[u8]) -> usize {
@@ -116,13 +157,12 @@ impl<'a> Lexer<'a> {
         let width = self.encoding.width();
         let name_start = start + if closing { 2 * width } else { width };
         let mut position = name_start;
-        while let Some(unit) = self.unit(position) {
-            if is_space(unit)
-                || matches!(
-                    unit,
-                    b'/' | b'>' | b'<' | b'=' | b'?' | b'!' | b'\'' | b'"' | 0
-                )
-            {
+        while let Some((character, width)) = self.character(position) {
+            if !(if position == name_start {
+                name_start_character(character)
+            } else {
+                name_character(character)
+            }) {
                 break;
             }
             position += width;
@@ -248,4 +288,13 @@ impl<'a> Lexer<'a> {
 
 fn is_space(unit: u8) -> bool {
     matches!(unit, b' ' | b'\t' | b'\r' | b'\n')
+}
+
+fn name_start_character(character: char) -> bool {
+    matches!(character, ':' | '_' | 'A'..='Z' | 'a'..='z' | '\u{c0}'..='\u{d6}' | '\u{d8}'..='\u{f6}' | '\u{f8}'..='\u{2ff}' | '\u{370}'..='\u{37d}' | '\u{37f}'..='\u{1fff}' | '\u{200c}'..='\u{200d}' | '\u{2070}'..='\u{218f}' | '\u{2c00}'..='\u{2fef}' | '\u{3001}'..='\u{d7ff}' | '\u{f900}'..='\u{fdcf}' | '\u{fdf0}'..='\u{fffd}' | '\u{10000}'..='\u{effff}')
+}
+
+fn name_character(character: char) -> bool {
+    name_start_character(character)
+        || matches!(character, '-' | '.' | '0'..='9' | '\u{b7}' | '\u{300}'..='\u{36f}' | '\u{203f}'..='\u{2040}')
 }

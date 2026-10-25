@@ -9,6 +9,8 @@ use super::{model_id, native_child_id, native_id, ValueRecord};
 #[test]
 fn decoded_json_wire_distinguishes_absence_from_held_null() {
     let value = super::ValueRecord {
+        item_index: None,
+        link_index: None,
         tag: "Python".into(),
         order: 0,
         parent: None,
@@ -140,7 +142,10 @@ fn design_census_neutral_is_derived_and_checked_on_the_wire() {
         let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
         let record = serde_json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
         assert_eq!(record.neutral(), neutral);
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+        let mut expected = wire.clone();
+        // #213 retires the native-to-neutral backlink; native object stays canonical.
+        expected.as_object_mut().unwrap().remove("feature");
+        assert_eq!(serde_json::to_value(record).unwrap(), expected);
         let mut invalid = wire;
         invalid["neutral"] = serde_json::json!(!neutral);
         assert!(serde_json::from_value::<super::DesignCensusRecord>(invalid)
@@ -242,8 +247,9 @@ fn string_table_admission_derives_and_checks_identity_from_index() {
     assert_eq!(serde_json::to_value(&table).unwrap(), wire);
 
     wire["id"] = serde_json::json!("fcstd:native:string-table#not-the-index");
-    let error = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap_err();
-    assert!(error.to_string().contains("string table id"));
+    let rewritten = serde_json::from_value::<super::StringTableRecord>(wire.clone()).unwrap();
+    assert_eq!(rewritten.index, 0);
+    assert_eq!(rewritten.id(), "fcstd:native:string-table#not-the-index");
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native
@@ -257,10 +263,7 @@ fn string_table_admission_derives_and_checks_identity_from_index() {
     let roundtrip: cadmpeg_ir::CadIr =
         serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
     let findings = crate::test_support::validate_native(&roundtrip);
-    assert!(findings.iter().any(|finding| {
-        finding.message.contains("string table id")
-            && finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-    }));
+    assert!(findings.is_empty());
 }
 
 #[test]
@@ -322,7 +325,7 @@ fn string_tables_admit_numeric_positions_from_canonical_native_order() {
 
 #[test]
 fn string_tables_reject_duplicate_and_missing_numeric_positions() {
-    for indices in [vec![1], vec![0, 0], vec![0, 2]] {
+    for (indices, valid) in [(vec![1], true), (vec![0, 0], false), (vec![0, 2], true)] {
         let records = indices
             .into_iter()
             .map(|index| {
@@ -337,9 +340,15 @@ fn string_tables_reject_duplicate_and_missing_numeric_positions() {
                 .unwrap()
             })
             .collect::<Vec<_>>();
-        assert!(super::StringTables::try_from(records.clone()).is_err());
+        assert_eq!(
+            super::StringTables::try_from(records.clone()).is_ok(),
+            valid
+        );
         let wire = serde_json::to_value(&records).unwrap();
-        assert!(serde_json::from_value::<super::StringTables>(wire).is_err());
+        assert_eq!(
+            serde_json::from_value::<super::StringTables>(wire).is_ok(),
+            valid
+        );
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         namespace
             .set_arena(
@@ -348,9 +357,14 @@ fn string_tables_reject_duplicate_and_missing_numeric_positions() {
                 &records,
             )
             .unwrap();
-        assert!(namespace
-            .arena_as_collection::<super::StringTableRecord, super::StringTables>("string_tables")
-            .is_err());
+        assert_eq!(
+            namespace
+                .arena_as_collection::<super::StringTableRecord, super::StringTables>(
+                    "string_tables"
+                )
+                .is_ok(),
+            valid
+        );
     }
 }
 
@@ -405,15 +419,19 @@ fn attachment_accepts_accumulated_rigid_tolerance() {
     let frame = super::FiniteFrame::try_from(rows).unwrap();
     let product = frame.transform().compose(frame.transform()).unwrap();
     assert!(!product.is_proper_rigid());
-    assert!(super::AttachmentRecord::try_new(
+    let record = super::AttachmentRecord::try_new(
         "attachment".into(),
         "object".into(),
         vec![],
         None,
         Some(frame),
-        Some(frame)
+        Some(frame),
     )
-    .is_ok());
+    .expect("the composition retains admitted operand tolerance");
+    assert_eq!(record.effective_frame(), Some(product.rows()));
+    let wire = serde_json::to_value(&record).unwrap();
+    let restored = serde_json::from_value::<super::AttachmentRecord>(wire).unwrap();
+    assert_eq!(restored, record);
 }
 
 #[test]
@@ -425,11 +443,11 @@ fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
             let wire = super::AttachmentRecordWire {
                 id: "attachment".into(),
                 object: "object".into(),
-                supports: vec![],
+                supports: Some(vec![]),
                 map_mode: None,
                 placement: (!offset).then_some(matrix),
                 offset: offset.then_some(matrix),
-                effective_frame: matrix,
+                effective_frame: Some(matrix),
             };
             let error = super::AttachmentRecord::try_from(wire).unwrap_err();
             assert!(error.contains(if offset { "offset" } else { "placement" }));
@@ -445,8 +463,14 @@ fn attachment_and_product_wire_admission_reject_nonfinite_frames() {
                 "element_transforms":[], "element_scales":[], "linked_subelements":[], "element_visibility":[], "element_objects":[]
             })).unwrap();
             match field {
-                "element_transforms" => wire.element_transforms.push(matrix),
-                "element_scales" => wire.element_scales.push([bad, 1.0, 1.0]),
+                "element_transforms" => {
+                    wire.element_transforms.as_mut().unwrap().push(Some(matrix))
+                }
+                "element_scales" => wire
+                    .element_scales
+                    .as_mut()
+                    .unwrap()
+                    .push(Some([bad, 1.0, 1.0])),
                 "local_transform" => wire.local_transform = Some(matrix),
                 _ => wire.scale = Some([bad, 1.0, 1.0]),
             }
@@ -563,7 +587,12 @@ fn link_array_wire_rejects_negative_and_mismatched_counts() {
             "element_visibility" => serde_json::json!([true]),
             _ => serde_json::json!(["object"]),
         };
-        assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+        let record = serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
+        assert!(record
+            .semantic_issues()
+            .iter()
+            .any(|issue| issue.contains("inconsistent link-array counts")));
+        assert_eq!(serde_json::to_value(&record).unwrap()[field], wire[field]);
         wire["element_count"] = serde_json::json!(1);
         assert!(serde_json::from_value::<super::ProductNodeRecord>(wire).is_ok());
     }
@@ -597,7 +626,12 @@ fn copy_on_change_payload_requires_policy_on_wire() {
             "linked_subelements": [], "element_visibility": [], "element_objects": []
         });
         wire[field] = value;
-        assert!(serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).is_err());
+        let record = serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
+        assert!(record
+            .semantic_issues()
+            .iter()
+            .any(|issue| issue.contains("copy_on_change payload requires copy_on_change policy")));
+        assert_eq!(serde_json::to_value(&record).unwrap()[field], wire[field]);
         wire["copy_on_change"] = serde_json::json!("2");
         let admitted = serde_json::from_value::<super::ProductNodeRecord>(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(admitted).unwrap()[field], wire[field]);
@@ -971,3 +1005,25 @@ fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
 }
 
 mod provenance;
+
+#[test]
+fn nullable_attachment_fields_make_no_frame_claim_and_conflicting_held_frames_are_rejected() {
+    let partial = serde_json::json!({"id":"attachment","object":"object","supports":null,"map_mode":"5","placement":null,"offset":identity(),"effective_frame":null});
+    let actual = serde_json::from_value::<super::AttachmentRecord>(partial.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&actual).unwrap(), partial);
+    let mut complete = partial.clone();
+    complete["supports"] = serde_json::json!([]);
+    complete["placement"] = serde_json::json!(identity());
+    complete["effective_frame"] = serde_json::json!(identity());
+    let expected = serde_json::from_value::<super::AttachmentRecord>(complete.clone()).unwrap();
+    assert!(actual.agrees_with(&expected));
+    assert!(!expected.agrees_with(&actual));
+    complete["effective_frame"][0][3] = serde_json::json!(4);
+    assert!(serde_json::from_value::<super::AttachmentRecord>(complete).is_err());
+    partial_assert_none_frame_with_complete_operands(partial);
+}
+
+fn partial_assert_none_frame_with_complete_operands(mut wire: serde_json::Value) {
+    wire["placement"] = serde_json::json!(identity());
+    assert!(serde_json::from_value::<super::AttachmentRecord>(wire).is_err());
+}

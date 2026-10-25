@@ -51,12 +51,12 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.entity_count(), 0);
-    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
-    assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
+    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
     assert_eq!(
-        decoded.ir().source.as_ref().unwrap().dialects(),
-        baseline.ir().source.as_ref().unwrap().dialects()
+        decoded.report().scope(),
+        cadmpeg_ir::ContentScope::container()
     );
+    assert!(decoded.ir().source.as_ref().unwrap().dialects().is_none());
     let native = decoded.ir().native.namespace("fcstd").unwrap();
     assert_eq!(
         native
@@ -78,8 +78,8 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
     assert!(part.parent().is_none());
     assert_eq!(part.offset(), 0);
     assert_eq!(part.byte_len(), u64::try_from(bytes.len()).unwrap());
-    // The original seven archive/document scopes remain; the live object
-    // producer adds exactly the eleven source-owned Appendix C descendants.
+    // The genuine peer header and payload ran before the unframeable header.
+    // No Document callback may run before all prerequisite member headers.
     let level_counts = fidelity.parts().values().fold(
         std::collections::BTreeMap::<&str, usize>::new(),
         |mut counts, part| {
@@ -91,17 +91,8 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
         level_counts,
         std::collections::BTreeMap::from([
             ("zip.archive", 1),
-            ("zip.local_header", 2),
-            ("zip.entry", 2),
-            ("freecad.document_xml", 1),
-            ("freecad.document", 1),
-            ("freecad.objects", 1),
-            ("freecad.object_declaration", 1),
-            ("freecad.object_data_section", 1),
-            ("freecad.object_data", 1),
-            ("freecad.properties", 1),
-            ("freecad.property", 3),
-            ("freecad.property_value", 3),
+            ("zip.local_header", 1),
+            ("zip.entry", 1),
         ])
     );
     assert_eq!(
@@ -117,7 +108,7 @@ fn an_unframeable_optional_header_gives_up_its_archive_and_no_document_records_e
                     | "freecad.document"
             ))
             .count(),
-        7
+        3
     );
     for (id, child) in fidelity.parts().iter().filter(|(id, _)| *id != &unknown.id) {
         assert_ne!(id, &unknown.id);
@@ -249,7 +240,8 @@ fn whole_archive_inspection_keeps_actual_identity_entries_and_its_source_owned_e
     let baseline = crate::FcstdCodec
         .inspect(&mut Cursor::new(original()), &InspectOptions::default())
         .unwrap();
-    assert_eq!(summary.dialects(), baseline.dialects());
+    assert!(summary.dialects().is_none());
+    assert!(baseline.dialects().is_some());
     assert_eq!(summary.entries.len(), baseline.entries.len());
     assert_eq!(summary.entries[..2], baseline.entries[..2]);
     let failed = &summary.entries[2];
@@ -358,7 +350,60 @@ fn the_public_nonzero_archive_decode_keeps_source_coordinates_for_bounded_failur
     assert_eq!(retained.offset(), u64::try_from(prefix.len()).unwrap());
     assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
     assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
-    assert!(fidelity.b1_spans().is_empty());
+    let shift = u64::try_from(prefix.len()).unwrap();
+    let expected_root = baseline.source_fidelity().b1_spans()[source.stream()]
+        .spans()
+        .iter()
+        .map(|span| {
+            let range = span.range();
+            (range.start + shift..range.end + shift, span.classes())
+        })
+        .collect::<Vec<_>>();
+    let actual_root = fidelity.b1_spans()[source.stream()]
+        .spans()
+        .iter()
+        .map(|span| (span.range(), span.classes()))
+        .collect::<Vec<_>>();
+    assert_eq!(actual_root, expected_root);
+    assert!(actual_root
+        .iter()
+        .all(|(range, _)| range.start >= source.offset()
+            && range.end <= source.offset() + source.byte_len()));
+    crate::fidelity::b1::assert_classified_spans(&decoded);
+    let baseline_arena = DecodeArena::new();
+    let (baseline_ctx, baseline_root) =
+        DecodeContext::from_root_bytes(&bytes, &baseline_arena, &DecodePolicy::service()).unwrap();
+    let before_archive =
+        cadmpeg_container::ArchiveSnapshot::new(&baseline_ctx, baseline_root).unwrap();
+    let after_arena = DecodeArena::new();
+    let (after_ctx, after_outer) =
+        DecodeContext::from_root_bytes(&embedded, &after_arena, &DecodePolicy::service()).unwrap();
+    let after_root = after_outer
+        .child(prefix.len(), prefix.len() + bytes.len())
+        .unwrap();
+    let after_archive = cadmpeg_container::ArchiveSnapshot::new(&after_ctx, after_root).unwrap();
+    assert_eq!(
+        fidelity.b1_spans().len(),
+        baseline.source_fidelity().b1_spans().len()
+    );
+    for entry in before_archive.entries() {
+        match (
+            before_archive.open(&baseline_ctx, &entry.name),
+            after_archive.open(&after_ctx, &entry.name),
+        ) {
+            (Ok(before_view), Ok(after_view)) => {
+                assert_eq!(before_view.window(), after_view.window());
+                let before_stream = baseline_ctx.capture_part_extent(before_view).unwrap();
+                let after_stream = after_ctx.capture_part_extent(after_view).unwrap();
+                assert_eq!(
+                    baseline.source_fidelity().b1_spans()[before_stream.stream()].spans(),
+                    fidelity.b1_spans()[after_stream.stream()].spans()
+                );
+            }
+            (Err(_), Err(_)) => {}
+            _ => panic!("actual bounded member availability changed: {}", entry.name),
+        }
+    }
     let (id, failed) = fidelity
         .parts()
         .iter()

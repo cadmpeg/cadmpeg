@@ -25,7 +25,7 @@ fn the_real_codec_composes_shared_unknowns_and_retains_successful_member_records
             .iter()
             .map(|entry| entry.name())
             .collect::<BTreeSet<_>>(),
-        BTreeSet::from(["Document.xml", "peer.bin"])
+        BTreeSet::from(["Document.xml", "broken.bin", "peer.bin"])
     );
     let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
     let [unknown] = unknowns.as_slice() else {

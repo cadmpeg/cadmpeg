@@ -15,16 +15,37 @@ fn selected_gui_dom_supplies_early_complete_inventory_but_missing_dom_does_not()
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (scan, _) = crate::container::scan_for_decode(&ctx, root).unwrap();
-    assert!(matches!(
-        prepare(&ctx, root, &scan, None).unwrap(),
-        Admission::Pending
-    ));
+    assert!(prepare(&ctx, root, &scan)
+        .unwrap()
+        .is_complete(&ctx)
+        .unwrap());
     let source = crate::gui::source::parse(&ctx, scan.data["GuiDocument.xml"]).unwrap();
-    let Admission::Complete(inventory) = prepare(&ctx, root, &scan, Some(&source)).unwrap() else {
-        panic!("known XML and stored ZIP grammars have a complete actual inventory");
-    };
-    let extent = ctx.capture_part_extent(source.view()).unwrap();
-    assert!(!inventory.0[extent.stream()].framing.is_empty());
+    let inventory = prepare(&ctx, root, &scan).unwrap();
+    let extent = ctx
+        .capture_part_extent(source.scanner(&ctx).unwrap().view())
+        .unwrap();
+    assert_eq!(
+        inventory.0[extent.stream()].byte_len,
+        u64::try_from(gui.len()).unwrap()
+    );
+    let framing: Vec<_> = source
+        .scanner(&ctx)
+        .unwrap()
+        .elements()
+        .iter()
+        .flat_map(|element| element.framing())
+        .map(|view| view.window())
+        .collect();
+    assert_eq!(
+        framing,
+        [
+            b"<Document".as_slice(),
+            b">",
+            b"</Document>",
+            b"<ViewProviderData",
+            b"/>"
+        ]
+    );
     assert!(inventory.is_complete(&ctx).unwrap());
     crate::test_support::test_archive::assert_only_document_file_version_capture(&ctx, &scan);
 }
@@ -45,10 +66,9 @@ fn unsupported_or_unreadable_gui_stays_pending_before_legacy_evidence_decision()
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
         let (scan, _) = crate::container::scan_for_decode(&ctx, root).unwrap();
         let source = crate::gui::source::parse(&ctx, scan.data["GuiDocument.xml"]).unwrap();
-        assert!(matches!(
-            prepare(&ctx, root, &scan, Some(&source)).unwrap(),
-            Admission::Pending
-        ), "{gui}");
+        let inventory = prepare(&ctx, root, &scan).unwrap();
+        assert!(inventory.is_complete(&ctx).unwrap(), "{gui}");
+        assert_eq!(source.scanner(&ctx).unwrap().view().window(), gui.as_bytes());
     }
 }
 
@@ -65,8 +85,20 @@ fn equal_xml_in_another_actual_member_cannot_replace_selected_gui_source() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (scan, _) = crate::container::scan_for_decode(&ctx, root).unwrap();
     let source = crate::gui::source::parse(&ctx, scan.data["other.xml"]).unwrap();
-    assert!(matches!(
-        prepare(&ctx, root, &scan, Some(&source)),
-        Err(CodecError::Malformed(_))
-    ));
+    let inventory = prepare(&ctx, root, &scan).unwrap();
+    let foreign = ctx
+        .capture_part_extent(source.scanner(&ctx).unwrap().view())
+        .unwrap();
+    let selected = ctx
+        .capture_part_extent(scan.data["GuiDocument.xml"])
+        .unwrap();
+    assert_ne!(foreign.stream(), selected.stream());
+    assert_eq!(
+        inventory.0[foreign.stream()].byte_len,
+        u64::try_from(gui.len()).unwrap()
+    );
+    assert_eq!(
+        inventory.0[selected.stream()].byte_len,
+        u64::try_from(gui.len()).unwrap()
+    );
 }

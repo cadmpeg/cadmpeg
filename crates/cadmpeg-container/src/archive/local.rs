@@ -13,6 +13,7 @@ use crate::layout::local_header;
 pub(super) struct Recovery {
     pub(super) reason: String,
     pub(super) tail: Option<ByteRange>,
+    pub(super) incomplete_header: Option<ByteRange>,
 }
 
 pub(super) fn recover(
@@ -28,8 +29,13 @@ pub(super) fn recover(
     let mut walk = root;
     let mut entries = Vec::new();
     let mut by_name = BTreeMap::new();
+    let mut incomplete_header = None;
     while walk.unread().starts_with(b"PK\x03\x04") {
         let Some(entry) = read(&mut walk)? else {
+            incomplete_header = Some(ByteRange {
+                start: u64_from_index(walk.read_len()),
+                end: u64_from_index(root.window().len()),
+            });
             break;
         };
         if by_name.contains_key(&entry.name) {
@@ -50,7 +56,11 @@ pub(super) fn recover(
         central_start: end,
         entries,
         by_name,
-        recovery: Some(Box::new(Recovery { reason, tail })),
+        recovery: Some(Box::new(Recovery {
+            reason,
+            tail,
+            incomplete_header,
+        })),
         footer: None,
     })
 }

@@ -200,6 +200,13 @@ fn typed_value(value: &AttributeValue, targets: &Targets) -> Result<(i64, String
         AttributeValue::Vector(_) => {
             return Err("a numeric vector has no exact Generic Data scalar type".into());
         }
+        AttributeValue::Map(_)
+        | AttributeValue::Expression(_)
+        | AttributeValue::SubReference { .. }
+        | AttributeValue::ExternalReference { .. }
+        | AttributeValue::NumericList(_) => {
+            return Err("this structured attribute has no exact Generic Data scalar type".into());
+        }
     })
 }
 

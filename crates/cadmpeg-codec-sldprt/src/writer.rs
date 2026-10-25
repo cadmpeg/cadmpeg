@@ -2122,6 +2122,7 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
     let mut positioned = Vec::new();
     for attribute in &ir.model.attributes {
         if attribute.id.as_str().starts_with("sldprt:")
+            && !accounting::unsupported_attribute(attribute)
             && !custom_properties::represents(attribute)
             && !crate::pmi::write::attribute_supported(attribute)
         {

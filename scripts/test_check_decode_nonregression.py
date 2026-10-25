@@ -98,6 +98,64 @@ class FixedAcceptanceControls(unittest.TestCase):
         self.assertTrue(any(f.code == 'layout-value-preservation' for f in failures))
 
 
+class FreecadPolygonControls(unittest.TestCase):
+    def pair(self, carrier):
+        polygons = [
+            {'deflection': 0.1, 'nodes': [[1.0, 2.0, 3.0]], 'parameters': [0.0]},
+            {'deflection': 0.2, 'nodes': [[4.0, 5.0, 6.0]], 'parameters': [1.0]},
+        ]
+        indexed = [
+            {'deflection': 0.3, 'nodes': [1, 2], 'parameters': [0.0, 1.0]},
+            {'deflection': 0.4, 'nodes': [3, 4], 'parameters': [2.0, 3.0]},
+        ]
+        before = document(native={'fcstd': {'shape_payloads': [{
+            'id': 'payload', carrier: {'polygons3d': polygons,
+                                      'polygons_on_triangulations': indexed,
+                                      'other': {'value': 7}},
+        }]}})
+        head = copy.deepcopy(before)
+        arenas = head['native']['fcstd']
+        for arena, rows in [('polygons3d', polygons), ('polygons_on_triangulations', indexed)]:
+            arenas[arena] = [dict(copy.deepcopy(row), id=f'{arena}:{index}') for index, row in enumerate(rows)]
+            arenas['shape_payloads'][0][carrier][arena] = [row['id'] for row in arenas[arena]]
+        return before, head
+
+    def test_text_and_binary_two_entries_per_table_preserve_values_and_inputs(self):
+        for carrier in ('text', 'binary'):
+            with self.subTest(carrier=carrier):
+                before, head = self.pair(carrier)
+                originals = copy.deepcopy((before, head))
+                self.assertEqual(checker.compare_decodes(before, head, SCHEMA), [])
+                self.assertEqual((before, head), originals)
+
+    def test_changed_coordinate_and_removed_reference_fail(self):
+        for carrier in ('text', 'binary'):
+            for change in ('coordinate', 'remove', 'order', 'missing', 'duplicate-record', 'other'):
+                with self.subTest(carrier=carrier, change=change):
+                    before, head = self.pair(carrier)
+                    arenas = head['native']['fcstd']
+                    facts = arenas['shape_payloads'][0][carrier]
+                    if change == 'coordinate':
+                        arenas['polygons3d'][0]['nodes'][0][0] = 99.0
+                    elif change == 'remove':
+                        facts['polygons_on_triangulations'].pop()
+                    elif change == 'order':
+                        facts['polygons3d'].reverse()
+                    elif change == 'missing':
+                        facts['polygons3d'][0] = 'absent'
+                    elif change == 'duplicate-record':
+                        arenas['polygons3d'].append(copy.deepcopy(arenas['polygons3d'][0]))
+                    else:
+                        facts['other']['value'] = 8
+                    self.assertTrue(checker.compare_decodes(before, head, SCHEMA))
+
+    def test_same_fields_in_other_namespace_do_not_gain_conversion(self):
+        before, head = self.pair('text')
+        before['native']['foreign'] = before['native'].pop('fcstd')
+        head['native']['foreign'] = head['native'].pop('fcstd')
+        self.assertTrue(checker.compare_decodes(before, head, SCHEMA))
+
+
 class ComparatorBoundaryControls(unittest.TestCase):
     def test_dimension_wrapper_is_transparent_only_at_its_typed_path(self):
         before = document([{'id': 'a', 'definition': {'kind': 'extrude', 'length': 7.0}}])

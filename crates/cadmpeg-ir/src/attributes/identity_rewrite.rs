@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{AttributeTarget, AttributeValue, SourceAttribute};
+use super::{AttributeTarget, SourceAttribute};
 
 impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
     const IS_REFERENCE_LEAF: bool = true;
@@ -357,12 +357,4 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
     }
 }
 
-rewrite_enum!(AttributeValue, []; {
-    Integer(field0),
-    Float(field0),
-    String(field0),
-    Boolean(field0),
-    Reference(field0),
-    Vector(field0),
-});
 rewrite_record!(SourceAttribute, []; {id, native_ref, target, name, values});

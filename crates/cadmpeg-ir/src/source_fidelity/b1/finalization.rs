@@ -260,6 +260,7 @@ fn has_stream(streams: &[SourceStream], partition: &StreamPartition) -> bool {
 }
 
 fn check_partition(ctx: &DecodeContext<'_>, partition: &StreamPartition) -> Result<(), CodecError> {
+    partition.validate_domain(ctx)?;
     let count = partition
         .reads()
         .len()
@@ -276,16 +277,17 @@ fn check_partition(ctx: &DecodeContext<'_>, partition: &StreamPartition) -> Resu
             .chain(partition.b1()),
     );
     ranges.sort_unstable_by_key(|range| (range.start, range.end));
-    let mut end = 0;
+    let domain = partition.domain();
+    let mut end = domain.start;
     for range in ranges {
-        if range.start != end || range.start >= range.end || range.end > partition.byte_len() {
+        if range.start != end || range.start >= range.end || range.end > domain.end {
             return Err(CodecError::malformed(
                 "source closure has a gap, overlap or invalid extent",
             ));
         }
         end = range.end;
     }
-    if end != partition.byte_len() {
+    if end != domain.end {
         return Err(CodecError::malformed(
             "source closure does not cover the complete stream",
         ));

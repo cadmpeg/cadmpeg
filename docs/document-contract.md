@@ -63,6 +63,16 @@ A typed record must represent the record's content. An inventory of offsets, ide
 
 The codec declares this set from its own loss table and retained-record semantics. The wrapper does not derive it from scope. FreeCAD's geometry cut retains readable design objects and properties as typed native records. A cut whose payloads are fully typed has no unrepresented design; opaque binary or Python payloads still add their content class. F3D's geometry cut creates no typed design records, so its set contains design. An unreadable FreeCAD design property's XML is raw content and adds design.
 
+## Record captures
+
+A record has one primary source extent. Its `record_layout` keeps that extent when the producer reads further source fragments. The primary declaration returns an opaque owner token. A continuation requires that actual token, its live decode session and its current capture batch. An identifier string alone grants no continuation authority. Rolled-back, retired and sealed owners cannot resume.
+
+Each fragment runs a source-bound record scope. A read belongs to the innermost open record scope, including when that scope is a continuation. A continuation collects only reads performed by its own producer; nested records keep their own reads. Two records that use the same source fact obtain it through their own getters. Copying a parsed value or a read map grants no read coverage.
+
+A successful fragment merges its actual reads into the primary record. A failed fragment discards its reads and nested captures while keeping prior successful contributions. An enclosing rollback discards every contribution made inside that transaction. A sequential fragment commits only its returned consumed prefix; its reads and nested captures must fit that prefix. Continuations may cross registered streams, with each read retained under its actual stream name.
+
+Capture identities, stream names, frames, read ranges and owner authorities use the shared decode resource account. Moving already charged capture storage does not charge that storage again. Rollback and retirement do not refund consumed resource limits. Retiring an unformed producer removes its primary capture and all continuations through their actual authority; it does not change unrelated captures.
+
 ## Patch rule
 
 Before patch or replay, `EncodeInput::ensure_represented` rejects nonempty `unrepresented` with `CodecError::UnrepresentedSource { format, classes, path, synthesized_available }`. The sealed encoder also checks the final path. Backends that choose their own path call the helper before consuming retained bytes. They can select synthesis instead. A patch admission failure selects synthesis and records `SynthesisCause::PatchDeclined`.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Original-source framing without a second parse or semantic read credit.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 
 use super::*;
@@ -274,7 +275,7 @@ fn one_original_element_exposes_only_markup_in_a_nonzero_window() {
     let source = root.child(6, bytes.len() - 6).unwrap();
     let text = std::str::from_utf8(source.window()).unwrap();
     let xml = ctx.parse_xml(text, "original framing control").unwrap();
-    let (extent, fields) = super::element_fields(&ctx, source, xml.root_element()).unwrap();
+    let (extent, fields) = element_fields(&ctx, source, xml.root_element()).unwrap();
     assert_eq!(
         extent.window(),
         b"<Document marker='>'><Properties/></Document>"
@@ -295,6 +296,266 @@ fn one_original_element_exposes_only_markup_in_a_nonzero_window() {
     );
     let copied = text.to_owned();
     let other_dom = roxmltree::Document::parse(&copied).unwrap();
-    assert!(super::element_fields(&ctx, source, other_dom.root_element()).is_err());
+    assert!(element_fields(&ctx, source, other_dom.root_element()).is_err());
     assert!(ctx.take_record_captures().unwrap().is_empty());
+}
+
+#[derive(Clone, Copy)]
+enum Role {
+    Document,
+    Objects,
+    Deps,
+    Dep,
+    Declaration,
+    Data,
+    Object,
+    Extensions,
+    Extension,
+    Properties,
+    Property,
+    Value,
+    ValueElement,
+    Hasher,
+    Providers,
+    Provider,
+    State,
+    StateElement,
+}
+
+impl Role {
+    fn structural(self) -> bool {
+        matches!(
+            self,
+            Self::Document
+                | Self::Objects
+                | Self::Deps
+                | Self::Data
+                | Self::Object
+                | Self::Extensions
+                | Self::Extension
+                | Self::Properties
+                | Self::Property
+                | Self::Providers
+                | Self::Provider
+        )
+    }
+}
+
+fn role(gui: bool, name: &str, parent: Option<Role>) -> Option<Role> {
+    use Role::{
+        Data, Declaration, Dep, Deps, Document, Extension, Extensions, Hasher, Object, Objects,
+        Properties, Property, Provider, Providers, State, StateElement, Value, ValueElement,
+    };
+    if gui {
+        Some(match (parent, name) {
+            (None, "Document") => Document,
+            (Some(Document), "ViewProviderData") => Providers,
+            (Some(Document), _) => State,
+            (Some(State | StateElement), _) => StateElement,
+            (Some(Providers), "ViewProvider") => Provider,
+            (Some(Provider), "Extensions") => Extensions,
+            (Some(Extensions), "Extension") => Extension,
+            (Some(Provider), "Properties") => Properties,
+            (Some(Properties), "Property") => Property,
+            (Some(Property), _) => Value,
+            (Some(Value | ValueElement), _) => ValueElement,
+            _ => return None,
+        })
+    } else {
+        Some(match (parent, name) {
+            (None, "Document") => Document,
+            (Some(Document), "StringHasher" | "StringHasher2") => Hasher,
+            (Some(Document), "Objects" | "Features") => Objects,
+            (Some(Objects), "ObjectDeps") => Deps,
+            (Some(Deps), "Dep") => Dep,
+            (Some(Objects), "Object" | "Feature") => Declaration,
+            (Some(Document), "ObjectData" | "FeatureData") => Data,
+            (Some(Data), "Object" | "Feature") => Object,
+            (Some(Object), "Extensions") => Extensions,
+            (Some(Extensions), "Extension") => Extension,
+            (Some(Document | Object | Extension), "Properties") => Properties,
+            (Some(Properties), "Property" | "_Property") => Property,
+            (Some(Property), _) => Value,
+            (Some(Value | ValueElement), _) => ValueElement,
+            _ => return None,
+        })
+    }
+}
+
+// SPDX-License-Identifier: Apache-2.0
+
+#[test]
+fn damaged_child_does_not_invalidate_closed_parent_or_following_peer() {
+    let bytes = b"<Document><Properties><Property name='bad'><Broken></Property><Property name='good'/></Properties></Document>";
+    let arena = DecodeArena::new();
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    let source = XmlSource::new(&ctx, view).unwrap();
+    assert!(source.validate(0).is_ok());
+    let properties = source.children(0).next().unwrap();
+    let children: Vec<_> = source.children(properties).collect();
+    assert_eq!(children.len(), 2);
+    assert_eq!(source.name(children[1]).unwrap(), "Property");
+    assert!(ctx
+        .parse_xml(
+            std::str::from_utf8(source.extent(children[0]).unwrap().window()).unwrap(),
+            "actual damaged XML leaf"
+        )
+        .is_err());
+    assert!(ctx
+        .parse_xml(
+            std::str::from_utf8(source.extent(children[1]).unwrap().window()).unwrap(),
+            "actual independent XML leaf"
+        )
+        .is_ok());
+    let broken = source.children(children[0]).next().unwrap();
+    assert!(source.validate(broken).is_err());
+    assert_eq!(
+        source.extent(children[1]).unwrap().window(),
+        b"<Property name='good'/>"
+    );
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+}
+
+#[test]
+fn selected_attribute_records_actual_token_without_crediting_navigation_fields() {
+    let bytes = b"<Document Count='9' Name = \"A&amp;B&#x9;\"/>";
+    let arena = DecodeArena::new();
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    let source = XmlSource::new(&ctx, view).unwrap();
+    assert_eq!(source.peek_attributes(&ctx, 0).unwrap()["Count"], "9");
+    ctx.record("kept", view, || {
+        assert_eq!(source.attribute(&ctx, 0, "Name")?, Some("A&B\t".to_owned()));
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .unwrap();
+    let captures = ctx.take_record_captures().unwrap();
+    assert_eq!(captures.len(), 1);
+    let ranges: Vec<_> = captures[0].reads().values().flatten().cloned().collect();
+    let start = bytes.windows(4).position(|bytes| bytes == b"Name").unwrap();
+    assert_eq!(
+        ranges,
+        vec![
+            u64::try_from(start).unwrap()..u64::try_from(start + 4).unwrap(),
+            u64::try_from(start + 8).unwrap()..u64::try_from(bytes.len() - 3).unwrap(),
+        ]
+    );
+}
+
+#[test]
+fn text_keeps_entities_cdata_and_direct_text_without_descendant_content() {
+    let bytes =
+        b"<Value>a&amp;b<![CDATA[<raw>]]><!--ignored--><Child>elsewhere</Child>tail&#13;</Value>";
+    let arena = DecodeArena::new();
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    let source = XmlSource::new(&ctx, view).unwrap();
+    ctx.record("value", view, || {
+        assert_eq!(source.text(&ctx, 0)?, "a&b<raw>tail\r");
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .unwrap();
+    let captures = ctx.take_record_captures().unwrap();
+    let ranges: Vec<_> = captures[0].reads().values().flatten().cloned().collect();
+    for range in ranges {
+        let start = usize::try_from(range.start).unwrap();
+        let end = usize::try_from(range.end).unwrap();
+        assert!(!bytes[start..end]
+            .windows(9)
+            .any(|bytes| bytes == b"elsewhere"));
+        assert!(!bytes[start..end]
+            .windows(7)
+            .any(|bytes| bytes == b"ignored"));
+    }
+}
+struct Framing<'a> {
+    fields: Vec<View<'a>>,
+    spaces: Vec<View<'a>>,
+    complete: bool,
+}
+impl<'a> Framing<'a> {
+    fn framing(&self) -> &[View<'a>] {
+        &self.fields
+    }
+    fn insignificant(&self) -> &[View<'a>] {
+        &self.spaces
+    }
+    fn supported(&self) -> bool {
+        self.complete
+    }
+}
+
+fn frame<'a>(
+    ctx: &DecodeContext<'_>,
+    source: View<'a>,
+    tree: &roxmltree::Document<'_>,
+    gui: bool,
+) -> Result<Framing<'a>, CodecError> {
+    let scan = XmlSource::new(ctx, source)?;
+    if tree.input_text().as_ptr() != source.window().as_ptr()
+        || tree.input_text().len() != source.window().len()
+    {
+        return Err(CodecError::malformed("DOM does not borrow framing source"));
+    }
+    let mut roles = Vec::new();
+    let mut fields = Vec::new();
+    let mut complete = true;
+    for (index, element) in scan.elements().iter().enumerate() {
+        let parent = element.parent().and_then(|parent| roles[parent]);
+        let role = if element.parent().is_some() && parent.is_none() {
+            None
+        } else {
+            role(gui, scan.name(index)?.rsplit(':').next().unwrap(), parent)
+        };
+        complete &= role.is_some();
+        roles.push(role);
+        if role.is_some() {
+            fields.extend(element.framing());
+        }
+    }
+    let spaces = scan
+        .insignificant(ctx)?
+        .into_iter()
+        .filter(|space| {
+            scan.elements()
+                .iter()
+                .enumerate()
+                .filter(|(_, element)| {
+                    element.extent().start() <= space.start()
+                        && element.extent().end() >= space.end()
+                })
+                .last()
+                .is_some_and(|(index, _)| roles[index].is_some_and(Role::structural))
+        })
+        .collect();
+    Ok(Framing {
+        fields,
+        spaces,
+        complete,
+    })
+}
+
+fn element_fields<'a>(
+    ctx: &DecodeContext<'_>,
+    source: View<'a>,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<(View<'a>, Vec<std::ops::Range<u64>>), CodecError> {
+    if node.document().input_text().as_ptr() != source.window().as_ptr()
+        || node.document().input_text().len() != source.window().len()
+    {
+        return Err(CodecError::malformed("DOM does not borrow element source"));
+    }
+    let scan = XmlSource::new(ctx, source)?;
+    let start = source.start() + node.range().start;
+    let index = scan
+        .elements()
+        .iter()
+        .position(|element| element.extent().start() == start)
+        .ok_or_else(|| CodecError::malformed("element source boundary absent"))?;
+    let fields = scan.elements()[index]
+        .framing()
+        .map(|field| u64::try_from(field.start()).unwrap()..u64::try_from(field.end()).unwrap())
+        .collect();
+    Ok((scan.extent(index)?, fields))
 }

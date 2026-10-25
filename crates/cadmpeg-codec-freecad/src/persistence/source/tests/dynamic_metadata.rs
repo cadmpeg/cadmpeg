@@ -50,19 +50,20 @@ fn changed_group_and_documentation_strings_feed_kept_fields_with_exact_nonzero_s
         assert_eq!(capture.stream(), extent.stream());
         assert_eq!(
             capture.reads(),
-            &std::collections::BTreeMap::from([(
+            &normalized_map(&std::collections::BTreeMap::from([(
                 "file".into(),
-                vec![
-                    attribute_range(&bytes, "name", "Input"),
-                    attribute_range(&bytes, "type", "App::PropertyFloat"),
-                    attribute_range(&bytes, "group", raw_group),
-                    attribute_range(&bytes, "doc", raw_doc),
-                    attribute_range(&bytes, "attr", "12"),
-                    attribute_range(&bytes, "ro", "true"),
-                    attribute_range(&bytes, "hide", "false"),
-                    attribute_range(&bytes, "value", "7.5")
+                [
+                    attribute_reads(&bytes, "name", "Input"),
+                    attribute_reads(&bytes, "type", "App::PropertyFloat"),
+                    attribute_reads(&bytes, "group", raw_group),
+                    attribute_reads(&bytes, "doc", raw_doc),
+                    attribute_reads(&bytes, "attr", "12"),
+                    attribute_reads(&bytes, "ro", "true"),
+                    attribute_reads(&bytes, "hide", "false"),
+                    attribute_reads(&bytes, "value", "7.5")
                 ]
-            )])
+                .concat()
+            )]))
         );
     }
 }
@@ -103,21 +104,28 @@ fn absent_group_namespace_lookalikes_and_unreadable_bodies_keep_strings_uncredit
             assert!(property.dynamic.is_none());
             assert_eq!(property.values()[0].attributes["value"], "7.5");
         } else {
-            assert!(matches!(
-                &property.body,
-                Some(crate::native::PropertyBody::Unreadable(_))
-            ));
+            assert!(matches!(&property.body, None));
             assert!(property.values().is_empty());
+            // The value part failed; independent property metadata remains held (#215).
+            let metadata = property.dynamic.as_ref().unwrap();
+            assert_eq!(metadata.group, "discarded-group");
+            assert_eq!(metadata.documentation.as_deref(), Some("discarded-doc"));
         }
         let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
         let mut expected = identity_ranges(&xml, "P", "App::PropertyFloat");
         if readable {
-            expected.push(attribute_range(&xml, "value", "7.5"));
+            expected.extend(attribute_reads(&xml, "value", "7.5"));
+        } else {
+            expected.extend(attribute_reads(&xml, "group", "discarded-group"));
+            expected.extend(attribute_reads(&xml, "doc", "discarded-doc"));
         }
         assert_eq!(
             captures[0].reads(),
-            &std::collections::BTreeMap::from([("file".into(), expected)])
+            &normalized_map(&std::collections::BTreeMap::from([(
+                "file".into(),
+                expected
+            )]))
         );
     }
 }
@@ -128,35 +136,25 @@ fn abandoned_actual_dynamic_property_producer_rolls_back_group_doc_and_value_rea
     let arena = DecodeArena::new();
     let (ctx, view) =
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
-    let dom = roxmltree::Document::parse(xml).unwrap();
-    let source = Source::new(&ctx, view, &dom).unwrap();
     let mut losses = Vec::new();
-    let result: Result<(), CodecError> =
-        source.record("discarded-dynamic-property", dom.root_element(), || {
-            let property = crate::persistence::parse_persisted_property(
-                dom.root_element(),
-                "Owner",
-                0,
-                &mut losses,
-                Some(&source),
-                false,
-            )?;
-            assert!(matches!(
-                &property.body,
-                Some(crate::native::PropertyBody::Persisted { .. })
-            ));
-            let Some(metadata) = &property.dynamic else {
-                panic!("kept metadata")
-            };
-            assert_eq!(metadata.group, "Custom");
-            assert_eq!(
-                metadata.documentation.as_deref(),
-                Some("kept only on success")
-            );
-            Err(CodecError::malformed(
-                "discard this actual kept-field producer",
-            ))
-        });
+    let result: Result<(), CodecError> = ctx.record("discarded-dynamic-property", view, || {
+        let property = parse_property(&ctx, view, &mut losses)?;
+        assert!(matches!(
+            &property.body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        ));
+        let Some(metadata) = &property.dynamic else {
+            panic!("kept metadata")
+        };
+        assert_eq!(metadata.group, "Custom");
+        assert_eq!(
+            metadata.documentation.as_deref(),
+            Some("kept only on success")
+        );
+        Err(CodecError::malformed(
+            "discard this actual kept-field producer",
+        ))
+    });
     assert!(result.is_err());
     assert!(losses.is_empty());
     assert!(ctx.take_record_captures().unwrap().is_empty());

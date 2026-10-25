@@ -77,7 +77,7 @@ typed side entry has one requesting property or payload owner.
 `GuiDocument.xml` has at most one `ViewProviderData` container. `ViewProvider` names are unique.
 Each provider has one direct `Properties` container, and direct property names are unique within
 that container. Registered GUI property types define the cardinality of their value elements;
-unregistered properties retain their ordered values without semantic dispatch.
+an unregistered runtime type has a retained property declaration without a decoded value.
 
 Each `ObjectData` object has at most one direct `Extensions` container and at most one direct
 `Properties` container. When both are present, `Extensions` precedes `Properties`. An extension
@@ -204,6 +204,13 @@ The exact-shape runtime type is `Part::PropertyPartShape`. Other runtime types d
 exact-shape or persistent element-map parsing. Part shape properties reference text or binary
 B-rep entries. Shape records retain native table
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
+The native `polygons3d` and `polygons_on_triangulations` arenas each hold one record per
+table entry, with `id`, `deflection`, `nodes`, and `parameters`. A record has no payload owner
+field. Each text or binary `ShapeSet` in `shape_payloads` names its polygon records in ordered
+`polygons3d` and `polygons_on_triangulations` id lists; all other `ShapeSet` fields keep their
+existing representation. Polygon ids use the arena name and the payload key followed by the
+one-based table index. Both arenas are written, and synthesis emits each payload's tables in
+its reference-list order. A deleted referenced record cannot leave stale polygon table bytes.
 The direct `Part` carrier is the only exact-shape side-entry admission point. A non-empty `Part
 file` attribute names that property's one text or binary B-rep entry; an inline `brep` or `binary`
 carrier has no side entry. An exact-shape property has at most one `Part` carrier and at most one
@@ -220,6 +227,8 @@ forward for `ElementMap2` after a marker with `new` set, so intervening or neste
 that carrier from being read. An `ElementMap2` without an `ElementMap` marker is not an independent
 carrier: restore's marker search reaches the end of the XML and raises an XML parse error, and a
 subsequent save writes an empty marker without the map payload.
+The marker's integer `new` attribute selects the new layout when it is nonzero. An absent or
+zero `new` attribute selects the legacy layout.
 
 A compatibility `ElementMap` marker without `new` is itself the legacy carrier. If it has a
 non-empty `file` attribute, that side entry is consumed before the marker `count`: a
@@ -236,8 +245,8 @@ root size is the sum of root mapped names and root child spans.
 
 CADIR decision: neutral element-map admission requires one direct `Part`, one direct
 `ElementMap new="1"` marker after it, and that marker's immediate direct `ElementMap2` successor.
-Nested, duplicate, missing, or non-successor new-layout carriers are decode refusals and do not
-assign persistent names to neutral topology. A direct marker without `new` is admitted as the
+Nested, duplicate, missing, or non-successor new-layout carriers are malformed and have no
+persistent-name association with neutral topology. A direct marker without `new` is admitted as the
 legacy carrier described above; its side entry, inline records, or direct `Element` children form
 one map owned by that property. Multiple exact-shape properties emit independent `Part` and
 element-map carriers and independent side-entry requests; no carrier is shared across properties.
@@ -852,7 +861,8 @@ Derived position and orientation values must be finite; a zero position is valid
 axis-angle orientation is invalid. This axis-angle retention is a CADIR decision: no quaternion
 conversion is applied. Each view-provider record contains
 its resolved application object, source order, tree expansion and visibility state, display and
-selection modes, nonnegative line and point sizes, and exact-name fallback properties. References,
+selection modes, and nonnegative line and point sizes. Its neutral properties map is empty;
+registered source values remain in the native GUI property records. References,
 orders, and numeric invariants are validated independently of the FCStd native namespace.
 
 GUI records retain view-provider identity separately from application-object identity. Visibility,
@@ -884,7 +894,7 @@ The application registry also uses these GUI property forms. `App::PropertyFont`
 `String`; `App::PropertyStringList` contains `StringList` with a count and ordered `String`
 elements; `App::PropertyIntegerList` contains `IntegerList` with a count and ordered `I` elements;
 `App::PropertyIntegerSet` contains `IntegerSet` with a count and sorted, unique `I` elements;
-`App::PropertyMap` contains `Map` with a count and key-sorted `Item` key/value pairs;
+`App::PropertyMap` contains `Map` with a count and ordered `Item` key/value pairs;
 `App::PropertyMatrix` contains `PropertyMatrix` with attributes `a11` through `a44`;
 `App::PropertyVectorDistance`, `App::PropertyPosition`, and `App::PropertyDirection` contain
 `PropertyVector`; `App::PropertyPrecision` and every registered quantity subtype contain `Float`;
@@ -911,8 +921,9 @@ link grammar.
 `StringList`, `IntegerList`, and `IntegerSet` are direct roots whose `count` equals the number of
 direct leaf children: `String` children carry `value`, and `I` children carry `v`. `IntegerSet`
 children are strictly increasing by integer value. `Map` is a direct root whose `count` equals the
-number of direct leaf `Item` children; each item carries `key` and `value`, and keys are strictly
-increasing. Nested elements in these roots or their value records are malformed.
+number of direct leaf `Item` children; each item carries `key` and `value`. Item order is semantic;
+duplicate keys and nonascending keys remain in their authored positions. Nested elements in these
+roots or their value records are malformed.
 
 `App::PropertyFloatList`, `App::PropertyVectorList`, and `App::PropertyPlacementList` contain,
 respectively, `FloatList`, `VectorList`, and `PlacementList` with one `file` attribute. Their named
@@ -923,8 +934,7 @@ little-endian `f64` values per placement. These side entries have no trailing by
 direct `file` carrier; its side entry is a little-endian `u32` count followed by that many packed
 `u32` colors and no trailing bytes. `App::PropertyMaterialList` uses `MaterialList` with the same
 direct `file` carrier and an optional `version` from 0 through 3. Versions 0 through 2 contain a
-count followed by four packed `u32` colors and two `f32` scalars per material; version 3 then
-contains three length-prefixed UTF-8 strings per material. The material side entry has no trailing
+count followed by four packed `u32` colors and two `f32` scalars per material; version 3 stores all fixed material records first, then three length-prefixed UTF-8 strings per material. The material side entry has no trailing
 bytes. These five side-entry roots are direct leaves: a non-empty lowercase `file` on the direct
 root is their only side-entry reference, an empty `file` names no side entry, and nested elements
 or descendant file attributes are malformed. A `PropertyFileIncluded` value is a direct leaf with
@@ -1033,10 +1043,10 @@ packed `u32` colors. A material-list value has a format version from zero throug
 zero and one begin with a signed 32-bit count. A negative value is a provisional-version marker
 followed by the unsigned 32-bit count. Version two begins with the unsigned count. Each material
 then contains four packed `u32` colors followed by float32 shininess and transparency. Version
-three uses the version-two header and material records, followed by three length-prefixed byte
-strings for each material in image, image-path, UUID order. Each string has a little-endian `u32`
+three uses the version-two header, then all `count` material records, then `3 × count`
+length-prefixed byte strings: for each material in record order, its image, image path and UUID. Each string has a little-endian `u32`
 byte count and UTF-8 bytes. Counts are bounded by the remaining payload. Truncated records,
-non-finite scalars, invalid UTF-8, and trailing bytes are invalid. Producing versions before 1.1
+non-finite scalars, invalid UTF-8, embedded null bytes, and trailing bytes are invalid. Producing versions before 1.1
 store the low color byte with the inverse alpha convention; readers invert that byte before
 presentation transfer.
 
@@ -1065,13 +1075,13 @@ scalars describe the application object's exact-shape property named `Shape`. Th
 object appearance and explicit bindings only for bodies transferred from that property. Other
 exact-shape properties on the same object do not inherit this view-provider state. Packed colors
 decode as red, green, blue, and reserved low byte; the independent transparency percentage
-determines opacity. The effective body display fields mirror this object-level assignment.
+determines opacity. Body color fields do not duplicate this appearance assignment.
 `ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
 color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
 transparency, four packed material colors, shininess, and UUID. Multiple materials bind in order to
 the persistent Face element-map group only when their count equals the group's indexed face count.
-If persistent face identity is absent or the counts differ, the material list remains native and
-the legacy object color remains the neutral fallback.
+Every material creates an appearance. If persistent face identity is absent or the counts differ,
+no face bindings are made and the object appearance remains the neutral fallback.
 Topology-color and multi-material association requires one unambiguous application property named
 `Shape`, at most one exact-shape payload for that property, and at most one element-map record for
 that payload. The final `ElementMap2` node owns the shape. A requested `Face`, `Edge`, or `Vertex`
@@ -1093,9 +1103,9 @@ precedence.
 
 `ShapeAppearance` uses the same admission rule for its material records. One material is the
 uniform object appearance. Multiple materials create indexed Face bindings only when their count
-equals the mapped Face count. A different count, including zero, leaves the exact material-list
-side entry native, withholds the neutral Face override, and emits the same loss code. If persistent
-Face identity is absent, the material list remains native without choosing transient labels.
+equals the mapped Face count. A different count, including zero, preserves all material appearances, withholds the neutral Face
+override, and emits the same loss code. Missing persistent Face identity also emits the same loss
+code and withholds Face bindings without choosing transient labels.
 
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,
@@ -1122,7 +1132,11 @@ by each item's `i32` value and two `f64` values. `Points::PropertyGreyValueList`
 `Inspection::PropertyDistanceList` write a little-endian `u32` count followed by `f32` values.
 `Points::PropertyNormalList` and `Mesh::PropertyNormalList` write a little-endian `u32` count
 followed by three `f32` values per item. Their curvature-list variants write a little-endian
-`u32` count followed by eight `f32` values per item. `Mesh::PropertyMaterial` writes a little-endian
+`u32` count followed by eight `f32` values per item. The scalar variants also support an inline
+`FloatList` with a `count` and ordered `F` children, each with an `f32` `v` attribute.
+Their neutral numeric kinds are Float, Vector, and Curvature respectively. Curvature rows have
+exactly eight finite components. An absent row retains its original list position.
+ `Mesh::PropertyMaterial` writes a little-endian
 `u32` binding value, four color arrays each framed by a `u32` count and packed `u32` values, and
 two float arrays each framed by a `u32` count and `f32` values.
 `Fem::PropertyFemMesh` writes the complete ASCII UNV member. `Fem::PropertyPostDataObject` writes
@@ -1154,11 +1168,9 @@ UNV, VTK XML, and G-code members are complete delegated external-format payloads
 carrier selects the external reader or supplies separate transform or center state; no FCStd field
 is inserted into the member. File-included and VRML members likewise have no FCStd-defined fields
 and consist of source or resource bytes. These producer grammars are documented format semantics
-but are not typed CADIR transfer grammars. CADIR therefore retains each member as the complete
-named native application payload linked to its owning property. It does not create a neutral mesh,
-result, point, material, inspection, or toolpath value from these bytes. The exact runtime
-property, XML value, and complete member remain authoritative, and the logical member span remains
-`named_opaque`.
+but have no typed CADIR transfer grammar. The property retains the member reference. The actual
+member has an opaque part and its undecoded bytes receive B1 classification. These bytes reside
+in the source sidecar; they do not supply document content or a neutral application value.
 
 `Mesh::PropertyMeshKernel` contains exactly one direct `Mesh` value root. A duplicate or missing
 root is malformed. That root has zero or one non-empty lowercase `file` attribute; a non-empty
@@ -1169,10 +1181,13 @@ record. The current typed binary record begins with the
 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field. Both
 integer byte orders are accepted when the magic and version agree. Two 32-bit counts precede
 ordered float32 XYZ points and facets. Each facet contains three zero-based point indices followed
-by three stored neighbour indices. Six float32 bounding-box limits close the record. Counts are
+by three stored neighbour indices; `ffffffff` denotes an absent neighbour. Six float32
+bounding-box limits close the record in minimum-X, maximum-X, minimum-Y, maximum-Y, minimum-Z,
+maximum-Z order. Counts are
 bounded, point indices must resolve, coordinates and bounds must be finite, and trailing or
-truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
-when only the indexed triangle mesh is projected neutrally.
+truncated bytes are invalid. Typed kernel records retain point and facet positions, optional
+neighbours, and bounds. Failed child parts retain null positions. The neutral indexed mesh links
+its kernel record; source entry bytes remain in the source sidecar.
 
 `Points::PropertyPointKernel` contains exactly one direct `Points` value root. A duplicate or
 missing root is malformed. Its zero or one non-empty lowercase `file` attribute identifies the
@@ -1629,11 +1644,15 @@ construction. STEP, IGES, B-rep, and curve-network
 import features instead retain their exact external path and source model format as replayable
 import intent; an absent or empty source path leaves the feature attributable and native.
 
-The native design census contains one record for every object admitted to the design projection.
-Each record binds the persisted object type and neutral feature identity to its CADIR semantic
-family, native-versus-neutral status, and post-processing composition. Native validation derives
-the census again from the object and feature graphs; missing projections and stale classifications
-are errors rather than coverage-report omissions.
+The native design census contains one record for each held projected feature whose `native_ref`
+links an admitted design object. An eligible object whose feature cannot form through required
+reference closure is not admitted to this population. Its prospective census record has the same
+actual given-up cause as the feature. Each census record links the persisted object and states its
+source type, CADIR semantic family, and post-processing composition. It holds no neutral feature ID.
+The current feature's `native_ref` supplies that relationship. Native validation requires exactly
+one compatible census record per held projected feature, with no extra record. Missing records,
+duplicate object links, and stale classifications are errors. Census record identities are
+independent of object identities, and arena record order has no semantic effect.
 
 Native document, object, property, payload, ledger, product, drawing, and application identities
 use canonical CADIR ids. Persisted names form percent-escaped id keys while the exact unescaped
@@ -1766,9 +1785,63 @@ properties, with an Error loss, so independent content still forms a valid archi
 The current synthesized writer drops subds, assets, feature topology bindings,
 configurations, spatial sketches and their entities/constraints, drawings, semantic
 annotations, tessellations, PMI, and presentation layers. Unconsumed admitted
-scalar, vector, and simple-reference properties project to neutral attributes
-and are written from those attributes. Other admitted typed property forms
-remain native content and receive a named projection loss. Opaque payloads stay
+scalar, vector, map, expression, and reference properties project to neutral attributes
+and are written from their current typed values. Generic scalar and vector projection
+uses admitted value tags within readable property families; the exact-runtime
+rules for named design controls do not restrict these extra attributes. Unknown
+property families retain identity only and their unread bodies remain B1. Semantic XML
+value fields use the last attribute with the selected local name, and their source
+producers read that actual QName rather than a shadowed spelling. `Map` projects to one ordered
+`AttributeValue::Map`; its entries retain separate key and value strings, including
+repeated keys. An unavailable required map entry prevents the map attribute from
+forming rather than changing its cardinality. The actual failed child owns that
+projection omission, and the native collection retains its missing position.
+
+Each `ExpressionEngine/Expression` entry that binds an actually held design parameter
+is consumed by that parameter. Every other entry projects to
+`AttributeValue::Expression`, retaining its path, optional comment, and ordered
+expression tokens. The same identifier tokenizer used for parameter expressions
+makes references to held parameters into `Parameter` tokens; unresolved text remains
+`Text`. The writer renders references using current parameter names. Expression
+entries retain source order and repeated paths. Local links with subelements use
+`SubReference` with the canonical object identity and ordered selector strings;
+external links use `ExternalReference` with literal document/object names and ordered
+selector strings. Local identities participate in canonical rewrites; external names
+do not. Scalar local links without selectors continue to use `Reference`.
+
+Float, vector, placement, color, and fixed eight-component curvature lists use `NumericList` with a named
+numeric kind. Unknown whole arity is `None`; a known list is an ordered vector of
+optional rows, including genuine empty lists and missing source positions. Placement
+rows preserve position and the source quaternion's four finite components (not all zero)
+without normalization. The registered float32 scalar, normal, and curvature families retain
+Float, Vector, and Curvature numeric kinds. Inline scalar lists retain their `F` row order.
+Source attribute constructors read the original admitted XML
+fields and numeric row views; native records are retained independently. On output,
+dense current lists generate a fresh binary member and its XML pointer. The wire
+count-and-row grammar cannot express a missing positional row or unknown arity, so
+such a list is omitted with `source.undecoded-omitted`, naming the affected attribute;
+old native XML and bytes cannot restore it. Other counted scalar collections also
+retain missing positions in native content rather than packing them into a neutral
+attribute.
+
+`Mesh::PropertyMaterial` extras project as seven ordered values: the integer binding,
+four `NumericList::Color` arrays (ambient, diffuse, specular, emissive), then two
+`NumericList::Float` arrays (shininess, transparency). Each array retains unknown arity
+and missing source positions. An unreadable required binding prevents the attribute
+from forming and its actual binding part owns that omission. Every healthy field is
+read from its original binary supplier under the attribute's own producer, including
+aliases of the same member. The source-less writer emits current tuple values through
+the registered mesh-material grammar. Missing array arity or a row omits the property
+with a named loss; deleted attributes never fall back to old native bytes.
+
+Document properties target `Document`. Object properties target an actual held neutral
+record whose `native_ref` is that object: model records take precedence over design
+records, then neutral arena registry order and ascending identity decide. Without such
+a record, the property stays typed native content without a neutral attribute or loss;
+the writer preserves its current native value. FreeCAD does not construct `Source`
+attribute or appearance targets.
+
+Opaque payloads stay
 in fidelity and mark their served classes unrepresented. Each populated
 dropped arena has an export loss. Geometry omissions use Error severity; unsupported
 nonstructural metadata uses Warning. Omitted native namespaces use the shared

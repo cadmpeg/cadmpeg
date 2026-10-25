@@ -8,6 +8,91 @@ use cadmpeg_core::decode::{
 use cadmpeg_ir::source_fidelity::parts::PartState;
 use std::collections::BTreeSet;
 
+mod entry_contents;
+
+#[test]
+fn a_reached_incomplete_local_header_has_one_real_home_and_keeps_complete_members() {
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use cadmpeg_test_support::framing::zip::{RecoveryReason, ZipScan};
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+    let complete = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", b"<Document SchemaVersion='4' FileVersion='1'><Objects Count='0'/><ObjectData Count='0'/></Document>"),
+        RawEntry::stored("peer.bin", b"readable peer"),
+        RawEntry::stored("incomplete-name.bin", b"missing payload"),
+    ]);
+    let start = {
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&complete, &arena, &DecodePolicy::service()).unwrap();
+        usize::try_from(
+            cadmpeg_container::ArchiveSnapshot::new(&ctx, root)
+                .unwrap()
+                .entry("incomplete-name.bin")
+                .unwrap()
+                .header_start,
+        )
+        .unwrap()
+    };
+    for width in [4, 17, 29, 32] {
+        let bytes = &complete[..start + width];
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+        let mut independent = Vec::new();
+        let ZipScan::Local { entries, stop } =
+            cadmpeg_test_support::framing::zip::scan(&ctx, root, &mut independent).unwrap()
+        else {
+            panic!("actual local prefix");
+        };
+        assert_eq!(entries.len(), 2);
+        assert_eq!(stop.reason(), RecoveryReason::HeaderIncomplete);
+        let expected = &independent[stop.frame_index().unwrap()];
+        let decoded = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let fidelity = decoded.source_fidelity();
+        let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+        let [unknown] = unknowns.as_slice() else {
+            panic!("one actual header failure");
+        };
+        let actual = &fidelity.parts()[&unknown.id];
+        assert_eq!(actual.level(), expected.level());
+        assert_eq!(actual.state(), &PartState::GivenUp {});
+        assert_eq!(actual.offset(), u64::try_from(start).unwrap());
+        assert_eq!(actual.byte_len(), u64::try_from(width).unwrap());
+        assert_eq!(actual.framing_bytes(), expected.framing());
+        assert_eq!(
+            fidelity
+                .retained_record(unknown.id.as_str())
+                .unwrap()
+                .data(),
+            Some(&bytes[start..])
+        );
+        let kept = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .unwrap();
+        assert_eq!(
+            kept.iter()
+                .map(|entry| entry.name())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["Document.xml", "peer.bin"])
+        );
+        let failures: Vec<_> = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].severity, cadmpeg_ir::report::Severity::Error);
+        assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+    }
+}
+
 #[test]
 fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     let bytes = archive();
@@ -18,7 +103,14 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     assert_eq!(scan.data["peer.bin"].window(), b"peer source");
     assert!(scan.data.contains_key("Document.xml"));
     assert!(!scan.data.contains_key("broken.bin"));
-    assert_eq!(scan.failed_members, BTreeSet::from(["broken.bin".into()]));
+    assert_eq!(
+        scan.entries
+            .iter()
+            .filter(|entry| !scan.data.contains_key(&entry.name))
+            .map(|entry| entry.name.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
+        BTreeSet::from(["broken.bin".into()])
+    );
     assert!(!crate::native::ARENAS.contains(&"unreadable_entries"));
     assert!(scan.losses.is_empty());
     let range = scan
@@ -42,7 +134,7 @@ fn a_damaged_known_endpoint_member_has_one_shared_home_and_keeps_its_peer() {
     };
     assert!(unknown.links.is_empty());
     let parts = fidelity.parts();
-    assert_eq!(parts.len(), 9);
+    assert_eq!(parts.len(), 11);
     let (archive_id, archive_part) = parts
         .iter()
         .find(|(_, part)| part.level().as_str() == "zip.archive")
@@ -128,6 +220,57 @@ fn a_session_entity_refusal_escapes_the_member_give_up_boundary() {
 }
 
 #[test]
+fn opaque_side_entries_use_their_actual_zip_parent_once_without_semantic_reads() {
+    let bytes = archive();
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (scan, mut output) = crate::container::scan_for_decode(&ctx, root).unwrap();
+    let parent = &scan.entry_parents["peer.bin"];
+    assert!(!output.has_descendant(parent).unwrap());
+    super::opaque_side_entries(&ctx, &scan, &mut output).unwrap();
+    assert!(output.has_descendant(parent).unwrap());
+    let count = output.fidelity().parts().len();
+    super::opaque_side_entries(&ctx, &scan, &mut output).unwrap();
+    assert_eq!(output.fidelity().parts().len(), count);
+    let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
+    let opaque = fidelity
+        .parts()
+        .values()
+        .filter(|part| part.level().as_str() == "freecad.opaque_side_entry")
+        .collect::<Vec<_>>();
+    let [opaque] = opaque.as_slice() else {
+        panic!("one opaque peer: {opaque:?}")
+    };
+    assert_eq!(opaque.state(), &PartState::Decoded {});
+    let source = ctx.capture_part_extent(scan.data["peer.bin"]).unwrap();
+    assert_eq!(opaque.stream(), source.stream());
+    assert_eq!(opaque.offset(), source.offset());
+    assert_eq!(opaque.byte_len(), source.byte_len());
+    let parent = &fidelity.parts()[opaque.parent().unwrap()];
+    assert_eq!(parent.level().as_str(), "zip.entry");
+    let range = scan
+        .archive
+        .entry("peer.bin")
+        .unwrap()
+        .stored_range()
+        .unwrap();
+    assert_eq!(parent.offset(), range.start);
+    assert_eq!(parent.byte_len(), range.end - range.start);
+    assert_eq!(
+        native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(losses.len(), 1);
+    crate::test_support::test_archive::assert_only_document_file_version_capture(&ctx, &scan);
+}
+
+#[test]
 fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload() {
     use cadmpeg_test_support::zip_fixture::{self, RawEntry};
     let mut bytes = zip_fixture::archive(&[
@@ -154,7 +297,14 @@ fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload()
     assert!(scan.data.contains_key("Document.xml"));
     assert_eq!(scan.data["peer.bin"].window(), b"peer source");
     assert!(!scan.data.contains_key("broken.bin"));
-    assert_eq!(scan.failed_members, BTreeSet::from(["broken.bin".into()]));
+    assert_eq!(
+        scan.entries
+            .iter()
+            .filter(|entry| !scan.data.contains_key(&entry.name))
+            .map(|entry| entry.name.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
+        BTreeSet::from(["broken.bin".into()])
+    );
     assert!(!crate::native::ARENAS.contains(&"unreadable_entries"));
     assert!(scan.losses.is_empty());
     let (_, native, fidelity, losses) = output.into_parts(&ctx).unwrap().into_parts();
@@ -194,7 +344,7 @@ fn a_locatable_damaged_local_header_is_given_up_without_relabeling_its_payload()
     assert!(fidelity.record_layout()[unknown.id.as_str()]
         .reads()
         .is_empty());
-    assert_eq!(fidelity.parts().len(), 8);
+    assert_eq!(fidelity.parts().len(), 10);
     assert_eq!(
         fidelity
             .parts()

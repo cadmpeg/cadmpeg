@@ -39,6 +39,7 @@ fn transferred_nurbs_curve_keeps_one_geometry_copy() {
         CurveId::mint("fcstd:model:curve#Nurbs").unwrap(),
         &source_association(),
         &mut transfer,
+        None,
     )
     .expect("one geometry copy");
     assert_eq!(transfer.curves.len(), 1);
@@ -91,6 +92,7 @@ fn transferred_nurbs_surface_keeps_one_geometry_copy() {
         &source_association(),
         &mut curves,
         &mut transfer,
+        None,
     )
     .expect("one geometry copy");
     assert_eq!(transfer.surfaces.len(), 1);
@@ -135,7 +137,7 @@ fn uppercase_binary_shape_extension_selects_binary_reader() {
         &[&entry],
         &DecodePolicy::default(),
         |ctx, sources| {
-            super::super::parse_payloads(
+            super::super::source::parse_payloads(
                 ctx,
                 &[property.property.clone()],
                 &[entry.record.clone()],

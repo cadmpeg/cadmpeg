@@ -40,18 +40,19 @@ fn valid_flag_changes_and_entities_feed_kept_fields_with_exact_nonzero_source_re
         assert_eq!(captures[0].id(), property.id);
         assert_eq!(
             captures[0].reads(),
-            &std::collections::BTreeMap::from([(
+            &normalized_map(&std::collections::BTreeMap::from([(
                 "file".into(),
-                vec![
-                    attribute_range(&bytes, "name", "Flags"),
-                    attribute_range(&bytes, "type", "App::PropertyFloat"),
-                    attribute_range(&bytes, "group", "Custom"),
-                    attribute_range(&bytes, "attr", attr),
-                    attribute_range(&bytes, "ro", ro),
-                    attribute_range(&bytes, "hide", hide),
-                    attribute_range(&bytes, "value", "7.5")
+                [
+                    attribute_reads(&bytes, "name", "Flags"),
+                    attribute_reads(&bytes, "type", "App::PropertyFloat"),
+                    attribute_reads(&bytes, "group", "Custom"),
+                    attribute_reads(&bytes, "attr", attr),
+                    attribute_reads(&bytes, "ro", ro),
+                    attribute_reads(&bytes, "hide", hide),
+                    attribute_reads(&bytes, "value", "7.5")
                 ]
-            )])
+                .concat()
+            )]))
         );
     }
 }
@@ -102,16 +103,24 @@ fn flag_values_hold_only_boolean_spellings_and_credit_only_their_reads() {
         assert_eq!(metadata.hidden, hidden);
         let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
-        let mut expected = vec![
-            attribute_range(&xml, "name", "Flags"),
-            attribute_range(&xml, "type", "App::PropertyFloat"),
-            attribute_range(&xml, "group", "Custom"),
-        ];
-        expected.extend(hide_read.map(|hide| attribute_range(&xml, "hide", hide)));
-        expected.push(attribute_range(&xml, "value", "7.5"));
+        let mut expected = [
+            attribute_reads(&xml, "name", "Flags"),
+            attribute_reads(&xml, "type", "App::PropertyFloat"),
+            attribute_reads(&xml, "group", "Custom"),
+        ]
+        .concat();
+        expected.extend(
+            hide_read
+                .into_iter()
+                .flat_map(|hide| attribute_reads(&xml, "hide", hide)),
+        );
+        expected.extend(attribute_reads(&xml, "value", "7.5"));
         assert_eq!(
             captures[0].reads(),
-            &std::collections::BTreeMap::from([("file".into(), expected)])
+            &normalized_map(&std::collections::BTreeMap::from([(
+                "file".into(),
+                expected
+            )]))
         );
     }
 }
@@ -135,20 +144,35 @@ fn absent_metadata_or_unreadable_body_cannot_credit_otherwise_valid_flag_bytes()
             ));
             assert!(graph.properties[0].dynamic.is_none());
         } else {
-            assert!(matches!(
-                &graph.properties[0].body,
-                Some(crate::native::PropertyBody::Unreadable(_))
-            ));
+            assert!(matches!(&graph.properties[0].body, None));
+            // A failed value does not discard independently admitted header fields (#215).
+            let metadata = graph.properties[0].dynamic.as_ref().unwrap();
+            assert_eq!(metadata.group, "Custom");
+            assert_eq!(metadata.attributes, Some(7));
+            assert_eq!(metadata.read_only, Some(true));
+            assert_eq!(metadata.hidden, Some(false));
         }
         let captures = property_captures(&ctx, &graph);
         assert_eq!(captures.len(), 1);
         let mut expected = identity_ranges(&xml, "Flags", "App::PropertyFloat");
         if readable {
-            expected.push(attribute_range(&xml, "value", value));
+            expected.extend(attribute_reads(&xml, "value", value));
+        } else {
+            for (key, raw) in [
+                ("group", "Custom"),
+                ("attr", "7"),
+                ("ro", "1"),
+                ("hide", "0"),
+            ] {
+                expected.extend(attribute_reads(&xml, key, raw));
+            }
         }
         assert_eq!(
             captures[0].reads(),
-            &std::collections::BTreeMap::from([("file".into(), expected)])
+            &normalized_map(&std::collections::BTreeMap::from([(
+                "file".into(),
+                expected
+            )]))
         );
     }
 }
@@ -159,31 +183,21 @@ fn discarded_actual_flag_producer_rolls_back_numeric_boolean_and_other_field_rea
     let arena = DecodeArena::new();
     let (ctx, view) =
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
-    let dom = roxmltree::Document::parse(xml).unwrap();
-    let source = Source::new(&ctx, view, &dom).unwrap();
     let mut losses = Vec::new();
-    let result: Result<(), CodecError> =
-        source.record("discarded-flags", dom.root_element(), || {
-            let property = crate::persistence::parse_persisted_property(
-                dom.root_element(),
-                "Owner",
-                0,
-                &mut losses,
-                Some(&source),
-                false,
-            )?;
-            assert!(matches!(
-                &property.body,
-                Some(crate::native::PropertyBody::Persisted { .. })
-            ));
-            let Some(metadata) = &property.dynamic else {
-                panic!("actual kept flags")
-            };
-            assert_eq!(metadata.attributes, Some(12));
-            assert_eq!(metadata.read_only, Some(true));
-            assert_eq!(metadata.hidden, Some(false));
-            Err(CodecError::malformed("discard actual property flags"))
-        });
+    let result: Result<(), CodecError> = ctx.record("discarded-flags", view, || {
+        let property = parse_property(&ctx, view, &mut losses)?;
+        assert!(matches!(
+            &property.body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        ));
+        let Some(metadata) = &property.dynamic else {
+            panic!("actual kept flags")
+        };
+        assert_eq!(metadata.attributes, Some(12));
+        assert_eq!(metadata.read_only, Some(true));
+        assert_eq!(metadata.hidden, Some(false));
+        Err(CodecError::malformed("discard actual property flags"))
+    });
     assert!(result.is_err());
     assert!(losses.is_empty());
     assert!(ctx.take_record_captures().unwrap().is_empty());

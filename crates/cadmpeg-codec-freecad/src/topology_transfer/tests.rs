@@ -1122,31 +1122,25 @@ Co 1001000 +2 0 *
             .count(),
         2
     );
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .appearances
-            .iter()
-            .find(|appearance| appearance.schema.as_deref()
-                == Some("FCStd ViewProvider line style"))
-            .and_then(|appearance| appearance.properties.get("line_width"))
-            .map(|value| value.get()),
-        Some(2.5)
-    );
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .appearances
-            .iter()
-            .find(
-                |appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider point style")
-            )
-            .and_then(|appearance| appearance.properties.get("point_size"))
-            .map(|value| value.get()),
-        Some(4.0)
-    );
+    // #224 §8 removes the line/point-size copy from Appearance.properties.
+    assert!(result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider line style"))
+        .expect("line style")
+        .properties
+        .is_empty());
+    assert!(result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider point style"))
+        .expect("point style")
+        .properties
+        .is_empty());
     assert_eq!(result.ir().model.bodies[0].visible, Some(false));
     assert_eq!(result.ir().model.presentation_documents.len(), 1);
     assert_eq!(result.ir().model.view_presentations.len(), 1);
@@ -1232,6 +1226,16 @@ Co 1001000 +2 0 *
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);
+    for (name, value) in [("LineWidth", "2.5"), ("PointSize", "4")] {
+        let property = gui_properties
+            .iter()
+            .find(|property| property.name == name)
+            .unwrap();
+        assert_eq!(property.type_name, "App::PropertyFloatConstraint");
+        assert_eq!(property.values.len(), 1);
+        assert_eq!(property.values[0].tag, "Float");
+        assert_eq!(property.values[0].attributes["value"], value);
+    }
     assert!(gui_properties.iter().all(|property| std::str::from_utf8(
         crate::test_support::source_fidelity::bytes(result.source_fidelity(), &property.id,)
     )
@@ -1312,7 +1316,7 @@ So 1001000 +2 0 *
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0])
     );
-    assert!(result.report().losses.is_empty());
+    crate::test_support::b1::assert_report(&result);
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
     assert!(
@@ -1497,9 +1501,20 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
         .expect("element maps");
     let groups = &maps[0].maps[0].groups;
-    assert_eq!(groups[0].names[1][0].topology_ids.len(), 2);
-    assert_eq!(groups[1].names[1][0].topology_ids.len(), 2);
-    assert_eq!(groups[1].names[2][0].topology_ids.len(), 2);
+    let occurrences = crate::test_support::topology_occurrences(result.ir());
+    for (group, index) in [(0, 1), (1, 1), (1, 2)] {
+        assert_eq!(
+            crate::element_map::topology_ids(
+                &maps[0].maps,
+                groups[group].as_ref().unwrap(),
+                &occurrences,
+                &maps[0].property,
+                index
+            )
+            .count(),
+            2
+        );
+    }
     assert_valid_document(result.ir());
 }
 

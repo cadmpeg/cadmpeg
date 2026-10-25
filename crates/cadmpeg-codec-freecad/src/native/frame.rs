@@ -26,6 +26,13 @@ impl From<FiniteFrame> for [[f64; 4]; 4] {
     }
 }
 impl FiniteFrame {
+    /// Composing admitted frames preserves their accumulated rigid tolerance.
+    pub(crate) fn compose(self, other: Self) -> Result<Self, String> {
+        self.0
+            .compose(other.0)
+            .map(Self)
+            .map_err(|error| error.to_string())
+    }
     pub(crate) fn rows(self) -> [[f64; 4]; 4] {
         self.0.rows()
     }

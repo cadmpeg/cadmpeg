@@ -22,6 +22,8 @@ fn scalar_source_edits_change_the_kept_value_without_crediting_opaque_or_xml_mar
             .find(|property| property.name == "Distance")
             .unwrap();
         assert_eq!(property.values()[0].attributes["value"], literal);
+        assert_eq!(property.values()[0].attributes["unit"], "mm");
+        assert_eq!(property.values()[0].tag, "Float");
         let fidelity = decoded.source_fidelity();
         let layout = &fidelity.record_layout()[&property.id];
         let start = document.find(&format!("value='{literal}'")).unwrap() + "value='".len();
@@ -31,11 +33,25 @@ fn scalar_source_edits_change_the_kept_value_without_crediting_opaque_or_xml_mar
                 document.find(&format!("{name}='{raw}'")).unwrap() + name.len() + "='".len();
             u64_from_index(start)..u64_from_index(start + raw.len())
         };
+        let key_range = |key: &str, raw: &str| {
+            let at = document.find(&format!("{key}='{raw}'")).unwrap();
+            u64_from_index(at)..u64_from_index(at + key.len())
+        };
+        let tag_range = |tag: &str| {
+            let at = document.find(&format!("<{tag} ")).unwrap() + 1;
+            u64_from_index(at)..u64_from_index(at + tag.len())
+        };
         assert_eq!(
             layout.reads()[layout.stream()],
             [
+                key_range("name", "Distance"),
                 identity_range("name", "Distance"),
+                key_range("type", "App::PropertyFloat"),
                 identity_range("type", "App::PropertyFloat"),
+                tag_range("Float"),
+                key_range("unit", "mm"),
+                identity_range("unit", "mm"),
+                key_range("value", literal),
                 range.clone()
             ]
         );
@@ -58,8 +74,11 @@ fn scalar_source_edits_change_the_kept_value_without_crediting_opaque_or_xml_mar
         assert_eq!(
             opaque_layout.reads()[opaque_layout.stream()],
             [
+                key_range("name", "Proxy"),
                 identity_range("name", "Proxy"),
-                identity_range("type", "App::PropertyPythonObject")
+                key_range("type", "App::PropertyPythonObject"),
+                identity_range("type", "App::PropertyPythonObject"),
+                tag_range("Python")
             ]
         );
         assert!(fidelity.record_layout()[&property.id]

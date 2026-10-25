@@ -91,13 +91,12 @@ fn a_bad_root_metadata_field_retains_only_the_root_and_preserves_a_zip_peer() {
     let actual_document = snapshot.open(&ctx, "Document.xml").unwrap();
     let capture = ctx.capture_part_extent(actual_document).unwrap();
     let entry_layout = &fidelity.record_layout()[document_entry.id()];
-    assert_eq!(entry_layout.stream(), capture.stream());
-    assert_eq!(entry_layout.offset(), capture.offset());
-    assert_eq!(entry_layout.byte_len(), capture.byte_len());
+    crate::test_support::source_fidelity::assert_entry_header_layout(
+        &decoded,
+        &bytes,
+        "Document.xml",
+    );
     assert_eq!(actual_document.window(), document.as_bytes());
-    assert!(entry_layout.offset() < part.offset());
-    assert!(entry_layout.byte_len() > part.byte_len());
-    assert!(entry_layout.reads().is_empty());
     assert!(entry_layout.payloads().is_empty());
     assert_eq!(
         entry_layout.pointers(),
@@ -230,10 +229,11 @@ fn a_readable_deflated_document_entry_outlives_failed_root_metadata() {
     let capture = ctx.capture_part_extent(expanded).unwrap();
     assert_eq!(expanded.window(), document);
     let layout = &decoded.source_fidelity().record_layout()[entries[0].id()];
-    assert_eq!(layout.stream(), capture.stream());
-    assert_eq!(layout.offset(), capture.offset());
-    assert_eq!(layout.byte_len(), capture.byte_len());
-    assert!(layout.reads().is_empty());
+    crate::test_support::source_fidelity::assert_entry_header_layout(
+        &decoded,
+        &bytes,
+        "Document.xml",
+    );
     assert!(layout.payloads().is_empty());
     assert_eq!(
         layout.pointers(),

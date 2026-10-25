@@ -37,7 +37,8 @@ fn quantity_scalar_changes_flow_to_native_and_neutral_values_with_exact_original
                 .arena_as::<crate::native::PropertyRecord>("properties")
                 .unwrap();
             let pure = crate::persistence::parse_document(
-                &scan.document_xml,
+                &crate::container::admit_document(&ctx, scan.data["Document.xml"].window())
+                    .expect("valid source XML"),
                 crate::persistence::Vocabulary::Objects,
             )
             .unwrap();
@@ -93,8 +94,8 @@ fn quantity_scalar_changes_flow_to_native_and_neutral_values_with_exact_original
             let mut expected_reads = Vec::new();
             let mut from = 0;
             for raw in [
-                "Scaled", family, "9", "Custom", "A&amp;B", "true", "value", raw, "unit", raw_unit,
-                "extra", "held",
+                "name", "Scaled", "type", family, "status", "9", "group", "Custom", "doc",
+                "A&amp;B", "ro", "true", "Float", "value", raw, "unit", raw_unit, "extra", "held",
             ] {
                 let at = from + property_xml[from..].find(raw).unwrap();
                 from = at + raw.len();

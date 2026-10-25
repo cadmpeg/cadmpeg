@@ -125,6 +125,44 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<AttachmentRecord>, CodecError> {
+    transfer_impl(objects, properties, None).map(|(records, _)| records)
+}
+
+pub(crate) fn transfer_source<'source>(
+    ctx: &crate::property_reader::PropertyReader<'_, 'source>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    sources: &std::collections::BTreeMap<
+        String,
+        crate::persistence::object_parts::ObjectSource<'source>,
+    >,
+) -> Result<
+    (
+        Vec<AttachmentRecord>,
+        Vec<crate::design::UnformedProjection>,
+    ),
+    CodecError,
+> {
+    transfer_impl(objects, properties, Some((ctx, sources)))
+}
+
+fn transfer_impl<'source>(
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    producer: Option<(
+        &crate::property_reader::PropertyReader<'_, 'source>,
+        &std::collections::BTreeMap<
+            String,
+            crate::persistence::object_parts::ObjectSource<'source>,
+        >,
+    )>,
+) -> Result<
+    (
+        Vec<AttachmentRecord>,
+        Vec<crate::design::UnformedProjection>,
+    ),
+    CodecError,
+> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         let owner = property.owner.as_str();
@@ -132,33 +170,145 @@ pub(crate) fn transfer(
         owned.push(property);
     }
     let mut records = Vec::new();
+    let mut unformed = Vec::new();
     for object in objects {
-        let Some(owned) = by_owner.get(object.id().as_str()) else {
-            continue;
-        };
+        let owned = by_owner
+            .get(object.id().as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let reader = producer.map(|(ctx, _)| ctx);
+        if let Some(reader) = reader {
+            reader.begin_projection(object.id())?;
+        }
         let support = sole_named_property("attachment", owned, "AttachmentSupport")?;
         let mode = sole_named_property("attachment", owned, "MapMode")?;
-        let placement = placement_matrix(sole_named_property("attachment", owned, "Placement")?)?;
-        let offset = placement_matrix(sole_named_property(
-            "attachment",
-            owned,
-            "AttachmentOffset",
-        )?)?;
-        if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
+        let placement_property = sole_named_property("attachment", owned, "Placement")?;
+        let offset_property = sole_named_property("attachment", owned, "AttachmentOffset")?;
+        if support.is_none()
+            && mode.is_none()
+            && placement_property.is_none()
+            && offset_property.is_none()
+        {
+            let mut actual_role_failed = false;
+            if let Some(reader) = reader {
+                for name in [
+                    "AttachmentSupport",
+                    "MapMode",
+                    "Placement",
+                    "AttachmentOffset",
+                ] {
+                    actual_role_failed |= reader.unavailable_named_exact(name)?;
+                }
+            }
+            if !actual_role_failed {
+                continue;
+            }
+        }
+        let missing = |property: Option<&PropertyRecord>, name: &str| -> Result<bool, CodecError> {
+            match reader {
+                Some(reader) => reader.missing_value(property, name),
+                None => Ok(property.is_some_and(|property| property.body.is_none())),
+            }
+        };
+        let support_missing = missing(support, "AttachmentSupport")?;
+        let mode_missing = missing(mode, "MapMode")?;
+        let placement_missing = missing(placement_property, "Placement")?;
+        let offset_missing = missing(offset_property, "AttachmentOffset")?;
+        if support.is_none()
+            && mode.is_none()
+            && placement_property.is_none()
+            && offset_property.is_none()
+            && !support_missing
+            && !mode_missing
+            && !placement_missing
+            && !offset_missing
+        {
             continue;
         }
-        let record = AttachmentRecord::try_new(
-            crate::native::native_id("attachment", object.name()),
-            object.id().to_owned(),
-            support.map(support_links).transpose()?.unwrap_or_default(),
-            mode.map(map_mode_value).transpose()?,
-            placement,
-            offset,
-        )
-        .map_err(CodecError::Malformed)?;
+        if support.is_none()
+            && mode.is_none()
+            && placement_property.is_none()
+            && offset_property.is_none()
+        {
+            // A refused header is not a newly invented identity-only attachment.
+            if let Some(reader) = reader {
+                let homes = reader.take_unavailable();
+                if !homes.is_empty() {
+                    unformed.push(crate::design::UnformedProjection {
+                        ids: vec![crate::native::native_id("attachment", object.name())],
+                        homes,
+                    });
+                }
+            }
+            continue;
+        }
+        let supports = if support_missing {
+            None
+        } else {
+            Some(support.map(support_links).transpose()?.unwrap_or_default())
+        };
+        let map_mode = if mode_missing {
+            None
+        } else {
+            mode.map(map_mode_value).transpose()?
+        };
+        let placement = if placement_missing {
+            None
+        } else {
+            placement_matrix(placement_property)?
+        };
+        let offset = if offset_missing {
+            None
+        } else {
+            placement_matrix(offset_property)?
+        };
+        let id = crate::native::native_id("attachment", object.name());
+        let construct = |actual_object: String| -> Result<AttachmentRecord, CodecError> {
+            match (supports, placement_missing || offset_missing) {
+                (Some(supports), false) => AttachmentRecord::try_new(
+                    id.clone(),
+                    actual_object,
+                    supports,
+                    map_mode,
+                    placement,
+                    offset,
+                ),
+                (supports, unknown_frame) => {
+                    let frame = if unknown_frame {
+                        None
+                    } else {
+                        Some(
+                            crate::native::frame::FiniteFrame::try_from(effective_frame(
+                                placement.map(crate::native::frame::FiniteFrame::rows),
+                                offset.map(crate::native::frame::FiniteFrame::rows),
+                            ))
+                            .map_err(CodecError::Malformed)?,
+                        )
+                    };
+                    AttachmentRecord::try_new_partial(
+                        id.clone(),
+                        actual_object,
+                        supports,
+                        map_mode,
+                        placement,
+                        offset,
+                        frame,
+                    )
+                }
+            }
+            .map_err(CodecError::Malformed)
+        };
+        let record = match producer {
+            Some((ctx, sources)) => sources
+                .get(object.id())
+                .ok_or_else(|| {
+                    CodecError::malformed("attachment owner has no original source authority")
+                })?
+                .record(ctx, &id, construct)?,
+            None => construct(object.id().to_owned())?,
+        };
         records.push(record);
     }
-    Ok(records)
+    Ok((records, unformed))
 }
 
 pub(crate) fn effective_frame(
@@ -188,6 +338,13 @@ fn support_links(property: &PropertyRecord) -> Result<Vec<Option<LinkTarget>>, C
             "attachment property {} has runtime type {}, expected App::PropertyLinkSubList",
             property.id, property.type_name
         )));
+    }
+    if property.body.is_some()
+        && property.values().is_empty()
+        && !property.links().is_empty()
+        && property.links().iter().all(Option::is_none)
+    {
+        return Ok(property.links().to_vec());
     }
     if property
         .values()

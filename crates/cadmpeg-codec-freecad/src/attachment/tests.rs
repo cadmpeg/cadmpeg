@@ -19,7 +19,7 @@ fn diagnostic_property(
         family: crate::native::PropertyFamily::Unknown,
         status: None,
         body: Some(crate::native::PropertyBody::Persisted {
-            values,
+            values: values.into(),
             links: Vec::new(),
             side_entries: Vec::new(),
         }),
@@ -30,6 +30,8 @@ fn diagnostic_property(
 
 fn enum_value(tag: &str, value: Option<&str>) -> crate::native::ValueRecord {
     crate::native::ValueRecord {
+        item_index: None,
+        link_index: None,
         parent: None,
         tag: tag.into(),
         order: 0,
@@ -85,14 +87,14 @@ fn retains_support_attachment_and_distinct_offset_frame() {
         Some("5".to_owned())
     );
     assert_eq!(
-        attachments[0].supports[0]
+        attachments[0].supports.as_ref().expect("held supports")[0]
             .as_ref()
             .expect("support")
             .object(),
         Some("fcstd:native:object#Support")
     );
     assert_eq!(
-        attachments[0].supports[0]
+        attachments[0].supports.as_ref().expect("held supports")[0]
             .as_ref()
             .expect("support")
             .subelements(),
@@ -103,7 +105,10 @@ fn retains_support_attachment_and_distinct_offset_frame() {
         10.0
     );
     assert_eq!(attachments[0].offset().expect("offset").rows()[0][3], 2.0);
-    assert_eq!(attachments[0].effective_frame()[0][3], 12.0);
+    assert_eq!(
+        attachments[0].effective_frame().expect("held frame")[0][3],
+        12.0
+    );
     let sketch = result.ir().model.sketches.first().expect("sketch");
     assert_eq!(
         sketch
@@ -119,52 +124,74 @@ fn retains_support_attachment_and_distinct_offset_frame() {
 
 #[test]
 fn rejects_ambiguous_attachment_carriers() {
-    for property in [
+    for (index, property) in [
         r#"<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1"/><PropertyPlacement Px="2"/></Property>"#,
         r#"<Property name="MapMode" type="App::PropertyString"><String value="FlatFace"/><String value="Deformed"/></Property>"#,
         r#"<Property name="AttachmentSupport" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>"#,
         r#"<Property name="MapMode" type="App::PropertyEnumeration"><Integer value="55"/></Property>"#,
-    ] {
+    ].into_iter().enumerate() {
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="1">{property}</Properties></Object></ObjectData>
 </Document>"#
         );
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(&document)),
-                &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+        if index == 1 || index == 3 {
+            assert!(matches!(FcstdCodec.decode(&mut Cursor::new(archive(&document)),
+                &DecodeOptions::default()), Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)))));
+            continue;
+        }
+        let result = FcstdCodec.decode(&mut Cursor::new(archive(&document)),
+            &DecodeOptions::default()).expect("actual unreadable attachment value is isolated");
+        let expected: &[(&str, &str)] = if index == 0 {
+            &[("freecad.property_value", "<PropertyPlacement Px=\"1\"/>"),
+              ("freecad.property_value", "<PropertyPlacement Px=\"2\"/>")]
+        } else {
+            &[("freecad.property_value", "<LinkSub value=\"Support\" count=\"1\"><Sub value=\"Face1\"/></LinkSub>")]
+        };
+        crate::test_support::source_fidelity::assert_failed_xml_parts(&result, &document, expected);
+        let attachments = result.ir().native.namespace("fcstd").unwrap()
+            .arena_as::<crate::native::AttachmentRecord>("attachments").unwrap();
+        assert_eq!(attachments.len(), 1);
+        if index == 0 {
+            assert!(attachments[0].placement().is_none());
+            assert!(attachments[0].effective_frame().is_none());
+        } else {
+            assert!(attachments[0].supports.is_none());
+        }
+        assert_valid_document(result.ir());
     }
 }
 
 #[test]
 fn rejects_noncanonical_map_mode_value_grammar() {
-    for property in [
+    for (index, property) in [
         r#"<Property name="MapMode" type="App::PropertyEnumeration"><String value="FlatFace"/></Property>"#,
         r#"<Property name="MapMode" type="App::PropertyEnumeration"><Integer value="5"/><CustomEnumList count="1"><Enum value="FlatFace"/></CustomEnumList></Property>"#,
         r#"<Property name="MapMode" type="App::PropertyEnumeration"><Integer/></Property>"#,
-    ] {
+    ].into_iter().enumerate() {
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="1">{property}</Properties></Object></ObjectData>
 </Document>"#
         );
-        assert!(matches!(
-            FcstdCodec.decode(
-                &mut Cursor::new(archive(&document)),
-                &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+        if index == 1 {
+            assert!(matches!(FcstdCodec.decode(&mut Cursor::new(archive(&document)),
+                &DecodeOptions::default()), Err(cadmpeg_ir::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::Malformed(_)))));
+            continue;
+        }
+        let result = FcstdCodec.decode(&mut Cursor::new(archive(&document)),
+            &DecodeOptions::default()).expect("bad registered Integer is absent at its source value home");
+        crate::test_support::source_fidelity::assert_failed_xml_parts(&result, &document,
+            &[("freecad.property_value", if index == 0 { "<String value=\"FlatFace\"/>" } else { "<Integer/>" })]);
+        let attachments = result.ir().native.namespace("fcstd").unwrap()
+            .arena_as::<crate::native::AttachmentRecord>("attachments").unwrap();
+        assert_eq!(attachments.len(), 1);
+        assert!(attachments[0].map_mode.is_none());
+        assert_valid_document(result.ir());
     }
 }
 
@@ -182,15 +209,39 @@ fn rejects_invalid_attachment_placement_values() {
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="1">{property}</Properties></Object></ObjectData>
 </Document>"#
         );
-        assert!(matches!(
-            FcstdCodec.decode(
+        let result = FcstdCodec
+            .decode(
                 &mut Cursor::new(archive(&document)),
                 &DecodeOptions::default(),
-            ),
-            Err(cadmpeg_ir::DecodeFailure::Codec(
-                cadmpeg_core::CodecError::Malformed(_)
-            ))
-        ));
+            )
+            .expect("#215 isolates invalid property syntax before attachment projection");
+        let namespace = result.ir().native.namespace("fcstd").unwrap();
+        let attachments = namespace
+            .arena_as::<crate::native::AttachmentRecord>("attachments")
+            .unwrap_or_default();
+        if property.contains("App::PropertyPlacement") {
+            assert_eq!(attachments.len(), 1);
+            assert!(attachments[0].placement().is_none());
+            assert!(attachments[0].effective_frame().is_none());
+            assert!(result
+                .source_fidelity()
+                .parts()
+                .values()
+                .any(|part| part.level().as_str() == "freecad.property_value"
+                    && part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}));
+        } else {
+            assert!(
+                attachments.is_empty(),
+                "a refused only header cannot invent a default attachment"
+            );
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "record.unreadable"
+                    && loss.message.contains("fcstd:native:attachment#Sketch")));
+        }
+        assert_valid_document(result.ir());
     }
 }
 

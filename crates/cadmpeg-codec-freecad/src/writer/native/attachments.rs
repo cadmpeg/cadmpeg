@@ -20,6 +20,7 @@ pub(crate) fn write(
     };
     let existing: std::collections::HashSet<_> =
         objects.iter().map(|object| object.name.clone()).collect();
+    let properties = namespace.arena_as::<crate::native::PropertyRecord>("properties")?;
     for record in namespace.arena_as::<AttachmentRecord>("attachments")? {
         let Some(name) = names.get(&record.object) else {
             losses.push(
@@ -28,6 +29,34 @@ pub(crate) fn write(
             );
             continue;
         };
+        // Missing supports and an unavailable effective frame have explicit
+        // unknown spellings. Optional placements without those claims may be
+        // genuinely absent and do not by themselves imply lost content.
+        let mut unavailable = Vec::new();
+        if record.supports.is_none() {
+            unavailable.push("supports");
+        }
+        if record.effective_frame().is_none() {
+            unavailable.push("effective_frame");
+        }
+        if record.map_mode.is_none()
+            && properties.iter().any(|property| {
+                property.owner == record.object
+                    && property.name == "MapMode"
+                    && property.body.is_none()
+            })
+        {
+            unavailable.push("map_mode");
+        }
+        if !unavailable.is_empty() {
+            losses.push(
+                cadmpeg_ir::codec::write::ExportLossCode::SourceUndecodedOmitted.note(format!(
+                    "attachment {} omits unavailable fields {}; its held component properties are written independently",
+                    record.id,
+                    unavailable.join(", ")
+                )),
+            );
+        }
         let Some(object) = objects.iter_mut().find(|object| object.name == *name) else {
             losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred
@@ -37,7 +66,7 @@ pub(crate) fn write(
         };
         let mut links = Vec::new();
         let mut complete = true;
-        for support in &record.supports {
+        for support in record.supports.as_deref().unwrap_or_default() {
             let Some(support) = support else {
                 links.push(xml::element(
                     "Link",
@@ -97,8 +126,9 @@ pub(crate) fn write(
         // Neutral geometry/placement already incorporates the effective frame.
         // An offset would apply that transform a second time. Rebuild a neutral
         // placement with identity local offset instead.
-        let neutral_placement = object.properties.contains_key("Placement")
-            || body_names.values().any(|owner| owner == name);
+        let neutral_placement = record.effective_frame().is_some()
+            && (object.properties.contains_key("Placement")
+                || body_names.values().any(|owner| owner == name));
         if neutral_placement {
             if record.offset().is_some() {
                 object.set(
@@ -126,8 +156,15 @@ pub(crate) fn write(
             outcomes,
             "attachments",
             &record.id,
-            cadmpeg_ir::codec::write::NativeDisposition::Written,
+            if unavailable.is_empty() {
+                cadmpeg_ir::codec::write::NativeDisposition::Written
+            } else {
+                cadmpeg_ir::codec::write::NativeDisposition::Dropped
+            },
         );
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

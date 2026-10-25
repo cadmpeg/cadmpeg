@@ -74,6 +74,27 @@ pub fn assert_geometry_agrees_with_full_with<N: AsRef<str>>(
     inputs: &[(N, Vec<u8>)],
     check: impl Fn(&DecodeResult),
 ) -> DepthSummary {
+    assert_geometry_agrees_with_full_resolving(codec, inputs, check, |_| Ok(None))
+}
+
+/// Run the same strict depth checks with a codec's genuine source expression symbols.
+/// The resolver is built from Full and is used for both model views; no arena,
+/// attribute, path, comment, target, or non-expression value is exempted.
+///
+/// # Panics
+/// Panics for the same failures as [`assert_geometry_agrees_with_full_with`],
+/// including missing, ambiguous, or dangling expression source symbols.
+pub fn assert_geometry_agrees_with_full_resolving<N: AsRef<str>>(
+    codec: &dyn Codec,
+    inputs: &[(N, Vec<u8>)],
+    check: impl Fn(&DecodeResult),
+    source_names: impl Fn(
+        &DecodeResult,
+    ) -> Result<
+        Option<Box<dyn crate::contract::expressions::ExpressionSourceResolver>>,
+        String,
+    >,
+) -> DepthSummary {
     assert!(
         !inputs.is_empty(),
         "no input to compare; the depth harness would pass vacuously"
@@ -93,8 +114,15 @@ pub fn assert_geometry_agrees_with_full_with<N: AsRef<str>>(
                 if geometry.ir().scope == cadmpeg_ir::ContentScope::geometry() {
                     summary.cut += 1;
                 }
+                let resolver = match source_names(&full) {
+                    Ok(resolver) => resolver,
+                    Err(reason) => {
+                        failures.push(format!("{name}: source expression symbols: {reason}"));
+                        None
+                    }
+                };
                 failures.extend(
-                    compare(codec, bytes, &full, &geometry)
+                    compare(codec, bytes, &full, &geometry, resolver.as_deref())
                         .into_iter()
                         .map(|failure| format!("{name}: {failure}")),
                 );
@@ -143,6 +171,7 @@ fn compare(
     bytes: &[u8],
     full: &DecodeResult,
     geometry: &DecodeResult,
+    resolver: Option<&dyn crate::contract::expressions::ExpressionSourceResolver>,
 ) -> Vec<String> {
     let mut failures = Vec::new();
     for (requested, result) in [(DecodeDepth::Full, full), (DecodeDepth::Geometry, geometry)] {
@@ -176,11 +205,24 @@ fn compare(
             "the full decode has unrepresented classes absent from the geometry decode".into(),
         );
     }
-    if let Some(path) = first_difference(&outside_design(full.ir()), &outside_design(geometry.ir()))
-    {
-        failures.push(format!(
-            "the documents differ outside the design arenas at `{path}`"
-        ));
+    let views = match resolver {
+        Some(resolver) => crate::contract::expressions::neutral_views(
+            full.ir(),
+            geometry.ir(),
+            &[ArenaClass::Design],
+            resolver,
+        ),
+        None => Ok((outside_design(full.ir()), outside_design(geometry.ir()))),
+    };
+    match views {
+        Ok((full, geometry)) => {
+            if let Some(path) = first_difference(&full, &geometry) {
+                failures.push(format!(
+                    "the documents differ outside the design arenas at `{path}`"
+                ));
+            }
+        }
+        Err(reason) => failures.push(format!("source expression equality failed: {reason}")),
     }
     match (
         findings(codec, bytes, full.ir()),

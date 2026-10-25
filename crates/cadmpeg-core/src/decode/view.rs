@@ -254,7 +254,7 @@ impl<'a> View<'a> {
     }
 
     /// Returns structural unread bytes without semantic read attribution.
-    /// Use read_remaining when these bytes supply a decoded value.
+    /// Use `read_remaining` when these bytes supply a decoded value.
     ///
     /// The cursor is the split of the window, so this is a field read.
     pub fn unread(self) -> &'a [u8] {
@@ -288,7 +288,7 @@ impl<'a> View<'a> {
     }
 
     /// Returns structural bytes without attributing a semantic read.
-    /// Use read_slice or take when these bytes supply a decoded value.
+    /// Use `read_slice` or `take` when these bytes supply a decoded value.
     pub fn window(self) -> &'a [u8] {
         self.window
     }

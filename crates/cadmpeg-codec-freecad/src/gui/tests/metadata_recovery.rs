@@ -10,14 +10,17 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
     let expected = FcstdCodec
         .decode(&mut Cursor::new(GEOMETRY), &DecodeOptions::default())
         .unwrap();
-    for gui in [
+    for (case, gui) in [
         b"<Document SchemaVersion=\"1\"><ViewProviderData Count=\"0\"/></Document>".as_slice(),
         b"<Document SchemaVersion=\"1\"><Camera settings=\"\"/><Camera settings=\"\"/></Document>",
         b"<Document SchemaVersion=\"99\"><ViewProviderData Count=\"2\"/></Document>",
         b"<Document SchemaVersion=\"1\"><Camera/></Document>",
         b"<Document",
         b"\xff",
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let source = rewrite_entry(GEOMETRY, "GuiDocument.xml", |_| gui.to_vec());
         let recovered = FcstdCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -46,20 +49,34 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
             .unwrap()
             .arena_as::<GuiDocumentRecord>("gui_documents")
             .unwrap();
-        assert_eq!(documents.len(), 1);
+        assert_eq!(documents.len(), usize::from(case < 4));
         let unresolved = recovered
             .report()
             .losses
             .iter()
             .filter(|loss| loss.code.local_code() == "source.gui-metadata-unresolved")
             .count();
-        // An explicitly empty schema-1 provider table is a complete GUI fact.
-        if gui == b"<Document SchemaVersion=\"1\"><ViewProviderData Count=\"0\"/></Document>" {
-            assert_eq!(unresolved, 0);
-            assert!(documents[0].states.is_empty());
-            assert!(recovered.ir().model.view_presentations.is_empty());
-        } else {
-            assert_eq!(unresolved, 1, "{:?}", recovered.report().losses);
+        // #215 keeps valid GUI owners and gives up only the bounded malformed part.
+        match case {
+            0 => {
+                assert_eq!(unresolved, 0);
+                assert!(documents[0].states.is_empty());
+                assert!(recovered.ir().model.view_presentations.is_empty());
+            }
+            1 | 3 => assert_eq!(unresolved, 1),
+            2 => {
+                assert_eq!(unresolved, 0);
+                assert_gui_part_recovery(&recovered, &["freecad.view_provider_data"]);
+            }
+            4 => {
+                assert_eq!(unresolved, 0);
+                assert_gui_part_recovery(&recovered, &["freecad.gui_document_xml"]);
+            }
+            5 => {
+                assert_eq!(unresolved, 0);
+                assert_gui_part_recovery(&recovered, &["freecad.gui_document_xml"]);
+            }
+            _ => unreachable!(),
         }
     }
 }

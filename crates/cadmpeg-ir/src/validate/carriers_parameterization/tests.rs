@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod native_owners;
+
 use super::parameter_in_domain;
 use crate::examples::unit_cube;
 use crate::geometry::{pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry};

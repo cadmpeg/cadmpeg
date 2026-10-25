@@ -193,6 +193,58 @@ impl<'a> FramedPart<'a> {
         PartSpec::new(self.level, self.framing.clone())
     }
 
+    /// Content eligible for damage, preserving this part's framing and every
+    /// descendant's framing in the undamaged independent inventory (#215).
+    ///
+    /// Descendants in another source address space contribute no byte offsets
+    /// to this view. The receiver must be an actual member of `inventory`.
+    ///
+    /// # Errors
+    /// Rejects a foreign receiver, invalid parent index, or parent cycle.
+    pub fn content_ranges_in(&self, inventory: &[Self]) -> Result<Vec<Range<u64>>, String> {
+        let index = inventory
+            .iter()
+            .position(|part| std::ptr::eq(self, part))
+            .ok_or("damage part is not in its independent inventory")?;
+        let mut framing = self.framing.clone();
+        for (child, part) in inventory.iter().enumerate() {
+            if child == index {
+                continue;
+            }
+            let mut current = child;
+            let mut remaining = inventory.len();
+            loop {
+                if remaining == 0 {
+                    return Err("framer parent cycle".into());
+                }
+                remaining -= 1;
+                let parent = inventory
+                    .get(current)
+                    .ok_or("framer parent outside inventory")?
+                    .parent;
+                let FrameParent::Part(parent) = parent else {
+                    break;
+                };
+                if parent == index {
+                    if part.capture.stream() == self.capture.stream() {
+                        framing.extend(part.framing.iter().cloned());
+                    }
+                    break;
+                }
+                current = parent;
+            }
+        }
+        Ok(subtract_ranges(
+            self.capture.offset()
+                ..self
+                    .capture
+                    .offset()
+                    .checked_add(self.capture.byte_len())
+                    .ok_or("damage part extent overflows")?,
+            &framing,
+        ))
+    }
+
     /// Bytes inside this part that are not its own framing.
     pub fn content_ranges(&self) -> Vec<Range<u64>> {
         subtract_ranges(

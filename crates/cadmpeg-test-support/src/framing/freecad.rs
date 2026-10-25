@@ -8,7 +8,10 @@ use cadmpeg_ir::source_fidelity::parts::PartLevel;
 
 use super::{FrameParent, FramedPart};
 
+pub mod binary;
+pub mod brep;
 mod dispatch;
+pub mod naming;
 
 /// Reached XML nodes, including damaged boundaries and unassigned source faults.
 /// This inventory does not assert that any element decoded successfully.

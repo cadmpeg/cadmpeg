@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::visit_native_references;
 use crate::attributes::{AttributeTarget, SourceAttribute};
+use crate::schema::native_links::visit_native_references;
 
 #[test]
 fn typed_accessor_keeps_labels_distinct_and_visits_unlinked_entities() {

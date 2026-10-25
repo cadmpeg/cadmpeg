@@ -475,7 +475,11 @@ fn parameter_ordering_matches_the_pairwise_selection() {
             .collect::<Vec<_>>();
         let mut kahn = parameters.clone();
         let mut pairwise = parameters;
-        let kahn_cycles = super::super::order_parameters_by_dependencies(&mut kahn);
+        let kahn_cycles = super::super::order_parameters_by_dependencies(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut kahn,
+        )
+        .unwrap();
         let pairwise_cycles = pairwise_parameter_order(&mut pairwise);
         assert_eq!(kahn, pairwise, "case {case}");
         assert_eq!(kahn_cycles, pairwise_cycles, "case {case}");
@@ -499,7 +503,11 @@ fn parameter_ordering_is_linear_in_a_reverse_dependency_chain() {
             parameter(index, 0, &dependencies)
         })
         .collect::<Vec<_>>();
-    let cycle_features = super::super::order_parameters_by_dependencies(&mut parameters);
+    let cycle_features = super::super::order_parameters_by_dependencies(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+    )
+    .unwrap();
     assert!(cycle_features.is_empty());
     assert!(parameters
         .iter()

@@ -164,14 +164,18 @@ pub fn neutral_view(ir: &CadIr, exclude: &[ArenaClass]) -> Value {
                 }
             }
         }
-        normalized.model.attributes.retain(|attribute| {
-            !matches!(
-                attribute.target,
+        normalized
+            .model
+            .attributes
+            .retain(|attribute| match attribute.target {
                 cadmpeg_ir::attributes::AttributeTarget::Feature(_)
-                    | cadmpeg_ir::attributes::AttributeTarget::Parameter(_)
-                    | cadmpeg_ir::attributes::AttributeTarget::Sketch(_)
-            )
-        });
+                | cadmpeg_ir::attributes::AttributeTarget::Parameter(_)
+                | cadmpeg_ir::attributes::AttributeTarget::Sketch(_) => false,
+                cadmpeg_ir::attributes::AttributeTarget::Record { arena, .. } => {
+                    arena.class() != ArenaClass::Design
+                }
+                _ => true,
+            });
     }
     normalized.model.finalize();
     let mut value =
@@ -215,6 +219,7 @@ pub fn assert_written_arenas_agree(report: &ExportReport, left: &CadIr, right: &
     identity::assert_agree(&held, left, right);
 }
 
+pub mod expressions;
 mod identity;
 
 pub mod iges;

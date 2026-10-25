@@ -53,7 +53,8 @@ fn constraint_bounds_and_scalars_keep_exact_native_facts_and_child_source_reads(
                 .arena_as::<crate::native::PropertyRecord>("properties")
                 .unwrap();
             let pure = crate::persistence::parse_document(
-                &scan.document_xml,
+                &crate::container::admit_document(&ctx, scan.data["Document.xml"].window())
+                    .expect("valid source XML"),
                 crate::persistence::Vocabulary::Objects,
             )
             .unwrap();
@@ -112,10 +113,15 @@ fn constraint_bounds_and_scalars_keep_exact_native_facts_and_child_source_reads(
             let mut from = 0;
             let mut expected_reads = Vec::new();
             for raw in [
+                "name",
                 "Constrained",
+                "type",
                 family,
+                "status",
                 "9",
+                "group",
                 "Custom",
+                tag,
                 "value",
                 value,
                 "min",

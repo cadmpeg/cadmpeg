@@ -304,6 +304,27 @@ impl Streams {
         owner_stream: &str,
         owner: ByteRange,
     ) -> Result<bool, CodecError> {
+        self.contains_with_empty(budget, part, owner_stream, owner, false)
+    }
+
+    pub(super) fn descends(
+        &self,
+        budget: &DecodeBudget,
+        part: View<'_>,
+        owner_stream: &str,
+        owner: ByteRange,
+    ) -> Result<bool, CodecError> {
+        self.contains_with_empty(budget, part, owner_stream, owner, true)
+    }
+
+    fn contains_with_empty(
+        &self,
+        budget: &DecodeBudget,
+        part: View<'_>,
+        owner_stream: &str,
+        owner: ByteRange,
+        allow_empty: bool,
+    ) -> Result<bool, CodecError> {
         #[derive(Clone, Copy)]
         struct Extent {
             space: SpaceId,
@@ -321,6 +342,7 @@ impl Streams {
         reserve(budget, &mut pending, 1)?;
         pending.push(initial);
         let mut seen: Vec<Extent> = Vec::new();
+        let mut reached = false;
         while let Some(current) = pending.pop() {
             let stream = self.get(current.space)?;
             validate_extent(stream, current.range)?;
@@ -328,11 +350,12 @@ impl Streams {
                 if current.range.start < owner.start || current.range.end > owner.end {
                     return Ok(false);
                 }
+                reached = true;
                 continue;
             }
             // Empty extents have no parent-byte ownership proof. Direct
             // same-stream containment above still handles empty parts exactly.
-            if current.range.start == current.range.end {
+            if current.range.start == current.range.end && !allow_empty {
                 return Ok(false);
             }
             if seen.iter().any(|old| {
@@ -386,7 +409,7 @@ impl Streams {
                 }
             }
         }
-        Ok(true)
+        Ok(reached)
     }
 
     pub(super) fn snapshot(&self, budget: &DecodeBudget) -> Result<Vec<SourceStream>, CodecError> {

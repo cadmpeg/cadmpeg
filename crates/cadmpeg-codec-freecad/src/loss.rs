@@ -29,13 +29,7 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 pub(crate) enum FreecadLossCode {
     /// A formula identifier has no unique parameter binding.
     ExpressionReferenceUnresolved,
-    /// A property has no constructible typed attribute projection.
-    AttributePropertyUnprojected,
     ExportAttributeNotTransferred,
-    /// Model payload content survives only in opaque source bytes.
-    SourceModelPayloadUnrepresented,
-    /// Design payload content survives only in opaque source bytes.
-    SourceDesignPayloadUnrepresented,
     /// A whole neutral arena has no `FCStd` representation.
     ExportArenaNotTransferred,
     /// A neutral construction has no writable `FreeCAD` operation.
@@ -46,6 +40,10 @@ pub(crate) enum FreecadLossCode {
     ExportJointOperandNotTransferred,
     /// A neutral body has an unsupported exact carrier.
     ExportGeometryNotTransferred,
+    /// A finite coordinate is rounded to the native binary32 representation.
+    ExportCoordinateQuantized,
+    /// Several kernel carriers are reduced to one owner-specific geometry union.
+    ExportKernelAssociationReduced,
     /// An appearance member has no exact `FreeCAD` GUI encoding.
     ExportAppearanceNotTransferred,
     /// GUI carrier requirements or aliases alter neutral presentation state.
@@ -54,8 +52,6 @@ pub(crate) enum FreecadLossCode {
     ExportProceduralReduced,
     /// Native-only property content has no synthesized encoding.
     ExportNativePropertyNotTransferred,
-    /// A property payload cannot enter the admitted persistence graph.
-    PersistencePayloadUnresolved,
     /// An optional file reference has no readable archive payload.
     PersistenceSideEntryUnresolved,
     /// Redundant persistence counts disagree with framed XML populations.
@@ -88,8 +84,6 @@ pub(crate) enum FreecadLossCode {
     SourceGuiPropertyKeyBlank,
     /// Optional GUI records could not be interpreted; exact XML remains retained.
     SourceGuiMetadataUnresolved,
-    /// Optional persistent naming metadata could not be interpreted.
-    ElementMapMetadataUnresolved,
     /// A parameter-space curve could not enter neutral geometry.
     PcurveNotTransferred,
     /// Producer version metadata used an alias or conflicting declarations.
@@ -98,8 +92,6 @@ pub(crate) enum FreecadLossCode {
     FileVersionNoncanonical,
     /// Persistence file-version declaration cannot select a legacy map encoding.
     FileVersionUnverified,
-    /// Nonempty inline legacy map has no verified file-version interpretation.
-    ElementMapVersionUnresolved,
 }
 
 impl FreecadLossCode {
@@ -107,20 +99,18 @@ impl FreecadLossCode {
     #[cfg(test)]
     const ALL: &'static [FreecadLossCode] = &[
         Self::ExpressionReferenceUnresolved,
-        Self::AttributePropertyUnprojected,
         Self::ExportAttributeNotTransferred,
-        Self::SourceModelPayloadUnrepresented,
-        Self::SourceDesignPayloadUnrepresented,
         Self::ExportArenaNotTransferred,
         Self::ExportFeatureNotTransferred,
         Self::ExportOccurrenceNotTransferred,
         Self::ExportJointOperandNotTransferred,
         Self::ExportGeometryNotTransferred,
+        Self::ExportCoordinateQuantized,
+        Self::ExportKernelAssociationReduced,
         Self::ExportAppearanceNotTransferred,
         Self::ExportPresentationNotTransferred,
         Self::ExportProceduralReduced,
         Self::ExportNativePropertyNotTransferred,
-        Self::PersistencePayloadUnresolved,
         Self::PersistenceSideEntryUnresolved,
         Self::PersistenceCountNoncanonical,
         Self::FeatureCyclicHistory,
@@ -137,12 +127,10 @@ impl FreecadLossCode {
         Self::SourceGuiSchemaUnverified,
         Self::SourceGuiPropertyKeyBlank,
         Self::SourceGuiMetadataUnresolved,
-        Self::ElementMapMetadataUnresolved,
         Self::PcurveNotTransferred,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
-        Self::ElementMapVersionUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -150,20 +138,18 @@ impl FreecadLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ExpressionReferenceUnresolved => "expression.reference-unresolved",
-            Self::AttributePropertyUnprojected => "attribute.property-unprojected",
             Self::ExportAttributeNotTransferred => "attribute.not-transferred",
-            Self::SourceModelPayloadUnrepresented => "source.model-payload-unrepresented",
-            Self::SourceDesignPayloadUnrepresented => "source.design-payload-unrepresented",
             Self::ExportArenaNotTransferred => "arena.not-transferred",
             Self::ExportFeatureNotTransferred => "feature.not-transferred",
             Self::ExportOccurrenceNotTransferred => "occurrence.not-transferred",
             Self::ExportJointOperandNotTransferred => "joint.operand-not-transferred",
             Self::ExportGeometryNotTransferred => "geometry.not-transferred",
+            Self::ExportCoordinateQuantized => "geometry.coordinate-quantized",
+            Self::ExportKernelAssociationReduced => "kernel.association-reduced",
             Self::ExportAppearanceNotTransferred => "appearance.not-transferred",
             Self::ExportPresentationNotTransferred => "presentation.not-transferred",
             Self::ExportProceduralReduced => "geometry.procedural-reduced",
             Self::ExportNativePropertyNotTransferred => "metadata.native-property-not-transferred",
-            Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
             Self::PersistenceSideEntryUnresolved => "metadata.persistence-side-entry-unresolved",
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
@@ -184,12 +170,10 @@ impl FreecadLossCode {
             Self::SourceGuiSchemaUnverified => "source.gui-schema-unverified",
             Self::SourceGuiPropertyKeyBlank => "source.gui-property-key-blank",
             Self::SourceGuiMetadataUnresolved => "source.gui-metadata-unresolved",
-            Self::ElementMapMetadataUnresolved => "element-map.metadata-unresolved",
             Self::PcurveNotTransferred => "pcurve.not-transferred",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
-            Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
         }
     }
 
@@ -198,7 +182,6 @@ impl FreecadLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::ExpressionReferenceUnresolved
-            | Self::AttributePropertyUnprojected
             | Self::ExportAttributeNotTransferred
             | Self::ExportOccurrenceNotTransferred
             | Self::ExportJointOperandNotTransferred => Severity::Warning,
@@ -206,12 +189,12 @@ impl FreecadLossCode {
                 Severity::Error
             }
             Self::ExportNativePropertyNotTransferred => Severity::Info,
-            Self::SourceModelPayloadUnrepresented
-            | Self::SourceDesignPayloadUnrepresented
-            | Self::ExportArenaNotTransferred
+            Self::ExportArenaNotTransferred
             | Self::ExportAppearanceNotTransferred
             | Self::ExportPresentationNotTransferred
-            | Self::ExportProceduralReduced => Severity::Warning,
+            | Self::ExportProceduralReduced
+            | Self::ExportCoordinateQuantized
+            | Self::ExportKernelAssociationReduced => Severity::Warning,
             Self::FeatureNativeKindRetained
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint => Severity::Blocking,
@@ -219,7 +202,6 @@ impl FreecadLossCode {
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
-            | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
             | Self::AppearanceTopologyColorCountMismatch
@@ -229,12 +211,10 @@ impl FreecadLossCode {
             | Self::SourceGuiSchemaUnverified
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
-            | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
-            | Self::FileVersionUnverified
-            | Self::ElementMapVersionUnresolved => Severity::Warning,
+            | Self::FileVersionUnverified => Severity::Warning,
         }
     }
 
@@ -243,22 +223,20 @@ impl FreecadLossCode {
             Self::ExportOccurrenceNotTransferred | Self::ExportJointOperandNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
-            Self::ExpressionReferenceUnresolved
-            | Self::AttributePropertyUnprojected
-            | Self::ExportAttributeNotTransferred => LossTaxonomy::MetadataNotTransferred,
-            Self::SourceModelPayloadUnrepresented | Self::SourceDesignPayloadUnrepresented => {
-                LossTaxonomy::RecordNotTyped
+            Self::ExpressionReferenceUnresolved | Self::ExportAttributeNotTransferred => {
+                LossTaxonomy::MetadataNotTransferred
             }
             Self::ExportArenaNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::ExportFeatureNotTransferred => LossTaxonomy::ParametricRecordOmitted,
             Self::ExportAppearanceNotTransferred => LossTaxonomy::MaterialNotTransferred,
-            Self::ExportPresentationNotTransferred => LossTaxonomy::MetadataNotTransferred,
+            Self::ExportPresentationNotTransferred | Self::ExportKernelAssociationReduced => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::ExportProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::ExportGeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
+            Self::ExportCoordinateQuantized => LossTaxonomy::ValueQuantized,
             Self::ExportNativePropertyNotTransferred => LossTaxonomy::MetadataNotTransferred,
-            Self::PersistencePayloadUnresolved | Self::PersistenceSideEntryUnresolved => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
                 LossTaxonomy::FeatureHistoryRetained
             }
@@ -269,7 +247,6 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
-            | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
@@ -277,7 +254,6 @@ impl FreecadLossCode {
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
@@ -306,262 +282,6 @@ impl FreecadLossCode {
     }
 }
 
-/// Why a decode loss does or does not leave source content unrepresented.
-/// A/B are source records absent from all typed arenas; C retains typed source
-/// records with reduced neutral fidelity; D changes no arena content.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg(test)]
-enum SourceRecordCoverage {
-    /// C: admitted native records retain the source content.
-    Typed,
-    /// D: syntax or dialect metadata only.
-    Metadata,
-    /// B: model-class content survives only as bytes or is absent.
-    Model,
-    /// A: design-class content survives only as bytes or is absent.
-    Design,
-    /// Writer losses do not describe source decode content.
-    Writer,
-    /// Per-property admission decides the served class.
-    Property,
-}
-
-/// Complete audit of decoder losses. An object-unprojected loss is C when its
-/// native object and properties are typed; an Unreadable property separately
-/// marks the served class below. Diagnostic records never stand in for bytes.
-#[cfg(test)]
-const SOURCE_RECORD_COVERAGE: &[(FreecadLossCode, SourceRecordCoverage)] = &[
-    (
-        FreecadLossCode::ExpressionReferenceUnresolved,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::AttributePropertyUnprojected,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::SourceModelPayloadUnrepresented,
-        SourceRecordCoverage::Model,
-    ),
-    (
-        FreecadLossCode::SourceDesignPayloadUnrepresented,
-        SourceRecordCoverage::Design,
-    ),
-    (
-        FreecadLossCode::ExportAttributeNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportArenaNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportProceduralReduced,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportAppearanceNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportPresentationNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportFeatureNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportOccurrenceNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportJointOperandNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportGeometryNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::ExportNativePropertyNotTransferred,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::PersistencePayloadUnresolved,
-        SourceRecordCoverage::Property,
-    ),
-    (
-        FreecadLossCode::PersistenceSideEntryUnresolved,
-        SourceRecordCoverage::Property,
-    ),
-    (
-        FreecadLossCode::PersistenceCountNoncanonical,
-        SourceRecordCoverage::Metadata,
-    ),
-    (
-        FreecadLossCode::FeatureCyclicHistory,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::FeatureNativeKindRetained,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::SketchNativeGeometry,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::SketchExternalReferenceUnresolved,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::SketchExternalCacheUnresolved,
-        SourceRecordCoverage::Design,
-    ),
-    (
-        FreecadLossCode::SketchNativeConstraint,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::SketchProfileMatchingBounded,
-        SourceRecordCoverage::Typed,
-    ),
-    (
-        FreecadLossCode::AppearanceTopologyColorCountMismatch,
-        SourceRecordCoverage::Model,
-    ),
-    (
-        FreecadLossCode::AppearancePrimitiveSizeNotTransferred,
-        SourceRecordCoverage::Model,
-    ),
-    (
-        FreecadLossCode::SourceDialectUnverified,
-        SourceRecordCoverage::Metadata,
-    ),
-    (
-        FreecadLossCode::SourceDialectDisplaced,
-        SourceRecordCoverage::Writer,
-    ),
-    (
-        FreecadLossCode::SourceGuiSchemaUnverified,
-        SourceRecordCoverage::Metadata,
-    ),
-    (
-        FreecadLossCode::SourceGuiPropertyKeyBlank,
-        SourceRecordCoverage::Model,
-    ),
-    (
-        FreecadLossCode::SourceGuiMetadataUnresolved,
-        SourceRecordCoverage::Model,
-    ),
-    (
-        FreecadLossCode::ElementMapMetadataUnresolved,
-        SourceRecordCoverage::Model,
-    ),
-    (
-        FreecadLossCode::PcurveNotTransferred,
-        SourceRecordCoverage::Model,
-    ),
-    (
-        FreecadLossCode::ProgramVersionNoncanonical,
-        SourceRecordCoverage::Metadata,
-    ),
-    (
-        FreecadLossCode::FileVersionNoncanonical,
-        SourceRecordCoverage::Metadata,
-    ),
-    (
-        FreecadLossCode::FileVersionUnverified,
-        SourceRecordCoverage::Metadata,
-    ),
-    (
-        FreecadLossCode::ElementMapVersionUnresolved,
-        SourceRecordCoverage::Model,
-    ),
-];
-
-/// Source content that exists in no typed neutral or native arena. This is
-/// declared independently of neutral projection scope: geometry decodes retain
-/// the complete typed native feature/property graph.
-#[cfg(test)]
-pub(crate) fn unrepresented(
-    losses: &[LossNote],
-    native: &cadmpeg_ir::native::NativeNamespace,
-) -> Result<cadmpeg_ir::document::ArenaClasses, cadmpeg_core::CodecError> {
-    use crate::native::{DocumentFacts, EntryRecord, ObjectRecord, PropertyBody, PropertyRecord};
-    use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
-    let mut classes = ArenaClasses::new();
-    for (code, coverage) in SOURCE_RECORD_COVERAGE {
-        if losses
-            .iter()
-            .any(|loss| loss.code.namespace() == "fcstd" && loss.code.local_code() == code.code())
-        {
-            match coverage {
-                SourceRecordCoverage::Model => {
-                    classes.insert(ArenaClass::Model);
-                }
-                SourceRecordCoverage::Design => {
-                    classes.insert(ArenaClass::Design);
-                }
-                SourceRecordCoverage::Typed
-                | SourceRecordCoverage::Metadata
-                | SourceRecordCoverage::Property
-                | SourceRecordCoverage::Writer => {}
-            }
-        }
-    }
-    let objects = native.arena_as::<ObjectRecord>("objects")?;
-    let properties = native.arena_as::<PropertyRecord>("properties")?;
-    let entries = native.arena_as::<EntryRecord>("entries")?;
-    let property_class = |property: &PropertyRecord| {
-        if property.type_name == "Part::PropertyPartShape" {
-            ArenaClass::Model
-        } else if objects.iter().any(|object| {
-            object.id().as_str() == property.owner
-                && crate::design::is_design_kind(&object.type_name)
-        }) || property.owner == crate::native::native_id("document", "0")
-        {
-            ArenaClass::Design
-        } else {
-            ArenaClass::Model
-        }
-    };
-    for property in &properties {
-        if matches!(property.body, Some(PropertyBody::Unreadable(_))) {
-            classes.insert(property_class(property));
-        }
-        // Missing optional side entries remain in typed filename attributes,
-        // but the named payload itself is not represented by that filename.
-        if property.values().iter().any(|value| {
-            value.attributes.iter().any(|(key, name)| {
-                entry_attribute(property, key)
-                    && !name.is_empty()
-                    && !entries.iter().any(|entry| entry.name() == *name)
-            })
-        }) {
-            classes.insert(property_class(property));
-        }
-    }
-
-    if objects.is_empty()
-        && native
-            .arena_as::<DocumentFacts>("document")?
-            .iter()
-            .any(|document| document.object_count != 0)
-    {
-        classes.extend([ArenaClass::Model, ArenaClass::Design]);
-    }
-    Ok(classes)
-}
-
-#[cfg(test)]
-fn entry_attribute(property: &crate::native::PropertyRecord, name: &str) -> bool {
-    (matches!(name, "file" | "File") && !crate::persistence::is_xlink_type(&property.type_name))
-        || (property.family == crate::native::PropertyFamily::File
-            && matches!(name, "name" | "Name"))
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -576,20 +296,18 @@ mod tests {
             codes,
             [
                 "expression.reference-unresolved",
-                "attribute.property-unprojected",
                 "attribute.not-transferred",
-                "source.model-payload-unrepresented",
-                "source.design-payload-unrepresented",
                 "arena.not-transferred",
                 "feature.not-transferred",
                 "occurrence.not-transferred",
                 "joint.operand-not-transferred",
                 "geometry.not-transferred",
+                "geometry.coordinate-quantized",
+                "kernel.association-reduced",
                 "appearance.not-transferred",
                 "presentation.not-transferred",
                 "geometry.procedural-reduced",
                 "metadata.native-property-not-transferred",
-                "metadata.persistence-payload-unresolved",
                 "metadata.persistence-side-entry-unresolved",
                 "metadata.persistence-count-noncanonical",
                 "feature.cyclic-history",
@@ -606,12 +324,10 @@ mod tests {
                 "source.gui-schema-unverified",
                 "source.gui-property-key-blank",
                 "source.gui-metadata-unresolved",
-                "element-map.metadata-unresolved",
                 "pcurve.not-transferred",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",
-                "element-map.version-unresolved",
             ]
         );
     }
@@ -661,91 +377,63 @@ mod tests {
     }
 
     #[test]
-    fn every_decode_loss_has_one_source_record_disposition() {
-        let audited: BTreeSet<_> = super::SOURCE_RECORD_COVERAGE
-            .iter()
-            .map(|(code, _)| *code)
-            .collect();
-        assert_eq!(audited.len(), super::SOURCE_RECORD_COVERAGE.len());
-        assert_eq!(audited, FreecadLossCode::ALL.iter().copied().collect());
-    }
-
-    #[test]
-    fn source_record_dispositions_distinguish_reduced_fidelity_and_untyped_content() {
-        use cadmpeg_ir::document::{ArenaClass, ArenaClasses, CadIr};
-        let mut ir = CadIr::empty();
-        let namespace = ir.native.namespace_mut("fcstd");
-        for code in [
-            FreecadLossCode::FeatureCyclicHistory,
-            FreecadLossCode::FeatureNativeKindRetained,
-            FreecadLossCode::SketchNativeGeometry,
-            FreecadLossCode::SketchNativeConstraint,
-            FreecadLossCode::SketchProfileMatchingBounded,
-        ] {
-            assert!(
-                super::unrepresented(&[code.note("retained typed content")], namespace)
-                    .unwrap()
-                    .is_empty()
-            );
-        }
-        for code in [
-            FreecadLossCode::AppearanceTopologyColorCountMismatch,
-            FreecadLossCode::AppearancePrimitiveSizeNotTransferred,
-            FreecadLossCode::PcurveNotTransferred,
-        ] {
-            assert_eq!(
-                super::unrepresented(&[code.note("unrepresented model record")], namespace)
-                    .unwrap(),
-                ArenaClasses::from([ArenaClass::Model])
-            );
-        }
-    }
-
-    fn namespace_from_xml(xml: &str) -> cadmpeg_ir::document::CadIr {
-        let graph = crate::persistence::parse_document(
-            &roxmltree::Document::parse(xml).unwrap(),
-            crate::persistence::Vocabulary::Objects,
-        )
-        .unwrap();
-        let mut ir = cadmpeg_ir::document::CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
-        let native = ir.native.namespace_mut("fcstd");
-        native.set_arena(&ctx, "objects", &graph.objects).unwrap();
-        native
-            .set_arena(&ctx, "properties", &graph.properties)
-            .unwrap();
-        ir
-    }
-
-    #[test]
     fn unreadable_property_marks_its_served_class_even_with_native_diagnostic() {
-        use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
+        use cadmpeg_ir::{ArenaClass, Codec};
         let xml = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="Extension" type="PartDesign::VendorFeature"/></Objects><ObjectData Count="1"><Object name="Extension"><Properties Count="1"><Property name="Input" type="App::PropertyLink"/></Properties></Object></ObjectData></Document>"#;
-        let mut ir = namespace_from_xml(xml);
-        let namespace = ir.native.namespace_mut("fcstd");
-        let mut properties = namespace
+        let bytes = crate::test_support::test_archive::archive(xml);
+        let decoded = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(bytes), &Default::default())
+            .unwrap();
+        let properties = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
             .arena_as::<crate::native::PropertyRecord>("properties")
             .unwrap();
-        assert!(matches!(
-            properties[0].body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ));
+        assert!(properties.is_empty());
+        let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+        let [unknown] = unknowns.as_slice() else {
+            panic!("one failed whole property")
+        };
+        let fidelity = decoded.source_fidelity();
+        let part = &fidelity.parts()[&unknown.id];
+        let element = roxmltree::Document::parse(xml)
+            .unwrap()
+            .descendants()
+            .find(|node| node.has_tag_name("Property"))
+            .unwrap()
+            .range();
+        assert_eq!(part.level().as_str(), "freecad.property");
         assert_eq!(
-            super::unrepresented(&[], namespace).unwrap(),
-            ArenaClasses::from([ArenaClass::Design])
+            part.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
         );
-        properties[0].type_name = "Part::PropertyPartShape".into();
-        namespace
-            .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
-                "properties",
-                &properties,
-            )
-            .unwrap();
+        assert_eq!(part.offset(), u64::try_from(element.start).unwrap());
+        assert_eq!(part.byte_len(), u64::try_from(element.len()).unwrap());
         assert_eq!(
-            super::unrepresented(&[], namespace).unwrap(),
-            ArenaClasses::from([ArenaClass::Model])
+            fidelity
+                .retained_record(unknown.id.as_str())
+                .unwrap()
+                .data(),
+            Some(&xml.as_bytes()[element])
         );
+        let failures = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect::<Vec<_>>();
+        assert_eq!(failures.len(), 1);
+        let location = failures[0].provenance.as_ref().unwrap();
+        assert_eq!(location.stream_name(), Some(part.stream()));
+        assert_eq!(location.offset, part.offset());
+        assert_eq!(location.byte_len(), Some(part.byte_len()));
+        assert!(decoded
+            .source_fidelity()
+            .unrepresented()
+            .contains(&ArenaClass::Design));
+        crate::fidelity::b1::assert_classified_spans(&decoded);
     }
 
     #[test]

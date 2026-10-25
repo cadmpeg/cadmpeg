@@ -268,23 +268,30 @@ fn a_directrix_and_its_surface_share_one_nesting_count() {
 #[test]
 fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
     let facts = super::super::ShapeSet {
-        locations: Vec::new(),
-        curve2ds: Vec::new(),
-        curves: Vec::new(),
-        polygons3d: Vec::new(),
-        polygons_on_triangulations: Vec::new(),
+        indices: Default::default(),
+        declared_counts: Default::default(),
+        row_ids: Default::default(),
+        polygon3d_refs: Vec::new().into(),
+        indexed_polygon_refs: Vec::new().into(),
+        locations: Vec::new().into(),
+        curve2ds: Vec::new().into(),
+        curves: Vec::new().into(),
+        polygons3d: Vec::new().into(),
+        polygons_on_triangulations: Vec::new().into(),
         surfaces: vec![
             nested_offset_surface(super::super::MAX_GEOMETRY_NESTING_DEPTH)
                 .expect("the bound is admitted"),
-        ],
-        triangulations: Vec::new(),
+        ]
+        .into(),
+        triangulations: Vec::new().into(),
         tshapes: Vec::new().into(),
-        roots: Vec::new(),
+        roots: Vec::new().into(),
     };
     let record = ShapePayloadRecord {
         id: "fcstd:native:shape_payload#1".to_owned(),
         property: "fcstd:native:property#1".to_owned(),
         entry: "Shape.brp".to_owned(),
+        rows: Vec::new(),
         payload: ShapePayload::Binary {
             version: super::super::BinaryTopologyVersion::V4,
             facts,

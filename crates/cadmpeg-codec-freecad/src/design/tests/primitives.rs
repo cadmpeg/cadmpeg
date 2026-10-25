@@ -1740,19 +1740,23 @@ fn rejects_nested_and_duplicate_design_scalar_and_vector_roots() {
             &DecodeOptions::default(),
         )
         .expect("native fallback for misframed design values");
-    for name in ["Box", "Revolution"] {
-        let feature = result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .expect("feature");
-        assert!(matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native { .. })
-        ));
+    // Recovery admits only the independent direct value, never a nested
+    // lookalike or a second scalar root.
+    for (owner, name) in [("Box", "Length"), ("Box", "Width"), ("Revolution", "Axis")] {
+        super::projection_assertions::assert_failed_value(&result, owner, name);
     }
+    assert!(
+        matches!(definition(&result, "Box"), FeatureDefinition::Operation(FeatureOperation::Primitive { solid, .. })
+        if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Box { length, width, height }
+            if result.ir().dimension_value(length).unwrap().get() == 1.0
+                && result.ir().dimension_value(width).unwrap().get() == 2.0
+                && result.ir().dimension_value(height).unwrap().get() == 4.0))
+    );
+    assert!(
+        matches!(definition(&result, "Revolution"), FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. })
+        if *construction.axis().unwrap().direction == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
+    );
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -1799,6 +1803,20 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
                 &DecodeOptions::default(),
             )
             .expect("PartDesign revolution selector");
+        // #224 retains Native for a failed control, at its #215 home; a valid
+        // first direct root survives a damaged extra root.
+        if type_property.contains("value=\"bad\"") || type_property.contains("<Wrapper>") {
+            super::projection_assertions::assert_native_projection_from_failed_control(
+                &result,
+                "Revolution",
+                "Type",
+            );
+            continue;
+        }
+        let duplicate_root = type_property.contains("/><Integer");
+        if duplicate_root {
+            super::projection_assertions::assert_failed_value(&result, "Revolution", "Type");
+        }
         let definition = result
             .ir()
             .model
@@ -1808,7 +1826,7 @@ fn distinguishes_absent_and_malformed_partdesign_revolution_type() {
             .expect("Revolution feature")
             .evaluation
             .definition();
-        if expected_native {
+        if expected_native && !duplicate_root {
             assert!(matches!(
                 definition,
                 FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Revolution"

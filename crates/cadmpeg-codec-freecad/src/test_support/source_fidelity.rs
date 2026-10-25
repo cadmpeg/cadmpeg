@@ -148,6 +148,12 @@ pub(crate) fn entry_bytes(fidelity: &cadmpeg_ir::SourceFidelity, id: &str) -> Ve
         .expect("genuine original archive source");
     let archive = crate::source_archive::OriginalArchive::new(&ctx, root, fidelity)
         .expect("original archive");
+    if let Some(view) = archive
+        .entry_for_id(&ctx, id)
+        .expect("actual entry identity")
+    {
+        return view.window().to_vec();
+    }
     let view = archive.stream(&ctx, layout).expect("original named member");
     let capture = ctx
         .capture_part_extent(view)
@@ -255,17 +261,15 @@ pub(crate) fn entry_layout_fixture(entry: &EntryFixture) -> cadmpeg_ir::SourceFi
         )
         .unwrap();
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    crate::fidelity::retain(
+    crate::fidelity::retain(&mut fidelity, entry.id(), entry.name(), 0, source.window()).unwrap();
+    crate::fidelity::install_layouts(
+        &context,
         &mut fidelity,
-        entry.id(),
-        entry.name(),
-        0,
-        source.window(),
-        cadmpeg_ir::ArenaClasses::new(),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        None,
     )
     .unwrap();
-    crate::fidelity::install_layouts(&context, &mut fidelity, BTreeMap::new(), BTreeMap::new())
-        .unwrap();
     let layout = &fidelity.record_layout()[entry.id()];
     assert_eq!(
         layout.byte_len(),
@@ -353,7 +357,7 @@ pub(crate) fn with_decode_sources<T>(
             )
         })
         .collect();
-    let reader = crate::property_reader::PropertyReader::fixtures(&context, properties)
+    let reader = crate::property_reader::PropertyReader::fixtures(&context, properties, root)
         .expect("property Views belong to the real source session");
     let sources = crate::entry_sources::EntrySources::new(&context, &entries)
         .expect("entry Views belong to the real source session");
@@ -373,4 +377,168 @@ fn fixture_range(bytes: &mut Vec<u8>, input: &[u8], source: &[u8]) -> std::ops::
     let start = bytes.len();
     bytes.extend_from_slice(source);
     start..bytes.len()
+}
+
+/// Compare every failed XML part with independently selected source literals.
+pub(crate) fn assert_failed_xml_parts(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+    source: &str,
+    expected: &[(&str, &str)],
+) {
+    use cadmpeg_ir::source_fidelity::parts::PartState;
+    let mut seen = BTreeMap::<&str, usize>::new();
+    let mut expected = expected
+        .iter()
+        .map(|(level, literal)| {
+            let ordinal = seen.entry(literal).or_default();
+            let start = source
+                .match_indices(literal)
+                .nth(*ordinal)
+                .expect("authored failed source literal ordinal")
+                .0;
+            *ordinal += 1;
+            (
+                *level,
+                u64::try_from(start).unwrap(),
+                u64::try_from(literal.len()).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    expected.sort_unstable();
+    let mut actual = decoded
+        .source_fidelity()
+        .parts()
+        .values()
+        .filter(|part| part.state() == &PartState::GivenUp {})
+        .map(|part| (part.level().as_str(), part.offset(), part.byte_len()))
+        .collect::<Vec<_>>();
+    actual.sort_unstable();
+    assert_eq!(
+        actual, expected,
+        "every failure stays at its exact authored XML part"
+    );
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), expected.len());
+    for (_, offset, length) in expected {
+        assert_eq!(
+            losses
+                .iter()
+                .filter(|loss| loss.provenance.as_ref().is_some_and(|home| {
+                    home.offset == offset && home.byte_len() == Some(length)
+                }))
+                .count(),
+            1,
+            "one diagnostic at the same source home"
+        );
+    }
+}
+
+pub(crate) fn assert_single_property_part(decoded: &cadmpeg_ir::codec::DecodeResult, xml: &str) {
+    let document = roxmltree::Document::parse(xml).unwrap();
+    let elements = document
+        .descendants()
+        .filter(|node| node.has_tag_name("Property"))
+        .collect::<Vec<_>>();
+    let [element] = elements.as_slice() else {
+        panic!("one authored property")
+    };
+    let parts = decoded.source_fidelity().parts();
+    let properties = parts
+        .values()
+        .filter(|part| part.level().as_str() == "freecad.property")
+        .collect::<Vec<_>>();
+    let [part] = properties.as_slice() else {
+        panic!("one actual property part: {properties:?}")
+    };
+    assert_eq!(
+        part.state(),
+        &cadmpeg_ir::source_fidelity::parts::PartState::Decoded {}
+    );
+    assert_eq!(part.offset(), u64::try_from(element.range().start).unwrap());
+    assert_eq!(
+        part.byte_len(),
+        u64::try_from(element.range().len()).unwrap()
+    );
+    assert_eq!(
+        parts[part.parent().unwrap()].level().as_str(),
+        "freecad.properties"
+    );
+}
+
+pub(crate) fn assert_entry_header_layout(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+    bytes: &[u8],
+    name: &str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_test_support::framing::zip;
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+    let root = ctx.name_stream(root, "file").unwrap();
+    let mut frames = Vec::new();
+    let entries = zip::frame(&ctx, root, &mut frames).unwrap();
+    let entry = entries
+        .iter()
+        .find(|entry| entry.name().window() == name.as_bytes())
+        .unwrap();
+    let headers = frames
+        .iter()
+        .filter(|part| {
+            part.level().as_str() == "zip.local_header"
+                && part.view().end() == entry.payload().start()
+        })
+        .collect::<Vec<_>>();
+    let [header] = headers.as_slice() else {
+        panic!("one exact physical local header")
+    };
+    let layout =
+        &decoded.source_fidelity().record_layout()[&crate::native::native_id("entry", name)];
+    let expected = header.capture();
+    assert_eq!(layout.stream(), expected.stream());
+    assert_eq!(layout.offset(), expected.offset());
+    assert_eq!(layout.byte_len(), expected.byte_len());
+    assert_eq!(
+        layout.reads(),
+        &BTreeMap::from([(
+            "file".into(),
+            vec![
+                u64::try_from(entry.name().start()).unwrap()
+                    ..u64::try_from(entry.name().end()).unwrap()
+            ]
+        )])
+    );
+    assert!(layout.payloads().is_empty());
+}
+
+pub(crate) fn project_document_attributes<'source>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'source>,
+    source: cadmpeg_core::decode::View<'source>,
+    properties: &crate::persistence::document_properties::RootProperties,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+) {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let reader = crate::property_reader::PropertyReader::typed(ctx);
+    let bindings = crate::design::ExpressionBindings::default();
+    let (losses, unformed) = crate::attributes::transfer_source(
+        ctx,
+        &mut ir,
+        &[],
+        &properties.properties,
+        source,
+        &properties.sources,
+        &reader,
+        &bindings,
+    )
+    .unwrap();
+    assert!(losses.is_empty());
+    assert!(unformed.is_empty());
+    for attribute in ir.model.attributes {
+        output.insert_model(ctx, attribute).unwrap();
+    }
 }

@@ -17,7 +17,7 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(None);
     };
-    let payloads = namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads")?;
+    let payloads = crate::brep::records::payloads_untracked(namespace)?;
     if payloads.is_empty() {
         return Ok(None);
     }
@@ -25,7 +25,8 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let property_reader = crate::property_reader::PropertyReader::typed(&ctx);
+    let property_reader = crate::property_reader::PropertyReader::typed(&ctx)
+        .with_entries(namespace.arena_as::<crate::native::EntryRecord>("entries")?);
     let mut typed_properties = Vec::new();
     for property in properties {
         if super::xml::native(&property)?.is_some() {
@@ -36,8 +37,20 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
     let mut scope = projected.scope;
     scope.model = true;
     projected.set_scope(scope).map_err(CodecError::malformed)?;
-    let mut curves = brep::transfer_text_curves(&ctx, &payloads, &typed_properties)?;
-    let surfaces = brep::transfer_text_surfaces(&ctx, &payloads, &typed_properties, &mut curves)?;
+    let shape_owners = brep::owners::gui(&ctx, Some(namespace))?;
+    let mut curves = brep::transfer_text_curves(
+        &ctx,
+        &payloads,
+        brep::owners::Properties::new(&typed_properties, &shape_owners),
+        None,
+    )?;
+    let surfaces = brep::transfer_text_surfaces(
+        &ctx,
+        &payloads,
+        brep::owners::Properties::new(&typed_properties, &shape_owners),
+        &mut curves,
+        None,
+    )?;
     projected.model.curves = curves.curves;
     projected
         .model
@@ -53,13 +66,15 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         &ctx,
         &mut projected,
         &payloads,
-        &typed_properties,
+        brep::owners::Properties::new(&typed_properties, &shape_owners),
         &mut losses,
     )?;
     crate::topology_transfer::apply_body_names(&mut projected, &payloads, &typed_properties);
     let objects = namespace.arena_as::<native::ObjectRecord>("objects")?;
     let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
     let joints = namespace.arena_as::<native::joint::JointRecord>("joints")?;
+    let (products, unavailable_products) =
+        crate::product::for_projection(products, &typed_properties)?;
     let (definitions, occurrences) = crate::product::transfer_neutral(
         &property_reader,
         &products,
@@ -68,11 +83,16 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         &typed_properties,
         &payloads,
         &projected.model.bodies,
+        &unavailable_products,
     )?;
     projected.model.product_definitions = definitions;
     projected.model.occurrences = occurrences;
-    projected.model.assembly_joints =
-        crate::joint::transfer_neutral(&joints, &projected.model.occurrences)?;
+    projected.model.assembly_joints = crate::joint::transfer_neutral(
+        &joints,
+        &projected.model.occurrences,
+        &typed_properties,
+        &std::collections::BTreeSet::new(),
+    )?;
     let drawings = namespace.arena_as::<native::DrawingRecord>("drawings")?;
     let annotations = namespace.arena_as::<native::SemanticAnnotationRecord>("annotations")?;
     crate::drawing::transfer_neutral(
@@ -88,25 +108,32 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         &typed_properties,
         &drawings,
     )?;
-    if let Some(gui) = super::target::projection::gui_xml_lossy(namespace, &mut losses)? {
-        let mut element_maps =
+    if super::target::projection::gui_xml_lossy(namespace, &mut losses)?.is_some() {
+        let element_maps =
             namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
-        crate::element_map::bind_topology(&mut element_maps, &topology_occurrences);
         let documents = namespace.arena_as::<native::DocumentFacts>("document")?;
         let version = documents
             .first()
             .and_then(|document| document.program_version.as_deref());
         let entries = std::collections::BTreeMap::new();
-        let graph = crate::gui::transfer(
-            &ctx,
+        let graph = crate::gui::project_native(
             &mut projected,
-            gui.as_bytes(),
+            namespace,
             &crate::gui::GuiSources {
                 entries: &entries,
+                declared_entries: None,
+                declared_objects: None,
+                admitted_objects: None,
+                entry_parents: None,
+                entry_owners: None,
+                entry_interpretations: None,
+                gui_entry_interpretations: None,
                 objects: &objects,
+                object_sources: None,
                 properties: &typed_properties,
                 payloads: &payloads,
                 element_maps: &element_maps,
+                topology_occurrences: &topology_occurrences,
                 requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
             },
         )?;

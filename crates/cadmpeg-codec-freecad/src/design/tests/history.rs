@@ -30,14 +30,20 @@ fn distinguishes_stored_base_and_application_owned_features() {
             &DecodeOptions::default(),
         )
         .expect("stored and derived features");
-    assert!(
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .all(|feature| feature.name.as_deref() != Some("Source")),
-        "a plain Part::Feature is model content, without a stored-geometry design wrapper"
+    let source = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Source"))
+        .expect("stored geometry feature");
+    assert!(matches!(
+        source.definition().operation(),
+        FeatureOperation::StoredGeometry {}
+    ));
+    assert_eq!(
+        source.native_ref.as_deref(),
+        Some(crate::native::native_id("object", "Source").as_str())
     );
     let base = result
         .ir()
@@ -47,15 +53,46 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("base feature");
     assert!(
-        matches!(base.evaluation.definition().operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "PartDesign::FeatureBase")
+        matches!(base.evaluation.definition().operation(), FeatureOperation::DerivedGeometry { source: source_id } if source_id == &source.id)
     );
-    assert!(base.dependencies.is_empty());
-    assert!(result.ir().model.features.iter().all(|feature| {
-        !matches!(
-            feature.name.as_deref(),
-            Some("PartExtension" | "DesignExtension")
-        )
-    }));
+    assert_eq!(base.dependencies.as_slice(), &[source.id.clone()]);
+    assert_eq!(result.ir().model.features.len(), 4);
+    for (name, expected_kind) in [
+        ("PartExtension", "Part::FeaturePython"),
+        ("DesignExtension", "PartDesign::FeaturePython"),
+    ] {
+        let native_id = crate::native::native_id("object", name);
+        let feature = result
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.native_ref.as_deref() == Some(native_id.as_str()))
+            .expect("native extension");
+        assert_eq!(feature.name.as_deref(), Some(name));
+        assert!(
+            matches!(feature.definition().operation(), FeatureOperation::Native { kind, .. }
+            if kind.as_str() == expected_kind)
+        );
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code.local_code() == "feature.native-kind-retained"
+                        && loss.severity == cadmpeg_ir::report::Severity::Blocking
+                        && loss
+                            .provenance
+                            .as_ref()
+                            .and_then(|source| source.tag.as_deref())
+                            == Some(native_id.as_str())
+                        && loss.message.contains(expected_kind)
+                })
+                .count(),
+            1
+        );
+    }
     let namespace = result
         .ir()
         .native
@@ -73,29 +110,24 @@ fn distinguishes_stored_base_and_application_owned_features() {
     let census = namespace
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 1);
+    assert_eq!(census.len(), 4);
+    let base_census = census
+        .iter()
+        .find(|record| record.object == crate::native::native_id("object", "BaseFeature"))
+        .unwrap();
     assert_eq!(
-        census[0].object,
+        base_census.object,
         crate::native::native_id("object", "BaseFeature")
     );
-    assert_eq!(census[0].type_name, "PartDesign::FeatureBase");
-    assert_eq!(census[0].feature, base.id.as_str());
-    assert_eq!(census[0].semantic_kind, "native");
-    assert!(!census[0].neutral());
-    assert!(!census[0].post_processed);
-    assert_eq!(result.report().losses.len(), 3);
+    assert_eq!(base_census.type_name, "PartDesign::FeatureBase");
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(
-                |loss| loss.code.local_code() == "feature.object-unprojected"
-                    && loss.severity == cadmpeg_ir::report::Severity::Blocking
-            )
-            .count(),
-        2
+        base.native_ref.as_deref(),
+        Some(base_census.object.as_str())
     );
+    assert_eq!(base_census.semantic_kind, "derived_geometry");
+    assert!(base_census.neutral());
+    assert!(!base_census.post_processed);
+    assert_eq!(result.report().losses.len(), 2);
     assert_eq!(
         result
             .report()
@@ -106,7 +138,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
                     && loss.severity == cadmpeg_ir::report::Severity::Blocking
             )
             .count(),
-        1
+        2
     );
     assert!(
         result.source_fidelity().unrepresented().is_empty(),
@@ -479,12 +511,22 @@ fn transfers_stored_and_external_part_feature_families() {
                 if path.starts_with("models/") && *actual == format
         ));
     }
-    assert!(result
+    let extension = result
         .ir()
         .model
         .features
         .iter()
-        .all(|feature| feature.name.as_deref() != Some("PlanarExtension")));
+        .find(|feature| feature.name.as_deref() == Some("PlanarExtension"))
+        .expect("native planar extension");
+    assert_eq!(result.ir().model.features.len(), 9);
+    assert_eq!(
+        extension.native_ref.as_deref(),
+        Some(crate::native::native_id("object", "PlanarExtension").as_str())
+    );
+    assert!(
+        matches!(extension.definition().operation(), FeatureOperation::Native { kind, .. }
+        if kind.as_str() == "Part::Part2DObjectPython")
+    );
     let census = result
         .ir()
         .native
@@ -492,17 +534,26 @@ fn transfers_stored_and_external_part_feature_families() {
         .expect("namespace")
         .arena_as::<crate::native::DesignCensusRecord>("design_census")
         .expect("design census");
-    assert_eq!(census.len(), 8);
-    assert!(census
+    assert_eq!(census.len(), 9);
+    assert_eq!(census.iter().filter(|record| record.neutral()).count(), 8);
+    let native = census
         .iter()
-        .all(crate::native::DesignCensusRecord::neutral));
+        .find(|record| record.object == crate::native::native_id("object", "PlanarExtension"))
+        .unwrap();
+    assert_eq!(
+        extension.native_ref.as_deref(),
+        Some(native.object.as_str())
+    );
+    assert_eq!(native.semantic_kind, "native");
+    assert!(!native.neutral());
+    assert!(!native.post_processed);
     assert_eq!(result.report().losses.len(), 1);
     assert!(result
         .report()
         .losses
         .iter()
         .all(
-            |loss| loss.code.local_code() == "feature.object-unprojected"
+            |loss| loss.code.local_code() == "feature.native-kind-retained"
                 && loss.severity == cadmpeg_ir::report::Severity::Blocking
                 && loss.message.contains("PlanarExtension")
         ));
@@ -799,8 +850,31 @@ fn rejects_ambiguous_spreadsheet_selectors() {
     .into_iter()
     .enumerate()
     {
-        let error = decode(count, properties).expect_err("ambiguous spreadsheet selector");
-        assert!(error.to_string().contains(expected), "case {index}: {error}");
+        if index == 6 {
+            let error = decode(count, properties).expect_err("unknown carrier has no typed cells");
+            assert!(error.to_string().contains(expected), "case {index}: {error}");
+            continue;
+        }
+        let result = decode(count, properties).expect("recover ambiguous spreadsheet source part");
+        let property = match index {
+            0 | 1 => "cells",
+            2 | 3 => "columnWidths",
+            4 | 5 => "rowHeights",
+            _ => unreachable!(),
+        };
+        if index % 2 == 0 {
+            // Duplicate identities are refused at their actual header homes;
+            // the source feature survives without an invented sheet.
+            super::projection_assertions::assert_native_projection_from_failed_control(&result, "Sheet", property);
+            assert!(result.ir().model.spreadsheets.is_empty());
+        } else {
+            // A second value is independently damaged; the first survives.
+            super::projection_assertions::assert_failed_value(&result, "Sheet", property);
+            assert_eq!(result.ir().model.spreadsheets.len(), 1);
+            assert!(result.ir().model.parameters.is_empty());
+            assert!(matches!(super::definition(&result, "Sheet"), FeatureDefinition::Operation(FeatureOperation::TreeNode { role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations, .. })));
+        }
+        assert_valid_document(result.ir());
     }
 }
 
@@ -819,19 +893,24 @@ fn rejects_nested_spreadsheet_value_roots() {
         )
     };
 
-    for properties in [
+    for (index, properties) in [
         r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Wrapper><Cells Count="1"><Cell address="A1" content="5"/></Cells></Wrapper></Property>
 <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><ColumnInfo Count="0"/></Property>"#,
         r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
 <Property name="columnWidths" type="Spreadsheet::PropertyColumnWidths"><Wrapper><ColumnInfo Count="1"><Column name="A" width="120"/></ColumnInfo></Wrapper></Property>"#,
         r#"<Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="0"/></Property>
 <Property name="rowHeights" type="Spreadsheet::PropertyRowHeights"><Wrapper><RowInfo Count="1"><Row name="1" height="45"/></RowInfo></Wrapper></Property>"#,
-    ] {
-        let error = decode(properties).expect_err("nested spreadsheet value root");
-        assert!(matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-        ));
+    ].into_iter().enumerate() {
+        let result = decode(properties).expect("the unexpected Wrapper is isolated at its value home");
+        let role = ["cells", "columnWidths", "rowHeights"][index];
+        super::projection_assertions::assert_native_projection_from_failed_control(&result, "Sheet", role);
+        assert!(result.ir().model.spreadsheets.is_empty());
+        assert!(result.ir().model.parameters.is_empty());
+        let native = result.ir().native.namespace("fcstd").unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties").unwrap();
+        assert_eq!(native.len(), 2);
+        assert!(native.iter().find(|property| property.name == role).unwrap().body.is_none());
+        assert!(native.iter().find(|property| property.name != role).unwrap().body.is_some());
     }
 }
 

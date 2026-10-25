@@ -22,6 +22,7 @@ pub(super) fn prepare(
     ir: &CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    payloads: &[crate::brep::ShapePayloadRecord],
 ) -> HashMap<String, String> {
     let mut names = HashMap::new();
     let mut used = HashSet::new();
@@ -141,6 +142,19 @@ pub(super) fn prepare(
             names.insert(property.id.clone(), target.clone());
         }
     }
+    let property_owners = properties
+        .iter()
+        .map(|property| (property.id.as_str(), property.owner.as_str()))
+        .collect::<HashMap<_, _>>();
+    let payload_owners = payloads
+        .iter()
+        .filter_map(|payload| {
+            Some((
+                payload.id.as_str(),
+                *property_owners.get(payload.property.as_str())?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     let mut topology_names =
         HashMap::<String, (HashSet<String>, HashSet<String>, HashSet<String>)>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
@@ -152,6 +166,13 @@ pub(super) fn prepare(
             .find(|feature| feature.evaluation.outputs().contains(&body.id))
             .and_then(|feature| names.get(feature.id.as_str()))
             .cloned()
+            .or_else(|| {
+                body.native_ref
+                    .as_deref()
+                    .and_then(|id| payload_owners.get(id))
+                    .and_then(|owner| names.get(*owner))
+                    .cloned()
+            })
             .or_else(|| {
                 body.regions
                     .iter()

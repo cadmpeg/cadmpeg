@@ -28,14 +28,18 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
         status: None,
         order: 0,
         values: vec![ValueRecord {
+            item_index: None,
+            link_index: None,
             order: 0,
             parent: None,
             tag: "Bool".into(),
             attributes: BTreeMap::from([("value".into(), "0".into())]),
             decoded_json: None,
             text: None,
-        }],
+        }]
+        .into(),
         side_entries: Vec::new(),
+        links: Vec::new(),
     };
     let rendered = native_property(&record)
         .expect("typed property")
@@ -181,14 +185,18 @@ fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
             status: None,
             order: 0,
             values: vec![ValueRecord {
+                item_index: None,
+                link_index: None,
                 order: 0,
                 parent: None,
                 tag: "Bool".into(),
                 attributes: BTreeMap::from([("value".into(), value.into())]),
                 decoded_json: None,
                 text: None,
-            }],
+            }]
+            .into(),
             side_entries: Vec::new(),
+            links: Vec::new(),
         };
         record
     };
@@ -213,6 +221,24 @@ fn view_fields_win_over_duplicate_native_property_values_and_deletions() {
     )
     .expect("neutral views");
     assert!(providers["Shape"].properties["Visibility"].contains("value=\"1\""));
-    assert!(!providers["Shape"].properties.contains_key("DeletedSetting"));
+    // #224 keeps generic GUI scalars in their typed native owner. The empty
+    // neutral view cache cannot delete an independently held native property.
+    let retained = roxmltree::Document::parse(&providers["Shape"].properties["DeletedSetting"])
+        .expect("retained typed native setting");
+    assert_eq!(
+        retained.root_element().attribute("type"),
+        Some("App::PropertyBool")
+    );
+    assert_eq!(
+        retained
+            .root_element()
+            .children()
+            .find(|node| node.is_element())
+            .expect("retained native Boolean")
+            .attribute("value"),
+        Some("1")
+    );
     assert!(losses.is_empty());
 }
+
+mod source_less_styles;

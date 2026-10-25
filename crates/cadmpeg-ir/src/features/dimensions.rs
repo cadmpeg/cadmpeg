@@ -162,6 +162,19 @@ impl DimensionValue for std::num::NonZeroU32 {
 }
 
 impl<Q: RewriteIdentities + DimensionValue> RewriteIdentities for Dimension<Q> {
+    fn visit_dependency_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(
+            crate::schema::rewrite::typed::prune::DependencyReference<'_>,
+        ) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        match self {
+            Self::Literal(value) => value.visit_dependency_references(ctx, visitor),
+            Self::Parameter(id) => id.visit_dependency_references(ctx, visitor),
+        }
+    }
+
     fn validate_dimensions(
         &self,
         ir: &crate::CadIr,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly joints recovered without executing Python proxy payloads.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
@@ -11,11 +11,21 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::scalar::FiniteReal;
 
-pub(crate) fn transfer(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
+pub(crate) fn transfer_source<'source>(
+    ctx: &crate::property_reader::PropertyReader<'_, 'source>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Result<Vec<JointRecord>, CodecError> {
+    sources: &BTreeMap<String, crate::persistence::object_parts::ObjectSource<'source>>,
+) -> Result<(Vec<JointRecord>, Vec<crate::design::UnformedProjection>), CodecError> {
+    transfer_impl(ctx, objects, properties, Some(sources))
+}
+
+fn transfer_impl<'source>(
+    ctx: &crate::property_reader::PropertyReader<'_, 'source>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    sources: Option<&BTreeMap<String, crate::persistence::object_parts::ObjectSource<'source>>>,
+) -> Result<(Vec<JointRecord>, Vec<crate::design::UnformedProjection>), CodecError> {
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
@@ -26,7 +36,9 @@ pub(crate) fn transfer(
         }
     }
     let mut output = Vec::new();
+    let mut unformed = Vec::new();
     for object in objects {
+        ctx.begin_projection(object.id())?;
         let source = by_owner
             .get(object.id().as_str())
             .map_or(&[][..], Vec::as_slice);
@@ -34,111 +46,199 @@ pub(crate) fn transfer(
         owned.extend_from_slice(source);
         let grounded_property = sole_named_property("joint", &owned, "ObjectToGround")?;
         let joint_type_property = sole_named_property("joint", &owned, "JointType")?;
-        if grounded_property.is_some() && joint_type_property.is_some() {
-            return Err(CodecError::malformed(format_args!(
-                "joint object {} carries both ObjectToGround and JointType",
-                object.id()
-            )));
-        }
-        if let Some(property) = grounded_property {
-            let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
-                && property.links().len() == 1
-                && property.links()[0]
-                    .as_ref()
-                    .is_none_or(|link| link.subelements().iter().all(String::is_empty));
-            if !matches!(
-                property.type_name.as_str(),
-                "App::PropertyLinkGlobal" | "App::PropertyLink"
-            ) && !legacy_empty_sub
-            {
-                return Err(CodecError::malformed(format_args!(
-                    "joint property {} has the wrong runtime type for ObjectToGround",
-                    property.id
-                )));
+        if grounded_property.is_none() && joint_type_property.is_none() {
+            let actual_grounded_role = ctx.unavailable_named_exact("ObjectToGround")?;
+            let actual_kind_role = ctx.unavailable_named_exact("JointType")?;
+            if !actual_grounded_role && !actual_kind_role {
+                continue;
             }
         }
-        if let Some(property) = joint_type_property {
-            if property.type_name != "App::PropertyEnumeration" {
-                return Err(CodecError::malformed(format_args!(
-                    "joint property {} has the wrong runtime type for JointType",
-                    property.id
-                )));
-            }
-        }
-        let joint_type = joint_type_property
-            .map(|property| enumeration_value(ctx, property))
-            .transpose()?;
-        let body = if grounded_property.is_some() {
-            let placement = placement(&owned, "Placement")?.unwrap_or_default();
-            let reference = grounded_property
-                .into_iter()
-                .flat_map(PropertyRecord::links)
-                .flatten()
-                .find(|link| link.document().is_some() || link.object().is_some())
-                .cloned();
-            JointBody::Grounded {
-                reference,
-                placement,
-            }
-        } else if let Some(joint_type) = joint_type {
-            let connector_record = |owned: &[&PropertyRecord],
-                                    reference_name: &str,
-                                    placement_name: &str,
-                                    offset_name: &str|
-             -> Result<JointConnectorRecord, CodecError> {
-                Ok(JointConnectorRecord {
-                    reference: connector(owned, reference_name)?,
-                    placement: placement(owned, placement_name)?.unwrap_or_default(),
-                    offset: placement(owned, offset_name)?.unwrap_or_default(),
-                })
-            };
-            JointBody::Pair {
-                kind: PairedJointFamily::new(joint_type).map_err(CodecError::Malformed)?,
-                connectors: Box::new([
-                    connector_record(&owned, "Reference1", "Placement1", "Offset1")?,
-                    connector_record(&owned, "Reference2", "Placement2", "Offset2")?,
-                ]),
-            }
-        } else {
+        let grounded_missing = ctx.missing_value(grounded_property, "ObjectToGround")?;
+        let kind_missing = ctx.missing_value(joint_type_property, "JointType")?;
+        if grounded_property.is_none()
+            && joint_type_property.is_none()
+            && !grounded_missing
+            && !kind_missing
+        {
             continue;
+        }
+        let id = crate::native::native_id("joint", object.name());
+        let neutral_id = crate::native::model_id("joint", object.id(), "constraint");
+        if joint_type_property
+            .is_some_and(|property| property.type_name != "App::PropertyEnumeration")
+        {
+            return Err(CodecError::malformed(
+                "joint JointType property has the wrong runtime type",
+            ));
+        }
+        let mut required_missing = grounded_missing || kind_missing;
+        let joint_type = if kind_missing {
+            None
+        } else {
+            joint_type_property
+                .map(|property| enumeration_value(ctx, property))
+                .transpose()?
+                .flatten()
         };
-        let mut parameters = BTreeMap::new();
-        for property in owned.iter().filter(|property| {
-            matches!(
-                property.name.as_str(),
-                "Angle"
-                    | "AngleMin"
-                    | "AngleMax"
-                    | "Distance"
-                    | "Distance2"
-                    | "LengthMin"
-                    | "LengthMax"
-                    | "EnableAngleMin"
-                    | "EnableAngleMax"
-                    | "EnableLengthMin"
-                    | "EnableLengthMax"
-                    | "Detach1"
-                    | "Detach2"
-                    | "Suppressed"
-            )
-        }) {
-            if let Some(value) = scalar_parameter(property)? {
-                parameters.insert(property.name.clone(), value);
+        required_missing |= joint_type_property.is_some() && joint_type.is_none();
+        let roles: &[&str] = if grounded_property.is_some() || grounded_missing {
+            &["Placement"]
+        } else {
+            &[
+                "Reference1",
+                "Reference2",
+                "Placement1",
+                "Placement2",
+                "Offset1",
+                "Offset2",
+            ]
+        };
+        for name in roles {
+            required_missing |=
+                ctx.missing_value(sole_named_property("joint", &owned, name)?, name)?;
+        }
+        if required_missing {
+            let homes = ctx.take_unavailable();
+            if !homes.is_empty() {
+                unformed.push(crate::design::UnformedProjection {
+                    ids: if ctx.container_only() {
+                        vec![id]
+                    } else {
+                        vec![id, neutral_id]
+                    },
+                    homes,
+                });
+            }
+            continue;
+        }
+        let mut neutral_missing = false;
+        if !ctx.container_only() {
+            for name in ["Detach1", "Detach2", "Suppressed"] {
+                neutral_missing |=
+                    ctx.missing_value(sole_named_property("joint", &owned, name)?, name)?;
             }
         }
-        output.push(JointRecord::try_new(
-            crate::native::native_id("joint", object.name()),
-            object.id().to_owned(),
-            body,
-            parameters,
-        )?);
+        if neutral_missing {
+            let homes = ctx.take_unavailable();
+            if !homes.is_empty() {
+                unformed.push(crate::design::UnformedProjection {
+                    ids: vec![neutral_id],
+                    homes,
+                });
+            }
+        }
+        let construct = |actual_object: String| -> Result<JointRecord, CodecError> {
+            if grounded_property.is_some() && joint_type_property.is_some() {
+                return Err(CodecError::malformed(format_args!(
+                    "joint object {} carries both ObjectToGround and JointType",
+                    object.id()
+                )));
+            }
+            if let Some(property) = grounded_property {
+                let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
+                    && property.links().len() == 1
+                    && property.links()[0]
+                        .as_ref()
+                        .is_none_or(|link| link.subelements().iter().all(String::is_empty));
+                if !matches!(
+                    property.type_name.as_str(),
+                    "App::PropertyLinkGlobal" | "App::PropertyLink"
+                ) && !legacy_empty_sub
+                {
+                    return Err(CodecError::malformed(format_args!(
+                        "joint property {} has the wrong runtime type for ObjectToGround",
+                        property.id
+                    )));
+                }
+            }
+            if let Some(property) = joint_type_property {
+                if property.type_name != "App::PropertyEnumeration" {
+                    return Err(CodecError::malformed(format_args!(
+                        "joint property {} has the wrong runtime type for JointType",
+                        property.id
+                    )));
+                }
+            }
+            let body = if grounded_property.is_some() {
+                let placement = placement(&owned, "Placement")?.unwrap_or_default();
+                let reference = grounded_property
+                    .into_iter()
+                    .flat_map(PropertyRecord::links)
+                    .flatten()
+                    .find(|link| link.document().is_some() || link.object().is_some())
+                    .cloned();
+                JointBody::Grounded {
+                    reference,
+                    placement,
+                }
+            } else if let Some(joint_type) = joint_type.clone() {
+                let connector_record =
+                    |owned: &[&PropertyRecord],
+                     reference_name: &str,
+                     placement_name: &str,
+                     offset_name: &str|
+                     -> Result<JointConnectorRecord, CodecError> {
+                        Ok(JointConnectorRecord {
+                            reference: connector(owned, reference_name)?,
+                            placement: placement(owned, placement_name)?.unwrap_or_default(),
+                            offset: placement(owned, offset_name)?.unwrap_or_default(),
+                        })
+                    };
+                JointBody::Pair {
+                    kind: PairedJointFamily::new(joint_type).map_err(CodecError::Malformed)?,
+                    connectors: Box::new([
+                        connector_record(&owned, "Reference1", "Placement1", "Offset1")?,
+                        connector_record(&owned, "Reference2", "Placement2", "Offset2")?,
+                    ]),
+                }
+            } else {
+                return Err(CodecError::malformed("joint has no declared runtime value"));
+            };
+            let mut parameters = BTreeMap::new();
+            for property in owned.iter().filter(|property| {
+                matches!(
+                    property.name.as_str(),
+                    "Angle"
+                        | "AngleMin"
+                        | "AngleMax"
+                        | "Distance"
+                        | "Distance2"
+                        | "LengthMin"
+                        | "LengthMax"
+                        | "EnableAngleMin"
+                        | "EnableAngleMax"
+                        | "EnableLengthMin"
+                        | "EnableLengthMax"
+                        | "Detach1"
+                        | "Detach2"
+                        | "Suppressed"
+                )
+            }) {
+                if let Some(value) = scalar_parameter(property)? {
+                    parameters.insert(property.name.clone(), value);
+                }
+            }
+            JointRecord::try_new(id.clone(), actual_object, body, parameters)
+        };
+        let record = match sources {
+            Some(sources) => sources
+                .get(object.id())
+                .ok_or_else(|| {
+                    CodecError::malformed("joint owner has no original source authority")
+                })?
+                .record(ctx, &id, construct)?,
+            None => construct(object.id().to_owned())?,
+        };
+        output.push(record);
     }
-    Ok(output)
+    Ok((output, unformed))
 }
 
 pub(crate) fn transfer_neutral(
     records: &[JointRecord],
     occurrences: &[Occurrence],
+    properties: &[PropertyRecord],
+    unavailable: &BTreeSet<String>,
 ) -> Result<Vec<AssemblyJoint>, CodecError> {
     let mut occurrence_by_native = HashMap::new();
     for occurrence in occurrences {
@@ -148,6 +248,16 @@ pub(crate) fn transfer_neutral(
     }
     let mut output = Vec::new();
     for record in records {
+        let model_id = crate::native::model_id("joint", record.object(), "constraint");
+        if unavailable.contains(&model_id)
+            || properties.iter().any(|property| {
+                property.owner == record.object()
+                    && matches!(property.name.as_str(), "Detach1" | "Detach2" | "Suppressed")
+                    && property.body.is_none()
+            })
+        {
+            continue;
+        }
         let parameters = record.parameters();
         let bool_value = |name: &str| parameters.bool_value(name);
         let scalar = |name: &str| parameters.scalar_value(name);
@@ -378,141 +488,63 @@ fn joint_kind(
 fn enumeration_value(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
-) -> Result<String, CodecError> {
-    let property_xml = ctx.property_xml(property)?;
-    let document = ctx
-        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
-        .map_err(|error| {
-            let CodecError::Malformed(error) = error else {
-                return error;
-            };
-            CodecError::malformed(format_args!(
-                "joint enumeration property {} has invalid XML: {error}",
-                property.id
-            ))
-        })?;
-    let root = document.root_element();
-    if !root.has_tag_name("Property") {
-        return Err(CodecError::malformed(format_args!(
-            "joint enumeration property {} has no Property root",
-            property.id
-        )));
-    }
-    let mut values = root.children().filter(roxmltree::Node::is_element);
-    let Some(integer) = values.next().filter(|value| value.has_tag_name("Integer")) else {
-        return Err(CodecError::malformed(format_args!(
-            "joint enumeration property {} requires one direct Integer value",
-            property.id
-        )));
+) -> Result<Option<String>, CodecError> {
+    let values = property.values();
+    let Some(integer) = values
+        .iter()
+        .find(|value| value.parent.is_none() && value.tag == "Integer")
+    else {
+        ctx.unavailable(property)?;
+        return Ok(None);
     };
-    if integer.children().any(|value| value.is_element()) {
-        return Err(CodecError::malformed(format_args!(
-            "joint enumeration property {} has nested Integer values",
-            property.id
-        )));
-    }
-    let custom_list = values.next();
-    if values.next().is_some()
-        || custom_list.is_some_and(|value| !value.has_tag_name("CustomEnumList"))
-    {
-        return Err(CodecError::malformed(format_args!(
-            "joint enumeration property {} has extra direct value roots",
-            property.id
-        )));
-    }
-    let custom = match integer.attribute("CustomEnum") {
-        None => false,
-        Some("true") => true,
-        Some(_) => {
-            return Err(CodecError::malformed(format_args!(
-                "joint enumeration property {} has an invalid CustomEnum marker",
-                property.id
-            )));
-        }
-    };
-    if custom != custom_list.is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "joint enumeration property {} has inconsistent custom enumeration carriers",
-            property.id
-        )));
-    }
     let index = integer
-        .attribute("value")
+        .attributes
+        .get("value")
+        .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "joint enumeration property {} has no Integer value",
-                property.id
-            ))
-        })?
-        .parse::<usize>()
-        .map_err(|_| {
-            CodecError::malformed(format_args!(
-                "joint enumeration property {} has an invalid Integer value",
-                property.id
-            ))
+            CodecError::malformed("joint enumeration requires a nonnegative Integer value")
         })?;
-    let selected = if let Some(custom_list) = custom_list {
-        let count = custom_list
-            .attribute("count")
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "joint enumeration property {} CustomEnumList has no count",
-                    property.id
-                ))
-            })?
-            .parse::<usize>()
-            .map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "joint enumeration property {} CustomEnumList count is invalid",
-                    property.id
-                ))
-            })?;
-        let values = custom_list.children().filter(roxmltree::Node::is_element);
-        let found = values.clone().count();
-        if found != count || values.clone().any(|value| !value.has_tag_name("Enum")) {
-            return Err(CodecError::malformed(format_args!(
-                "joint enumeration property {} CustomEnumList count={count} but {} direct Enum values were found",
-                property.id,
-                found
-            )));
-        }
-        let mut selected = None;
-        for (position, value) in values.enumerate() {
-            if value.children().any(|child| child.is_element()) {
-                return Err(CodecError::malformed(format_args!(
-                    "joint enumeration property {} has nested Enum values",
-                    property.id
-                )));
-            }
-            let text = value.attribute("value").ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "joint enumeration property {} Enum has no value",
-                    property.id
-                ))
-            })?;
-            if position == index {
-                selected = Some(text);
-            }
-        }
-        selected
-    } else {
-        None
+    if integer.attributes.get("CustomEnum").map(String::as_str) != Some("true") {
+        return Ok(Some(index.to_string()));
+    }
+    let Some(list) = values
+        .iter()
+        .find(|value| value.parent.is_none() && value.tag == "CustomEnumList")
+    else {
+        ctx.unavailable(property)?;
+        return Ok(None);
     };
-    Ok(match selected {
-        Some(value) => value.to_owned(),
-        None => index.to_string(),
-    })
+    let count = list
+        .attributes
+        .get("count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| CodecError::malformed("joint CustomEnumList requires count"))?;
+    if index >= count {
+        return Ok(Some(index.to_string()));
+    }
+    let enums = values
+        .iter()
+        .filter(|value| value.parent == Some(list.order) && value.tag == "Enum");
+    let explicit = enums.clone().any(|value| value.item_index.is_some());
+    let dense = !matches!(&property.body, Some(crate::native::PropertyBody::Persisted { values, .. }) if values.has_missing())
+        && enums.clone().count() == count;
+    let selected = enums.enumerate().find_map(|(ordinal, value)| {
+        ((value.item_index == Some(index)) || (!explicit && dense && ordinal == index))
+            .then_some(value)
+    });
+    match selected.and_then(|value| value.attributes.get("value")) {
+        Some(value) => Ok(Some(value.clone())),
+        None => {
+            ctx.unavailable(property)?;
+            Ok(None)
+        }
+    }
 }
 
 fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
     // Persistence admission already reported this unreadable scalar. Keep the
     // independently typed joint relation without inventing its missing value.
-    if property.body.is_none()
-        || matches!(
-            property.body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        )
-    {
+    if property.body.is_none() || matches!(property.body, None) {
         return Ok(None);
     }
     let (expected_type, expected_tag) = match property.name.as_str() {
@@ -579,10 +611,14 @@ fn connector(
             property.id, property.type_name
         )));
     }
-    if property
-        .values()
-        .first()
-        .is_none_or(|value| value.tag != "XLink")
+    let unavailable_null = property.body.is_some()
+        && property.values().is_empty()
+        && matches!(property.links(), [None]);
+    if !unavailable_null
+        && property
+            .values()
+            .first()
+            .is_none_or(|value| value.tag != "XLink")
     {
         return Err(CodecError::malformed(format_args!(
             "joint connector {} requires one XLink value",
@@ -638,6 +674,8 @@ pub(crate) mod tests {
             .filter(roxmltree::Node::is_element)
             .enumerate()
             .map(|(order, node)| crate::native::ValueRecord {
+                item_index: None,
+                link_index: None,
                 parent: None,
                 tag: node.tag_name().name().into(),
                 order,
@@ -648,9 +686,9 @@ pub(crate) mod tests {
                 decoded_json: None,
                 text: None,
             })
-            .collect();
+            .collect::<Vec<_>>();
         property.body = Some(crate::native::PropertyBody::Persisted {
-            values,
+            values: values.into(),
             links: Vec::new(),
             side_entries: Vec::new(),
         });
@@ -923,13 +961,13 @@ pub(crate) mod tests {
 
     #[test]
     fn rejects_wrong_connector_type_and_target_cardinality() {
-        for properties in [
+        for (index, properties) in [
             r#"<Property name="Reference1" type="App::PropertyLinkSub"><LinkSub value="Base" count="0"/></Property>
 <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
             r#"<Property name="Reference1" type="App::PropertyXLinkSubList"><XLinkSubList count="2"><XLink file="" name="Base"/><XLink file="" name="Other"/></XLinkSubList></Property>
 <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
             r#"<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
-        ] {
+        ].into_iter().enumerate() {
             let property_count = properties.lines().count() + 1;
             let document = format!(
                 r#"<Document SchemaVersion="4" FileVersion="1">
@@ -939,15 +977,26 @@ pub(crate) mod tests {
 {properties}
 </Properties></Object></ObjectData></Document>"#
             );
-            assert!(matches!(
-                FcstdCodec.decode(
-                    &mut Cursor::new(archive(&document)),
-                    &DecodeOptions::default(),
-                ),
-                Err(cadmpeg_ir::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::Malformed(_)
-                ))
-            ));
+            let result = FcstdCodec.decode(&mut Cursor::new(archive(&document)),
+                &DecodeOptions::default()).expect("never-declared connector targets fail their actual leaves");
+            let expected: &[(&str, &str)] = match index {
+                0 => &[
+                    ("freecad.property_value", "<LinkSub value=\"Base\" count=\"0\"/>"),
+                    ("freecad.property_value", "<XLink file=\"\" name=\"Base\"/>"),
+                ],
+                1 => &[
+                    ("freecad.value_element", "<XLink file=\"\" name=\"Base\"/>"),
+                    ("freecad.value_element", "<XLink file=\"\" name=\"Other\"/>"),
+                    ("freecad.property_value", "<XLink file=\"\" name=\"Base\"/>"),
+                ],
+                2 => &[("freecad.property_value", "<XLink file=\"\" name=\"Base\"/>")],
+                _ => unreachable!(),
+            };
+            crate::test_support::source_fidelity::assert_failed_xml_parts(&result, &document, expected);
+            assert!(result.ir().native.namespace("fcstd").unwrap()
+                .arena_as::<crate::native::joint::JointRecord>("joints").unwrap().is_empty());
+            assert!(result.ir().model.assembly_joints.is_empty());
+            assert_valid_document(result.ir());
         }
     }
 
@@ -967,22 +1016,46 @@ pub(crate) mod tests {
 <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
 <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
         ];
-        for properties in cases {
+        for (index, properties) in cases.into_iter().enumerate() {
             let document = format!(
                 r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
 <ObjectData Count="1"><Object name="Joint"><Properties Count="3">{properties}</Properties></Object></ObjectData>
 </Document>"#
             );
-            assert!(matches!(
-                FcstdCodec.decode(
+            let result = FcstdCodec
+                .decode(
                     &mut Cursor::new(archive(&document)),
                     &DecodeOptions::default(),
-                ),
-                Err(cadmpeg_ir::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::Malformed(_)
-                ))
-            ));
+                )
+                .expect("nested enum and dangling targets stay at their source homes");
+            let mut expected = vec![
+                ("freecad.property_value", "<XLink file=\"\" name=\"Base\"/>"),
+                ("freecad.property_value", "<XLink file=\"\" name=\"Base\"/>"),
+            ];
+            match index {
+                0 => expected.push(("freecad.value_element", "<Wrapper><Enum value=\"Fixed\"/></Wrapper>")),
+                1 => {
+                    expected.push(("freecad.property_value", "<Wrapper><Integer value=\"0\"/></Wrapper>"));
+                    expected.push(("freecad.property_value", "<CustomEnumList count=\"1\"><Enum value=\"Fixed\"/></CustomEnumList>"));
+                }
+                2 => expected.push(("freecad.property_value", "<CustomEnumList count=\"1\"><Enum value=\"Fixed\"/><Enum value=\"Revolute\"/></CustomEnumList>")),
+                3 => {},
+                _ => unreachable!(),
+            }
+            crate::test_support::source_fidelity::assert_failed_xml_parts(
+                &result, &document, &expected,
+            );
+            assert!(result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::joint::JointRecord>("joints")
+                .unwrap()
+                .is_empty());
+            assert!(result.ir().model.assembly_joints.is_empty());
+            assert_valid_document(result.ir());
         }
     }
 
@@ -1014,8 +1087,7 @@ pub(crate) mod tests {
                         .report()
                         .losses
                         .iter()
-                        .any(|loss| loss.code.local_code()
-                            == "metadata.persistence-payload-unresolved"));
+                        .any(|loss| loss.code.local_code() == "record.unreadable"));
                     assert!(decoded
                         .source_fidelity()
                         .unrepresented()
@@ -1054,16 +1126,40 @@ pub(crate) mod tests {
 <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
 </Properties></Object></ObjectData></Document>"#,
         ];
-        for document in documents {
-            assert!(matches!(
-                FcstdCodec.decode(
+        for (index, document) in documents.into_iter().enumerate() {
+            if index < 3 {
+                assert!(matches!(
+                    FcstdCodec.decode(
+                        &mut Cursor::new(archive(document)),
+                        &DecodeOptions::default()
+                    ),
+                    Err(cadmpeg_ir::DecodeFailure::Codec(
+                        cadmpeg_core::CodecError::Malformed(_)
+                    ))
+                ));
+                continue;
+            }
+            let result = FcstdCodec
+                .decode(
                     &mut Cursor::new(archive(document)),
                     &DecodeOptions::default(),
-                ),
-                Err(cadmpeg_ir::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::Malformed(_)
-                ))
-            ));
+                )
+                .expect("extra Placement fails without replacing first placement");
+            crate::test_support::source_fidelity::assert_failed_xml_parts(&result, document,
+                &[("freecad.property_value", "<PropertyPlacement Px=\"1\" Py=\"0\" Pz=\"0\" Q0=\"0\" Q1=\"0\" Q2=\"0\" Q3=\"1\"/>")]);
+            let rows = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::joint::JointRecord>("joints")
+                .unwrap();
+            assert_eq!(rows.len(), 1);
+            assert!(
+                matches!(&rows[0].body, crate::native::joint::JointBody::Grounded { reference: Some(target), placement }
+                if target.object() == Some("fcstd:native:object#Base") && placement.rows()[0][3] == 0.0)
+            );
+            assert_valid_document(result.ir());
         }
     }
 
@@ -1090,7 +1186,7 @@ pub(crate) mod tests {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "metadata.persistence-payload-unresolved"));
+            .any(|loss| loss.code.local_code() == "record.unreadable"));
         assert!(decoded
             .source_fidelity()
             .unrepresented()
@@ -1155,12 +1251,38 @@ pub(crate) mod tests {
                 result.ir().model.assembly_joints[0].suppressed,
                 expected.unwrap_or(false)
             );
-            assert_eq!(
-                result
+            let failures = result
+                .source_fidelity()
+                .parts()
+                .values()
+                .filter(|part| {
+                    part.state() == &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(failures.len(), usize::from(expected.is_none()));
+            if expected.is_none() {
+                assert_eq!(failures[0].level().as_str(), "freecad.property_value");
+                assert!(result
                     .source_fidelity()
                     .unrepresented()
-                    .contains(&cadmpeg_ir::ArenaClass::Model),
-                expected.is_none()
+                    .contains(&cadmpeg_ir::ArenaClass::Model));
+            }
+            let id = crate::native::native_child_id(
+                "property",
+                &crate::native::native_id("object", "Joint"),
+                "Suppressed",
+            );
+            let layout = &result.source_fidelity().record_layout()[&id];
+            let raw_start = u64::try_from(
+                document.rfind(&format!("value=\"{raw}\"")).unwrap() + "value=\"".len(),
+            )
+            .unwrap();
+            let raw_end = raw_start + u64::try_from(raw.len()).unwrap();
+            assert_eq!(
+                layout.reads()[layout.stream()]
+                    .iter()
+                    .any(|range| range.start <= raw_start && range.end >= raw_end),
+                expected.is_some()
             );
             let restored = cadmpeg_ir::CadIr::from_json(
                 &serde_json::to_string(result.ir()).expect("CADIR serialization"),

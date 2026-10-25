@@ -55,13 +55,25 @@ fn current_group_and_documentation_fields_keep_exact_source_ownership_and_dynami
         let at = document.find(&format!("{key}='{raw}'")).unwrap() + key.len() + "='".len();
         u64_from_index(at)..u64_from_index(at + raw.len())
     };
+    let key = |key: &str, raw: &str| {
+        let at = document.find(&format!("{key}='{raw}'")).unwrap();
+        u64_from_index(at)..u64_from_index(at + key.len())
+    };
     assert_eq!(
         layout.reads()[layout.stream()],
         [
+            key("name", "CustomMeasure"),
             range("name", "CustomMeasure"),
+            key("type", "App::PropertyFloat"),
             range("type", "App::PropertyFloat"),
+            key("group", "Custom&amp;Parameters"),
             range("group", "Custom&amp;Parameters"),
+            key("doc", " Ω &amp; β "),
             range("doc", " Ω &amp; β "),
+            {
+                let at = document.find("<Float ").unwrap() + 1;
+                u64_from_index(at)..u64_from_index(at + "Float".len())
+            },
             // The key is kept in ValueRecord.attributes as well as its value.
             {
                 let at = document.find("value='7.5'").unwrap();

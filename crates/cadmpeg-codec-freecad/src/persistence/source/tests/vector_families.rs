@@ -63,16 +63,18 @@ fn registered_vector_family_components_feed_native_and_neutral_values_from_exact
             );
             assert_eq!(
                 capture.reads(),
-                &std::collections::BTreeMap::from([(
+                &normalized_map(&std::collections::BTreeMap::from([(
                     "file".into(),
-                    vec![
-                        attribute_range(&bytes, "name", "ExtraVector"),
-                        attribute_range(&bytes, "type", type_name),
-                        attribute_range(&bytes, "valueX", raw_x),
-                        attribute_range(&bytes, "valueY", "&#50;"),
-                        attribute_range(&bytes, "valueZ", "3"),
+                    [
+                        attribute_reads(&bytes, "name", "ExtraVector"),
+                        attribute_reads(&bytes, "type", type_name),
+                        attribute_reads(&bytes, "valueX", raw_x),
+                        attribute_reads(&bytes, "valueY", "&#50;"),
+                        attribute_reads(&bytes, "valueZ", "3"),
+                        attribute_reads(&bytes, "Vendor", "opaque-extra"),
                     ]
-                )])
+                    .concat()
+                )]))
             );
         }
     }
@@ -95,7 +97,7 @@ fn incomplete_nonfinite_nested_namespace_and_vendor_vector_families_keep_no_comp
                 "<PropertyVector xmlns:v='urn:vendor' valueX='1' v:valueX='overwritten' valueY='2' valueZ='3'/>",
             ]
         };
-        for carrier in carriers {
+        for (case, carrier) in carriers.iter().enumerate() {
             let xml = document(
                 &format!("<Property name='Uncredited' type='{type_name}'>{carrier}</Property>"),
                 1,
@@ -108,17 +110,39 @@ fn incomplete_nonfinite_nested_namespace_and_vendor_vector_families_keep_no_comp
             let pure = crate::persistence::parse_document(&dom, Vocabulary::Objects).unwrap();
             let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
             assert_eq!(graph.properties, pure.properties, "{type_name}: {carrier}");
-            assert!(!graph.properties[0].values().is_empty());
+            // #215 keeps readable roots across damaged peers; XML namespaces retain local tags.
+            let held = !type_name.starts_with("Vendor::") && matches!(case, 4 | 5 | 6);
+            assert_eq!(graph.properties[0].values().len(), usize::from(held));
+            assert_eq!(
+                graph.properties[0].body.is_some(),
+                held || type_name.starts_with("Vendor::")
+            );
+            assert_eq!(
+                graph
+                    .losses
+                    .iter()
+                    .filter(|loss| loss.code.local_code() == "record.unreadable")
+                    .count(),
+                usize::from(!type_name.starts_with("Vendor::") && case != 6),
+                "{type_name}: {carrier}"
+            );
+            let mut expected = identity_ranges(&xml, "Uncredited", type_name);
+            if held {
+                for (key, raw) in [("valueX", "1"), ("valueY", "2"), ("valueZ", "3")] {
+                    expected.extend(attribute_reads(&xml, key, raw));
+                }
+                assert_eq!(graph.properties[0].values()[0].attributes["valueX"], "1");
+            }
             let captures = property_captures(&ctx, &graph);
             let [capture] = captures.as_slice() else {
                 panic!("one property: {captures:?}")
             };
             assert_eq!(
                 capture.reads(),
-                &std::collections::BTreeMap::from([(
+                &normalized_map(&std::collections::BTreeMap::from([(
                     "file".into(),
-                    identity_ranges(&xml, "Uncredited", type_name)
-                )]),
+                    expected
+                )])),
                 "{type_name}: {carrier}"
             );
         }
@@ -133,26 +157,16 @@ fn discarding_each_actual_vector_family_producer_rolls_back_its_identity_and_com
         let (ctx, view) =
             DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service())
                 .unwrap();
-        let dom = roxmltree::Document::parse(&xml).unwrap();
-        let source = Source::new(&ctx, view, &dom).unwrap();
         let mut losses = Vec::new();
-        let result: Result<(), CodecError> =
-            source.record("discarded-vector-family", dom.root_element(), || {
-                let property = crate::persistence::parse_persisted_property(
-                    dom.root_element(),
-                    "Owner",
-                    0,
-                    &mut losses,
-                    Some(&source),
-                    false,
-                )?;
-                assert_eq!(property.type_name, type_name);
-                assert_eq!(property.values()[0].attributes["valueX"], "1");
-                assert!(crate::attributes::values(&property).is_some());
-                Err(CodecError::malformed(
-                    "discard the actual vector-family producer",
-                ))
-            });
+        let result: Result<(), CodecError> = ctx.record("discarded-vector-family", view, || {
+            let property = parse_property(&ctx, view, &mut losses)?;
+            assert_eq!(property.type_name, type_name);
+            assert_eq!(property.values()[0].attributes["valueX"], "1");
+            assert!(crate::attributes::values(&property).is_some());
+            Err(CodecError::malformed(
+                "discard the actual vector-family producer",
+            ))
+        });
         assert!(result.is_err());
         assert!(losses.is_empty());
         assert!(ctx.take_record_captures().unwrap().is_empty());

@@ -283,7 +283,7 @@ pub(crate) fn transfers_part_construction_geometry_features() {
         matches!(feature("Face").evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker }) if source.ends_with(":Sources") && *face_maker == cadmpeg_ir::features::FaceMaker::Unified)
     );
     assert_eq!(feature("Face").dependencies.len(), 2);
-    assert!(result.report().losses.is_empty());
+    crate::test_support::b1::assert_report(&result);
 }
 
 #[test]
@@ -359,17 +359,9 @@ fn rejects_malformed_polygon_vector_list_side_streams() {
                 &DecodeOptions::default(),
             )
             .expect("native fallback for malformed vector side stream");
-        let feature = result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some("Polygon"))
-            .expect("polygon feature");
-        assert!(matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native { .. })
-        ));
+        super::projection_assertions::assert_native_projection_from_failed_control(
+            &result, "Polygon", "Nodes",
+        );
     }
 
     let document_with_unowned_entry = document.replace(
@@ -387,17 +379,11 @@ fn rejects_malformed_polygon_vector_list_side_streams() {
             &DecodeOptions::default(),
         )
         .expect("native fallback for unowned vector side stream");
-    let feature = result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Polygon"))
-        .expect("polygon feature");
-    assert!(matches!(
-        feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
-    ));
+    super::projection_assertions::assert_failed_value(&result, "Polygon", "Nodes");
+    assert!(
+        matches!(definition(&result, "Polygon"), FeatureDefinition::Operation(FeatureOperation::Polyline { chain }) if !chain.closed() && chain.points().len() == 2)
+    );
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -605,7 +591,7 @@ fn transfers_part_compound_refine_and_reverse_operations() {
     assert_eq!(feature("Compound2").dependencies.len(), 2);
     assert_eq!(feature("Refine").dependencies.len(), 1);
     assert_eq!(feature("Reverse").dependencies.len(), 1);
-    assert!(result.report().losses.is_empty());
+    crate::test_support::b1::assert_report(&result);
 }
 
 #[test]
@@ -1277,7 +1263,7 @@ TShapes 0
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     )));
-    assert!(result.report().losses.is_empty());
+    crate::test_support::b1::assert_report(&result);
 }
 
 #[test]

@@ -9,6 +9,19 @@ use cadmpeg_ir::{
     CadIr,
 };
 
+pub(super) fn unsupported_attribute(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
+    attribute.values.iter().any(|value| {
+        matches!(
+            value,
+            cadmpeg_ir::attributes::AttributeValue::Map(_)
+                | cadmpeg_ir::attributes::AttributeValue::Expression(_)
+                | cadmpeg_ir::attributes::AttributeValue::SubReference { .. }
+                | cadmpeg_ir::attributes::AttributeValue::ExternalReference { .. }
+                | cadmpeg_ir::attributes::AttributeValue::NumericList(_)
+        )
+    })
+}
+
 pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
     let mut losses = Vec::new();
     let mut charge = |count: usize, code: SldprtLossCode, records: &str| {
@@ -152,6 +165,17 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
     );
+    for attribute in ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| unsupported_attribute(attribute))
+    {
+        losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
+            "attribute {} ({}) has no representable SLDPRT attribute value",
+            attribute.id, attribute.name
+        )));
+    }
     losses
 }
 

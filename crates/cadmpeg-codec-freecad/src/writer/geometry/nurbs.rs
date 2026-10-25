@@ -79,7 +79,7 @@ pub(in crate::writer) fn cyclic_tail<T: PartialEq>(lane: &[T], axis: &Axis) -> b
     lane.len() == axis.count + axis.padding && lane[axis.count..] == lane[..axis.padding]
 }
 
-pub(super) fn curve(value: &NurbsCurve) -> Option<String> {
+pub(in crate::writer) fn curve(value: &NurbsCurve) -> Option<String> {
     let axis = axis(
         value.knots(),
         value.degree(),
@@ -115,7 +115,7 @@ pub(super) fn curve(value: &NurbsCurve) -> Option<String> {
     Some(output)
 }
 
-pub(super) fn surface(value: &NurbsSurface) -> Option<String> {
+pub(in crate::writer) fn surface(value: &NurbsSurface) -> Option<String> {
     let u = axis(
         value.u_knots(),
         value.u_degree(),

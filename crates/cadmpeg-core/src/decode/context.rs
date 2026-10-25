@@ -226,6 +226,30 @@ impl<'a> DecodeContext<'a> {
         Ok(value)
     }
 
+    /// Build a sequential record and commit the exact prefix consumed by its parser.
+    pub fn sequential_record<T>(
+        &self,
+        id: &str,
+        remaining: View<'_>,
+        decode: impl FnOnce() -> Result<(T, usize), CodecError>,
+    ) -> Result<(T, usize), CodecError> {
+        self.require_source(remaining)?;
+        let transaction = ReadTransaction::begin(self.budget, Some((id, remaining)))?;
+        let result = decode();
+        if let Some(limit) = self.budget.fused() {
+            return Err(limit.into());
+        }
+        let (value, consumed) = result?;
+        if consumed > remaining.window().len() {
+            return Err(CodecError::malformed(
+                "sequential record exceeds its parent extent",
+            ));
+        }
+        transaction.narrow_record(consumed)?;
+        transaction.commit()?;
+        Ok((value, consumed))
+    }
+
     /// Stage reads and new record captures until explicit commit.
     pub fn read_transaction(&self) -> Result<ReadTransaction<'a>, CodecError> {
         ReadTransaction::begin(self.budget, None)
@@ -374,7 +398,7 @@ impl<'a> DecodeContext<'a> {
         let bytes = additional
             .checked_mul(size_of::<T>())
             .ok_or_else(|| self.budget.retained_allocation_failed(u64::MAX, operation))?;
-        values.try_reserve_exact(additional).map_err(|_| {
+        values.try_reserve(additional).map_err(|_| {
             self.budget
                 .retained_allocation_failed(u64_from_index(bytes), operation)
         })?;

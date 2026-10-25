@@ -78,7 +78,11 @@ pub(super) fn xml_reductions(coverage: &mut ArenaDispositions, document: bool, g
     }
 }
 
-pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositions {
+pub(super) fn complete(
+    ir: &CadIr,
+    emitted_meshes: &std::collections::HashSet<String>,
+    losses: &mut Vec<LossNote>,
+) -> ArenaDispositions {
     let mut dispositions = declaration();
     dispositions.bodies = ArenaDisposition::Written;
     dispositions.regions = ArenaDisposition::Written;
@@ -214,6 +218,20 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         dispositions.assembly_joints = ArenaDisposition::Reported;
     }
 
+    let missing_meshes = ir
+        .model
+        .tessellations
+        .iter()
+        .filter(|mesh| !emitted_meshes.contains(mesh.id.as_str()))
+        .count();
+    if missing_meshes != 0 {
+        losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+            "FCStd does not represent {missing_meshes} record(s) in neutral arena `tessellations`"
+        )));
+        dispositions.tessellations = ArenaDisposition::Reported;
+    } else if !ir.model.tessellations.is_empty() {
+        dispositions.tessellations = ArenaDisposition::Written;
+    }
     for (arena, count) in [
         ("subds", ir.model.subds.len()),
         ("assets", ir.model.assets.len()),
@@ -237,7 +255,6 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         ),
         ("drawings", ir.model.drawings.len()),
         ("semantic_annotations", ir.model.semantic_annotations.len()),
-        ("tessellations", ir.model.tessellations.len()),
         ("pmi", ir.model.pmi.len()),
         ("presentation_layers", ir.model.presentation_layers.len()),
     ] {

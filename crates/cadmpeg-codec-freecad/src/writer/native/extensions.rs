@@ -25,7 +25,12 @@ pub(crate) fn write(
     };
     let mut extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     extensions.sort_by_key(|extension| extension.order);
-    for extension in extensions {
+    let owners = namespace.arena_as::<crate::native::ObjectRecord>("objects")?;
+    for extension in extensions.into_iter().filter(|extension| {
+        owners
+            .iter()
+            .any(|object| object.id().as_str() == extension.owner.as_str())
+    }) {
         let Some(object) = names
             .get(&extension.owner)
             .and_then(|name| objects.iter_mut().find(|object| object.name == *name))

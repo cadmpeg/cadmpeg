@@ -60,18 +60,23 @@ fn changed_ordered_list_strings_flow_to_kept_and_neutral_values_with_exact_nonze
         assert_eq!(capture.offset(), u64_from_index(start));
         assert_eq!(capture.byte_len(), u64_from_index(end - start));
         let mut expected = identity_ranges(&bytes, "Words", "App::PropertyStringList");
-        expected.push(attribute_range(&bytes, "value", raw_first));
-        expected.push(attribute_range(&bytes, "value", raw_second));
+        expected.extend(attribute_reads(&bytes, "count", "3"));
+        expected.extend(attribute_reads(&bytes, "value", raw_first));
+        expected.extend(attribute_reads(&bytes, "value", raw_second));
+        expected.extend(attribute_reads(&bytes, "value", ""));
         assert_eq!(
             capture.reads(),
-            &std::collections::BTreeMap::from([("file".into(), expected)])
+            &normalized_map(&std::collections::BTreeMap::from([(
+                "file".into(),
+                expected
+            )]))
         );
     }
 }
 
 #[test]
 fn invalid_counts_nested_case_namespace_and_vendor_lists_keep_their_original_values_uncredited() {
-    for (type_name, body) in [
+    for (case, (type_name, body)) in [
         ("App::PropertyStringList", "<StringList count='2'><String value='kept'/></StringList>"),
         ("App::PropertyStringList", "<StringList count='bad'><String value='kept'/></StringList>"),
         ("App::PropertyStringList", "<StringList count='1'><Wrapper><String value='kept'/></Wrapper></StringList>"),
@@ -83,7 +88,7 @@ fn invalid_counts_nested_case_namespace_and_vendor_lists_keep_their_original_val
         ("App::PropertyStringList", "<v:StringList xmlns:v='urn:vendor' count='1'><String value='kept'/></v:StringList>"),
         ("App::PropertyStringList", "<StringList count='1'><String value='kept'/></StringList><StringList count='0'/>"),
         ("Vendor::PropertyStringList", "<StringList count='1'><String value='kept'/></StringList>"),
-    ] {
+    ].into_iter().enumerate() {
         let xml = document(&format!("<Property name='Uncredited' type='{type_name}'>{body}</Property>"), 1);
         let arena = DecodeArena::new();
         let (ctx, view) = DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
@@ -91,10 +96,30 @@ fn invalid_counts_nested_case_namespace_and_vendor_lists_keep_their_original_val
         let pure = crate::persistence::parse_document(&dom, Vocabulary::Objects).unwrap();
         let graph = parse_document_source(&ctx, view, &dom, Vocabulary::Objects).unwrap();
         assert_eq!(graph.properties, pure.properties, "{body}");
-        assert!(graph.properties[0].values().iter().any(|value| value.attributes.values().any(|text| text == "kept" || text == "overwritten")));
+        // #215 retains each readable leaf and gives up only the damaged element.
+        let property = &graph.properties[0];
+        let (held, failures) = match case {
+            0 | 1 | 7 => (0, 1),
+            2 | 4 => (1, 1),
+            3 | 9 => (2, 1),
+            5 | 6 | 8 => (2, 0),
+            10 => (0, 0),
+            _ => unreachable!(),
+        };
+        assert_eq!(property.values().len(), held, "{body}");
+        assert_eq!(property.body.is_some(), !matches!(case, 0 | 1 | 7));
+        assert_eq!(graph.losses.iter().filter(|loss| loss.code.local_code() == "record.unreadable").count(), failures, "{body}");
+        let mut expected = identity_ranges(&xml, "Uncredited", type_name);
+        if held != 0 { expected.extend(attribute_reads(&xml, "count", "1")); }
+        if held == 2 {
+            let (key, raw) = if case == 5 { ("v:value", "overwritten") } else { ("value", "kept") };
+            expected.extend(attribute_reads(&xml, key, raw));
+            assert_eq!(property.values()[1].attributes["value"], raw);
+        }
+        if case == 6 { expected.extend(attribute_reads(&xml, "Vendor", "opaque")); }
         let captures = property_captures(&ctx, &graph);
         let [capture] = captures.as_slice() else { panic!("one property: {captures:?}") };
-        assert_eq!(capture.reads(), &std::collections::BTreeMap::from([("file".into(), identity_ranges(&xml, "Uncredited", type_name))]), "{body}");
+        assert_eq!(capture.reads(), &normalized_map(&std::collections::BTreeMap::from([("file".into(), expected)])), "{body}");
     }
 }
 
@@ -104,32 +129,22 @@ fn discarding_a_real_string_list_producer_rolls_back_each_child_value_and_proper
     let arena = DecodeArena::new();
     let (ctx, view) =
         DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &DecodePolicy::service()).unwrap();
-    let dom = roxmltree::Document::parse(xml).unwrap();
-    let source = Source::new(&ctx, view, &dom).unwrap();
     let mut losses = Vec::new();
-    let result: Result<(), CodecError> =
-        source.record("discarded-string-list", dom.root_element(), || {
-            let property = crate::persistence::parse_persisted_property(
-                dom.root_element(),
-                "Owner",
-                0,
-                &mut losses,
-                Some(&source),
-                false,
-            )?;
-            assert_eq!(property.values()[1].attributes["value"], "first");
-            assert_eq!(property.values()[2].attributes["value"], "second");
-            assert_eq!(
-                crate::attributes::values(&property).unwrap(),
-                vec![
-                    AttributeValue::String("first".into()),
-                    AttributeValue::String("second".into())
-                ]
-            );
-            Err(CodecError::malformed(
-                "discard the actual ordered string-list producer",
-            ))
-        });
+    let result: Result<(), CodecError> = ctx.record("discarded-string-list", view, || {
+        let property = parse_property(&ctx, view, &mut losses)?;
+        assert_eq!(property.values()[1].attributes["value"], "first");
+        assert_eq!(property.values()[2].attributes["value"], "second");
+        assert_eq!(
+            crate::attributes::values(&property).unwrap(),
+            vec![
+                AttributeValue::String("first".into()),
+                AttributeValue::String("second".into())
+            ]
+        );
+        Err(CodecError::malformed(
+            "discard the actual ordered string-list producer",
+        ))
+    });
     assert!(result.is_err());
     assert!(losses.is_empty());
     assert!(ctx.take_record_captures().unwrap().is_empty());

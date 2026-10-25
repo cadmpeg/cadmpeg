@@ -14,6 +14,15 @@ pub(super) struct CaptureOwner {
 }
 
 impl CaptureOwner {
+    pub(super) const fn primary(token: usize) -> Self {
+        Self {
+            token,
+            primary: true,
+        }
+    }
+    pub(super) const fn token(self) -> usize {
+        self.token
+    }
     pub(super) const fn is_continuation(self) -> bool {
         !self.primary
     }
@@ -59,6 +68,57 @@ impl<'a> DecodeContext<'a> {
         ))
     }
 
+    /// Produce a sequential primary fragment once, then permit disjoint continuations.
+    ///
+    /// The primary parser's own reads must fit its consumed prefix. The owner
+    /// has the same session, batch, rollback, and seal limits as `record_owner`.
+    pub fn sequential_record_owner<T>(
+        &self,
+        id: &str,
+        remaining: View<'_>,
+        decode: impl FnOnce() -> Result<(T, usize), CodecError>,
+    ) -> Result<(T, usize, RecordOwner<'a>), CodecError> {
+        self.require_source(remaining)?;
+        let transaction = ReadTransaction::begin(self.budget, Some((id, remaining)))?;
+        let token = transaction.token;
+        self.budget.declare_owner(token)?;
+        let value = decode();
+        if let Some(limit) = self.budget.fused() {
+            return Err(limit.into());
+        }
+        let (value, consumed) = value?;
+        if consumed > remaining.window().len() {
+            return Err(CodecError::malformed(
+                "sequential record exceeds its parent extent",
+            ));
+        }
+        transaction.narrow_record(consumed)?;
+        transaction.commit()?;
+        Ok((
+            value,
+            consumed,
+            RecordOwner {
+                session: self.budget,
+                token,
+            },
+        ))
+    }
+
+    /// Retire the complete capture of a source producer that cannot form its record.
+    ///
+    /// The primary declaration must still belong to this session and batch and
+    /// every producer scope must have closed. Enclosing read transactions stage
+    /// this retirement, so their rollback restores the original authority.
+    pub fn retire_record_owner(&self, owner: &RecordOwner<'_>) -> Result<(), CodecError> {
+        if !self.budget.same_session(owner.session) {
+            return Err(CodecError::malformed(
+                "record owner belongs to another decode session",
+            ));
+        }
+        let authority = self.budget.authority_for_owner(owner.token)?;
+        self.retire_record_capture(&authority)
+    }
+
     /// Produce another actual source fragment of the same record.
     ///
     /// Only this opaque token permits repeated record identity. Its declaration
@@ -70,6 +130,28 @@ impl<'a> DecodeContext<'a> {
         extent: View<'_>,
         decode: impl FnOnce() -> Result<T, CodecError>,
     ) -> Result<T, CodecError> {
+        self.sequential_record_fragment(owner, extent, || {
+            decode().map(|value| (value, extent.window().len()))
+        })
+        .map(|(value, _consumed)| value)
+    }
+
+    /// Continue one actual source fragment once and finalize its consumed prefix.
+    pub fn sequential_record_fragment<T>(
+        &self,
+        owner: &RecordOwner<'_>,
+        extent: View<'_>,
+        decode: impl FnOnce() -> Result<(T, usize), CodecError>,
+    ) -> Result<(T, usize), CodecError> {
+        self.record_fragment_impl(owner, extent, decode)
+    }
+
+    fn record_fragment_impl<T>(
+        &self,
+        owner: &RecordOwner<'_>,
+        extent: View<'_>,
+        decode: impl FnOnce() -> Result<(T, usize), CodecError>,
+    ) -> Result<(T, usize), CodecError> {
         self.require_source(extent)?;
         if !self.budget.same_session(owner.session) {
             return Err(CodecError::malformed(
@@ -88,9 +170,15 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.budget.fused() {
             return Err(limit.into());
         }
-        let value = value?;
+        let (value, consumed) = value?;
+        if consumed > extent.window().len() {
+            return Err(CodecError::malformed(
+                "sequential record fragment exceeds its parent extent",
+            ));
+        }
+        transaction.narrow_record(consumed)?;
         transaction.commit()?;
-        Ok(value)
+        Ok((value, consumed))
     }
 }
 
@@ -118,40 +206,25 @@ impl SessionHandle<'_> {
                     "record captures have already been extracted",
                 ));
             }
-            if session
-                .frames
-                .iter()
-                .filter_map(|frame| frame.record.as_ref())
-                .any(|record| record.owner.is_some_and(|owner| owner.token == token))
-            {
+            let primary = session
+                .primaries
+                .get(token)
+                .ok_or_else(|| CodecError::malformed("record owner declaration was rolled back"))?;
+            if primary.active {
                 return Err(CodecError::malformed(
                     "record owner fragment is already active",
                 ));
             }
-            let primary = session
-                .committed
-                .iter()
-                .chain(
-                    session
-                        .frames
-                        .iter()
-                        .flat_map(|frame| frame.captures.iter()),
-                )
-                .find(|record| {
-                    record.owner
-                        == Some(CaptureOwner {
-                            token,
-                            primary: true,
-                        })
-                })
-                .ok_or_else(|| CodecError::malformed("record owner declaration was rolled back"))?;
             let batch = session.frames.iter().rev().find_map(|frame| frame.batch);
             if primary.batch != batch {
                 return Err(CodecError::malformed(
                     "record owner belongs to another record batch",
                 ));
             }
-            let mut record = session.capture(primary.id(), extent)?;
+            if primary.retired {
+                return Err(CodecError::malformed("record owner was retired"));
+            }
+            let mut record = session.capture(primary.id.as_str(), extent)?;
             record.owner = Some(CaptureOwner {
                 token,
                 primary: false,

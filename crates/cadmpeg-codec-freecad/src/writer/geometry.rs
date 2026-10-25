@@ -297,18 +297,40 @@ pub(super) fn located_surface(
     surface_record(ir, value).map(|row| (row, cadmpeg_ir::transform::Transform::identity()))
 }
 
-/// A decoded placed carrier can share its original base table identity. This
-/// is a layout choice only when the current neutral inline basis still agrees.
+/// An inline basis is a value; independent current base identities keep their rows.
 pub(super) fn curve_layout_key(
     ir: &cadmpeg_ir::CadIr,
     value: &cadmpeg_ir::geometry::Curve,
+    selected: &std::collections::HashSet<String>,
 ) -> String {
-    if let Some((base, _)) = value.id.as_str().rsplit_once("%40") {
+    if value.geometry.procedural_construction().is_none() {
         if let Some(SolvedCurveGeometry::Transformed(placed)) = value.geometry.solved() {
-            if ir.model.curves.iter().any(|curve| {
-                curve.id.as_str() == base && curve.geometry.solved() == Some(placed.basis())
-            }) {
-                return base.to_owned();
+            let Some((row, _)) = located_curve(ir, value) else {
+                return value.id.to_string();
+            };
+            let rank = ir.model.curves.iter().take_while(|peer| peer.id != value.id).filter(|peer| {
+                selected.contains(peer.id.as_str()) && peer.native_ref == value.native_ref
+                    && peer.parameter_range == value.parameter_range
+                    && peer.geometry.procedural_construction().is_none()
+                    && matches!(peer.geometry.solved(), Some(SolvedCurveGeometry::Transformed(other)) if other == placed)
+            }).count();
+            if let Some(base) = ir
+                .model
+                .curves
+                .iter()
+                .filter(|base| {
+                    selected.contains(base.id.as_str())
+                        && base.id != value.id
+                        && base.native_ref == value.native_ref
+                        && base.geometry.solved() == Some(placed.basis())
+                        && located_curve(ir, base).is_some_and(|(encoded, location)| {
+                            encoded == row
+                                && location == cadmpeg_ir::transform::Transform::identity()
+                        })
+                })
+                .nth(rank)
+            {
+                return base.id.to_string();
             }
         }
     }
@@ -317,15 +339,40 @@ pub(super) fn curve_layout_key(
 pub(super) fn surface_layout_key(
     ir: &cadmpeg_ir::CadIr,
     value: &cadmpeg_ir::geometry::Surface,
+    selected: &std::collections::HashSet<String>,
 ) -> String {
-    if let Some((base, _)) = value.id.as_str().rsplit_once("%40") {
+    if value.geometry.procedural_construction().is_none() {
         if let Some(SolvedSurfaceGeometry::Transformed(placed)) = value.geometry.solved() {
-            if ir.model.surfaces.iter().any(|surface| {
-                surface.id.as_str() == base && surface.geometry.solved() == Some(placed.basis())
-            }) {
-                return base.to_owned();
+            let Some((row, _)) = located_surface(ir, value) else {
+                return value.id.to_string();
+            };
+            let rank = ir.model.surfaces.iter().take_while(|peer| peer.id != value.id).filter(|peer| {
+                selected.contains(peer.id.as_str()) && peer.native_ref == value.native_ref
+                    && peer.geometry.procedural_construction().is_none()
+                    && matches!(peer.geometry.solved(), Some(SolvedSurfaceGeometry::Transformed(other)) if other == placed)
+            }).count();
+            if let Some(base) = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|base| {
+                    selected.contains(base.id.as_str())
+                        && base.id != value.id
+                        && base.native_ref == value.native_ref
+                        && base.geometry.solved() == Some(placed.basis())
+                        && located_surface(ir, base).is_some_and(|(encoded, location)| {
+                            encoded == row
+                                && location == cadmpeg_ir::transform::Transform::identity()
+                        })
+                })
+                .nth(rank)
+            {
+                return base.id.to_string();
             }
         }
     }
     value.id.to_string()
 }
+
+#[cfg(test)]
+mod tests;

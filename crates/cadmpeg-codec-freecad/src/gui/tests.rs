@@ -74,6 +74,7 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
         super::PrimitiveAppearanceSource {
             provider_name: "Model",
             object_id: "fcstd:object#Model",
+            native_ref: None,
             packed_color: 0xff00_00ff,
             style,
             payload_prefixes: &[String::new()],
@@ -172,6 +173,7 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
             &mut plan,
             &mut losses,
             super::PrimitiveAppearanceSource {
+                native_ref: None,
                 provider_name: "Model",
                 object_id: "shape",
                 packed_color: 0x1122_3344,
@@ -352,8 +354,20 @@ fn retains_missing_and_ambiguous_cameras_in_schema_one_gui_document() {
             .expect("independent persistence survives malformed GUI metadata");
 
         if camera_records.is_empty() {
-            assert!(recovered.report().losses.is_empty());
-            assert!(recovered.source_fidelity().unrepresented().is_empty());
+            assert!(recovered
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code.local_code() == "source.bytes-undecoded"));
+            assert!(recovered
+                .source_fidelity()
+                .parts()
+                .values()
+                .all(|part| !matches!(
+                    part.state(),
+                    cadmpeg_ir::source_fidelity::parts::PartState::GivenUp { .. }
+                )));
+            crate::fidelity::b1::assert_classified_spans(&recovered);
             assert!(recovered.ir().model.presentation_documents[0]
                 .states()
                 .is_empty());
@@ -477,10 +491,12 @@ fn a_failed_foreign_gui_parse_does_not_apply_staged_appearances() {
         )
         .expect("broken foreign GUI schema degrades");
 
-    assert!(result.ir().model.appearances.is_empty());
+    // #215 preserves the readable ShapeColor peer; #224 gives it its own appearance.
+    assert_eq!(result.ir().model.appearances.len(), 1);
+    assert_gui_part_recovery(&result, &["freecad.gui_property_value"]);
     assert!(result.ir().model.appearance_bindings.is_empty());
-    assert!(result.ir().model.presentation_documents.is_empty());
-    assert!(result.ir().model.view_presentations.is_empty());
+    assert_eq!(result.ir().model.presentation_documents.len(), 1);
+    assert_eq!(result.ir().model.view_presentations.len(), 1);
     assert!(result
         .report()
         .losses
@@ -500,7 +516,7 @@ fn retains_invalid_schema_one_camera_values_with_diagnostics() {
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="OrthographicCamera { position 1 2 3 orientation 0 0 0 0 }"/></Document>"#,
         r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><Camera settings="not a camera"/></Document>"#,
     ];
-    for gui in gui_documents {
+    for (case, gui) in gui_documents.into_iter().enumerate() {
         let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
@@ -510,7 +526,11 @@ fn retains_invalid_schema_one_camera_values_with_diagnostics() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        if case == 0 {
+            assert_gui_part_recovery(&recovered, &["freecad.gui_document"]);
+        } else {
+            assert_gui_metadata_recovery(&recovered);
+        }
     }
 }
 
@@ -690,9 +710,9 @@ fn refuses_a_transparency_percentage_outside_its_domain() {
             )
             .expect("independent persistence survives malformed GUI metadata");
         assert!(
-            assert_gui_metadata_recovery(&recovered)
+            assert_gui_part_recovery(&recovered, &["freecad.gui_property_value"])
                 .message
-                .contains("GUI color components must be in [0, 1]"),
+                .contains("transparency percentage is outside 0..=100"),
             "transparency {percent}"
         );
     }
@@ -837,15 +857,16 @@ Co 1001000 +2 0 *
                 &DecodeOptions::default(),
             )
             .expect("producer-accepted topology color mismatch");
-        assert_eq!(result.report().losses.len(), 2);
-        assert!(result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code.local_code() == "source.model-payload-unrepresented"));
+        // #214 gives unread native fields exact B1 spans rather than an arena-wide loss.
+        crate::fidelity::b1::assert_classified_spans(&result);
         assert_eq!(
-            result.source_fidelity().unrepresented(),
-            cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "appearance.topology-color-count-mismatch")
+                .count(),
+            1
         );
         let loss = result
             .report()
@@ -890,12 +911,12 @@ fn quarantines_ambiguous_gui_containers_and_names() {
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
-    for gui in [
+    for (case,gui) in [
         br#"<Document SchemaVersion="1"><ViewProviderData Count="0"/><ViewProviderData Count="0"/><Camera settings=""/></Document>"#.as_slice(),
         br#"<Document SchemaVersion="1"><ViewProviderData Count="2"><ViewProvider name="Model"><Properties Count="0"/></ViewProvider><ViewProvider name="Model"><Properties Count="0"/></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
         br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="0"/><Properties Count="0"/></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
         br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="2"><Property name="State" type="Vendor::PropertyState"><Value/></Property><Property name="State" type="Vendor::PropertyState"><Value/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
-    ] {
+    ].into_iter().enumerate() {
         let recovered = FcstdCodec
             .decode(
                 &mut Cursor::new(archive_entries(&[
@@ -905,7 +926,7 @@ fn quarantines_ambiguous_gui_containers_and_names() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered, match case {0=> &["freecad.view_provider_data"],1=> &["freecad.view_provider"],2=> &["freecad.gui_properties"],_=> &["freecad.gui_property_value","freecad.gui_property"]});
     }
 }
 
@@ -957,7 +978,7 @@ fn quarantines_malformed_registered_gui_property_values() {
             &DecodeOptions::default(),
         )
         .expect("independent persistence survives malformed GUI metadata");
-    assert_gui_metadata_recovery(&recovered);
+    assert_gui_part_recovery(&recovered, &["freecad.gui_property_value"]);
 }
 
 #[test]
@@ -984,12 +1005,12 @@ fn validates_gui_link_value_grammars() {
         )
         .expect("valid GUI link grammars");
 
-    for invalid in [
+    for (case, invalid) in [
         r#"<Property name="Link" type="App::PropertyLink"><Link value=""><Nested/></Link></Property>"#,
         r#"<Property name="LinkList" type="App::PropertyLinkList"><LinkList count="1"><Link value=""/><Link value=""/></LinkList></Property>"#,
         r#"<Property name="LinkSub" type="App::PropertyLinkSub"><LinkSub value="" count="1"><Sub value="Face1"><Nested/></Sub></LinkSub></Property>"#,
         r#"<Property name="LinkSubList" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="" sub="Face1"><Nested/></Link></LinkSubList></Property>"#,
-    ] {
+    ].into_iter().enumerate() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
@@ -1002,7 +1023,7 @@ fn validates_gui_link_value_grammars() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered, if case < 2 {&["freecad.gui_property_value"]}else{&["freecad.gui_value_element"]});
     }
 }
 
@@ -1042,7 +1063,7 @@ fn validates_gui_constraint_attribute_grammars() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered, &["freecad.gui_property_value"]);
     }
 }
 
@@ -1086,7 +1107,7 @@ fn validates_gui_in_memory_list_grammars() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered, &["freecad.gui_value_element"]);
     }
 }
 
@@ -1125,13 +1146,13 @@ fn accepts_and_validates_gui_custom_enumerations() {
     assert_eq!(persistent.values[1].tag, "PersistentObject");
     assert_eq!(persistent.values[2].tag, "State");
 
-    for invalid in [
-        br#"<Integer value="1"/><CustomEnumList count="0"/>"#.as_slice(),
-        br#"<Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="None"/></CustomEnumList>"#.as_slice(),
+    for (value, malformed) in [
+        (br#"<Integer value="1"/><CustomEnumList count="0"/>"#.as_slice(), false),
+        (br#"<Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="None"/></CustomEnumList>"#.as_slice(), true),
     ] {
         let gui = [
             br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="Pattern" type="App::PropertyEnumeration">"#.as_slice(),
-            invalid,
+            value,
             br#"</Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
         ]
         .concat();
@@ -1144,7 +1165,25 @@ fn accepts_and_validates_gui_custom_enumerations() {
                 &DecodeOptions::default(),
             )
             .expect("invalid GUI enum remains source-only");
-        assert_gui_metadata_recovery(&recovered);
+        if malformed {
+            assert_gui_part_recovery(&recovered, &["freecad.gui_property_value"]);
+        } else {
+            // An index without a corresponding choice remains its numeric family.
+            assert!(recovered.source_fidelity().parts().values()
+                .all(|part| !matches!(part.state(), cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {})));
+            assert!(!recovered.report().losses.iter()
+                .any(|loss| loss.code.local_code() == "record.unreadable"));
+            assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
+            crate::fidelity::b1::assert_classified_spans(&recovered);
+            let properties = recovered.ir().native.namespace("fcstd").unwrap()
+                .arena_as::<crate::native::GuiPropertyRecord>("gui_properties").unwrap();
+            let enumeration = properties.iter().find(|property| property.name == "Pattern").unwrap();
+            assert_eq!(enumeration.values.len(), 2);
+            assert_eq!(enumeration.values[0].tag, "Integer");
+            assert_eq!(enumeration.values[0].attributes["value"], "1");
+            assert_eq!(enumeration.values[1].tag, "CustomEnumList");
+            assert_eq!(enumeration.values[1].attributes["count"], "0");
+        }
     }
 }
 
@@ -1193,11 +1232,11 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
     assert_eq!(span.classification.as_str(), "typed");
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
-    for value in [
+    for (case,value) in [
         br#"<VisualLayerList count="1"><VisualLayer visible="maybe" linePattern="1" lineWidth="1"/></VisualLayerList>"#.as_slice(),
         br#"<VisualLayerList count="2"><VisualLayer visible="true" linePattern="1" lineWidth="1"/></VisualLayerList>"#.as_slice(),
         br#"<VisualLayerList count="1"><VisualLayer visible="true" linePattern="1" lineWidth="NaN"/></VisualLayerList>"#.as_slice(),
-    ] {
+    ].into_iter().enumerate() {
         let gui = [
             br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Sketch"><Properties Count="1"><Property name="VisualLayerList" type="BadType">"#.as_slice(),
             value,
@@ -1213,7 +1252,7 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered,if case ==1 {&["freecad.gui_property_value"]}else{&["freecad.gui_value_element"]});
     }
 }
 
@@ -1287,7 +1326,7 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
             &DecodeOptions::default(),
         )
         .expect("independent persistence survives malformed GUI metadata");
-    assert_gui_metadata_recovery(&recovered);
+    assert_gui_part_recovery(&recovered, &["freecad.float_list_entry"]);
 }
 
 #[test]
@@ -1319,7 +1358,7 @@ fn quarantines_gui_side_entries_owned_by_nested_values() {
         )
         .expect("direct GUI side-entry references");
 
-    for invalid in [
+    for (case, invalid) in [
         r#"<Property name="Floats" type="App::PropertyFloatList"><FloatList file=""><Nested file="Floats"/></FloatList></Property>"#,
         r#"<Property name="Vectors" type="App::PropertyVectorList"><VectorList file=""><Nested file="Vectors"/></VectorList></Property>"#,
         r#"<Property name="Placements" type="App::PropertyPlacementList"><PlacementList file=""><Nested file="Placements"/></PlacementList></Property>"#,
@@ -1327,7 +1366,7 @@ fn quarantines_gui_side_entries_owned_by_nested_values() {
         r#"<Property name="Materials" type="App::PropertyMaterialList"><MaterialList file="" version="3"><Nested file="Materials"/></MaterialList></Property>"#,
         r#"<Property name="Included" type="App::PropertyFileIncluded"><FileIncluded file=""><Nested file="Included"/></FileIncluded></Property>"#,
         r#"<Property name="Included" type="App::PropertyFileIncluded"><FileIncluded file="Included" data="inline"/></Property>"#,
-    ] {
+    ].into_iter().enumerate() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
@@ -1346,7 +1385,7 @@ fn quarantines_gui_side_entries_owned_by_nested_values() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered, if case < 6 {&["freecad.gui_value_element"]}else{&["freecad.gui_property_value"]});
     }
 }
 
@@ -1369,13 +1408,13 @@ fn validates_gui_mesh_and_points_value_grammars() {
         )
         .expect("valid GUI mesh and points roots");
 
-    for invalid in [
+    for (case, invalid) in [
         r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file=""><Nested file="MeshPayload"/></Mesh></Property>"#,
         r#"<Property name="Points" type="Points::PropertyPointKernel"><Points file="PointsPayload"><Nested file="Other"/></Points></Property>"#,
         r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshPayload"/><Mesh file="Other"/></Property>"#,
         r#"<Property name="Points" type="Points::PropertyPointKernel"><Mesh file="PointsPayload"/></Property>"#,
         r#"<Property name="Points" type="Points::PropertyPointKernel"><Points file="PointsPayload" mtrx="1 0 0"/></Property>"#,
-    ] {
+    ].into_iter().enumerate() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
@@ -1391,7 +1430,7 @@ fn validates_gui_mesh_and_points_value_grammars() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered,match case {0=> &["freecad.gui_value_element"],1=> &["freecad.gui_value_element","freecad.point_kernel_entry"],2=> &["freecad.gui_property_value","freecad.mesh_kernel_header"],_=> &["freecad.gui_property_value"]});
     }
 }
 
@@ -1409,7 +1448,7 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
         )
         .expect("valid TechDraw GeomFormatList");
 
-    for invalid in [
+    for (case, invalid) in [
         r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><Wrong count="0"/></Property>"#,
         r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"/></Property>"#,
         r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><Other type="TechDraw::GeomFormat"/></GeomFormatList></Property>"#,
@@ -1418,7 +1457,7 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
         r##"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"/><Style value="2"/><Weight value="nan"/><Color value="#FF0000"/><Visible value="1"/></GeomFormat></GeomFormatList></Property>"##,
         r#"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"/><Style value="2"/><Weight value="0.7"/><Color value="red"/><Visible value="1"/></GeomFormat></GeomFormatList></Property>"#,
         r##"<Property name="Formats" type="TechDraw::PropertyGeomFormatList"><GeomFormatList count="1"><GeomFormat type="TechDraw::GeomFormat"><GeomIndex value="0"/><Style value="2"/><Weight value="0.7"/><Color value="#FF0000"/><Visible value="1"/><Unexpected value="2"/></GeomFormat></GeomFormatList></Property>"##,
-    ] {
+    ].into_iter().enumerate() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
@@ -1431,7 +1470,7 @@ fn validates_gui_techdraw_geom_format_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered, if case < 2 {&["freecad.gui_property_value"]}else{&["freecad.gui_value_element"]});
     }
 }
 
@@ -1481,7 +1520,7 @@ fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
         )),
         property(&record.replace("</CosmeticVertex>", "<Extra/></CosmeticVertex>")),
     ];
-    for invalid in invalid {
+    for (case, invalid) in invalid.into_iter().enumerate() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
@@ -1494,7 +1533,14 @@ fn validates_gui_techdraw_cosmetic_vertex_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(
+            &recovered,
+            if !matches!(case, 2 | 3 | 4) {
+                &["freecad.gui_property_value"]
+            } else {
+                &["freecad.gui_value_element"]
+            },
+        );
     }
 }
 
@@ -1556,7 +1602,7 @@ fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
             "<LineNumber value=\"2\"/><Extra/>",
         )),
     ];
-    for invalid in invalid {
+    for (case, invalid) in invalid.into_iter().enumerate() {
         let gui = format!(
             r#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1">{invalid}</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#
         );
@@ -1569,7 +1615,14 @@ fn validates_gui_techdraw_cosmetic_edge_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(
+            &recovered,
+            if case != 2 {
+                &["freecad.gui_property_value"]
+            } else {
+                &["freecad.gui_value_element"]
+            },
+        );
     }
 }
 
@@ -1632,7 +1685,7 @@ fn validates_gui_techdraw_center_line_list_grammar() {
                 &DecodeOptions::default(),
             )
             .expect("independent persistence survives malformed GUI metadata");
-        assert_gui_metadata_recovery(&recovered);
+        assert_gui_part_recovery(&recovered, &["freecad.gui_property_value"]);
     }
 }
 
@@ -1708,7 +1761,10 @@ fn quarantines_truncated_gui_material_list_payload() {
             &DecodeOptions::default(),
         )
         .expect("independent persistence survives malformed GUI metadata");
-    assert_gui_metadata_recovery(&recovered);
+    // #215: the complete count locates the first zero-length fixed record;
+    // only that material gives up, while its entry retains the known slot.
+    assert_gui_part_recovery(&recovered, &["freecad.material_list_material"]);
+    recovery_assertions::assert_truncated_material_slot(&recovered);
 }
 
 #[test]
@@ -1734,8 +1790,10 @@ fn retains_unregistered_gui_property_values_without_semantic_dispatch() {
         .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
         .expect("GUI properties");
     assert_eq!(properties[0].type_name, "Vendor::PropertyState");
-    assert_eq!(properties[0].values[0].tag, "VendorState");
-    assert_eq!(properties[0].values[1].tag, "Nested");
+    // #214/#215: Unknown keeps declaration identity only; its payload is a given-up source part.
+    assert!(properties[0].values.is_empty());
+    assert!(properties[0].links.is_empty());
+    assert_gui_part_recovery(&result, &["freecad.gui_property_value"]);
 }
 
 #[test]
@@ -1768,7 +1826,9 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .iter()
         .find(|property| property.name == "ExtensionState")
         .expect("extension property");
-    assert_eq!(property.side_entries, ["state.bin"]);
+    assert!(property.side_entries.is_empty());
+    assert!(property.values.is_empty());
+    assert_gui_part_recovery(&result, &["freecad.gui_property_value"]);
 
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
@@ -1777,7 +1837,7 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .iter()
         .find(|entry| entry.name() == "state.bin")
         .expect("state entry");
-    assert_eq!(entry.referenced_by(), std::slice::from_ref(&property.id));
+    assert!(entry.referenced_by().is_empty());
     assert_eq!(
         crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
         payload
@@ -1906,36 +1966,6 @@ fn a_blank_gui_property_key_is_charged_and_the_presentation_graph_survives() {
     );
 }
 
-/// Decodes one shape whose view provider states `shininess` as its
-/// `ShapeMaterial` shininess and checks that the refusal is reported while
-/// retaining the GUI source. The invalid material never enters appearance.
-fn assert_material_shininess_remains_source_only(shininess: &str, expected: &str) {
-    let document = br#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="A"/></Objects>
-<ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData>
-</Document>"#;
-    let gui = format!(
-        r#"<Document SchemaVersion="1"><ViewProviderData Count="1">
-<ViewProvider name="A"><Properties Count="2">
-<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property>
-<Property name="ShapeMaterial" type="App::PropertyMaterial"><PropertyMaterial ambientColor="1" diffuseColor="2" specularColor="3" emissiveColor="4" shininess="{shininess}" transparency="0.25"/></Property>
-</Properties></ViewProvider>
-</ViewProviderData><Camera settings=""/></Document>"#
-    );
-    let decoded = FcstdCodec.decode(
-        &mut Cursor::new(archive_entries(&[
-            ("Document.xml", document),
-            ("GuiDocument.xml", gui.as_bytes()),
-        ])),
-        &DecodeOptions::default(),
-    );
-    let recovered = decoded.expect("malformed GUI material remains source-only");
-    assert!(assert_gui_metadata_recovery(&recovered)
-        .message
-        .contains(expected));
-    assert!(recovered.ir().model.appearances.is_empty());
-}
-
 /// A `nan` material shininess stays source-only.
 #[test]
 fn a_non_finite_material_value_keeps_the_gui_source_only() {
@@ -1954,18 +1984,11 @@ fn an_unparsable_material_value_keeps_the_gui_source_only() {
     );
 }
 
-fn assert_gui_metadata_recovery(
-    result: &cadmpeg_ir::codec::DecodeResult,
-) -> &cadmpeg_ir::report::loss::LossNote {
-    assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    let loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| loss.code.local_code() == "source.gui-metadata-unresolved")
-        .expect("GUI recovery diagnostic");
-    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
-    loss
-}
+mod recovery_assertions;
+use recovery_assertions::{
+    assert_gui_metadata_recovery, assert_gui_part_recovery,
+    assert_material_shininess_remains_source_only,
+};
 
 mod metadata_recovery;
+mod shape_payloads;

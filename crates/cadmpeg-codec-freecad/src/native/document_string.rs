@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed identity ownership for admitted document string properties.
 
-use super::{PropertyBody, PropertyRecord};
+use super::PropertyRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::schema::rewrite::typed::prune::{DependencyPosition, DependencyReference};
@@ -12,10 +12,7 @@ pub(crate) struct DocumentString(PropertyRecord);
 
 impl DocumentString {
     pub(crate) fn new(property: PropertyRecord) -> Result<Self, CodecError> {
-        if property.type_name != "App::PropertyString"
-            || !(matches!(&property.body, Some(PropertyBody::Persisted { links, side_entries, .. }) if links.is_empty() && side_entries.is_empty())
-                || property.body.is_none())
-        {
+        if property.type_name != "App::PropertyString" || !property.links().is_empty() {
             return Err(CodecError::malformed(
                 "document string has a different property grammar",
             ));

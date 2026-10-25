@@ -94,7 +94,12 @@ fn owned_handoff_runs_required_closure_and_list_pruning_without_an_advisory_call
         .expect("independent sibling");
     fail(&ctx, &mut output, root, true);
     let finalized = output.into_parts(&ctx).expect("real resource checks");
-    let (_, native, _, losses) = finalized.into_parts();
+    assert_eq!(
+        finalized.dropped_records(),
+        [id(1).as_str(), id(2).as_str()]
+    );
+    let ((_, native, _, losses), dropped) = finalized.into_parts_with_dropped();
+    assert_eq!(dropped, [id(1).as_str(), id(2).as_str()]);
     let records = native
         .namespace("step")
         .expect("namespace")
@@ -673,4 +678,99 @@ fn readmitted_identity_prunes_every_actual_own_member_batch() {
     assert_eq!(mapped, 0);
     assert_eq!(fidelity.record_layout(), &failed_home_layouts);
     assert!(!fidelity.record_layout().contains_key(id(1).as_str()));
+}
+
+#[test]
+fn required_failed_child_retires_its_actual_parent_capture_without_crediting_discarded_reads() {
+    let first = b"#1=USER(#2);";
+    let peer = b"#3=PEER();";
+    let failed = b"#2=UNKNOWN();";
+    let bytes = [first.as_slice(), peer.as_slice(), failed.as_slice()].concat();
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let mut output = PartOutput::new(CodecFormat::Step);
+    let number = |position| -> Result<Identity, CodecError> {
+        let digit = root
+            .read_slice(position..position + 1)
+            .ok_or_else(|| CodecError::malformed("record digit is absent"))?[0];
+        Ok(id(digit.checked_sub(b'0').ok_or_else(|| {
+            CodecError::malformed("record digit is invalid")
+        })?))
+    };
+    ctx.record(id(1).as_str(), root.child(0, first.len()).unwrap(), || {
+        output.insert_native(
+            &ctx,
+            "records",
+            Record {
+                id: number(1)?,
+                required: Some(number(9)?),
+                listed: vec![],
+            },
+        )
+    })
+    .unwrap();
+    let peer_start = first.len();
+    ctx.record(
+        id(3).as_str(),
+        root.child(peer_start, peer_start + peer.len()).unwrap(),
+        || {
+            output.insert_native(
+                &ctx,
+                "records",
+                Record {
+                    id: number(peer_start + 1)?,
+                    required: None,
+                    listed: vec![],
+                },
+            )
+        },
+    )
+    .unwrap();
+    let failed_start = first.len() + peer.len();
+    let extent = root.child(failed_start, bytes.len()).unwrap();
+    let spec = PartSpec::new(
+        PartLevel::parse("step.simple_entity_instance").unwrap(),
+        vec![],
+    );
+    ctx.decode_part(&mut output, extent, spec, |stage| {
+        ctx.record(id(2).as_str(), extent, || {
+            stage.insert_native(
+                &ctx,
+                "records",
+                Record {
+                    id: number(failed_start + 1)?,
+                    required: None,
+                    listed: vec![],
+                },
+            )?;
+            Err::<(), _>(CodecError::NotImplemented(
+                "unknown actual child grammar".into(),
+            ))
+        })
+    })
+    .unwrap();
+    let (_, native, mut fidelity, losses, pruning) = output
+        .into_parts(&ctx)
+        .unwrap()
+        .into_parts_with_capture_pruning();
+    let rows = native
+        .namespace("step")
+        .unwrap()
+        .arena_as::<Record>("records")
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, id(3));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(fidelity.retained_records().len(), 1);
+    fidelity
+        .install_pruned_record_captures(&ctx, pruning, |_, _| Ok(()))
+        .expect("actual dependency-pruned capture installation");
+    assert_eq!(fidelity.record_layout().len(), 2);
+    assert!(!fidelity.record_layout().contains_key(id(1).as_str()));
+    assert!(!fidelity.record_layout().contains_key(id(2).as_str()));
+    assert_eq!(
+        fidelity.record_layout()[id(3).as_str()].reads()["file"],
+        [u64::try_from(peer_start + 1).unwrap()..u64::try_from(peer_start + 2).unwrap()]
+    );
 }

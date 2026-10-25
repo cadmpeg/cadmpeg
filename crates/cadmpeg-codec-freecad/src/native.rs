@@ -2,10 +2,14 @@
 //! Versioned FCStd-native records.
 
 mod document_rewrite;
+mod value_slots;
+pub(crate) use value_slots::ValueSlots;
 pub(crate) mod document_string;
 pub(crate) mod document_value;
 pub(crate) mod element_map;
+pub(crate) mod entry_contents;
 mod entry_rewrite;
+mod extension_rewrite;
 pub(crate) mod frame;
 pub(crate) mod joint;
 pub(crate) mod object_declaration;
@@ -30,6 +34,8 @@ pub(crate) const ARENAS: &[&str] = &[
     "extensions",
     "properties",
     "shape_payloads",
+    "polygons3d",
+    "polygons_on_triangulations",
     "carrier_census",
     "string_tables",
     "product_nodes",
@@ -89,8 +95,6 @@ pub(crate) struct DesignCensusRecord {
     pub(crate) object: String,
     /// Persisted runtime type.
     pub(crate) type_name: String,
-    /// Neutral history feature projected from the object.
-    pub(crate) feature: String,
     /// Stable CADIR feature-definition family name.
     pub(crate) semantic_kind: String,
     /// Whether topology post-processing composition wraps the operation.
@@ -109,7 +113,6 @@ struct DesignCensusRecordWire {
     id: String,
     object: String,
     type_name: String,
-    feature: String,
     semantic_kind: String,
     neutral: bool,
     post_processed: bool,
@@ -120,7 +123,6 @@ struct DesignCensusRecordOut<'a> {
     id: &'a str,
     object: &'a str,
     type_name: &'a str,
-    feature: &'a str,
     semantic_kind: &'a str,
     neutral: bool,
     post_processed: bool,
@@ -132,7 +134,6 @@ impl Serialize for DesignCensusRecord {
             id: &self.id,
             object: &self.object,
             type_name: &self.type_name,
-            feature: &self.feature,
             semantic_kind: &self.semantic_kind,
             neutral: self.neutral(),
             post_processed: self.post_processed,
@@ -149,7 +150,6 @@ impl TryFrom<DesignCensusRecordWire> for DesignCensusRecord {
             id: wire.id,
             object: wire.object,
             type_name: wire.type_name,
-            feature: wire.feature,
             semantic_kind: wire.semantic_kind,
             post_processed: wire.post_processed,
         };
@@ -206,13 +206,14 @@ pub(crate) struct AttachmentRecord {
     /// Attached application object.
     pub(crate) object: String,
     /// Ordered support objects and subelements.
-    pub(crate) supports: Vec<Option<LinkTarget>>,
+    pub(crate) supports: Option<Vec<Option<LinkTarget>>>,
     /// Persisted attachment-map mode.
     pub(crate) map_mode: Option<MapModeIndex>,
     /// Persisted resolved object placement.
     placement: Option<FiniteFrame>,
     /// Persisted attachment-local offset.
     offset: Option<FiniteFrame>,
+    effective_frame: Option<FiniteFrame>,
 }
 
 impl AttachmentRecord {
@@ -224,21 +225,85 @@ impl AttachmentRecord {
         placement: Option<FiniteFrame>,
         offset: Option<FiniteFrame>,
     ) -> Result<Self, String> {
-        let record = Self {
+        let effective = match (placement, offset) {
+            (Some(placement), Some(offset)) => placement
+                .compose(offset)
+                .map_err(|error| format!("effective_frame: {error}"))?,
+            _ => FiniteFrame::try_from(crate::attachment::effective_frame(
+                placement.map(FiniteFrame::rows),
+                offset.map(FiniteFrame::rows),
+            ))?,
+        };
+        Self::try_new_partial(
+            id,
+            object,
+            Some(supports),
+            map_mode,
+            placement,
+            offset,
+            Some(effective),
+        )
+    }
+
+    pub(crate) fn try_new_partial(
+        id: String,
+        object: String,
+        supports: Option<Vec<Option<LinkTarget>>>,
+        map_mode: Option<MapModeIndex>,
+        placement: Option<FiniteFrame>,
+        offset: Option<FiniteFrame>,
+        effective_frame: Option<FiniteFrame>,
+    ) -> Result<Self, String> {
+        let expected = match (placement, offset) {
+            (Some(placement), Some(offset)) => Some(
+                placement
+                    .transform()
+                    .compose(offset.transform())
+                    .map_err(|error| format!("effective_frame: {error}"))?
+                    .rows(),
+            ),
+            _ => None,
+        };
+        if let Some(effective) = effective_frame {
+            let expected = expected.unwrap_or_else(|| {
+                crate::attachment::effective_frame(
+                    placement.map(FiniteFrame::rows),
+                    offset.map(FiniteFrame::rows),
+                )
+            });
+            if effective.rows() != expected {
+                return Err(
+                    "attachment effective_frame disagrees with placement and offset".to_owned(),
+                );
+            }
+        } else if expected.is_some() {
+            return Err("attachment complete placements require an effective_frame".to_owned());
+        }
+        Ok(Self {
             id,
             object,
             supports,
             map_mode,
             placement,
             offset,
-        };
-        if let (Some(placement), Some(offset)) = (record.placement, record.offset) {
-            placement
-                .transform()
-                .compose(offset.transform())
-                .map_err(|error| format!("effective_frame: {error}"))?;
+            effective_frame,
+        })
+    }
+
+    /// Nullable fields make no claim about the cause of unavailable content.
+    pub(crate) fn agrees_with(&self, expected: &Self) -> bool {
+        fn held<T: PartialEq>(actual: &Option<T>, expected: &Option<T>) -> bool {
+            actual
+                .as_ref()
+                .is_none_or(|value| expected.as_ref() == Some(value))
         }
-        Ok(record)
+        self.id == expected.id
+            && self.object == expected.object
+            && held(&self.supports, &expected.supports)
+            && held(&self.map_mode, &expected.map_mode)
+            && held(&self.placement, &expected.placement)
+            && held(&self.offset, &expected.offset)
+            && held(&self.effective_frame, &expected.effective_frame)
     }
     pub(crate) fn placement(&self) -> Option<FiniteFrame> {
         self.placement
@@ -247,12 +312,9 @@ impl AttachmentRecord {
         self.offset
     }
 
-    /// Effective frame used for neutral geometry.
-    pub(crate) fn effective_frame(&self) -> [[f64; 4]; 4] {
-        crate::attachment::effective_frame(
-            self.placement().map(FiniteFrame::rows),
-            self.offset().map(FiniteFrame::rows),
-        )
+    /// Held effective frame, absent when its source operands are unavailable.
+    pub(crate) fn effective_frame(&self) -> Option<[[f64; 4]; 4]> {
+        self.effective_frame.map(FiniteFrame::rows)
     }
 }
 
@@ -260,22 +322,22 @@ impl AttachmentRecord {
 struct AttachmentRecordWire {
     id: String,
     object: String,
-    supports: Vec<Option<LinkTarget>>,
+    supports: Option<Vec<Option<LinkTarget>>>,
     map_mode: Option<MapModeIndex>,
     placement: Option<[[f64; 4]; 4]>,
     offset: Option<[[f64; 4]; 4]>,
-    effective_frame: [[f64; 4]; 4],
+    effective_frame: Option<[[f64; 4]; 4]>,
 }
 
 #[derive(Serialize)]
 struct AttachmentRecordOut<'a> {
     id: &'a str,
     object: &'a str,
-    supports: &'a [Option<LinkTarget>],
+    supports: Option<&'a [Option<LinkTarget>]>,
     map_mode: Option<MapModeIndex>,
     placement: Option<[[f64; 4]; 4]>,
     offset: Option<[[f64; 4]; 4]>,
-    effective_frame: [[f64; 4]; 4],
+    effective_frame: Option<[[f64; 4]; 4]>,
 }
 
 impl Serialize for AttachmentRecord {
@@ -283,7 +345,7 @@ impl Serialize for AttachmentRecord {
         AttachmentRecordOut {
             id: &self.id,
             object: &self.object,
-            supports: &self.supports,
+            supports: self.supports.as_deref(),
             map_mode: self.map_mode,
             placement: self.placement.map(FiniteFrame::rows),
             offset: self.offset.map(FiniteFrame::rows),
@@ -297,26 +359,43 @@ impl TryFrom<AttachmentRecordWire> for AttachmentRecord {
     type Error = String;
 
     fn try_from(wire: AttachmentRecordWire) -> Result<Self, Self::Error> {
-        let record = Self::try_new(
+        let placement = wire
+            .placement
+            .map(FiniteFrame::try_from)
+            .transpose()
+            .map_err(|error| format!("placement: {error}"))?;
+        let offset = wire
+            .offset
+            .map(FiniteFrame::try_from)
+            .transpose()
+            .map_err(|error| format!("offset: {error}"))?;
+        let effective = wire
+            .effective_frame
+            .map(|rows| {
+                if let (Some(placement), Some(offset)) = (placement, offset) {
+                    let composed = placement.compose(offset)?;
+                    if composed.rows() != rows {
+                        return Err(
+                            "attachment effective_frame disagrees with placement and offset"
+                                .to_owned(),
+                        );
+                    }
+                    Ok(composed)
+                } else {
+                    FiniteFrame::try_from(rows)
+                }
+            })
+            .transpose()
+            .map_err(|error| format!("effective_frame: {error}"))?;
+        Self::try_new_partial(
             wire.id,
             wire.object,
             wire.supports,
             wire.map_mode,
-            wire.placement
-                .map(FiniteFrame::try_from)
-                .transpose()
-                .map_err(|error| format!("placement: {error}"))?,
-            wire.offset
-                .map(FiniteFrame::try_from)
-                .transpose()
-                .map_err(|error| format!("offset: {error}"))?,
-        )?;
-        if wire.effective_frame != record.effective_frame() {
-            return Err(
-                "attachment effective_frame disagrees with placement and offset".to_owned(),
-            );
-        }
-        Ok(record)
+            placement,
+            offset,
+            effective,
+        )
     }
 }
 
@@ -345,7 +424,7 @@ pub(crate) struct GuiStateRecord {
     /// Exact element attributes.
     pub(crate) attributes: BTreeMap<String, String>,
     /// Ordered descendant value elements.
-    pub(crate) values: Vec<ValueRecord>,
+    pub(crate) values: ValueSlots,
     /// Referenced display assets.
     pub(crate) side_entries: Vec<String>,
 }
@@ -357,7 +436,7 @@ struct GuiStateRecordWire {
     id: String,
     kind: String,
     attributes: BTreeMap<String, String>,
-    values: Vec<ValueRecord>,
+    values: ValueSlots,
     side_entries: Vec<String>,
 }
 
@@ -786,8 +865,8 @@ pub(crate) struct LinkOccurrence {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LinkArray {
     count: Option<u64>,
-    transforms: Vec<FiniteFrame>,
-    scales: Vec<FiniteVector<3>>,
+    transforms: Option<Vec<Option<FiniteFrame>>>,
+    scales: Option<Vec<Option<FiniteVector<3>>>>,
     visibility: Vec<bool>,
     objects: Vec<String>,
 }
@@ -800,6 +879,8 @@ pub(crate) struct LinkArray {
 /// populated array-valued fields, including per-element visibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinkArrayCardinality {
+    /// A present array carrier has no known cardinality.
+    Unknown,
     /// The link is not an array and carries one occurrence.
     Scalar,
     /// The link is an array of this many elements.
@@ -807,46 +888,60 @@ pub(crate) enum LinkArrayCardinality {
 }
 
 impl LinkArray {
-    pub(crate) fn try_new(
+    pub(crate) fn from_admitted(
         count: Option<u64>,
-        transforms: Vec<FiniteFrame>,
-        scales: Vec<FiniteVector<3>>,
+        transforms: Option<Vec<Option<FiniteFrame>>>,
+        scales: Option<Vec<Option<FiniteVector<3>>>>,
         visibility: Vec<bool>,
         objects: Vec<String>,
-    ) -> Result<Self, String> {
+    ) -> Self {
+        Self {
+            count,
+            transforms,
+            scales,
+            visibility,
+            objects,
+        }
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), String> {
         let lengths = [
-            cadmpeg_core::decode::u64_from_index(transforms.len()),
-            cadmpeg_core::decode::u64_from_index(scales.len()),
-            cadmpeg_core::decode::u64_from_index(visibility.len()),
-            cadmpeg_core::decode::u64_from_index(objects.len()),
+            cadmpeg_core::decode::u64_from_index(self.transforms.as_ref().map_or(0, Vec::len)),
+            cadmpeg_core::decode::u64_from_index(self.scales.as_ref().map_or(0, Vec::len)),
+            cadmpeg_core::decode::u64_from_index(self.visibility.len()),
+            cadmpeg_core::decode::u64_from_index(self.objects.len()),
         ];
         // With no stated count the longest populated carrier establishes the
         // cardinality; every populated carrier must agree with it. A stated
         // zero therefore requires every carrier to be empty.
-        let effective = count.unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(lengths[3]));
+        let effective = self
+            .count
+            .unwrap_or(lengths[0].max(lengths[1]).max(lengths[2]).max(lengths[3]));
         if lengths
             .into_iter()
             .any(|length| length != 0 && length != effective)
         {
             return Err("element_count has inconsistent link-array counts".to_owned());
         }
-        Ok(Self {
-            count,
-            transforms,
-            scales,
-            visibility,
-            objects,
-        })
+        Ok(())
     }
 
     /// Element cardinality: the stated count, else the one the carriers establish.
     fn cardinality(&self) -> LinkArrayCardinality {
         let elements = self.count.unwrap_or_else(|| {
-            (cadmpeg_core::decode::u64_from_index(self.transforms.len()))
-                .max(cadmpeg_core::decode::u64_from_index(self.scales.len()))
+            (cadmpeg_core::decode::u64_from_index(self.transforms.as_ref().map_or(0, Vec::len)))
+                .max(cadmpeg_core::decode::u64_from_index(
+                    self.scales.as_ref().map_or(0, Vec::len),
+                ))
                 .max(cadmpeg_core::decode::u64_from_index(self.visibility.len()))
                 .max(cadmpeg_core::decode::u64_from_index(self.objects.len()))
         });
+        if self.count.is_none()
+            && elements == 0
+            && (self.transforms.is_none() || self.scales.is_none())
+        {
+            return LinkArrayCardinality::Unknown;
+        }
         match NonZeroU64::new(elements) {
             None => LinkArrayCardinality::Scalar,
             Some(elements) => LinkArrayCardinality::Elements(elements),
@@ -882,7 +977,7 @@ impl CopyOnChangePolicy {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CopyOnChange {
     /// Admitted persisted policy index.
-    policy: CopyOnChangePolicy,
+    policy: Option<CopyOnChangePolicy>,
     /// Original tracked object.
     pub(crate) source: Option<LinkTarget>,
     /// Internal ownership group.
@@ -899,7 +994,7 @@ impl CopyOnChange {
         touched: Option<bool>,
     ) -> Result<Option<Self>, String> {
         let policy = policy.map(CopyOnChangePolicy::from_raw).transpose()?;
-        Self::from_admitted(policy, source, group, touched)
+        Ok(Self::from_admitted(policy, source, group, touched))
     }
 
     pub(crate) fn from_admitted(
@@ -907,21 +1002,83 @@ impl CopyOnChange {
         source: Option<LinkTarget>,
         group: Option<LinkTarget>,
         touched: Option<bool>,
-    ) -> Result<Option<Self>, String> {
-        match policy {
-            Some(policy) => Ok(Some(Self {
+    ) -> Option<Self> {
+        (policy.is_some() || source.is_some() || group.is_some() || touched.is_some()).then_some(
+            Self {
                 policy,
                 source,
                 group,
                 touched,
-            })),
-            None if source.is_none() && group.is_none() && touched.is_none() => Ok(None),
-            None => Err("copy_on_change payload requires copy_on_change policy".to_owned()),
-        }
+            },
+        )
     }
 }
 
 impl ProductNodeRecord {
+    pub(crate) fn semantic_issues(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        let Some(node) = self.occurrence() else {
+            return issues;
+        };
+        if let Err(error) = node.array.validate() {
+            issues.push(error);
+        }
+        if node
+            .copy_on_change
+            .as_ref()
+            .is_some_and(|copy| copy.policy.is_none())
+        {
+            issues.push("copy_on_change payload requires copy_on_change policy".into());
+        }
+        issues
+    }
+
+    pub(crate) fn retain_projection_peers(
+        &mut self,
+        unavailable: &std::collections::HashSet<String>,
+    ) -> bool {
+        match &mut self.node {
+            ProductNode::Group(node) | ProductNode::Part(node) => {
+                node.members.retain(|member| !unavailable.contains(member));
+            }
+            ProductNode::LinkGroup {
+                container,
+                element_objects,
+            } => {
+                container
+                    .members
+                    .retain(|member| !unavailable.contains(member));
+                element_objects.retain(|member| !unavailable.contains(member));
+            }
+            ProductNode::Occurrence(node) => {
+                if node
+                    .prototype
+                    .as_ref()
+                    .is_some_and(|target| unavailable.contains(target))
+                    || node
+                        .copy_on_change
+                        .as_ref()
+                        .into_iter()
+                        .flat_map(|copy| [copy.source.as_ref(), copy.group.as_ref()])
+                        .flatten()
+                        .filter(|target| target.document().is_none())
+                        .filter_map(LinkTarget::object)
+                        .any(|target| unavailable.contains(target))
+                {
+                    return false;
+                }
+                node.members.retain(|member| !unavailable.contains(member));
+                node.array
+                    .objects
+                    .retain(|member| !unavailable.contains(member));
+                if node.array.validate().is_err() {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     /// Structural family string retained on the CADIR wire.
     pub(crate) fn kind(&self) -> &'static str {
         match self.node {
@@ -1002,16 +1159,26 @@ impl ProductNodeRecord {
         self.occurrence().and_then(|node| node.link_transform)
     }
 
-    /// Ordered per-element placements for a link array.
-    pub(crate) fn element_transforms(&self) -> &[FiniteFrame] {
+    pub(crate) fn element_transforms_known(&self) -> bool {
         self.occurrence()
-            .map_or(&[], |node| node.array.transforms.as_slice())
+            .is_none_or(|node| node.array.transforms.is_some())
+    }
+
+    pub(crate) fn element_scales_known(&self) -> bool {
+        self.occurrence()
+            .is_none_or(|node| node.array.scales.is_some())
+    }
+
+    /// Ordered per-element placements for a link array.
+    pub(crate) fn element_transforms(&self) -> &[Option<FiniteFrame>] {
+        self.occurrence()
+            .map_or(&[], |node| node.array.transforms.as_deref().unwrap_or(&[]))
     }
 
     /// Ordered per-element scale vectors for a link array.
-    pub(crate) fn element_scales(&self) -> &[FiniteVector<3>] {
+    pub(crate) fn element_scales(&self) -> &[Option<FiniteVector<3>>] {
         self.occurrence()
-            .map_or(&[], |node| node.array.scales.as_slice())
+            .map_or(&[], |node| node.array.scales.as_deref().unwrap_or(&[]))
     }
 
     /// Ordered per-element visibility values after `FreeCAD` bit-order decoding.
@@ -1035,14 +1202,14 @@ impl ProductNodeRecord {
     pub(crate) fn copy_on_change(&self) -> Option<&str> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
-            .map(|copy| copy.policy.as_str())
+            .and_then(|copy| copy.policy.as_ref().map(CopyOnChangePolicy::as_str))
     }
 
     /// Admitted copy-on-change policy, including its parsed source index.
     pub(crate) fn copy_on_change_policy(&self) -> Option<&CopyOnChangePolicy> {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
-            .map(|copy| &copy.policy)
+            .and_then(|copy| copy.policy.as_ref())
     }
 
     /// Original object tracked by copy-on-change.
@@ -1098,8 +1265,8 @@ struct ProductNodeRecordWire {
     placement_property: Option<String>,
     element_count: Option<u64>,
     link_transform: Option<bool>,
-    element_transforms: Vec<[[f64; 4]; 4]>,
-    element_scales: Vec<[f64; 3]>,
+    element_transforms: Option<Vec<Option<[[f64; 4]; 4]>>>,
+    element_scales: Option<Vec<Option<[f64; 3]>>>,
     linked_subelements: Vec<String>,
     claim_child: Option<bool>,
     copy_on_change: Option<String>,
@@ -1112,20 +1279,20 @@ struct ProductNodeRecordWire {
 }
 
 /// Writes admitted frames as the row-major matrices the wire carries.
-struct FrameRowsOut<'a>(&'a [FiniteFrame]);
+struct FrameRowsOut<'a>(&'a [Option<FiniteFrame>]);
 
 impl Serialize for FrameRowsOut<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.iter().copied().map(FiniteFrame::rows))
+        serializer.collect_seq(self.0.iter().map(|frame| frame.map(FiniteFrame::rows)))
     }
 }
 
 /// Writes admitted scale vectors as the component triples the wire carries.
-struct Vec3ValuesOut<'a>(&'a [FiniteVector<3>]);
+struct Vec3ValuesOut<'a>(&'a [Option<FiniteVector<3>>]);
 
 impl Serialize for Vec3ValuesOut<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.0.iter().copied().map(FiniteVector::get))
+        serializer.collect_seq(self.0.iter().map(|value| value.map(FiniteVector::get)))
     }
 }
 
@@ -1142,8 +1309,8 @@ struct ProductNodeRecordOut<'a> {
     placement_property: Option<&'a str>,
     element_count: Option<u64>,
     link_transform: Option<bool>,
-    element_transforms: FrameRowsOut<'a>,
-    element_scales: Vec3ValuesOut<'a>,
+    element_transforms: Option<FrameRowsOut<'a>>,
+    element_scales: Option<Vec3ValuesOut<'a>>,
     linked_subelements: &'a [String],
     claim_child: Option<bool>,
     copy_on_change: Option<&'a str>,
@@ -1171,8 +1338,12 @@ impl Serialize for ProductNodeRecord {
             placement_property: self.placement_property(),
             element_count: self.element_count(),
             link_transform: self.link_transform(),
-            element_transforms: FrameRowsOut(self.element_transforms()),
-            element_scales: Vec3ValuesOut(self.element_scales()),
+            element_transforms: self
+                .element_transforms_known()
+                .then(|| FrameRowsOut(self.element_transforms())),
+            element_scales: self
+                .element_scales_known()
+                .then(|| Vec3ValuesOut(self.element_scales())),
             linked_subelements: self.linked_subelements(),
             claim_child: self.claim_child(),
             copy_on_change: self.copy_on_change(),
@@ -1194,8 +1365,14 @@ impl ProductNodeRecordWire {
             || self.external_document_attribute.is_some()
             || self.element_count.is_some()
             || self.link_transform.is_some()
-            || !self.element_transforms.is_empty()
-            || !self.element_scales.is_empty()
+            || self
+                .element_transforms
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+            || self
+                .element_scales
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
             || !self.element_visibility.is_empty()
             || !self.linked_subelements.is_empty()
             || self.claim_child.is_some()
@@ -1211,6 +1388,11 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
     type Error = String;
 
     fn try_from(wire: ProductNodeRecordWire) -> Result<Self, Self::Error> {
+        if wire.kind != "occurrence"
+            && (wire.element_transforms.is_none() || wire.element_scales.is_none())
+        {
+            return Err("container product node carries an unknown occurrence array".to_owned());
+        }
         if wire.kind != "occurrence" && wire.has_occurrence_fields() {
             return Err("container product node carries occurrence-only link fields".to_owned());
         }
@@ -1250,24 +1432,36 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     .transpose()
                     .map_err(|error| format!("local_transform: {error}"))?,
                 placement_property: wire.placement_property,
-                array: LinkArray::try_new(
+                array: LinkArray::from_admitted(
                     wire.element_count,
                     wire.element_transforms
-                        .into_iter()
-                        .map(FiniteFrame::try_from)
-                        .collect::<Result<Vec<_>, _>>()
+                        .map(|frames| {
+                            frames
+                                .into_iter()
+                                .map(|frame| frame.map(FiniteFrame::try_from).transpose())
+                                .collect::<Result<Vec<_>, _>>()
+                        })
+                        .transpose()
                         .map_err(|error| format!("element_transforms: {error}"))?,
                     wire.element_scales
-                        .into_iter()
-                        .map(|values| {
-                            FiniteVector::new(values)
-                                .ok_or("scale vector components must be finite")
+                        .map(|scales| {
+                            scales
+                                .into_iter()
+                                .map(|values| {
+                                    values
+                                        .map(|values| {
+                                            FiniteVector::new(values)
+                                                .ok_or("scale vector components must be finite")
+                                        })
+                                        .transpose()
+                                })
+                                .collect::<Result<Vec<_>, _>>()
                         })
-                        .collect::<Result<Vec<_>, _>>()
+                        .transpose()
                         .map_err(|error| format!("element_scales: {error}"))?,
                     wire.element_visibility,
                     wire.element_objects,
-                )?,
+                ),
                 link_transform: wire.link_transform,
                 linked_subelements: wire.linked_subelements,
                 claim_child: wire.claim_child,
@@ -1327,9 +1521,12 @@ pub(crate) struct GuiPropertyRecord {
     /// Source order within the provider.
     pub(crate) order: usize,
     /// Ordered value elements.
-    pub(crate) values: Vec<ValueRecord>,
+    pub(crate) values: ValueSlots,
     /// Referenced archive entries.
     pub(crate) side_entries: Vec<String>,
+    /// Typed target slots for registered link property grammars.
+    #[serde(default)]
+    pub(crate) links: Vec<Option<LinkTarget>>,
 }
 
 /// Structural document-kind classification from declared object domains.
@@ -1783,6 +1980,8 @@ impl From<serde_json::Value> for DecodedJsonValue {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_decoded_json, DecodedJsonValue, "decoded_json");
+cadmpeg_core::named_optional_field!(deserialize_link_index, usize, "link_index");
+cadmpeg_core::named_optional_field!(deserialize_item_index, usize, "item_index");
 
 /// One property value element retained in source order.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -1791,8 +1990,15 @@ pub(crate) struct ValueRecord {
     pub(crate) tag: String,
     /// Ordered position among value elements.
     pub(crate) order: usize,
-    /// Parent value index; absent for a direct property child.
+    /// Parent source slot ordinal; absent for a direct property child.
     pub(crate) parent: Option<usize>,
+    /// Original direct Link/XLink slot ordinal in a registered reference collection.
+    /// Scalar link carriers use their implicit single slot and omit this field.
+    #[serde(default, deserialize_with = "deserialize_link_index")]
+    pub(crate) link_index: Option<usize>,
+    /// Original Enum position inside its direct CustomEnumList.
+    #[serde(default, deserialize_with = "deserialize_item_index")]
+    pub(crate) item_index: Option<usize>,
     /// Value attributes.
     pub(crate) attributes: BTreeMap<String, String>,
     /// Decoded JSON-mode Python value; encoded source attributes are layout only.
@@ -1813,6 +2019,10 @@ impl Serialize for ValueRecord {
             tag: &'a str,
             order: usize,
             parent: Option<usize>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            link_index: Option<usize>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            item_index: Option<usize>,
             attributes: BTreeMap<&'a str, &'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             decoded_json: Option<&'a DecodedJsonValue>,
@@ -1823,6 +2033,8 @@ impl Serialize for ValueRecord {
             tag: &self.tag,
             order: self.order,
             parent: self.parent,
+            link_index: self.link_index,
+            item_index: self.item_index,
             attributes: self
                 .attributes
                 .iter()
@@ -1845,14 +2057,12 @@ impl Serialize for ValueRecord {
 /// Persisted values of a property, or a status-only transient declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PropertyBody {
-    /// Rejected generic property payload.
-    Unreadable(String),
     /// Status-only transient property declaration.
     Transient,
     /// Persisted property payload.
     Persisted {
         /// Ordered value elements.
-        values: Vec<ValueRecord>,
+        values: ValueSlots,
         /// Generically recovered ordered link targets; `None` is a null link.
         links: Vec<Option<LinkTarget>>,
         /// Referenced archive entries.
@@ -1940,13 +2150,6 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 }
 
 impl PropertyRecord {
-    fn payload_error(&self) -> Option<&str> {
-        match &self.body {
-            Some(PropertyBody::Unreadable(detail)) => Some(detail),
-            _ => None,
-        }
-    }
-
     /// Whether this is a status-only transient property declaration.
     pub(crate) fn is_transient(&self) -> bool {
         matches!(self.body, Some(PropertyBody::Transient))
@@ -1956,7 +2159,7 @@ impl PropertyRecord {
     pub(crate) fn values(&self) -> &[ValueRecord] {
         match &self.body {
             Some(PropertyBody::Persisted { values, .. }) => values,
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient) | None => &[],
         }
     }
 
@@ -1964,7 +2167,7 @@ impl PropertyRecord {
     pub(crate) fn links(&self) -> &[Option<LinkTarget>] {
         match &self.body {
             Some(PropertyBody::Persisted { links, .. }) => links,
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient) | None => &[],
         }
     }
 
@@ -1972,14 +2175,14 @@ impl PropertyRecord {
     pub(crate) fn side_entries(&self) -> &[String] {
         match &self.body {
             Some(PropertyBody::Persisted { side_entries, .. }) => side_entries,
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => &[],
+            Some(PropertyBody::Transient) | None => &[],
         }
     }
 
-    pub(crate) fn values_mut(&mut self) -> Option<&mut Vec<ValueRecord>> {
+    pub(crate) fn values_mut(&mut self) -> Option<&mut ValueSlots> {
         match &mut self.body {
             Some(PropertyBody::Persisted { values, .. }) => Some(values),
-            Some(PropertyBody::Transient) | Some(PropertyBody::Unreadable(_)) | None => None,
+            Some(PropertyBody::Transient) | None => None,
         }
     }
 }
@@ -1994,11 +2197,10 @@ struct PropertyRecordWire {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
-    payload_error: Option<String>,
     dynamic: Option<DynamicPropertyMeta>,
     order: usize,
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-    values: Option<Vec<ValueRecord>>,
+    values: Option<ValueSlots>,
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
     links: Option<Vec<Option<LinkTarget>>>,
     #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
@@ -2014,11 +2216,9 @@ struct PropertyRecordOut<'a> {
     family: PropertyFamily,
     status: Option<u64>,
     transient: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    payload_error: Option<&'a str>,
     dynamic: Option<&'a DynamicPropertyMeta>,
     order: usize,
-    values: Option<&'a [ValueRecord]>,
+    values: Option<&'a ValueSlots>,
     links: Option<&'a [Option<LinkTarget>]>,
     side_entries: Option<&'a [String]>,
 }
@@ -2033,10 +2233,12 @@ impl Serialize for PropertyRecord {
             family: self.family,
             status: self.status,
             transient: self.is_transient(),
-            payload_error: self.payload_error(),
             dynamic: self.dynamic.as_ref(),
             order: self.order,
-            values: self.body.as_ref().map(|_| self.values()),
+            values: self.body.as_ref().map(|body| match body {
+                PropertyBody::Persisted { values, .. } => values,
+                PropertyBody::Transient => ValueSlots::empty_ref(),
+            }),
             links: self.body.as_ref().map(|_| self.links()),
             side_entries: self.body.as_ref().map(|_| self.side_entries()),
         }
@@ -2050,32 +2252,18 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
     fn try_from(wire: PropertyRecordWire) -> Result<Self, Self::Error> {
         let body = match (wire.values, wire.links, wire.side_entries) {
             (None, None, None) => {
-                if wire.transient || wire.payload_error.is_some() {
+                if wire.transient {
                     return Err("absent property body cannot declare a payload".into());
                 }
                 None
             }
             (Some(values), Some(links), Some(side_entries)) => {
-                for (index, value) in values.iter().enumerate() {
-                    if value.order != index || value.parent.is_some_and(|parent| parent >= index) {
-                        return Err("property values require contiguous order and backward parent references".into());
-                    }
+                if wire.type_name != "App::PropertyEnumeration"
+                    && values.iter().any(|value| value.item_index.is_some())
+                {
+                    return Err("Enum item_index requires an enumeration property".into());
                 }
-                if let Some(detail) = wire.payload_error {
-                    if detail.trim().is_empty()
-                        || wire.transient
-                        || !values.is_empty()
-                        || !links.is_empty()
-                        || !side_entries.is_empty()
-                        || wire.dynamic.is_some()
-                    {
-                        return Err(
-                            "unreadable property requires a diagnostic and no admitted payload"
-                                .into(),
-                        );
-                    }
-                    Some(PropertyBody::Unreadable(detail))
-                } else if wire.transient {
+                if wire.transient {
                     if !values.is_empty()
                         || !links.is_empty()
                         || !side_entries.is_empty()
@@ -2149,13 +2337,14 @@ pub(crate) enum PropertyFamily {
 }
 
 /// One logical archive entry and its graph ownership.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "EntryRecordWire")]
 pub(crate) struct EntryRecord {
     id: cadmpeg_ir::ids::Identity,
     name: ArchiveEntryName,
     pub(crate) role: cadmpeg_core::container::ContainerRole,
     referenced_by: EntryReferences,
+    pub(crate) contents: Vec<entry_contents::EntryContents>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2213,7 +2402,12 @@ impl EntryRecord {
             name,
             role,
             referenced_by,
+            contents: Vec::new(),
         })
+    }
+
+    pub(crate) fn contents(&self) -> &[entry_contents::EntryContents] {
+        &self.contents
     }
 
     pub(crate) fn id(&self) -> &str {
@@ -2248,6 +2442,8 @@ struct EntryRecordWire {
     name: String,
     role: String,
     referenced_by: Vec<String>,
+    #[serde(default)]
+    contents: Vec<entry_contents::EntryContents>,
 }
 
 #[derive(Serialize)]
@@ -2256,6 +2452,8 @@ struct EntryRecordOut<'a> {
     name: &'a str,
     role: &'static str,
     referenced_by: &'a [String],
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    contents: &'a [entry_contents::EntryContents],
 }
 
 impl Serialize for EntryRecord {
@@ -2265,6 +2463,7 @@ impl Serialize for EntryRecord {
             name: self.name(),
             role: self.role.as_str(),
             referenced_by: self.referenced_by(),
+            contents: self.contents(),
         }
         .serialize(serializer)
     }
@@ -2283,12 +2482,16 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
             role: serde_json::from_value(serde_json::Value::String(wire.role))
                 .map_err(|error| format!("entry role: {error}"))?,
             referenced_by,
+            contents: wire.contents,
         };
+        for contents in record.contents() {
+            contents.validate()?;
+        }
         Ok(record)
     }
 }
 
-/// Persistent string tables in contiguous numeric `HasherIndex` order.
+/// Persistent string tables in strictly increasing numeric `HasherIndex` order.
 ///
 /// Construction requires the records already in that order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2305,13 +2508,13 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
     type Error = cadmpeg_ir::native::NativeConvertError;
 
     fn try_from(records: Vec<StringTableRecord>) -> Result<Self, Self::Error> {
-        for (position, record) in records.iter().enumerate() {
-            if record.index != position {
-                return Err(Self::Error::InvalidCollection(format!(
-                    "string_tables[{position}].index must equal {position}, got {}",
-                    record.index
-                )));
-            }
+        if records
+            .windows(2)
+            .any(|records| records[0].index >= records[1].index)
+        {
+            return Err(Self::Error::InvalidCollection(
+                "string_tables indexes must be strictly increasing".into(),
+            ));
         }
         Ok(Self(records))
     }
@@ -2321,21 +2524,23 @@ impl TryFrom<Vec<StringTableRecord>> for StringTables {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "StringTableRecordWire")]
 pub(crate) struct StringTableRecord {
+    pub(crate) id: String,
     /// Zero-based document table index referenced by shape properties.
     pub(crate) index: usize,
     /// Owning property when the table is serialized beside its first use.
     pub(crate) owner_property: Option<String>,
-    /// Whether all strings were persisted; `None` for unreadable metadata.
+    /// Whether all strings were persisted, when supplied.
     pub(crate) save_all: Option<bool>,
-    /// Native hashing threshold; `None` for unreadable metadata.
+    /// Native hashing threshold, when supplied.
     pub(crate) threshold: Option<i64>,
     /// Referenced side entry, or `None` for inline data.
     pub(crate) source_entry: Option<String>,
-    /// Parsed records in serialized order; `None` when the payload is source-only.
-    entries: Option<Vec<StringTableEntry>>,
+    /// Optional record slots in serialized order.
+    entries: Option<Vec<Option<StringTableEntry>>>,
 }
 
 impl StringTableRecord {
+    #[cfg(test)]
     pub(crate) fn try_new(
         index: usize,
         owner_property: Option<String>,
@@ -2344,8 +2549,26 @@ impl StringTableRecord {
         source_entry: Option<String>,
         entries: Option<Vec<StringTableEntry>>,
     ) -> Result<Self, String> {
+        Self::try_sparse(
+            index,
+            owner_property,
+            save_all,
+            threshold,
+            source_entry,
+            entries.map(|entries| entries.into_iter().map(Some).collect()),
+        )
+    }
+
+    pub(crate) fn try_sparse(
+        index: usize,
+        owner_property: Option<String>,
+        save_all: Option<bool>,
+        threshold: Option<i64>,
+        source_entry: Option<String>,
+        entries: Option<Vec<Option<StringTableEntry>>>,
+    ) -> Result<Self, String> {
         let mut seen = std::collections::HashSet::new();
-        for entry in entries.as_deref().unwrap_or_default() {
+        for entry in entries.as_deref().unwrap_or_default().iter().flatten() {
             if entry.components.iter().any(|id| !seen.contains(id)) {
                 return Err("entries.components must reference earlier string_id values".to_owned());
             }
@@ -2354,6 +2577,7 @@ impl StringTableRecord {
             }
         }
         Ok(Self {
+            id: native_id("string-table", index.to_string()),
             index,
             owner_property,
             save_all,
@@ -2363,18 +2587,18 @@ impl StringTableRecord {
         })
     }
 
-    /// Stable table identity derived from the document table index.
+    /// Stable identity, independent of the numeric table reference index.
     pub(crate) fn id(&self) -> String {
-        native_id("string-table", self.index.to_string())
+        self.id.clone()
     }
 
-    pub(crate) fn entries(&self) -> Option<&[StringTableEntry]> {
+    pub(crate) fn entries(&self) -> Option<&[Option<StringTableEntry>]> {
         self.entries.as_deref()
     }
 
-    /// Admitted serialized count; absent exactly when the table is unreadable.
+    /// Number of serialized record positions, when supplied.
     fn declared_count(&self) -> Option<usize> {
-        self.entries().map(<[StringTableEntry]>::len)
+        self.entries().map(<[Option<StringTableEntry>]>::len)
     }
 }
 
@@ -2387,7 +2611,7 @@ struct StringTableRecordWire {
     threshold: Option<i64>,
     declared_count: Option<usize>,
     source_entry: Option<String>,
-    entries: Option<Vec<StringTableEntry>>,
+    entries: Option<Vec<Option<StringTableEntry>>>,
 }
 
 #[derive(Serialize)]
@@ -2399,13 +2623,12 @@ struct StringTableRecordOut<'a> {
     threshold: Option<i64>,
     declared_count: Option<usize>,
     source_entry: Option<&'a str>,
-    entries: Option<&'a [StringTableEntry]>,
+    entries: Option<&'a [Option<StringTableEntry>]>,
 }
 
 impl Serialize for StringTableRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         StringTableRecordOut {
-            // The identity is the written value, derived from the table index.
             id: self.id(),
             index: self.index,
             owner_property: self.owner_property.as_deref(),
@@ -2423,24 +2646,20 @@ impl TryFrom<StringTableRecordWire> for StringTableRecord {
     type Error = String;
 
     fn try_from(wire: StringTableRecordWire) -> Result<Self, Self::Error> {
-        let expected_id = native_id("string-table", wire.index.to_string());
-        if wire.id != expected_id {
-            return Err(format!(
-                "string table id must be {expected_id} for index {}",
-                wire.index
-            ));
-        }
+        cadmpeg_ir::ids::Identity::new(wire.id.clone()).map_err(|error| error.to_string())?;
         if wire.declared_count != wire.entries.as_ref().map(Vec::len) {
             return Err("string table declared_count must equal entries.len()".to_owned());
         }
-        Self::try_new(
+        let mut record = Self::try_sparse(
             wire.index,
             wire.owner_property,
             wire.save_all,
             wire.threshold,
             wire.source_entry,
             wire.entries,
-        )
+        )?;
+        record.id = wire.id;
+        Ok(record)
     }
 }
 

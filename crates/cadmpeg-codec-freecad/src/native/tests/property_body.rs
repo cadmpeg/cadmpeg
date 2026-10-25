@@ -57,7 +57,7 @@ fn absent_body_has_required_null_payloads_and_independent_header_metadata() {
 fn known_empty_and_legacy_unreadable_bodies_keep_their_existing_wire_facts() {
     let mut property = header();
     property.body = Some(PropertyBody::Persisted {
-        values: vec![],
+        values: vec![].into(),
         links: vec![],
         side_entries: vec![],
     });
@@ -69,16 +69,17 @@ fn known_empty_and_legacy_unreadable_bodies_keep_their_existing_wire_facts() {
         serde_json::from_value::<PropertyRecord>(wire).unwrap(),
         property
     );
-    property.body = Some(PropertyBody::Unreadable(
-        "original parser diagnostic".into(),
-    ));
+    property.body = None;
     let wire = serde_json::to_value(&property).unwrap();
-    assert_eq!(wire["payload_error"], "original parser diagnostic");
+    assert!(wire.get("payload_error").is_none());
     for key in ["values", "links", "side_entries"] {
-        assert_eq!(wire[key], serde_json::json!([]));
+        assert!(wire[key].is_null());
     }
     assert_eq!(
-        serde_json::from_value::<PropertyRecord>(wire).unwrap(),
+        serde_json::from_value::<PropertyRecord>(wire.clone()).unwrap(),
         property
     );
+    let mut legacy = wire;
+    legacy["payload_error"] = serde_json::json!("original parser diagnostic");
+    assert!(serde_json::from_value::<PropertyRecord>(legacy).is_err());
 }

@@ -7,9 +7,7 @@ use std::ops::Range;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::bytes::NativeBytes;
-use cadmpeg_ir::{
-    ids::UnknownId, ArenaClasses, RetainedBytes, RetainedSourceRecord, SourceFidelity,
-};
+use cadmpeg_ir::{ids::UnknownId, RetainedBytes, RetainedSourceRecord, SourceFidelity};
 
 pub(crate) mod b1;
 pub(crate) mod owners;
@@ -22,7 +20,6 @@ pub(crate) fn retain(
     stream: &str,
     offset: u64,
     bytes: &[u8],
-    untyped: ArenaClasses,
 ) -> Result<(), CodecError> {
     fidelity
         .insert_retained_record(
@@ -33,272 +30,60 @@ pub(crate) fn retain(
                 RetainedBytes::Inline {
                     data: bytes.to_vec(),
                 },
-            )?
-            .with_untyped(untyped),
+            )?,
         )
         .map_err(CodecError::malformed)
-}
-
-/// Record an unknown subrange without another image. Source processing reopens
-/// its genuine member from the one retained original archive when necessary.
-pub(crate) fn evidence(
-    fidelity: &mut SourceFidelity,
-    id: &str,
-    stream: &str,
-    offset: u64,
-    bytes: &[u8],
-    untyped: ArenaClasses,
-) -> Result<(), CodecError> {
-    let evidence = cadmpeg_ir::source_fidelity::SourceEvidence::of(bytes);
-    fidelity
-        .insert_retained_record(
-            UnknownId::mint(id).map_err(CodecError::malformed)?,
-            RetainedSourceRecord::from_bytes(
-                stream,
-                offset,
-                RetainedBytes::Digest {
-                    byte_len: evidence.length,
-                    sha256: evidence.sha256,
-                },
-            )?
-            .with_untyped(untyped),
-        )
-        .map_err(CodecError::malformed)
-}
-
-pub(crate) fn property(
-    ctx: &crate::property_reader::PropertyReader<'_, '_>,
-    fidelity: &mut SourceFidelity,
-    property: &crate::native::PropertyRecord,
-    objects: &[crate::native::ObjectRecord],
-    legacy_evidence: bool,
-) -> Result<Option<cadmpeg_ir::ArenaClass>, CodecError> {
-    if property.body.is_none() {
-        return Ok(None);
-    }
-    let opaque = crate::persistence::opaque_python_payload(property);
-    let mut classes = ArenaClasses::new();
-    let class = if property.type_name == "Part::PropertyPartShape" {
-        cadmpeg_ir::ArenaClass::Model
-    } else if property.owner == crate::native::native_id("document", "0")
-        || objects.iter().any(|object| {
-            object.id().as_str() == property.owner
-                && crate::design::is_design_kind(&object.type_name)
-        })
-    {
-        cadmpeg_ir::ArenaClass::Design
-    } else {
-        cadmpeg_ir::ArenaClass::Model
-    };
-    if opaque
-        || matches!(
-            property.body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        )
-    {
-        classes.insert(class);
-    }
-    if legacy_evidence {
-        let range = ctx.source_range(property)?.ok_or_else(|| {
-            CodecError::malformed("source classification requires an original property range")
-        })?;
-        evidence(
-            fidelity,
-            &property.id,
-            "Document.xml",
-            cadmpeg_core::decode::u64_from_index(range.start),
-            ctx.property_xml(property)?.as_bytes(),
-            classes,
-        )?;
-    }
-    Ok(opaque.then_some(class))
-}
-
-/// Charge missing content at the admission that retained only its evidence.
-pub(crate) fn mark_unreadable(
-    ir: &cadmpeg_ir::CadIr,
-    fidelity: &mut SourceFidelity,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::ArenaClass;
-    let Some(native) = ir.native.namespace("fcstd") else {
-        return Ok(());
-    };
-    let objects = native.arena_as::<crate::native::ObjectRecord>("objects")?;
-    let properties = native.arena_as::<crate::native::PropertyRecord>("properties")?;
-    let class = |property: &crate::native::PropertyRecord| {
-        if property.type_name == "Part::PropertyPartShape" {
-            ArenaClass::Model
-        } else if property.owner == crate::native::native_id("document", "0")
-            || objects.iter().any(|object| {
-                object.id().as_str() == property.owner
-                    && crate::design::is_design_kind(&object.type_name)
-            })
-        {
-            ArenaClass::Design
-        } else {
-            ArenaClass::Model
-        }
-    };
-    for property in &properties {
-        if matches!(
-            property.body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ) {
-            fidelity
-                .mark_untyped(&property.id, [class(property)])
-                .map_err(CodecError::malformed)?;
-        }
-    }
-    let entries = native.arena_as::<crate::native::EntryRecord>("entries")?;
-    let maps = native.arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")?;
-    for property in &properties {
-        if matches!(
-            property.type_name.as_str(),
-            "App::PropertyXLink"
-                | "App::PropertyXLinkSub"
-                | "App::PropertyXLinkList"
-                | "App::PropertyXLinkSubList"
-        ) {
-            continue;
-        }
-        let missing = property
-            .values()
-            .iter()
-            .flat_map(|value| &value.attributes)
-            .any(|(key, name)| {
-                matches!(key.as_str(), "file" | "File")
-                    && !name.is_empty()
-                    && !entries.iter().any(|entry| entry.name() == name)
-            });
-        let map_missing = property.values().iter().any(|value| {
-            matches!(value.tag.as_str(), "ElementMap" | "ElementMap2")
-                && (value
-                    .text
-                    .as_deref()
-                    .is_some_and(|text| !text.trim().is_empty())
-                    || value
-                        .attributes
-                        .get("count")
-                        .is_some_and(|count| count != "0"))
-        }) && !maps.iter().any(|map| map.property == property.id);
-        if missing || map_missing {
-            fidelity
-                .mark_untyped(&property.id, [class(property)])
-                .map_err(CodecError::malformed)?;
-        }
-    }
-
-    if objects.is_empty()
-        && native
-            .arena_as::<crate::native::DocumentFacts>("document")?
-            .iter()
-            .any(|document| document.object_count != 0)
-    {
-        fidelity
-            .mark_untyped(SOURCE_IMAGE, [ArenaClass::Model, ArenaClass::Design])
-            .map_err(CodecError::malformed)?;
-    }
-    Ok(())
 }
 
 #[derive(Clone)]
 pub(crate) struct ValueSourceRanges {
     id: String,
     record: Range<usize>,
-    values: Vec<Range<usize>>,
+    values: Vec<(usize, Range<usize>)>,
 }
 
 impl ValueSourceRanges {
+    #[cfg(test)]
+    pub(crate) fn new(
+        id: String,
+        record: Range<usize>,
+        values: Vec<Range<usize>>,
+    ) -> Result<Self, CodecError> {
+        Self::new_slots(id, record, values.into_iter().enumerate().collect())
+    }
+
+    pub(crate) fn new_slots(
+        id: String,
+        record: Range<usize>,
+        values: Vec<(usize, Range<usize>)>,
+    ) -> Result<Self, CodecError> {
+        if record.start > record.end
+            || values.iter().any(|(_, value)| {
+                value.start > value.end || value.start < record.start || value.end > record.end
+            })
+            || values.windows(2).any(|pair| pair[0].0 >= pair[1].0)
+        {
+            return Err(CodecError::malformed(
+                "XML value slots are unordered or escape their source record",
+            ));
+        }
+        Ok(Self { id, record, values })
+    }
+
     pub(crate) fn id(&self) -> &str {
         &self.id
     }
     pub(crate) fn record_range(&self) -> Range<usize> {
         self.record.clone()
     }
+    pub(crate) fn value_ranges(&self) -> impl Iterator<Item = (usize, Range<usize>)> + '_ {
+        self.values
+            .iter()
+            .map(|(order, range)| (*order, range.clone()))
+    }
     pub(crate) fn has_values(&self) -> bool {
         !self.values.is_empty()
     }
-}
-
-pub(crate) fn state_source(
-    node: roxmltree::Node<'_, '_>,
-    state: &crate::native::GuiStateRecord,
-) -> Result<ValueSourceRanges, CodecError> {
-    value_source_from_node(&state.id, node, &state.values)
-}
-
-pub(crate) fn property_source(
-    node: roxmltree::Node<'_, '_>,
-    property: &crate::native::PropertyRecord,
-) -> Result<ValueSourceRanges, CodecError> {
-    if !matches!(
-        property.body,
-        Some(crate::native::PropertyBody::Persisted { .. })
-    ) {
-        return Ok(ValueSourceRanges {
-            id: property.id.clone(),
-            record: node.range(),
-            values: Vec::new(),
-        });
-    }
-    value_source_from_node(&property.id, node, property.values())
-}
-
-pub(crate) fn gui_property_source(
-    node: roxmltree::Node<'_, '_>,
-    property: &crate::native::GuiPropertyRecord,
-) -> Result<ValueSourceRanges, CodecError> {
-    value_source_from_node(&property.id, node, &property.values)
-}
-
-fn value_source_from_node(
-    id: &str,
-    node: roxmltree::Node<'_, '_>,
-    values: &[crate::native::ValueRecord],
-) -> Result<ValueSourceRanges, CodecError> {
-    let mut ranges = Vec::new();
-    for (order, value) in node
-        .descendants()
-        .filter(|value| value.is_element() && *value != node)
-        .enumerate()
-    {
-        if !values
-            .get(order)
-            .is_some_and(|record| record.order == order && record.tag == value.tag_name().name())
-        {
-            return Err(CodecError::malformed(
-                "XML value ranges differ from admitted typed values",
-            ));
-        }
-        ranges.push(value.range());
-    }
-    if ranges.len() != values.len() {
-        return Err(CodecError::malformed(
-            "XML value range count differs from admitted typed values",
-        ));
-    }
-    Ok(ValueSourceRanges {
-        id: id.to_owned(),
-        record: node.range(),
-        values: ranges,
-    })
-}
-
-#[cfg(test)]
-pub(crate) fn value_layout_payloads(
-    ctx: &DecodeContext<'_>,
-    source: View<'_>,
-    ranges: &ValueSourceRanges,
-    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
-) -> Result<(), CodecError> {
-    let extent = relative_xml_extent(source, ranges.record.clone())?;
-    let fields = ctx.record(&ranges.id, extent, || {
-        copy_value_fields(ctx, source, ranges)
-    })?;
-    if payloads.insert(ranges.id.clone(), fields).is_some() {
-        return Err(CodecError::malformed("duplicate XML value layout identity"));
-    }
-    Ok(())
 }
 
 fn copy_value_fields(
@@ -307,7 +92,7 @@ fn copy_value_fields(
     ranges: &ValueSourceRanges,
 ) -> Result<BTreeMap<String, NativeBytes>, CodecError> {
     let mut fields = BTreeMap::new();
-    for (order, range) in ranges.values.iter().enumerate() {
+    for (order, range) in &ranges.values {
         if range.start < ranges.record.start || range.end > ranges.record.end {
             return Err(CodecError::malformed("XML value escapes its owning record"));
         }
@@ -331,10 +116,40 @@ pub(crate) fn state_layout_payloads(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     ranges: &ValueSourceRanges,
+    document: &str,
+    order: usize,
     payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
     pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<(), CodecError> {
-    xml_value_layout_payloads(ctx, source, ranges, payloads, pointers)
+    let prefix = format!("states.{order}.");
+    if payloads
+        .get(document)
+        .is_some_and(|fields| fields.keys().any(|key| key.starts_with(&prefix)))
+        || pointers
+            .get(document)
+            .is_some_and(|fields| fields.keys().any(|key| key.starts_with(&prefix)))
+    {
+        return Err(CodecError::malformed(
+            "duplicate GUI state source layout identity",
+        ));
+    }
+    let fields = copy_xml_value_layout(ctx, source, ranges)?;
+    payloads.entry(document.to_owned()).or_default().extend(
+        fields
+            .into_iter()
+            .map(|(name, bytes)| (format!("{prefix}{name}"), bytes)),
+    );
+    pointers.entry(document.to_owned()).or_default().extend([
+        (
+            format!("{prefix}byte_start"),
+            cadmpeg_core::decode::u64_from_index(ranges.record.start),
+        ),
+        (
+            format!("{prefix}byte_end"),
+            cadmpeg_core::decode::u64_from_index(ranges.record.end),
+        ),
+    ]);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -416,10 +231,7 @@ fn xml_value_layout_payloads(
     payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
     pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
 ) -> Result<(), CodecError> {
-    let extent = relative_xml_extent(source, ranges.record.clone())?;
-    let fields = ctx.record(&ranges.id, extent, || {
-        copy_xml_value_layout(ctx, source, ranges)
-    })?;
+    let fields = copy_xml_value_layout(ctx, source, ranges)?;
     install_xml_value_fields(ranges, fields, payloads, pointers)
 }
 
@@ -428,6 +240,7 @@ fn copy_xml_value_layout(
     source: View<'_>,
     ranges: &ValueSourceRanges,
 ) -> Result<BTreeMap<String, NativeBytes>, CodecError> {
+    ctx.require_source(source)?;
     let extent = relative_xml_extent(source, ranges.record.clone())?;
     let mut fields = copy_value_fields(ctx, source, ranges)?;
     ctx.retain_bytes(
@@ -490,6 +303,7 @@ pub(crate) fn relative_xml_extent(
         .ok_or_else(|| CodecError::malformed("XML record range escapes its source entry"))
 }
 
+#[cfg(test)]
 pub(crate) fn xml_layout_payload(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
@@ -497,28 +311,40 @@ pub(crate) fn xml_layout_payload(
     range: Range<usize>,
     payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
 ) -> Result<(), CodecError> {
-    let extent = relative_xml_extent(source, range)?;
-    let bytes = ctx.record(id, extent, || {
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(extent.window().len()),
-            "retain FCStd XML layout payload",
-        )?;
-        let mut bytes = ctx.alloc_filled(
-            extent.window().len(),
-            0_u8,
-            "retain FCStd XML layout payload",
-        )?;
-        bytes.copy_from_slice(extent.window());
-        Ok(NativeBytes::from(bytes))
-    })?;
-    if payloads
-        .insert(id.to_owned(), BTreeMap::from([("raw_xml".into(), bytes)]))
-        .is_some()
-    {
+    let extent = relative_xml_extent(source, range.clone())?;
+    ctx.record(id, extent, || {
+        captured_xml_layout_payload(ctx, source, id, range, payloads)
+    })
+}
+
+pub(crate) fn captured_xml_layout_payload(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    id: &str,
+    range: Range<usize>,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
+) -> Result<(), CodecError> {
+    ctx.require_source(source)?;
+    if payloads.contains_key(id) {
         return Err(CodecError::malformed(
             "duplicate XML layout payload identity",
         ));
     }
+    let extent = relative_xml_extent(source, range)?;
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(extent.window().len()),
+        "retain FCStd XML layout payload",
+    )?;
+    let mut bytes = ctx.alloc_filled(
+        extent.window().len(),
+        0_u8,
+        "retain FCStd XML layout payload",
+    )?;
+    bytes.copy_from_slice(extent.window());
+    payloads.insert(
+        id.to_owned(),
+        BTreeMap::from([("raw_xml".into(), NativeBytes::from(bytes))]),
+    );
     Ok(())
 }
 
@@ -527,8 +353,9 @@ pub(crate) fn install_layouts(
     fidelity: &mut SourceFidelity,
     mut payloads: BTreeMap<String, BTreeMap<String, NativeBytes>>,
     mut pointers: BTreeMap<String, BTreeMap<String, u64>>,
+    pruning: Option<cadmpeg_ir::source_fidelity::parts::PrunedPartCaptures>,
 ) -> Result<(), CodecError> {
-    fidelity.install_record_captures(ctx, |id, layout| {
+    let mut fields = |id: &str, layout: &mut cadmpeg_ir::source_fidelity::RecordLayout| {
         if let Some(fields) = payloads.remove(id) {
             for (field, bytes) in fields {
                 layout.insert_payload(field, bytes)?;
@@ -540,14 +367,77 @@ pub(crate) fn install_layouts(
             }
         }
         Ok(())
-    })?;
+    };
+    if let Some(pruning) = pruning {
+        fidelity.install_pruned_record_captures(ctx, pruning, &mut fields)?;
+    } else {
+        fidelity.install_record_captures(ctx, &mut fields)?;
+    }
     if !payloads.is_empty() || !pointers.is_empty() {
-        return Err(CodecError::malformed(
-            "XML payload has no completed record capture",
-        ));
+        return Err(CodecError::malformed(format!(
+            "XML payload has no completed record capture: payload owners {:?}; pointer owners {:?}",
+            payloads.keys(),
+            pointers.keys()
+        )));
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn gui_layout_payloads(
+    ctx: &DecodeContext<'_>,
+    entries: &BTreeMap<String, View<'_>>,
+    graph: &crate::gui::Graph,
+    payloads: &mut BTreeMap<String, BTreeMap<String, NativeBytes>>,
+    pointers: &mut BTreeMap<String, BTreeMap<String, u64>>,
+) -> Result<(), CodecError> {
+    for document in &graph.documents {
+        for (order, state) in document.states.iter().enumerate() {
+            let source = graph
+                .state_sources
+                .get(&state.id)
+                .ok_or_else(|| CodecError::malformed("GUI state has no actual source range"))?;
+            state_layout_payloads(
+                ctx,
+                *entries
+                    .get("GuiDocument.xml")
+                    .ok_or_else(|| CodecError::malformed("GUI state has no source entry"))?,
+                source,
+                &document.id,
+                order,
+                payloads,
+                pointers,
+            )?;
+        }
+    }
+    for source in graph
+        .value_sources
+        .iter()
+        .filter(|source| graph.property_sources.contains_key(source.id()))
+        .chain(
+            graph
+                .property_sources
+                .values()
+                .filter(|source| !source.has_values()),
+        )
+    {
+        gui_property_layout_payloads(
+            ctx,
+            *entries
+                .get("GuiDocument.xml")
+                .ok_or_else(|| CodecError::malformed("GUI property has no source entry"))?,
+            source,
+            payloads,
+            pointers,
+        )?;
+    }
+    for (id, range) in &graph.provider_sources {
+        let view = entries
+            .get("GuiDocument.xml")
+            .ok_or_else(|| CodecError::malformed("GUI provider has no source entry"))?;
+        captured_xml_layout_payload(ctx, *view, id, range.clone(), payloads)?;
+    }
+    Ok(())
+}
