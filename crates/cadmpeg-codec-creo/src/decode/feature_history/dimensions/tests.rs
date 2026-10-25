@@ -311,3 +311,83 @@ fn relation_coverage_refuses_rows_above_declared_empty_table() {
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
+
+#[test]
+fn diameter_parameter_doubles_the_native_radius() {
+    let (mut scan, mut ir) = one_dimension_transfer();
+    let row = &mut scan.features.definitions[0]
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0];
+    row.dimension_type = 4;
+    row.value = crate::feature::definitions::DimensionValue::Resolved(7.0);
+    crate::decode::with_service_context(|ctx| {
+        transfer_feature_dimensions(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("dimensions transfer");
+    assert_eq!(ir.model.parameters[0].expression, "14");
+    assert_eq!(
+        ir.model.parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(14.0).expect("diameter")
+        ))
+    );
+    assert_eq!(
+        scan.features.definitions[0]
+            .dimensions
+            .as_ref()
+            .expect("dimensions")
+            .rows[0]
+            .value
+            .resolved(),
+        Some(7.0)
+    );
+    assert!(super::diameter_projection_loss(&scan).is_none());
+}
+
+#[test]
+fn diameter_overflow_retains_a_native_value_and_reports_loss() {
+    let (mut scan, mut ir) = one_dimension_transfer();
+    let row = &mut scan.features.definitions[0]
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0];
+    row.dimension_type = 4;
+    row.value = crate::feature::definitions::DimensionValue::Resolved(f64::MAX);
+    crate::decode::with_service_context(|ctx| {
+        transfer_feature_dimensions(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("dimensions transfer");
+    assert_eq!(ir.model.parameters[0].value, None);
+    assert_eq!(ir.model.parameters[0].expression, "");
+    assert_eq!(
+        scan.features.definitions[0]
+            .dimensions
+            .as_ref()
+            .expect("dimensions")
+            .rows[0]
+            .value
+            .resolved(),
+        Some(f64::MAX)
+    );
+    assert_eq!(
+        super::diameter_projection_loss(&scan)
+            .expect("projection loss")
+            .code,
+        crate::loss::CreoLossCode::SectionDiameterValueUnresolved.kind()
+    );
+}
