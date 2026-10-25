@@ -393,3 +393,222 @@ fn a_closed_edge_directs_only_an_increasing_use_interval() {
         assert_eq!(directed, expected);
     }
 }
+
+#[test]
+fn reflected_conic_emission_uses_a_rational_spline() {
+    use cadmpeg_ir::geometry::pcurve::{CirclePcurve, PlacedPcurve};
+    use cadmpeg_ir::transform::Transform2;
+    let circle = PcurveGeometry::Circle(
+        CirclePcurve::try_new(
+            Point2::new(1.0, 2.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            3.0,
+        )
+        .unwrap(),
+    );
+    let reflected = PcurveGeometry::Transformed(
+        PlacedPcurve::try_new(
+            Box::new(circle),
+            Transform2::affine([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0]]).unwrap(),
+        )
+        .unwrap(),
+    );
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge_id = ir.model.edges[0].id.clone();
+    ir.model.edges[0].set_param_range(Some(ParameterInterval::new([10.0, 20.0]).unwrap()));
+    let pcurve_id = cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#reflected").unwrap();
+    ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+        id: pcurve_id.clone(),
+        geometry: reflected,
+        metadata: PcurveMetadata::default(),
+    });
+    for coedge in ir.model.coedges.iter_mut().filter(|c| c.edge == edge_id) {
+        coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
+            pcurve: pcurve_id.clone(),
+            isoparametric: None,
+            parameter_range: Some(DirectedParameterRange::new([0.0, TAU]).unwrap()),
+        });
+    }
+    let mut builder = super::super::Builder::new(&ir, crate::StepSchema::Ap214).unwrap();
+    for coedge in ir.model.coedges.iter().filter(|c| c.edge == edge_id) {
+        let (start, end) = builder
+            .coedge_pcurve_ends(coedge.id.as_str())
+            .unwrap()
+            .unwrap();
+        for point in [start, end] {
+            assert!((point[0] - 4.0).abs() < EPS_KNOT);
+            assert!((point[1] + 2.0).abs() < EPS_KNOT);
+        }
+        assert!(builder.emit_coedge_edge(coedge).is_some());
+    }
+    let lines = builder.emitter.into_lines().unwrap();
+    assert!(lines
+        .iter()
+        .any(|line| line.contains("RATIONAL_B_SPLINE_CURVE")));
+    assert!(!lines.iter().any(|line| line.contains("CURVE_REPLICA")));
+    for spline in lines
+        .iter()
+        .filter(|line| line.contains("RATIONAL_B_SPLINE_CURVE"))
+    {
+        let knots = spline
+            .split("(3,2,2,2,3),(")
+            .nth(1)
+            .unwrap()
+            .split(')')
+            .next()
+            .unwrap();
+        let knots = knots
+            .split(',')
+            .map(|value| value.parse::<f64>().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(knots.len(), 5);
+        for (actual, expected) in knots.iter().zip([10.0, 12.5, 15.0, 17.5, 20.0]) {
+            assert!((actual - expected).abs() < EPS_KNOT);
+        }
+    }
+}
+
+#[test]
+fn reflected_conics_lower_to_exact_rational_splines() {
+    use cadmpeg_ir::geometry::pcurve::{CirclePcurve, PlacedPcurve};
+    use cadmpeg_ir::transform::Transform2;
+    use std::f64::consts::{FRAC_PI_2, PI};
+
+    let circle = PcurveGeometry::Circle(
+        CirclePcurve::try_new(
+            Point2::new(1.0, 2.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            3.0,
+        )
+        .unwrap(),
+    );
+    let placed = |rows| {
+        PcurveGeometry::Transformed(
+            PlacedPcurve::try_new(Box::new(circle.clone()), Transform2::affine(rows).unwrap())
+                .unwrap(),
+        )
+    };
+    let reflected = placed([[1.0, 0.0, 0.0], [0.0, -1.0, 0.0]]);
+    let Cow::Owned(PcurveGeometry::Nurbs { nurbs }) = super::lower_placed_conic(&reflected, None)
+    else {
+        panic!("a reflected circle lowers to a spline");
+    };
+    assert_eq!(nurbs.degree(), 2);
+    assert_eq!(
+        nurbs.knots().as_slice(),
+        [
+            0.0,
+            0.0,
+            0.0,
+            FRAC_PI_2,
+            FRAC_PI_2,
+            PI,
+            PI,
+            3.0 * FRAC_PI_2,
+            3.0 * FRAC_PI_2,
+            TAU,
+            TAU,
+            TAU
+        ]
+    );
+    let points = nurbs
+        .pole_rows()
+        .points()
+        .iter()
+        .map(|point| point.get())
+        .collect::<Vec<_>>();
+    let weights = nurbs.pole_rows().weights().expect("rational spline");
+    let on_reflected = |angle: f64| Point2::new(1.0 + 3.0 * angle.cos(), -2.0 - 3.0 * angle.sin());
+    for (index, angle) in [0.0, FRAC_PI_2, PI, 3.0 * FRAC_PI_2, TAU]
+        .into_iter()
+        .enumerate()
+    {
+        let expected = on_reflected(angle);
+        let point = points[2 * index];
+        assert!((point.u - expected.u).abs() < EPS_KNOT && (point.v - expected.v).abs() < EPS_KNOT);
+    }
+    for span in 0..4 {
+        let [start, middle, end] = [points[2 * span], points[2 * span + 1], points[2 * span + 2]];
+        let weight = weights[2 * span + 1];
+        let denominator = 0.5 + 0.5 * weight;
+        let u = (0.25 * start.u + 0.5 * weight * middle.u + 0.25 * end.u) / denominator;
+        let v = (0.25 * start.v + 0.5 * weight * middle.v + 0.25 * end.v) / denominator;
+        assert!(((u - 1.0).hypot(v + 2.0) - 3.0).abs() < EPS_KNOT);
+    }
+
+    let arc = super::lower_placed_conic(
+        &reflected,
+        Some(DirectedParameterRange::new([0.0, FRAC_PI_2]).unwrap()),
+    );
+    let PcurveGeometry::Nurbs { nurbs } = arc.as_ref() else {
+        panic!("a reflected arc lowers to a spline");
+    };
+    assert_eq!(nurbs.pole_rows().count(), 3);
+
+    let turned = placed([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0]]);
+    assert!(matches!(
+        super::lower_placed_conic(&turned, None),
+        Cow::Borrowed(_)
+    ));
+}
+
+#[test]
+fn reflected_ellipse_uses_follow_edge_ranges_and_loop_shifts() {
+    use cadmpeg_ir::geometry::pcurve::{EllipsePcurve, PlacedPcurve};
+    use cadmpeg_ir::transform::Transform2;
+    use std::f64::consts::FRAC_PI_2;
+
+    let ellipse = PcurveGeometry::Ellipse(
+        EllipsePcurve::try_new(
+            Point2::new(1.0, 2.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            3.0,
+            2.0,
+        )
+        .unwrap(),
+    );
+    let reflected = PcurveGeometry::Transformed(
+        PlacedPcurve::try_new(
+            Box::new(ellipse),
+            Transform2::affine([[1.0, 0.0, TAU], [0.0, -1.0, 0.0]]).unwrap(),
+        )
+        .unwrap(),
+    );
+    let source = DirectedParameterRange::new([FRAC_PI_2, 0.0]).unwrap();
+    let lowered = super::lower_placed_conic(&reflected, Some(source));
+    let target = edge([10.0, 20.0]);
+    let aligned = super::align_spline_to_edge(&lowered, Some(source.endpoints()), &target);
+    let evaluate = |geometry: &PcurveGeometry, parameter| {
+        cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            geometry,
+            parameter,
+        )
+        .unwrap()
+        .get()
+    };
+    for (parameter, angle) in [(10.0, FRAC_PI_2), (15.0, FRAC_PI_2 / 2.0), (20.0, 0.0)] {
+        let actual = evaluate(&aligned, parameter);
+        assert!((actual.u - (1.0 + TAU + 3.0 * angle.cos())).abs() < EPS_KNOT);
+        assert!((actual.v - (-2.0 - 2.0 * angle.sin())).abs() < EPS_KNOT);
+    }
+    let start = evaluate(&aligned, 10.0);
+    let end = evaluate(&aligned, 20.0);
+    let shifts = super::loop_period_shifts(
+        &[
+            ([0.0, 0.0], [start.u - TAU, start.v]),
+            ([start.u, start.v], [end.u, end.v]),
+        ],
+        [Some(TAU), None],
+    );
+    let moved = super::shifted(&aligned, shifts[1]).unwrap();
+    for parameter in [10.0, 15.0, 20.0] {
+        let before = evaluate(&aligned, parameter);
+        let after = evaluate(&moved, parameter);
+        assert!((after.u - (before.u - TAU)).abs() < EPS_KNOT);
+        assert!((after.v - before.v).abs() < EPS_KNOT);
+    }
+}
