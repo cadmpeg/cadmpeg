@@ -464,3 +464,142 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
         "reference ordinal is part of the occurrence owner when role ordinals reset"
     );
 }
+
+#[test]
+fn merged_documents_keep_parameter_names_and_document_local_expression_dependencies() {
+    use crate::design::feature_project::{
+        project_parameter_design_with_edge_identities, ProjectInputs,
+    };
+    use crate::design::test_support::synthetic_feature_timelines;
+    use crate::f3z::merge::scope_document_parameters;
+    use crate::records::parameters::{
+        DesignParameter, DesignParameterDraft, DesignParameterSource,
+    };
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let document = |scalar: f64| {
+        let native = [("Span", "10 mm"), ("HalfSpan", "Span / 2")]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (name, expression))| {
+                DesignParameter::try_from(DesignParameterDraft {
+                    id: format!("f3d:native:parameter#{ordinal}"),
+                    byte_offset: 0,
+                    class_tag: "305".to_owned().try_into().unwrap(),
+                    record_index: u32::try_from(ordinal).unwrap(),
+                    source_ordinal: u32::try_from(ordinal).unwrap(),
+                    source: DesignParameterSource::User {
+                        family_discriminator: None,
+                    },
+                    expression: expression.into(),
+                    expression_offset: 1,
+                    source_kind_offset: 2,
+                    unit: Some(crate::records::identity::RecordedValue {
+                        value: "mm".into(),
+                        offset: 3,
+                    }),
+                    name: name.into(),
+                    name_offset: 4,
+                    evaluated_value: scalar,
+                    evaluated_value_offset: 5,
+                })
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let timelines = synthetic_feature_timelines(&[]);
+        let projected = project_parameter_design_with_edge_identities(
+            &ctx,
+            &ProjectInputs {
+                native: &native,
+                timelines: &timelines,
+                ..ProjectInputs::default()
+            },
+        )
+        .unwrap();
+        let mut model = Model::default();
+        model.parameters = projected.parameters;
+        model.features = projected.features;
+        let mut records = Native::default();
+        records
+            .namespace_mut("f3d")
+            .set_arena(&ctx, "design_parameters", &native)
+            .unwrap();
+        (model, records)
+    };
+    let (mut parent, mut native) = document(1.0);
+    let (mut component, component_native) = document(2.0);
+    let mut owned = component.parameters[1].clone();
+    let construction = feature("f3d:model:feature#consumer", 0);
+    owned.id = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#input").unwrap();
+    owned.owner = Some(construction.id.clone());
+    owned.ordinal = 0;
+    component.parameters.push(owned);
+    component.features.push(construction);
+
+    scope_document_parameters(&mut component).unwrap();
+    append_feature_history(&parent, &mut component).unwrap();
+    parent
+        .extend_rewritten(
+            component,
+            &mut OccurrenceScope {
+                ctx: &ctx,
+                occurrence: "component-0",
+            },
+        )
+        .unwrap();
+    extend_native(&ctx, &mut native, component_native, "component-0").unwrap();
+
+    assert_eq!(parent.parameters.len(), 5);
+    assert_eq!(parent.parameters[0].name, parent.parameters[2].name);
+    assert_eq!(parent.parameters[1].name, parent.parameters[3].name);
+    assert_ne!(parent.parameters[0].value, parent.parameters[2].value);
+    assert_eq!(
+        parent
+            .parameters
+            .iter()
+            .map(|parameter| parameter.ordinal)
+            .collect::<Vec<_>>(),
+        [0, 1, 0, 1, 0]
+    );
+    assert_eq!(parent.parameters[1].expression, "Span / 2");
+    assert_eq!(parent.parameters[3].expression, "Span / 2");
+    assert_eq!(parent.parameters[0].owner, None);
+    let scope = parent.parameters[2].owner.as_ref().unwrap();
+    assert_eq!(parent.parameters[3].owner.as_ref(), Some(scope));
+    assert_ne!(parent.parameters[4].owner.as_ref(), Some(scope));
+    assert_eq!(
+        parent.parameters[1].dependencies.as_slice(),
+        std::slice::from_ref(&parent.parameters[0].id)
+    );
+    assert_eq!(
+        parent.parameters[3].dependencies.as_slice(),
+        std::slice::from_ref(&parent.parameters[2].id)
+    );
+    assert_eq!(
+        parent.parameters[4].dependencies.as_slice(),
+        std::slice::from_ref(&parent.parameters[2].id)
+    );
+    let container = parent
+        .features
+        .iter()
+        .find(|feature| &feature.id == scope)
+        .unwrap();
+    assert!(matches!(
+        container.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+            ..
+        })
+    ));
+    assert!(parent
+        .features
+        .iter()
+        .filter(|feature| &feature.id != scope)
+        .all(|feature| container.ordinal < feature.ordinal));
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model = parent;
+    ir.native = native;
+    ir.finalize();
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(report.is_ok(), "{:?}", report.findings);
+}

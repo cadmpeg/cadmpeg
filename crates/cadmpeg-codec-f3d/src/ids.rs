@@ -382,6 +382,14 @@ pub(crate) fn neutral_configuration_id(
     )
 }
 
+/// The equation container for document parameters in a merged member.
+pub(crate) fn document_parameter_scope_id() -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "document-parameters"),
+        cadmpeg_ir::identity_key!("0"),
+    )
+}
+
 /// The neutral feature key for a parameter `scope`.
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
