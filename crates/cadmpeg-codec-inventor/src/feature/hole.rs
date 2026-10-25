@@ -22,15 +22,7 @@ pub(super) fn termination(
     index: &ProjectionIndex<'_>,
     depth: Length,
 ) -> Option<LinearTermination> {
-    let PmDcFeaturePropertyKind::Enumeration {
-        family: PmDcFeatureEnumFamily::Extent,
-        type_value: 11 | 12,
-        value,
-    } = slot_property(source, 9, index)?.kind
-    else {
-        return None;
-    };
-    match value {
+    match super::enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
         EXTENT_DISTANCE => Some(LinearTermination::Blind {
             length: cadmpeg_ir::scalar::PositiveLength::try_from(depth)
                 .ok()?

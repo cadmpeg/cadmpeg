@@ -11,14 +11,14 @@
       "payload_sha256": "94a23b71978647bf25a932453afa2279bbfb6f38acf09510cba8bf360de58a04"
     },
     {
-      "name": "Normals",
-      "payload_len": 4,
-      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-    },
-    {
       "name": "PointCloud",
       "payload_len": 40,
       "payload_sha256": "e161b73045886ad13be16c62fff955490942c1d9b111ad6e3f14ec2fd2b89049"
+    },
+    {
+      "name": "Normals",
+      "payload_len": 4,
+      "payload_sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
     },
     {
       "name": "Points",

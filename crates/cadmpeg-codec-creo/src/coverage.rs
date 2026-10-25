@@ -680,6 +680,8 @@ pub(crate) const DECODED_FEATURE_LOOP_RESTORE_DIRECTION_COUNT: CoverageKey =
     CoverageKey::new("decoded_feature_loop_restore_direction_count");
 pub(crate) const DECODED_FEATURE_OPAQUE_SEGMENT_COUNT: CoverageKey =
     CoverageKey::new("decoded_feature_opaque_segment_count");
+pub(crate) const UNRESOLVED_FEATURE_STATE_SELECTION_COUNT: CoverageKey =
+    CoverageKey::new("unresolved_feature_state_selection_count");
 pub(crate) const DECODED_FEATURE_OPERATION_COUNT: CoverageKey =
     CoverageKey::new("decoded_feature_operation_count");
 pub(crate) const DECODED_FEATURE_OPERATION_STATE_COUNT: CoverageKey =
@@ -1327,6 +1329,7 @@ const ALL: &[CoverageKey] = &[
     DECODED_FEATURE_LOOP_RESTORE_DIRECTION_COUNT,
     DECODED_FEATURE_OPAQUE_SEGMENT_COUNT,
     DECODED_FEATURE_OPERATION_COUNT,
+    UNRESOLVED_FEATURE_STATE_SELECTION_COUNT,
     DECODED_FEATURE_OPERATION_STATE_COUNT,
     DECODED_FEATURE_ORDER_ENTRY_COUNT,
     DECODED_FEATURE_OUTLINE_COUNT,

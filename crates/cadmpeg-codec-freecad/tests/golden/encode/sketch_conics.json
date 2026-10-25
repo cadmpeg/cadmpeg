@@ -11,14 +11,14 @@
       "payload_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "name": "ConicWitness.Shape.Map.txt",
-      "payload_len": 320,
-      "payload_sha256": "622c4475183c231b0b0cf1db77962ae1055aa05b3202418c8d3bc1cfdef24617"
-    },
-    {
       "name": "ConicWitness.Shape.brp",
       "payload_len": 3754,
       "payload_sha256": "8bf46c3b69b235079bcb6f96578cb1ed5f2c5ee45a8c60aa941b07c85d6e4955"
+    },
+    {
+      "name": "ConicWitness.Shape.Map.txt",
+      "payload_len": 320,
+      "payload_sha256": "622c4475183c231b0b0cf1db77962ae1055aa05b3202418c8d3bc1cfdef24617"
     }
   ],
   "report": {

@@ -77,6 +77,7 @@
         "section.2.role": "model-data",
         "section_count": "3",
         "srf_array_count": "5",
+        "unresolved_feature_state_selection_count": "0",
         "version_line": "#UGC:2 P c"
       },
       "identity": {
@@ -448,6 +449,7 @@
       "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_segment_geometry_count": 0,
+      "unresolved_feature_state_selection_count": 0,
       "untransferred_visible_cone_surface_row_count": 0,
       "untransferred_visible_curve_row_count": 0,
       "untransferred_visible_cylinder_surface_row_count": 0,

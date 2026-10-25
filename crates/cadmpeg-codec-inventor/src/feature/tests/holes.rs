@@ -8,8 +8,8 @@ use crate::feature::tests::{
 };
 use crate::feature::{
     project_hole, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel, PmDcFeatureProperty,
-    PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, PmDcWorkPlane, PmDcWorkPlanePayload,
-    HOLE_CLASS_ID, WORK_PLANE_TYPE,
+    PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcFeatureReferenceFamily, PmDcWorkPlane,
+    PmDcWorkPlanePayload, HOLE_CLASS_ID, WORK_PLANE_TYPE,
 };
 use crate::pmdc::{PmDcReferenceList, PmDcU32List};
 use crate::record_identity::Located;
@@ -47,6 +47,31 @@ struct HoleFixture {
     label: PmDcFeatureLabel,
 }
 
+/// An extent enumeration at the first segment major version that uses its type value.
+fn extent_property(extent_type: i16, extent: u16) -> PmDcFeatureProperty {
+    let property = test_property(
+        2,
+        PmDcFeaturePropertyKind::Enumeration {
+            family: PmDcFeatureEnumFamily::Extent,
+            type_value: extent_type,
+            value: extent,
+        },
+    );
+    if extent_type != 12 {
+        return property;
+    }
+    Located::new(
+        PmDcFeaturePropertyPayload {
+            save_version_major: 22,
+            header: test_header(),
+            kind: property.kind.clone(),
+        },
+        property.identity.type_id.clone(),
+        segment(),
+        2,
+    )
+}
+
 impl HoleFixture {
     fn new(form: u16, extent_type: i16, extent: u16) -> Self {
         let parameters = (70..76).map(raw_parameter).collect::<Vec<_>>();
@@ -71,14 +96,7 @@ impl HoleFixture {
                     value: form,
                 },
             ),
-            test_property(
-                2,
-                PmDcFeaturePropertyKind::Enumeration {
-                    family: PmDcFeatureEnumFamily::Extent,
-                    type_value: extent_type,
-                    value: extent,
-                },
-            ),
+            extent_property(extent_type, extent),
             test_property(
                 3,
                 PmDcFeaturePropertyKind::Boolean {

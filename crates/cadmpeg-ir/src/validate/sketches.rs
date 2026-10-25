@@ -1871,6 +1871,11 @@ fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
         Constraint::Midpoint { point, .. }
         | Constraint::PointOnObject { point, .. }
         | Constraint::PointCoordinateValues { point, .. } => loci.push(point),
+        Constraint::PointSymmetric {
+            first,
+            second,
+            center,
+        } => loci.extend([first, second, center]),
         Constraint::Symmetric { first, second, .. }
         | Constraint::DistanceLoci { first, second, .. }
         | Constraint::DistanceLociValue { first, second, .. }

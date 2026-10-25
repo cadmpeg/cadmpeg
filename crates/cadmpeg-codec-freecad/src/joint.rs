@@ -223,9 +223,17 @@ pub(crate) fn transfer_neutral(
             "constraint",
         ))
         .map_err(CodecError::malformed)?;
-        let angle = scalar("Angle").map(|value| value.get().to_radians());
         let distance = scalar("Distance");
         let distance2 = scalar("Distance2");
+        let angle = scalar("Angle")
+            .map(FiniteReal::get)
+            .or_else(|| match &record.body {
+                JointBody::Pair { kind, .. } if kind.as_str().eq_ignore_ascii_case("angle") => {
+                    distance.map(|value| value.get().abs())
+                }
+                _ => None,
+            })
+            .map(f64::to_radians);
         let angular_limits = enabled_limits(
             "AngleMin",
             "AngleMax",
@@ -512,7 +520,8 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
         | "Detach2" | "Suppressed" => ("App::PropertyBool", "Bool"),
         _ => return Ok(None),
     };
-    if property.type_name != expected_type {
+    let float_scalar = expected_tag == "Float" && property.type_name == "App::PropertyFloat";
+    if property.type_name != expected_type && !float_scalar {
         return Err(CodecError::malformed(format_args!(
             "joint parameter property {} has runtime type {}, expected {expected_type}",
             property.id, property.type_name
@@ -668,6 +677,102 @@ pub(crate) mod tests {
     use std::io::Cursor;
 
     const EPS_JOINT_SCALAR: f64 = 1.0e-12;
+
+    #[test]
+    fn joint_quantity_and_float_scalar_carriers_preserve_values() {
+        for (name, quantity_type) in [
+            ("Angle", "App::PropertyAngle"),
+            ("AngleMin", "App::PropertyAngle"),
+            ("AngleMax", "App::PropertyAngle"),
+            ("Distance", "App::PropertyLength"),
+            ("Distance2", "App::PropertyLength"),
+            ("LengthMin", "App::PropertyLength"),
+            ("LengthMax", "App::PropertyLength"),
+        ] {
+            for type_name in [quantity_type, "App::PropertyFloat"] {
+                let mut property =
+                    scalar_property(type_name, r#"<Property><Float value="-12.75"/></Property>"#);
+                property.name = name.into();
+                assert_eq!(
+                    super::scalar_parameter(&property).expect("scalar carrier"),
+                    Some("-12.75".into())
+                );
+                for value in ["NaN", "inf", "bad"] {
+                    let xml = format!(r#"<Property><Float value="{value}"/></Property>"#);
+                    let mut property = scalar_property(type_name, &xml);
+                    property.name = name.into();
+                    assert!(super::scalar_parameter(&property).is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn float_joint_limits_and_angle_distance_use_parameter_units() {
+        let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Turn"/><Object type="App::FeaturePython" name="Inclination"/></Objects>
+<ObjectData Count="3"><Object name="Base"><Properties Count="0"/></Object>
+<Object name="Turn"><Properties Count="7">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Revolute"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="AngleMin" type="App::PropertyFloat"><Float value="-60"/></Property>
+<Property name="AngleMax" type="App::PropertyFloat"><Float value="120"/></Property>
+<Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/></Property>
+<Property name="EnableAngleMax" type="App::PropertyBool"><Bool value="true"/></Property>
+</Properties></Object>
+<Object name="Inclination"><Properties Count="4">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Angle"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Distance" type="App::PropertyFloat"><Float value="-30"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            )
+            .expect("float joint parameters");
+        let records = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::joint::JointRecord>("joints")
+            .unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(decoded.ir().model.assembly_joints.len(), 2);
+        for joint in &decoded.ir().model.assembly_joints {
+            let cadmpeg_ir::products::JointOperands::Pair { kind, .. } =
+                wire::field(joint, "operands")
+            else {
+                panic!("paired joint")
+            };
+            match kind {
+                PairedJointKind::Revolute { angular_limits, .. } => {
+                    let cadmpeg_ir::products::JointLimits::Range(range) =
+                        angular_limits.expect("float angular limits")
+                    else {
+                        panic!("bounded angular interval")
+                    };
+                    assert!(
+                        (range.minimum().get() - (-60_f64).to_radians()).abs() < EPS_JOINT_SCALAR
+                    );
+                    assert!(
+                        (range.maximum().get() - 120_f64.to_radians()).abs() < EPS_JOINT_SCALAR
+                    );
+                }
+                PairedJointKind::Angle { angle } => {
+                    assert!(
+                        (angle.expect("Distance angle").get() - 30_f64.to_radians()).abs()
+                            < EPS_JOINT_SCALAR
+                    );
+                }
+                _ => panic!("unexpected joint family"),
+            }
+        }
+        assert_valid_document(decoded.ir());
+    }
 
     #[test]
     fn every_primary_joint_family_has_a_neutral_variant() {
@@ -983,7 +1088,7 @@ pub(crate) mod tests {
     #[test]
     fn rejects_wrong_joint_scalar_runtime_types_and_value_tags() {
         for property in [
-            r#"<Property name="Angle" type="App::PropertyFloat"><Float value="15"/></Property>"#,
+            r#"<Property name="Angle" type="App::PropertyLength"><Float value="15"/></Property>"#,
             r#"<Property name="Distance" type="App::PropertyLength"><Integer value="3"/></Property>"#,
             r#"<Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/><Bool value="false"/></Property>"#,
             r#"<Property name="Suppressed" type="App::PropertyString"><String value="true"/></Property>"#,
