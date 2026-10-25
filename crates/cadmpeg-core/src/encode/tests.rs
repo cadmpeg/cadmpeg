@@ -4,11 +4,21 @@
 use super::EncodeSession;
 use crate::decode::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimits};
 
+fn session_with_limits(limits: ResourceLimits) -> EncodeSession {
+    let arena = crate::decode::DecodeArena::new();
+    let policy = crate::decode::DecodePolicy {
+        limits,
+        ..crate::decode::DecodePolicy::service()
+    };
+    let ctx = crate::decode::DecodeContext::for_encode(&arena, &policy);
+    EncodeSession::from_context(&ctx).expect("actual caller account")
+}
+
 #[test]
 fn simultaneous_buffers_share_the_exact_live_byte_ceiling_and_fuse_refusal() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 5;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     let mut first = session.buffer();
     let mut second = session.buffer();
     first
@@ -47,7 +57,7 @@ fn simultaneous_buffers_share_the_exact_live_byte_ceiling_and_fuse_refusal() {
 fn dropping_a_buffer_releases_only_its_actual_live_bytes() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 5;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     {
         let mut first = session.buffer();
         first
@@ -66,7 +76,7 @@ fn dropping_a_buffer_releases_only_its_actual_live_bytes() {
 fn entity_charges_are_cumulative_and_do_not_follow_buffer_lifetime() {
     let mut limits = ResourceLimits::service();
     limits.max_entities = 2;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     session
         .charge_entities(1, "emit first record")
         .expect("first record");
@@ -89,7 +99,7 @@ fn entity_charges_are_cumulative_and_do_not_follow_buffer_lifetime() {
 fn an_in_place_length_patch_cannot_grow_or_capture_a_missing_range() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 4;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     let mut buffer = session.buffer();
     buffer
         .append(b"head", "four byte header")
@@ -109,7 +119,7 @@ fn an_in_place_length_patch_cannot_grow_or_capture_a_missing_range() {
 fn an_in_place_rotation_keeps_the_length_and_the_charge() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 6;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     let mut buffer = session.buffer();
     buffer
         .append(b"bodyhd", "body then header")
@@ -130,7 +140,7 @@ fn an_in_place_rotation_keeps_the_length_and_the_charge() {
 fn handing_over_the_bytes_refunds_their_charge() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 5;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     let mut first = session.buffer();
     first
         .append(b"final", "final output")
@@ -147,7 +157,7 @@ fn handing_over_the_bytes_refunds_their_charge() {
 fn the_largest_caller_entity_ceiling_does_not_wrap() {
     let mut limits = ResourceLimits::service();
     limits.max_entities = u64::MAX;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     session
         .charge_entities(u64::MAX, "emit a full counter")
         .expect("exact caller ceiling");
@@ -164,7 +174,7 @@ fn the_largest_caller_entity_ceiling_does_not_wrap() {
 fn geometric_growth_charges_actual_backing_capacity_instead_of_only_written_bytes() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 64;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     let mut first = session.buffer();
     first
         .append(b"abc", "first bytes")
@@ -198,7 +208,7 @@ fn geometric_growth_charges_actual_backing_capacity_instead_of_only_written_byte
 fn excess_actual_capacity_is_released_before_a_fused_refusal_returns() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 10;
-    let session = EncodeSession::new(limits);
+    let session = session_with_limits(limits);
     let mut unrelated = session.buffer();
     unrelated
         .append(b"keep", "other live record")

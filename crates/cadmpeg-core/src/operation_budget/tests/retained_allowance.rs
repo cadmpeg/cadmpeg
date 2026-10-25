@@ -5,7 +5,7 @@ use super::*;
 fn remaining_retained_bytes_follow_actual_charges_and_live_capacity_release() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 8;
-    let account = OperationBudget::new(limits);
+    let account = OperationBudget::new(limits, 0);
     assert_eq!(account.retained_bytes_available(), 8);
     account.charge_retained(3, "three retained fields").unwrap();
     assert_eq!(account.retained_bytes_available(), 5);
@@ -25,7 +25,7 @@ fn remaining_retained_bytes_follow_actual_charges_and_live_capacity_release() {
 fn inconsistent_retained_usage_latches_the_actual_checked_subtraction_failure() {
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 8;
-    let account = OperationBudget::new(limits);
+    let account = OperationBudget::new(limits, 0);
     account.state().retained = 9;
     assert_eq!(account.retained_bytes_available(), 0);
     let failure = account.fused().expect("checked accounting failure");
@@ -49,7 +49,7 @@ fn reading_an_inconsistent_allowance_never_replaces_the_existing_session_failure
     let mut limits = ResourceLimits::service();
     limits.max_retained_bytes = 8;
     limits.max_entities = 0;
-    let account = OperationBudget::new(limits);
+    let account = OperationBudget::new(limits, 0);
     let prior = account
         .charge_entities(0, 1, "first actual entity refusal")
         .unwrap_err();

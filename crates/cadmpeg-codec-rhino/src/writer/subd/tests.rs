@@ -90,7 +90,7 @@ fn direct_round_trip(source: &SubdSurface, version: RhinoArchiveVersion) -> Subd
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
-    let session = EncodeSession::new(policy.limits);
+    let session = EncodeSession::from_context(&ctx).unwrap();
     let bytes = payload(&ctx, &session, source, version).unwrap().unwrap();
     let decoded = crate::subd::decode(
         bytes.as_bytes(),
@@ -244,7 +244,7 @@ fn an_admitted_ring_that_repeats_an_edge_is_not_written_as_invalid_native_topolo
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
-    let session = EncodeSession::new(policy.limits);
+    let session = EncodeSession::from_context(&ctx).unwrap();
     assert!(payload(&ctx, &session, &source, RhinoArchiveVersion::V8)
         .unwrap()
         .is_none());
@@ -266,7 +266,7 @@ fn incidence_scratch_is_not_retained_and_payload_bytes_keep_the_actual_session_b
     )
     .unwrap();
     assert_eq!(staged.len(), 3);
-    let session = EncodeSession::new(policy.limits);
+    let session = EncodeSession::from_context(&ctx).unwrap();
     let error = payload(&ctx, &session, &triangle(), RhinoArchiveVersion::V8)
         .err()
         .unwrap();

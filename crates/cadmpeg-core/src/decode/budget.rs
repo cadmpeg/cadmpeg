@@ -38,8 +38,52 @@ impl DecodeBudget {
             decompressed: Cell::new(0),
             retained: Cell::new(0),
             recursion_depth: Cell::new(0),
-            account: Arc::new(OperationBudget::new(policy.limits)),
+            account: Arc::new(OperationBudget::new(policy.limits, input_bytes)),
         }
+    }
+
+    pub(super) fn from_account(policy: DecodePolicy, account: Arc<OperationBudget>) -> Self {
+        Self {
+            policy,
+            input_bytes: Cell::new(0),
+            decompressed: Cell::new(0),
+            retained: Cell::new(0),
+            recursion_depth: Cell::new(0),
+            account,
+        }
+    }
+
+    pub(super) fn activate_tracking(
+        &self,
+        slot_bytes: u64,
+        first_bytes: u64,
+    ) -> Result<(), ResourceLimit> {
+        let before = self.retained.get();
+        #[cfg(feature = "test-support")]
+        let local_limit = |bytes| {
+            let limit = self.retained_allowance();
+            super::test_support::charge_limit(
+                &self.policy.limits,
+                ResourceDimension::RetainedBytes,
+                "record tracking session",
+                before,
+                bytes,
+            )
+            .map_or(limit, |probe| limit.min(probe))
+        };
+        #[cfg(not(feature = "test-support"))]
+        let local_limit = |_| self.retained_allowance();
+        let bytes = self
+            .account
+            .charge_tracking(slot_bytes, first_bytes, local_limit, before)?;
+        self.retained.set(before + bytes);
+        #[cfg(feature = "test-support")]
+        super::test_support::record_charge(
+            ResourceDimension::RetainedBytes,
+            "record tracking session",
+            bytes,
+        );
+        Ok(())
     }
 
     pub(super) fn fused(&self) -> Option<ResourceLimit> {
@@ -126,6 +170,13 @@ impl DecodeBudget {
     ) -> Result<(), ResourceLimit> {
         let before = used.get();
         self.admit(dimension, before, limit, amount, operation)?;
+        match dimension {
+            ResourceDimension::InputBytes => self.account.charge_input(amount, operation)?,
+            ResourceDimension::DecompressedBytes => {
+                self.account.charge_decompressed(amount, operation)?
+            }
+            _ => {}
+        }
         used.set(before + amount);
         #[cfg(feature = "test-support")]
         super::test_support::record_charge(dimension, operation, amount);

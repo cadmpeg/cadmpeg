@@ -6,22 +6,21 @@ use std::sync::Arc;
 use crate::operation_budget::OperationBudget;
 
 use crate::decode::{
-    DecodeContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, ResourceLimits,
+    DecodeContext, DecodePolicy, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit,
 };
 
 /// One encode operation's cumulative entities and live retained allocations.
 #[derive(Debug)]
 pub struct EncodeSession {
     account: Arc<OperationBudget>,
+    pub(crate) policy: DecodePolicy,
 }
 
 impl EncodeSession {
-    /// Starts an encode operation with the caller's ceilings.
+    /// Wraps the actual existing caller account without opening an allowance.
     #[must_use]
-    pub fn new(limits: ResourceLimits) -> Self {
-        Self {
-            account: Arc::new(OperationBudget::new(limits)),
-        }
+    pub(crate) fn new(account: Arc<OperationBudget>, policy: DecodePolicy) -> Self {
+        Self { account, policy }
     }
 
     /// Shares the context's caller account, including every prior fatal refusal.
@@ -30,7 +29,11 @@ impl EncodeSession {
         if let Some(error) = account.fused() {
             return Err(error);
         }
-        Ok(Self { account })
+        Ok(Self::new(account, *context.policy()))
+    }
+
+    pub(crate) fn account(&self) -> Arc<OperationBudget> {
+        Arc::clone(&self.account)
     }
 
     /// Charges semantic or native records at their actual emission boundary.

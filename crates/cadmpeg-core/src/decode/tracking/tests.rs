@@ -584,3 +584,5 @@ fn a_primary_capture_slot_is_charged_once_at_every_nesting_depth() {
     }
     assert_eq!(used[0], used[1]);
 }
+
+mod shared_encode;

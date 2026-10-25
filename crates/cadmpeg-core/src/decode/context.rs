@@ -68,6 +68,31 @@ impl<'a> DecodeContext<'a> {
         ctx
     }
 
+    /// Opens an independent source domain on an existing encode caller account.
+    ///
+    /// Caller policy and ceilings are inherited from the session. This neither
+    /// registers source bytes nor borrows another context or its arena. Input,
+    /// decompressed bytes, retained output, entities and the first refusal are
+    /// shared; record captures, stream identity and local work stay separate.
+    pub fn for_encode_session(
+        arena: &'a DecodeArena,
+        session: &crate::encode::EncodeSession,
+    ) -> Result<Self, ResourceLimit> {
+        session.finish()?;
+        let policy = session.policy;
+        let budget = arena
+            .tracking
+            .session_on_account(policy, session.account())?;
+        Ok(Self {
+            arena,
+            depth: DecodeDepth::Full,
+            policy,
+            encoding: true,
+            budget,
+            derived_spaces: Cell::new(0),
+        })
+    }
+
     /// Whether this context owns temporary projections for an encode operation.
     pub const fn is_encoding(&self) -> bool {
         self.encoding

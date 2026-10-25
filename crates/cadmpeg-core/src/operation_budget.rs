@@ -16,16 +16,22 @@ pub(crate) struct OperationBudget {
 #[derive(Debug)]
 pub(crate) struct OperationBudgetState {
     pub(crate) entities: u64,
+    input: u64,
+    decompressed: u64,
+    tracking_body_charged: bool,
     retained: u64,
     failure: Option<ResourceLimit>,
 }
 
 impl OperationBudget {
-    pub(crate) const fn new(limits: ResourceLimits) -> Self {
+    pub(crate) const fn new(limits: ResourceLimits, input: u64) -> Self {
         Self {
             limits,
             state: Mutex::new(OperationBudgetState {
                 entities: 0,
+                input,
+                decompressed: 0,
+                tracking_body_charged: false,
                 retained: 0,
                 failure: None,
             }),
@@ -88,6 +94,97 @@ impl OperationBudget {
             additional,
             operation,
         )
+    }
+
+    pub(crate) fn charge_input(
+        &self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        let mut state = self.state();
+        let used = state.input;
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::InputBytes,
+            self.limits.max_input_bytes,
+            used,
+            amount,
+            operation,
+        )?;
+        state.input += amount;
+        Ok(())
+    }
+
+    pub(crate) fn charge_decompressed(
+        &self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        let mut state = self.state();
+        let used = state.decompressed;
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::DecompressedBytes,
+            self.limits.max_decompressed_bytes_total,
+            used,
+            amount,
+            operation,
+        )?;
+        state.decompressed += amount;
+        Ok(())
+    }
+
+    pub(crate) fn allocation_failed(
+        &self,
+        additional: u64,
+        operation: &'static str,
+    ) -> ResourceLimit {
+        let mut state = self.state();
+        let resource = ResourceLimit {
+            scope: LimitScope::Session,
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: self.limits.max_retained_bytes,
+            used: state.retained,
+            additional,
+            operation,
+        };
+        Self::refuse_locked(&mut state, resource)
+    }
+
+    pub(crate) fn charge_tracking(
+        &self,
+        slot_bytes: u64,
+        first_bytes: u64,
+        local_limit: impl FnOnce(u64) -> u64,
+        local_used: u64,
+    ) -> Result<u64, ResourceLimit> {
+        let mut state = self.state();
+        let bytes = if state.tracking_body_charged {
+            slot_bytes
+        } else {
+            first_bytes
+        };
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::RetainedBytes,
+            local_limit(bytes),
+            local_used,
+            bytes,
+            "record tracking session",
+        )?;
+        let used = state.retained;
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::RetainedBytes,
+            self.limits.max_retained_bytes,
+            used,
+            bytes,
+            "record tracking session",
+        )?;
+        state.retained += bytes;
+        state.tracking_body_charged = true;
+        Ok(bytes)
     }
 
     pub(crate) fn charge_entities(
@@ -244,7 +341,7 @@ mod tests {
     fn poisoned_lock_permanently_refuses_without_claiming_budget_exhaustion() {
         let mut limits = ResourceLimits::service();
         limits.max_retained_bytes = 8;
-        let account = Arc::new(OperationBudget::new(limits));
+        let account = Arc::new(OperationBudget::new(limits, 0));
         let native = Box::new(*b"native");
         account
             .charge_retained(6, "native fields")
@@ -281,7 +378,7 @@ mod tests {
     fn poisoned_lock_keeps_the_first_session_refusal() {
         let mut limits = ResourceLimits::service();
         limits.max_retained_bytes = 8;
-        let account = Arc::new(OperationBudget::new(limits));
+        let account = Arc::new(OperationBudget::new(limits, 0));
         account
             .charge_retained(6, "native fields")
             .expect("native fits");
@@ -297,7 +394,7 @@ mod tests {
         let mut limits = ResourceLimits::service();
         limits.max_retained_bytes = 8;
         limits.max_entities = 3;
-        let account = Arc::new(OperationBudget::new(limits));
+        let account = Arc::new(OperationBudget::new(limits, 0));
         account
             .charge_retained(6, "native fields")
             .expect("native fields fit");

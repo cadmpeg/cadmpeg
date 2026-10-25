@@ -125,6 +125,47 @@ pub(super) struct SessionHandle<'a> {
 }
 
 impl TrackingStore {
+    pub(super) fn session_on_account(
+        &self,
+        policy: DecodePolicy,
+        account: std::sync::Arc<crate::operation_budget::OperationBudget>,
+    ) -> Result<SessionHandle<'_>, ResourceLimit> {
+        if let Some(error) = account.fused() {
+            return Err(error);
+        }
+        let mut sessions = self.sessions.borrow_mut();
+        let budget = DecodeBudget::from_account(policy, std::sync::Arc::clone(&account));
+        if let Some((index, slot)) = sessions
+            .iter_mut()
+            .enumerate()
+            .find(|(_, slot)| slot.state.is_none() && slot.generation < usize::MAX)
+        {
+            slot.generation += 1;
+            slot.state = Some(Session::with_budget(budget));
+            return Ok(SessionHandle {
+                store: self,
+                index: Some(index),
+                generation: slot.generation,
+            });
+        }
+        sessions.try_reserve_exact(1).map_err(|_| {
+            account.allocation_failed(
+                u64_from_index(size_of::<SessionSlot>()),
+                "allocate decode session",
+            )
+        })?;
+        let index = sessions.len();
+        sessions.push(SessionSlot {
+            generation: 0,
+            state: Some(Session::with_budget(budget)),
+        });
+        Ok(SessionHandle {
+            store: self,
+            index: Some(index),
+            generation: 0,
+        })
+    }
+
     pub(super) fn session(&self, policy: DecodePolicy, input_bytes: u64) -> SessionHandle<'_> {
         if self.allocation_failure.get().is_some() {
             return SessionHandle {
@@ -819,9 +860,13 @@ impl SessionHandle<'_> {
 
 impl Session {
     fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
+        Self::with_budget(DecodeBudget::new(policy, input_bytes))
+    }
+
+    fn with_budget(budget: DecodeBudget) -> Self {
         Self {
             identity: None,
-            budget: DecodeBudget::new(policy, input_bytes),
+            budget,
             streams: Streams::default(),
             frames: Vec::new(),
             committed: Vec::new(),
@@ -835,12 +880,12 @@ impl Session {
 
     fn activate(&mut self) -> Result<(), CodecError> {
         if !self.activated {
-            self.budget.retain_bytes(
+            self.budget.activate_tracking(
+                u64_from_index(size_of::<SessionSlot>()),
                 u64_from_index(
                     size_of::<SessionSlot>()
                         + size_of::<crate::operation_budget::OperationBudget>(),
                 ),
-                "record tracking session",
             )?;
             self.activated = true;
         }
