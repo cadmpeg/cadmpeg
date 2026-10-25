@@ -3,7 +3,10 @@
 use cadmpeg_core::decode::unique_index;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{
+    AngularTermination, PlanarProfileRef, ProfileRef, RevolutionAxis, RevolveConstruction,
+    RevolveExtent,
+};
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -136,6 +139,11 @@ const SURFACE_TYPE: [u8; 16] = [
 const PLANE_SURFACE_FORM: u32 = 25;
 /// Work-plane value that precedes the explicit plane frame in its extended form.
 const WORK_PLANE_FRAME_MARKER: u32 = 0x203;
+const WORK_AXIS_TYPE: [u8; 16] = [
+    0x89, 0x6c, 0xf0, 0x8e, 0xd1, 0x11, 0x3c, 0x04, 0x60, 0x00, 0x7c, 0xb8, 0x01, 0xf3, 0x1b, 0xb0,
+];
+/// Revolve extent value of a full revolution.
+const REVOLVE_EXTENT_FULL: u16 = 3;
 const FEATURE_LABEL_TYPE: [u8; 16] = [
     0x2b, 0xa4, 0x48, 0x2b, 0xd2, 0x11, 0x58, 0x64, 0x60, 0x00, 0x74, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
 ];
@@ -245,6 +253,17 @@ pub(crate) enum PmDcFeaturePropertyKind {
     },
     TerminationFlag {
         value: u8,
+    },
+    /// A work axis: the line through `origin` along `span`, in internal
+    /// centimetres.
+    WorkAxis {
+        entity_flags: u32,
+        values: Vec<u32>,
+        references: PmDcReferenceList,
+        marker: bool,
+        origin: [cadmpeg_ir::scalar::FiniteReal; 3],
+        span: [cadmpeg_ir::scalar::FiniteReal; 3],
+        state: u8,
     },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
@@ -873,6 +892,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         EDGE_ITEM_TYPE => Some(parse_edge_item),
         FACE_ITEM_TYPE => Some(parse_face_item),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
+        WORK_AXIS_TYPE => Some(parse_work_axis),
         _ => split::property_parser(type_id),
     }
 }
@@ -1156,6 +1176,45 @@ fn parse_work_plane(source: View<'_>, version: u8) -> Result<PmDcWorkPlanePayloa
     })
 }
 
+fn parse_work_axis(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, version)?;
+    let entity_flags = cursor.u32("work axis entity flags")?;
+    let mut values = vec![
+        cursor.u32("work axis value")?,
+        cursor.u32("work axis value")?,
+    ];
+    if version > 21 {
+        values.push(cursor.u32("work axis value")?);
+    }
+    let references = reference_list(&mut cursor, 2, "work axis references")?;
+    let marker = cursor.peek_u32("work axis frame marker")? == WORK_PLANE_FRAME_MARKER;
+    if marker {
+        cursor.u32("work axis frame marker")?;
+    }
+    let origin = f64_triple(&mut cursor, "work axis origin")?;
+    let span = f64_triple(&mut cursor, "work axis span")?;
+    let state = cursor.u8("work axis state")?;
+    cursor.finish("work axis")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::WorkAxis {
+            entity_flags,
+            values,
+            references,
+            marker,
+            origin,
+            span,
+            state,
+        },
+    ))
+}
+
 fn parse_termination_flag(
     _: &DecodeContext<'_>,
     source: View<'_>,
@@ -1381,6 +1440,9 @@ const FILLET_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const CORNER_ROUND_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xb5, 0x4d, 0xd6, 0xf6, 0xd3, 0x11, 0xc4, 0x96, 0x60, 0x00, 0xf2, 0xb2, 0x1d, 0x6e, 0xef, 0xb0,
 ]));
+const REVOLVE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
+    0x5f, 0x01, 0x54, 0x00, 0xd2, 0x11, 0x25, 0x1c, 0x60, 0x00, 0x67, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
+]));
 /// Sheet-metal plate: the solid of one sheet-metal face.
 const PLATE_CLASS_ID: ClassId = ClassId(NativeBytes::new([
     0xc6, 0x5f, 0x58, 0x55, 0xd3, 0x11, 0x73, 0x0c, 0x60, 0x00, 0x3a, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
@@ -1444,13 +1506,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0x47, 0xb5,
         ],
         "RevolveSurface",
-    ),
-    (
-        [
-            0x5f, 0x01, 0x54, 0x00, 0xd2, 0x11, 0x25, 0x1c, 0x60, 0x00, 0x67, 0xb7, 0x9b, 0x49,
-            0xeb, 0xb0,
-        ],
-        "Revolve",
     ),
     (
         [
@@ -1604,6 +1659,7 @@ pub(crate) enum FeatureFamily {
     Plate,
     Thicken,
     Shell,
+    Revolve,
 }
 
 impl FeatureFamily {
@@ -1618,6 +1674,7 @@ impl FeatureFamily {
             Self::Plate => &[PLATE_CLASS_ID],
             Self::Thicken => &[THICKEN_CLASS_ID],
             Self::Shell => &[SHELL_CLASS_ID],
+            Self::Revolve => &[REVOLVE_CLASS_ID],
         }
     }
 
@@ -1631,6 +1688,7 @@ impl FeatureFamily {
             Self::Plate => 6,
             Self::Thicken => 15,
             Self::Shell => 9,
+            Self::Revolve => 17,
         }
     }
 
@@ -1644,6 +1702,7 @@ impl FeatureFamily {
             Self::Plate,
             Self::Thicken,
             Self::Shell,
+            Self::Revolve,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1674,6 +1733,9 @@ impl FeatureFamily {
             ) | (
                 Self::Shell,
                 FeatureDefinition::Operation(FeatureOperation::Shell { .. })
+            ) | (
+                Self::Revolve,
+                FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
             )
         )
     }
@@ -1687,6 +1749,7 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => Some(Self::Thicken),
             FeatureDefinition::Operation(FeatureOperation::Shell { .. }) => Some(Self::Shell),
+            FeatureDefinition::Operation(FeatureOperation::Revolve { .. }) => Some(Self::Revolve),
             _ => None,
         }
     }
@@ -1906,6 +1969,7 @@ pub(crate) fn project(
                 FeatureFamily::Plate => project_plate(ctx, feature, label, &index),
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
                 FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
+                FeatureFamily::Revolve => project_revolve(ctx, feature, label, &index),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2226,6 +2290,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Plate => NativeFeatureKind::Other("Plate".into()),
             FeatureFamily::Thicken => NativeFeatureKind::Other("Thicken".into()),
             FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
+            FeatureFamily::Revolve => NativeFeatureKind::Other("Revolve".into()),
         };
     }
     NATIVE_CLASSES
@@ -2352,6 +2417,101 @@ fn project_thread(
     }))
 }
 
+/// The profile selections of a boundary patch and the one planar sketch that
+/// the feature label names.
+struct BoundaryProfile<'a> {
+    selections: Vec<String>,
+    links: Vec<u32>,
+    sketch: &'a crate::sketch::PmDcSketch,
+    sketch_id: cadmpeg_ir::sketches::SketchId,
+}
+
+impl<'a> BoundaryProfile<'a> {
+    fn new(
+        source: &PmDcFeature,
+        label: &PmDcFeatureLabel,
+        slot: usize,
+        index: &ProjectionIndex<'a>,
+    ) -> Option<Self> {
+        let boundary = references(
+            source,
+            slot,
+            PmDcFeatureReferenceFamily::BoundaryPatch,
+            index,
+        )?;
+        let mut distinct = HashSet::new();
+        if !boundary
+            .references()
+            .iter()
+            .all(|selection| distinct.insert(selection.index()))
+        {
+            return None;
+        }
+        let mut selections = Vec::new();
+        let mut links = Vec::new();
+        for reference in boundary.references() {
+            let property = resolve_property(
+                source.identity.segment_token.as_str(),
+                reference.index(),
+                index,
+            )?;
+            let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind
+            else {
+                return None;
+            };
+            let ordinal = entity_link.index().checked_sub(1)?;
+            if !index
+                .entity_style_links
+                .contains(&(source.identity.segment_token.as_str(), ordinal))
+            {
+                return None;
+            }
+            selections.push(property.id());
+            links.push(ordinal);
+        }
+        if selections.is_empty() || label.participants.references().len() != 1 {
+            return None;
+        }
+        let sketch_reference = label.participants.references().first()?;
+        let sketch = index
+            .sketches
+            .get(&(
+                source.identity.segment_token.as_str(),
+                sketch_reference.index().checked_sub(1)?,
+            ))
+            .and_then(Option::as_ref)
+            .copied()?;
+        let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
+        Some(Self {
+            selections,
+            links,
+            sketch,
+            sketch_id,
+        })
+    }
+
+    /// The selected sketch regions, or the native selection when they do not
+    /// resolve. Resolution can append loops to the sketch profile table, so a
+    /// projection resolves its profile after every other check.
+    fn resolve(self, index: &ProjectionIndex<'_>) -> Option<PlanarProfileRef> {
+        let regions = index
+            .sketches_by_id
+            .get(self.sketch_id.as_str())
+            .and_then(|neutral| {
+                index.profiles.regions(
+                    self.sketch.identity.segment_token.as_str(),
+                    self.sketch.identity.record_ordinal,
+                    neutral,
+                    &self.links,
+                )
+            });
+        match regions {
+            Some(profile) => Some(profile),
+            None => PlanarProfileRef::sketch_selection(self.sketch_id, self.selections).ok(),
+        }
+    }
+}
+
 fn project_extrusion(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
@@ -2366,52 +2526,10 @@ fn project_extrusion(
         4 => BooleanOp::Intersect,
         _ => return None,
     };
-    let boundary = references(source, 1, PmDcFeatureReferenceFamily::BoundaryPatch, index)?;
     if source.properties.references().get(23)? != source.properties.references().get(1)? {
         return None;
     }
-    let mut distinct = HashSet::new();
-    if !boundary
-        .references()
-        .iter()
-        .all(|selection| distinct.insert(selection.index()))
-    {
-        return None;
-    }
-    let mut selections = Vec::new();
-    let mut links = Vec::new();
-    for reference in boundary.references() {
-        let property = resolve_property(
-            source.identity.segment_token.as_str(),
-            reference.index(),
-            index,
-        )?;
-        let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind else {
-            return None;
-        };
-        let ordinal = entity_link.index().checked_sub(1)?;
-        if !index
-            .entity_style_links
-            .contains(&(source.identity.segment_token.as_str(), ordinal))
-        {
-            return None;
-        }
-        selections.push(property.id());
-        links.push(ordinal);
-    }
-    if selections.is_empty() || label.participants.references().len() != 1 {
-        return None;
-    }
-    let sketch_reference = label.participants.references().first()?;
-    let sketch = index
-        .sketches
-        .get(&(
-            source.identity.segment_token.as_str(),
-            sketch_reference.index().checked_sub(1)?,
-        ))
-        .and_then(Option::as_ref)?;
-    let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
-    let neutral_sketch = index.sketches_by_id.get(sketch_id.as_str()).copied();
+    let boundary = BoundaryProfile::new(source, label, 1, index)?;
 
     let direction_record = resolve_direction(source, 2, index)?;
     let mut direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
@@ -2466,18 +2584,7 @@ fn project_extrusion(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
         return Some(Err(error));
     }
-    let regions = neutral_sketch.and_then(|neutral| {
-        index.profiles.regions(
-            source.identity.segment_token.as_str(),
-            sketch.identity.record_ordinal,
-            neutral,
-            &links,
-        )
-    });
-    let profile = match regions {
-        Some(profile) => profile,
-        None => PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?,
-    };
+    let profile = boundary.resolve(index)?;
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),
@@ -2504,6 +2611,85 @@ fn project_extrusion(
                 inner_wire_taper: None,
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
+            }),
+        ),
+        native_ref: Some(source.id()),
+    };
+    Some(Ok((feature, result)))
+}
+
+/// A revolution of the boundary-patch profile about the slot-2 work axis.
+/// Extent value 3 is a full revolution; other extents stay native.
+fn project_revolve(
+    ctx: &DecodeContext<'_>,
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    let op = match enum16(source, 0, PmDcFeatureEnumFamily::PartOperation, index)? {
+        1 => BooleanOp::NewBody,
+        2 => BooleanOp::Cut,
+        3 => BooleanOp::Join,
+        4 => BooleanOp::Intersect,
+        _ => return None,
+    };
+    let boundary = BoundaryProfile::new(source, label, 1, index)?;
+    let PmDcFeaturePropertyKind::WorkAxis { origin, span, .. } =
+        &slot_property(source, 2, index)?.kind
+    else {
+        return None;
+    };
+    let origin = origin.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let span = span.map(cadmpeg_ir::scalar::FiniteReal::get);
+    let direction =
+        cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(span[0], span[1], span[2]))?;
+    let axis = RevolutionAxis {
+        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            origin[0] * 10.0,
+            origin[1] * 10.0,
+            origin[2] * 10.0,
+        ))?,
+        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+        reference: None,
+    };
+    if enum16(source, 3, PmDcFeatureEnumFamily::Extent, index)? != REVOLVE_EXTENT_FULL {
+        return None;
+    }
+    let extent = RevolveExtent::OneSided {
+        termination: AngularTermination::Angle {
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)?,
+        },
+    };
+    let (feature_id, result) = match feature_result(ctx, source, 17, index)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
+        return Some(Err(error));
+    }
+    let profile = boundary.resolve(index)?;
+    let feature = Feature {
+        id: feature_id,
+        ordinal: u64::from(label.index),
+        name: label.name().map(str::to_owned),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some("revolve".into()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Revolve {
+                construction: RevolveConstruction::Resolved {
+                    profile,
+                    axis,
+                    extent,
+                    solid: Some(true),
+                    face_maker: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+                op,
             }),
         ),
         native_ref: Some(source.id()),
@@ -5498,6 +5684,7 @@ mod tests {
     }
 
     mod extents;
+    mod revolve;
     mod shell;
     mod thread;
 }
