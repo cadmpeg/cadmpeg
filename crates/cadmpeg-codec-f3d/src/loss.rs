@@ -44,6 +44,14 @@ pub(crate) enum F3dLossCode {
     ActComponentLinkUnresolved,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
+    /// A local occurrence owner joins no unique component definition.
+    LocalOccurrenceOwnerUnbound,
+    /// The component owner graph contains a cycle.
+    LocalOccurrenceOwnerCycle,
+    /// Repeated local instance trees exceed the decode limits.
+    LocalOccurrenceExpansionLimit,
+    /// A component feature names no unique expanded occurrence.
+    FeatureOccurrencePathUnresolved,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -279,6 +287,10 @@ impl F3dLossCode {
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
+        Self::LocalOccurrenceOwnerUnbound,
+        Self::LocalOccurrenceOwnerCycle,
+        Self::LocalOccurrenceExpansionLimit,
+        Self::FeatureOccurrencePathUnresolved,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
@@ -403,6 +415,10 @@ impl F3dLossCode {
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
+            Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
+            Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
+            Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
+            Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
@@ -546,6 +562,10 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::LocalOccurrenceOwnerUnbound
+            | Self::LocalOccurrenceOwnerCycle
+            | Self::LocalOccurrenceExpansionLimit
+            | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
@@ -701,6 +721,7 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
+            | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
@@ -709,7 +730,10 @@ impl F3dLossCode {
             | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
-            Self::LocalOccurrenceUnplaced
+            Self::LocalOccurrenceOwnerUnbound
+            | Self::LocalOccurrenceOwnerCycle
+            | Self::LocalOccurrenceExpansionLimit
+            | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
@@ -813,6 +837,10 @@ mod tests {
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
+                "assembly.local-occurrence-owner-unbound",
+                "assembly.local-occurrence-owner-cycle",
+                "assembly.local-occurrence-expansion-limit",
+                "feature.occurrence-path-unresolved",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",

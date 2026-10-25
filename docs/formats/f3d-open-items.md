@@ -146,20 +146,6 @@ name one component definition record can store different carrier GUIDs. The
 binding, the decoder keys the neutral component definition by the carrier GUID.
 Two carriers of one definition then project as two definitions.
 
-### DR-76. Nested local occurrence placement
-
-**Question.** How does a local occurrence whose owner entity is the root entity
-of a non-root component compose into the document frame?
-
-**Known.** `f3d.md` §3.1 "The component-record reference names the component
-definition record." gives the owner entity and the root-instance record. An
-occurrence that the root component contains is a child of the root occurrence,
-and its transform maps the component definition into the root component frame.
-
-**Need.** A reader must place every occurrence of a nested component in each
-occurrence of its containing component. The decoder does not place a nested
-occurrence and reports `assembly.local-occurrence-unplaced`.
-
 ### DR-77. Operation placements of identity-frame carriers
 
 **Question.** Does the `CopyPaste` source placement or the `R-Pattern` first
