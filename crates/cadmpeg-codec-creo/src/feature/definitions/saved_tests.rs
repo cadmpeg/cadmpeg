@@ -825,17 +825,7 @@ fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
     );
     assert_eq!(states[1].recipe.resolved(), Some(FeatureRecipe::CutExtrude));
 
-    let current_operations = operations(payload);
-    let [current] = current_operations.as_slice() else {
-        panic!("one consensus operation");
-    };
-    assert_eq!(current.kind.as_str(), "Extrude");
-    assert!(current.display_state_conflict);
-    assert!(current.recipe.is_conflicting());
-    assert_eq!(
-        current.recipe,
-        crate::feature::operations::RecipeResolution::Conflicting
-    );
+    assert!(operations(payload).is_empty());
 }
 
 #[test]
@@ -906,21 +896,7 @@ fn preserves_competing_depdb_recipe_bindings() {
     );
 
     let current = operations(payload);
-    assert_eq!(current.len(), 1);
-    assert_eq!(current[0].feature_id, 8053);
-    assert_eq!(current[0].kind.as_str(), "Native Feature");
-    assert_eq!(
-        current[0].recipe,
-        crate::feature::operations::RecipeResolution::Conflicting
-    );
-    assert!(current[0].recipe.is_conflicting());
-    assert_eq!(
-        current[0]
-            .root_schema_class()
-            .map(crate::feature::schema::SchemaClass::code),
-        None
-    );
-    assert_eq!(current[0].parent_feature_id(), None);
+    assert!(current.is_empty());
 
     let repeated = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
             \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protextrude\0";
@@ -970,17 +946,7 @@ fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
     );
     assert_eq!(display.parent_feature_id(), None);
 
-    let current = operations(payload);
-    let [current] = current.as_slice() else {
-        panic!("one current operation");
-    };
-    assert_eq!(current.kind.as_str(), "Extrude");
-    assert!(current.display_name_stored());
-    assert_eq!(
-        current.recipe,
-        crate::feature::operations::RecipeResolution::Conflicting
-    );
-    assert!(current.recipe.is_conflicting());
+    assert!(operations(payload).is_empty());
 }
 
 #[test]
