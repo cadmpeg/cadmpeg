@@ -860,6 +860,9 @@ fn decode_container<'a>(
                 unresolved.sketch_construction
             )));
         }
+        losses.extend(crate::sketch::point_tail::paired_association_loss(
+            &sketch_inventory,
+        ));
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
             losses.push(InventorLossCode::RseStreamUnpaired.note(format!(
                 "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
