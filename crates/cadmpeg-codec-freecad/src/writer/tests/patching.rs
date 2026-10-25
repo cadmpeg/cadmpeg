@@ -148,6 +148,23 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
         )
         .expect("decode source");
     let mut edited = decoded.ir().clone();
+    // #209 section2.3 W2: the current neutral projection owns this native lane.
+    let canonical_label = edited
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| {
+            attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+                && attribute.name == "Label"
+        })
+        .expect("canonical document Label");
+    let [cadmpeg_ir::attributes::AttributeValue::String(expected_label)] =
+        canonical_label.values.as_slice()
+    else {
+        panic!("the authored fixture has one canonical string Label")
+    };
+    let expected_label = expected_label.clone();
+    assert_ne!(expected_label, "edited & verified");
     FcstdCodec
         .set_property_value_attribute(
             &mut edited,
@@ -158,6 +175,25 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
             "edited & verified",
         )
         .expect("edit Label");
+    let edited_properties = edited
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<PropertyRecord>("properties")
+        .expect("typed properties");
+    let edited_native_label = edited_properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("document", "0") && property.name == "Label"
+        })
+        .expect("edited native document Label");
+    assert_eq!(
+        edited_native_label.values()[0]
+            .attributes
+            .get("value")
+            .map(String::as_str),
+        Some("edited & verified")
+    );
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
@@ -190,7 +226,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
             .attributes
             .get("value")
             .map(String::as_str),
-        Some("edited & verified")
+        Some(expected_label.as_str())
     );
     assert_eq!(
         round_trip.ir().model.bodies.len(),
@@ -391,4 +427,87 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         reread.ir().model.bodies.len(),
         stale_entry.model.bodies.len()
     );
+}
+
+#[test]
+fn canonical_document_label_edits_regenerate_the_native_property() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let mut edited = decoded.ir().clone();
+    let canonical_label = edited
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| {
+            attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+                && attribute.name == "Label"
+        })
+        .expect("canonical document Label");
+    assert_ne!(
+        canonical_label.values,
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            "edited & verified".into()
+        )]
+    );
+    canonical_label.values = vec![cadmpeg_ir::attributes::AttributeValue::String(
+        "edited & verified".into(),
+    )];
+    let mut encoded = Vec::new();
+    let report = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("encode canonical edit");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("decode canonical output");
+    let namespace = round_trip
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace");
+    let properties = namespace
+        .arena_as::<PropertyRecord>("properties")
+        .expect("typed properties");
+    let output_label = properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("document", "0") && property.name == "Label"
+        })
+        .expect("document Label");
+    assert_eq!(
+        output_label.values()[0]
+            .attributes
+            .get("value")
+            .map(String::as_str),
+        Some("edited & verified")
+    );
+    let canonical_label = round_trip
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| {
+            attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+                && attribute.name == "Label"
+        })
+        .expect("decoded canonical Label");
+    assert_eq!(
+        canonical_label.values,
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            "edited & verified".into()
+        )]
+    );
+    assert_eq!(
+        round_trip.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
+    assert!(crate::test_support::validate_native(round_trip.ir()).is_empty());
 }
