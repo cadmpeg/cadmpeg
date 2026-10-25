@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project exact local component operations into neutral product structure.
 
+pub(crate) mod paths;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -41,6 +43,7 @@ pub(crate) struct LocalComponentSources<'a> {
     pub(crate) bodies: Option<&'a BTreeSet<BodyId>>,
     /// First free ordinal among root occurrences already in the model.
     pub(crate) root_ordinal_start: usize,
+    pub(crate) limits: cadmpeg_core::decode::ResourceLimits,
 }
 
 /// Local product structure projected from component occurrences.
@@ -54,14 +57,14 @@ pub(crate) struct LocalComponentProjection {
 /// Project local component definitions and their placed occurrences.
 ///
 /// Component operations supply the occurrences and placements they prove.
-/// Every other carrier contained by the root component is placed at its own
-/// transform. A carrier whose container or definition the source does not
-/// settle stays unplaced and is reported.
+/// Local child trees repeat beneath each containing instance. A carrier whose
+/// container or definition cannot resolve stays unplaced and is reported.
 pub(crate) fn project_local_components(
     sources: &LocalComponentSources<'_>,
 ) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
     let mut projector = Projector::new(sources);
     for scope in sources.scopes {
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
         if let Some(qualifiers) = scope.assembly_alignment().and_then(
             super::super::records::feature::assembly::DesignAssemblyAlignment::operand_qualifiers,
         ) {
@@ -73,11 +76,16 @@ pub(crate) fn project_local_components(
                     continue;
                 };
                 let key = guid.value.as_str().to_ascii_lowercase();
-                let root = projector.native_by_guid.get(&key).copied().flatten();
+                let root = projector
+                    .native_by_guid
+                    .get(&(stream.to_owned(), key))
+                    .copied()
+                    .flatten();
                 let Some(root) = root else {
                     continue;
                 };
                 projector.place(
+                    stream,
                     &root.component_guid,
                     &root.occurrence_guid,
                     root.transform()
@@ -87,11 +95,13 @@ pub(crate) fn project_local_components(
         }
         if let Some(operation) = scope.copy_paste_component_operation() {
             projector.place(
+                stream,
                 &operation.component_guid,
                 &operation.source_occurrence_guid,
                 operation.source_transform,
             )?;
             projector.place(
+                stream,
                 &operation.component_guid,
                 &operation.copied_occurrence_guid,
                 operation.copied_transform,
@@ -99,6 +109,7 @@ pub(crate) fn project_local_components(
         }
         if let Some(construction) = scope.derived_instance_construction() {
             projector.place(
+                stream,
                 &construction.component_guid,
                 &construction.occurrence_guid,
                 construction.transform,
@@ -118,6 +129,7 @@ pub(crate) fn project_local_components(
         };
         for occurrence in std::iter::once(seed).chain(generated) {
             projector.place(
+                stream,
                 component_guid,
                 &occurrence.occurrence_guid,
                 occurrence.instance.transform.value,
@@ -126,6 +138,7 @@ pub(crate) fn project_local_components(
     }
     projector.place_root_contained_carriers()?;
     projector.attach_root_occurrences();
+    projector.expand_nested_carriers()?;
     projector.finish()
 }
 
@@ -134,8 +147,11 @@ pub(crate) fn project_local_components(
 enum Unplaced {
     RepeatedGuid,
     NoRootComponent,
-    NestedContainer,
+    OwnerUnbound,
+    OwnerCycle,
+    ExpansionLimit,
     DefinitionUnbound,
+    OwnerUninstanced,
     BodyOutsideComponents,
     BodiesPending,
 }
@@ -147,9 +163,10 @@ impl Unplaced {
             Self::NoRootComponent => {
                 "the Design stream has no unique root instance bound to a component naming space"
             }
-            Self::NestedContainer => {
-                "the containing component is not the root component; nested placement is not projected"
-            }
+            Self::OwnerUnbound => "the owner entity joins no unique component definition",
+            Self::OwnerCycle => "the component owner graph has a cycle",
+            Self::ExpansionLimit => "the occurrence expansion exceeds the decode limit",
+            Self::OwnerUninstanced => "the containing component has no resolved instance path",
             Self::DefinitionUnbound => {
                 "the component definition record stores no naming-space binding"
             }
@@ -165,17 +182,24 @@ impl Unplaced {
 
 struct Projector<'a> {
     sources: &'a LocalComponentSources<'a>,
-    native_by_guid: BTreeMap<String, Option<&'a DesignComponentOccurrence>>,
+    native_by_guid: BTreeMap<(String, String), Option<&'a DesignComponentOccurrence>>,
+    guid_stream_counts: BTreeMap<String, usize>,
     definitions: BTreeMap<String, ProductDefinition>,
     occurrences: BTreeMap<String, (Occurrence, Option<&'a DesignComponentOccurrence>)>,
     unplaced: BTreeMap<Unplaced, usize>,
+    rejected: BTreeSet<&'a str>,
 }
 
 impl<'a> Projector<'a> {
     fn new(sources: &'a LocalComponentSources<'a>) -> Self {
         let mut native_by_guid = BTreeMap::new();
         for occurrence in sources.occurrences {
-            match native_by_guid.entry(occurrence.occurrence_guid.as_str().to_ascii_lowercase()) {
+            match native_by_guid.entry((
+                crate::ids::native_stream(&occurrence.id)
+                    .unwrap_or_default()
+                    .to_owned(),
+                occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
+            )) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(Some(occurrence));
                 }
@@ -184,12 +208,55 @@ impl<'a> Projector<'a> {
                 }
             }
         }
+        let mut guid_stream_counts = BTreeMap::new();
+        for (_, key) in native_by_guid.keys() {
+            *guid_stream_counts.entry(key.clone()).or_default() += 1;
+        }
         Self {
             sources,
             native_by_guid,
+            guid_stream_counts,
             definitions: BTreeMap::new(),
             occurrences: BTreeMap::new(),
             unplaced: BTreeMap::new(),
+            rejected: BTreeSet::new(),
+        }
+    }
+
+    fn occurrence_id(
+        &self,
+        stream: &str,
+        key: &impl crate::records::mesh::OccurrenceIdentity,
+    ) -> OccurrenceId {
+        if self
+            .guid_stream_counts
+            .get(&key.identity_text().to_ascii_lowercase())
+            .is_some_and(|count| *count > 1)
+        {
+            crate::ids::stream_component_occurrence_id(stream, key)
+        } else {
+            crate::ids::neutral_component_occurrence_id(key)
+        }
+    }
+
+    fn root_occurrence_id(&self, stream: &str, root: &ComponentDefinition) -> OccurrenceId {
+        let repeated = self
+            .sources
+            .components
+            .values()
+            .filter_map(|components| {
+                components
+                    .root_component
+                    .and_then(|record| components.roots.get(&record))
+            })
+            .filter(|other| other.context_uuid == root.context_uuid)
+            .take(2)
+            .count()
+            > 1;
+        if repeated {
+            crate::ids::stream_root_occurrence_id(stream, &root.context_uuid)
+        } else {
+            crate::ids::neutral_root_occurrence_id(&root.context_uuid)
         }
     }
 
@@ -218,18 +285,22 @@ impl<'a> Projector<'a> {
     /// Place one occurrence once. The first placement of an occurrence wins.
     fn place(
         &mut self,
+        stream: &str,
         component_guid: &DesignRelaxedGuidText,
         occurrence_guid: &impl crate::records::mesh::OccurrenceIdentity,
         transform: impl Into<[[f64; 4]; 4]>,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
+        let occurrence_id = self.occurrence_id(stream, occurrence_guid);
         if self.occurrences.contains_key(occurrence_id.as_str()) {
             return Ok(());
         }
         let transform = neutral_transform(transform)?;
         let carrier = self
             .native_by_guid
-            .get(&occurrence_guid.identity_text().to_ascii_lowercase())
+            .get(&(
+                stream.to_owned(),
+                occurrence_guid.identity_text().to_ascii_lowercase(),
+            ))
             .copied()
             .flatten();
         let definition = match carrier.and_then(|carrier| self.carrier_definition(carrier)) {
@@ -268,14 +339,32 @@ impl<'a> Projector<'a> {
             Some(_) => Ok(()),
         };
         for carrier in self.sources.occurrences {
-            let occurrence_id =
-                crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid);
+            if self
+                .stream_components(carrier)
+                .is_some_and(|(_, components)| {
+                    components
+                        .root_component
+                        .and_then(|root| components.roots.get(&root))
+                        .is_some_and(|root| root.root_entity != carrier.owner_entity)
+                })
+            {
+                continue;
+            }
+            let occurrence_id = self.occurrence_id(
+                crate::ids::native_stream(&carrier.id).unwrap_or_default(),
+                &carrier.occurrence_guid,
+            );
             if self.occurrences.contains_key(occurrence_id.as_str()) {
                 continue;
             }
             let unplaced = if self
                 .native_by_guid
-                .get(&carrier.occurrence_guid.as_str().to_ascii_lowercase())
+                .get(&(
+                    crate::ids::native_stream(&carrier.id)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    carrier.occurrence_guid.as_str().to_ascii_lowercase(),
+                ))
                 .copied()
                 .flatten()
                 .is_none()
@@ -288,9 +377,6 @@ impl<'a> Projector<'a> {
                         .and_then(|root| components.roots.get(&root))
                 }) {
                     None => Some(Unplaced::NoRootComponent),
-                    Some(root) if root.root_entity != carrier.owner_entity => {
-                        Some(Unplaced::NestedContainer)
-                    }
                     Some(_) if self.carrier_definition(carrier).is_none() => {
                         Some(Unplaced::DefinitionUnbound)
                     }
@@ -299,9 +385,11 @@ impl<'a> Projector<'a> {
             };
             if let Some(reason) = unplaced {
                 *self.unplaced.entry(reason).or_default() += 1;
+                self.rejected.insert(carrier.id.as_str());
                 continue;
             }
             self.place(
+                crate::ids::native_stream(&carrier.id).unwrap_or_default(),
                 &carrier.component_guid,
                 &carrier.occurrence_guid,
                 carrier
@@ -322,7 +410,7 @@ impl<'a> Projector<'a> {
             else {
                 continue;
             };
-            let root_occurrence = crate::ids::neutral_root_occurrence_id(&root.context_uuid);
+            let root_occurrence = self.root_occurrence_id(stream, root);
             let mut contained = false;
             for (occurrence, carrier) in self.occurrences.values_mut() {
                 if carrier.is_some_and(|carrier| {
@@ -362,6 +450,235 @@ impl<'a> Projector<'a> {
         }
     }
 
+    fn expand_nested_carriers(&mut self) -> Result<(), cadmpeg_core::CodecError> {
+        let mut operation_placements = BTreeMap::new();
+        for carrier in self.sources.occurrences {
+            let nested = self
+                .stream_components(carrier)
+                .is_some_and(|(_, components)| {
+                    components
+                        .root_component
+                        .and_then(|record| components.roots.get(&record))
+                        .is_some_and(|root| root.root_entity != carrier.owner_entity)
+                });
+            if nested {
+                let id = self.occurrence_id(
+                    crate::ids::native_stream(&carrier.id).unwrap_or_default(),
+                    &carrier.occurrence_guid,
+                );
+                if let Some((occurrence, _)) = self.occurrences.remove(id.as_str()) {
+                    operation_placements.insert(carrier.id.as_str(), occurrence.transform);
+                }
+            }
+        }
+        for (stream, components) in self.sources.components {
+            let Some(root) = components
+                .root_component
+                .and_then(|key| components.roots.get(&key))
+            else {
+                continue;
+            };
+            let mut owners = BTreeMap::new();
+            for definition in components.roots.values() {
+                owners
+                    .entry(definition.root_entity)
+                    .and_modify(|unique| *unique = false)
+                    .or_insert(true);
+            }
+            let mut children = BTreeMap::<u64, Vec<&DesignComponentOccurrence>>::new();
+            for carrier in
+                self.sources.occurrences.iter().filter(|carrier| {
+                    crate::ids::native_stream(&carrier.id) == Some(stream.as_str())
+                })
+            {
+                let key = (
+                    stream.clone(),
+                    carrier.occurrence_guid.as_str().to_ascii_lowercase(),
+                );
+                let rejection = if self.native_by_guid.get(&key).copied().flatten().is_none() {
+                    Some(Unplaced::RepeatedGuid)
+                } else if owners.get(&carrier.owner_entity) != Some(&true) {
+                    Some(Unplaced::OwnerUnbound)
+                } else {
+                    None
+                };
+                if let Some(reason) = rejection {
+                    if self.rejected.insert(carrier.id.as_str()) {
+                        *self.unplaced.entry(reason).or_default() += 1;
+                    }
+                    self.occurrences.remove(
+                        self.occurrence_id(
+                            crate::ids::native_stream(&carrier.id).unwrap_or_default(),
+                            &carrier.occurrence_guid,
+                        )
+                        .as_str(),
+                    );
+                    continue;
+                }
+                children
+                    .entry(carrier.owner_entity)
+                    .or_default()
+                    .push(carrier);
+            }
+            let mut colors = BTreeMap::<u64, u8>::new();
+            let mut cyclic = BTreeSet::new();
+            for definition in components.roots.values() {
+                let mut stack = vec![(definition.root_entity, false)];
+                while let Some((entity, exit)) = stack.pop() {
+                    if exit {
+                        colors.insert(entity, 2);
+                        continue;
+                    }
+                    if colors.contains_key(&entity) {
+                        continue;
+                    }
+                    colors.insert(entity, 1);
+                    stack.push((entity, true));
+                    for carrier in children.get(&entity).into_iter().flatten().rev() {
+                        let Some(target) = components.roots.get(&carrier.component_record_index)
+                        else {
+                            continue;
+                        };
+                        if colors.get(&target.root_entity) == Some(&1) {
+                            cyclic.insert(carrier.id.as_str());
+                        } else if !colors.contains_key(&target.root_entity) {
+                            stack.push((target.root_entity, false));
+                        }
+                    }
+                }
+            }
+            *self.unplaced.entry(Unplaced::OwnerCycle).or_default() += cyclic.len();
+            for carrier in children
+                .values()
+                .flatten()
+                .filter(|carrier| cyclic.contains(carrier.id.as_str()))
+            {
+                self.occurrences.remove(
+                    self.occurrence_id(
+                        crate::ids::native_stream(&carrier.id).unwrap_or_default(),
+                        &carrier.occurrence_guid,
+                    )
+                    .as_str(),
+                );
+            }
+            let root_id = self.root_occurrence_id(stream, root);
+            let mut stack = Vec::new();
+            if self.occurrences.contains_key(root_id.as_str()) {
+                stack.push((root_id, root.root_entity, 1_u64));
+            }
+            let mut reached = BTreeSet::new();
+            let mut limited = BTreeSet::new();
+            while let Some((parent, entity, depth)) = stack.pop() {
+                for carrier in children.get(&entity).into_iter().flatten() {
+                    if cyclic.contains(carrier.id.as_str()) {
+                        continue;
+                    }
+                    let Some(target) = components.roots.get(&carrier.component_record_index) else {
+                        if reached.insert(carrier.id.as_str()) {
+                            *self
+                                .unplaced
+                                .entry(Unplaced::DefinitionUnbound)
+                                .or_default() += 1;
+                        }
+                        continue;
+                    };
+                    let native_id = self.occurrence_id(
+                        crate::ids::native_stream(&carrier.id).unwrap_or_default(),
+                        &carrier.occurrence_guid,
+                    );
+                    let nested = entity != root.root_entity;
+                    if !nested && !self.occurrences.contains_key(native_id.as_str()) {
+                        continue;
+                    }
+                    reached.insert(carrier.id.as_str());
+                    if depth >= self.sources.limits.max_recursion_depth
+                        || cadmpeg_core::decode::u64_from_index(self.occurrences.len())
+                            >= self.sources.limits.max_entities
+                    {
+                        limited.insert(target.root_entity);
+                        *self.unplaced.entry(Unplaced::ExpansionLimit).or_default() += 1;
+                        continue;
+                    }
+                    let id = if nested {
+                        crate::ids::nested_component_occurrence_id(
+                            &parent,
+                            &carrier.occurrence_guid,
+                        )
+                    } else {
+                        native_id.clone()
+                    };
+                    if nested {
+                        let transform = operation_placements
+                            .get(carrier.id.as_str())
+                            .copied()
+                            .map_or_else(
+                                || {
+                                    neutral_transform(
+                                        carrier
+                                            .transform()
+                                            .map_or(IDENTITY, |frame| frame.value.into()),
+                                    )
+                                },
+                                Ok,
+                            )?;
+                        let definition = self.naming_space_definition(stream, target);
+                        self.occurrences.insert(
+                            id.as_str().to_owned(),
+                            (
+                                Occurrence {
+                                    id: id.clone(),
+                                    prototype: PrototypeReference::Local { definition },
+                                    parent: OccurrenceParent::Occurrence {
+                                        occurrence: parent.clone(),
+                                    },
+                                    ordinal: 0,
+                                    transform,
+                                    linked_prototype: None,
+                                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+                                    name: None,
+                                    visible: None,
+                                    link: None,
+                                    native_ref: Some(carrier.id.clone()),
+                                },
+                                Some(carrier),
+                            ),
+                        );
+                    }
+                    reached.insert(carrier.id.as_str());
+                    stack.push((id, target.root_entity, depth + 1));
+                }
+            }
+            let mut pending = limited.iter().copied().collect::<Vec<_>>();
+            while let Some(entity) = pending.pop() {
+                for carrier in children.get(&entity).into_iter().flatten() {
+                    if let Some(target) = components.roots.get(&carrier.component_record_index) {
+                        if limited.insert(target.root_entity) {
+                            pending.push(target.root_entity);
+                        }
+                    }
+                }
+            }
+            for carrier in children.values().flatten() {
+                if carrier.owner_entity == root.root_entity {
+                    continue;
+                }
+                let native_id = self.occurrence_id(
+                    crate::ids::native_stream(&carrier.id).unwrap_or_default(),
+                    &carrier.occurrence_guid,
+                );
+                self.occurrences.remove(native_id.as_str());
+                if !reached.contains(carrier.id.as_str())
+                    && !cyclic.contains(carrier.id.as_str())
+                    && !limited.contains(&carrier.owner_entity)
+                {
+                    *self.unplaced.entry(Unplaced::OwnerUninstanced).or_default() += 1;
+                }
+            }
+        }
+        self.unplaced.retain(|_, count| *count != 0);
+        Ok(())
+    }
+
     fn finish(self) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
         let overflow =
             || cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32");
@@ -397,10 +714,23 @@ impl<'a> Projector<'a> {
             .unplaced
             .into_iter()
             .map(|(reason, count)| {
-                F3dLossCode::LocalOccurrenceUnplaced.note(format!(
-                    "{count} local component occurrence(s) are not placed: {}",
-                    reason.reason()
-                ))
+                match reason {
+                    Unplaced::OwnerUnbound => F3dLossCode::LocalOccurrenceOwnerUnbound,
+                    Unplaced::OwnerCycle => F3dLossCode::LocalOccurrenceOwnerCycle,
+                    Unplaced::ExpansionLimit => F3dLossCode::LocalOccurrenceExpansionLimit,
+                    _ => F3dLossCode::LocalOccurrenceUnplaced,
+                }
+                .note(if reason == Unplaced::ExpansionLimit {
+                    format!(
+                        "{count} local instance subtree(s) are not expanded: {}",
+                        reason.reason()
+                    )
+                } else {
+                    format!(
+                        "{count} local component occurrence(s) are not placed: {}",
+                        reason.reason()
+                    )
+                })
             })
             .collect();
         Ok(LocalComponentProjection {
@@ -804,6 +1134,7 @@ mod tests {
             body_bindings: &[],
             bodies: Some(&bodies),
             root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
         (projection.definitions, projection.occurrences)
@@ -909,6 +1240,7 @@ mod tests {
             body_bindings: &bindings,
             bodies: Some(&bodies),
             root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap()
     }
@@ -1023,7 +1355,7 @@ mod tests {
                 [carrier(100, OCCURRENCE, identity, COMPONENT_ROOT)],
                 two_component_stream(Some(276)),
                 vec![COMPONENT_BODY, ROOT_BODY],
-                "nested placement",
+                "owner graph has a cycle",
             ),
             (
                 [carrier(100, OCCURRENCE, identity, DOCUMENT_ROOT)],
@@ -1048,10 +1380,327 @@ mod tests {
             assert_eq!(projection.losses.len(), 1, "{reason}");
             assert_eq!(
                 projection.losses[0].code,
-                crate::loss::F3dLossCode::LocalOccurrenceUnplaced.kind()
+                if reason == "owner graph has a cycle" {
+                    crate::loss::F3dLossCode::LocalOccurrenceOwnerCycle.kind()
+                } else {
+                    crate::loss::F3dLossCode::LocalOccurrenceUnplaced.kind()
+                }
             );
             assert!(projection.losses[0].message.contains(reason), "{reason}");
         }
+    }
+
+    fn nested_fixture() -> (
+        Vec<DesignComponentOccurrence>,
+        BTreeMap<String, StreamComponents>,
+    ) {
+        let mut components = two_component_stream(Some(276));
+        let stream = components.get_mut(STREAM).unwrap();
+        stream.root_entities.insert(101);
+        stream.roots.insert(
+            100,
+            ComponentDefinition {
+                root_entity: 101,
+                context_uuid: guid("00000000-0000-4000-8000-000000000101"),
+                name: Some("Module".to_owned()),
+            },
+        );
+        let parent_transform = [
+            [0.0, -1.0, 0.0, 3.0],
+            [1.0, 0.0, 0.0, 4.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let mut parent = carrier(
+            100,
+            "00000000-0000-4000-8000-000000000001",
+            placed(1, parent_transform),
+            DOCUMENT_ROOT,
+        );
+        parent.component_record_index = 100;
+        let mut translated = super::IDENTITY;
+        translated[0][3] = 1.0;
+        (
+            vec![
+                parent,
+                carrier(
+                    200,
+                    "00000000-0000-4000-8000-000000000002",
+                    DesignComponentOccurrencePlacement::Base,
+                    101,
+                ),
+                carrier(
+                    300,
+                    "00000000-0000-4000-8000-000000000003",
+                    placed(2, translated),
+                    101,
+                ),
+            ],
+            components,
+        )
+    }
+
+    #[test]
+    fn nested_instances_compose_local_frames_and_repeat_shared_prototypes() {
+        const TOLERANCE: f64 = 1e-12;
+        let (mut carriers, components) = nested_fixture();
+        let mut second = carriers[0].clone();
+        second.id = format!("{STREAM}:design-component-occurrence#400");
+        second.occurrence_guid = guid("00000000-0000-4000-8000-000000000004").into();
+        carriers.push(second);
+        let projection = project_carriers(&carriers, &components, &[COMPONENT_BODY]);
+        assert!(projection.losses.is_empty(), "{:?}", projection.losses);
+        assert_eq!(projection.definitions.len(), 3);
+        assert_eq!(projection.occurrences.len(), 7);
+        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
+        let prototype = PrototypeReference::Local {
+            definition: crate::ids::neutral_component_id(&guid(COMPONENT_CONTEXT)),
+        };
+        let leaves = projection
+            .occurrences
+            .iter()
+            .filter(|occurrence| occurrence.prototype == prototype)
+            .collect::<Vec<_>>();
+        assert_eq!(leaves.len(), 4);
+        assert_eq!(
+            leaves
+                .iter()
+                .map(|leaf| &leaf.id)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            4
+        );
+        assert_eq!(
+            projection
+                .definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            1
+        );
+        let paths = super::paths::LocalOccurrencePaths::new(&carriers, &projection.occurrences);
+        assert!(paths
+            .resolve(STREAM, &[carriers[1].occurrence_guid.as_str().to_owned()])
+            .is_none());
+        for parent in [&carriers[0], &carriers[3]] {
+            let parent_id = crate::ids::neutral_component_occurrence_id(&parent.occurrence_guid);
+            for (child, y_min, face_x) in [(&carriers[1], 40.0, 10.0), (&carriers[2], 50.0, 0.0)] {
+                let id =
+                    crate::ids::nested_component_occurrence_id(&parent_id, &child.occurrence_guid);
+                let pose = cadmpeg_test_support::assembly::resolved_transform(&graph, &id).unwrap();
+                let leaf = graph.occurrence(&id).unwrap();
+                assert_eq!(
+                    leaf.parent,
+                    OccurrenceParent::Occurrence {
+                        occurrence: parent_id.clone()
+                    }
+                );
+                assert_eq!(leaf.prototype, prototype);
+                assert_eq!(
+                    paths.resolve(
+                        STREAM,
+                        &[
+                            parent.occurrence_guid.as_str().to_owned(),
+                            child.occurrence_guid.as_str().to_owned()
+                        ]
+                    ),
+                    Some((id, 2))
+                );
+                let mut min = [f64::INFINITY; 3];
+                let mut max = [f64::NEG_INFINITY; 3];
+                for x in [0.0, 10.0] {
+                    for y in [0.0, 10.0] {
+                        for z in [0.0, 10.0] {
+                            let point = pose
+                                .apply_point(cadmpeg_ir::math::Point3::new(x, y, z))
+                                .unwrap()
+                                .get();
+                            for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate()
+                            {
+                                min[axis] = min[axis].min(value);
+                                max[axis] = max[axis].max(value);
+                            }
+                        }
+                    }
+                }
+                for (actual, expected) in
+                    min.into_iter()
+                        .chain(max)
+                        .zip([20.0, y_min, 0.0, 30.0, y_min + 10.0, 10.0])
+                {
+                    assert!((actual - expected).abs() < TOLERANCE);
+                }
+                for y in [0.0, 10.0] {
+                    for z in [0.0, 10.0] {
+                        let face = pose
+                            .apply_point(cadmpeg_ir::math::Point3::new(face_x, y, z))
+                            .unwrap()
+                            .get();
+                        assert!((face.y - 50.0).abs() < TOLERANCE);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_operation_placement_stays_local_beneath_its_containing_instance() {
+        const TOLERANCE: f64 = 1e-12;
+        let (carriers, components) = nested_fixture();
+        let mut transform = super::IDENTITY;
+        transform[0][3] = 2.0;
+        let mut scope = DesignParameterScope::empty(
+            &format!("{STREAM}:design-parameter-scope#600"),
+            crate::records::feature::scope::DesignFeatureKind::DerivedInstance,
+            600,
+        );
+        if let crate::records::feature::scope::DesignScopePayloadMut::DerivedInstance(slot) =
+            scope.payload_mut()
+        {
+            *slot = Some(DesignDerivedInstanceConstruction {
+                reference_record_index: 159,
+                relation_record_index: 601,
+                carrier_record_index: 300,
+                component_guid: carriers[2].component_guid.clone(),
+                occurrence_guid: carriers[2].occurrence_guid.clone(),
+                transform: transform.try_into().unwrap(),
+                transform_offset: 0,
+            });
+        }
+        let bodies = BTreeSet::new();
+        let projection = super::project_local_components(&super::LocalComponentSources {
+            scopes: &[scope],
+            occurrences: &carriers,
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&bodies),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits {
+                max_entities: 4,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+        assert!(projection.losses.is_empty());
+        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
+        assert!(graph
+            .occurrence(&crate::ids::neutral_component_occurrence_id(
+                &carriers[2].occurrence_guid
+            ))
+            .is_none());
+        let parent = crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
+        let child =
+            crate::ids::nested_component_occurrence_id(&parent, &carriers[2].occurrence_guid);
+        let rows = cadmpeg_test_support::assembly::resolved_transform(&graph, &child)
+            .unwrap()
+            .rows();
+        assert!((rows[0][3] - 30.0).abs() < TOLERANCE);
+        assert!((rows[1][3] - 60.0).abs() < TOLERANCE);
+        assert!(
+            (graph.occurrence(&child).unwrap().transform.rows()[0][3] - 20.0).abs() < TOLERANCE
+        );
+    }
+
+    #[test]
+    fn occurrence_keys_are_local_to_their_design_stream() {
+        const OTHER_STREAM: &str = "f3d:DesignOther/BulkStream.dat";
+        let mut components = two_component_stream(Some(276));
+        components.insert(OTHER_STREAM.to_owned(), components[STREAM].clone());
+        let first = carrier(
+            100,
+            "00000000-0000-4000-8000-000000000001",
+            DesignComponentOccurrencePlacement::Base,
+            DOCUMENT_ROOT,
+        );
+        let mut second = first.clone();
+        second.id = format!("{OTHER_STREAM}:design-component-occurrence#100");
+        let carriers = [first, second];
+        let projection = project_carriers(&carriers, &components, &[]);
+        assert!(projection.losses.is_empty());
+        assert_eq!(projection.occurrences.len(), 4);
+        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
+        let paths = super::paths::LocalOccurrencePaths::new(&carriers, &projection.occurrences);
+        let key = vec![carriers[0].occurrence_guid.as_str().to_owned()];
+        let first = paths.resolve(STREAM, &key).unwrap().0;
+        let second = paths.resolve(OTHER_STREAM, &key).unwrap().0;
+        assert_ne!(first, second);
+        assert_ne!(
+            graph.occurrence(&first).unwrap().parent,
+            graph.occurrence(&second).unwrap().parent
+        );
+    }
+
+    #[test]
+    fn deep_identity_owner_chains_resolve_through_the_assembly_graph() {
+        let mut components = two_component_stream(Some(276));
+        let stream = components.get_mut(STREAM).unwrap();
+        let mut carriers = Vec::new();
+        let mut owner = DOCUMENT_ROOT;
+        for index in 0..64 {
+            let record = 1000 + index * 2;
+            stream.root_entities.insert(record + 1);
+            stream.roots.insert(
+                record,
+                ComponentDefinition {
+                    root_entity: record + 1,
+                    context_uuid: guid(&format!("00000000-0000-4000-8000-{record:012}")),
+                    name: None,
+                },
+            );
+            let mut child = carrier(
+                record,
+                &format!("00000000-0000-4000-8001-{record:012}"),
+                DesignComponentOccurrencePlacement::Base,
+                owner,
+            );
+            child.component_record_index = record;
+            carriers.push(child);
+            owner = record + 1;
+        }
+        let projection = project_carriers(&carriers, &components, &[]);
+        assert!(projection.losses.is_empty());
+        assert_eq!(projection.occurrences.len(), 65);
+        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
+        for occurrence in &projection.occurrences {
+            assert_eq!(
+                cadmpeg_test_support::assembly::resolved_transform(&graph, &occurrence.id).unwrap(),
+                cadmpeg_ir::transform::Transform::identity()
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_owners_and_expansion_limits_have_distinct_losses() {
+        let (mut carriers, components) = nested_fixture();
+        carriers[1].owner_entity = 999;
+        let projection = project_carriers(&carriers, &components, &[]);
+        assert_eq!(projection.losses.len(), 1);
+        assert_eq!(
+            projection.losses[0].code,
+            crate::loss::F3dLossCode::LocalOccurrenceOwnerUnbound.kind()
+        );
+        let (carriers, components) = nested_fixture();
+        let bodies = BTreeSet::new();
+        let projection = super::project_local_components(&super::LocalComponentSources {
+            scopes: &[],
+            occurrences: &carriers,
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&bodies),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits {
+                max_entities: 3,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+        assert_eq!(projection.occurrences.len(), 3);
+        assert_eq!(projection.losses.len(), 1);
+        assert_eq!(
+            projection.losses[0].code,
+            crate::loss::F3dLossCode::LocalOccurrenceExpansionLimit.kind()
+        );
+        cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
     }
 
     #[test]
@@ -1174,8 +1823,10 @@ mod tests {
             },
         )
         .unwrap();
-        let (definitions, occurrences) =
-            project_without_naming_spaces(&[scope.clone()], &[native_occurrence]);
+        let (definitions, occurrences) = project_without_naming_spaces(
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&native_occurrence),
+        );
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
@@ -1210,7 +1861,10 @@ mod tests {
             native_ref: None,
         };
         feature.native_ref = Some(scope.id.clone());
-        super::project_derived_instance_features(std::slice::from_mut(&mut feature), &[scope]);
+        super::project_derived_instance_features(
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+        );
         assert_eq!(
             *feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::InsertComponent {
@@ -1220,6 +1874,25 @@ mod tests {
                 ),
             })
         );
+        let inserted = feature.evaluation.definition().clone();
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "DerivedInstance".into(),
+                parameters: BTreeMap::new(),
+            }));
+        let (_, operation_occurrences) =
+            project_without_naming_spaces(std::slice::from_ref(&scope), &[]);
+        assert_eq!(operation_occurrences.len(), 1);
+        super::project_derived_instance_features(
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+        );
+        let paths = super::paths::LocalOccurrencePaths::new(&[], &operation_occurrences);
+        assert!(
+            super::paths::bind_feature_paths(std::slice::from_mut(&mut feature), &paths).is_empty()
+        );
+        assert_eq!(*feature.evaluation.definition(), inserted);
     }
 
     fn component_insert_scope(record_index: u32, role: &str) -> DesignParameterScope {

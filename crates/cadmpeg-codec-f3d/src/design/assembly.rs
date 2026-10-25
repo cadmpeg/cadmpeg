@@ -94,7 +94,19 @@ impl AssemblyScopeGeneration {
             Axial, Compact, CompactWide, LegacyClass388, Standard, Wide,
         };
         let (operand_frame, lanes, locator_offsets) = match frame_length {
-            378 | 399 => (None, Some((4, 0, 4)), Some([51, 62])),
+            378 => (None, Some((4, 0, 4)), Some([
+                crate::layout::assembly_as_built_scope_378::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_as_built_scope_378::SECOND_LOCATOR_REFERENCE,
+            ])),
+            399 => (None, Some((4, 0, 4)), Some([51, 62])),
+            422 => (None, Some((6, 0, 4)), Some([
+                crate::layout::assembly_as_built_scope_422::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_as_built_scope_422::SECOND_LOCATOR_REFERENCE,
+            ])),
+            444 => (None, Some((7, 0, 4)), Some([
+                crate::layout::assembly_as_built_scope_444::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_as_built_scope_444::SECOND_LOCATOR_REFERENCE,
+            ])),
             604 => (None, Some((8, 4, 8)), None),
             627 | 637 | 692 => (Some(Standard), Some((4, 0, 4)), Some([366, 377])),
             633 => (Some(Compact), Some((4, 0, 4)), Some([362, 373])),
@@ -234,14 +246,24 @@ pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
     as_built && rigid_group_member_count(frame_length).is_some()
 }
 
-/// The 378-byte `As-built` form, whose four owners are `OffsetX`, `OffsetY`,
-/// `OffsetZ`, and `AngleZ` in local order.
+/// The placement-ordered `As-built` form, whose first four owners are
+/// `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` in local order.
 pub(crate) fn placement_ordered_as_built_scope(frame_length: u64, as_built: bool) -> bool {
-    as_built && frame_length == 378
+    as_built && as_built_additional_owner_count(frame_length).is_some()
+}
+
+/// The additional-owner count selected by the scope frame length.
+pub(crate) fn as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
+    match frame_length {
+        378 => Some(0),
+        422 => Some(2),
+        444 => Some(3),
+        _ => None,
+    }
 }
 
 /// An `As-built` scope whose operand-path locators are wide locators: a rigid
-/// group, or the 378-byte form with four alignment owners.
+/// group, or the placement-ordered form.
 pub(crate) fn wide_as_built_scope(frame_length: u64, as_built: bool) -> bool {
     rigid_as_built_scope(frame_length, as_built)
         || placement_ordered_as_built_scope(frame_length, as_built)
@@ -377,11 +399,28 @@ pub(crate) struct AssemblyJointProjection {
 /// and the `Component Insert` occurrences, and no features. A joint scope
 /// whose operands, frames, limits, or alignment values do not project is
 /// skipped and counted in one loss.
+#[cfg(test)]
 pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     inserts: &ComponentInserts,
     motions: &[crate::records::feature::joint_motion::DesignJointMotion],
+) -> AssemblyJointProjection {
+    project_assembly_joints_with_paths(
+        scopes,
+        native_occurrences,
+        inserts,
+        motions,
+        &crate::design::components::paths::LocalOccurrencePaths::default(),
+    )
+}
+
+pub(crate) fn project_assembly_joints_with_paths(
+    scopes: &[DesignParameterScope],
+    native_occurrences: &[DesignComponentOccurrence],
+    inserts: &ComponentInserts,
+    motions: &[crate::records::feature::joint_motion::DesignJointMotion],
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> AssemblyJointProjection {
     let mut occurrences = BTreeMap::new();
     for occurrence in native_occurrences {
@@ -407,12 +446,15 @@ pub(crate) fn project_assembly_joints(
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
     let mut unprojected_members = 0_usize;
+    let mut resting_joints = 0_usize;
+    let mut malformed_rest_joints = 0_usize;
+    let mut native_angular_limits = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
         let motion = scope_joint_motion(scope, stream, motions);
-        match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion) {
+        match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion, paths) {
             Ok(Some((mut joint, undecoded))) => {
                 let paired = scope
                     .assembly_alignment()
@@ -439,13 +481,29 @@ pub(crate) fn project_assembly_joints(
                             }
                         }),
                 );
+                if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
+                    native_angular_limits += 1;
+                }
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
                 }
+                if motion
+                    .and_then(|motion| motion.limits.as_ref())
+                    .is_some_and(|lanes| lanes.rest_malformed)
+                {
+                    malformed_rest_joints += 1;
+                }
+                if motion
+                    .and_then(|motion| motion.limits.as_ref())
+                    .and_then(|lanes| lanes.rest)
+                    .is_some_and(|rest| rest.flag == 1)
+                {
+                    resting_joints += 1;
+                }
                 joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
                 let members =
-                    rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts);
+                    rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts, paths);
                 paired_joints += members.paired;
                 unprojected_members += members.unprojected;
                 for member in members.joints {
@@ -463,6 +521,21 @@ pub(crate) fn project_assembly_joints(
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
             "{undecoded_motion_count} Design assembly joint(s) were projected as fixed: their motion does not map to a joint kind ({reasons})."
+        )));
+    }
+    if native_angular_limits != 0 {
+        losses.push(F3dLossCode::AssemblyJointAngularLimitsNative.note(format!(
+            "{native_angular_limits} projected Design assembly joint(s) retain stored angular limits natively because the zero-lane freedom value is unsettled."
+        )));
+    }
+    if malformed_rest_joints != 0 {
+        losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
+            "{malformed_rest_joints} projected Design assembly joint(s) have a stored rest that is malformed; the rest was refused and the limit lanes were retained."
+        )));
+    }
+    if resting_joints != 0 {
+        losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
+            "{resting_joints} projected Design assembly joint(s) enable a rest position; the neutral joint does not carry it, which is retained natively."
         )));
     }
     if paired_joints != 0 {
@@ -501,7 +574,8 @@ fn scope_joint_motion<'a>(
     matching.next().is_none().then_some(motion)
 }
 
-/// The joint kind a decoded motion selects.
+/// The kind a motion's freedoms and limit lanes select, or the reason they
+/// select none.
 enum JointMotionKind {
     /// Rotation about the connector z axis; `turn_y_to_z` when the freedom is
     /// about the joint's local y axis.
@@ -509,12 +583,26 @@ enum JointMotionKind {
         turn_y_to_z: bool,
         limits: Option<JointLimits>,
     },
-    /// Translation along the connector z axis.
-    Slider,
+    /// Translation along the connector z axis, with its limits in
+    /// millimetres.
+    Slider { limits: Option<JointLimits> },
 }
 
-/// The kind a motion's freedoms and limit lanes select, or the reason they
-/// select none.
+fn zero_lane_rotation_limits(
+    motion: &crate::records::feature::joint_motion::DesignJointMotion,
+) -> bool {
+    matches!(motion.freedoms.as_slice(), [freedom] if matches!(freedom.value, 1 | 2))
+        && motion
+            .entry_words
+            .iter()
+            .any(|entry| entry.zero_second_value)
+        && motion
+            .limits
+            .as_ref()
+            .is_some_and(|lanes| lanes.first_flag == 1 && lanes.second_flag == 1)
+}
+
+/// The joint kind a decoded motion selects.
 fn joint_motion_kind(
     motion: &crate::records::feature::joint_motion::DesignJointMotion,
 ) -> Result<JointMotionKind, String> {
@@ -532,22 +620,21 @@ fn joint_motion_kind(
         Some((1, 1)) => true,
         Some((first, second)) => return Err(format!("limit flags {first} {second}")),
     };
+    // Rotation limits are in radians and translation limits in centimetres.
+    let limits = |scale: f64, what: &str| match motion.limits.as_ref().filter(|_| limited) {
+        Some(lanes) => JointLimits::new(Some(lanes.minimum * scale), Some(lanes.maximum * scale))
+            .map(Some)
+            .ok_or_else(|| format!("{what} limits are not ordered")),
+        None => Ok(None),
+    };
     match codes.as_slice() {
-        [code @ (1 | 2)] => {
-            let limits = match motion.limits.as_ref().filter(|_| limited) {
-                Some(lanes) => Some(
-                    JointLimits::new(Some(lanes.minimum), Some(lanes.maximum))
-                        .ok_or_else(|| "rotation limits are not ordered".to_owned())?,
-                ),
-                None => None,
-            };
-            Ok(JointMotionKind::Revolute {
-                turn_y_to_z: *code == 1,
-                limits,
-            })
-        }
-        [8] if !limited => Ok(JointMotionKind::Slider),
-        [8] => Err("translation limits".to_owned()),
+        [code @ (1 | 2)] => Ok(JointMotionKind::Revolute {
+            turn_y_to_z: *code == 1,
+            limits: limits(1.0, "rotation")?.filter(|_| !zero_lane_rotation_limits(motion)),
+        }),
+        [8] => Ok(JointMotionKind::Slider {
+            limits: limits(10.0, "translation")?,
+        }),
         codes => Err(format!("freedom codes {codes:?}")),
     }
 }
@@ -570,6 +657,7 @@ fn project_assembly_joint(
     scopes: &[DesignParameterScope],
     inserts: &ComponentInserts,
     motion: Option<&crate::records::feature::joint_motion::DesignJointMotion>,
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> Result<Option<(AssemblyJoint, Option<String>)>, CodecError> {
     let Some(alignment) = scope.assembly_alignment() else {
         return Ok(None);
@@ -616,6 +704,7 @@ fn project_assembly_joint(
                 occurrences,
                 scopes,
                 inserts,
+                paths,
             )
             .ok_or_else(|| {
                 CodecError::NotImplemented(
@@ -700,7 +789,7 @@ fn project_assembly_joint(
                 )
             }
         }
-        Some(Ok(JointMotionKind::Slider)) => {
+        Some(Ok(JointMotionKind::Slider { limits })) => {
             if alignment.angle().abs() > 0.0 {
                 (fixed, false, Some("slider with an angle offset".to_owned()))
             } else {
@@ -708,7 +797,7 @@ fn project_assembly_joint(
                     PairedJointKind::Slider {
                         distance: None,
                         translation_offset: Some(translation_offset),
-                        linear_limits: None,
+                        linear_limits: limits,
                     },
                     false,
                     None,
@@ -767,6 +856,7 @@ fn rigid_group_member_joints(
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     inserts: &ComponentInserts,
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> RigidGroupMemberJoints {
     let mut projected = RigidGroupMemberJoints::default();
     let Some(alignment) = scope.assembly_alignment() else {
@@ -798,6 +888,7 @@ fn rigid_group_member_joints(
             occurrences,
             scopes,
             inserts,
+            paths,
         );
         let member_frame = super::components::neutral_transform(member.frame.transform.rows());
         let (Some([first_operand, member_operand]), Ok(member_frame)) = (operands, member_frame)
@@ -882,6 +973,7 @@ fn project_qualified_operands(
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     inserts: &ComponentInserts,
+    paths: &super::components::paths::LocalOccurrencePaths,
 ) -> Option<[JointOperand; 2]> {
     let project = |qualifier: &DesignAssemblyOperandQualifier| -> Option<JointOperand> {
         match qualifier {
@@ -901,6 +993,21 @@ fn project_qualified_operands(
                 let mut subelements = Vec::new();
                 for guid in subelement_guids {
                     subelements.push(guid.value.as_str().to_ascii_lowercase());
+                }
+                let keys = path
+                    .occurrence_guids()
+                    .iter()
+                    .map(|guid| guid.value.as_str().to_ascii_lowercase())
+                    .collect::<Vec<_>>();
+                if let Some((id, consumed)) = paths.resolve(stream, &keys) {
+                    return Some(JointOperand::occurrence(
+                        id,
+                        object,
+                        keys[consumed..].to_vec(),
+                    ));
+                }
+                if occurrence.is_some() && paths.ambiguous(stream, &keys[..1]) {
+                    return None;
                 }
                 Some(match occurrence {
                     Some(_) => JointOperand::occurrence(
@@ -1550,6 +1657,8 @@ mod tests {
                 maximum: 0.5,
                 minimum: -0.25,
                 values_offset: 823,
+                rest: None,
+                rest_malformed: false,
             }),
         };
         let project = |motions: &[DesignJointMotion]| {
@@ -1577,6 +1686,34 @@ mod tests {
         assert_eq!(kind(&revolute)["angular_limits"]["minimum"], -0.25);
         assert!(revolute.losses.is_empty());
 
+        for code in [1, 2, 8] {
+            let mut zero_lane = motion(&[code], [1, 1]);
+            zero_lane.entry_words.push(
+                crate::records::feature::joint_motion::DesignJointFreedomWord {
+                    word: 1,
+                    zero_second_value: true,
+                    value: Some(0.0),
+                },
+            );
+            let projected = project(&[zero_lane]);
+            if code == 8 {
+                assert_eq!(kind(&projected)["kind"], "slider");
+                assert_eq!(kind(&projected)["linear_limits"]["minimum"], -2.5);
+                assert!(projected.losses.is_empty());
+            } else {
+                assert_eq!(kind(&projected)["kind"], "revolute");
+                assert!(kind(&projected)["angular_limits"].is_null());
+                assert_eq!(
+                    projected
+                        .losses
+                        .iter()
+                        .map(|loss| loss.code.clone())
+                        .collect::<Vec<_>>(),
+                    [crate::loss::F3dLossCode::AssemblyJointAngularLimitsNative.kind()]
+                );
+            }
+        }
+
         // Rotation about local y turns each connector frame so y becomes z.
         let turned = project(&[motion(&[1], [0, 0])]);
         assert_eq!(kind(&turned)["kind"], "revolute");
@@ -1587,6 +1724,36 @@ mod tests {
         assert_eq!(frame[2][1], -1.0);
 
         assert_eq!(kind(&project(&[motion(&[8], [0, 0])]))["kind"], "slider");
+        // Translation limits are in centimetres.
+        let limited = project(&[motion(&[8], [1, 1])]);
+        assert_eq!(kind(&limited)["kind"], "slider");
+        assert_eq!(kind(&limited)["linear_limits"]["minimum"], -2.5);
+        assert_eq!(kind(&limited)["linear_limits"]["maximum"], 5.0);
+        assert!(limited.losses.is_empty());
+
+        // An enabled rest position is retained natively with a loss; a rest
+        // value without the flag is not reported.
+        let resting = |flag: u8| {
+            let mut resting = motion(&[8], [1, 1]);
+            if let Some(lanes) = resting.limits.as_mut() {
+                lanes.rest = Some(crate::records::feature::joint_motion::DesignJointRest {
+                    flag,
+                    value: 0.25,
+                });
+            }
+            project(&[resting])
+        };
+        let rested = resting(1);
+        assert_eq!(kind(&rested)["kind"], "slider");
+        assert_eq!(
+            rested
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyJointRestUnprojected.kind()]
+        );
+        assert!(resting(0).losses.is_empty());
 
         // A rigid group is fixed: one whose joint record states a freedom is
         // left unprojected.
@@ -1627,12 +1794,12 @@ mod tests {
             [crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()]
         );
 
-        // Unconfirmed codes, one-sided flags and translation limits stay fixed.
+        // Unconfirmed codes and one-sided flags stay fixed.
         for undecoded in [
             motion(&[0], [0, 0]),
             motion(&[2, 7], [0, 0]),
             motion(&[2], [1, 0]),
-            motion(&[8], [1, 1]),
+            motion(&[8], [0, 1]),
         ] {
             let projection = project(&[undecoded]);
             assert_eq!(kind(&projection)["kind"], "fixed");
@@ -2115,6 +2282,7 @@ mod tests {
                     &BTreeMap::new(),
                     scopes,
                     inserts,
+                    &crate::design::components::paths::LocalOccurrencePaths::default(),
                 )
             };
         let operands = project(&scopes, &inserts).expect("complete axial operands");

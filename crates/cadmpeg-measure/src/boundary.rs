@@ -67,6 +67,9 @@ pub(crate) struct ResolvedLoop<'ir> {
     pub(crate) off_surface: f64,
     /// Whether the traversal direction is known for every coedge.
     pub(crate) directed: bool,
+    /// The coedges whose pcurve uses are listed from their end to their
+    /// start, in traversal order.
+    pub(crate) pcurve_order: Vec<&'ir Coedge>,
 }
 
 /// A coedge's 3D curve, its interval in traversal order, and the source
@@ -87,10 +90,12 @@ struct Join {
 /// The pieces of one coedge.
 enum CoedgePieces<'ir> {
     /// Pieces in traversal order; `directed` is false when the direction of
-    /// a closed pcurve-only coedge is not known.
+    /// a closed pcurve-only coedge is not known, and `listed_backward` is
+    /// true when its pcurve uses are listed from its end to its start.
     Pieces {
         pieces: Vec<Piece<'ir>>,
         directed: bool,
+        listed_backward: bool,
     },
     /// A degenerate coedge at a singular point: a segment along the singular
     /// line between its neighbours.
@@ -144,6 +149,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
                         max_gap: 0.0,
                         off_surface: 0.0,
                         directed: true,
+                        pcurve_order: Vec::new(),
                     }),
                     None => Err(MeasureFailure::unavailable(
                         UnavailableReason::BoundaryCoedgeUnresolved,
@@ -269,6 +275,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
         let mut max_gap: f64 = 0.0;
         let mut off_surface: f64 = 0.0;
         let mut directed = true;
+        let mut pcurve_order = Vec::new();
         let mut pending_pole: Option<&'ir Coedge> = None;
         let mut leading_pole: Option<&'ir Coedge> = None;
         let alone = coedges.len() == 1;
@@ -283,8 +290,12 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 CoedgePieces::Pieces {
                     pieces: new_pieces,
                     directed: known,
+                    listed_backward,
                 } => {
                     directed &= known;
+                    if listed_backward {
+                        pcurve_order.push(*coedge);
+                    }
                     new_pieces
                 }
             };
@@ -403,6 +414,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             max_gap,
             off_surface,
             directed,
+            pcurve_order,
         })
     }
 
@@ -595,6 +607,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             return Ok(CoedgePieces::Pieces {
                 pieces,
                 directed: resolved.directed,
+                listed_backward: resolved.listed_backward,
             });
         }
         let Some((curve, interval, uv_source)) = three_d else {
@@ -622,6 +635,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
         Ok(CoedgePieces::Pieces {
             pieces: vec![piece],
             directed: true,
+            listed_backward: false,
         })
     }
 

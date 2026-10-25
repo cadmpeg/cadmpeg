@@ -7,8 +7,10 @@
 //! range, the pcurve's stored range, its trim range, the edge interval and
 //! its negation, the pcurve's domain, then an interval recovered by Newton
 //! steps on the mapped pcurve. A closed coedge's direction comes from the
-//! tangent of its 3D curve, else from the stored use range. Several uses form
-//! a chain in their stated order or in reverse.
+//! tangent of its 3D curve at the traversal start, compared with the image
+//! tangent that each reading of the span leaves the vertex along, else from
+//! the stored use range. Several uses form a chain in their stated order or
+//! in reverse; a chain in reverse is listed backward.
 //!
 //! The witness maps the pcurve image at the Gauss–Kronrod nodes of every
 //! breakpoint interval onto the 3D curve. The matched curve parameters must
@@ -107,6 +109,9 @@ pub(crate) struct Resolved<'ir> {
     /// Whether the traversal direction is known. A closed pcurve-only use
     /// with no stored range has none.
     pub(crate) directed: bool,
+    /// Whether the uses form their chain from the coedge's end to its start
+    /// in listed order.
+    pub(crate) listed_backward: bool,
 }
 
 fn failure(reason: UnavailableReason, message: &str) -> MeasureFailure {
@@ -287,14 +292,17 @@ impl<'ir> UseFrame<'_, 'ir> {
             Some(true) => Ok(Resolved {
                 spans: vec![span([a, b])],
                 directed: true,
+                listed_backward: false,
             }),
             Some(false) => Ok(Resolved {
                 spans: vec![span([b, a])],
                 directed: true,
+                listed_backward: false,
             }),
             None if direction_optional => Ok(Resolved {
                 spans: vec![span([a, b])],
                 directed: false,
+                listed_backward: false,
             }),
             None => Err(failure(
                 UnavailableReason::BoundaryPcurveDirectionAmbiguous,
@@ -366,8 +374,11 @@ impl<'ir> UseFrame<'_, 'ir> {
         Ok(best.1)
     }
 
-    /// The direction of a closed span: the 3D tangent at the traversal
-    /// start, else the stored use range.
+    /// The direction of a closed span: the reading whose image leaves the
+    /// vertex along the 3D tangent at the traversal start, else the stored
+    /// use range. The span read forward leaves along its image tangent at
+    /// `t0`; read backward, it leaves against its image tangent at `t1`, which
+    /// differs from the first at a corner of the image.
     fn closed_direction(
         &self,
         eval: &Eval<'_, '_>,
@@ -378,8 +389,11 @@ impl<'ir> UseFrame<'_, 'ir> {
             let sign = if c1 >= c0 { 1.0 } else { -1.0 };
             let tangent = curve.tangent(eval, c0)?.scale(sign);
             let image_sign = if span.t1 >= span.t0 { 1.0 } else { -1.0 };
-            let image = self.mapped_velocity(eval, span, span.t0)?.scale(image_sign);
-            let product = image.dot(tangent);
+            let forward = self.mapped_velocity(eval, span, span.t0)?.scale(image_sign);
+            let backward = self
+                .mapped_velocity(eval, span, span.t1)?
+                .scale(-image_sign);
+            let product = forward.dot(tangent) - backward.dot(tangent);
             if product > 0.0 {
                 return Ok(Some(true));
             }
@@ -456,7 +470,7 @@ impl<'ir> UseFrame<'_, 'ir> {
     }
 
     /// A chain of uses, each on its own stored range, in stated order or in
-    /// reverse.
+    /// reverse. A chain that joins only in reverse is listed backward.
     fn chain(&self, eval: &Eval<'_, '_>, uses: &'ir [PcurveUse]) -> Measure<Resolved<'ir>> {
         let mut spans = Vec::with_capacity(uses.len());
         for use_ in uses {
@@ -521,6 +535,7 @@ impl<'ir> UseFrame<'_, 'ir> {
         Ok(Resolved {
             spans: if use_forward { spans } else { reversed },
             directed: true,
+            listed_backward: !use_forward,
         })
     }
 

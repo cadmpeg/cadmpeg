@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Boundaries from pcurve uses: pcurve-only edges, pcurves witnessed by
 //! their 3D curves, a pcurve chain that leaves its curve, a closed coedge on
-//! a decreasing use interval, a seam-cut cylinder side and a cone tip closed
-//! by a pole edge.
+//! a decreasing use interval, a closed coedge whose image starts at a corner,
+//! a pcurve chain listed from its end to its start, a seam-cut cylinder side
+//! and a cone tip closed by a pole edge.
 
 use std::f64::consts::{PI, TAU};
 
 use cadmpeg_ir::ids::{EdgeId, FaceId, VertexId};
 use cadmpeg_ir::topology::{BodyKind, Sense};
 
-use crate::reason::{Category, UnavailableReason};
+use crate::reason::{Category, CaveatCode, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, UvSource};
 use crate::select::Selection;
-use crate::test_support::builders::{assert_measured, assert_tight_box, measure, Builder, Frame};
+use crate::test_support::builders::{
+    assert_measured, assert_tight_box, measure, square_with_split_side, Builder, Frame,
+};
 use crate::value::Quantity;
 
 fn everything() -> Selection {
@@ -311,4 +314,65 @@ fn a_closed_coedge_follows_its_pcurve_over_a_decreasing_use_interval() {
     assert!(uv_sources(face)
         .iter()
         .all(|source| *source == Some(UvSource::Pcurve)));
+}
+
+/// A reversed closed coedge on the counterclockwise unit-square polyline,
+/// whose polyline pcurve runs in the edge direction with no use interval,
+/// starts at a corner: the image leaves the vertex across the 3D tangent in
+/// its forward reading and along it in its backward reading. The coedge
+/// reads the pcurve backward, and the clockwise square about `+z` bounds the
+/// face of the `−z` oriented normal.
+#[test]
+fn a_closed_coedge_starting_at_a_corner_reads_its_pcurve_backward() {
+    let corners = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    let mut builder = Builder::new();
+    let vertex = builder.vertex([0.0; 3]);
+    let edge = builder.closed_polyline(&corners.map(|[x, y]| [x, y, 0.0]), &vertex);
+    let surface = builder.plane([0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let face = builder.face(
+        &surface,
+        Sense::Reversed,
+        &[vec![(edge, Sense::Reversed)]],
+        true,
+    );
+    builder.closed_polyline_pcurve(&face, [0, 0], &corners, None);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &everything());
+    let face = only_face(&report);
+    assert_measured(face.measures().area(), 1.0, 1.0);
+    assert!(uv_sources(face)
+        .iter()
+        .all(|source| *source == Some(UvSource::Pcurve)));
+}
+
+/// A coedge's pcurve uses form one chain from its start to its end in
+/// traversal order (`docs/cad-ir.md`). The chain listed from its end to its
+/// start measures the same face and adds the `boundary.pcurve-order` caveat
+/// on that coedge; the chain in traversal order adds none.
+#[test]
+fn a_pcurve_chain_listed_backward_is_a_face_caveat() {
+    for listed_backward in [false, true] {
+        let (ir, coedge, _) = square_with_split_side(listed_backward);
+        let report = measure(&ir, &everything());
+        let face = only_face(&report);
+        assert_measured(face.measures().area(), 1.0, 1.0);
+        assert_measured(face.measures().boundary_length(), 4.0, 4.0);
+        let caveats: Vec<_> = face
+            .caveats()
+            .iter()
+            .filter(|caveat| caveat.code() == CaveatCode::BoundaryPcurveOrder)
+            .collect();
+        if listed_backward {
+            let [caveat] = caveats.as_slice() else {
+                panic!("one pcurve-order caveat");
+            };
+            assert_eq!(caveat.entity(), Some(coedge.as_str()));
+            assert_eq!(caveat.category(), Category::Input);
+        } else {
+            assert!(
+                caveats.is_empty(),
+                "a chain in traversal order has no caveat"
+            );
+        }
+    }
 }

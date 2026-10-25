@@ -116,6 +116,8 @@ impl From<ResourceLimit> for MeasureError {
 /// The `check` findings that measurement exposes in `ir`, as warnings:
 /// face rings whose coedges are not listed in traversal order
 /// ([`Check::RingOrder`](cadmpeg_ir::report::check::Check::RingOrder)),
+/// coedges whose pcurve uses are listed from their end to their start
+/// ([`Check::PcurveOrder`](cadmpeg_ir::report::check::Check::PcurveOrder)),
 /// faces whose sense disagrees with their loop winding, and bodies whose
 /// shells are closed and whose volume readings conflict
 /// ([`Check::Orientation`](cadmpeg_ir::report::check::Check::Orientation)).

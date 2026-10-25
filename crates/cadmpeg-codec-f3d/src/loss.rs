@@ -44,6 +44,14 @@ pub(crate) enum F3dLossCode {
     ActComponentLinkUnresolved,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
+    /// A local occurrence owner joins no unique component definition.
+    LocalOccurrenceOwnerUnbound,
+    /// The component owner graph contains a cycle.
+    LocalOccurrenceOwnerCycle,
+    /// Repeated local instance trees exceed the decode limits.
+    LocalOccurrenceExpansionLimit,
+    /// A component feature names no unique expanded occurrence.
+    FeatureOccurrencePathUnresolved,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -58,6 +66,12 @@ pub(crate) enum F3dLossCode {
     /// Design assembly joints projected as fixed because their freedom codes or
     /// limit lanes do not map to a joint kind.
     AssemblyJointMotionUndecoded,
+    /// Projected Design assembly joints whose stored rest is malformed or
+    /// enabled. The neutral joint carries no rest; the native record retains
+    /// the valid rest or the malformed-rest mark.
+    AssemblyJointRestUnprojected,
+    /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
+    AssemblyJointAngularLimitsNative,
     /// Projected Design assembly joints whose operand paths carry occurrence
     /// identity pairs of unknown effect on the joint, retained natively.
     AssemblyOperandPathPairsNative,
@@ -273,11 +287,17 @@ impl F3dLossCode {
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
+        Self::LocalOccurrenceOwnerUnbound,
+        Self::LocalOccurrenceOwnerCycle,
+        Self::LocalOccurrenceExpansionLimit,
+        Self::FeatureOccurrencePathUnresolved,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
         Self::AssemblyJointUnprojected,
         Self::AssemblyJointMotionUndecoded,
+        Self::AssemblyJointRestUnprojected,
+        Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
@@ -395,11 +415,17 @@ impl F3dLossCode {
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
+            Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
+            Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
+            Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
+            Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
+            Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
+            Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
@@ -536,12 +562,18 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::LocalOccurrenceOwnerUnbound
+            | Self::LocalOccurrenceOwnerCycle
+            | Self::LocalOccurrenceExpansionLimit
+            | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyJointAngularLimitsNative
+            | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
@@ -689,13 +721,19 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
+            | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
             | Self::AssemblyJointMotionUndecoded
+            | Self::AssemblyJointAngularLimitsNative
+            | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
-            Self::LocalOccurrenceUnplaced
+            Self::LocalOccurrenceOwnerUnbound
+            | Self::LocalOccurrenceOwnerCycle
+            | Self::LocalOccurrenceExpansionLimit
+            | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
@@ -799,11 +837,17 @@ mod tests {
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
+                "assembly.local-occurrence-owner-unbound",
+                "assembly.local-occurrence-owner-cycle",
+                "assembly.local-occurrence-expansion-limit",
+                "feature.occurrence-path-unresolved",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
                 "assembly.joint-unprojected",
                 "assembly.joint-motion-undecoded",
+                "assembly.joint-rest-unprojected",
+                "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",

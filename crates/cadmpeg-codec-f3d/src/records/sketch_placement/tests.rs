@@ -35,3 +35,32 @@ fn sketch_placement_native_retained_limit_refuses_before_record_clone() {
         || SKETCH_PLACEMENT_CLONE_COUNT.with(std::cell::Cell::get),
     );
 }
+
+#[test]
+fn sketch_visibility_collection_wire_requires_omission_or_a_positive_identity() {
+    let mut visibility =
+        super::DesignSketchVisibility::new(std::num::NonZeroU32::new(2).unwrap(), 30, false)
+            .unwrap();
+    visibility.ordinal_collection = std::num::NonZeroU64::new(300);
+    let wire = serde_json::to_value(visibility).unwrap();
+    assert_eq!(
+        serde_json::from_value::<super::DesignSketchVisibility>(wire.clone()).unwrap(),
+        visibility
+    );
+    let mut omitted = wire.clone();
+    omitted
+        .as_object_mut()
+        .unwrap()
+        .remove("ordinal_collection");
+    assert!(
+        serde_json::from_value::<super::DesignSketchVisibility>(omitted)
+            .unwrap()
+            .ordinal_collection
+            .is_none()
+    );
+    for invalid in [serde_json::Value::Null, serde_json::json!(0)] {
+        let mut invalid_wire = wire.clone();
+        invalid_wire["ordinal_collection"] = invalid;
+        assert!(serde_json::from_value::<super::DesignSketchVisibility>(invalid_wire).is_err());
+    }
+}
