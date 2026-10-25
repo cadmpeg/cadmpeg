@@ -277,7 +277,7 @@ impl FaceAdmission<'_, '_> {
             _ => {}
         }
         let mut admit = |selection: &mut FaceSelection, hole: bool| {
-            if hole {
+            if hole || matches!(selection, FaceSelection::Resolved { .. }) {
                 inputs.hole(id, selection, losses)
             } else {
                 inputs.admit(id, selection, losses);
