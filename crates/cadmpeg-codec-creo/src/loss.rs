@@ -181,6 +181,8 @@ pub(crate) enum CreoLossCode {
     SectionSolverVariableMissing,
     /// Section dimensions retain source-native value tokens.
     SectionDimensionValueUnresolved,
+    /// A native radius cannot form a finite neutral diameter value.
+    SectionDiameterValueUnresolved,
     /// Referenced configuration driver tables retain unresolved traversal.
     ConfigurationDriverUnresolved,
     /// Active curve-equation records with prohibited constructs were not evaluated.
@@ -276,6 +278,7 @@ impl CreoLossCode {
             Self::SectionDimensionGuessUnresolved => "section.dimension-guess-unresolved",
             Self::SectionSolverVariableMissing => "section.solver-variable-missing",
             Self::SectionDimensionValueUnresolved => "section.dimension-value-unresolved",
+            Self::SectionDiameterValueUnresolved => "section.diameter-value-unresolved",
             Self::ConfigurationDriverUnresolved => "configuration.driver-unresolved",
             Self::CurveExpressionProhibited => "curve-expression.prohibited",
             Self::CurveExpressionSolveUnresolved => "curve-expression.solve-unresolved",
@@ -362,6 +365,7 @@ impl CreoLossCode {
             | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
+            | Self::SectionDiameterValueUnresolved
             | Self::ConfigurationDriverUnresolved
             | Self::CurveExpressionProhibited
             | Self::CurveExpressionSolveUnresolved
@@ -447,6 +451,7 @@ impl CreoLossCode {
             | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
+            | Self::SectionDiameterValueUnresolved
             | Self::ConfigurationDriverUnresolved
             | Self::CurveExpressionProhibited
             | Self::CurveExpressionSolveUnresolved
@@ -562,6 +567,7 @@ mod tests {
                 "section.dimension-guess-unresolved",
                 "section.solver-variable-missing",
                 "section.dimension-value-unresolved",
+                "section.diameter-value-unresolved",
                 "configuration.driver-unresolved",
                 "curve-expression.prohibited",
                 "curve-expression.solve-unresolved",

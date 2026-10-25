@@ -652,9 +652,15 @@ that gate.
   resolves to a type-three or type-four dimension uses the neutral radius or
   diameter form; all other bindings remain native.
 - Type-five arc-radius and type-fourteen circular-size relations accept every
-  linear dimension type. Type four propagates a diameter as half its stored
-  value; the other linear types propagate a radius. Angular and schema-defined
-  dimensions remain native.
+  linear dimension type. Type four propagates its stored radius and uses twice
+  that value for the neutral diameter parameter; the other linear types propagate
+  a radius. Angular and schema-defined dimensions remain native.
+- Type-four dimension parameters and literal expressions use twice the stored
+  radius. Native dimension values and encoded value bodies remain unchanged. A
+  non-finite doubled value retains an unresolved neutral parameter and reports
+  `creo/section.diameter-value-unresolved`. Active neutral diameter constraints
+  with resolved circular geometry and length parameters are checked against twice
+  the radius by `cadmpeg-ir` sketch geometric-consistency validation.
 - A complete endpoint-selection or type-35 incidence whose non-target operand
   resolves to a point locus establishes its sense-zero operand's line role
   independently of solver activity. A unique unary type-one or type-two

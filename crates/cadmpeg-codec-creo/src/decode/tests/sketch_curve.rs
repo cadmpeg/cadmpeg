@@ -430,7 +430,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
-        BTreeMap::from([(0, 2.5)])
+        BTreeMap::from([(0, 5.0)])
     );
     let diameter = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(diameter.len(), 1);
@@ -472,7 +472,7 @@ fn dimension_identity_includes_its_feature_definition() {
     assert_eq!(
         crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &definition))
             .expect("test section solve"),
-        BTreeMap::from([(0, 2.5)])
+        BTreeMap::from([(0, 5.0)])
     );
     assert_eq!(
         *(section_segment_radius_constraints(&definition, &sketch_917)[0]
@@ -641,7 +641,7 @@ fn dimension_identity_includes_its_feature_definition() {
         Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(1.0, 2.0),
-                radius: Length::new(2.5).expect("finite length fixture"),
+                radius: Length::new(5.0).expect("finite length fixture"),
             })
             .expect("valid test fixture")
         )
