@@ -1700,7 +1700,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         }
     }
     let unordered_parameter_scopes =
-        normalize_parameter_ordinals(&mut parameters, &parameter_owners);
+        normalize_parameter_ordinals(&mut parameters, &parameter_owners)?;
     for feature in &mut features {
         for parameter in parameters
             .iter()
@@ -4571,7 +4571,7 @@ pub(crate) const PARAMETER_ORDER_WORK: usize = 1 << 22;
 fn normalize_parameter_ordinals(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     owners: &HashMap<cadmpeg_ir::features::ParameterId, Option<cadmpeg_ir::features::FeatureId>>,
-) -> usize {
+) -> Result<usize, CodecError> {
     let mut groups = HashMap::<Option<cadmpeg_ir::features::FeatureId>, Vec<usize>>::new();
     for (index, parameter) in parameters.iter().enumerate() {
         if let Some(indices) = groups.get_mut(&parameter.owner) {
@@ -4591,18 +4591,18 @@ fn normalize_parameter_ordinals(
             owner.as_ref(),
             &indices,
             &cadmpeg_core::decode::WorkBudget::new(PARAMETER_ORDER_WORK),
-        ) {
+        )? {
             unordered_scopes += 1;
         }
     }
-    unordered_scopes
+    Ok(unordered_scopes)
 }
 
 /// Reassign the ordinals of one owner scope so each parameter follows its
 /// same-scope dependencies, breaking cycles at their lowest-ordinal member.
 ///
 /// Returns `false` when the ordering exhausts `budget`. The scope then keeps
-/// its source ordinals and loses its same-scope dependency edges, so the
+/// its unique ordinal slots and loses its same-scope dependency edges, so the
 /// projection stays valid. Decode reports the skipped scope as
 /// `parameter.order-budget-exceeded` and the dropped edges as unbound
 /// expression symbols.
@@ -4612,12 +4612,27 @@ fn order_parameter_scope(
     owner: Option<&cadmpeg_ir::features::FeatureId>,
     indices: &[usize],
     budget: &cadmpeg_core::decode::WorkBudget,
-) -> bool {
+) -> Result<bool, CodecError> {
+    let mut source_order = indices.to_vec();
+    source_order.sort_unstable_by(|a, b| {
+        let a = &parameters[*a];
+        let b = &parameters[*b];
+        (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
+    });
     let mut ordinals = Vec::new();
-    for index in indices {
-        ordinals.push(parameters[*index].ordinal);
+    let mut previous: Option<u32> = None;
+    for index in source_order {
+        let parameter = &mut parameters[index];
+        if let Some(previous) = previous {
+            if parameter.ordinal <= previous {
+                parameter.ordinal = previous
+                    .checked_add(1)
+                    .ok_or_else(|| CodecError::malformed("Design parameter ordinal exceeds u32"))?;
+            }
+        }
+        ordinals.push(parameter.ordinal);
+        previous = Some(parameter.ordinal);
     }
-    ordinals.sort_unstable_by(Ord::cmp);
     let mut unresolved = HashSet::new();
     for index in indices {
         // discarded-value: each parameter index occurs once in its owner group.
@@ -4647,7 +4662,7 @@ fn order_parameter_scope(
                     .dependencies
                     .retain(|dependency| owners.get(dependency).map(Option::as_ref) != Some(owner));
             }
-            return false;
+            return Ok(false);
         }
         ready.sort_by(|a, b| {
             let pa = &parameters[*a];
@@ -4701,7 +4716,7 @@ fn order_parameter_scope(
     for (index, ordinal) in order.into_iter().zip(ordinals) {
         parameters[index].ordinal = ordinal;
     }
-    true
+    Ok(true)
 }
 
 /// Strongly connected components of the unresolved parameter graph that contain a cycle.
