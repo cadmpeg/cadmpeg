@@ -634,3 +634,83 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
     assert!(!subset_cube([0.0, 1.0]));
     assert!(subset_cube([2.0, 3.0]));
 }
+
+#[test]
+fn periodic_pcurve_ranges_accept_one_unwrapped_period_and_reject_longer_uses() {
+    use crate::geometry::pcurve::{OffsetPcurve, PcurveNurbs, PlacedPcurve, TrimmedPcurve};
+    use crate::math::Point2;
+    for (period, range) in [
+        (
+            0.005_123_231_207_432_89,
+            [0.002_564_023_778_11, 0.007_687_254_985_543],
+        ),
+        (
+            0.005_118_414_858_650_36,
+            [0.002_559_207_429_328, 0.007_677_622_287_978],
+        ),
+    ] {
+        let geometry = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 0.5 * period, period, period],
+                vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(0.0, 0.0),
+                ],
+                None,
+                true,
+            )
+            .unwrap(),
+        };
+        let placed = PcurveGeometry::Transformed(
+            PlacedPcurve::try_new(
+                Box::new(geometry.clone()),
+                crate::transform::Transform2::identity(),
+            )
+            .unwrap(),
+        );
+        let offset =
+            PcurveGeometry::Offset(OffsetPcurve::try_new(0.1, Box::new(placed.clone())).unwrap());
+        for carrier in [geometry.clone(), placed, offset] {
+            assert!(!coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+                carrier.clone(),
+                range
+            )));
+            assert!(!coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+                carrier.clone(),
+                [range[1], range[0]]
+            )));
+            assert!(coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+                carrier,
+                [range[0], range[0] + 1.01 * period]
+            )));
+        }
+        let trimmed = PcurveGeometry::Trimmed(
+            TrimmedPcurve::try_new([0.4 * period, 0.6 * period], true, Box::new(geometry)).unwrap(),
+        );
+        assert!(!coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+            trimmed.clone(),
+            [0.4 * period, 0.6 * period]
+        )));
+        assert!(coedge_pcurve_range_reported(&cube_with_one_coedge_pcurve(
+            trimmed, range
+        )));
+    }
+}
+
+#[test]
+fn periodic_pcurve_range_span_comparison_handles_width_overflow() {
+    let domain = [-f64::MAX, f64::MAX];
+    assert!(super::periodic_pcurve_range_in_domain(
+        domain[0], domain[1], domain
+    ));
+    assert!(super::periodic_pcurve_range_in_domain(
+        domain[1], domain[0], domain
+    ));
+    assert!(!super::periodic_pcurve_range_in_domain(
+        -f64::MAX,
+        f64::MAX,
+        [0.0, f64::MAX]
+    ));
+}

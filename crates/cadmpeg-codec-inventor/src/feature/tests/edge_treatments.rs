@@ -273,6 +273,7 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
             kernel_entity_links: Vec::new(),
             work_planes: Vec::new(),
             issues: Vec::new(),
+            edge_names: std::collections::HashMap::new(),
         };
         if duplicate {
             inventory.features.push(chamfer_source(101));

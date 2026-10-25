@@ -34,6 +34,7 @@ use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
+mod edge_selection;
 mod history;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
@@ -140,6 +141,7 @@ const FEATURE_LABEL_TYPE: [u8; 16] = [
 
 #[derive(Debug)]
 pub(crate) struct FeatureInventory {
+    edge_names: HashMap<(String, u32), Option<edge_selection::EdgeName>>,
     record_types: HashMap<cadmpeg_ir::ids::IdentityKey, HashMap<u32, Option<String>>>,
     pub(crate) features: Vec<PmDcFeature>,
     pub(crate) pattern_features: Vec<PmDcPatternFeature>,
@@ -539,6 +541,7 @@ pub(crate) fn inventory(
     document: &RseInventory<'_>,
 ) -> Result<FeatureInventory, CodecError> {
     let mut inventory = FeatureInventory {
+        edge_names: edge_selection::inventory(ctx, document)?,
         record_types: HashMap::new(),
         features: Vec::new(),
         pattern_features: Vec::new(),
@@ -1668,6 +1671,7 @@ impl FeatureFamily {
 }
 
 struct ProjectionIndex<'a> {
+    edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
     parameters: HashMap<(&'a str, u32), Option<&'a crate::design::PmDcParameter>>,
     parameter_values: HashMap<&'a str, Option<&'a DesignParameter>>,
@@ -1784,7 +1788,8 @@ pub(crate) fn project(
             record,
         )
     }));
-    let index = ProjectionIndex {
+    let mut index = ProjectionIndex {
+        edge_names: HashMap::new(),
         properties: unique_properties,
         parameters: unique_parameters,
         parameter_values: unique_index(
@@ -1854,6 +1859,7 @@ pub(crate) fn project(
         Some(token) => history::build(ctx, token, inventory, design, &sketch.sketches)?,
         None => history::History::default(),
     };
+    index.edge_names = edge_selection::generated_names(inventory, &history, sketch);
     let label_of = |ordinal: u32| {
         token.and_then(|token| {
             labels
@@ -1982,6 +1988,7 @@ pub(crate) fn project(
             result_topologies.push(result);
         }
     }
+    edge_selection::bind_generated(&mut features, &mut result_topologies)?;
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {
@@ -2883,12 +2890,12 @@ fn project_fillet(
             .get(),
         )?;
         groups.push(FilletGroup {
-            edges: EdgeSelection::Native(match selection.kind {
+            edges: match selection.kind {
                 PmDcFeaturePropertyKind::WideEnumeration { type_value: 4, .. } => {
-                    edge_collection.id()
+                    edge_selection::resolve(edge_collection, index)
                 }
-                _ => set.id(),
-            }),
+                _ => EdgeSelection::Native(set.id()),
+            },
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
         });
@@ -3016,11 +3023,11 @@ fn project_chamfer(
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Chamfer {
                     groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                        edges: EdgeSelection::Native(if form == 0 {
-                            edges.id()
+                        edges: if form == 0 {
+                            edge_selection::resolve(edges, index)
                         } else {
-                            source.id()
-                        }),
+                            EdgeSelection::Native(source.id())
+                        },
                         spec,
                     }),
                     flip_direction,
@@ -3507,20 +3514,29 @@ fn references<'a>(
     }
 }
 
+/// First segment major version whose extent enumerations use type value 12.
+const EXTENT_TYPE_12_FIRST_MAJOR: u8 = 22;
+
 fn enum16(
     source: &PmDcFeature,
     slot: usize,
     family: PmDcFeatureEnumFamily,
     index: &ProjectionIndex<'_>,
 ) -> Option<u16> {
+    let property = slot_property(source, slot, index)?;
     let expected_type = match family {
         PmDcFeatureEnumFamily::PartOperation => 5,
+        PmDcFeatureEnumFamily::Extent
+            if property.save_version_major >= EXTENT_TYPE_12_FIRST_MAJOR =>
+        {
+            12
+        }
         PmDcFeatureEnumFamily::Extent => 11,
         PmDcFeatureEnumFamily::Hole => 3,
         PmDcFeatureEnumFamily::Fillet | PmDcFeatureEnumFamily::Chamfer => 2,
         PmDcFeatureEnumFamily::Auxiliary => return None,
     };
-    match slot_property(source, slot, index)?.kind {
+    match property.kind {
         PmDcFeaturePropertyKind::Enumeration {
             family: actual,
             type_value,
@@ -3742,6 +3758,7 @@ mod tests {
     #[test]
     fn feature_projection_reports_an_unlabelled_feature() {
         let inventory = super::FeatureInventory {
+            edge_names: std::collections::HashMap::new(),
             record_types: std::collections::HashMap::new(),
             features: vec![test_feature(0, 0, &[])],
             pattern_features: Vec::new(),
@@ -4212,6 +4229,7 @@ mod tests {
         entity_style_links: &'a [PmDcEntityStyleLink],
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
+            edge_names: std::collections::HashMap::new(),
             properties: super::unique_index(properties.iter().map(|record| {
                 (
                     (
@@ -4676,6 +4694,58 @@ mod tests {
             }
         }
 
+        let mut named_properties = fillet_properties.clone();
+        named_properties[6] = test_property(
+            7,
+            PmDcFeaturePropertyKind::EdgeItem {
+                index_references: PmDcU32List::new(
+                    2,
+                    Some(crate::pmdc::PmDcListMetadata::U32([1, 0])),
+                    vec![42],
+                )
+                .expect("valid named feature fixture"),
+                index_reference_value: -1,
+                value: 0,
+            },
+        );
+        let mut named_index = test_projection_index(
+            &named_properties,
+            std::slice::from_ref(&raw_radius),
+            std::slice::from_ref(&neutral_radius),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let generated_edge = cadmpeg_ir::features::GeneratedEdgeRef {
+            feature: super::history_feature_id(&test_feature(90, 0, &[]).identity)
+                .expect("valid named feature fixture"),
+            local_id: cadmpeg_ir::features::SelectionReference::new(
+                "inventor:nmx:INV_NMX_SWEEPGENERATED_TAG:3:0:18".into(),
+            )
+            .expect("valid named feature fixture"),
+        };
+        named_index.edge_names.insert(
+            (
+                named_properties[3]
+                    .identity
+                    .segment_token
+                    .as_str()
+                    .to_owned(),
+                42,
+            ),
+            Some(generated_edge.clone()),
+        );
+        let (named, _) = project_fillet(&ctx, &fillet, &label, &named_index)
+            .expect("named fillet candidate")
+            .expect("named fillet projection");
+        assert!(
+            matches!(named.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+            if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Generated { edges, native }
+                if edges.as_slice() == [generated_edge.clone()] && native.as_str() == named_properties[3].id()))
+        );
+
         let raw_distance = raw_parameter(40);
         let neutral_distance = neutral_parameter(
             &raw_distance,
@@ -4757,6 +4827,26 @@ mod tests {
                 flip_direction: true
             }) if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
         ));
+        let mut named_index = index;
+        named_index.edge_names.insert(
+            (
+                chamfer_properties[0]
+                    .identity
+                    .segment_token
+                    .as_str()
+                    .to_owned(),
+                17,
+            ),
+            Some(generated_edge.clone()),
+        );
+        let (named, _) = project_chamfer(&ctx, &chamfer, &label, &named_index)
+            .expect("named chamfer candidate")
+            .expect("named chamfer projection");
+        assert!(
+            matches!(named.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+            if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Generated { edges, native }
+                if edges.as_slice() == [generated_edge] && native.as_str() == chamfer_properties[0].id()))
+        );
     }
 
     fn generated_extrusion(
