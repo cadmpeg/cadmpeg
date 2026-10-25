@@ -75,6 +75,8 @@ def main():
              work / f"{name}.measure.json", "--force"], f"measure-{name}")
         run([args.cadmpeg.resolve(), "diff", source, rewritten, "--geometry", "--report",
              work / f"{name}.geometry-diff.json", "--force"], f"diff-{name}")
+    run([args.cadmpeg.resolve(), "measure", reference / "spline_domains.FCStd", "--edges",
+         "--report", work / "spline_domains.edges.measure.json", "--force"], "measure-spline-edges")
     for name in ("placed_mesh", "nested_mesh", "linked_mesh"):
         source = reference / f"{name}.FCStd"
         run([args.cadmpeg.resolve(), "check", source], f"check-{name}")

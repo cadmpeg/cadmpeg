@@ -111,6 +111,30 @@ def check_source_less():
         App.closeDocument(document.Name)
 
 
+def check_spline_domains():
+    document = App.openDocument(str(WORK / "reference" / "spline_domains.FCStd"))
+    try:
+        expected_area = document.getObject("PeriodicFace").Shape.Area
+        expected_length = document.getObject("SplineEdge").Shape.Length
+    finally:
+        App.closeDocument(document.Name)
+    bodies = json.loads((WORK / "spline_domains.measure.json").read_text())["measure"]["bodies"]
+    faces = [body for body in bodies if body["name"] == "PeriodicFace"]
+    edges = json.loads((WORK / "spline_domains.edges.measure.json").read_text())["measure"]["edges"]
+    edges = [edge for edge in edges if "#SplineEdge:" in edge["edge"]]
+    if len(faces) != 1 or len(edges) != 1:
+        raise ValueError("missing spline measurement rows")
+    for expected, quantity in ((expected_area, faces[0]["area"]),
+                               (expected_length, edges[0]["length"])):
+        if quantity["status"] != "measured" or not math.isclose(
+            expected, quantity["value"], rel_tol=GEOMETRY_RELATIVE_TOLERANCE,
+            abs_tol=COORDINATE_TOLERANCE,
+        ):
+            raise ValueError("spline geometry differs from native measurement")
+    return {"periodic_face_area": faces[0]["area"]["value"],
+            "spline_edge_length": edges[0]["length"]["value"]}
+
+
 def check_source_less_shapes():
     document = App.openDocument(str(WORK / "source_less_shapes.FCStd"))
     try:
@@ -144,6 +168,7 @@ report = {"accepted": False}
 try:
     report["meshes"] = [check_mesh(name) for name in ("placed_mesh", "nested_mesh", "linked_mesh")]
     report["step"] = check_step()
+    report["spline_domains"] = check_spline_domains()
     report["source_less"] = check_source_less()
     report["source_less_shapes"] = check_source_less_shapes()
     report["ordinary_recompute_edit"] = check_native_edit()
