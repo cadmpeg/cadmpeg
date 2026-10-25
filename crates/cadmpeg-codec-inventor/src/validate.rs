@@ -1161,6 +1161,23 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(|property| (property.id(), property))
         .collect::<HashMap<_, _>>();
+    for source in &data.pm_dc_features {
+        let token = source.identity.segment_token.as_str();
+        let family = labels
+            .get(&(token, source.identity.record_ordinal))
+            .and_then(|label| {
+                crate::feature::loft_sweep::slots::Family::from_class_id(label.class_id())
+            });
+        if family.is_some_and(|family| {
+            !family.valid_slots(source, |ordinal| raw.get(&(token, ordinal)).copied())
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor loft or sweep property slot has an invalid record type".into(),
+                Some(source.id()),
+            ));
+        }
+    }
     let parameters_by_record = data
         .pm_dc_parameters
         .iter()

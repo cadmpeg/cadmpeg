@@ -76,18 +76,6 @@ fn decode_container<'a>(
     } else {
         ctx.depth()
     };
-    let unresolved = if delivered == DecodeDepth::Full {
-        project_design(
-            ctx,
-            &mut ir,
-            &container.rse,
-            &design_inventory,
-            &sketch_inventory,
-            &feature_inventory,
-        )?
-    } else {
-        UnresolvedDesign::default()
-    };
     let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -574,6 +562,18 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
+    let unresolved = if delivered == DecodeDepth::Full {
+        project_design(
+            ctx,
+            &mut ir,
+            &container.rse,
+            &design_inventory,
+            &sketch_inventory,
+            &feature_inventory,
+        )?
+    } else {
+        UnresolvedDesign::default()
+    };
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -758,6 +758,12 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(crate::feature::loft_sweep::retained_control_losses(
+            ir.model
+                .features
+                .iter()
+                .map(|feature| feature.evaluation.definition()),
+        ));
         let partial_threads = ir
             .model
             .features
@@ -1281,6 +1287,7 @@ fn project_design(
             sketches: &ir.model.sketches,
             entities: &ir.model.sketch_entities,
             profile_bodies: &profile_bodies.bodies,
+            result_model: Some(&ir.model),
         },
     )?;
     let mut added_profiles = features.added_profiles;

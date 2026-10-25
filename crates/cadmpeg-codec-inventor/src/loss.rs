@@ -69,6 +69,10 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
+    /// Sweep construction controls have no exact neutral interpretation.
+    FeatureSweepControlsUnresolved,
+    /// Loft construction controls and section conditions have no exact neutral interpretation.
+    FeatureLoftControlsUnresolved,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Parameter records have a unit or expression graph that is not closed.
@@ -147,6 +151,8 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureShellDefinitionPartial,
+        Self::FeatureSweepControlsUnresolved,
+        Self::FeatureLoftControlsUnresolved,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
@@ -200,6 +206,8 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
+            Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
+            Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
@@ -267,6 +275,8 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureShellDefinitionPartial
+            | Self::FeatureSweepControlsUnresolved
+            | Self::FeatureLoftControlsUnresolved
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::FeatureStateUnresolved
@@ -349,6 +359,8 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.shell-definition-partial",
+                "feature.sweep-controls-unresolved",
+                "feature.loft-controls-unresolved",
                 "feature.state-unresolved",
                 "parameter.graph-open",
                 "parameter.expression-bounded",

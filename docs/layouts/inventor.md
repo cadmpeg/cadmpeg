@@ -481,3 +481,87 @@ Spec §13 · layout: byte offsets · size: 22 B
 | 10 | 4 | `topology` | `u32` | little | spec | The fixed selector prefix after the content header contains |
 | 14 | 4 | `qualifier` | `u32` | little | spec | The fixed selector prefix after the content header contains |
 | 18 | 4 | `naming_form` | `u32` | little | spec | The fixed selector prefix after the content header contains |
+
+## `pm_dc_loft_property_slots`
+
+Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Non-null property references select the stated record types. Slot numbers are property-list indices, not byte offsets.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `slot_0` | `u32` | little | spec | Ordered section list. |
+| 1 | `slot_1` | `u32` | little | spec | Part operation. |
+| 2 | `slot_2` | `u32` | little | spec | Boolean construction control. |
+| 3 | `slot_6` | `u32` | little | spec | Surface-loft result body wrapper. |
+| 4 | `slot_7` | `u32` | little | spec | Auxiliary loft-selection list. |
+| 5 | `slot_9` | `u32` | little | spec | Boolean construction control. |
+| 6 | `slot_10` | `u32` | little | spec | Loft construction enumeration. |
+| 7 | `slot_13` | `u32` | little | spec | Solid-loft result object collection. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 0 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 1 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 2 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 6 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 7 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 9 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 10 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 13 selects the record types in the specification.
+
+## `pm_dc_sweep_property_slots`
+
+Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Non-null property references select the stated record types. Slot numbers are property-list indices, not byte offsets.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `slot_0` | `u32` | little | spec | Boundary patch. |
+| 1 | `slot_1` | `u32` | little | spec | Path selection. |
+| 2 | `slot_2` | `u32` | little | spec | Part operation. |
+| 3 | `slot_3` | `u32` | little | spec | Angular parameter. |
+| 4 | `slot_4` | `u32` | little | spec | Extent enumeration. |
+| 5 | `slot_7` | `u32` | little | spec | Feature dimensions. |
+| 6 | `slot_8` | `u32` | little | spec | Sweep construction enumeration. |
+| 7 | `slot_9` | `u32` | little | spec | Sweep orientation enumeration. |
+| 8 | `slot_10` | `u32` | little | spec | Sweep scaling enumeration. |
+| 9 | `slot_15` | `u32` | little | spec | Result object collection. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 0 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 1 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 2 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 3 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 4 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 7 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 8 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 9 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 10 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 15 selects the record types in the specification.
+
+## `pm_dc_generated_face_attribute`
+
+Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Ordered ASM typed attribute values.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/projection/evidence.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `common_fields` | `array` | little | spec | Five common attribute fields. |
+| 1 | `family` | `text` | little | spec | a family string |
+| 2 | `version_schema_state` | `array` | little | spec | Three integer tokens: 1, 44, 1. |
+| 3 | `generator` | `token_stream` | little | spec | `generator` is the generating feature's content-header source index |
+| 4 | `sentinel` | `token_stream` | little | spec | `generator`, and −1 |
+| 5 | `family_payload` | `array` | little | spec | Family-selected integer tokens. |

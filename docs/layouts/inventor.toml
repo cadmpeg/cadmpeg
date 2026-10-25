@@ -1540,3 +1540,288 @@ offset = 18
 type = "u32"
 source = "spec"
 anchor = "The fixed selector prefix after the content header contains"
+
+[[record]]
+name = "pm_dc_loft_property_slots"
+kind = "slot"
+section = "13.2"
+anchor = "Loft property slots are:"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+note = "Non-null property references select the stated record types. Slot numbers are property-list indices, not byte offsets."
+
+[[record.field]]
+name = "slot_0"
+type = "u32"
+source = "spec"
+anchor = "| 0 | Ordered section list | `509e2f31d1110344000881ba32a3dc09` |"
+note = "Ordered section list."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(0, &[super::SECTION_LIST_TYPE]),'''
+note = "Slot 0 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_1"
+type = "u32"
+source = "spec"
+anchor = "| 1 | Part operation | `28be9a72d111440900084eba32a3dc09` |"
+note = "Part operation."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(1, &[super::super::PART_OPERATION_TYPE]),'''
+note = "Slot 1 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_2"
+type = "u32"
+source = "spec"
+anchor = "| 2 | Boolean construction control | `284d8790d011f8d10008cabc0663dc09` |"
+note = "Boolean construction control."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(2, &[super::super::BOOLEAN_TYPE]),'''
+note = "Slot 2 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_6"
+type = "u32"
+source = "spec"
+anchor = "| 6 | Surface-loft result body wrapper | `474d8790d011f8d10008cabc0663dc09` |"
+note = "Surface-loft result body wrapper."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(6, &[super::super::SURFACE_BODY_TYPE]),'''
+note = "Slot 6 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_7"
+type = "u32"
+source = "spec"
+anchor = "| 7 | Auxiliary loft-selection list | `509e2f31d1110344000881ba32a3dc09` |"
+note = "Auxiliary loft-selection list."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(7, &[super::SECTION_LIST_TYPE]),'''
+note = "Slot 7 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_9"
+type = "u32"
+source = "spec"
+anchor = "| 9 | Boolean construction control | `284d8790d011f8d10008cabc0663dc09` |"
+note = "Boolean construction control."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(9, &[super::super::BOOLEAN_TYPE]),'''
+note = "Slot 9 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_10"
+type = "u32"
+source = "spec"
+anchor = "| 10 | Loft construction enumeration | `02e2e3e0d111480900084eba32a3dc09` |"
+note = "Loft construction enumeration."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(10, &[super::LOFT_MODE_TYPE]),'''
+note = "Slot 10 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_13"
+type = "u32"
+source = "spec"
+anchor = "| 13 | Solid-loft result object collection | `ae70680ed14a1e86d76248b03c2a96e1` |"
+note = "Solid-loft result object collection."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(13, &[super::super::OBJECT_COLLECTION_TYPE]),'''
+note = "Slot 13 selects the record types in the specification."
+
+[[record]]
+name = "pm_dc_sweep_property_slots"
+kind = "slot"
+section = "13.2"
+anchor = "Sweep property slots are:"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+note = "Non-null property references select the stated record types. Slot numbers are property-list indices, not byte offsets."
+
+[[record.field]]
+name = "slot_0"
+type = "u32"
+source = "spec"
+anchor = "| 0 | Boundary patch | `91739422d11107cf000835bd0663dc09` |"
+note = "Boundary patch."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(0, &[super::super::BOUNDARY_PATCH_TYPE]),'''
+note = "Slot 0 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_1"
+type = "u32"
+source = "spec"
+anchor = "| 1 | Path selection | `3b2477a4d1118f96000826bd0663dc09` or `473f20fcd11101cf000835bd0663dc09` |"
+note = "Path selection."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(
+        1,
+        &[
+            super::super::PROFILE_SELECTION_TYPE,
+            super::super::PLATE_PROFILE_SELECTION_TYPE,
+        ],
+    ),'''
+note = "Slot 1 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_2"
+type = "u32"
+source = "spec"
+anchor = "| 2 | Part operation | `28be9a72d111440900084eba32a3dc09` |"
+note = "Part operation."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(2, &[super::super::PART_OPERATION_TYPE]),'''
+note = "Slot 2 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_3"
+type = "u32"
+source = "spec"
+anchor = "| 3 | Angular parameter | `264d8790d011f8d10008cabc0663dc09` |"
+note = "Angular parameter."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(3, &[crate::design::PARAMETER_FULL_TYPE]),'''
+note = "Slot 3 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_4"
+type = "u32"
+source = "spec"
+anchor = "| 4 | Extent enumeration | `297d6392d1113cb9000831bd0663dc09` |"
+note = "Extent enumeration."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(4, &[super::super::EXTENT_TYPE]),'''
+note = "Slot 4 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_7"
+type = "u32"
+source = "spec"
+anchor = "| 7 | Feature dimensions | `71f23ed8d2115094a00049803603c8c9` |"
+note = "Feature dimensions."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(7, &[super::super::FEATURE_DIMENSIONS_TYPE]),'''
+note = "Slot 7 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_8"
+type = "u32"
+source = "spec"
+anchor = "| 8 | Sweep construction enumeration | `b7849ca26d4811e38b95b3a06051b440` |"
+note = "Sweep construction enumeration."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(8, &[super::SWEEP_MODE_TYPE]),'''
+note = "Slot 8 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_9"
+type = "u32"
+source = "spec"
+anchor = "| 9 | Sweep orientation enumeration | `ed2ef031904b9b04d79918b91f1619c8` |"
+note = "Sweep orientation enumeration."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(9, &[super::SWEEP_ORIENTATION_TYPE]),'''
+note = "Slot 9 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_10"
+type = "u32"
+source = "spec"
+anchor = "| 10 | Sweep scaling enumeration | `e211b05c3e46583e928a0cbf3a085834` |"
+note = "Sweep scaling enumeration."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(10, &[super::SWEEP_SCALING_TYPE]),'''
+note = "Slot 10 selects the record types in the specification."
+
+[[record.field]]
+name = "slot_15"
+type = "u32"
+source = "spec"
+anchor = "| 15 | Result object collection | `ae70680ed14a1e86d76248b03c2a96e1` |"
+note = "Result object collection."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
+contains = '''(15, &[super::super::OBJECT_COLLECTION_TYPE]),'''
+note = "Slot 15 selects the record types in the specification."
+
+[[record]]
+name = "pm_dc_generated_face_attribute"
+kind = "slot"
+section = "13.2"
+anchor = "Schema-44 generated-face attributes"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/projection/evidence.rs"
+note = "Ordered ASM typed attribute values."
+
+[[record.field]]
+name = "common_fields"
+type = "array"
+source = "spec"
+anchor = "Five common attribute fields"
+note = "Five common attribute fields."
+
+[[record.field]]
+name = "family"
+type = "text"
+source = "spec"
+anchor = "a family string"
+
+[[record.field]]
+name = "version_schema_state"
+type = "array"
+source = "spec"
+anchor = "the integers 1, 44, 1"
+note = "Three integer tokens: 1, 44, 1."
+
+[[record.field]]
+name = "generator"
+type = "token_stream"
+source = "spec"
+anchor = "`generator` is the generating feature's content-header source index"
+
+[[record.field]]
+name = "sentinel"
+type = "token_stream"
+source = "spec"
+anchor = "`generator`, and −1"
+
+[[record.field]]
+name = "family_payload"
+type = "array"
+source = "spec"
+anchor = "Family `INV_NMX_SWEEPGENERATED_TAG` then stores"
+note = "Family-selected integer tokens."

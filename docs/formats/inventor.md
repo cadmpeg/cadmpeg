@@ -534,33 +534,43 @@ The record ends after `option_reference`. Section 12 defines the content-header 
 
 Types `6c1c6c3c9a43e3947318e2bbd0c39ff8`, `02e2e3e0d111480900084eba32a3dc09`, `b7849ca26d4811e38b95b3a06051b440`, `ed2ef031904b9b04d79918b91f1619c8`, and `e211b05c3e46583e928a0cbf3a085834` use the content-header enumeration grammar, with `type_value:i16` and `value:u16`. They identify the loft section condition, loft construction control, sweep construction control, sweep orientation control, and sweep scaling control. The record ends after `value`. Both scalar fields admit all bit patterns.
 
+A non-null property reference in a table slot selects one of the stated record types. A null reference selects no record. The two loft classes use the same slot types.
+
 Loft property slots are:
 
-| Slot | Operand |
-| ---: | --- |
-| 0 | Ordered section list |
-| 1 | Part operation |
-| 2 | Boolean construction control |
-| 6 | Surface-loft result body wrapper |
-| 7 | Auxiliary loft-selection list |
-| 9 | Boolean construction control |
-| 10 | Loft construction enumeration |
-| 13 | Solid-loft result object collection |
+| Slot | Operand | Record type |
+| ---: | --- | --- |
+| 0 | Ordered section list | `509e2f31d1110344000881ba32a3dc09` |
+| 1 | Part operation | `28be9a72d111440900084eba32a3dc09` |
+| 2 | Boolean construction control | `284d8790d011f8d10008cabc0663dc09` |
+| 6 | Surface-loft result body wrapper | `474d8790d011f8d10008cabc0663dc09` |
+| 7 | Auxiliary loft-selection list | `509e2f31d1110344000881ba32a3dc09` |
+| 9 | Boolean construction control | `284d8790d011f8d10008cabc0663dc09` |
+| 10 | Loft construction enumeration | `02e2e3e0d111480900084eba32a3dc09` |
+| 13 | Solid-loft result object collection | `ae70680ed14a1e86d76248b03c2a96e1` |
 
 Sweep property slots are:
 
-| Slot | Operand |
-| ---: | --- |
-| 0 | Boundary patch |
-| 1 | Path selection |
-| 2 | Part operation |
-| 3 | Angular parameter |
-| 4 | Extent enumeration |
-| 7 | Feature dimensions |
-| 8 | Sweep construction enumeration |
-| 9 | Sweep orientation enumeration |
-| 10 | Sweep scaling enumeration |
-| 15 | Result object collection |
+| Slot | Operand | Record type |
+| ---: | --- | --- |
+| 0 | Boundary patch | `91739422d11107cf000835bd0663dc09` |
+| 1 | Path selection | `3b2477a4d1118f96000826bd0663dc09` or `473f20fcd11101cf000835bd0663dc09` |
+| 2 | Part operation | `28be9a72d111440900084eba32a3dc09` |
+| 3 | Angular parameter | `264d8790d011f8d10008cabc0663dc09` |
+| 4 | Extent enumeration | `297d6392d1113cb9000831bd0663dc09` |
+| 7 | Feature dimensions | `71f23ed8d2115094a00049803603c8c9` |
+| 8 | Sweep construction enumeration | `b7849ca26d4811e38b95b3a06051b440` |
+| 9 | Sweep orientation enumeration | `ed2ef031904b9b04d79918b91f1619c8` |
+| 10 | Sweep scaling enumeration | `e211b05c3e46583e928a0cbf3a085834` |
+| 15 | Result object collection | `ae70680ed14a1e86d76248b03c2a96e1` |
+
+Schema-44 generated-face attributes use type `ATTRIB_CUSTOM-attrib`. Five common attribute fields precede a family string and the integers 1, 44, 1, `generator`, and −1. `generator` is the generating feature's content-header source index. The target of the attribute is the generated face.
+
+Family `INV_NMX_SWEEPGENERATED_TAG` then stores `section`, `span`, `role`, and seven zero integers. Role 20 identifies a side face; `section` and `span` identify the associative names of its section curve and path curve. Roles 4 and 12 identify the two terminal cap faces and have zero `section` and `span` values.
+
+Family `INV_NMX_GEN_TAG` with the trailing integers 0, `section`, 260 identifies a loft cap. Family `INV_NMX_ORDERED_GEN_TAG` with the trailing integers 2, `curve`, `first_section`, 258, 0, 0, 3, `last_section`, 258, 4, `member` identifies a loft side face. The cap `section` and the side `first_section` and `last_section` are source indices of the section sketches. `member` is the one-based side-face member index. The side face stores a procedural loft surface. Its ordered profile members state any support surfaces and directions; a null support surface and an absent direction impose neither support continuity nor a direction constraint. The cap and side attributes refer to the same generating feature.
+
+A sweep path selection uses the profile-selection grammar. Its kernel-entity link selects one keyed wire. The wire's ordered edges are the complete selected chain. A path wire can be open. Its edge naming attributes use the same naming-type and associative-name grammar as section boundaries.
 
 ### 13.3 Split property references
 
