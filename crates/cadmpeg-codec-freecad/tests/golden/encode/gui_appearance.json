@@ -16,6 +16,11 @@
       "payload_sha256": "9bc34f73f9cc3e1c450a2cbd8f253c0c62948feb2925cb6369bd54894ff9e4c6"
     },
     {
+      "name": "thumbnails/Thumbnail.png",
+      "payload_len": 955,
+      "payload_sha256": "83cb29ad45a443e670854bb0d968c43e873160ca0e9dc345948bf5b26b158560"
+    },
+    {
       "name": "LineColorArray",
       "payload_len": 8,
       "payload_sha256": "4a964ce970888e63eecab3de4df46fa4529f5fe7f5c6d9a51d57ce2919ce00c2"
@@ -29,11 +34,6 @@
       "name": "ShapeAppearance",
       "payload_len": 292,
       "payload_sha256": "7750576e4d6a179f51acf5b048c26a00a2f8e6e31ce8085da2b162965f46dab4"
-    },
-    {
-      "name": "thumbnails/Thumbnail.png",
-      "payload_len": 955,
-      "payload_sha256": "83cb29ad45a443e670854bb0d968c43e873160ca0e9dc345948bf5b26b158560"
     }
   ],
   "report": {
