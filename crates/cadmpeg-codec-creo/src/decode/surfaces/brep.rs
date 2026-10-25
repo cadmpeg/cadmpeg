@@ -1558,7 +1558,7 @@ fn native_loop_ring(
     face_id: u32,
 ) -> Result<cadmpeg_ir::topology::LoopRing, cadmpeg_core::CodecError> {
     let mut coedge_ids = Vec::new();
-    for half_edge in native_loop.half_edges() {
+    for half_edge in native_loop.half_edges().iter().rev() {
         coedge_ids.push(crate::identity::compose_checked::<CoedgeId>(
             &crate::identity::VISIBGEOM_COEDGE,
             format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
@@ -1569,6 +1569,13 @@ fn native_loop_ring(
         Err(error) => Err(cadmpeg_core::CodecError::malformed(format!(
             "VisibGeom face {face_id} loop ring: {error}"
         ))),
+    }
+}
+
+fn native_coedge_sense(side: crate::topology::Side) -> Sense {
+    match side {
+        crate::topology::Side::Zero => Sense::Reversed,
+        crate::topology::Side::One => Sense::Forward,
     }
 }
 
@@ -2569,10 +2576,7 @@ pub(in super::super) fn transfer_native_brep(
                                 half_edge.curve_id,
                             )?,
                             radial_next,
-                            sense: match half_edge.side {
-                                crate::topology::Side::Zero => Sense::Forward,
-                                crate::topology::Side::One => Sense::Reversed,
-                            },
+                            sense: native_coedge_sense(half_edge.side),
                             pcurves,
                             use_curve: None,
                         },

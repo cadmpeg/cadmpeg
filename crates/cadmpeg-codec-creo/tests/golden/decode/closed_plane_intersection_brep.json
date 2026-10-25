@@ -27,7 +27,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#10:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#10",
@@ -39,7 +39,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#10:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#11",
@@ -51,7 +51,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#11:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#11",
@@ -63,7 +63,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#11:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#12",
@@ -75,7 +75,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#12:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#12",
@@ -87,7 +87,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#12:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#13",
@@ -99,7 +99,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#13:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#13",
@@ -111,7 +111,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#13:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#14",
@@ -123,7 +123,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#14:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#14",
@@ -135,7 +135,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#14:0",
-          "sense": "reversed"
+          "sense": "forward"
         },
         {
           "edge": "creo:visibgeom:edge#15",
@@ -147,7 +147,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#15:1",
-          "sense": "forward"
+          "sense": "reversed"
         },
         {
           "edge": "creo:visibgeom:edge#15",
@@ -159,7 +159,7 @@
             }
           ],
           "radial_next": "creo:visibgeom:coedge#15:0",
-          "sense": "reversed"
+          "sense": "forward"
         }
       ],
       "configurations": [],
@@ -479,9 +479,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#10:0",
+              "creo:visibgeom:coedge#11:0",
               "creo:visibgeom:coedge#12:0",
-              "creo:visibgeom:coedge#11:0"
+              "creo:visibgeom:coedge#10:0"
             ],
             "kind": "ring"
           },
@@ -491,9 +491,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#10:1",
+              "creo:visibgeom:coedge#14:0",
               "creo:visibgeom:coedge#13:0",
-              "creo:visibgeom:coedge#14:0"
+              "creo:visibgeom:coedge#10:1"
             ],
             "kind": "ring"
           },
@@ -503,9 +503,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#11:1",
+              "creo:visibgeom:coedge#13:1",
               "creo:visibgeom:coedge#15:0",
-              "creo:visibgeom:coedge#13:1"
+              "creo:visibgeom:coedge#11:1"
             ],
             "kind": "ring"
           },
@@ -515,9 +515,9 @@
         {
           "boundary": {
             "coedges": [
-              "creo:visibgeom:coedge#12:1",
+              "creo:visibgeom:coedge#15:1",
               "creo:visibgeom:coedge#14:1",
-              "creo:visibgeom:coedge#15:1"
+              "creo:visibgeom:coedge#12:1"
             ],
             "kind": "ring"
           },
