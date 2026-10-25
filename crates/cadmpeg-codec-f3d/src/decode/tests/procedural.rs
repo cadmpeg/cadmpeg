@@ -165,8 +165,11 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     missing_tolerance.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    let error = crate::writer::generate::write_new(&missing_tolerance, &mut Vec::new())
-        .expect_err("compound loft without its required tolerance must be rejected");
+    let error = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &missing_tolerance, &mut Vec::new()),
+    )
+    .expect_err("compound loft without its required tolerance must be rejected");
     assert!(
         error
             .to_string()
@@ -432,12 +435,13 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     missing_tolerance.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    assert!(
-        crate::writer::generate::write_new(&missing_tolerance, &mut Vec::new())
-            .expect_err("full scaled compound loft without tolerance must fail")
-            .to_string()
-            .contains("full shape requires a native cache-fit tolerance")
-    );
+    assert!(crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &missing_tolerance, &mut Vec::new())
+    )
+    .expect_err("full scaled compound loft without tolerance must fail")
+    .to_string()
+    .contains("full shape requires a native cache-fit tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1259,7 +1263,11 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    let error = crate::writer::generate::write_new(&source_less, &mut Vec::new()).unwrap_err();
+    let error = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &source_less, &mut Vec::new()),
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("unresolved variable arity"));
 }
 

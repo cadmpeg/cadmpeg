@@ -11,6 +11,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::F3dLossCode;
 
 pub(super) fn admit_bodies(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<CadIr, CodecError> {
@@ -18,24 +19,24 @@ pub(super) fn admit_bodies(
     for body in &source.model.bodies {
         let mut candidate_ids = admitted.clone();
         candidate_ids.insert(body.id.clone());
-        let candidate = body_graph(source, &candidate_ids)?;
-        match super::super::generate::write_new(&candidate, &mut Vec::new()) {
+        let candidate = body_graph(ctx, source, &candidate_ids)?;
+        match super::super::generate::write_new(ctx, &candidate, &mut Vec::new()) {
             Ok(_) => admitted = candidate_ids,
             Err(error) if super::declines(&error) => {
                 // F3D can encode an open shell. Admit independently encodable
                 // faces before considering omission of their containing body.
-                let reduced = admit_faces(&candidate, &body.id, losses)?;
+                let reduced = admit_faces(ctx, &candidate, &body.id, losses)?;
                 if reduced
                     .model
                     .bodies
                     .iter()
                     .any(|record| record.id == body.id)
                 {
-                    match super::super::generate::write_new(&reduced, &mut Vec::new()) {
+                    match super::super::generate::write_new(ctx, &reduced, &mut Vec::new()) {
                         Ok(_) => {
                             admitted = candidate_ids;
                             return admit_bodies_after_reduction(
-                                source, reduced, &admitted, losses,
+                                ctx, source, reduced, &admitted, losses,
                             );
                         }
                         Err(error) if super::declines(&error) => {}
@@ -50,10 +51,11 @@ pub(super) fn admit_bodies(
             Err(error) => return Err(error),
         }
     }
-    body_graph(source, &admitted)
+    body_graph(ctx, source, &admitted)
 }
 
 fn admit_bodies_after_reduction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &CadIr,
     mut reduced: CadIr,
     admitted: &BTreeSet<BodyId>,
@@ -66,7 +68,7 @@ fn admit_bodies_after_reduction(
         .filter(|body| !admitted.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    let tail = admit_bodies(&body_graph(source, &remaining)?, losses)?;
+    let tail = admit_bodies(ctx, &body_graph(ctx, source, &remaining)?, losses)?;
     // Merge only geometry arenas: auxiliary and design content were already
     // prepared once and are shared by all admitted body candidates.
     macro_rules! append { ($($field:ident),*) => {$({
@@ -96,6 +98,7 @@ fn admit_bodies_after_reduction(
 }
 
 fn admit_faces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &CadIr,
     body: &BodyId,
     losses: &mut Vec<LossNote>,
@@ -122,8 +125,8 @@ fn admit_faces(
     {
         let mut candidate_ids = admitted.clone();
         candidate_ids.insert(face.id.clone());
-        let candidate = face_graph(source, &shells, &candidate_ids)?;
-        match super::super::generate::write_new(&candidate, &mut Vec::new()) {
+        let candidate = face_graph(ctx, source, &shells, &candidate_ids)?;
+        match super::super::generate::write_new(ctx, &candidate, &mut Vec::new()) {
             Ok(_) => admitted = candidate_ids,
             Err(error) if super::declines(&error) => {
                 losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
@@ -134,10 +137,11 @@ fn admit_faces(
             Err(error) => return Err(error),
         }
     }
-    face_graph(source, &shells, &admitted)
+    face_graph(ctx, source, &shells, &admitted)
 }
 
 fn face_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     source: &CadIr,
     shells: &BTreeSet<cadmpeg_ir::ids::ShellId>,
     faces: &BTreeSet<cadmpeg_ir::ids::FaceId>,
@@ -153,7 +157,7 @@ fn face_graph(
         .iter()
         .map(|body| body.id.clone())
         .collect();
-    let mut result = body_graph(&result, &bodies)?;
+    let mut result = body_graph(ctx, &result, &bodies)?;
     let affected = source
         .model
         .regions
@@ -227,7 +231,11 @@ fn face_graph(
     Ok(result)
 }
 
-fn body_graph(source: &CadIr, bodies: &BTreeSet<BodyId>) -> Result<CadIr, CodecError> {
+fn body_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &CadIr,
+    bodies: &BTreeSet<BodyId>,
+) -> Result<CadIr, CodecError> {
     let mut result = source.clone();
     let model = &mut result.model;
     model.bodies.retain(|body| bodies.contains(&body.id));
@@ -398,7 +406,7 @@ fn body_graph(source: &CadIr, bodies: &BTreeSet<BodyId>) -> Result<CadIr, CodecE
                 .map(|use_| use_.pcurve.as_str().to_owned()),
         )
         .collect();
-    geometry_closure(source, &mut seeds)?;
+    geometry_closure(ctx, source, &mut seeds)?;
     model
         .points
         .retain(|record| seeds.contains(record.id.as_str()));
@@ -430,37 +438,39 @@ fn body_graph(source: &CadIr, bodies: &BTreeSet<BodyId>) -> Result<CadIr, CodecE
             _ => false,
         }
     });
-    super::native::prune(&mut result)?;
+    super::native::prune(ctx, &mut result)?;
     Ok(result)
 }
 
 /// Include support geometry and child constructions that are not direct face
 /// or edge carriers. Filtering topology must not create a dangling reference.
-fn geometry_closure(source: &CadIr, ids: &mut BTreeSet<String>) -> Result<(), CodecError> {
+fn geometry_closure(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &CadIr,
+    ids: &mut BTreeSet<String>,
+) -> Result<(), CodecError> {
     use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
-    super::design::with_context(|ctx| {
-        let mut visited = BTreeSet::new();
-        loop {
-            let previous = visited.len();
-            macro_rules! visit { ($($field:ident),*) => {$({
+    let mut visited = BTreeSet::new();
+    loop {
+        let previous = visited.len();
+        macro_rules! visit { ($($field:ident),*) => {$({
                 for record in &source.model.$field {
                     if ids.contains(record.id.as_str()) && visited.insert(record.id.as_str().to_owned()) {
                         record.visit_identity_references(ctx, &mut |id| { ids.insert(id.to_owned()); Ok(()) })?;
                     }
                 }
             })*}; }
-            visit!(
-                points,
-                surfaces,
-                curves,
-                pcurves,
-                procedural_surfaces,
-                procedural_curves
-            );
-            if previous == visited.len() {
-                break;
-            }
+        visit!(
+            points,
+            surfaces,
+            curves,
+            pcurves,
+            procedural_surfaces,
+            procedural_curves
+        );
+        if previous == visited.len() {
+            break;
         }
-        Ok(())
-    })
+    }
+    Ok(())
 }

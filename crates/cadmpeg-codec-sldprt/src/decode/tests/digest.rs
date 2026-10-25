@@ -120,7 +120,9 @@ fn digest_restores_appearance_order() {
     ));
     let appearances = ir.model.appearances.clone();
     let bindings = ir.model.appearance_bindings.clone();
-    let expected_hash = crate::decode::brep_local_sha256(&ir).unwrap();
+    let expected_hash =
+        crate::test_support::with_desktop_context(|ctx| crate::decode::brep_local_sha256(ctx, &ir))
+            .unwrap();
     let actual_hash = brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
     assert_eq!(actual_hash, expected_hash);
     assert_eq!(ir.model.appearances, appearances);

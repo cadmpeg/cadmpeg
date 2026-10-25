@@ -140,6 +140,45 @@ impl<'a> DecodeContext<'a> {
         Self::from_bytes_limit(bytes, arena, policy, DecodeDepth::Full)
     }
 
+    /// Opens an independent source session on an existing operation's account.
+    ///
+    /// Caller ceilings and every fatal refusal are shared with `parent`.
+    /// Source domains, read captures and decode-local proportional limits stay
+    /// independent. The parent may be dropped while this context remains live.
+    pub fn from_root_bytes_shared(
+        bytes: &'a [u8],
+        arena: &'a DecodeArena,
+        parent: &DecodeContext<'_>,
+    ) -> Result<(Self, View<'a>), ResourceLimit> {
+        let account = parent.operation_budget();
+        if let Some(error) = account.fused() {
+            return Err(error);
+        }
+        let policy = *parent.policy();
+        let length = u64_from_index(bytes.len());
+        if length > policy.limits.max_input_bytes {
+            return Err(account.refuse(root_limit(
+                ResourceFailure::BudgetExceeded,
+                policy.limits.max_input_bytes,
+                length,
+            )));
+        }
+        let ctx = Self {
+            arena,
+            depth: DecodeDepth::Full,
+            policy,
+            budget: arena
+                .tracking
+                .session_shared(policy, length, std::sync::Arc::clone(&account)),
+            derived_spaces: Cell::new(0),
+        };
+        ctx.budget
+            .register_root(length)
+            .map_err(|limit| account.refuse(limit))?;
+        let root = View::over_space(bytes, SpaceId::ROOT).with_session(ctx.budget);
+        Ok((ctx, root))
+    }
+
     fn from_bytes_limit(
         bytes: &'a [u8],
         arena: &'a DecodeArena,
@@ -436,6 +475,8 @@ impl<'a> DecodeContext<'a> {
                     "begin_expand",
                 ));
             }
+            self.budget
+                .admit_shared_decompressed(size, "begin_expand")?;
         }
         let mut buffer: Vec<u8> = Vec::new();
         let reserve = match spec {
@@ -785,6 +826,8 @@ impl<'a> ExpandWriter<'_, 'a> {
 
 #[cfg(test)]
 mod tests {
+    mod shared_accounts;
+
     use super::{ByteRange, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 
     use std::io::{self, Cursor, Read, Seek, SeekFrom};

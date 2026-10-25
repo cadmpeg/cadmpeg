@@ -139,7 +139,11 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
         .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
         .collect();
     let mut notes = Vec::new();
-    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes).unwrap();
+    let (patched, guids) = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::patch_protein_appearances(ctx, &protein, &edits, &mut notes),
+    )
+    .unwrap();
     assert_eq!(
         guids.into_iter().collect::<Vec<_>>(),
         ["first-guid", "third-guid"]
@@ -213,8 +217,11 @@ fn a_zstandard_protein_archive_decodes_and_patches() {
         .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
         .collect();
     let mut notes = Vec::new();
-    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes)
-        .expect("patch a Zstandard Protein archive");
+    let (patched, guids) = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::patch_protein_appearances(ctx, &protein, &edits, &mut notes),
+    )
+    .expect("patch a Zstandard Protein archive");
     assert_eq!(
         guids.into_iter().collect::<Vec<_>>(),
         ["first-guid", "third-guid"]
@@ -1490,8 +1497,11 @@ fn an_unconstrained_sketch_link_serializer_retains_its_source_spelling() {
         closure: 3,
     }];
     let mut encoded = Vec::new();
-    crate::writer::generate::write_new(&source_less, &mut encoded)
-        .expect("typed sketch-link serializer");
+    crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &source_less, &mut encoded),
+    )
+    .expect("typed sketch-link serializer");
     assert!(
         encoded
             .windows(b"113 0 4294967295 0 2 3".len())
@@ -1786,8 +1796,11 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
             properties: std::collections::BTreeMap::new(),
         },
     )]);
-    let error = crate::materials::patch_protein_appearances(&protein, &edits, &mut Vec::new())
-        .expect_err("a record that ends at its GUID places no colour carrier");
+    let error = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::materials::patch_protein_appearances(ctx, &protein, &edits, &mut Vec::new()),
+    )
+    .expect_err("a record that ends at its GUID places no colour carrier");
     assert!(
         error
             .to_string()

@@ -832,8 +832,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .collect::<Vec<_>>();
     drop(native);
     let mut encoded = Vec::new();
-    crate::writer::generate::write_new(&source_less, &mut encoded)
-        .expect("source-less sketch BulkStream encode");
+    crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &source_less, &mut encoded),
+    )
+    .expect("source-less sketch BulkStream encode");
     let mut extended_source_less = source_less.clone();
     {
         let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
@@ -875,8 +878,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(vec![101]));
     f3d_native_mut(&mut source_less).design_types[2].set_version(10);
-    let error = crate::writer::generate::write_new(&source_less, &mut Vec::new())
-        .expect_err("the native serializer requires its current writable class version");
+    let error = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &source_less, &mut Vec::new()),
+    )
+    .expect_err("the native serializer requires its current writable class version");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::UnsupportedContent(_)
@@ -913,8 +919,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
     }
     let mut variable_relation = Vec::new();
-    crate::writer::generate::write_new(&source_less, &mut variable_relation)
-        .expect("source-less variable-width sketch relation encode");
+    crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &source_less, &mut variable_relation),
+    )
+    .expect("source-less variable-width sketch relation encode");
     let variable_round_trip = F3dCodec
         .decode(
             &mut Cursor::new(variable_relation),
@@ -1091,8 +1100,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
     }
     let mut extended_encoded = Vec::new();
-    crate::writer::generate::write_new(&extended_source_less, &mut extended_encoded)
-        .expect("source-less extended sketch point encode");
+    crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, &extended_source_less, &mut extended_encoded),
+    )
+    .expect("source-less extended sketch point encode");
     let extended_round_trip = F3dCodec
         .decode(
             &mut Cursor::new(extended_encoded),

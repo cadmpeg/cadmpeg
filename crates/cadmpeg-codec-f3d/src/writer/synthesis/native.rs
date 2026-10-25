@@ -48,8 +48,12 @@ const WRITTEN: &[&str] = &[
     "persistent_subentity_tags",
 ];
 
-pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
-    let original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+pub(super) fn reconcile(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let original = super::super::primitives::f3d_native(ctx, target)?.unwrap_or_default();
     validate_input(target, &original)?;
     // Parameter values have an independent generated stream. The native-only
     // metadata registry can therefore coexist with neutral parameter edits.
@@ -285,13 +289,11 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     super::act::reconcile(target, &mut native, losses)?;
     super::body_keys::reconcile(target, &mut native)?;
     super::geometry::reconcile(target, &mut native);
-    super::design::regenerate(target, &mut native, losses)?;
+    super::design::regenerate(ctx, target, &mut native, losses)?;
     target.model.assembly_joints.clear();
     target.native.0.remove("f3d");
-    super::design::with_context(|ctx| {
-        native.store(ctx, target.native.namespace_mut("f3d"))?;
-        Ok(())
-    })
+    native.store(ctx, target.native.namespace_mut("f3d"))?;
+    Ok(())
 }
 
 fn target_exists(ir: &CadIr, target: &cadmpeg_ir::attributes::AttributeTarget) -> bool {
@@ -307,17 +309,21 @@ fn target_exists(ir: &CadIr, target: &cadmpeg_ir::attributes::AttributeTarget) -
 }
 
 /// Rejoin independently admitted body candidates using one output key space.
-pub(super) fn repair_keys(target: &mut CadIr) -> Result<(), CodecError> {
-    let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+pub(super) fn repair_keys(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &mut CadIr,
+) -> Result<(), CodecError> {
+    let mut native = super::super::primitives::f3d_native(ctx, target)?.unwrap_or_default();
     super::body_keys::reconcile(target, &mut native)?;
-    super::design::with_context(|ctx| {
-        native.store(ctx, target.native.namespace_mut("f3d"))?;
-        Ok(())
-    })
+    native.store(ctx, target.native.namespace_mut("f3d"))?;
+    Ok(())
 }
 
-pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
-    let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+pub(super) fn prune(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &mut CadIr,
+) -> Result<(), CodecError> {
+    let mut native = super::super::primitives::f3d_native(ctx, target)?.unwrap_or_default();
     native.body_native_keys.retain(|record| {
         target
             .model
@@ -370,10 +376,8 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
         .retain(|record| target_exists(target, &record.target));
     super::geometry::reconcile(target, &mut native);
     target.native.0.remove("f3d");
-    super::design::with_context(|ctx| {
-        native.store(ctx, target.native.namespace_mut("f3d"))?;
-        Ok(())
-    })
+    native.store(ctx, target.native.namespace_mut("f3d"))?;
+    Ok(())
 }
 
 pub(super) fn coverage(

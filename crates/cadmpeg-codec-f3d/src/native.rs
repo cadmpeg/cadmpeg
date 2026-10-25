@@ -1471,18 +1471,10 @@ pub(crate) struct F3dNative {
 
 impl F3dNative {
     pub(crate) fn load(
+        ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &decode_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
-        let decode_ctx = &decode_ctx;
-
-        Self::load_inner(decode_ctx, namespace)
+        Self::load_inner(ctx, namespace)
     }
 
     /// Load the typed native records from `namespace` under `ctx`.

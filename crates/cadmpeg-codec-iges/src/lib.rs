@@ -128,13 +128,11 @@ impl IgesVersion {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
 
-fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = document_local_sha256(&ctx, ir, ir.source.as_ref(), "iges", SOURCE_IMAGE_ID)?;
-    ctx.finish_session()?;
-    Ok(digest)
+fn document_digest(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, cadmpeg_core::CodecError> {
+    document_local_sha256(ctx, ir, ir.source.as_ref(), "iges", SOURCE_IMAGE_ID)
 }
 
 impl CodecBackend for IgesCodec {

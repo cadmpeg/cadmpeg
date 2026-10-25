@@ -287,8 +287,16 @@ fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir
         .unwrap();
     let second = decode(bytes);
     assert_eq!(
-        crate::decode::document_local_sha256(first.ir()).unwrap(),
-        crate::decode::document_local_sha256(second.ir()).unwrap()
+        crate::test_support::with_desktop_context(|ctx| crate::decode::document_local_sha256(
+            ctx,
+            first.ir()
+        ))
+        .unwrap(),
+        crate::test_support::with_desktop_context(|ctx| crate::decode::document_local_sha256(
+            ctx,
+            second.ir()
+        ))
+        .unwrap()
     );
     semantic_writer_drops_subds_with_loss();
 }

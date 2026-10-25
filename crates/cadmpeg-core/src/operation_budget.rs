@@ -16,7 +16,9 @@ pub(crate) struct OperationBudget {
 #[derive(Debug)]
 pub(crate) struct OperationBudgetState {
     pub(crate) entities: u64,
+    decompressed: u64,
     retained: u64,
+    tracking_body_charged: bool,
     failure: Option<ResourceLimit>,
 }
 
@@ -26,7 +28,9 @@ impl OperationBudget {
             limits,
             state: Mutex::new(OperationBudgetState {
                 entities: 0,
+                decompressed: 0,
                 retained: 0,
+                tracking_body_charged: false,
                 failure: None,
             }),
         }
@@ -104,6 +108,77 @@ impl OperationBudget {
         )?;
         state.retained += count;
         Ok(())
+    }
+
+    pub(crate) fn admit_decompressed(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        let mut state = self.state();
+        let used = state.decompressed;
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::DecompressedBytes,
+            self.limits.max_decompressed_bytes_total,
+            used,
+            bytes,
+            operation,
+        )
+    }
+
+    pub(crate) fn charge_decompressed(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        let mut state = self.state();
+        let used = state.decompressed;
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::DecompressedBytes,
+            self.limits.max_decompressed_bytes_total,
+            used,
+            bytes,
+            operation,
+        )?;
+        state.decompressed += bytes;
+        Ok(())
+    }
+
+    pub(crate) fn charge_tracking(
+        &self,
+        slot_bytes: u64,
+        local_used: u64,
+        local_limit: u64,
+    ) -> Result<u64, ResourceLimit> {
+        let mut state = self.state();
+        let bytes = slot_bytes
+            + if state.tracking_body_charged {
+                0
+            } else {
+                u64_from_index(size_of::<Self>())
+            };
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::RetainedBytes,
+            local_limit,
+            local_used,
+            bytes,
+            "record tracking session",
+        )?;
+        let used = state.retained;
+        Self::admit_locked(
+            &mut state,
+            ResourceDimension::RetainedBytes,
+            self.limits.max_retained_bytes,
+            used,
+            bytes,
+            "record tracking session",
+        )?;
+        state.retained += bytes;
+        state.tracking_body_charged = true;
+        Ok(bytes)
     }
 
     pub(crate) fn reserve_retained(

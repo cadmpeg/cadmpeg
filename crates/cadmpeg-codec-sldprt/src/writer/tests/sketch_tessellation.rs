@@ -45,7 +45,10 @@ fn semantic_writer_synthesizes_retained_sketch_constraint_edits() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let original_digest = crate::decode::document_local_sha256(decoded.ir()).unwrap();
+    let original_digest = crate::test_support::with_desktop_context(|ctx| {
+        crate::decode::document_local_sha256(ctx, decoded.ir())
+    })
+    .unwrap();
     let sketch = decoded.ir().model.sketches[0].id.clone();
     let entity = decoded.ir().model.sketch_entities[0].id().clone();
     decoded
@@ -72,7 +75,11 @@ fn semantic_writer_synthesizes_retained_sketch_constraint_edits() {
         });
     assert_ne!(
         original_digest,
-        crate::decode::document_local_sha256(decoded.ir()).unwrap()
+        crate::test_support::with_desktop_context(|ctx| crate::decode::document_local_sha256(
+            ctx,
+            decoded.ir()
+        ))
+        .unwrap()
     );
 
     let plan = SldprtCodec

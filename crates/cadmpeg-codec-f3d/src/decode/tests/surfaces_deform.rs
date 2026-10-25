@@ -1413,7 +1413,11 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         source_less.model.procedural_surfaces[0]
             .set_cache_fit_tolerance(None)
             .unwrap();
-        let error = crate::writer::generate::write_new(&source_less, &mut Vec::new()).unwrap_err();
+        let error = crate::test_support::with_decode_policy(
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| crate::writer::generate::write_new(ctx, &source_less, &mut Vec::new()),
+        )
+        .unwrap_err();
         assert!(
             error
                 .to_string()

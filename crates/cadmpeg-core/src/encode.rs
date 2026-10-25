@@ -12,13 +12,13 @@ use crate::decode::{
 /// One encode operation's cumulative entities and live retained allocations.
 #[derive(Debug)]
 pub struct EncodeSession {
-    account: Arc<OperationBudget>,
+    pub(crate) account: Arc<OperationBudget>,
 }
 
 impl EncodeSession {
     /// Starts an encode operation with the caller's ceilings.
     #[must_use]
-    pub fn new(limits: ResourceLimits) -> Self {
+    pub(crate) fn new(limits: ResourceLimits) -> Self {
         Self {
             account: Arc::new(OperationBudget::new(limits)),
         }

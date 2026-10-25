@@ -9,7 +9,7 @@ use crate::entities::affine_parameter_map;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
@@ -425,7 +425,11 @@ fn append_name_properties(
     Ok(())
 }
 
-fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+fn synthesize(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<Synthesis, CodecError> {
     let mut prepared = std::borrow::Cow::Borrowed(ir);
     let mut transform_losses = Vec::new();
     if ir.model.bodies.iter().any(|body| {
@@ -444,9 +448,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         }
     }
     let ir = prepared.as_ref();
-    let mut graph = match synthesis_graph(ir, version) {
+    let mut graph = match synthesis_graph(ctx, ir, version) {
         Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
+        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
         Err(error) => return Err(error),
     };
     graph.losses.extend(transform_losses);
@@ -523,10 +527,11 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     })
 }
 
-fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisGraph, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let ctx = &ctx;
+fn synthesis_graph(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<SynthesisGraph, CodecError> {
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
     validate_analytic_surface_context(ir)?;

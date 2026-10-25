@@ -60,8 +60,11 @@ fn assembly_root_without_brep_is_not_a_blocking_loss() {
         .notes
         .iter()
         .any(|note| note.contains("comp.f3d") && note.contains(XREF_ROLE)));
-    let native =
-        crate::native::F3dNative::load(decoded.ir().native.namespace("f3d").unwrap()).unwrap();
+    let native = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::native::F3dNative::load(ctx, decoded.ir().native.namespace("f3d").unwrap()),
+    )
+    .unwrap();
     assert_eq!(native.xref_designs.len(), 2);
     assert_eq!(native.xref_references.len(), 1);
     assert_eq!(native.xref_references[0].relative_path.as_str(), "comp.f3d");

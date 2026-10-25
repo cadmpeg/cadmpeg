@@ -562,9 +562,12 @@ fn patch_baseline_locations_remain_transient_outside_cadir() {
         .act_guids
         .iter()
         .all(|record| record.guid_offset().is_some()));
-    let document_native = crate::writer::primitives::f3d_native(&baseline.ir)
-        .unwrap()
-        .unwrap();
+    let document_native = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::primitives::f3d_native(ctx, &baseline.ir),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(
         document_native.act_guids.len(),
         source_native.act_guids.len()

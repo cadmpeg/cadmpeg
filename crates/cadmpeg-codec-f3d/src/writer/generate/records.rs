@@ -116,19 +116,12 @@ pub(super) fn native_tolerant_coedge_extension(
 }
 
 pub(super) fn encode_design_bulkstream(
+    decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let decode_ctx = &decode_ctx;
-
     let projected_parameters =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             decode_ctx,

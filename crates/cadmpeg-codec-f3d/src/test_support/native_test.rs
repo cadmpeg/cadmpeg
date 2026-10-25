@@ -115,8 +115,13 @@ impl TestEncode for F3dCodec {
 }
 
 pub(crate) fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> crate::native::F3dNative {
-    crate::native::F3dNative::load(ir.native.namespace("f3d").expect("F3D native namespace"))
-        .unwrap()
+    crate::test_support::with_decode_policy(&cadmpeg_core::decode::DecodePolicy::default(), |ctx| {
+        crate::native::F3dNative::load(
+            ctx,
+            ir.native.namespace("f3d").expect("F3D native namespace"),
+        )
+    })
+    .unwrap()
 }
 
 pub(crate) struct F3dNativeMut<'a> {
@@ -153,7 +158,12 @@ pub(crate) fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeM
     let native = ir
         .native
         .namespace("f3d")
-        .map(crate::native::F3dNative::load)
+        .map(|namespace| {
+            crate::test_support::with_decode_policy(
+                &cadmpeg_core::decode::DecodePolicy::default(),
+                |ctx| crate::native::F3dNative::load(ctx, namespace),
+            )
+        })
         .transpose()
         .unwrap()
         .unwrap_or_default();

@@ -32,13 +32,25 @@ pub(super) struct DecodeBudget {
 
 impl DecodeBudget {
     pub(super) fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
+        Self::with_account(
+            policy,
+            input_bytes,
+            crate::encode::EncodeSession::new(policy.limits).account,
+        )
+    }
+
+    pub(super) fn with_account(
+        policy: DecodePolicy,
+        input_bytes: u64,
+        account: Arc<OperationBudget>,
+    ) -> Self {
         Self {
             policy,
             input_bytes: Cell::new(input_bytes),
             decompressed: Cell::new(0),
             retained: Cell::new(0),
             recursion_depth: Cell::new(0),
-            account: Arc::new(OperationBudget::new(policy.limits)),
+            account,
         }
     }
 
@@ -116,6 +128,14 @@ impl DecodeBudget {
         self.decompressed.get()
     }
 
+    pub(super) fn admit_shared_decompressed(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.account.admit_decompressed(bytes, operation)
+    }
+
     fn charge(
         &self,
         dimension: ResourceDimension,
@@ -126,6 +146,9 @@ impl DecodeBudget {
     ) -> Result<(), ResourceLimit> {
         let before = used.get();
         self.admit(dimension, before, limit, amount, operation)?;
+        if dimension == ResourceDimension::DecompressedBytes {
+            self.account.charge_decompressed(amount, operation)?;
+        }
         used.set(before + amount);
         #[cfg(feature = "test-support")]
         super::test_support::record_charge(dimension, operation, amount);
@@ -187,6 +210,21 @@ impl DecodeBudget {
 
     pub(super) fn operation_budget(&self) -> Arc<OperationBudget> {
         Arc::clone(&self.account)
+    }
+
+    pub(super) fn retain_tracking(&self, slot_bytes: u64) -> Result<(), ResourceLimit> {
+        let before = self.retained.get();
+        let bytes = self
+            .account
+            .charge_tracking(slot_bytes, before, self.retained_allowance())?;
+        self.retained.set(before + bytes);
+        #[cfg(feature = "test-support")]
+        super::test_support::record_charge(
+            ResourceDimension::RetainedBytes,
+            "record tracking session",
+            bytes,
+        );
+        Ok(())
     }
 
     pub(super) fn refuse(

@@ -121,7 +121,12 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+    )
+    .unwrap();
     assert_eq!(
         generated
             .losses
@@ -159,8 +164,12 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
 fn support_only_surface_export_refuses_an_empty_transfer() {
     let mut ir = rectangle();
     ir.model.surfaces[0].source_object = Some(support_association());
-    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3)
-        .expect("support-only geometry produces an empty valid file");
+    let synthesis = crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+    )
+    .expect("support-only geometry produces an empty valid file");
     assert!(synthesis
         .losses
         .iter()
@@ -175,8 +184,12 @@ fn support_only_point_export_refuses_an_empty_transfer() {
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3)
-        .expect("support-only geometry produces an empty valid file");
+    let synthesis = crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+    )
+    .expect("support-only geometry produces an empty valid file");
     assert!(synthesis
         .losses
         .iter()
@@ -195,7 +208,12 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
     assert_eq!(ir.model.surfaces.len(), 1);
     ir.model.surfaces[0].source_object = Some(support_association());
     ir.native = cadmpeg_ir::native::Native::default();
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+    )
+    .unwrap();
     assert!(!generated
         .losses
         .iter()
@@ -327,7 +345,12 @@ fn topology_owned_curve_preserves_support_and_independent_roles() {
             source.geometry_role = Some(role);
             curve.source_object = Some(source);
         }
-        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let generated = crate::test_support::with_policy_context(
+            &[],
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+        )
+        .unwrap();
         let expected_status = match role {
             SourceGeometryRole::Support => b"00010000",
             SourceGeometryRole::Independent => b"00000000",
@@ -421,7 +444,12 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 .unwrap(),
             );
         }
-        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let generated = crate::test_support::with_policy_context(
+            &[],
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+        )
+        .unwrap();
         assert!(generated.losses.iter().any(|loss| loss.code
             == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
             && loss.message.contains("free vertex record(s)")));
@@ -463,7 +491,12 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
         let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
         assert!(ignored.edges.contains("test:model:edge#duplicate"));
 
-        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let generated = crate::test_support::with_policy_context(
+            &[],
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+        )
+        .unwrap();
         let notes: Vec<_> = generated
             .losses
             .iter()
@@ -537,7 +570,12 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
     assert!(ignored.curves.contains("test:model:curve#duplicate"));
 
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::super::synthesize(ctx, &ir, IgesVersion::V5_3),
+    )
+    .unwrap();
     let notes: Vec<_> = generated
         .losses
         .iter()
@@ -568,7 +606,12 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .unwrap();
-        let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+        let generated = crate::test_support::with_policy_context(
+            &[],
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| super::super::synthesize(ctx, decoded.ir(), IgesVersion::V5_3),
+        )
+        .unwrap();
         let curve_entries: Vec<_> = generated
             .bytes
             .chunks_exact(81)
@@ -616,7 +659,12 @@ fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+    let generated = crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| super::super::synthesize(ctx, decoded.ir(), IgesVersion::V5_3),
+    )
+    .unwrap();
     assert!(generated.losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
         && loss.message.contains("parameter-space carrier")));

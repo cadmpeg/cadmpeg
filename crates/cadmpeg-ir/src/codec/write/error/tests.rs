@@ -97,7 +97,17 @@ fn actual_encode_buffer_limit_becomes_the_same_typed_encode_error() {
     use crate::codec::write::EncodeSession;
     let mut limits = cadmpeg_core::decode::ResourceLimits::service();
     limits.max_retained_bytes = 3;
-    let session = EncodeSession::new(limits);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..cadmpeg_core::decode::DecodePolicy::service()
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let session = EncodeSession::from_context(&ctx).expect("one caller account");
     let mut buffer = session.buffer();
     buffer
         .append(b"tri", "retain first record")

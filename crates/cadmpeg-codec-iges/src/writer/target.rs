@@ -15,9 +15,29 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: input.limits,
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let result = plan_in(&ctx, input, resolved);
+    ctx.finish_session()?;
+    result
+}
+
+fn plan_in(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
     match resolved.target() {
         // A successful replay retains the source dialect; synthesis selects its catalog default.
-        ResolvedTarget::Preserved { .. } => match replay_bytes(input.ir, input.fidelity)? {
+        ResolvedTarget::Preserved { .. } => match replay_bytes(ctx, input.ir, input.fidelity)? {
             Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
             Replay::Declined(reason) => {
                 let synthesis = resolved.for_synthesis()?;
@@ -31,7 +51,7 @@ pub(crate) fn plan(
                     None => crate::IgesVersion::ALL[0],
                 };
                 let mut body =
-                    synthesized_body(input, version, SynthesisCause::ReplayDeclined(reason))?;
+                    synthesized_body(ctx, input, version, SynthesisCause::ReplayDeclined(reason))?;
                 if let Some(message) = synthesis.resolution().displacement_message() {
                     body.losses
                         .push(IgesLossCode::SourceDialectDisplaced.note(message));
@@ -44,9 +64,10 @@ pub(crate) fn plan(
         | ResolvedTarget::Default { index, .. } => {
             let version = crate::IgesVersion::ALL[*index];
             if resolved.preserves_source() {
-                replay_or_synthesize(input, version)
+                replay_or_synthesize(ctx, input, version)
             } else {
                 synthesized_body(
+                    ctx,
                     input,
                     version,
                     SynthesisCause::from_resolution(input, resolved),
@@ -59,14 +80,16 @@ pub(crate) fn plan(
 /// A same-format source at the resolved target: replay its retained image when
 /// it is intact, otherwise regenerate and report why replay was declined.
 fn replay_or_synthesize(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
 ) -> Result<ExportBody, CodecError> {
-    let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
+    let replay_failure = match replay_bytes(ctx, input.ir, input.fidelity)? {
         Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
         Replay::Declined(reason) => reason,
     };
     synthesized_body(
+        ctx,
         input,
         version,
         SynthesisCause::ReplayDeclined(replay_failure),
@@ -92,6 +115,7 @@ fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
 }
 
 fn synthesized_body(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
     cause: SynthesisCause,
@@ -99,7 +123,7 @@ fn synthesized_body(
     let synthesis_cause = cause.report_cause();
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
-    let synthesis = super::synthesize(input.ir, version)?;
+    let synthesis = super::synthesize(ctx, input.ir, version)?;
     losses.extend(synthesis.losses.clone());
     let mut body = super::body(
         synthesis.bytes,
@@ -202,7 +226,11 @@ impl Replay {
     }
 }
 
-fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay, CodecError> {
+fn replay_bytes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+) -> Result<Replay, CodecError> {
     let Some(_source) = ir
         .source
         .as_ref()
@@ -245,7 +273,7 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
             ));
         }
     }
-    if crate::document_digest(ir)? != *expected {
+    if crate::document_digest(ctx, ir)? != *expected {
         return Ok(Replay::declined_for_record(
             record,
             "decoded model no longer matches the preserved IGES source digest; byte replay skipped",

@@ -37,9 +37,13 @@ use target::Resolution;
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOutcome, CodecError> {
+fn write(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut dyn Write,
+    resolution: &Resolution<'_>,
+) -> Result<WriteOutcome, CodecError> {
     let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(&mut staged, resolution)?;
+    let report = write_seekable(ctx, &mut staged, resolution)?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, output)?;
     Ok(report)
@@ -52,6 +56,7 @@ fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOut
 /// dialect written here is the one the retained document already declares.
 /// This function carries out that decision; it does not gate it.
 fn write_seekable(
+    context: &cadmpeg_core::decode::DecodeContext<'_>,
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
 ) -> Result<WriteOutcome, CodecError> {
@@ -67,12 +72,12 @@ fn write_seekable(
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     let archive_image = crate::source_archive::image(fidelity)?;
     let source_arena = cadmpeg_core::decode::DecodeArena::new();
-    let source_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (source_context, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        archive_image,
-        &source_arena,
-        &source_policy,
-    )?;
+    let (source_context, source_root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes_shared(
+            archive_image,
+            &source_arena,
+            context,
+        )?;
     let source_archive =
         crate::source_archive::OriginalArchive::new(&source_context, source_root, fidelity)?;
     let mut payloads = HashMap::new();
@@ -102,9 +107,11 @@ fn write_seekable(
         .window()
         .to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes_shared(
+        &document_xml,
+        &arena,
+        context,
+    )?;
     let written_xml = crate::container::admit_document(&ctx, &document_xml)?;
     let mut written_graph = crate::persistence::parse_document(
         &written_xml,

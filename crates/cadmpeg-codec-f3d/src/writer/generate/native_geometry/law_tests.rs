@@ -91,8 +91,11 @@ fn assert_round_trip(ir: &CadIr) {
 fn assert_refused(ir: &CadIr) {
     // The exact native law serializer declines this entity; the public writer
     // must still author the representable document and report the reduction.
-    let error = crate::writer::generate::write_new(ir, &mut Vec::new())
-        .expect_err("the exact law serializer cannot encode this grammar");
+    let error = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::writer::generate::write_new(ctx, ir, &mut Vec::new()),
+    )
+    .expect_err("the exact law serializer cannot encode this grammar");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::UnsupportedContent(_)

@@ -37,13 +37,16 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
     ));
     let records = crate::source_records(&ir, &fidelity);
     let mut written = Vec::new();
-    let dialect = crate::writer::write_semantic_with_records(
-        &ir,
-        &fidelity.annotations,
-        &records,
-        Some(&fidelity),
-        &mut written,
-    )
+    let dialect = crate::test_support::with_desktop_context(|ctx| {
+        crate::writer::write_semantic_with_records(
+            ctx,
+            &ir,
+            &fidelity.annotations,
+            &records,
+            Some(&fidelity),
+            &mut written,
+        )
+    })
     .expect("semantic write succeeds")
     .dialect;
     let redecoded = SldprtCodec

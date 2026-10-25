@@ -13,6 +13,7 @@ use crate::records::parameters::{
 };
 
 pub(super) fn regenerate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &mut CadIr,
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
@@ -101,35 +102,32 @@ pub(super) fn regenerate(
             )));
         }
     }
-    target.model.parameters = super::with_context(|ctx| {
-        Ok(
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &native.design_parameters,
-                    owners: &[],
-                    scopes: &[],
-                    timelines: &[],
-                    construction_groups: &[],
-                    fillet_radius_groups: &[],
-                    edge_operands: &[],
-                    edge_identity_operands: &[],
-                    edge_treatment_vertex_operands: &[],
-                    entity_selection_operands: &[],
-                    curve_identities: &[],
-                    face_operands: &[],
-                    body_recipe_operands: &[],
-                    legacy_loft_body_carriers: &[],
-                    placements: &[],
-                    body_bindings: &[],
-                    component_naming_spaces: &[],
-                    histories: &[],
-                    face_boundaries: &[],
-                },
-            )?
-            .parameters,
-        )
-    })?;
+    target.model.parameters =
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &native.design_parameters,
+                owners: &[],
+                scopes: &[],
+                timelines: &[],
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
+                placements: &[],
+                body_bindings: &[],
+                component_naming_spaces: &[],
+                histories: &[],
+                face_boundaries: &[],
+            },
+        )?
+        .parameters;
     Ok(())
 }
 

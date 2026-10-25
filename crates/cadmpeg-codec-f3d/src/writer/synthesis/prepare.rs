@@ -135,6 +135,7 @@ pub(super) fn auxiliary(target: &mut CadIr, losses: &mut Vec<LossNote>) {
 }
 
 pub(super) fn solved_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -234,7 +235,7 @@ pub(super) fn solved_carriers(
         .model
         .procedural_curves
         .retain(|record| curve_ids.contains(&record.id));
-    let local_curves = super::super::primitives::f3d_native(target)?
+    let local_curves = super::super::primitives::f3d_native(ctx, target)?
         .unwrap_or_default()
         .tolerant_coedge_parameters
         .into_iter()

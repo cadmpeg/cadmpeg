@@ -27,26 +27,29 @@ pub(super) struct Synthesized {
 }
 
 /// Author an archive from the document, reducing unsupported records locally.
-pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
+pub(super) fn write(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &CadIr,
+) -> Result<Synthesized, CodecError> {
     let mut prepared = target.clone();
     let mut losses = Vec::new();
     prepare::auxiliary(&mut prepared, &mut losses);
     appearance::prepare(&mut prepared, &mut losses);
-    native::reconcile(&mut prepared, &mut losses)?;
+    native::reconcile(ctx, &mut prepared, &mut losses)?;
     let mut bytes = Vec::new();
-    let coverage = match super::generate::write_new(&prepared, &mut bytes) {
+    let coverage = match super::generate::write_new(ctx, &prepared, &mut bytes) {
         Ok(coverage) => coverage,
         Err(error) if declines(&error) => {
-            prepare::solved_carriers(&mut prepared, &mut losses)?;
+            prepare::solved_carriers(ctx, &mut prepared, &mut losses)?;
             prepare::pcurves(&mut prepared, &mut losses)?;
             bytes.clear();
-            match super::generate::write_new(&prepared, &mut bytes) {
+            match super::generate::write_new(ctx, &prepared, &mut bytes) {
                 Ok(coverage) => coverage,
                 Err(error) if declines(&error) => {
-                    prepared = topology::admit_bodies(&prepared, &mut losses)?;
-                    native::repair_keys(&mut prepared)?;
+                    prepared = topology::admit_bodies(ctx, &prepared, &mut losses)?;
+                    native::repair_keys(ctx, &mut prepared)?;
                     bytes.clear();
-                    super::generate::write_new(&prepared, &mut bytes)?
+                    super::generate::write_new(ctx, &prepared, &mut bytes)?
                 }
                 Err(error) => return Err(error),
             }

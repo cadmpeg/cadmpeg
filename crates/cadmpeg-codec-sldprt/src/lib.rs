@@ -182,6 +182,7 @@ impl SldprtCodec {
     /// reproduce the input byte for byte when nothing it rewrites has moved, so
     /// the output cannot say which branch ran and only this value can.
     fn write_preserved_with_annotations(
+        ctx: &DecodeContext<'_>,
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
@@ -193,6 +194,7 @@ impl SldprtCodec {
             .and_then(|record| record.metadata.get("document_local_sha256"));
         let Some(expected) = expected else {
             return Self::write_semantic(
+                ctx,
                 ir,
                 annotations,
                 records,
@@ -201,8 +203,9 @@ impl SldprtCodec {
                 writer,
             );
         };
-        if decode::document_local_sha256(ir)? != *expected {
+        if decode::document_local_sha256(ctx, ir)? != *expected {
             return Self::write_semantic(
+                ctx,
                 ir,
                 annotations,
                 records,
@@ -216,6 +219,7 @@ impl SldprtCodec {
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
         else {
             return Self::write_semantic(
+                ctx,
                 ir,
                 annotations,
                 records,
@@ -226,6 +230,7 @@ impl SldprtCodec {
         };
         let Some(data) = record.data.as_ref() else {
             return Self::write_semantic(
+                ctx,
                 ir,
                 annotations,
                 records,
@@ -242,6 +247,7 @@ impl SldprtCodec {
     /// retained source records fed the write, `Synthesized` when the document was
     /// built from the neutral IR alone.
     fn write_semantic(
+        ctx: &DecodeContext<'_>,
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
@@ -253,7 +259,14 @@ impl SldprtCodec {
             dialect,
             coverage,
             consumed_source_layout,
-        } = writer::write_semantic_with_records(ir, annotations, records, source_fidelity, writer)?;
+        } = writer::write_semantic_with_records(
+            ctx,
+            ir,
+            annotations,
+            records,
+            source_fidelity,
+            writer,
+        )?;
         Ok(Written::Semantic {
             path: if consumed_source_layout {
                 SemanticPath::Patched

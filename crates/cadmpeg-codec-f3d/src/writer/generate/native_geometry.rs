@@ -6133,7 +6133,10 @@ mod pcurve_chart_tests {
                 .expect("line pcurve is an admitted spring input");
             });
             let mut output = vec![0x93, 0x2a];
-            let result = crate::writer::generate::write_new(&target, &mut output);
+            let result = crate::test_support::with_decode_policy(
+                &cadmpeg_core::decode::DecodePolicy::default(),
+                |ctx| crate::writer::generate::write_new(ctx, &target, &mut output),
+            );
             if origin == 1.0 {
                 result.expect("finite pcurve poles write successfully");
                 crate::F3dCodec

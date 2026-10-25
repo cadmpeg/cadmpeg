@@ -31,7 +31,11 @@ fn nonnull_arena_rejects_null_form_at_construction_and_deserialization() {
             &[null_pair],
         )
         .unwrap();
-    assert!(F3dNative::load(&namespace).is_err());
+    assert!(crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| F3dNative::load(ctx, &namespace)
+    )
+    .is_err());
 }
 
 #[test]
@@ -49,7 +53,11 @@ fn null_arena_rejects_nonnull_form_at_construction_and_deserialization() {
             &[nonnull_pair],
         )
         .unwrap();
-    assert!(F3dNative::load(&namespace).is_err());
+    assert!(crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| F3dNative::load(ctx, &namespace)
+    )
+    .is_err());
 }
 
 #[test]
@@ -73,7 +81,14 @@ fn nonnull_arena_preserves_pair_wire() {
     let arena: Vec<DesignDimensionLocusPair> =
         namespace.arena_as("design_dimension_locus_pairs").unwrap();
     assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));
-    assert_eq!(F3dNative::load(&namespace).unwrap(), native);
+    assert_eq!(
+        crate::test_support::with_decode_policy(
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| F3dNative::load(ctx, &namespace)
+        )
+        .unwrap(),
+        native
+    );
 }
 
 #[test]

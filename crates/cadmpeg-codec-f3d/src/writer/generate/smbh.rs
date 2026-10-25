@@ -1888,7 +1888,11 @@ mod tests {
     fn wire_vertex_admission_refuses_invalid_membership_before_output() {
         let target = decoded_wire(&synthetic_free_vertex_body_smbh());
         let mut valid_output = Vec::new();
-        write_new(&target, &mut valid_output).expect("unmodified free wire writes");
+        crate::test_support::with_decode_policy(
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| write_new(ctx, &target, &mut valid_output),
+        )
+        .expect("unmodified free wire writes");
         assert!(!valid_output.is_empty());
 
         let mut missing = target.clone();
@@ -1916,8 +1920,11 @@ mod tests {
             (endpoint, "is both free and an edge endpoint"),
         ] {
             let mut output = vec![0x93, 0x2a];
-            let error = write_new(&target, &mut output)
-                .expect_err("invalid wire ownership must refuse the write");
+            let error = crate::test_support::with_decode_policy(
+                &cadmpeg_core::decode::DecodePolicy::default(),
+                |ctx| write_new(ctx, &target, &mut output),
+            )
+            .expect_err("invalid wire ownership must refuse the write");
             assert!(error.to_string().contains(reason), "{error}");
             assert_eq!(output, [0x93, 0x2a], "failed write changed caller output");
         }

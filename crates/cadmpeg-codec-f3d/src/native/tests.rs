@@ -138,7 +138,11 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
         )
         .unwrap(),
     );
-    let error = crate::native::F3dNative::load(&namespace).unwrap_err();
+    let error = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::native::F3dNative::load(ctx, &namespace),
+    )
+    .unwrap_err();
     let message = error.to_string();
     assert!(message.contains("f3d:native:bulletin#1"));
     assert!(message.contains("f3d:native:missing-state#1"));
@@ -170,7 +174,11 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         )
         .unwrap();
     let original = decoded.ir().native.namespace("f3d").unwrap();
-    let typed = crate::native::F3dNative::load(original).unwrap();
+    let typed = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| crate::native::F3dNative::load(ctx, original),
+    )
+    .unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed
         .store(
@@ -178,7 +186,14 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             &mut round_trip,
         )
         .unwrap();
-    assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
+    assert_eq!(
+        typed,
+        crate::test_support::with_decode_policy(
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            |ctx| crate::native::F3dNative::load(ctx, &round_trip)
+        )
+        .unwrap()
+    );
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas().get(*name),
@@ -1440,10 +1455,16 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
     let mut protein = zip.finish().unwrap().into_inner();
     set_zip_entry_uncompressed_size(&mut protein, target, u32::MAX);
 
-    let error = crate::materials::patch_protein_appearances(
-        &protein,
-        &std::collections::BTreeMap::new(),
-        &mut Vec::new(),
+    let error = crate::test_support::with_decode_policy(
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        |ctx| {
+            crate::materials::patch_protein_appearances(
+                ctx,
+                &protein,
+                &std::collections::BTreeMap::new(),
+                &mut Vec::new(),
+            )
+        },
     )
     .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));

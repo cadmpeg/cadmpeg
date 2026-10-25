@@ -69,14 +69,30 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: input.limits,
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let result = plan_in(&ctx, input, resolved);
+    ctx.finish_session()?;
+    result
+}
+
+fn plan_in(
+    ctx: &DecodeContext<'_>,
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
     let mut reason = None;
     if let Some(fidelity) = input
         .fidelity
         .filter(|_| resolved.source_preservation_eligible() && input.can_reuse_source())
     {
         if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
-            let patch =
-                admit_unedited(input.ir, resolution.fidelity()).and_then(|()| finish(&resolution));
+            let patch = admit_unedited(ctx, input.ir, resolution.fidelity())
+                .and_then(|()| finish(ctx, &resolution));
             match patch {
                 Ok(body) => return Ok(body),
                 Err(error @ CodecError::UnsupportedContent(_)) => reason = Some(error.to_string()),
@@ -100,7 +116,7 @@ pub(crate) fn plan(
         );
         "4"
     };
-    let mut body = super::synthesis::write(input.ir, schema)?;
+    let mut body = super::synthesis::write(ctx, input.ir, schema)?;
     if let Some(message) = resolved.displacement_message() {
         body.losses
             .push(crate::loss::FreecadLossCode::SourceDialectDisplaced.note(message));
@@ -141,7 +157,11 @@ pub(crate) fn document_local_sha256(
 /// Decline the retained-layout optimization after an uncarried edit.
 ///
 /// Such an edit is authored by the synthesized path instead.
-fn admit_unedited(ir: &CadIr, fidelity: &cadmpeg_ir::SourceFidelity) -> Result<(), CodecError> {
+fn admit_unedited(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> Result<(), CodecError> {
     if let Some(namespace) = ir.native.namespace("fcstd") {
         if namespace
             .arena_as::<crate::native::ObjectRecord>("objects")?
@@ -165,26 +185,19 @@ fn admit_unedited(ir: &CadIr, fidelity: &cadmpeg_ir::SourceFidelity) -> Result<(
                 "the retained typed-layout fingerprint is unavailable".into(),
             )
         })?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let current = document_local_sha256(&ctx, ir)?;
+    let current = document_local_sha256(ctx, ir)?;
     if current != *expected {
         return Err(CodecError::UnsupportedContent(
             "current uncarried typed records require FCStd graph regeneration".into(),
         ));
     }
-    projection::agrees(&ctx, ir).map_err(|error| match error {
+    projection::agrees(ctx, ir).map_err(|error| match error {
         CodecError::Malformed(_) | CodecError::Truncated { .. } => CodecError::UnsupportedContent(
             format!("current typed projection is unavailable: {error}"),
         ),
         error => error,
     })?;
-    let findings = crate::validate_native(&ctx, ir)?;
-    ctx.finish_session()?;
+    let findings = crate::validate_native(ctx, ir)?;
     if !findings.is_empty() {
         return Err(CodecError::UnsupportedContent(
             "the retained layout no longer agrees with its typed native records".into(),
@@ -196,9 +209,9 @@ fn admit_unedited(ir: &CadIr, fidelity: &cadmpeg_ir::SourceFidelity) -> Result<(
 /// Write the resolved retained layout using source images from fidelity.
 /// [`admit_unedited`] separately proves that its current typed projection
 /// agrees with every held neutral arena; the fingerprint selects layout only.
-fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
+fn finish(ctx: &DecodeContext<'_>, resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+    let outcome = write(ctx, &mut bytes, resolution)?;
     Ok(ExportBody {
         bytes,
         census: outcome.census,

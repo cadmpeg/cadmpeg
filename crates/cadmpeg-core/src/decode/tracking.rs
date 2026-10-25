@@ -119,6 +119,22 @@ pub(super) struct SessionHandle<'a> {
 
 impl TrackingStore {
     pub(super) fn session(&self, policy: DecodePolicy, input_bytes: u64) -> SessionHandle<'_> {
+        self.session_budget(DecodeBudget::new(policy, input_bytes), policy)
+    }
+
+    pub(super) fn session_shared(
+        &self,
+        policy: DecodePolicy,
+        input_bytes: u64,
+        account: std::sync::Arc<crate::operation_budget::OperationBudget>,
+    ) -> SessionHandle<'_> {
+        self.session_budget(
+            DecodeBudget::with_account(policy, input_bytes, account),
+            policy,
+        )
+    }
+
+    fn session_budget(&self, budget: DecodeBudget, policy: DecodePolicy) -> SessionHandle<'_> {
         if self.allocation_failure.get().is_some() {
             return SessionHandle {
                 store: self,
@@ -133,7 +149,7 @@ impl TrackingStore {
             .find(|(_, slot)| slot.state.is_none() && slot.generation < usize::MAX)
         {
             slot.generation += 1;
-            slot.state = Some(Session::new(policy, input_bytes));
+            slot.state = Some(Session::new(budget));
             return SessionHandle {
                 store: self,
                 index: Some(index),
@@ -144,7 +160,7 @@ impl TrackingStore {
             let index = sessions.len();
             sessions.push(SessionSlot {
                 generation: 0,
-                state: Some(Session::new(policy, input_bytes)),
+                state: Some(Session::new(budget)),
             });
             Some(index)
         } else {
@@ -233,6 +249,13 @@ impl SessionHandle<'_> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         self.with_budget(|budget| budget.charge_decompressed(amount, operation))
+    }
+    pub(super) fn admit_shared_decompressed(
+        self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        self.with_budget(|budget| budget.admit_shared_decompressed(amount, operation))
     }
     pub(super) fn charge_entities(
         self,
@@ -801,9 +824,9 @@ impl SessionHandle<'_> {
 }
 
 impl Session {
-    fn new(policy: DecodePolicy, input_bytes: u64) -> Self {
+    fn new(budget: DecodeBudget) -> Self {
         Self {
-            budget: DecodeBudget::new(policy, input_bytes),
+            budget,
             streams: Streams::default(),
             frames: Vec::new(),
             committed: Vec::new(),
@@ -817,13 +840,8 @@ impl Session {
 
     fn activate(&mut self) -> Result<(), CodecError> {
         if !self.activated {
-            self.budget.retain_bytes(
-                u64_from_index(
-                    size_of::<SessionSlot>()
-                        + size_of::<crate::operation_budget::OperationBudget>(),
-                ),
-                "record tracking session",
-            )?;
+            self.budget
+                .retain_tracking(u64_from_index(size_of::<SessionSlot>()))?;
             self.activated = true;
         }
         Ok(())

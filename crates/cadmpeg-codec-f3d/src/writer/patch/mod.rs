@@ -61,20 +61,16 @@ use records::{
 /// [`decode::document_local_sha256`] means anything; the comparison is bitwise
 /// because the question is whether an unsupported field moved at all.
 pub(crate) fn write_semantic(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     source_image: &[u8],
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    // Semantic patching reserializes native records under the same desktop
-    // decode policy used for the source-image salvage decode below.
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (encode_ctx, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        source_image,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )?;
-    let target_native = f3d_native(target)?;
+    let (encode_ctx, source_root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes_shared(source_image, &arena, ctx)?;
+    let target_native = f3d_native(&encode_ctx, target)?;
     if let Some(native) = target_native.as_ref() {
         validate_configuration_projection(target, native)?;
         validate_assembly_projection(target, Some(native))?;
@@ -619,9 +615,9 @@ pub(crate) fn write_semantic(
             let mut bytes = Vec::new();
             if zstd {
                 bytes.extend(crate::zip_write::expand_zstd_member(
+                    &encode_ctx,
                     &mut entry,
                     &name,
-                    cadmpeg_core::decode::u64_from_index(source_image.len()),
                 )?);
             } else {
                 let mut chunk = [0_u8; 16 * 1024];
@@ -681,6 +677,7 @@ pub(crate) fn write_semantic(
         } else {
             if name.ends_with(".protein") && !protein_appearance_edits.is_empty() {
                 let (patched_bytes, patched_guids) = crate::materials::patch_protein_appearances(
+                    &encode_ctx,
                     &bytes,
                     &protein_appearance_edits,
                     notes,

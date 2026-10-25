@@ -313,7 +313,13 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .dialect();
     let resolution = retained_baseline(decoded.ir(), decoded.source_fidelity(), source_dialect)
         .expect("the decoded schema-4 baseline is preserved");
-    crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    crate::writer::write_seekable(&ctx, &mut streamed, &resolution).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
 }

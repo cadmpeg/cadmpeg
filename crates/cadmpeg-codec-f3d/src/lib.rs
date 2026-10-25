@@ -142,6 +142,7 @@ impl F3dCodec {
     /// Replay retained source bytes when the document baseline still matches;
     /// otherwise patch. Absent baseline: refuse. Returns which branch ran.
     fn write_preserved_bytes(
+        ctx: &DecodeContext<'_>,
         ir: &CadIr,
         data: &[u8],
         expected: &str,
@@ -149,7 +150,7 @@ impl F3dCodec {
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
         if decode::document_local_sha256(ir)? != expected {
-            writer::patch::write_semantic(ir, data, writer, notes)?;
+            writer::patch::write_semantic(ctx, ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;

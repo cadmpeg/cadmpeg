@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-first synthesis after a retained layout cannot express an edit.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     ArenaCoverage, ArenaDisposition, Consumption, EncodeInput, ExportBody, WritePath,
@@ -32,6 +32,7 @@ pub(super) enum SynthesisCause {
 }
 
 pub(super) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     cause: SynthesisCause,
@@ -65,7 +66,7 @@ pub(super) fn plan(
         );
     }
     projected.source = None;
-    prepare_native(&mut projected, &mut losses)?;
+    prepare_native(ctx, &mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
     reduce_fields(&mut projected, &mut losses);
@@ -235,6 +236,7 @@ pub(super) fn plan(
         });
     let declaration = source_declaration.or(target.write_declaration());
     let output = super::write_semantic_at(
+        ctx,
         &projected,
         &Annotations::default(),
         &[],
@@ -360,9 +362,11 @@ pub(super) fn plan(
     })
 }
 
-fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
+fn prepare_native(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     let native = ir
         .native
         .namespace("sldprt")
@@ -370,7 +374,7 @@ fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Code
         .transpose()?;
     let mut native = native.unwrap_or_default();
     native.feature_input_lanes.clear();
-    parameters::move_unreferenced(&ctx, ir, &mut native, losses)?;
+    parameters::move_unreferenced(ctx, ir, &mut native, losses)?;
     for record in &mut native.pmi_dimensions {
         if record.item_count.get() > 1 {
             losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
@@ -428,7 +432,7 @@ fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Code
     }
     crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
     ir.native = cadmpeg_ir::native::Native::default();
-    native.store(&ctx, ir.native.namespace_mut("sldprt"))?;
+    native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     Ok(())
 }
 

@@ -61,13 +61,16 @@ fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_con
         .insert_retained_record(crate::source_image_id(), image)
         .expect("source image identity");
     let records = crate::source_records(&ir, &fidelity);
-    let error = crate::writer::write_semantic_with_records(
-        &ir,
-        &fidelity.annotations,
-        &records,
-        Some(&fidelity),
-        &mut Vec::new(),
-    )
+    let error = crate::test_support::with_desktop_context(|ctx| {
+        crate::writer::write_semantic_with_records(
+            ctx,
+            &ir,
+            &fidelity.annotations,
+            &records,
+            Some(&fidelity),
+            &mut Vec::new(),
+        )
+    })
     .err()
     .expect("the actual retained container is truncated");
     assert!(matches!(

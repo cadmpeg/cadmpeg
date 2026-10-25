@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
 use cadmpeg_ir::Annotations;
@@ -21,17 +22,34 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        mode: DecodeMode::Salvage,
+        limits: input.limits,
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let result = plan_in_context(&ctx, input, resolved);
+    ctx.finish_session()?;
+    result
+}
+
+fn plan_in_context(
+    ctx: &DecodeContext<'_>,
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
     if !resolved.preserves_source() || input.fidelity.is_none() {
         let cause = if resolved.preserves_source() && input.fidelity.is_none() {
             super::synthesis::SynthesisCause::SourceImageUnavailable
         } else {
             super::synthesis::SynthesisCause::Fresh
         };
-        return super::synthesis::plan(input, resolved, cause);
+        return super::synthesis::plan(ctx, input, resolved, cause);
     }
     let classes = input.source_unrepresented();
     if !classes.is_empty() {
         return super::synthesis::plan(
+            ctx,
             input,
             resolved,
             super::synthesis::SynthesisCause::SourceUnrepresented { classes },
@@ -39,6 +57,7 @@ pub(crate) fn plan(
     }
     if super::synthesis::parameters::has_conflict(input.ir) {
         return super::synthesis::plan(
+            ctx,
             input,
             resolved,
             super::synthesis::SynthesisCause::PatchDeclined {
@@ -46,7 +65,7 @@ pub(crate) fn plan(
             },
         );
     }
-    let attempt = write(input, true);
+    let attempt = write(ctx, input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,
         Err(error) => {
@@ -55,6 +74,7 @@ pub(crate) fn plan(
                 error => error.to_string(),
             };
             return super::synthesis::plan(
+                ctx,
                 input,
                 resolved,
                 super::synthesis::SynthesisCause::PatchDeclined { reason },
@@ -69,6 +89,7 @@ pub(crate) fn plan(
         }
     ) {
         return super::synthesis::plan(
+            ctx,
             input,
             resolved,
             super::synthesis::SynthesisCause::SourceImageUnavailable,
@@ -76,6 +97,7 @@ pub(crate) fn plan(
     }
     if !check_honesty(resolved, &written) {
         return super::synthesis::plan(
+            ctx,
             input,
             resolved,
             super::synthesis::SynthesisCause::PatchDeclined {
@@ -93,12 +115,17 @@ pub(crate) fn plan(
 
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
-fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<u8>), CodecError> {
+fn write(
+    ctx: &DecodeContext<'_>,
+    input: EncodeInput<'_>,
+    replay_eligible: bool,
+) -> Result<(Written, Vec<u8>), CodecError> {
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value);
             SldprtCodec::write_preserved_with_annotations(
+                ctx,
                 input.ir,
                 &value.annotations,
                 &records,
@@ -107,6 +134,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             )?
         }
         Some(_) => SldprtCodec::write_semantic(
+            ctx,
             input.ir,
             &Annotations::default(),
             &[],
@@ -115,6 +143,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
+            ctx,
             input.ir,
             &Annotations::default(),
             &[],

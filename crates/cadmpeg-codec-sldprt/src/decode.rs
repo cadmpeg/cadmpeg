@@ -4345,9 +4345,10 @@ fn stamp_local_digests(
                 .insert(crate::writer::PMI_LOCAL_DIGEST_ATTRIBUTE.into(), hash);
         }
     }
-    fidelity
-        .metadata
-        .insert("document_local_sha256".into(), document_local_sha256(ir)?);
+    fidelity.metadata.insert(
+        "document_local_sha256".into(),
+        document_local_sha256(ctx, ir)?,
+    );
     Ok(())
 }
 
@@ -4393,7 +4394,7 @@ fn retain_lane_images(
 /// whether the retained Parasolid partition may be replayed verbatim while the
 /// rest of the document is written. It carries every limitation
 /// [`document_local_sha256`] states, and the `_local_sha256` suffix says so.
-pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn brep_local_sha256(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
     let mut partition = cadmpeg_ir::document::Model::default();
@@ -4419,13 +4420,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     partition
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )?;
-    brep_partition_sha256(&ctx, ir.tolerances, partition).0
+    brep_partition_sha256(ctx, ir.tolerances, partition).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -4537,19 +4532,17 @@ fn brep_partition_sha256(
 /// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
 ///
 /// See [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(
-        &ctx,
+pub(crate) fn document_local_sha256(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<String, CodecError> {
+    cadmpeg_ir::hash::document_local_sha256(
+        ctx,
         ir,
         ir.source.as_ref(),
         "sldprt",
         "sldprt:file:source-image#0",
-    )?;
-    ctx.finish_session()?;
-    Ok(digest)
+    )
 }
 
 fn preserve_source_image(

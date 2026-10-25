@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! F3D target resolution, preservation dispatch, and export reporting.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
@@ -16,33 +17,49 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: input.limits,
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let result = plan_in(&ctx, input, target);
+    ctx.finish_session()?;
+    result
+}
+
+fn plan_in(
+    ctx: &DecodeContext<'_>,
+    input: EncodeInput<'_>,
+    target: &ResolvedWrite<'_>,
+) -> Result<ExportBody, CodecError> {
     if target.entry().is_none() {
-        return match preserve(input)? {
+        return match preserve(ctx, input)? {
             Preservation::Written {
                 bytes,
                 write_path,
                 notes,
             } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
             Preservation::PatchDeclined { reason } => {
-                synthesize_displaced(input, target, SynthesisCause::PatchDeclined { reason })
+                synthesize_displaced(ctx, input, target, SynthesisCause::PatchDeclined { reason })
             }
             Preservation::SourceImageUnavailable => {
-                synthesize_displaced(input, target, SynthesisCause::SourceImageUnavailable)
+                synthesize_displaced(ctx, input, target, SynthesisCause::SourceImageUnavailable)
             }
         };
     }
     if target.preserves_source() {
-        return match preserve(input)? {
+        return match preserve(ctx, input)? {
             Preservation::Written {
                 bytes,
                 write_path,
                 notes,
             } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
             Preservation::SourceImageUnavailable => {
-                synthesized_body(input, SynthesisCause::SourceImageUnavailable)
+                synthesized_body(ctx, input, SynthesisCause::SourceImageUnavailable)
             }
             Preservation::PatchDeclined { reason } => {
-                synthesized_body(input, SynthesisCause::PatchDeclined { reason })
+                synthesized_body(ctx, input, SynthesisCause::PatchDeclined { reason })
             }
         };
     }
@@ -58,16 +75,17 @@ pub(crate) fn plan(
     } else {
         SynthesisCause::Fresh
     };
-    synthesized_body(input, cause)
+    synthesized_body(ctx, input, cause)
 }
 
 fn synthesize_displaced(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
     let synthesis = target.for_synthesis()?;
-    let mut body = synthesized_body(input, cause)?;
+    let mut body = synthesized_body(ctx, input, cause)?;
     if let Some(message) = synthesis.resolution().displacement_message() {
         body.losses
             .push(F3dLossCode::SourceDialectDisplaced.note(message));
@@ -87,7 +105,7 @@ enum Preservation {
     },
 }
 
-fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
+fn preserve(ctx: &DecodeContext<'_>, input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     if !input.can_reuse_source() {
         return Ok(Preservation::SourceImageUnavailable);
     }
@@ -111,7 +129,7 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
             reason: "retained F3D layout has no bound document digest".into(),
         });
     };
-    let authored = super::synthesis::write(input.ir)?;
+    let authored = super::synthesis::write(ctx, input.ir)?;
     let omitted_native = input
         .has_foreign_native_content(cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT))
         || input.ir.native.namespace("f3d").is_some_and(|namespace| {
@@ -132,16 +150,17 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     }
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path =
-        match F3dCodec::write_preserved_bytes(input.ir, data, expected, &mut bytes, &mut notes) {
-            Ok(path) => path,
-            Err(error) if super::synthesis::declines(&error) => {
-                return Ok(Preservation::PatchDeclined {
-                    reason: error.to_string(),
-                });
-            }
-            Err(error) => return Err(error),
-        };
+    let write_path = match F3dCodec::write_preserved_bytes(
+        ctx, input.ir, data, expected, &mut bytes, &mut notes,
+    ) {
+        Ok(path) => path,
+        Err(error) if super::synthesis::declines(&error) => {
+            return Ok(Preservation::PatchDeclined {
+                reason: error.to_string(),
+            });
+        }
+        Err(error) => return Err(error),
+    };
     Ok(Preservation::Written {
         bytes,
         write_path,
@@ -204,6 +223,7 @@ impl SynthesisCause {
 }
 
 fn synthesized_body(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     cause: SynthesisCause,
 ) -> Result<ExportBody, CodecError> {
@@ -213,7 +233,7 @@ fn synthesized_body(
         losses: synthesis_losses,
         native_dispositions,
         preservation_compatible: _,
-    } = super::synthesis::write(input.ir)?;
+    } = super::synthesis::write(ctx, input.ir)?;
     let synthesis_cause = match &cause {
         SynthesisCause::PatchDeclined { reason } => {
             Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined {

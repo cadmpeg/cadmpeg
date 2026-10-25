@@ -629,8 +629,14 @@ fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let brep_hash = crate::decode::brep_local_sha256(decoded.ir()).unwrap();
-    let document_hash = crate::decode::document_local_sha256(decoded.ir()).unwrap();
+    let brep_hash = crate::test_support::with_desktop_context(|ctx| {
+        crate::decode::brep_local_sha256(ctx, decoded.ir())
+    })
+    .unwrap();
+    let document_hash = crate::test_support::with_desktop_context(|ctx| {
+        crate::decode::document_local_sha256(ctx, decoded.ir())
+    })
+    .unwrap();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
@@ -673,11 +679,19 @@ fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
         source_fidelity.annotations = annotations.build();
     }
     assert_eq!(
-        crate::decode::brep_local_sha256(decoded.ir()).unwrap(),
+        crate::test_support::with_desktop_context(|ctx| crate::decode::brep_local_sha256(
+            ctx,
+            decoded.ir()
+        ))
+        .unwrap(),
         brep_hash
     );
     assert_ne!(
-        crate::decode::document_local_sha256(decoded.ir()).unwrap(),
+        crate::test_support::with_desktop_context(|ctx| crate::decode::document_local_sha256(
+            ctx,
+            decoded.ir()
+        ))
+        .unwrap(),
         document_hash
     );
 
@@ -969,14 +983,23 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
     let records = crate::source_records(decoded.ir(), decoded.source_fidelity());
     let annotations = &decoded.source_fidelity().annotations;
     assert!(
-        super::patch_partition(decoded.ir(), annotations, &records, 0.001)
-            .unwrap()
-            .is_some()
+        crate::test_support::with_desktop_context(|ctx| super::patch_partition(
+            ctx,
+            decoded.ir(),
+            annotations,
+            &records,
+            0.001
+        ))
+        .unwrap()
+        .is_some()
     );
     let mut changed = decoded.ir().clone();
     changed.model.faces[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
-    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    let error = crate::test_support::with_desktop_context(|ctx| {
+        super::patch_partition(ctx, &changed, annotations, &records, 0.001)
+    })
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed face colours"));
@@ -1006,7 +1029,10 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
             });
     }
-    let error = super::patch_partition(&changed, annotations, &records, 0.001).unwrap_err();
+    let error = crate::test_support::with_desktop_context(|ctx| {
+        super::patch_partition(ctx, &changed, annotations, &records, 0.001)
+    })
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("cannot write changed pcurve geometry or metadata"));

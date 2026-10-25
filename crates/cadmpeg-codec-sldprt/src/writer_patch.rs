@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -14,6 +14,7 @@ use cadmpeg_ir::Annotations;
 use crate::SourceRecord;
 
 pub(crate) fn patch_partition(
+    operation: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
@@ -30,7 +31,7 @@ pub(crate) fn patch_partition(
         return Ok(None);
     };
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(source, &arena, &DecodePolicy::desktop())?;
+    let (ctx, root) = DecodeContext::from_root_bytes_shared(source, &arena, operation)?;
     let scan = crate::container::scan(&ctx, root)?;
     let Some(selected) = crate::container::select_active_parasolid_site(&scan) else {
         return Ok(None);

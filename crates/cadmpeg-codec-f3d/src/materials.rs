@@ -254,10 +254,13 @@ pub(crate) struct ProteinAppearanceEdit {
 }
 
 pub(crate) fn patch_protein_appearances(
+    parent: &DecodeContext<'_>,
     protein: &[u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     notes: &mut Vec<String>,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes_shared(protein, &arena, parent)?;
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
         CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
     })?;
@@ -294,11 +297,7 @@ pub(crate) fn patch_protein_appearances(
                 )));
             }
             let bytes = if zstd {
-                crate::zip_write::expand_zstd_member(
-                    &mut entry,
-                    &name,
-                    cadmpeg_core::decode::u64_from_index(protein.len()),
-                )?
+                crate::zip_write::expand_zstd_member(&ctx, &mut entry, &name)?
             } else {
                 crate::container::read_entry_bounded(&mut entry, declared_size, &name)?
             };

@@ -123,3 +123,15 @@ pub(crate) mod pmi;
 pub(crate) mod tessellation;
 
 pub(crate) mod dimensions;
+
+/// Runs an internal writer or digest assertion with its original desktop policy.
+pub(crate) fn with_desktop_context<T>(
+    operation: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let result = operation(&ctx);
+    ctx.finish_session()?;
+    result
+}

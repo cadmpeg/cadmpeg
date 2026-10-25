@@ -7,10 +7,13 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::Sense;
 
-pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
+pub(super) fn f3d_native(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<F3dNative>, CodecError> {
     ir.native
         .namespace("f3d")
-        .map(F3dNative::load)
+        .map(|namespace| F3dNative::load(ctx, namespace))
         .transpose()
         .map_err(Into::into)
 }

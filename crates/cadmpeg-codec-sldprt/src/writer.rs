@@ -13,7 +13,7 @@ pub(crate) mod target;
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
-use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
@@ -72,6 +72,7 @@ pub(crate) struct SemanticOutput {
 /// Writes a semantic document and returns the dialect and arena coverage it
 /// wrote.
 pub(crate) fn write_semantic_with_records(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
@@ -79,6 +80,7 @@ pub(crate) fn write_semantic_with_records(
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     write_semantic_at(
+        ctx,
         ir,
         annotations,
         retained_records,
@@ -91,6 +93,7 @@ pub(crate) fn write_semantic_with_records(
 
 /// Author the selected version envelope without consuming retained bytes.
 pub(super) fn write_semantic_at(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
@@ -100,9 +103,6 @@ pub(super) fn write_semantic_at(
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
-    let digest_arena = DecodeArena::new();
-    let (digest_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
     let mut native = match prepared_native {
         Some(native) => Some(native),
         None => ir
@@ -134,7 +134,7 @@ pub(super) fn write_semantic_at(
     let ir = &normalized;
     let source_arena = DecodeArena::new();
     let source_context = source_image(retained_records)
-        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
+        .map(|bytes| DecodeContext::from_root_bytes_shared(bytes, &source_arena, ctx))
         .transpose()?;
     let source_scan = source_context
         .as_ref()
@@ -155,6 +155,7 @@ pub(super) fn write_semantic_at(
         }
     }
     let retained_partition = retained_partition(
+        ctx,
         &normalized,
         source_scan.as_ref(),
         native.as_ref(),
@@ -166,7 +167,7 @@ pub(super) fn write_semantic_at(
         Vec::new()
     } else {
         let feature_input_renames =
-            crate::history::write::synchronize_feature_records(&digest_ctx, ir, &mut native)?;
+            crate::history::write::synchronize_feature_records(ctx, ir, &mut native)?;
         crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
         crate::history::write::parameters::synchronize_parameter_records(ir, &mut native)?;
         crate::history::write::configurations::synchronize_configuration_records(
@@ -192,7 +193,7 @@ pub(super) fn write_semantic_at(
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none() {
-        crate::writer_patch::patch_partition(ir, annotations, retained_records, length_scale)?
+        crate::writer_patch::patch_partition(ctx, ir, annotations, retained_records, length_scale)?
     } else {
         None
     };
@@ -228,7 +229,7 @@ pub(super) fn write_semantic_at(
         )]
     };
     let written_class_sources = if !retain_native_brep && ir.scope.design {
-        remap_written_geometry_references(ir, &partition_sections, &mut native)?
+        remap_written_geometry_references(ctx, ir, &partition_sections, &mut native)?
     } else {
         crate::resolved_features::class_sources::ClassSources::default()
     };
@@ -244,7 +245,7 @@ pub(super) fn write_semantic_at(
         false
     } else {
         let baseline = retained_metadata(retained_records, SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE);
-        let current = swobjects_local_sha256(&digest_ctx, ir)?;
+        let current = swobjects_local_sha256(ctx, ir)?;
         if baseline != Some(&current) {
             let material_baseline =
                 retained_metadata(retained_records, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
@@ -252,9 +253,8 @@ pub(super) fn write_semantic_at(
                 retained_records,
                 SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE,
             );
-            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?)
-                || identity_baseline
-                    != Some(&swobjects_metadata_identity_local_sha256(&digest_ctx, ir)?)
+            if material_baseline != Some(&swobjects_material_local_sha256(ctx, ir)?)
+                || identity_baseline != Some(&swobjects_metadata_identity_local_sha256(ctx, ir)?)
             {
                 return Err(CodecError::UnsupportedContent(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
@@ -692,6 +692,7 @@ fn retained_cache_cells(
 /// synthesized rather than decoded, or decoded by a binary that named the
 /// attribute differently — has no partition to replay and is written out in full.
 fn retained_partition(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
@@ -700,7 +701,7 @@ fn retained_partition(
     let Some(expected) = retained_metadata(retained_records, "brep_local_sha256") else {
         return Ok(None);
     };
-    if crate::decode::brep_local_sha256(ir)? != *expected {
+    if crate::decode::brep_local_sha256(ctx, ir)? != *expected {
         return Ok(None);
     }
     let Some(scan) = source_scan else {
@@ -905,6 +906,7 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 /// Generated geometry chooses its own node identities. Feature output scopes
 /// must address those emitted nodes rather than the document's earlier layout.
 fn remap_written_geometry_references(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     partitions: &[(String, Vec<u8>)],
     native: &mut Option<crate::native::SldprtNative>,
@@ -961,12 +963,10 @@ fn remap_written_geometry_references(
                 CodecError::malformed("generated SLDPRT block extent exceeds the address space")
             })?;
     }
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let mut model = ir.model.clone();
     macro_rules! remap_arena {
         ($($arena:ident),* $(,)?) => {$ (
-            model.$arena = cadmpeg_ir::schema::rewrite::identities(&ctx, model.$arena, |id|
+            model.$arena = cadmpeg_ir::schema::rewrite::identities(ctx, model.$arena, |id|
                 Ok(mapping.get(id).cloned().unwrap_or_else(|| id.to_owned())))?;
         )*};
     }

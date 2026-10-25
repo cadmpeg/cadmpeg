@@ -524,3 +524,42 @@ fn tracking_charges_the_shared_account_body_once_without_recharging_encode_clone
     ctx.finish_session()
         .expect("one actual account body charge");
 }
+
+#[test]
+fn independent_context_tracking_charges_two_slots_and_one_account_body() {
+    for child_first in [false, true] {
+        let parent_arena = DecodeArena::new();
+        let child_arena = DecodeArena::new();
+        let parent = DecodeContext::new(
+            &parent_arena,
+            &DecodePolicy::service(),
+            crate::decode::DecodeDepth::Full,
+        );
+        let (child, _) = DecodeContext::from_root_bytes_shared(&[], &child_arena, &parent).unwrap();
+        let account = parent.operation_budget();
+        let before = account.retained_used();
+        let contexts = if child_first {
+            [&child, &parent]
+        } else {
+            [&parent, &child]
+        };
+        for context in contexts {
+            context
+                .budget
+                .session(|session| session.activate())
+                .unwrap();
+        }
+        let actual_storage = crate::decode::u64_from_index(
+            2 * size_of::<super::SessionSlot>()
+                + size_of::<crate::operation_budget::OperationBudget>(),
+        );
+        assert_eq!(account.retained_used(), before + actual_storage);
+        for context in contexts {
+            context
+                .budget
+                .session(|session| session.activate())
+                .unwrap();
+        }
+        assert_eq!(account.retained_used(), before + actual_storage);
+    }
+}

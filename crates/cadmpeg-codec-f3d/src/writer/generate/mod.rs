@@ -39,10 +39,11 @@ use smbh::encode_smbh;
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile, and state which model arenas it carries.
 pub(crate) fn write_new(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     writer: &mut dyn Write,
 ) -> Result<ArenaDispositions, CodecError> {
-    let loaded_native = f3d_native(target)?;
+    let loaded_native = f3d_native(ctx, target)?;
     validate_assembly_projection(target, loaded_native.as_ref())?;
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
@@ -154,7 +155,7 @@ pub(crate) fn write_new(
     }
     // The parameter segment owns its independent dynamic class tags. Browser
     // and geometry metadata use the main Design segment's generated registry.
-    let design_bulk = encode_design_bulkstream(target, &native, &design_registry, Vec::new())?;
+    let design_bulk = encode_design_bulkstream(ctx, target, &native, &design_registry, Vec::new())?;
     if let Some(bulk_stream) = &design_bulk {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
