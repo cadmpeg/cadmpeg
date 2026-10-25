@@ -5972,3 +5972,27 @@ pub(crate) mod assembly_as_built_scope_owner_run {
     /// Offset of `additional_owner_references` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const ADDITIONAL_OWNER_REFERENCES: usize = 47;
 }
+
+/// Byte offsets for the `sketch_owner_collection_legacy_list_prefix` record.
+///
+/// Spec §3.1. Record length 6 B.
+pub(crate) mod sketch_owner_collection_legacy_list_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 6;
+}
+
+/// Byte offsets for the `sketch_owner_reference` record.
+///
+/// Spec §3.1. Record length 11 B.
+pub(crate) mod sketch_owner_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 11;
+}
+
+/// Byte offsets for the `sketch_owner_typed_reference` record.
+///
+/// Spec §3.1. Record length 51 B.
+pub(crate) mod sketch_owner_typed_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 51;
+}

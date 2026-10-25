@@ -288,6 +288,7 @@ pub(super) fn decode(
             }
 
             ir.model.product_definitions.push(ProductDefinition {
+                sketches: Vec::default(),
                 id: product_definition_id.clone(),
                 kind: ProductDefinitionKind::Part,
                 source_name: name.as_deref().map(std::borrow::ToOwned::to_owned),

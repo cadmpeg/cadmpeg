@@ -20,6 +20,7 @@ pub(crate) mod presentation;
 pub(crate) mod scopes;
 pub(crate) mod sheet_metal_settings;
 pub(crate) mod sketch;
+pub(crate) mod sketch_owners;
 pub(crate) mod surface_trim;
 pub(crate) mod text;
 pub(crate) mod units;

@@ -1658,6 +1658,266 @@ source = "spec"
 anchor = "The fixed selector prefix after the content header contains"
 
 [[record]]
+name = "meta_segment_pair"
+kind = "byte"
+section = "13.4"
+anchor = "32-byte entries"
+size = 32
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/base.rs"
+
+[[record.field]]
+name = "segment_id"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "segment_id:bytes[16]"
+
+[[record.field]]
+name = "revision_id"
+offset = 16
+type = "bytes[16]"
+source = "spec"
+anchor = "revision_id:bytes[16]"
+
+[[record]]
+name = "meta_external_revision"
+kind = "byte"
+section = "13.4"
+anchor = "20-byte revision entries"
+size = 20
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/base.rs"
+
+[[record.field]]
+name = "revision_id"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "revision_id:bytes[16]"
+
+[[record.field]]
+name = "segment_pair_index"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "segment_pair_index:u16"
+
+[[record.field]]
+name = "reference_count"
+offset = 18
+type = "u16"
+source = "spec"
+anchor = "reference_count:u16"
+
+[[record]]
+name = "meta_external_reference"
+kind = "byte"
+section = "13.4"
+anchor = "8-byte external entries"
+size = 8
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/base.rs"
+
+[[record.field]]
+name = "revision_index"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "revision_index:u32"
+
+[[record.field]]
+name = "key_extension"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "key_extension:u16"
+
+[[record.field]]
+name = "header_id"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "header_id:u16"
+
+[[record]]
+name = "kernel_entity_link"
+kind = "byte"
+section = "13"
+anchor = "Type `21750fccd1112780e38619962259017a` is a kernel-entity link. Its payload contains:"
+size = 23
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "selection_source"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "selection_source u32"
+
+[[record.field]]
+name = "state"
+offset = 10
+type = "u8"
+source = "spec"
+anchor = "state u8"
+
+[[record.field]]
+name = "body_reference"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "body_reference u32"
+
+[[record.field]]
+name = "entity_id"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "entity_id u32"
+
+[[record.field]]
+name = "entity_type"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "entity_type u32"
+
+[[record]]
+name = "pm_dc_spline_curve_prefix"
+kind = "byte"
+section = "12"
+anchor = "A form-1 spline curve has this fixed prefix"
+size = 28
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to each spline curve, after the spline record's variable lists."
+
+[[record.field]]
+name = "form"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "form u32"
+value = 1
+
+[[record.field]]
+name = "degree"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "degree u32"
+
+[[record.field]]
+name = "tolerance"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "tolerance f64"
+
+[[record.field]]
+name = "knot_count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "knot_count u32"
+
+[[record.field]]
+name = "knot_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "knot_value u32"
+
+[[record.field]]
+name = "scalar_width"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "scalar_width u32"
+value = 8
+
+[[record]]
+name = "pm_dc_spline_curve_tail"
+kind = "byte"
+section = "12"
+anchor = "Its fixed tail is"
+size = 44
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to the byte after the counted pole array."
+
+[[record.field]]
+name = "pole_tolerance"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "pole_tolerance f64"
+
+[[record.field]]
+name = "values"
+offset = 8
+type = "u32[2]"
+source = "spec"
+anchor = "values u32[2]"
+
+[[record.field]]
+name = "interval"
+offset = 16
+type = "f64[2]"
+source = "spec"
+anchor = "interval f64[2]"
+
+[[record.field]]
+name = "terminal_value"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "terminal_value f64"
+
+[[record.field]]
+name = "scalar_width"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "scalar_width u32"
+value = 8
+
+[[record]]
+name = "pm_dc_plate_side_fields"
+kind = "byte"
+section = "13"
+anchor = "is followed by `type_value:i16` and `value:u16`, then the record ends"
+size = 4
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+note = "Offsets start after the versioned content header and stamps."
+
+[[record.field]]
+name = "type_value"
+offset = 0
+type = "i16"
+source = "spec"
+anchor = "stamps, is followed by `type_value:i16`"
+note = "Enumeration type; 2 for the plate thickness side."
+
+[[record.field]]
+name = "value"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "and `value:u16`, then the record ends"
+note = "0 selects thickness along the face-sketch normal."
+
+[[record]]
 name = "pm_dc_loft_property_slots"
 kind = "slot"
 section = "13.2"
