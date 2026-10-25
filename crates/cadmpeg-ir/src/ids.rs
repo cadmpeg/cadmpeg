@@ -1249,3 +1249,18 @@ id_type!(
 
 #[cfg(test)]
 mod tests;
+
+macro_rules! working_identity_copy {
+    ($($name:ident),+ $(,)?) => {$(
+        impl $name {
+            /// Copy this admitted identity with fallible caller working storage.
+            pub fn try_clone_working(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+                let mut text = String::new();
+                ctx.reserve_text_working(&mut text, self.as_str().len(), "copy admitted geometry identity")?;
+                text.push_str(self.as_str());
+                Ok(Self(Identity(text)))
+            }
+        }
+    )+};
+}
+working_identity_copy!(CurveId, ProceduralCurveId, ProceduralSurfaceId, UnknownId);

@@ -1664,3 +1664,5 @@ fn knots_ordered(knots: &[f64], repeats: bool) -> bool {
 mod tests;
 
 mod identity_rewrite;
+
+mod working_copy;

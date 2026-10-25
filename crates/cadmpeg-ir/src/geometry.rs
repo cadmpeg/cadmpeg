@@ -26,6 +26,7 @@ pub mod nurbs;
 pub mod pcurve;
 pub mod sampled;
 pub mod scaling;
+mod working_copy;
 use analytic::{
     CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, HyperbolaCurve,
     LineCurve, ParabolaCurve, PlaneSurface, SphereSurface, TorusSurface,

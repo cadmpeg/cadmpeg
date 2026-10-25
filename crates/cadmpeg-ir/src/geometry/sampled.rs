@@ -687,3 +687,5 @@ impl PolylineCurve {
 mod tests;
 
 mod identity_rewrite;
+
+mod working_copy;

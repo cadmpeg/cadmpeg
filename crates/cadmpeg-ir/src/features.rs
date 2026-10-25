@@ -9210,3 +9210,16 @@ impl FeatureDefinition {
         dimensions::bound_parameter_ids(self)
     }
 }
+
+impl<T: Copy> NonEmptyMembers<T> {
+    /// Copy every admitted member with fallible caller working storage.
+    pub fn try_clone_working(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut values = Vec::new();
+        ctx.reserve_working(&mut values, self.0.len(), "copy admitted nonempty members")?;
+        values.extend_from_slice(&self.0);
+        Ok(Self(values))
+    }
+}
