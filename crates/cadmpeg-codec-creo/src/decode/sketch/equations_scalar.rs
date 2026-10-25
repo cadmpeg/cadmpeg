@@ -674,11 +674,6 @@ pub(super) fn section_relation_radius_scalar_values(
                 .value
                 .resolved()
                 .filter(|value| value.is_finite() && *value > 0.0)?;
-            let value = if dimension.dimension_type == 4 {
-                value / 2.0
-            } else {
-                value
-            };
             PositiveLength::new(value).map(|value| ((VariableType::Radius, radius), value.get()))
         })
         .collect::<Vec<_>>()

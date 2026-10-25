@@ -17,6 +17,7 @@ const EPS_SKETCH_VALIDATION_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 const EPS_EQUAL_DISTANCE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_COORDINATE_VALUE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
+const EPS_DIAMETER_RADIUS_VALUE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_DISTANCE_VALUE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const EPS_POLAR_ANGLE: f64 = EPS_SKETCH_VALIDATION_GEOMETRY;
 const SPATIAL_LINE_DEGENERACY_EPSILON: f64 = EPS_SKETCH_VALIDATION_EXACT_GEOMETRY;
@@ -1491,6 +1492,41 @@ pub(super) fn check_sketches(
                 Some(constraint.id.as_str()),
                 format_args!("{}", "invalid sketch constraint arity"),
             );
+        }
+        if let Constraint::Diameter { entity, parameter } = constraint.definition.kind() {
+            let radius =
+                geometry
+                    .get(entity.as_str())
+                    .and_then(|geometry| match geometry.definition() {
+                        SketchGeometryDefinition::Circle { radius, .. }
+                        | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
+                        _ => None,
+                    });
+            let diameter = match parameter_values.get(parameter.as_str()) {
+                Some(Some(crate::features::ParameterValue::Length(value))) => Some(value.get()),
+                _ => None,
+            };
+            if constraint.active != Some(false)
+                && diameter.zip(radius).is_some_and(|(diameter, radius)| {
+                    let half = diameter * 0.5;
+                    (half - radius).abs()
+                        > ir.tolerances
+                            .linear
+                            .get()
+                            .max(EPS_DIAMETER_RADIUS_VALUE * (1.0 + half.abs().max(radius)))
+                })
+            {
+                record_finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    crate::report::Severity::Error,
+                    Some(constraint.id.as_str()),
+                    format_args!(
+                        "{}",
+                        "diameter parameter does not equal twice the circular radius"
+                    ),
+                );
+            }
         }
         if let Constraint::PointOnObject { point: _, entity } = constraint.definition.kind() {
             if geometry.get(entity.as_str()).is_some_and(|geometry| {
