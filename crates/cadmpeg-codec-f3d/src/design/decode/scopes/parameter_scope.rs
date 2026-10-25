@@ -658,7 +658,9 @@ pub(crate) fn admit_history_bound_scope_variants(
                     }
                 })
             }
-            (None, false, Some(keep)) => {
+            // Several envelopes resolve to ASM transitions: the one the primary
+            // record index names is live; the others are retained revisions.
+            (Some(_), true, Some(keep)) | (None, false, Some(keep)) => {
                 // The other envelopes are not equivalent serializations, so
                 // dropping them loses their payload.
                 superseded = superseded.checked_add(following.len()).ok_or_else(|| {
