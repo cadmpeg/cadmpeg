@@ -727,9 +727,14 @@ the body natively instead of selecting a source-order value. A valid tip identif
 member as the active result. Suppressed, active,
 frozen, invalid, touched, mapping, support, and visibility properties remain individually named
 state rather than being collapsed into one enabled flag. Validation rejects duplicate members,
-inconsistent parentage, missing members, and an active tip outside the body's ordered membership. A body displays its result through its own `Shape`; the bodies transferred from its members'
-shapes, and from any shape property other than `Shape` (such as a feature's `AddSubShape` tool
-shape), are intermediate and carry `visible: false` unless a GUI view provider states otherwise.
+inconsistent parentage, missing members, and an active tip outside the body's ordered membership.
+A body displays its active `Tip` result through its own `Shape`, with visibility set by the body's
+own GUI view provider. Shapes of members in `Group` or legacy `Model`, including the `Tip`, and
+all shape properties other than `Shape` (such as `AddSubShape`) are intermediate topology. They
+remain available for history selections and carry `visible: false`. Structural membership and
+auxiliary shape roles take precedence over GUI visibility; a member's visible view provider does
+not make its stored shape an independent output body. A free feature outside a body retains the
+GUI visibility of its own `Shape`.
 
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
@@ -1125,7 +1130,8 @@ scalars describe the application object's exact-shape property named `Shape`. Th
 object appearance and explicit bindings only for bodies transferred from that property. Other
 exact-shape properties on the same object do not inherit this view-provider state. Packed colors
 decode as red, green, blue, and reserved low byte; the independent transparency percentage
-determines opacity. The effective body display fields mirror this object-level assignment.
+determines opacity. The effective body display fields mirror this object-level assignment, except
+that intermediate shapes remain hidden under the structural rule above.
 `ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
 color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
 transparency, four packed material colors, shininess, and UUID. Multiple materials correspond in

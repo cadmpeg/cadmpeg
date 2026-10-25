@@ -8216,8 +8216,9 @@ fn is_chamfer(kind: &str) -> bool {
 }
 /// Mark the bodies a document keeps only as intermediate shapes as not
 /// displayed: a feature's tool shape (any shape property other than `Shape`)
-/// and the shape of every member of a `PartDesign::Body`. A body shows its
-/// `Tip` result through its own `Shape`. Stored GUI visibility, applied later, wins.
+/// and the shape of every member of a `PartDesign::Body`, including its `Tip`.
+/// A body shows its `Tip` result through its own `Shape`. This runs after GUI
+/// transfer, so these structural roles win over stored member visibility.
 pub(crate) fn hide_intermediate_bodies(
     ir: &mut cadmpeg_ir::CadIr,
     objects: &[ObjectRecord],
