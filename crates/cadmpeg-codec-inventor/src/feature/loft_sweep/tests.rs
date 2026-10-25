@@ -6,6 +6,37 @@ use crate::record_identity::{Located, RecordTypeId};
 use crate::test_support::test_fixtures::{content_at, parse};
 use cadmpeg_ir::ids::IdentityKey;
 
+#[test]
+fn retained_features_report_unresolved_construction_controls_by_family() {
+    use crate::loss::InventorLossCode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
+
+    let definitions = ["Sweep", "Loft", "LoftSurface", "Sweep", "Revolve"].map(|kind| {
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Other(kind.into()),
+            parameters: std::collections::BTreeMap::new(),
+        })
+    });
+    let losses = retained_control_losses(&definitions);
+    assert_eq!(losses.len(), 2);
+    assert_eq!(
+        losses[0].code,
+        InventorLossCode::FeatureSweepControlsUnresolved.kind()
+    );
+    assert!(losses[0]
+        .message
+        .starts_with("Retained 2 native Inventor sweep"));
+    assert_eq!(
+        losses[1].code,
+        InventorLossCode::FeatureLoftControlsUnresolved.kind()
+    );
+    assert!(losses[1]
+        .message
+        .starts_with("Retained 2 native Inventor loft"));
+    assert!(retained_control_losses(std::iter::empty()).is_empty());
+    assert!(retained_control_losses(&definitions[4..]).is_empty());
+}
+
 fn header(version: u8) -> Vec<u8> {
     let stamps: &[i32] = match version {
         15..=22 => &[],

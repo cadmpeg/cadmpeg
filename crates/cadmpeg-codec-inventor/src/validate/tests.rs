@@ -459,6 +459,46 @@ fn fillet_continuity_is_nullable_and_rejects_a_resolved_non_boolean() {
     }
 }
 
+#[test]
+fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestResult {
+    for class in [
+        "05daba90d111386100080bbd0663dc09",
+        "e0ef542fd111340900084eba32a3dc09",
+        "808b00afd41140881000fca5bba647b5",
+    ] {
+        let mut data = thread_data()?;
+        let mut label = serde_json::to_value(&data.pm_dc_feature_labels[0])?;
+        label["class_id"] = serde_json::json!(class);
+        data.pm_dc_feature_labels[0] = serde_json::from_value(label)?;
+        for (reference, invalid) in [(0, false), (1, true)] {
+            let source = &data.pm_dc_features[0];
+            let mut payload = (**source).clone();
+            payload.properties = PmDcReferenceList::new(
+                2,
+                Some(PmDcListMetadata::U32([1, 0])),
+                vec![PmDcReference::from_packed(reference)],
+            )
+            .ok_or("invalid slot fixture")?;
+            data.pm_dc_features[0] = crate::record_identity::Located::new(
+                payload,
+                source.identity.type_id.clone(),
+                source.identity.segment_token.clone(),
+                source.identity.record_ordinal,
+            );
+            let mut findings = Vec::new();
+            super::validate_features(&cadmpeg_ir::CadIr::empty(), &data, &mut findings);
+            assert_eq!(findings.len(), usize::from(invalid));
+            if invalid {
+                assert_eq!(
+                    findings[0].message,
+                    "Inventor loft or sweep property slot has an invalid record type"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn sketch_point(
     version: u8,
     ordinal: u32,

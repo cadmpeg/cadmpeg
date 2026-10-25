@@ -269,6 +269,7 @@ fn projection_orders_history_and_marks_suppression() {
             sketches: &[],
             entities: &[],
             profile_bodies: &[],
+            result_model: None,
         },
     )
     .expect("feature projection");

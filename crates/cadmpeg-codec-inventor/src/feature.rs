@@ -1477,13 +1477,6 @@ const SHELL_CLASS_ID: ClassId = ClassId(NativeBytes::new([
 const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     (
         [
-            0x05, 0xda, 0xba, 0x90, 0xd1, 0x11, 0x38, 0x61, 0x00, 0x08, 0x0b, 0xbd, 0x06, 0x63,
-            0xdc, 0x09,
-        ],
-        "Sweep",
-    ),
-    (
-        [
             0x06, 0x19, 0xaa, 0x28, 0xd4, 0x11, 0xc7, 0x7a, 0x60, 0x00, 0xc4, 0xa4, 0xca, 0xe1,
             0xfb, 0xb0,
         ],
@@ -1530,13 +1523,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
             0x1c, 0x12,
         ],
         "SheetMetalCorner",
-    ),
-    (
-        [
-            0x80, 0x8b, 0x00, 0xaf, 0xd4, 0x11, 0x40, 0x88, 0x10, 0x00, 0xfc, 0xa5, 0xbb, 0xa6,
-            0x47, 0xb5,
-        ],
-        "LoftSurface",
     ),
     (
         [
@@ -1617,13 +1603,6 @@ const NATIVE_CLASSES: &[([u8; 16], &str)] = &[
     ),
     (
         [
-            0xe0, 0xef, 0x54, 0x2f, 0xd1, 0x11, 0x34, 0x09, 0x00, 0x08, 0x4e, 0xba, 0x32, 0xa3,
-            0xdc, 0x09,
-        ],
-        "Loft",
-    ),
-    (
-        [
             0xe6, 0xda, 0x3f, 0x26, 0x92, 0x4b, 0x5d, 0xab, 0x8e, 0x1b, 0xc5, 0xa9, 0x3f, 0xea,
             0xd7, 0xde,
         ],
@@ -1669,6 +1648,8 @@ pub(crate) enum FeatureFamily {
     Plate,
     Thicken,
     Shell,
+    Sweep,
+    Loft,
     Revolve,
 }
 
@@ -1684,6 +1665,8 @@ impl FeatureFamily {
             Self::Plate => &[PLATE_CLASS_ID],
             Self::Thicken => &[THICKEN_CLASS_ID],
             Self::Shell => &[SHELL_CLASS_ID],
+            Self::Sweep => &[loft_sweep::slots::SWEEP_CLASS],
+            Self::Loft => &[loft_sweep::slots::LOFT_CLASS],
             Self::Revolve => &[REVOLVE_CLASS_ID],
         }
     }
@@ -1704,6 +1687,8 @@ impl FeatureFamily {
             Self::Plate => 6,
             Self::Thicken => 15,
             Self::Shell => 9,
+            Self::Sweep => 15,
+            Self::Loft => 13,
             Self::Revolve => 17,
         }
     }
@@ -1718,6 +1703,8 @@ impl FeatureFamily {
             Self::Plate,
             Self::Thicken,
             Self::Shell,
+            Self::Sweep,
+            Self::Loft,
             Self::Revolve,
         ]
         .into_iter()
@@ -1753,6 +1740,12 @@ impl FeatureFamily {
                 Self::Shell,
                 FeatureDefinition::Operation(FeatureOperation::Shell { .. })
             ) | (
+                Self::Sweep,
+                FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+            ) | (
+                Self::Loft,
+                FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. })
+            ) | (
                 Self::Revolve,
                 FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
             )
@@ -1771,6 +1764,10 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Hole { .. }) => Some(Self::Hole),
             FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => Some(Self::Thicken),
             FeatureDefinition::Operation(FeatureOperation::Shell { .. }) => Some(Self::Shell),
+            FeatureDefinition::Operation(FeatureOperation::Sweep { .. }) => Some(Self::Sweep),
+            FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. }) => {
+                Some(Self::Loft)
+            }
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. }) => Some(Self::Revolve),
             _ => None,
         }
@@ -1778,6 +1775,7 @@ impl FeatureFamily {
 }
 
 struct ProjectionIndex<'a> {
+    result_model: Option<&'a cadmpeg_ir::document::Model>,
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
     sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
@@ -1802,6 +1800,7 @@ pub(crate) struct ProjectedSketches<'a> {
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     /// The decoded profile bodies that extrusion profiles resolve through.
     pub(crate) profile_bodies: &'a [profile::ProfileBody],
+    pub(crate) result_model: Option<&'a cadmpeg_ir::document::Model>,
 }
 
 pub(crate) fn project(
@@ -1816,6 +1815,7 @@ pub(crate) fn project(
         sketches,
         entities: sketch_entities,
         profile_bodies,
+        result_model,
     } = *projected;
     let total = inventory.features.len() + inventory.pattern_features.len();
     let mut feature_tokens = HashSet::new();
@@ -1897,6 +1897,7 @@ pub(crate) fn project(
         )
     }));
     let mut index = ProjectionIndex {
+        result_model,
         edge_names: HashMap::new(),
         sketch_entities: if inventory.properties.iter().any(|property| {
             matches!(
@@ -2024,6 +2025,9 @@ pub(crate) fn project(
                 FeatureFamily::Plate => project_plate(ctx, feature, label, &index),
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
                 FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
+                FeatureFamily::Sweep | FeatureFamily::Loft => {
+                    loft_sweep::projection::project(ctx, feature, label, &index, family)
+                }
                 FeatureFamily::Revolve => project_revolve(ctx, feature, label, &index),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
@@ -2356,8 +2360,13 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Plate => NativeFeatureKind::Other("Plate".into()),
             FeatureFamily::Thicken => NativeFeatureKind::Other("Thicken".into()),
             FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
+            FeatureFamily::Sweep => NativeFeatureKind::Other("Sweep".into()),
+            FeatureFamily::Loft => NativeFeatureKind::Other("Loft".into()),
             FeatureFamily::Revolve => NativeFeatureKind::Other("Revolve".into()),
         };
+    }
+    if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {
+        return NativeFeatureKind::Other(family.native_name().into());
     }
     NATIVE_CLASSES
         .iter()
@@ -4086,6 +4095,7 @@ mod tests {
                     sketches: &[],
                     entities: &[],
                     profile_bodies: &[],
+                    result_model: None,
                 },
             )
             .expect("feature projection")
@@ -4514,6 +4524,7 @@ mod tests {
         entity_style_links: &'a [PmDcEntityStyleLink],
     ) -> ProjectionIndex<'a> {
         ProjectionIndex {
+            result_model: None,
             edge_names: std::collections::HashMap::new(),
             sketch_entities: std::collections::HashMap::new(),
             properties: super::unique_index(properties.iter().map(|record| {
