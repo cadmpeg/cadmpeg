@@ -3,7 +3,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_asm::brep::records::FaceNativeKey;
+mod base;
+
+use cadmpeg_asm::brep::records::{BodyNativeKey, FaceNativeKey};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
@@ -970,7 +972,11 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             PmDcFeaturePropertyKind::References { items, .. } => {
                 references.extend(items.references().iter().map(|reference| reference.index()));
             }
-            PmDcFeaturePropertyKind::SurfaceBody { body } => references.push(body.index()),
+            PmDcFeaturePropertyKind::SurfaceBody { body } => {
+                if body.qualified() {
+                    references.push(body.index());
+                }
+            }
             PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } => {
                 references.push(entity_link.index());
             }
@@ -1068,6 +1074,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor loft section control or reference type is invalid".into(),
+                Some(property.id()),
+            ));
+        }
+        if let Some(message) = fillet_continuity_type_error(&property.kind, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                message.into(),
                 Some(property.id()),
             ));
         }
@@ -1422,6 +1438,23 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
+        if matches!(family, crate::feature::FeatureFamily::Base) {
+            if !base::valid(
+                ir,
+                data,
+                feature,
+                raw_feature,
+                results.get(&feature.id).copied(),
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Base result does not match its stored source and current model body"
+                        .into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         let output_slot = family.output_slot();
         let expected_collection = raw_feature
             .properties
@@ -1447,6 +1480,15 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for result in &ir.model.feature_result_topologies {
+        if ir.model.features.iter().any(|feature| {
+            feature.id == result.output_of
+                && matches!(
+                    crate::feature::FeatureFamily::from_definition(feature.evaluation.definition()),
+                    Some(crate::feature::FeatureFamily::Base)
+                )
+        }) {
+            continue;
+        }
         let Some(collection) = result
             .native_ref
             .as_deref()
@@ -1850,6 +1892,7 @@ struct NativeData {
     pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
+    body_native_keys: Vec<BodyNativeKey>,
     presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
@@ -1917,6 +1960,7 @@ impl NativeData {
             pm_graphics_primary_color_styles: namespace
                 .arena_as_for_decode(ctx, "pm_graphics_primary_color_styles")?,
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
+            body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
             presentation_record_issues: namespace
                 .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
@@ -2760,6 +2804,21 @@ pub(crate) fn fillet_option_is_admitted<'a>(
         || type_at(option.index() - 1).is_none_or(|type_id| {
             type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
         })
+}
+
+fn fillet_continuity_type_error<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> Option<&'static str> {
+    let PmDcFeaturePropertyKind::FilletEdgeSet { continuity, .. } = kind else {
+        return None;
+    };
+    let boolean_type = crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE);
+    continuity
+        .record_ordinal()
+        .and_then(type_at)
+        .is_some_and(|type_id| type_id != boolean_type)
+        .then_some("Inventor PmDc fillet continuity is not a Boolean record")
 }
 
 #[cfg(test)]

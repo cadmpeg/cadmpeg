@@ -25,7 +25,7 @@ mod annotations_native;
 mod carriers_parameterization;
 mod drawings;
 pub(crate) mod evaluation_cycles;
-mod geometry_consistency;
+pub mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
 mod pmi;

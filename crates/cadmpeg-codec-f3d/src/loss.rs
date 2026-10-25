@@ -52,6 +52,8 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceExpansionLimit,
     /// A component feature names no unique expanded occurrence.
     FeatureOccurrencePathUnresolved,
+    /// A sketch collection owner does not bind one component definition.
+    SketchOwnerUnresolved,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -216,6 +218,10 @@ pub(crate) enum F3dLossCode {
     MeshSurfaceSentinel,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
+    /// Vertex tolerance is widened to cover exact cache endpoints.
+    VertexToleranceWidened,
+    /// A cache-first spring support pcurve has no admitted endpoint relation.
+    SpringSupportPcurveUnresolved,
     /// Coedges carry a UV pcurve reference with no decodable 2D carrier.
     PcurveUndecoded,
     /// Rolling-ball blend definitions resolved only one of two native supports.
@@ -291,6 +297,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceOwnerCycle,
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
+        Self::SketchOwnerUnresolved,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
@@ -368,6 +375,8 @@ impl F3dLossCode {
         Self::SurfaceShapeNotDecoded,
         Self::MeshSurfaceSentinel,
         Self::ProceduralCurveUndecoded,
+        Self::VertexToleranceWidened,
+        Self::SpringSupportPcurveUnresolved,
         Self::PcurveUndecoded,
         Self::BlendSupportPartial,
         Self::SolvedRecordUntyped,
@@ -419,6 +428,7 @@ impl F3dLossCode {
             Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
+            Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
@@ -498,6 +508,8 @@ impl F3dLossCode {
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
+            Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::SpringSupportPcurveUnresolved => "geometry.spring-support-pcurve-unresolved",
             Self::PcurveUndecoded => "geometry.pcurve-undecoded",
             Self::BlendSupportPartial => "geometry.blend-support-partial",
             Self::SolvedRecordUntyped => "geometry.solved-record-untyped",
@@ -567,6 +579,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceExpansionLimit
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
+            | Self::SketchOwnerUnresolved
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised
@@ -633,6 +646,8 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
+            | Self::VertexToleranceWidened
+            | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
             | Self::BlendSupportPartial
             | Self::SolvedRecordUntyped
@@ -737,7 +752,8 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
-            Self::DesignBodyBindingUnresolved
+            Self::SketchOwnerUnresolved
+            | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ReferenceImageNativeRetained
@@ -760,9 +776,10 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
-            Self::ProceduralCurveUndecoded | Self::BlendSupportPartial => {
-                LossTaxonomy::ProceduralReduced
-            }
+            Self::VertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
+            Self::ProceduralCurveUndecoded
+            | Self::SpringSupportPcurveUnresolved
+            | Self::BlendSupportPartial => LossTaxonomy::ProceduralReduced,
             Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
@@ -841,6 +858,7 @@ mod tests {
                 "assembly.local-occurrence-owner-cycle",
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
+                "sketch.component-owner-unresolved",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
@@ -918,6 +936,8 @@ mod tests {
                 "geometry.surface-shape-not-decoded",
                 "geometry.mesh-surface-sentinel",
                 "geometry.procedural-curve-undecoded",
+                "geometry.vertex-tolerance-widened",
+                "geometry.spring-support-pcurve-unresolved",
                 "geometry.pcurve-undecoded",
                 "geometry.blend-support-partial",
                 "geometry.solved-record-untyped",
