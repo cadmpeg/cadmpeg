@@ -10,6 +10,7 @@
 //! view's help states which artifact kinds it accepts.
 
 mod document;
+mod effective;
 mod fidelity;
 mod graph;
 mod item;
@@ -78,6 +79,16 @@ pub(crate) enum QueryView {
     Schema(SchemaArgs),
     /// Read declared native projection links from a strictly admitted CADIR document.
     NativeLinks(QueryArgs),
+    /// Values the IR resolvers compute for a strictly admitted CADIR document.
+    ///
+    /// Each record's effective display colour, visibility, presentation-layer
+    /// names and, for an occurrence, its local effective transform; each
+    /// parameter's expression rendered with source parameter names; each
+    /// configuration's resolved parameter expressions, values and feature
+    /// suppression; and each feature and sketch-constraint definition with its
+    /// dimensions resolved. `--json` prints every value; the table lists the
+    /// per-record values.
+    Effective(QueryArgs),
     /// Walk identity references from start records.
     ///
     /// Accepts a CADIR document. Arena names and ID selection match
@@ -546,6 +557,7 @@ pub(crate) fn run(view: &QueryView) -> Result<()> {
         QueryView::Schema(args) => schema::run(args),
         QueryView::Graph(args) => graph::run(args),
         QueryView::NativeLinks(args) => native_links::run(args),
+        QueryView::Effective(args) => effective::run(args),
         QueryView::Join(args) => join::run(args),
         QueryView::Fidelity(args) => fidelity::run(&args.file, args.mode()?),
     }
