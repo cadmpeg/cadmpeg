@@ -35,100 +35,6 @@ fn parameter_discriminator_is_semantic_and_locations_are_not_document_content() 
 }
 
 #[test]
-fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
-    let fields = r#""record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","asset_id_offset":100,"context_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","context_id_offset":150,"identity_record_index":5,"identity_record_offset":180,"primary_identity":183,"primary_identity_offset":209"#;
-    let suffix = r#","next_record_index":6,"next_byte_offset":225}"#;
-    for prefix in [
-        "{",
-        "{\"id\":\"operand\",\"scope_record_index\":1,\"group_record_index\":2,\"group_member_ordinal\":0,",
-    ] {
-        for identities in [
-            "",
-            ",\"secondary_identity\":249,\"secondary_identity_offset\":217",
-            ",\"secondary_identity\":249,\"secondary_identity_offset\":217,\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201",
-        ] {
-            let wire = format!("{prefix}{fields}{identities}{suffix}");
-            let wire = if identities.is_empty() {
-                wire.replace(
-                    "\"primary_identity_offset\":209",
-                    "\"primary_identity_offset\":201",
-                )
-                .replace("\"next_byte_offset\":225", "\"next_byte_offset\":209")
-            } else {
-                wire
-            };
-            let encoded = if prefix == "{" {
-                let value: crate::records::feature::hole::DesignHoleFaceSelection =
-                    serde_json::from_str(&wire).expect("hole selection");
-                serde_json::to_string(&value).expect("hole selection wire")
-            } else {
-                let value: crate::records::topology::entity_selection::DesignEntitySelectionOperand = serde_json::from_str(&wire).expect("entity selection");
-                serde_json::to_string(&value).expect("entity selection wire")
-            };
-            assert_eq!(encoded, wire);
-        }
-        for field in [
-            "secondary_identity",
-            "secondary_identity_offset",
-            "curve_secondary_identity",
-            "curve_secondary_identity_offset",
-        ] {
-            let wire = format!("{prefix}{fields},\"{field}\":1{suffix}");
-            let error = if prefix == "{" {
-                serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(
-                    &wire,
-                )
-                .expect_err("partial hole selection identity")
-                .to_string()
-            } else {
-                serde_json::from_str::<
-                    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
-                >(&wire)
-                .expect_err("partial entity selection identity")
-                .to_string()
-            };
-            assert!(error.contains(field));
-        }
-        let wire = format!(
-            "{prefix}{fields},\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201{suffix}"
-        );
-        let error = if prefix == "{" {
-            serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(&wire)
-                .unwrap_err()
-                .to_string()
-        } else {
-            serde_json::from_str::<
-                crate::records::topology::entity_selection::DesignEntitySelectionOperand,
-            >(&wire)
-            .unwrap_err()
-            .to_string()
-        };
-        assert!(error.contains("secondary_identity"));
-        assert!(error.contains("curve_secondary_identity"));
-        for guid in [
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
-        ] {
-            let wire = format!("{prefix}{fields}{suffix}").replace(guid, "not-a-guid");
-            let error = if prefix == "{" {
-                serde_json::from_str::<crate::records::feature::hole::DesignHoleFaceSelection>(
-                    &wire,
-                )
-                .expect_err("non-GUID hole selection identity")
-                .to_string()
-            } else {
-                serde_json::from_str::<
-                    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
-                >(&wire)
-                .expect_err("non-GUID entity selection identity")
-                .to_string()
-            };
-            assert!(error.contains("GUID"), "{error}");
-        }
-    }
-}
-
-#[test]
 fn material_assignment_keeps_optional_tokens_independent_of_source_locations() {
     let base = serde_json::json!({"id":"f3d:native:material-assignment#0",
         "body_binding_id":"f3d:native:design-body-binding#0","asm_body_key":42,"entity_id":"0_985",
@@ -795,7 +701,7 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
             .expect("valid entity ID");
         assert_eq!(id.as_str(), name);
         assert_eq!(id.suffix(), suffix);
-        let wire = serde_json::json!({"entity_id": name, "entity_suffix": suffix, "entity_reference_offset": 20});
+        let wire = serde_json::json!({"entity_id": name, "entity_suffix": suffix});
         let binding: crate::records::feature::scope::DesignSketchEntityBinding =
             serde_json::from_value(wire.clone()).expect("matching suffix");
         assert_eq!(serde_json::to_value(binding).unwrap(), wire);
@@ -839,18 +745,14 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
         paired_byte_offset: 40,
     })
     .expect("valid source profile ID");
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    source.retain_source(&mut fidelity, "profile", "selection");
+    let pointers = crate::records::source_offsets::collect(&mut source.clone());
     for (field, offset) in [
-        ("byte_offset", "10"),
-        ("asset_id_offset", "20"),
-        ("entity_reference_offset", "30"),
-        ("paired_byte_offset", "40"),
+        ("byte_offset", 10),
+        ("asset_id_offset", 20),
+        ("entity_reference_offset", 30),
+        ("paired_byte_offset", 40),
     ] {
-        assert_eq!(
-            fidelity.metadata[&format!("profile.selection.{field}")],
-            offset
-        );
+        assert_eq!(pointers[field], offset);
     }
     let wire = serde_json::json!({
         "scope_reference_ordinal": 0, "record_index": 1,
@@ -1063,6 +965,7 @@ fn sketch_placement_source_forms_conserve_transform_in_payload_free_document() {
             Form::MemberExplicit {
                 paired_byte_offset: 50,
                 transform: matrix,
+                typed_reference: false,
             },
             162,
             Some(122),
@@ -1193,8 +1096,8 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
         (
             0x1000_0000,
             Some(Kind::Circular {
-                angle_parameter: 2,
-                count_parameter: 3,
+                angle_parameter: Some(2),
+                count_parameter: Some(3),
                 evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap(),
                 evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(2)
                     .unwrap(),
@@ -1205,8 +1108,8 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
             Some(Kind::Rectangular {
                 directions: std::array::from_fn(|_| {
                     crate::records::sketch_relations::SketchPatternDirection {
-                        count_parameter: 2,
-                        distance_parameter: 3,
+                        count_parameter: Some(2),
+                        distance_parameter: Some(3),
                         evaluated_count:
                             crate::records::sketch_relations::SketchPatternCount::try_from(2)
                                 .unwrap(),
@@ -1435,7 +1338,7 @@ fn sketch_point_flags_preserve_numeric_wire_and_reject_non_boolean_values() {
     ] {
         let mut base = json!({
             "id": "point", "record_index": 1, "class_tag": "000",
-            "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
+            "record_form": form,
             "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0
         });
         base["companion"] = json!({"incident_curves": []});
@@ -1726,7 +1629,7 @@ fn sketch_pattern_count_enforces_both_bounds() {
 #[test]
 fn sketch_identity_sidecar_rejects_zero() {
     let point = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
-        "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
+        "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 0, "closure": {"selector": 0, "state": 0},
         "companion": {"incident_curves": []}});
@@ -1753,7 +1656,7 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
         owner_reference: None,
         class_tag: "000".to_owned().try_into().unwrap(),
         byte_offset: Some(0),
-        coordinate_offset: 0,
+        coordinate_offset: Some(0),
         companion: crate::records::sketch_geometry::SketchPointCompanion {
             incident_curves: Vec::new(),
         },
@@ -1800,7 +1703,7 @@ fn sketch_point_admission_and_edits_keep_finite_coordinates() {
 #[test]
 fn sketch_point_requires_a_distinct_companion_on_every_route() {
     let mut wire = serde_json::json!({"id": "point", "record_index": 1, "class_tag": "000",
-        "byte_offset": 0, "coordinate_offset": 1, "record_form": {"kind": "version8"},
+        "record_form": {"kind": "version8"},
         "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0}, "depth": 0.0,
         "persistent_id": 1, "closure": {"selector": 0, "state": 0},
         "companion": {"incident_curves": []}});
@@ -1831,7 +1734,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         owner_reference: None,
         class_tag: "000".to_owned().try_into().unwrap(),
         byte_offset: Some(0),
-        coordinate_offset: 0,
+        coordinate_offset: Some(0),
         record_form: original.record_form().clone().into_raw(),
         paired_reference: 2,
         coordinates: original.coordinates(),
@@ -1947,3 +1850,5 @@ mod native_ids;
 mod persistent_text;
 
 mod locus_frames;
+
+mod selection_identities;

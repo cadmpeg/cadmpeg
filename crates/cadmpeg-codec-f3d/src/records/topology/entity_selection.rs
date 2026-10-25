@@ -292,6 +292,12 @@ impl DesignEntitySelectionOperand {
     pub(crate) fn primary_identity_offset(&self) -> u64 {
         self.identity_record_offset + self.selection.primary_delta()
     }
+    /// The single u64 identity of a compact 29-byte identity record, or
+    /// `None` for a frame that stores an identity pair.
+    pub(crate) fn compact_identity(&self) -> Option<u64> {
+        matches!(self.selection, EntitySelectionFrame::Primary { .. })
+            .then_some(self.primary_identity)
+    }
     pub(crate) fn secondary(&self) -> Option<DesignSecondaryIdentity<Located<u64>>> {
         self.selection.secondary(self.identity_record_offset)
     }
@@ -936,3 +942,49 @@ cadmpeg_core::named_optional_field!(
 mod tests;
 
 mod identity_rewrite;
+
+/// One curve entry of a typed-reference profile identity record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignProfileCurveEntry {
+    /// Sketch-curve primary identity named by the entry.
+    pub(crate) primary_id: u64,
+    /// Byte offset of `primary_id`.
+    pub(crate) primary_id_offset: u64,
+    /// Sketch-curve secondary identity; zero names no secondary identity.
+    pub(crate) secondary_id: u64,
+    /// The three u32 values after the secondary identity, retained as
+    /// encoded.
+    pub(crate) entry_fields: [u32; 3],
+}
+
+/// Profile selection whose identity record lists curve loops of one Sketch,
+/// written by the container generation whose references carry inline type
+/// GUIDs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignProfileCurveSelection {
+    /// Globally unique deterministic identifier for this native selection.
+    pub(crate) id: String,
+    /// Owning feature scope record.
+    pub(crate) scope_record_index: u32,
+    /// Owning construction-operand group record.
+    pub(crate) group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub(crate) group_member_ordinal: u32,
+    /// Primary selection record index.
+    pub(crate) record_index: u32,
+    /// Byte offset of the primary selection record header.
+    pub(crate) byte_offset: u64,
+    /// Decimal Sketch entity suffix stored in the selection prefix.
+    pub(crate) owner_text: String,
+    /// Byte offset of the owner text's UTF-16LE code units.
+    pub(crate) owner_text_offset: u64,
+    /// Sketch scope named by the chain record at the selection index plus one.
+    pub(crate) sketch_scope_record_index: u32,
+    /// Byte offset of the Sketch scope reference target.
+    pub(crate) sketch_scope_offset: u64,
+    /// Byte offset of the identity record at the selection index plus three.
+    pub(crate) identity_record_offset: u64,
+    /// The identity record's two counted loop lists, each in record order;
+    /// together their curves name the selected profile.
+    pub(crate) loop_lists: [Vec<Vec<DesignProfileCurveEntry>>; 2],
+}

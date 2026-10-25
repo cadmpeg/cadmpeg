@@ -5,144 +5,14 @@
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [
-        {
-          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:basic",
-          "name": "basic",
-          "target": {
-            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
-            "kind": "pmi"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        },
-        {
-          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:inspection",
-          "name": "inspection",
-          "target": {
-            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
-            "kind": "pmi"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": false
-            }
-          ]
-        },
-        {
-          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:precision",
-          "name": "precision",
-          "target": {
-            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
-            "kind": "pmi"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 3
-            }
-          ]
-        },
-        {
-          "id": "sldprt:model:attribute#pmi:01234567-89ab-cdef-0123-456789abcdef:reference_only",
-          "name": "reference_only",
-          "target": {
-            "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
-            "kind": "pmi"
-          },
-          "values": [
-            {
-              "kind": "boolean",
-              "value": true
-            }
-          ]
-        }
-      ],
-      "bodies": [
-        {
-          "id": "sldprt:brep:body#0",
-          "kind": "solid",
-          "regions": [
-            "sldprt:brep:region#0"
-          ]
-        }
-      ],
-      "coedges": [
-        {
-          "edge": "sldprt:brep:edge#40",
-          "id": "sldprt:brep:coedge#30",
-          "owner_loop": "sldprt:brep:loop#20",
-          "radial_next": "sldprt:brep:coedge#30",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#41",
-          "id": "sldprt:brep:coedge#31",
-          "owner_loop": "sldprt:brep:loop#20",
-          "radial_next": "sldprt:brep:coedge#31",
-          "sense": "forward"
-        },
-        {
-          "edge": "sldprt:brep:edge#42",
-          "id": "sldprt:brep:coedge#32",
-          "owner_loop": "sldprt:brep:loop#20",
-          "radial_next": "sldprt:brep:coedge#32",
-          "sense": "forward"
-        }
-      ],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#0"
-          ],
-          "id": "sldprt:model:configuration#partition:0",
-          "name": "Config-0",
-          "ordinal": 0,
-          "source_index": 0
-        }
-      ],
+      "attributes": [],
+      "bodies": [],
+      "coedges": [],
+      "configurations": [],
       "curves": [],
       "drawings": [],
-      "edges": [
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
-        },
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
-        },
-        {
-          "carrier": {},
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
-        }
-      ],
-      "faces": [
-        {
-          "id": "sldprt:brep:face#10",
-          "loops": {
-            "classification": "unspecified",
-            "loops": [
-              "sldprt:brep:loop#20"
-            ]
-          },
-          "sense": "forward",
-          "shell": "sldprt:brep:shell#0",
-          "surface": "sldprt:brep:surf#10"
-        }
-      ],
+      "edges": [],
+      "faces": [],
       "features": [
         {
           "definition": {
@@ -160,20 +30,7 @@
           "suppressed": false
         }
       ],
-      "loops": [
-        {
-          "boundary": {
-            "coedges": [
-              "sldprt:brep:coedge#30",
-              "sldprt:brep:coedge#31",
-              "sldprt:brep:coedge#32"
-            ],
-            "kind": "ring"
-          },
-          "face": "sldprt:brep:face#10",
-          "id": "sldprt:brep:loop#20"
-        }
-      ],
+      "loops": [],
       "occurrences": [],
       "parameters": [
         {
@@ -190,7 +47,6 @@
           "name": "D1",
           "ordinal": 0,
           "owner": "sldprt:model:feature#247:0",
-          "pmi": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef",
           "value": {
             "kind": "length",
             "value": 25.0
@@ -198,82 +54,16 @@
         }
       ],
       "pcurves": [],
-      "pmi": [
-        {
-          "definition": {
-            "dimension": "size",
-            "kind": "dimension",
-            "nominal": {
-              "kind": "parameter",
-              "value": "sldprt:model:parameter#247:0:0"
-            }
-          },
-          "id": "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef"
-        },
-        {
-          "definition": {
-            "kind": "presentation",
-            "semantics": [
-              "sldprt:model:pmi#01234567-89ab-cdef-0123-456789abcdef"
-            ],
-            "text": "25.000 mm"
-          },
-          "id": "sldprt:model:pmi#presentation:01234567-89ab-cdef-0123-456789abcdef"
-        }
-      ],
-      "points": [
-        {
-          "id": "sldprt:brep:point#60",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#61",
-          "position": {
-            "x": 1000.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "sldprt:brep:point#62",
-          "position": {
-            "x": 0.0,
-            "y": 1000.0,
-            "z": 0.0
-          }
-        }
-      ],
+      "pmi": [],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "sldprt:brep:body#0",
-          "id": "sldprt:brep:region#0",
-          "shells": [
-            "sldprt:brep:shell#0"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "id": "sldprt:brep:shell#0",
-          "members": [
-            {
-              "id": "sldprt:brep:face#10",
-              "kind": "face"
-            }
-          ],
-          "region": "sldprt:brep:region#0"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -281,44 +71,9 @@
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "sldprt:brep:surf#10"
-        }
-      ],
+      "surfaces": [],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "sldprt:brep:vertex#50",
-          "point": "sldprt:brep:point#60"
-        },
-        {
-          "id": "sldprt:brep:vertex#51",
-          "point": "sldprt:brep:point#61"
-        },
-        {
-          "id": "sldprt:brep:vertex#52",
-          "point": "sldprt:brep:point#62"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -380,12 +135,6 @@
         "sketch_input_entities": [],
         "unknowns": [
           {
-            "id": "sldprt:file:block#247"
-          },
-          {
-            "id": "sldprt:file:block#347"
-          },
-          {
             "id": "sldprt:file:block#8"
           }
         ]
@@ -393,14 +142,11 @@
     },
     "scope": {
       "design": true,
-      "model": true
+      "model": false
     },
     "source": {
       "attributes": {
-        "bmp_thumbnail_count": "0",
-        "parasolid_description": "partition body",
-        "parasolid_schema": "SCH_SW_33103_11000",
-        "png_preview_count": "0"
+        "parasolid_schema": "SCH_SW_33103_11000"
       },
       "identity": {
         "classification": "classified",
@@ -453,12 +199,34 @@
     "losses": [
       {
         "code": {
-          "code": "topology.body-hierarchy-derived",
-          "kind": "topology_gauge_substituted",
+          "code": "geometry.parasolid-not-transferred",
+          "kind": "geometry_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 3 payload source(s) were enumerated, 1 carrying Parasolid streams.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "topology.graph-not-transferred",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
+        "severity": "blocking"
+      },
+      {
+        "code": {
+          "code": "material.metadata-not-transferred",
+          "kind": "material_not_transferred",
           "namespace": "sldprt",
           "scope": "namespaced"
         },
-        "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
         "severity": "warning"
       },
       {
@@ -474,12 +242,13 @@
       },
       {
         "code": {
-          "code": "config.inferred-without-native",
-          "kind": "feature_history_retained",
+          "code": "topology.vertex-record-unresolved",
+          "kind": "topology_not_transferred",
           "namespace": "sldprt",
-          "scope": "namespaced"
+          "scope": "namespaced",
+          "strict_floor": "warning"
         },
-        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
+        "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
       },
       {
@@ -491,6 +260,17 @@
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the sldprt decoder did not deliver classes: model",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -499,140 +279,26 @@
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
     "transfer": {
-      "geometry_transferred": true,
+      "geometry_transferred": false,
       "scope": {
         "design": true,
-        "model": true
+        "model": false
       }
     }
   },
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "sldprt:brep:body#0": {
-          "entity": "derived",
+        "sldprt:file:block#8": {
+          "entity": "unknown",
           "scope": "entity"
-        },
-        "sldprt:brep:region#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:shell#0": {
-          "entity": "derived",
-          "scope": "entity"
-        },
-        "sldprt:brep:surf#10": {
-          "fields": {
-            "geometry.u_axis": "derived"
-          },
-          "scope": "fields"
         }
       },
       "provenance": {
-        "sldprt:brep:body#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:coedge#30": {
-          "offset": 146,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#31": {
-          "offset": 169,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:coedge#32": {
-          "offset": 192,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_11"
-        },
-        "sldprt:brep:edge#40": {
-          "offset": 215,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#41": {
-          "offset": 245,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:edge#42": {
-          "offset": 275,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_10"
-        },
-        "sldprt:brep:face#10": {
-          "offset": 91,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0e"
-        },
-        "sldprt:brep:loop#20": {
-          "offset": 130,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_0f"
-        },
-        "sldprt:brep:point#60": {
-          "offset": 383,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:point#61": {
-          "offset": 423,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:point#62": {
-          "offset": 463,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_1d"
-        },
-        "sldprt:brep:region#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:shell#0": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "synthetic_grouping"
-        },
-        "sldprt:brep:surf#10": {
-          "offset": 0,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "compact_surface"
-        },
-        "sldprt:brep:vertex#50": {
-          "offset": 305,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
-        "sldprt:brep:vertex#51": {
-          "offset": 331,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
-        "sldprt:brep:vertex#52": {
-          "offset": 357,
-          "stream": "Contents/Config-0-Partition",
-          "tag": "00_12"
-        },
-        "sldprt:file:block#247": {
-          "offset": 247,
-          "stream": "Contents/Keywords",
-          "tag": "unknown"
-        },
-        "sldprt:file:block#347": {
-          "offset": 347,
-          "stream": "Contents/PMISemanticDataDB",
-          "tag": "unqlite"
-        },
         "sldprt:file:block#8": {
-          "offset": 8,
+          "offset": 0,
           "stream": "Contents/Config-0-Partition",
-          "tag": "parasolid"
+          "tag": "parasolid_stream"
         },
         "sldprt:file:source-image#0": {
           "offset": 0,
@@ -658,43 +324,59 @@
     },
     "metadata": {
       "active_parasolid_block": "Contents/Config-0-Partition",
-      "block_count": "3",
-      "brep_local_sha256": "99515efff73d48415f7fadfea5439d9758fdc4538ace29a4f2e41e397705b946",
-      "compound_stream_count": "0",
-      "document_local_sha256": "2819893fb8ce6203a93f567c79f1ab9f961b1def5f8f63d580bccf7fe739cd1e",
+      "brep_local_sha256": "90c8f71fa076a81c0c053ae3a519abe4e4e722a097fa23c783ef7abb5dab1f29",
+      "document_local_sha256": "379fbeaf5c93aaaf68314b9a3cce182305bb98cab754a87500a17003754b31af",
       "outer_version": "0x00000004",
-      "sldprt_pmi_local_sha256": "88bab75262be85b6b5a40dc383b946ed86b402025609c491d04d02e964089ac4",
       "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
       "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "record_layout": {
+      "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef": {
+        "byte_len": 201,
+        "offset": 100,
+        "payloads": {},
+        "pointers": {
+          "basic_offset": 184,
+          "display_text_offset": 254,
+          "inspection_offset": 198,
+          "offset": 100,
+          "precision_offset": 229,
+          "reference_only_offset": 215,
+          "value_offset": 237
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 615,
+              "start": 399
+            }
+          ],
+          "sldprt-block:4:file:399:216": [
+            {
+              "end": 282,
+              "start": 64
+            },
+            {
+              "end": 301,
+              "start": 291
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:399:216"
+      }
+    },
     "retained_records": {
-      "sldprt:file:block#247": {
-        "bytes": {
-          "data": "PEtleXdvcmRzPjxTa2V0Y2ggTmFtZT0iU2tldGNoMSIgVHlwZT0iUHJvZmlsZUZlYXR1cmUiLz48L0tleXdvcmRzPg==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "Contents/Keywords",
-        "untyped": []
-      },
-      "sldprt:file:block#347": {
-        "bytes": {
-          "data": "dW5xbGl0ZQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAxMjM0NTY3LTg5YWItY2RlZi0wMTIzLTQ1Njc4OWFiY2RlZoeoYW5ub1R5cGUBp2NhZFRleHSqRDFAU2tldGNoMahkaW1JdGVtc5GHpWNsYXNzqkRpbVNlbURhdGGqZGltU3ViVHlwZaZMaW5lYXKnaXNCYXNpY8OsaXNJbnNwZWN0aW9uwq9pc1JlZmVyZW5jZU9ubHnDrHZhbFByZWNpc2lvbgOldmFsdWXLP5mZmZmZmZqnZGltVGV4dKkyNS4wMDAgbW2nZGltVHlwZQCoaURTdHJpbmepbmF0aXZlLWlkqHJlc2VydmVkwA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "Contents/PMISemanticDataDB",
-        "untyped": []
-      },
       "sldprt:file:block#8": {
         "bytes": {
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
           "retention": "inline"
         },
-        "offset": 0,
+        "offset": 8,
         "stream": "Contents/Config-0-Partition",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -706,6 +388,8 @@
         "untyped": []
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

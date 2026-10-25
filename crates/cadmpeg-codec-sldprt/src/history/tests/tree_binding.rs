@@ -6,7 +6,6 @@ use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::records::FeatureSource;
@@ -150,7 +149,12 @@ fn decode_types_non_modeling_feature_tree_nodes() {
         ]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let definitions = decoded
@@ -202,13 +206,12 @@ fn decode_types_non_modeling_feature_tree_nodes() {
     )));
     decoded.ir_mut().model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

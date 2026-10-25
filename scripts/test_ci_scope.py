@@ -92,6 +92,18 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(scope['rust'])
         self.assertFalse(scope['fuzz'])
 
+    def test_preflight_tools_skip_rust(self):
+        scope = select(ROOT, ['scripts/preflight.py', 'scripts/preflight_branch.py',
+                              'scripts/test_preflight_branch.py'])
+        self.assertFalse(scope['rust'])
+        self.assertFalse(scope['full'])
+
+    def test_only_named_preflight_tools_skip_rust(self):
+        for path in ['scripts/preflight-data.json', 'scripts/preflight/helper.py',
+                     'scripts/sub/preflight_x.py', 'scripts/preflightx.py']:
+            with self.subTest(path=path):
+                self.assertTrue(select(ROOT, [path])['full'])
+
     def test_codec_selects_facade_and_cli_dependents(self):
         scope = select(ROOT, ['crates/cadmpeg-codec-iges/src/reader.rs'])
         self.assertIn('cadmpeg-codec-iges', scope['packages'])
@@ -159,6 +171,12 @@ class ScopeTests(unittest.TestCase):
         scope = select(ROOT, ['docs/dialect-id-conformance.toml'])
         self.assertFalse(scope['full'])
         self.assertIn('cadmpeg-core', scope['packages'])
+
+    def test_measurement_contract_selects_measure_crate(self):
+        scope = select(ROOT, ['docs/measurement.md'])
+        self.assertFalse(scope['full'])
+        self.assertIn('cadmpeg-measure', scope['packages'])
+        self.assertTrue(scope['rust'])
 
     def test_prose_and_static_tables_skip_rust(self):
         for path in ('docs/architecture.md', 'README.md', 'docs/codec-facade.toml',

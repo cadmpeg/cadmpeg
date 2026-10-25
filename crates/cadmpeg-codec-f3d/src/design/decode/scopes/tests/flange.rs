@@ -51,7 +51,7 @@ fn base_flange_scope_has_exact_profile_and_thickness_fields() {
     )
     .expect("fixed BaseFlange operation");
     assert_eq!(operation.thickness.get(), 0.25);
-    assert_eq!(operation.thickness_offset, 123);
+    assert_eq!(operation.thickness_offset, Some(123));
     assert_eq!(operation.profile_group_record_index, 256);
     assert_eq!(operation.profile_record_index, 259);
     assert_eq!(operation.thickness_record_index, 263);
@@ -140,7 +140,7 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
     assert_eq!(operation.angle_owner_record_index, 218);
     assert_eq!(operation.settings_record_index, 207);
     assert!((operation.bend_radius.get() - 0.25).abs() < EPS_BEND_RADIUS);
-    assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
+    assert_eq!(operation.bend_radius_offset, Some(frame.bend_radius_offset));
     assert_eq!(
         operation.bend_position,
         crate::records::feature::sheet_metal::DesignBendPosition::Inside
@@ -274,7 +274,7 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
         assert_eq!(operation.angle_owner_record_index, 218);
         assert_eq!(operation.settings_record_index, 207);
         assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
-        assert_eq!(operation.bend_radius_offset, 138);
+        assert_eq!(operation.bend_radius_offset, Some(138));
         assert_eq!(
             operation.bend_position,
             crate::records::feature::sheet_metal::DesignBendPosition::Inside
@@ -346,7 +346,7 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
         assert_eq!(operation.angle_owner_record_index, 222);
         assert_eq!(operation.settings_record_index, 234);
         assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
-        assert_eq!(operation.bend_radius_offset, 165);
+        assert_eq!(operation.bend_radius_offset, Some(165));
         assert_eq!(
             operation.bend_position,
             crate::records::feature::sheet_metal::DesignBendPosition::Inside
@@ -432,7 +432,7 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
         crate::records::feature::sheet_metal::DesignEdgeWidthMode::SymmetricPerEdge
     );
     assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
-    assert_eq!(operation.bend_radius_offset, 165);
+    assert_eq!(operation.bend_radius_offset, Some(165));
 }
 
 #[test]
@@ -516,7 +516,7 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
             crate::records::feature::sheet_metal::DesignEdgeWidthMode::TwoSidesPerEdge
         );
         assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
-        assert_eq!(operation.bend_radius_offset, 169);
+        assert_eq!(operation.bend_radius_offset, Some(169));
     }
 }
 
@@ -575,7 +575,7 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
     assert_eq!(operation.angle_owner_record_index, 218);
     assert_eq!(operation.settings_record_index, 207);
     assert!((operation.bend_radius.get() - 0.25).abs() < EPS_BEND_RADIUS);
-    assert_eq!(operation.bend_radius_offset, 142);
+    assert_eq!(operation.bend_radius_offset, Some(142));
     assert_eq!(
         operation.bend_position,
         crate::records::feature::sheet_metal::DesignBendPosition::Adjacent
@@ -686,7 +686,7 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
     assert_eq!(operation.height_owner_record_index, 225);
     assert_eq!(operation.angle_owner_record_index, 228);
     assert!((operation.bend_radius.get() - 0.254).abs() < EPS_BEND_RADIUS);
-    assert_eq!(operation.bend_radius_offset, 169);
+    assert_eq!(operation.bend_radius_offset, Some(169));
 }
 
 #[test]

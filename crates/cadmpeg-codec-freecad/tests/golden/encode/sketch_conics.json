@@ -3,7 +3,7 @@
     {
       "name": "Document.xml",
       "payload_len": 10607,
-      "payload_sha256": "5057bd65b10e4f68756a495a71bba10c27c7f23a82b071168bb32c29642f7107"
+      "payload_sha256": "4d1b8a28c5175e8bc5cfd30324ff4f1b6b925c6ed408f137c69dd5ad677e2f5a"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -12,8 +12,8 @@
     },
     {
       "name": "ConicWitness.brp",
-      "payload_len": 2304,
-      "payload_sha256": "b5864d03103cf908fa67410652d8cf9d203d791b59123acfccd958c32befc426"
+      "payload_len": 2272,
+      "payload_sha256": "f9f9c2d9d359fcac92927309b578564d06201e7bb045dabf19d1f20919d282e2"
     }
   ],
   "report": {
@@ -144,7 +144,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 3 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.entries`: fcstd:native:entry#ConicWitness.InternalShape.brp, fcstd:native:entry#ConicWitness.Shape.Map.txt, fcstd:native:entry#ConicWitness.Shape.brp",
         "severity": "info"
       },
       {
@@ -154,7 +154,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 5 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 5 native record(s) from `fcstd.properties`: fcstd:native:property#ConicWitness:ExpressionEngine, fcstd:native:property#ConicWitness:ExternalGeo, fcstd:native:property#ConicWitness:ExternalGeometry, fcstd:native:property#ConicWitness:InternalShape, fcstd:native:property#CorpusMetadata:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -164,7 +164,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.shape_payloads`",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#ConicWitness:InternalShape:ConicWitness.InternalShape.brp",
         "severity": "info"
       }
     ],
@@ -316,9 +316,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

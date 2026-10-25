@@ -80,3 +80,28 @@ fn metadata_digest_preserves_recursion_refusal() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(first)) if first == limit)
     );
 }
+
+#[test]
+fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let mut ir = CadIr::empty();
+    ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
+        id: AttributeId::mint("sldprt:metadata:transformed_reference_enclosure#0:6").unwrap(),
+        target: AttributeTarget::Document,
+        name: "transformed_reference_enclosure".into(),
+        values: vec![
+            AttributeValue::vector([0., 0., 0.]).unwrap(),
+            AttributeValue::vector([100., 100., 100.]).unwrap(),
+            AttributeValue::vector([-100., -100., -100.]).unwrap(),
+            AttributeValue::float(200.).unwrap(),
+        ],
+    });
+    assert!(matches!(
+        crate::writer::metadata_payloads(&ir, 0.001, false),
+        Err(CodecError::NotImplemented(_))
+    ));
+    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001, true).unwrap();
+    assert!(objects.is_empty());
+    assert!(units.is_none());
+}

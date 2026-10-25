@@ -1,0 +1,1457 @@
+{
+  "ir": {
+    "ir_version": "8",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "assembly_joints": [],
+      "attributes": [],
+      "bodies": [
+        {
+          "id": "sldprt:brep:body#900",
+          "kind": "solid",
+          "regions": [
+            "sldprt:brep:region#902"
+          ]
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "sldprt:brep:edge#40",
+          "id": "sldprt:brep:coedge#30",
+          "owner_loop": "sldprt:brep:loop#20",
+          "radial_next": "sldprt:brep:coedge#30",
+          "sense": "forward"
+        },
+        {
+          "edge": "sldprt:brep:edge#41",
+          "id": "sldprt:brep:coedge#31",
+          "owner_loop": "sldprt:brep:loop#20",
+          "radial_next": "sldprt:brep:coedge#31",
+          "sense": "forward"
+        },
+        {
+          "edge": "sldprt:brep:edge#42",
+          "id": "sldprt:brep:coedge#32",
+          "owner_loop": "sldprt:brep:loop#20",
+          "radial_next": "sldprt:brep:coedge#32",
+          "sense": "forward"
+        }
+      ],
+      "configurations": [
+        {
+          "active": true,
+          "bodies": [
+            "sldprt:brep:body#900"
+          ],
+          "id": "sldprt:model:configuration#968:0",
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#968:0",
+          "ordinal": 0,
+          "source_index": 0
+        }
+      ],
+      "curves": [],
+      "drawings": [],
+      "edges": [
+        {
+          "carrier": {},
+          "end": "sldprt:brep:vertex#51",
+          "id": "sldprt:brep:edge#40",
+          "start": "sldprt:brep:vertex#50"
+        },
+        {
+          "carrier": {},
+          "end": "sldprt:brep:vertex#52",
+          "id": "sldprt:brep:edge#41",
+          "start": "sldprt:brep:vertex#51"
+        },
+        {
+          "carrier": {},
+          "end": "sldprt:brep:vertex#50",
+          "id": "sldprt:brep:edge#42",
+          "start": "sldprt:brep:vertex#52"
+        }
+      ],
+      "faces": [
+        {
+          "id": "sldprt:brep:face#10",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "sldprt:brep:loop#20"
+            ]
+          },
+          "sense": "forward",
+          "shell": "sldprt:brep:shell#901",
+          "surface": "sldprt:brep:surf#10"
+        }
+      ],
+      "features": [],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "sldprt:brep:coedge#30",
+              "sldprt:brep:coedge#31",
+              "sldprt:brep:coedge#32"
+            ],
+            "kind": "ring"
+          },
+          "face": "sldprt:brep:face#10",
+          "id": "sldprt:brep:loop#20"
+        }
+      ],
+      "occurrences": [],
+      "parameters": [],
+      "pcurves": [],
+      "pmi": [],
+      "points": [
+        {
+          "id": "sldprt:brep:point#60",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#61",
+          "position": {
+            "x": 1000.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "sldprt:brep:point#62",
+          "position": {
+            "x": 0.0,
+            "y": 1000.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "product_definitions": [],
+      "regions": [
+        {
+          "body": "sldprt:brep:body#900",
+          "id": "sldprt:brep:region#902",
+          "shells": [
+            "sldprt:brep:shell#901"
+          ]
+        }
+      ],
+      "semantic_annotations": [],
+      "shells": [
+        {
+          "id": "sldprt:brep:shell#901",
+          "members": [
+            {
+              "id": "sldprt:brep:face#10",
+              "kind": "face"
+            }
+          ],
+          "region": "sldprt:brep:region#902"
+        }
+      ],
+      "sketch_constraints": [
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:0",
+                "kind": "start"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:2",
+                "kind": "end"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#348:0:0:0",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:0",
+                "kind": "end"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:1",
+                "kind": "start"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#348:0:0:1",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:1",
+                "kind": "end"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:2",
+                "kind": "start"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#348:0:0:2",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:0",
+                "kind": "start"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:2",
+                "kind": "end"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#348:1:0:3",
+          "sketch": "sldprt:model:sketch#348:1:0"
+        },
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:0",
+                "kind": "end"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:1",
+                "kind": "start"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#348:1:0:4",
+          "sketch": "sldprt:model:sketch#348:1:0"
+        },
+        {
+          "definition": {
+            "kind": "coincident_loci",
+            "loci": [
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:1",
+                "kind": "end"
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:2",
+                "kind": "start"
+              }
+            ]
+          },
+          "id": "sldprt:model:sketch-constraint#348:1:0:5",
+          "sketch": "sldprt:model:sketch#348:1:0"
+        }
+      ],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#60",
+            "0:sldprt:brep:point#61"
+          ],
+          "geometry": {
+            "curve": {
+              "degree": 2,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "form": "polynomial",
+                "points": [
+                  {
+                    "u": 0.0,
+                    "v": 0.0
+                  },
+                  {
+                    "u": 500.0,
+                    "v": 1000.0
+                  },
+                  {
+                    "u": 1000.0,
+                    "v": 0.0
+                  }
+                ]
+              }
+            },
+            "kind": "nurbs"
+          },
+          "geometry_ref": "0:sldprt:brep:curve#70",
+          "id": "sldprt:model:sketch-entity#348:0:0:0",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#61",
+            "0:sldprt:brep:point#62"
+          ],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 1000.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 1000.0,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:1",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "0:sldprt:brep:point#62",
+            "0:sldprt:brep:point#60"
+          ],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": 1000.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:0:0:2",
+          "sketch": "sldprt:model:sketch#348:0:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "1:sldprt:brep:point#60",
+            "1:sldprt:brep:point#61"
+          ],
+          "geometry": {
+            "curve": {
+              "degree": 2,
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "form": "rational",
+                "points": [
+                  {
+                    "point": {
+                      "u": 0.0,
+                      "v": 0.0
+                    },
+                    "weight": 1.0
+                  },
+                  {
+                    "point": {
+                      "u": 500.0,
+                      "v": 1000.0
+                    },
+                    "weight": 0.5
+                  },
+                  {
+                    "point": {
+                      "u": 1000.0,
+                      "v": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
+              }
+            },
+            "kind": "nurbs"
+          },
+          "geometry_ref": "1:sldprt:brep:curve#70",
+          "id": "sldprt:model:sketch-entity#348:1:0:0",
+          "sketch": "sldprt:model:sketch#348:1:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "1:sldprt:brep:point#61",
+            "1:sldprt:brep:point#62"
+          ],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 1000.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 1000.0,
+              "v": 0.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:1:0:1",
+          "sketch": "sldprt:model:sketch#348:1:0"
+        },
+        {
+          "construction": false,
+          "endpoint_refs": [
+            "1:sldprt:brep:point#62",
+            "1:sldprt:brep:point#60"
+          ],
+          "geometry": {
+            "end": {
+              "u": 0.0,
+              "v": 0.0
+            },
+            "kind": "line",
+            "start": {
+              "u": 0.0,
+              "v": 1000.0
+            }
+          },
+          "id": "sldprt:model:sketch-entity#348:1:0:2",
+          "sketch": "sldprt:model:sketch#348:1:0"
+        }
+      ],
+      "sketches": [
+        {
+          "configuration": "0",
+          "id": "sldprt:model:sketch#348:0:0",
+          "name": "feature input spline sketch",
+          "native_ref": "sldprt:feature-input:resolved-features#348",
+          "placement": {
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "resolved"
+          },
+          "profiles": [
+            [
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:0",
+                "reversed": false
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:1",
+                "reversed": false
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:0:0:2",
+                "reversed": false
+              }
+            ]
+          ]
+        },
+        {
+          "configuration": "0",
+          "id": "sldprt:model:sketch#348:1:0",
+          "name": "feature input rational spline sketch",
+          "native_ref": "sldprt:feature-input:resolved-features#348",
+          "placement": {
+            "frame": {
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "resolved"
+          },
+          "profiles": [
+            [
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:0",
+                "reversed": false
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:1",
+                "reversed": false
+              },
+              {
+                "entity": "sldprt:model:sketch-entity#348:1:0:2",
+                "reversed": false
+              }
+            ]
+          ]
+        }
+      ],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "plane",
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          },
+          "id": "sldprt:brep:surf#10"
+        }
+      ],
+      "tessellations": [],
+      "vertices": [
+        {
+          "id": "sldprt:brep:vertex#50",
+          "point": "sldprt:brep:point#60"
+        },
+        {
+          "id": "sldprt:brep:vertex#51",
+          "point": "sldprt:brep:point#61"
+        },
+        {
+          "id": "sldprt:brep:vertex#52",
+          "point": "sldprt:brep:point#62"
+        }
+      ],
+      "view_presentations": []
+    },
+    "native": {
+      "sldprt": {
+        "configurations": [
+          {
+            "id": "sldprt:history:configuration#968:0",
+            "name": "Default",
+            "ordinal": 0,
+            "parent": "sldprt:history:feature-history#968",
+            "properties": {},
+            "source_index": 0
+          }
+        ],
+        "document_metadata": [],
+        "feature_histories": [
+          {
+            "configurations": [],
+            "content": [
+              {
+                "kind": "configuration",
+                "value": "sldprt:history:configuration#968:0"
+              }
+            ],
+            "features": [],
+            "id": "sldprt:history:feature-history#968"
+          }
+        ],
+        "feature_input_body_selections": [],
+        "feature_input_classes": [
+          {
+            "id": "sldprt:feature-input:class#348:0",
+            "name": "sgPointHandle",
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "role": "sketch_entity",
+            "sequence": 0
+          },
+          {
+            "id": "sldprt:feature-input:class#348:106",
+            "name": "sgPntPntDist",
+            "ordinal": 3,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "role": "sketch_constraint",
+            "sequence": 5
+          },
+          {
+            "id": "sldprt:feature-input:class#348:19",
+            "name": "sgLineHandle",
+            "ordinal": 1,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "role": "sketch_entity",
+            "sequence": 1
+          },
+          {
+            "id": "sldprt:feature-input:class#348:37",
+            "name": "sgArcHandle",
+            "ordinal": 2,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "role": "sketch_entity",
+            "sequence": 2
+          }
+        ],
+        "feature_input_edge_selections": [],
+        "feature_input_generated_surface_identities": [],
+        "feature_input_lanes": [
+          {
+            "body_selections": [],
+            "classes": [],
+            "configuration": "0",
+            "edge_selections": [],
+            "generated_surface_identities": [],
+            "id": "sldprt:feature-input:resolved-features#348",
+            "names": [],
+            "payload_evidence": {
+              "byte_len": 2252,
+              "sha256": "a6499b48b67ac223b2842dacc2fd5e859e894c4cd79d094d811872501ea9a0ea"
+            },
+            "references": [],
+            "relation_bindings": [],
+            "relation_instances": [],
+            "scalars": [],
+            "sketch_entities": [],
+            "surface_selections": []
+          }
+        ],
+        "feature_input_names": [
+          {
+            "id": "sldprt:feature-input:name#348:124",
+            "object_id": 4294967295,
+            "ordinal": 2,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "sequence": 6,
+            "value": "D1"
+          },
+          {
+            "id": "sldprt:feature-input:name#348:54",
+            "object_id": 7536751,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "sequence": 3,
+            "value": "Sketch1"
+          },
+          {
+            "id": "sldprt:feature-input:name#348:74",
+            "object_id": 1349807696,
+            "ordinal": 1,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "sequence": 4,
+            "value": "Boss-Extrude1"
+          }
+        ],
+        "feature_input_references": [
+          {
+            "id": "sldprt:feature-input:reference#348:199",
+            "kind": "d6",
+            "object_index": 0,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "sequence": 8
+          },
+          {
+            "id": "sldprt:feature-input:reference#348:211",
+            "kind": "d6",
+            "object_index": 2,
+            "ordinal": 1,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "sequence": 9
+          }
+        ],
+        "feature_input_relation_bindings": [
+          {
+            "class_ref": "sldprt:feature-input:class#348:106",
+            "family": "point_point_distance",
+            "id": "sldprt:feature-input:relation-binding#348:3",
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "scalar_ref": "sldprt:feature-input:scalar#348:156",
+            "sequence": 5
+          }
+        ],
+        "feature_input_relation_instances": [],
+        "feature_input_scalars": [
+          {
+            "entity_indices": [
+              0,
+              2
+            ],
+            "id": "sldprt:feature-input:scalar#348:156",
+            "name": "sldprt:feature-input:name#348:124",
+            "object_id": 1,
+            "operands": [
+              {
+                "entity_index": 0,
+                "kind": "d6",
+                "reference_ref": "sldprt:feature-input:reference#348:199"
+              },
+              {
+                "entity_index": 2,
+                "kind": "d6",
+                "reference_ref": "sldprt:feature-input:reference#348:211"
+              }
+            ],
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "role": "driving",
+            "sequence": 7,
+            "value": 0.025
+          }
+        ],
+        "feature_input_surface_selections": [],
+        "features": [],
+        "pmi_dimensions": [],
+        "sketch_input_entities": [
+          {
+            "id": "sldprt:feature-input:sketch-entity#348:223",
+            "kind": {
+              "relation": "distance"
+            },
+            "local_id": 1,
+            "object_index": 0,
+            "ordinal": 0,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "sequence": 10,
+            "state_value": 1.0
+          },
+          {
+            "id": "sldprt:feature-input:sketch-entity#348:315",
+            "kind": {
+              "relation": "distance"
+            },
+            "local_id": 2,
+            "object_index": 1,
+            "ordinal": 1,
+            "parent": "sldprt:feature-input:resolved-features#348",
+            "sequence": 11,
+            "state_value": 2.0
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "sldprt:file:block#1088"
+          },
+          {
+            "id": "sldprt:file:block#12"
+          },
+          {
+            "id": "sldprt:file:block#348"
+          },
+          {
+            "id": "sldprt:file:block#968"
+          }
+        ]
+      }
+    },
+    "scope": {
+      "design": true,
+      "model": true
+    },
+    "source": {
+      "attributes": {
+        "parasolid_description": "partition body",
+        "parasolid_schema": "SCH_SW_33103_11000",
+        "sw_configuration_0_most_recent": "YES",
+        "sw_configuration_name": "Default"
+      },
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@12:Contents/Config-0-Partition+0",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@12:Contents/Config-0-Partition+0"
+            },
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@348:Contents/Config-0-ResolvedFeatures+407",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@348:Contents/Config-0-ResolvedFeatures+407"
+            },
+            {
+              "admission": "admitted",
+              "declared": {
+                "carrier": "block@348:Contents/Config-0-ResolvedFeatures+1313",
+                "schema": "SCH_SW_33103_11000"
+              },
+              "dialect": "parasolid:sch-sw-33103",
+              "instance": "block@348:Contents/Config-0-ResolvedFeatures+1313"
+            }
+          ],
+          "primary": {
+            "admission": "residual",
+            "dialect": "sldprt:unknown"
+          }
+        }
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "length": "millimeter"
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@12:Contents/Config-0-Partition+0",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@12:Contents/Config-0-Partition+0"
+          },
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@348:Contents/Config-0-ResolvedFeatures+407",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@348:Contents/Config-0-ResolvedFeatures+407"
+          },
+          {
+            "admission": "admitted",
+            "declared": {
+              "carrier": "block@348:Contents/Config-0-ResolvedFeatures+1313",
+              "schema": "SCH_SW_33103_11000"
+            },
+            "dialect": "parasolid:sch-sw-33103",
+            "instance": "block@348:Contents/Config-0-ResolvedFeatures+1313"
+          }
+        ],
+        "primary": {
+          "admission": "residual",
+          "dialect": "sldprt:unknown"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.opaque-records-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "source record sldprt:file:block#1088 has no typed neutral or native payload representation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.native-geometry",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "sketch-input entity sldprt:feature-input:sketch-entity#348:223 has no neutral geometry or constraint projection; its typed native marker is retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "sketch.native-geometry",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "sketch-input entity sldprt:feature-input:sketch-entity#348:315 has no neutral geometry or constraint projection; its typed native marker is retained",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "outer version word: 0x00000004; 4 CRC-validated block(s), 4 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+      "active Parasolid B-rep candidate: Contents/Config-0-Partition (701 bytes, schema SCH_SW_33103_11000)",
+      "Parasolid body streams supply the typed topology and analytic carriers used by decode"
+    ],
+    "transfer": {
+      "geometry_transferred": true,
+      "scope": {
+        "design": true,
+        "model": true
+      }
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {
+        "sldprt:brep:surf#10": {
+          "fields": {
+            "geometry.u_axis": "derived"
+          },
+          "scope": "fields"
+        },
+        "sldprt:model:sketch#348:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch#348:1:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:1:0:3": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:1:0:4": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-constraint#348:1:0:5": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-entity#348:0:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-entity#348:0:0:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-entity#348:0:0:2": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-entity#348:1:0:0": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-entity#348:1:0:1": {
+          "entity": "derived",
+          "scope": "entity"
+        },
+        "sldprt:model:sketch-entity#348:1:0:2": {
+          "entity": "derived",
+          "scope": "entity"
+        }
+      },
+      "provenance": {
+        "sldprt:brep:body#900": {
+          "offset": 515,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_51_body"
+        },
+        "sldprt:brep:coedge#30": {
+          "offset": 146,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_11"
+        },
+        "sldprt:brep:coedge#31": {
+          "offset": 169,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_11"
+        },
+        "sldprt:brep:coedge#32": {
+          "offset": 192,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_11"
+        },
+        "sldprt:brep:edge#40": {
+          "offset": 215,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_10"
+        },
+        "sldprt:brep:edge#41": {
+          "offset": 247,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_10"
+        },
+        "sldprt:brep:edge#42": {
+          "offset": 279,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_10"
+        },
+        "sldprt:brep:face#10": {
+          "offset": 91,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_0e"
+        },
+        "sldprt:brep:loop#20": {
+          "offset": 130,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_0f"
+        },
+        "sldprt:brep:point#60": {
+          "offset": 395,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_1d"
+        },
+        "sldprt:brep:point#61": {
+          "offset": 435,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_1d"
+        },
+        "sldprt:brep:point#62": {
+          "offset": 475,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_1d"
+        },
+        "sldprt:brep:region#902": {
+          "offset": 610,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_51_region"
+        },
+        "sldprt:brep:shell#901": {
+          "offset": 585,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_51_shell"
+        },
+        "sldprt:brep:surf#10": {
+          "offset": 0,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "compact_surface"
+        },
+        "sldprt:brep:vertex#50": {
+          "offset": 311,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_12"
+        },
+        "sldprt:brep:vertex#51": {
+          "offset": 339,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_12"
+        },
+        "sldprt:brep:vertex#52": {
+          "offset": 367,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "00_12"
+        },
+        "sldprt:feature-input:resolved-features#348": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "ResolvedFeatures"
+        },
+        "sldprt:feature-input:sketch-entity#348:223": {
+          "offset": 223,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "ff_ff_1f_00_03"
+        },
+        "sldprt:feature-input:sketch-entity#348:315": {
+          "offset": 315,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "ff_ff_1f_00_03"
+        },
+        "sldprt:file:block#1088": {
+          "offset": 1088,
+          "stream": "Contents/Features",
+          "tag": "unknown"
+        },
+        "sldprt:file:block#12": {
+          "offset": 12,
+          "stream": "Contents/Config-0-Partition",
+          "tag": "parasolid"
+        },
+        "sldprt:file:block#348": {
+          "offset": 348,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "parasolid"
+        },
+        "sldprt:file:block#968": {
+          "offset": 968,
+          "stream": "Contents/Keywords",
+          "tag": "unknown"
+        },
+        "sldprt:file:source-image#0": {
+          "offset": 0,
+          "stream": "source",
+          "tag": "source_image"
+        },
+        "sldprt:history:configuration#968:0": {
+          "offset": 10,
+          "stream": "Contents/Keywords",
+          "tag": "Configuration"
+        },
+        "sldprt:history:feature-history#968": {
+          "offset": 0,
+          "stream": "Contents/Keywords",
+          "tag": "Keywords"
+        },
+        "sldprt:model:sketch#348:0:0": {
+          "offset": 407,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile"
+        },
+        "sldprt:model:sketch#348:1:0": {
+          "offset": 1313,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:1": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#348:0:0:2": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#348:1:0:3": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#348:1:0:4": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-constraint#348:1:0:5": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_shared_endpoint"
+        },
+        "sldprt:model:sketch-entity#348:0:0:0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#348:0:0:1": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#348:0:0:2": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#348:1:0:0": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#348:1:0:1": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:model:sketch-entity#348:1:0:2": {
+          "offset": 0,
+          "stream": "Contents/Config-0-ResolvedFeatures",
+          "tag": "feature_input_profile_edge"
+        },
+        "sldprt:source:feature-input#1a4da75dc62908a02283a1127c2fb159d5ed8a9b18f078057b2276e260bb0f83": {
+          "offset": 0,
+          "stream": "ResolvedFeatures",
+          "tag": "feature_input_layout"
+        }
+      }
+    },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "brep_local_sha256": "9eb57dfd034507ec6f252a2e84d8a3d188fb192da6773984d90bd30798ea4b48",
+      "document_local_sha256": "bb7aebc01e0f9152273e9d3032e3d129f9241378dc057a149e3581e08ede8f8a",
+      "outer_version": "0x00000004",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "record_layout": {
+      "sldprt:feature-input:class#348:0": {
+        "byte_len": 19,
+        "offset": 0,
+        "payloads": {},
+        "pointers": {
+          "offset": 0
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 964,
+              "start": 408
+            }
+          ],
+          "sldprt-block:4:file:408:556": [
+            {
+              "end": 19,
+              "start": 0
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:408:556"
+      },
+      "sldprt:feature-input:class#348:106": {
+        "byte_len": 18,
+        "offset": 106,
+        "payloads": {},
+        "pointers": {
+          "offset": 106
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 964,
+              "start": 408
+            }
+          ],
+          "sldprt-block:4:file:408:556": [
+            {
+              "end": 124,
+              "start": 106
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:408:556"
+      },
+      "sldprt:feature-input:class#348:19": {
+        "byte_len": 18,
+        "offset": 19,
+        "payloads": {},
+        "pointers": {
+          "offset": 19
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 964,
+              "start": 408
+            }
+          ],
+          "sldprt-block:4:file:408:556": [
+            {
+              "end": 37,
+              "start": 19
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:408:556"
+      },
+      "sldprt:feature-input:class#348:37": {
+        "byte_len": 17,
+        "offset": 37,
+        "payloads": {},
+        "pointers": {
+          "offset": 37
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 964,
+              "start": 408
+            }
+          ],
+          "sldprt-block:4:file:408:556": [
+            {
+              "end": 54,
+              "start": 37
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:408:556"
+      },
+      "sldprt:feature-input:reference#348:199": {
+        "byte_len": 12,
+        "offset": 199,
+        "payloads": {},
+        "pointers": {
+          "offset": 199
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 964,
+              "start": 408
+            }
+          ],
+          "sldprt-block:4:file:408:556": [
+            {
+              "end": 211,
+              "start": 199
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:408:556"
+      },
+      "sldprt:feature-input:reference#348:211": {
+        "byte_len": 12,
+        "offset": 211,
+        "payloads": {},
+        "pointers": {
+          "offset": 211
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 964,
+              "start": 408
+            }
+          ],
+          "sldprt-block:4:file:408:556": [
+            {
+              "end": 223,
+              "start": 211
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:408:556"
+      },
+      "sldprt:feature-input:relation-binding#348:3": {
+        "byte_len": 18,
+        "offset": 106,
+        "payloads": {},
+        "pointers": {
+          "offset": 106
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 964,
+              "start": 408
+            }
+          ],
+          "sldprt-block:4:file:408:556": [
+            {
+              "end": 124,
+              "start": 106
+            }
+          ]
+        },
+        "stream": "sldprt-block:4:file:408:556"
+      }
+    },
+    "retained_records": {
+      "sldprt:file:block#1088": {
+        "bytes": {
+          "data": "PHN3U29saWRXb3JrcyB4bWxucz0iaHR0cDovL3d3dy5zb2xpZHdvcmtzLmNvbS9zdzIwMDMvc2NoZW1hIj48c3dNb2RlbCBpZD0ibW9kZWwtMCIgc3dDb25maWd1cmF0aW9uTmFtZT0iRGVmYXVsdCIvPjxzd0NvbmZpZ3VyYXRpb25MaXN0Pjxzd0NvbmZpZ3VyYXRpb24gc3dJRD0iMCIgc3dNb2RlbFJlZj0ibW9kZWwtMCIgc3dNb3N0UmVjZW50Q29uZmlndXJhdGlvbj0iWUVTIi8+PC9zd0NvbmZpZ3VyYXRpb25MaXN0Pjwvc3dTb2xpZFdvcmtzPg==",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Contents/Features",
+        "untyped": [
+          "model",
+          "design"
+        ]
+      },
+      "sldprt:file:block#12": {
+        "bytes": {
+          "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAOEABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAAAAAAAAA4QAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAADhAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAA4QAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAOEABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAADhAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Contents/Config-0-Partition",
+        "untyped": []
+      },
+      "sldprt:file:block#348": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Contents/Config-0-ResolvedFeatures",
+        "untyped": []
+      },
+      "sldprt:file:block#968": {
+        "bytes": {
+          "data": "PEtleXdvcmRzPjxDb25maWd1cmF0aW9uIE5hbWU9IkRlZmF1bHQiIFNvdXJjZUluZGV4PSIwIi8+PC9LZXl3b3Jkcz4=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "Contents/Keywords",
+        "untyped": []
+      },
+      "sldprt:file:source-image#0": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "source",
+        "untyped": []
+      },
+      "sldprt:source:feature-input#1a4da75dc62908a02283a1127c2fb159d5ed8a9b18f078057b2276e260bb0f83": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "sldprt",
+        "untyped": []
+      }
+    },
+    "unrepresented": [
+      "model",
+      "design"
+    ]
+  }
+}

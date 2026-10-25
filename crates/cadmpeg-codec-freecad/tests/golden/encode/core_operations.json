@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 139235,
-      "payload_sha256": "6e1e6c31dac80045137bbc4069b0abdbc235a52598747193f98f2065e5a357eb"
+      "payload_len": 140131,
+      "payload_sha256": "6f65d706c25ff8d53d512091decd28d605e0ec40e2966eca0ff1f5b6de49997c"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -13,7 +13,7 @@
     {
       "name": "ChamferBase.brp",
       "payload_len": 2536,
-      "payload_sha256": "c110c812d4dabe77e240975cb30e12e190995ca8ed3b7394349e87e1f3748c31"
+      "payload_sha256": "d68507702ef431aa59ced78f99e257c67f662ea7974eebaa99494fef3436c5ca"
     },
     {
       "name": "DatumCoordinateSystem.brp",
@@ -33,22 +33,22 @@
     {
       "name": "Draft.brp",
       "payload_len": 5075,
-      "payload_sha256": "269d06f0c8da54b7e6b735c3514490c86db3aea280c2038f59e4f81838af90bf"
+      "payload_sha256": "7a0bc8e684301e7f32744e4d13eb69e2cb446bf8b9864a6ad381b5c7e3795521"
     },
     {
       "name": "DraftBase.brp",
       "payload_len": 2561,
-      "payload_sha256": "84ec758500201896ae2a36018621389c400f8f6d4c205800421acd6de2667429"
+      "payload_sha256": "32a28957914841cabc4b1d7c6715ecc276795030d66c9870ff2fcb26a005eda7"
     },
     {
       "name": "DraftBody.brp",
       "payload_len": 2907,
-      "payload_sha256": "1bd299a8ead5d2d106abf45c54a20244c24258876546fdb3e0636d1ab735b1ac"
+      "payload_sha256": "38ed562ee913c95ed9298b22a9ba46069d0775fee5fded7697adbe23edd4d986"
     },
     {
       "name": "DressupBase.brp",
       "payload_len": 2561,
-      "payload_sha256": "595b4ad6e4b48208a7302157841b0f1fe91f46c2e5889c49cd2a69420d157386"
+      "payload_sha256": "1331fb7af1f23e8868f7ae827492a64a0093e7a98d77b7c8067d84240b5787e4"
     },
     {
       "name": "FreeGeometry.brp",
@@ -56,19 +56,24 @@
       "payload_sha256": "edce24bbf35bf3b3bd09c71ecab3808e2be3a933ff7206285d307ea3a8788b35"
     },
     {
+      "name": "GuiDocument.xml",
+      "payload_len": 1262,
+      "payload_sha256": "21b50de2e7327968148098d1da4401de1646dc6a2eb92dadd5ea9d319123290c"
+    },
+    {
       "name": "Hole.brp",
-      "payload_len": 6668,
-      "payload_sha256": "2ec05752b17e90a4784c3484556195df7ea851b7f03f9fea2ad5acc6e79458e9"
+      "payload_len": 6626,
+      "payload_sha256": "ba9ee2842de4e8356932b1f0273f42100e8cb2512973eadc3c226d97c34382cb"
     },
     {
       "name": "HoleBase.brp",
       "payload_len": 2561,
-      "payload_sha256": "e63c5388d6bbc41a1b52464022a145dd2dbff0fd33bae4bd5a2c7cc0781e3b28"
+      "payload_sha256": "a348c02b4bf9aa87e8a9c915ac37aecea1173dffd80528447031dcce6fdca89a"
     },
     {
       "name": "HoleBody.brp",
-      "payload_len": 3981,
-      "payload_sha256": "2561a271c294bb6deb9e23d0f2a8978531fc88be3a4ede199208983119cc9c47"
+      "payload_len": 3960,
+      "payload_sha256": "8c333ada424debd9a7622d66ab819ac517b11bcb1f07b603ba63e0d74805c98e"
     },
     {
       "name": "HoleProfile.brp",
@@ -77,8 +82,8 @@
     },
     {
       "name": "LinearPattern.brp",
-      "payload_len": 2302,
-      "payload_sha256": "7a171049d999509419ad5c88957e0e688d4cdb29c772e1bdef0ea220088943b7"
+      "payload_len": 2281,
+      "payload_sha256": "384ceeedf0fbc5ea88a409d6767b94acb6ec683d5c9528c312a3681cb31a2c40"
     },
     {
       "name": "Loft.brp",
@@ -88,37 +93,37 @@
     {
       "name": "Mirror.brp",
       "payload_len": 1037,
-      "payload_sha256": "157d8dcaefaad9dfd17d009ebd861b099f5c4cee0971102c818ac170b1f67417"
+      "payload_sha256": "cdd4a0e1d7103ed47951712b7f5bfa7c4cedcfba27d79b0dcc092d54e236eaa2"
     },
     {
       "name": "MirrorBase.brp",
       "payload_len": 1094,
-      "payload_sha256": "d25c6b188f8b1c008db2d005ce77978d0829d0ebea2225d5d4c8378c6293eaa2"
+      "payload_sha256": "d77139c2c7b13a31b0782b0ac58aac3b01e46ad318499bf4a6a9986ab2ee3ea6"
     },
     {
       "name": "PartChamfer.brp",
-      "payload_len": 3911,
-      "payload_sha256": "e7fbcbc9cba53daf9646ea6710a832bdaa3630889742fa168137b597dac83dee"
+      "payload_len": 3858,
+      "payload_sha256": "db6756b7ef7f4fc5c3245d7f736e28c48601d21011c2d56fdf2fa08901df5755"
     },
     {
       "name": "PartFillet.brp",
-      "payload_len": 3877,
-      "payload_sha256": "36b2eeb0ad603b3cc1fc801b89272a7b5108c7daad77a02b81678ed2277527dc"
+      "payload_len": 3828,
+      "payload_sha256": "89736948398a0c81217cc6d7ccc3d4ddc2f92bf2233294b264bbe7656bbe3839"
     },
     {
       "name": "PatternBase.brp",
       "payload_len": 4864,
-      "payload_sha256": "abaa32fc666a5dc000ebd560d9213887d2e7db61c9d6fd02a7323ff93c74cda3"
+      "payload_sha256": "67f3c1a1bb12e89f8beb48833d33f96ab2b2a17055728462896d853c7002ef87"
     },
     {
       "name": "PatternBody.brp",
       "payload_len": 1919,
-      "payload_sha256": "0834db24c298e2d77414e94e6a47336ab65d1f0e252a43f85d034f3144258532"
+      "payload_sha256": "7643102725e31625227d220c8782080b19fe32a278626dc1c7d719b034cc61f7"
     },
     {
       "name": "Revolution.brp",
-      "payload_len": 1502,
-      "payload_sha256": "d836266f82e55d81dea58a6dd020f978eb7976b55291ae064646cf1a3bcf858f"
+      "payload_len": 1614,
+      "payload_sha256": "10a4ffcb6a953827b55e8ce3cabe37910c6a09e0117870d3441cb9d864544afe"
     },
     {
       "name": "RevolutionProfile.brp",
@@ -153,22 +158,22 @@
     {
       "name": "Sweep.brp",
       "payload_len": 1759,
-      "payload_sha256": "d192a1ffbb981908d3fe07f74a76b80c702d5479f9a87eda17860432380d5463"
+      "payload_sha256": "3ba0f43dea659a6083102cd85f09ac97d3707df9d9b48f22e4ef724d88078826"
     },
     {
       "name": "SymmetricExtrusion.brp",
       "payload_len": 5183,
-      "payload_sha256": "119983ee45e12d07a447ab4e864443d2f35fd6cae6936872efc147918f412e24"
+      "payload_sha256": "1a74051bd2205f5a74cf9bbcefb52cee99e26f237cdb7e959ee42f2ad36c254a"
     },
     {
       "name": "Thickness.brp",
-      "payload_len": 5459,
-      "payload_sha256": "9a6d52135428437a6d8db8352da1b1b84913cb50489bfb4da0e9773c5dd10ed9"
+      "payload_len": 5438,
+      "payload_sha256": "99e1b132ce67daa7d44a8976cb59da36a5b463969b8f16609077cecec30e19dd"
     },
     {
       "name": "ThicknessBase.brp",
       "payload_len": 2536,
-      "payload_sha256": "389c211454b8f78cf54b1828ca67895286eeb61fab4db70cd9c97ce1eea81969"
+      "payload_sha256": "154561227b39b7698fa375dca87f5e8971a9642fba3a2173be8b6c4d96e9bb67"
     }
   ],
   "report": {
@@ -205,7 +210,7 @@
         "native.fcstd.string_tables": 1,
         "occurrences": 0,
         "parameters": 27,
-        "pcurves": 409,
+        "pcurves": 411,
         "pmi": 0,
         "points": 191,
         "presentation_documents": 0,
@@ -254,7 +259,7 @@
         "pcurves": "written",
         "pmi": "dropped",
         "points": "written",
-        "presentation_documents": "written",
+        "presentation_documents": "reported",
         "presentation_layers": "dropped",
         "procedural_curves": "written",
         "procedural_surfaces": "written",
@@ -273,7 +278,7 @@
         "surfaces": "written",
         "tessellations": "dropped",
         "vertices": "written",
-        "view_presentations": "written"
+        "view_presentations": "reported"
       },
       "coverage": "declared"
     },
@@ -704,12 +709,22 @@
       },
       {
         "code": {
+          "code": "presentation.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FreeCAD GUI carriers create presentation records for appearance or visibility state without an authored neutral presentation",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "native.records-omitted",
           "kind": "record_not_typed",
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.element_maps`",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.element_maps`: fcstd:native:element-map#Hole:AddSubShape:map",
         "severity": "info"
       },
       {
@@ -719,7 +734,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 65 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 65 native record(s) from `fcstd.entries`: fcstd:native:entry#ChamferBase.Shape.brp, fcstd:native:entry#DatumAxis.Shape.brp, fcstd:native:entry#DatumCoordinateSystem.Shape.brp, fcstd:native:entry#DatumPlane.Shape.brp, fcstd:native:entry#DatumPoint.Shape.brp, fcstd:native:entry#Draft.AddSubShape.brp, fcstd:native:entry#Draft.Shape.Map.txt, fcstd:native:entry#Draft.Shape.brp, fcstd:native:entry#Draft.SuppressedShape.brp, fcstd:native:entry#DraftBase.Shape.brp, fcstd:native:entry#DraftBase.SuppressedShape.brp, fcstd:native:entry#DraftBody.Shape.Map.txt, fcstd:native:entry#DraftBody.Shape.brp, fcstd:native:entry#DressupBase.Shape.brp, fcstd:native:entry#Edges, fcstd:native:entry#Edges1, fcstd:native:entry#ExtrusionProfile.Shape.brp, fcstd:native:entry#Hole.AddSubShape.Map.txt, fcstd:native:entry#Hole.AddSubShape.brp, fcstd:native:entry#Hole.Shape.Map.txt, fcstd:native:entry#Hole.Shape.brp, fcstd:native:entry#Hole.SuppressedShape.brp, fcstd:native:entry#HoleBase.Shape.brp, fcstd:native:entry#HoleBase.SuppressedShape.brp, fcstd:native:entry#HoleBody.Shape.Map.txt, fcstd:native:entry#HoleBody.Shape.brp, fcstd:native:entry#HoleProfile.InternalShape.brp, fcstd:native:entry#HoleProfile.Shape.Map.txt, fcstd:native:entry#HoleProfile.Shape.brp, fcstd:native:entry#LinearPattern.Shape.Map.txt, fcstd:native:entry#LinearPattern.Shape.brp, fcstd:native:entry#LinearPattern.SuppressedShape.brp, fcstd:native:entry#Loft.Shape.Map.txt, fcstd:native:entry#Loft.Shape.brp, fcstd:native:entry#LoftSectionA.Shape.brp, fcstd:native:entry#LoftSectionB.Shape.brp, fcstd:native:entry#Mirror.Shape.Map.txt, fcstd:native:entry#Mirror.Shape.brp, fcstd:native:entry#MirrorBase.Shape.brp, fcstd:native:entry#PartChamfer.Shape.Map.txt, fcstd:native:entry#PartChamfer.Shape.brp, fcstd:native:entry#PartFillet.Shape.Map.txt, fcstd:native:entry#PartFillet.Shape.brp, fcstd:native:entry#PatternBase.AddSubShape.brp, fcstd:native:entry#PatternBase.Shape.brp, fcstd:native:entry#PatternBase.SuppressedShape.brp, fcstd:native:entry#PatternBody.Shape.Map.txt, fcstd:native:entry#PatternBody.Shape.brp, fcstd:native:entry#Revolution.Shape.Map.txt, fcstd:native:entry#Revolution.Shape.brp, fcstd:native:entry#RevolutionProfile.InternalShape.brp, fcstd:native:entry#RevolutionProfile.Shape.Map.txt, fcstd:native:entry#RevolutionProfile.Shape.brp, fcstd:native:entry#SpacingPattern, fcstd:native:entry#SpacingPattern2, fcstd:native:entry#Spacings, fcstd:native:entry#StringHasher.Table.txt, fcstd:native:entry#Sweep.Shape.Map.txt, fcstd:native:entry#Sweep.Shape.brp, fcstd:native:entry#SweepSection.Shape.brp, fcstd:native:entry#SweepSpine.Shape.brp, fcstd:native:entry#SymmetricExtrusion.Shape.Map.txt, fcstd:native:entry#SymmetricExtrusion.Shape.brp, fcstd:native:entry#Thickness.Shape.brp, fcstd:native:entry#ThicknessBase.Shape.brp",
         "severity": "info"
       },
       {
@@ -729,7 +744,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 135 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 135 native record(s) from `fcstd.properties`: fcstd:native:property#ChamferBase:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#DatumAxis:Shape, fcstd:native:property#DatumCoordinateSystem:ExpressionEngine, fcstd:native:property#DatumPoint:ExpressionEngine, fcstd:native:property#Draft:AddSubShape, fcstd:native:property#Draft:BaseFeature, fcstd:native:property#Draft:Placement, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#Draft:PullDirection, fcstd:native:property#Draft:SuppressedShape, fcstd:native:property#DraftBase:BaseFeature, fcstd:native:property#DraftBase:ExpressionEngine, fcstd:native:property#DraftBase:Placement, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#DraftBase:SuppressedShape, fcstd:native:property#DraftBody:BaseFeature, fcstd:native:property#DraftBody:ExpressionEngine, fcstd:native:property#DraftBody:Origin, fcstd:native:property#DraftBody:Placement, fcstd:native:property#DressupBase:ExpressionEngine, fcstd:native:property#ExtrusionProfile:ExpressionEngine, fcstd:native:property#ExtrusionProfile:Shape, fcstd:native:property#Hole:AddSubShape, fcstd:native:property#Hole:BaseFeature, fcstd:native:property#Hole:Midplane, fcstd:native:property#Hole:ModelThread, fcstd:native:property#Hole:Placement, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#Hole:Reversed, fcstd:native:property#Hole:SuppressedShape, fcstd:native:property#Hole:ThreadClass, fcstd:native:property#Hole:ThreadDepthType, fcstd:native:property#Hole:ThreadDirection, fcstd:native:property#Hole:ThreadFit, fcstd:native:property#Hole:ThreadSize, fcstd:native:property#Hole:Threaded, fcstd:native:property#Hole:UpToFace, fcstd:native:property#Hole:UpToFace2, fcstd:native:property#Hole:UseCustomThreadClearance, fcstd:native:property#HoleBase:BaseFeature, fcstd:native:property#HoleBase:ExpressionEngine, fcstd:native:property#HoleBase:Placement, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#HoleBase:SuppressedShape, fcstd:native:property#HoleBody:BaseFeature, fcstd:native:property#HoleBody:ExpressionEngine, fcstd:native:property#HoleBody:Origin, fcstd:native:property#HoleBody:Placement, fcstd:native:property#HoleProfile:ExpressionEngine, fcstd:native:property#HoleProfile:ExternalGeo, fcstd:native:property#HoleProfile:ExternalGeometry, fcstd:native:property#HoleProfile:InternalShape, fcstd:native:property#LinearPattern:BaseFeature, fcstd:native:property#LinearPattern:Mode2, fcstd:native:property#LinearPattern:Placement, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#LinearPattern:Reversed, fcstd:native:property#LinearPattern:SpacingPattern, fcstd:native:property#LinearPattern:SpacingPattern2, fcstd:native:property#LinearPattern:Spacings, fcstd:native:property#LinearPattern:Spacings2, fcstd:native:property#LinearPattern:SuppressedShape, fcstd:native:property#Loft:Placement, fcstd:native:property#LoftSectionA:ExpressionEngine, fcstd:native:property#LoftSectionA:Shape, fcstd:native:property#LoftSectionB:ExpressionEngine, fcstd:native:property#LoftSectionB:Shape, fcstd:native:property#Mirror:ExpressionEngine, fcstd:native:property#Mirror:MirrorPlane, fcstd:native:property#Mirror:Placement, fcstd:native:property#MirrorBase:ExpressionEngine, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin002:ExpressionEngine, fcstd:native:property#Origin002:OriginFeatures, fcstd:native:property#Origin003:ExpressionEngine, fcstd:native:property#Origin004:ExpressionEngine, fcstd:native:property#Origin004:OriginFeatures, fcstd:native:property#Origin005:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Origin:OriginFeatures, fcstd:native:property#PartChamfer:Edges, fcstd:native:property#PartChamfer:ExpressionEngine, fcstd:native:property#PartChamfer:Placement, fcstd:native:property#PartFillet:Edges, fcstd:native:property#PartFillet:ExpressionEngine, fcstd:native:property#PartFillet:Placement, fcstd:native:property#PatternBase:AddSubShape, fcstd:native:property#PatternBase:BaseFeature, fcstd:native:property#PatternBase:PreviewShape, fcstd:native:property#PatternBase:SuppressedShape, fcstd:native:property#PatternBody:BaseFeature, fcstd:native:property#PatternBody:ExpressionEngine, fcstd:native:property#PatternBody:Origin, fcstd:native:property#PatternBody:Placement, fcstd:native:property#Revolution:AxisLink, fcstd:native:property#Revolution:FaceMakerClass, fcstd:native:property#Revolution:Placement, fcstd:native:property#Revolution:Source, fcstd:native:property#RevolutionProfile:ExpressionEngine, fcstd:native:property#RevolutionProfile:ExternalGeo, fcstd:native:property#RevolutionProfile:ExternalGeometry, fcstd:native:property#RevolutionProfile:InternalShape, fcstd:native:property#Sweep:ExpressionEngine, fcstd:native:property#Sweep:Placement, fcstd:native:property#SweepSection:ExpressionEngine, fcstd:native:property#SweepSection:Shape, fcstd:native:property#SweepSpine:ExpressionEngine, fcstd:native:property#SweepSpine:Shape, fcstd:native:property#SymmetricExtrusion:DirLink, fcstd:native:property#SymmetricExtrusion:FaceMakerClass, fcstd:native:property#SymmetricExtrusion:FaceMakerMode, fcstd:native:property#SymmetricExtrusion:Placement, fcstd:native:property#SymmetricExtrusion:Reversed, fcstd:native:property#SymmetricExtrusion:TaperAngleRev, fcstd:native:property#Thickness:Placement, fcstd:native:property#ThicknessBase:ExpressionEngine, fcstd:native:property#XY_Plane001:ExpressionEngine, fcstd:native:property#XY_Plane002:ExpressionEngine, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane001:ExpressionEngine, fcstd:native:property#XZ_Plane002:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis001:ExpressionEngine, fcstd:native:property#X_Axis002:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane001:ExpressionEngine, fcstd:native:property#YZ_Plane002:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis001:ExpressionEngine, fcstd:native:property#Y_Axis002:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis001:ExpressionEngine, fcstd:native:property#Z_Axis002:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -739,7 +754,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 17 native record(s) from `fcstd.shape_payloads`",
+        "message": "the fcstd write omits 17 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#DatumAxis:Shape:DatumAxis.Shape.brp, fcstd:native:shape-payload#Draft:AddSubShape:Draft.AddSubShape.brp, fcstd:native:shape-payload#Draft:SuppressedShape:Draft.SuppressedShape.brp, fcstd:native:shape-payload#DraftBase:SuppressedShape:DraftBase.SuppressedShape.brp, fcstd:native:shape-payload#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp, fcstd:native:shape-payload#Hole:AddSubShape:Hole.AddSubShape.brp, fcstd:native:shape-payload#Hole:SuppressedShape:Hole.SuppressedShape.brp, fcstd:native:shape-payload#HoleBase:SuppressedShape:HoleBase.SuppressedShape.brp, fcstd:native:shape-payload#HoleProfile:InternalShape:HoleProfile.InternalShape.brp, fcstd:native:shape-payload#LinearPattern:SuppressedShape:LinearPattern.SuppressedShape.brp, fcstd:native:shape-payload#LoftSectionA:Shape:LoftSectionA.Shape.brp, fcstd:native:shape-payload#LoftSectionB:Shape:LoftSectionB.Shape.brp, fcstd:native:shape-payload#PatternBase:AddSubShape:PatternBase.AddSubShape.brp, fcstd:native:shape-payload#PatternBase:SuppressedShape:PatternBase.SuppressedShape.brp, fcstd:native:shape-payload#RevolutionProfile:InternalShape:RevolutionProfile.InternalShape.brp, fcstd:native:shape-payload#SweepSection:Shape:SweepSection.Shape.brp, fcstd:native:shape-payload#SweepSpine:Shape:SweepSpine.Shape.brp",
         "severity": "info"
       }
     ],
@@ -1690,9 +1705,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

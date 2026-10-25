@@ -282,6 +282,14 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 references.push(left.index());
                 references.push(right.index());
             }
+            PmDcExpressionKind::Function { arguments, .. } => {
+                references.extend(
+                    arguments
+                        .references()
+                        .iter()
+                        .map(|argument| argument.index()),
+                );
+            }
         }
         if raw.get(&(
             expression.identity.segment_token.as_str(),
@@ -566,12 +574,16 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 endpoint_of,
                 center_of,
                 tail,
+                links,
                 ..
             } => {
                 add_list(endpoint_of);
                 add_list(center_of);
                 if let PointTail::Present { associations, .. } = tail {
                     add_list(associations);
+                }
+                if let Some(links) = links {
+                    add_list(links);
                 }
             }
             PmDcSketchEntityKind::Line {
@@ -600,6 +612,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 }
                 references.push(center.index());
             }
+            PmDcSketchEntityKind::Polygon { center, .. } => references.push(center.index()),
         }
         if !record_is_exact(
             entity.identity.segment_token.as_str(),
@@ -634,55 +647,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         }
     }
     for constraint in &data.pm_dc_sketch_constraints {
-        let header = &constraint.header;
-        let mut references = vec![
-            header.content.next.index(),
-            header.content.context.index(),
-            header.group.index(),
-            header.parameter.index(),
-        ];
-        for (key, _) in header.scalar_map.entries() {
-            references.push(key.index());
-        }
-        for (key, value) in header.reference_map.entries() {
-            references.extend([key.index(), value.index()]);
-        }
-        match constraint.kind {
-            PmDcSketchConstraintKind::Coincident { first, second }
-            | PmDcSketchConstraintKind::Parallel { first, second, .. }
-            | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
-            | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
-                references.extend([first.index(), second.index()]);
-            }
-            PmDcSketchConstraintKind::Horizontal { entity, .. }
-            | PmDcSketchConstraintKind::Vertical { entity, .. } => {
-                references.push(entity.index());
-            }
-            PmDcSketchConstraintKind::HorizontalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            }
-            | PmDcSketchConstraintKind::VerticalDistance {
-                first,
-                second,
-                parameter,
-                ..
-            } => references.extend([first.index(), second.index(), parameter.index()]),
-            PmDcSketchConstraintKind::Radius { entity, .. } => {
-                references.push(entity.index());
-            }
-            PmDcSketchConstraintKind::Diameter {
-                reference, entity, ..
-            } => references.extend([reference.index(), entity.index()]),
-            PmDcSketchConstraintKind::CircleCenter { entity, center } => {
-                references.extend([entity.index(), center.index()]);
-            }
-            PmDcSketchConstraintKind::EqualRadius { first, second } => {
-                references.extend([first.index(), second.index()]);
-            }
-        }
+        let references = sketch_constraint_references(constraint);
         if !record_is_exact(
             constraint.identity.segment_token.as_str(),
             constraint.identity.record_ordinal,
@@ -909,6 +874,20 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
         }
     }
+    let properties_by_record = data
+        .pm_dc_feature_properties
+        .iter()
+        .map(|property| {
+            (
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
+                property,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let selection_list_type = crate::pmdc::type_id_string(crate::feature::SELECTION_LIST_TYPE);
     for property in &data.pm_dc_feature_properties {
         let mut references = vec![
             property.header.next.index(),
@@ -932,17 +911,23 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 radius,
                 selection,
                 continuity,
-            } => references.extend([
-                edges.index(),
-                radius.index(),
-                selection.index(),
-                continuity.index(),
-            ]),
+                option,
+            } => references.extend(
+                [
+                    edges.index(),
+                    radius.index(),
+                    selection.index(),
+                    continuity.index(),
+                ]
+                .into_iter()
+                .chain(option.map(crate::pmdc::PmDcReference::index)),
+            ),
             PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
             | PmDcFeaturePropertyKind::RdxVariable { .. }
             | PmDcFeaturePropertyKind::EdgeItem { .. }
+            | PmDcFeaturePropertyKind::FaceItem { .. }
             | PmDcFeaturePropertyKind::TerminationFlag { .. } => {}
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
@@ -962,6 +947,41 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-property record or reference does not resolve".into(),
+                Some(property.id()),
+            ));
+        }
+        if !face_property_is_admitted(property, |ordinal| {
+            properties_by_record
+                .get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc face selection has an invalid record type, list, or member".into(),
+                Some(property.id()),
+            ));
+        }
+        if !fillet_option_is_admitted(&property.kind, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor PmDc fillet edge-set option is not a Boolean record".into(),
+                Some(property.id()),
+            ));
+        }
+        if matches!(
+            property.kind,
+            PmDcFeaturePropertyKind::References {
+                family: crate::feature::PmDcFeatureReferenceFamily::SelectionList,
+                ..
+            }
+        ) != (property.identity.type_id.as_str() == selection_list_type)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor selection list has the wrong PmDc record type".into(),
                 Some(property.id()),
             ));
         }
@@ -1090,16 +1110,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .iter()
         .map(|property| (property.id(), property))
         .collect::<HashMap<_, _>>();
-    let properties_by_record = data
-        .pm_dc_feature_properties
+    let parameters_by_record = data
+        .pm_dc_parameters
         .iter()
-        .map(|property| {
+        .map(|parameter| {
             (
                 (
-                    property.identity.segment_token.as_str(),
-                    property.identity.record_ordinal,
+                    parameter.identity.segment_token.as_str(),
+                    parameter.identity.record_ordinal,
                 ),
-                property,
+                parameter,
             )
         })
         .collect::<HashMap<_, _>>();
@@ -1120,6 +1140,39 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .map(PmDcPatternFeature::id)
         .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
         .collect::<HashSet<_>>();
+    let thicken_record_types =
+        cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        }));
+    let thicken_properties =
+        cadmpeg_core::decode::unique_index(data.pm_dc_feature_properties.iter().map(|property| {
+            (
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
+                property,
+            )
+        }));
+    let thicken_parameters =
+        cadmpeg_core::decode::unique_index(data.pm_dc_parameters.iter().map(|parameter| {
+            (
+                (
+                    parameter.identity.segment_token.as_str(),
+                    parameter.identity.record_ordinal,
+                ),
+                parameter,
+            )
+        }));
+    let thicken_values = cadmpeg_core::decode::unique_index(
+        ir.model
+            .parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter))),
+    );
     for feature in &ir.model.features {
         if is_flat_pattern_feature(feature)
             && feature
@@ -1134,6 +1187,12 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             if native.is_some_and(|native| history_records.contains(native))
                 && crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
                     .is_none()
+                && !matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::CosmeticThread { .. }
+                    )
+                )
             {
                 continue;
             }
@@ -1144,6 +1203,49 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             ));
             continue;
         };
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            },
+        ) = feature.evaluation.definition()
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let collection = crate::feature::thread_face_collection(
+                raw_feature,
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.checked_sub(1)?))
+                        .copied()
+                },
+                |reference| {
+                    reference
+                        .checked_sub(1)
+                        .is_some_and(|ordinal| parameters_by_record.contains_key(&(token, ordinal)))
+                },
+            );
+            let label_matches = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .is_some_and(|label| label.class_id() == crate::feature::THREAD_CLASS_ID);
+            let selection_matches = collection.is_some_and(|collection| {
+                matches!(face, cadmpeg_ir::features::FaceSelection::Native(native)
+                    if *native == collection.id())
+            });
+            if !label_matches
+                || !selection_matches
+                || diameter.is_some()
+                || extent.is_some()
+                || results.contains_key(&feature.id)
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor thread annotation does not match its PmDc face selection".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         let Some(family) =
             crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
         else {
@@ -1151,6 +1253,47 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         };
         let expected_class = family.class_id();
         let output_slot = family.output_slot();
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            actual @ cadmpeg_ir::features::FeatureOperation::Thicken { .. },
+        ) = feature.evaluation.definition()
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::thicken_operation(
+                raw_feature,
+                |slot| {
+                    let ordinal = raw_feature
+                        .properties
+                        .references()
+                        .get(slot)?
+                        .record_ordinal()?;
+                    thicken_properties.get(&(token, ordinal))?.as_ref().copied()
+                },
+                |slot| {
+                    let ordinal = raw_feature
+                        .properties
+                        .references()
+                        .get(slot)?
+                        .record_ordinal()?;
+                    let parameter = thicken_parameters.get(&(token, ordinal))?.as_ref()?;
+                    let native = parameter.id();
+                    let design = thicken_values.get(native.as_str())?.as_ref()?;
+                    Some((*parameter, design.value.as_ref()?, &design.id))
+                },
+                |ordinal| {
+                    thicken_record_types
+                        .get(&(token, ordinal))?
+                        .as_ref()
+                        .copied()
+                },
+            );
+            if expected.as_ref() != Some(actual) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral thicken operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
         if labels
             .get(&(
                 raw_feature.identity.segment_token.as_str(),
@@ -1246,6 +1389,39 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             format!("Inventor feature record: {}", issue.detail),
             Some(issue.id()),
         ));
+    }
+}
+
+fn face_property_is_admitted<'a>(
+    property: &PmDcFeatureProperty,
+    property_at: impl Fn(u32) -> Option<&'a PmDcFeatureProperty>,
+) -> bool {
+    let face_item_type = "ccb59f50d1114f6b0008a1ba32a3dc09";
+    let face_collection_type = "f1b2bc24d01121dd0008d0bc0663dc09";
+    let valid_item = |item: &PmDcFeatureProperty| {
+        item.identity.type_id.as_str() == face_item_type
+            && matches!(&item.kind, PmDcFeaturePropertyKind::FaceItem { index_references }
+                if index_references.marker() == 2 && !index_references.values().is_empty())
+    };
+    match &property.kind {
+        PmDcFeaturePropertyKind::FaceItem { .. } => valid_item(property),
+        PmDcFeaturePropertyKind::References {
+            family: crate::feature::PmDcFeatureReferenceFamily::FaceCollection,
+            items,
+        } => {
+            property.identity.type_id.as_str() == face_collection_type
+                && items.marker() == 2
+                && items.references().iter().all(|reference| {
+                    reference
+                        .record_ordinal()
+                        .and_then(&property_at)
+                        .is_some_and(valid_item)
+                })
+        }
+        _ => {
+            property.identity.type_id.as_str() != face_item_type
+                && property.identity.type_id.as_str() != face_collection_type
+        }
     }
 }
 
@@ -2322,6 +2498,114 @@ fn finding(check: Check, message: String, entity: Option<String>) -> Finding {
         message,
         entity,
     }
+}
+
+/// Record references a sketch constraint stores, in its header, maps, and kind.
+pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) -> Vec<u32> {
+    let header = &constraint.header;
+    let mut references = vec![
+        header.content.next.index(),
+        header.content.context.index(),
+        header.group.index(),
+        header.parameter.index(),
+    ];
+    for (key, _) in header.scalar_map.entries() {
+        references.push(key.index());
+    }
+    // A tangent solver hint stores an unqualified code, not a reference, as its value.
+    let hint_codes = matches!(constraint.kind, PmDcSketchConstraintKind::Tangent { .. });
+    for (key, value) in header.reference_map.entries() {
+        references.push(key.index());
+        if !hint_codes {
+            references.push(value.index());
+        }
+    }
+    match constraint.kind {
+        PmDcSketchConstraintKind::Coincident { first, second }
+        | PmDcSketchConstraintKind::Parallel { first, second, .. }
+        | PmDcSketchConstraintKind::Perpendicular { first, second, .. }
+        | PmDcSketchConstraintKind::Tangent { first, second, .. } => {
+            references.extend([first.index(), second.index()]);
+        }
+        PmDcSketchConstraintKind::Horizontal { entity, .. }
+        | PmDcSketchConstraintKind::Vertical { entity, .. } => {
+            references.push(entity.index());
+        }
+        PmDcSketchConstraintKind::HorizontalDistance {
+            first,
+            second,
+            parameter,
+            ..
+        }
+        | PmDcSketchConstraintKind::VerticalDistance {
+            first,
+            second,
+            parameter,
+            ..
+        } => references.extend([first.index(), second.index(), parameter.index()]),
+        PmDcSketchConstraintKind::Radius { entity, .. } => {
+            references.push(entity.index());
+        }
+        PmDcSketchConstraintKind::Diameter {
+            reference, entity, ..
+        } => references.extend([reference.index(), entity.index()]),
+        PmDcSketchConstraintKind::CircleCenter { entity, center } => {
+            references.extend([entity.index(), center.index()]);
+        }
+        PmDcSketchConstraintKind::EqualRadius { first, second }
+        | PmDcSketchConstraintKind::EqualLength { first, second }
+        | PmDcSketchConstraintKind::Distance { first, second, .. }
+        | PmDcSketchConstraintKind::Angle { first, second, .. }
+        | PmDcSketchConstraintKind::HorizontalAlignment { first, second }
+        | PmDcSketchConstraintKind::VerticalAlignment { first, second }
+        | PmDcSketchConstraintKind::Collinear { first, second, .. } => {
+            references.extend([first.index(), second.index()]);
+        }
+        PmDcSketchConstraintKind::Midpoint { entity, point, .. } => {
+            references.extend([entity.index(), point.index()]);
+        }
+        PmDcSketchConstraintKind::Fix { entity } => references.push(entity.index()),
+        PmDcSketchConstraintKind::Symmetric {
+            first,
+            second,
+            axis,
+        } => references.extend([first.index(), second.index(), axis.index()]),
+        PmDcSketchConstraintKind::PolygonRelation {
+            first,
+            second,
+            center,
+            polygon,
+            ..
+        } => references.extend([
+            first.index(),
+            second.index(),
+            center.index(),
+            polygon[0].index(),
+            polygon[1].index(),
+        ]),
+    }
+    references
+}
+
+/// Whether a fillet edge set's fifth reference is null or selects a Boolean
+/// record. `type_at` gives the type identifier of the record at an ordinal. A
+/// reference that selects no record is reported by the reference check, so it
+/// is admitted here.
+pub(crate) fn fillet_option_is_admitted<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> bool {
+    let PmDcFeaturePropertyKind::FilletEdgeSet {
+        option: Some(option),
+        ..
+    } = kind
+    else {
+        return true;
+    };
+    option.index() == 0
+        || type_at(option.index() - 1).is_none_or(|type_id| {
+            type_id == crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE)
+        })
 }
 
 #[cfg(test)]

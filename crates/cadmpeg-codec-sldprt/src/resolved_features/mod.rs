@@ -120,6 +120,7 @@ mod edge_selection_layout;
 mod generated_surface_layout;
 
 mod reference_layout;
+pub(crate) mod relation_table;
 
 pub(crate) mod feature_sources;
 

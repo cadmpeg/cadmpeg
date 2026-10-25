@@ -91,9 +91,10 @@ fn decal_document_retains_content_without_source_layout() {
         assert!(image.scope_byte_offset().is_none());
         assert!(image.asset.byte_offset.is_none());
         assert_eq!(serde_json::to_value(&image).unwrap(), value);
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        image.retain_source(&mut fidelity);
-        assert!(fidelity.metadata.is_empty());
+        assert!(image
+            .source_offsets()
+            .iter()
+            .all(|(_, offset)| offset.is_none()));
     }
     let mut unicode = base.clone();
     unicode["asset_name"] = serde_json::json!("图😀.png");
@@ -182,17 +183,9 @@ fn decal_scanner_validates_real_extents_and_retains_actual_layout_separately() {
     )
     .unwrap();
     assert_eq!(scanned.scope_byte_offset(), Some(200));
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    scanned.retain_source(&mut fidelity);
-    assert_eq!(
-        fidelity.metadata["f3d:native:decal#0.scope_byte_offset"],
-        "200"
-    );
-    assert_eq!(
-        fidelity.metadata["f3d:native:decal#0.asset_byte_offset"],
-        "100"
-    );
-    assert!(fidelity.unrepresented().is_empty());
+    let offsets: std::collections::BTreeMap<_, _> = scanned.source_offsets().into_iter().collect();
+    assert_eq!(offsets["scope_byte_offset"], Some(200));
+    assert_eq!(offsets["asset_byte_offset"], Some(100));
     let wire = serde_json::to_value(&scanned).unwrap();
     assert_eq!(wire, decal_wire_fixture());
     let reloaded: DesignDecalImage = serde_json::from_value(wire).unwrap();

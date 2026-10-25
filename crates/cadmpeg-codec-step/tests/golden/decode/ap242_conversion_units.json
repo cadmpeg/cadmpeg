@@ -68,7 +68,9 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "step": {}
+    },
     "scope": {
       "design": true,
       "model": true
@@ -147,6 +149,200 @@
       "data_sections": "1",
       "entity_instances": "7",
       "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+    },
+    "parts": {
+      "step:source:part#03426230b031213c00bb955c468384d5b11d66ba5ffb432d1fe32671b32da7da": {
+        "byte_len": 53,
+        "framing_bytes": [
+          {
+            "end": 322,
+            "start": 320
+          },
+          {
+            "end": 323,
+            "start": 322
+          },
+          {
+            "end": 373,
+            "start": 372
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 320,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#0c583fa5bacae4929737c4ea16794c99453afdace99d3fd6db68682bd9acc7a7": {
+        "byte_len": 44,
+        "framing_bytes": [
+          {
+            "end": 682,
+            "start": 680
+          },
+          {
+            "end": 683,
+            "start": 682
+          },
+          {
+            "end": 724,
+            "start": 723
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 680,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#45caee8ad94261731d4e6df7ccaec7b17d8b3f65867619f7519e0c7dec7be712": {
+        "byte_len": 55,
+        "framing_bytes": [
+          {
+            "end": 727,
+            "start": 725
+          },
+          {
+            "end": 728,
+            "start": 727
+          },
+          {
+            "end": 780,
+            "start": 779
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 725,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#4cec7eb787d6d40480103f0d9c1aff1b04dd55a6533ff3953e6e27bbefcbba09": {
+        "byte_len": 66,
+        "framing_bytes": [
+          {
+            "end": 376,
+            "start": 374
+          },
+          {
+            "end": 377,
+            "start": 376
+          },
+          {
+            "end": 378,
+            "start": 377
+          },
+          {
+            "end": 439,
+            "start": 438
+          },
+          {
+            "end": 440,
+            "start": 439
+          }
+        ],
+        "level": "step.complex_entity_instance",
+        "offset": 374,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#6415d21914040497bd755c7f54991f2053597fc2bfbf756bc738800f151185e3": {
+        "byte_len": 155,
+        "framing_bytes": [
+          {
+            "end": 526,
+            "start": 524
+          },
+          {
+            "end": 527,
+            "start": 526
+          },
+          {
+            "end": 528,
+            "start": 527
+          },
+          {
+            "end": 678,
+            "start": 677
+          },
+          {
+            "end": 679,
+            "start": 678
+          }
+        ],
+        "level": "step.complex_entity_instance",
+        "offset": 524,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#dc1d613ca4d631d80f5e75b44e7f5579ec7c6463de0a33727b1711bfd86a4f53": {
+        "byte_len": 82,
+        "framing_bytes": [
+          {
+            "end": 443,
+            "start": 441
+          },
+          {
+            "end": 444,
+            "start": 443
+          },
+          {
+            "end": 523,
+            "start": 522
+          }
+        ],
+        "level": "step.simple_entity_instance",
+        "offset": 441,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "step:source:part#ff3006ecd7918368ffc8dc6f9b606813887f88648eb9c1b01542c5c25049aa9c": {
+        "byte_len": 58,
+        "framing_bytes": [
+          {
+            "end": 263,
+            "start": 261
+          },
+          {
+            "end": 264,
+            "start": 263
+          },
+          {
+            "end": 265,
+            "start": 264
+          },
+          {
+            "end": 318,
+            "start": 317
+          },
+          {
+            "end": 319,
+            "start": 318
+          }
+        ],
+        "level": "step.complex_entity_instance",
+        "offset": 261,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      }
     },
     "unrepresented": []
   }

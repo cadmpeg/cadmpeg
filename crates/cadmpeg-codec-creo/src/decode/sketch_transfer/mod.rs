@@ -9,3 +9,6 @@ pub(super) mod profiles;
 pub(super) mod recipe;
 pub(super) mod skamp_constraints;
 pub(super) mod transfer;
+
+#[cfg(test)]
+pub(in crate::decode) mod conic_owner_tests;

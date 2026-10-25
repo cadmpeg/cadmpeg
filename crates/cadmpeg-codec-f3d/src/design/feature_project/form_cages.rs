@@ -7,8 +7,7 @@ use crate::ids::{self, native_stream};
 use crate::layout::{
     form_class_325_cage_entry, form_class_325_cage_table, form_class_328_cage_group,
     form_class_328_metadata_group, form_class_328_reference_entry, form_class_328_scope,
-    form_class_350_member_owner_tail, form_compact_one_cage_list, form_legacy_one_cage_owner,
-    form_serializer_frame_132,
+    form_class_350_member_owner_tail, form_serializer_frame_132,
 };
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
@@ -56,7 +55,7 @@ pub(crate) fn bind_form_cages(
         };
         let bytes = scan.entry_bytes(stream)?;
         let records = IndexedRecordOffsets::build(bytes);
-        let (cage_lists, cage_counts) = form_cage_lists(
+        let cage_lists = form_cage_lists(
             bytes,
             &records,
             scope.reference_members().values().copied(),
@@ -177,39 +176,6 @@ pub(crate) fn bind_form_cages(
             }
             continue;
         }
-        if scopes
-            .iter()
-            .filter(|candidate| {
-                candidate.kind() == crate::records::feature::scope::DesignFeatureKind::Form
-            })
-            .count()
-            == 1
-            && cages.len() == 1
-            && cage_counts.as_slice() == [1]
-        {
-            let feature_id = crate::ids::neutral_feature_id(scope);
-            if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
-                if matches!(
-                    feature.evaluation.definition(),
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Native { .. }
-                    )
-                ) {
-                    feature.evaluation.set_definition(
-                        cadmpeg_ir::features::FeatureDefinition::Operation(
-                            cadmpeg_ir::features::FeatureOperation::Form {
-                                cages: {
-                                    let mut ids = Vec::new();
-                                    push_form_cage_id(&mut ids, &cages[0].id);
-                                    ids
-                                },
-                            },
-                        ),
-                    );
-                }
-            }
-            continue;
-        }
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
@@ -258,135 +224,6 @@ pub(crate) fn bind_form_cages(
         }
     }
     Ok(())
-}
-
-/// Read the one-cage envelopes used by legacy Form record generations.
-///
-/// The compact envelope identifies the sole cage object directly. The older
-/// owner envelope identifies one nested cage-object wrapper; its companion
-/// record carries generation-specific scalar data and is not a cage count.
-fn legacy_form_cage_count(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    record_index: u32,
-    scope_record_index: u32,
-) -> Option<usize> {
-    if let Some(count) = legacy_form_owner_count(bytes, records, record_index, scope_record_index) {
-        return Some(count);
-    }
-    for (start, paired) in records.frames(record_index) {
-        if paired.checked_sub(start)? != form_compact_one_cage_list::LEN
-            || bytes.get(
-                start + form_compact_one_cage_list::ZERO_RUN_10
-                    ..start + form_compact_one_cage_list::OWNER_MARKER,
-            )? != [0; 10]
-            || bytes.get(start + form_compact_one_cage_list::OWNER_MARKER) != Some(&1)
-            || View::u64_le_at(
-                bytes,
-                start + form_compact_one_cage_list::OWNER_SCOPE_RECORD_INDEX,
-            )? != u64::from(scope_record_index)
-            || bytes.get(
-                start + form_compact_one_cage_list::ZERO_RUN_2
-                    ..start + form_compact_one_cage_list::CAGE_COUNT,
-            )? != [0; 2]
-        {
-            continue;
-        }
-        let count = usize::try_from(View::u32_le_at(
-            bytes,
-            start + form_compact_one_cage_list::CAGE_COUNT,
-        )?)
-        .ok()?;
-        if count != 1 {
-            continue;
-        }
-        let member = start + form_compact_one_cage_list::MEMBER_MARKER;
-        if bytes.get(member) != Some(&1)
-            || bytes.get(
-                start + form_compact_one_cage_list::MEMBER_ZERO
-                    ..start + form_compact_one_cage_list::MEMBER_FLAGS + 2,
-            )? != [0, 0, 0xfc, 0]
-        {
-            continue;
-        }
-        let object = u32::try_from(View::u64_le_at(
-            bytes,
-            start + form_compact_one_cage_list::CAGE_OBJECT_RECORD_INDEX,
-        )?)
-        .ok()?;
-        if records.offsets(object).is_empty() {
-            continue;
-        }
-        return Some(count);
-    }
-    None
-}
-
-fn legacy_form_owner_count(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    record_index: u32,
-    scope_record_index: u32,
-) -> Option<usize> {
-    let mut frames = records.frames(record_index);
-    let (start, paired) = frames.next()?;
-    if frames.next().is_some() {
-        return None;
-    }
-    let owner_class = bytes.get(start + 4..start + 7)?;
-    let paired_class = bytes.get(paired + 4..paired + 7)?;
-    let nested_class: &[u8] = if owner_class == b"335" && paired_class == b"262" {
-        b"328"
-    } else if owner_class == b"395" && paired_class == b"264" {
-        b"329"
-    } else if owner_class == b"448" && paired_class == b"258" {
-        b"276"
-    } else if owner_class == b"295" && paired_class == b"258" {
-        b"274"
-    } else {
-        return None;
-    };
-    if paired.checked_sub(start)? != form_legacy_one_cage_owner::LEN
-        || View::u64_le_at(bytes, start + 7)? != u64::from(record_index)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::ZERO_RUN_14
-                ..start + form_legacy_one_cage_owner::OWNER_MARKER,
-        )? != [0; 14]
-        || bytes.get(start + form_legacy_one_cage_owner::OWNER_MARKER) != Some(&1)
-        || View::u64_le_at(
-            bytes,
-            start + form_legacy_one_cage_owner::OWNER_SCOPE_RECORD_INDEX,
-        )? != u64::from(scope_record_index)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::ZERO_RUN_24
-                ..start + form_legacy_one_cage_owner::NESTED_MARKER,
-        )? != [0; 24]
-        || bytes.get(start + form_legacy_one_cage_owner::NESTED_MARKER) != Some(&1)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::NESTED_ZERO_RUN
-                ..start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER,
-        )? != [0; 3]
-        || bytes.get(start + form_legacy_one_cage_owner::OWNER_REPEAT_MARKER) != Some(&1)
-        || View::u64_le_at(
-            bytes,
-            start + form_legacy_one_cage_owner::OWNER_REPEAT_SCOPE,
-        )? != u64::from(scope_record_index)
-        || bytes.get(
-            start + form_legacy_one_cage_owner::TAIL_ZERO_RUN
-                ..start + form_legacy_one_cage_owner::LEN,
-        )? != [0; 2]
-    {
-        return None;
-    }
-    let nested_record = u32::try_from(View::u64_le_at(
-        bytes,
-        start + form_legacy_one_cage_owner::NESTED_RECORD_INDEX,
-    )?)
-    .ok()?;
-    let [nested_at] = records.offsets(nested_record) else {
-        return None;
-    };
-    (bytes.get(nested_at + 4..nested_at + 7) == Some(nested_class)).then_some(1)
 }
 
 fn form_class_328_envelope(
@@ -893,23 +730,12 @@ fn form_cage_lists(
     records: &IndexedRecordOffsets,
     references: impl Iterator<Item = u32>,
     scope_record_index: u32,
-) -> (Vec<Vec<u32>>, Vec<usize>) {
-    let mut lists = Vec::new();
-    let mut counts = Vec::new();
-    for record_index in references {
-        let objects = form_cage_objects(bytes, records, record_index, scope_record_index);
-        let count = objects
-            .as_ref()
-            .map(Vec::len)
-            .or_else(|| legacy_form_cage_count(bytes, records, record_index, scope_record_index));
-        if let Some(objects) = objects {
-            lists.push(objects);
-        }
-        if let Some(count) = count {
-            counts.push(count);
-        }
-    }
-    (lists, counts)
+) -> Vec<Vec<u32>> {
+    references
+        .filter_map(|record_index| {
+            form_cage_objects(bytes, records, record_index, scope_record_index)
+        })
+        .collect()
 }
 
 fn form_cage_surface(

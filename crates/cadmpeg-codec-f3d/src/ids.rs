@@ -289,6 +289,27 @@ pub(crate) fn neutral_assembly_joint_id(
     )
 }
 
+/// The joint that ties rigid-group member `member` (2 or more) to the group's
+/// first member.
+pub(crate) fn neutral_assembly_group_joint_id(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    member: usize,
+) -> cadmpeg_ir::products::JointId {
+    let stream = cadmpeg_ir::ids::IdentityKeyTail::percent_encode(
+        native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
+    );
+    let key = cadmpeg_ir::ids::IdentityKey::from(stream.as_str().len())
+        .then(cadmpeg_ir::identity_key!(":"))
+        .with_tail(&stream)
+        .then(scope.record_index)
+        .then(cadmpeg_ir::identity_key!("m"))
+        .then(member);
+    cadmpeg_ir::products::JointId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"),
+        key,
+    )
+}
+
 /// The history-input state of `feature_id` relative to `previous_state_id`.
 pub(crate) fn feature_input_topology_id(
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -1184,25 +1205,25 @@ mod tests {
     fn legacy_assembly_connector_key_is_namespace_and_recipe_scoped() {
         let selection = DesignAssemblyLegacySelection {
             record_index: 7,
-            byte_offset: 100,
+            byte_offset: Some(100),
             class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
                 .unwrap(),
             asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            asset_id_offset: 110,
+            asset_id_offset: Some(110),
             context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            context_id_offset: 120,
+            context_id_offset: Some(120),
             recipe_record_index: 8,
-            recipe_record_byte_offset: 130,
+            recipe_record_byte_offset: Some(130),
             recipe_id: "Recipe:1".into(),
             recipe_kind: ConstructionRecipeKind::Face,
             recipe_references: Vec::new(),
-            next_byte_offset: 140,
+            next_byte_offset: Some(140),
         };
         assert_eq!(
             neutral_assembly_legacy_object_id(&selection),

@@ -230,3 +230,27 @@ pub(crate) fn synthetic_feature_timelines(
         })
         .collect::<Vec<_>>()
 }
+
+/// Lengthen a synthetic scope's frame to `frame_length`, keeping its
+/// reference table, kind, and ordinal at their distance from the frame end.
+pub(crate) fn lengthen_scope_frame(
+    draft: &mut crate::records::feature::scope::DesignParameterScopeDraft,
+    frame_length: u64,
+) {
+    let shift = frame_length - draft.frame_length;
+    draft.reference_count_offset += shift;
+    if let Some(rows) = draft.reference_members.located_rows() {
+        draft.reference_members = crate::records::identity::ReferenceRun::located(
+            rows.iter()
+                .map(|member| crate::records::identity::Located {
+                    value: member.value,
+                    offset: member.offset + shift,
+                })
+                .collect(),
+        );
+    }
+    draft.kind_offset += shift;
+    draft.feature_ordinal_offset += shift;
+    draft.frame_length = frame_length;
+    draft.paired_byte_offset += shift;
+}

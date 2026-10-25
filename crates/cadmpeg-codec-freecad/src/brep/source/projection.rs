@@ -106,9 +106,13 @@ impl<'a> ProjectionSources<'a> {
         }
         let surface = source.row(5, surface)?;
         let affine = ctx.record_fragment(&owner, surface, || {
-            source
-                .surface(surface)
-                .map(|surface| surface_parameter_affine(&surface))
+            source.surface(surface).map(|surface| {
+                let mut support = &surface;
+                while let TextSurface::Trimmed { basis, .. } = support {
+                    support = basis.surface();
+                }
+                surface_parameter_affine(support)
+            })
         })?;
         if source.marks.root.is_none() {
             ctx.retire_record_owner(&owner)?;

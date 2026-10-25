@@ -43,7 +43,6 @@ fn original_dom_survives_until_transfer_without_another_parse_or_read_credit() {
         object_sources: None,
         properties: &[],
         payloads: &[],
-        element_maps: &[],
         topology_occurrences: &[],
         requires_alpha_conversion: false,
     };
@@ -104,7 +103,6 @@ fn same_dom_transfer_preserves_native_graph_model_and_existing_source_only_error
             object_sources: None,
             properties: &[],
             payloads: &[],
-            element_maps: &[],
             topology_occurrences: &[],
             requires_alpha_conversion: false,
         };
@@ -135,7 +133,6 @@ fn same_dom_transfer_preserves_native_graph_model_and_existing_source_only_error
             object_sources: None,
             properties: &[],
             payloads: &[],
-            element_maps: &[],
             topology_occurrences: &[],
             requires_alpha_conversion: false,
         };
@@ -198,7 +195,6 @@ fn recursion_limit_escapes_source_only_recovery_and_keeps_the_session_fused() {
         object_sources: None,
         properties: &[],
         payloads: &[],
-        element_maps: &[],
         topology_occurrences: &[],
         requires_alpha_conversion: false,
     };

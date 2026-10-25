@@ -9,6 +9,7 @@
         {
           "id": "iges:application:attribute#D1:0:0",
           "name": "name",
+          "native_ref": "iges:entity:directory#1",
           "target": {
             "id": "iges:model:surface#D1",
             "kind": "surface"
@@ -23,6 +24,7 @@
         {
           "id": "iges:application:attribute#D3:0:0",
           "name": "name",
+          "native_ref": "iges:entity:directory#3",
           "target": {
             "id": "iges:model:surface#D3",
             "kind": "surface"
@@ -258,9 +260,6 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "neutral_label": [
-              "iges:application:attribute#D1:0:0"
-            ],
             "parameter_line_count": 1,
             "parameters": [
               {
@@ -353,9 +352,6 @@
             "line_font": 0,
             "line_weight": 0,
             "links": [],
-            "neutral_label": [
-              "iges:application:attribute#D3:0:0"
-            ],
             "parameter_line_count": 1,
             "parameters": [
               {
@@ -542,10 +538,1640 @@
   "source_fidelity": {
     "annotations": {},
     "metadata": {
-      "document_local_sha256": "f1659c4b37660bd930d93dd5a7585e8097df2894bc8e6f3db6f924dc0a037847",
+      "document_local_sha256": "bc7a07c290eb8496c7467f1488664f4e25ef507797f18314fa702979c0434f70",
       "iges.card_layout": "[[1,0,80,1],[2,81,80,1],[3,162,80,1],[4,243,80,1],[5,324,80,1],[6,405,80,1],[7,486,80,1],[8,567,80,1],[9,648,80,1],[10,729,80,1]]",
       "iges.entity_layout": "[[1,1,1],[3,2,1]]",
       "iges.parameter_layout": "[[1,{\"start\":1,\"end\":2},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13},{\"start\":14,\"end\":15},{\"start\":16,\"end\":17},{\"start\":18,\"end\":19},{\"start\":20,\"end\":21}]],[3,{\"start\":2,\"end\":3},[{\"start\":0,\"end\":3},{\"start\":4,\"end\":5},{\"start\":6,\"end\":7},{\"start\":8,\"end\":9},{\"start\":10,\"end\":11},{\"start\":12,\"end\":13}]]]"
+    },
+    "parts": {
+      "iges:source:part#033f076224b6892587384bfb52692290e2be28758983d4f2d99d015dfec12a30": {
+        "byte_len": 6,
+        "framing_bytes": [
+          {
+            "end": 41,
+            "start": 39
+          },
+          {
+            "end": 45,
+            "start": 44
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 39,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#05f1376aa26975b91c976697e879544f461e57ffa3d266c48d5a7e8db728ef4f": {
+        "byte_len": 6,
+        "framing_bytes": [
+          {
+            "end": 123,
+            "start": 121
+          },
+          {
+            "end": 127,
+            "start": 126
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 121,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#0bbdc4d8e8e534f0203a6919d932d86c3da8114b020eea62c11925719b8569f3": {
+        "byte_len": 3,
+        "framing_bytes": [
+          {
+            "end": 48,
+            "start": 47
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 45,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8": {
+        "byte_len": 162,
+        "framing_bytes": [
+          {
+            "end": 421,
+            "start": 413
+          },
+          {
+            "end": 486,
+            "start": 477
+          },
+          {
+            "end": 518,
+            "start": 510
+          },
+          {
+            "end": 567,
+            "start": 558
+          }
+        ],
+        "level": "iges.directory_entry",
+        "offset": 405,
+        "parent": "iges:source:part#74a09dc6c61838d228c778403b3d75ae45ec6196b82bce64e51fc6f72df4d9b4",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#1bcc254d779b653d669aaf331fe923dcee2b4f440d0a6b22dd7f650a6e0beec6": {
+        "byte_len": 8,
+        "framing_bytes": [
+          {
+            "end": 518,
+            "start": 510
+          }
+        ],
+        "level": "iges.directory_field",
+        "offset": 510,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#21548521261294508231006c963b95e159397f2843bcbf042b140d706a42f227": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 10,
+            "start": 9
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 8,
+        "parent": "iges:source:part#a977a218cc781d280c663182c59c5f8872ab65bbad62fa3ba526c263a8e61cc7",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/648/729"
+      },
+      "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009": {
+        "byte_len": 162,
+        "framing_bytes": [
+          {
+            "end": 259,
+            "start": 251
+          },
+          {
+            "end": 324,
+            "start": 315
+          },
+          {
+            "end": 356,
+            "start": 348
+          },
+          {
+            "end": 405,
+            "start": 396
+          }
+        ],
+        "level": "iges.directory_entry",
+        "offset": 243,
+        "parent": "iges:source:part#74a09dc6c61838d228c778403b3d75ae45ec6196b82bce64e51fc6f72df4d9b4",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#26596b67ffd4be678a2c130484f0d55949aef61e532b5c54d886a82382df8f30": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 18,
+            "start": 17
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 16,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#28a570598ec08e06413e3c277fc6b28080cc23e440d62f9aa60f9edd7b3f5814": {
+        "byte_len": 8,
+        "framing_bytes": [
+          {
+            "end": 356,
+            "start": 348
+          }
+        ],
+        "level": "iges.directory_field",
+        "offset": 348,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#2a53ce8b710de231a17d65128ab5b619f6c78f5182b49bef43097c03dc0e1aa2": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 332,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#2c3a992876a57f933ae9edf8bdf7d3f4eeea802f89e462f5d71e39deb653653b": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 518,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#30c518e1cd670cd1249a9ec253e5158a93f35dba7c4dac1c1820be20bf2716a6": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 243,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#316d03f3761777d8076afef0058406e41255464e6bb495cde83d65eceabdf2f1": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 494,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#32291564c8a86f600c7827dd818731807f853795dfe27e9f4b188eb9ccb8b5c6": {
+        "byte_len": 8,
+        "framing_bytes": [
+          {
+            "end": 259,
+            "start": 251
+          }
+        ],
+        "level": "iges.directory_field",
+        "offset": 251,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#322dd7e9b139d8a8436fd3fdf758c2ede2bcd103de94666db6406da05f99bf27": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 275,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737": {
+        "byte_len": 162,
+        "framing_bytes": [
+          {
+            "end": 89,
+            "start": 81
+          },
+          {
+            "end": 162,
+            "start": 153
+          },
+          {
+            "end": 228,
+            "start": 227
+          },
+          {
+            "end": 243,
+            "start": 234
+          }
+        ],
+        "level": "iges.global_section",
+        "offset": 81,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#3352b1d8e66eba0e04a45d4438d6c9bf5537355d48810d91adcc35ee45ee25ea": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 267,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#3423c3397fec8da6c13f402e7e363008e149e6ae6fbc0b14f177ab9ef4b91c38": {
+        "byte_len": 3,
+        "framing_bytes": [
+          {
+            "end": 60,
+            "start": 59
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 57,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#34f0d529c45f318fb389593eae460c01043dcf6f1837e45f0a7377e3b38371fc": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 10,
+            "start": 9
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 8,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#35a586a5842bb0a1d540b3d5eb2440e5555aba68c74f1404db193da0430d0f21": {
+        "byte_len": 10,
+        "framing_bytes": [
+          {
+            "end": 31,
+            "start": 29
+          },
+          {
+            "end": 39,
+            "start": 38
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 29,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#395bda75c42e3a1b52a04e52337aabad982b361a8adfa15bba8e4281487a6d91": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 340,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#39a347a181044aca2917d32536c3fd5b5278866d6404ceb0a55cad7949e9cbaa": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 461,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#3b8f232aae275e0ec9032f18de629303456d72a2b48a7d3fcee6aceddbf7d861": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 299,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#3f5d28ba7ec3e33ad2ecc272c2540c9c9948078c670f40c59f59b09be0746f3d": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 6,
+            "start": 5
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 4,
+        "parent": "iges:source:part#a977a218cc781d280c663182c59c5f8872ab65bbad62fa3ba526c263a8e61cc7",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/648/729"
+      },
+      "iges:source:part#4029efdb27d296109e0d93d5cb710dc8827f527e2079f038fb79f9b59deb363a": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 324,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#435f4d2cbc22fc8fb5ca45dd34910372e4d183bf865a968db9a327933061bd5e": {
+        "byte_len": 3,
+        "framing_bytes": [
+          {
+            "end": 134,
+            "start": 132
+          },
+          {
+            "end": 135,
+            "start": 134
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 132,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#44fc5e91ba7c5c5bb48b3b9e9809e91c22de55ffba3fa0c9c34a9626d4884b79": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 76,
+            "start": 75
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 74,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#4bea2a17e0faadaee6a1b560f35eda8d2627164f05f806d853b8703077fd4493": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 14,
+            "start": 13
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 12,
+        "parent": "iges:source:part#a977a218cc781d280c663182c59c5f8872ab65bbad62fa3ba526c263a8e61cc7",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/648/729"
+      },
+      "iges:source:part#52a39979442b46b223c46bb1b4070731ed539cae9947a5600d58b5c7f6b21906": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 437,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#5395bc7800f906bb5bbd55d32cc634acbd2b5455129645d060db225e1ada412c": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 14,
+            "start": 13
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 12,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#54f71ff8d32a7bf0dbee3c3e31194344fa6c16d177795d542faa46f7c05709e5": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 283,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#5617e2e1961d195efca75eb1920ef66dbe6cd464a26e8275dee570b9ed54b994": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 405,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#57f0891068e4d8c8f6fbbb3ae21f82b1b368f5b8255cf64e6977e81e718fe8c8": {
+        "byte_len": 3,
+        "framing_bytes": [
+          {
+            "end": 130,
+            "start": 129
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 127,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#580f59754e54c1188b84882ea52151c10a66d99ce90ebfa4cc16675299c43920": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 69,
+            "start": 68
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 67,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#5cb4c1a09ae5e664833cd47261ca43780217a789315ae73d5476ab221014fc08": {
+        "byte_len": 3,
+        "framing_bytes": [
+          {
+            "end": 51,
+            "start": 50
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 48,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#5fd450c640f6c18a83a2044ecdca329b81d36c401fba71e52ee8b08e9e6e8765": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 20,
+            "start": 19
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 18,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#615caa16fd16c0507493a2d582f540c891ae4838289d653433565ec99d2307c1": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 380,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#675697c9fb37a10a1547f38df7c671870c68f403c6abf0a447d7c4534dda2ed3": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 364,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#6d2a06ea458beb5dda170eeb853e6a7fde05e8baee9fe0c5dfd51b77444795c3": {
+        "byte_len": 8,
+        "framing_bytes": [
+          {
+            "end": 421,
+            "start": 413
+          }
+        ],
+        "level": "iges.directory_field",
+        "offset": 413,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#6d442292da4eb78fa38beee598898208ea09bac4e463eabe16e390b2ec6d6a0b": {
+        "byte_len": 19,
+        "framing_bytes": [
+          {
+            "end": 83,
+            "start": 80
+          },
+          {
+            "end": 99,
+            "start": 98
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 80,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc": {
+        "byte_len": 81,
+        "framing_bytes": [
+          {
+            "end": 589,
+            "start": 588
+          },
+          {
+            "end": 648,
+            "start": 631
+          }
+        ],
+        "level": "iges.parameter_record",
+        "offset": 567,
+        "parent": "iges:source:part#8e402b6c3f95db384b6f2c30cd6765cc847737271932daeba8bc6fe553537eb6",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#74a09dc6c61838d228c778403b3d75ae45ec6196b82bce64e51fc6f72df4d9b4": {
+        "byte_len": 324,
+        "framing_bytes": [
+          {
+            "end": 324,
+            "start": 315
+          },
+          {
+            "end": 405,
+            "start": 396
+          },
+          {
+            "end": 486,
+            "start": 477
+          },
+          {
+            "end": 567,
+            "start": 558
+          }
+        ],
+        "level": "iges.directory_section",
+        "offset": 243,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#77a105fa0a0776549b93773b4d5a10a736462bafe525ccc08c4786be120af69e": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 469,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#7845863b7a5b79b5ea891e2da0810b0c80a0d9d4eb280e0d6b93704db4d4708c": {
+        "byte_len": 7,
+        "framing_bytes": [
+          {
+            "end": 112,
+            "start": 111
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 105,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#84262e66f319dea161831feb340afcf4a05cf677e621cfded55a7734b320c2ac": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 388,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#86116dd9b295681935db5b59c23f289bd9686700b3686e651e3cb10dbfb5ca9e": {
+        "byte_len": 9,
+        "framing_bytes": [
+          {
+            "end": 114,
+            "start": 112
+          },
+          {
+            "end": 121,
+            "start": 120
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 112,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#87cc5701520c89f4e253a1c5c1e1944d9e15b8bdeffd13ac0ff8c91b9dd1c2c6": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 372,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#89c78698e6979e7fbdfc8af799d8d1ea6d1a1956fe064b81fa9493a528eb3448": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 526,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#8b65f30b00f608c4a3a741ad6c2959b9ad4a0393e6ceed6f44af9f74f087ff12": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 453,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#8e402b6c3f95db384b6f2c30cd6765cc847737271932daeba8bc6fe553537eb6": {
+        "byte_len": 162,
+        "framing_bytes": [
+          {
+            "end": 648,
+            "start": 639
+          },
+          {
+            "end": 729,
+            "start": 720
+          }
+        ],
+        "level": "iges.parameter_section",
+        "offset": 567,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#8fa8c5eb5342863f1403f7eb222c8f83c48ebd217563a58dfd4f1ead494118d2": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 16,
+            "start": 15
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 14,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#901949f410b20df78d906351d7a35aa6c7f04f7854fbda3c246e906df58227e6": {
+        "byte_len": 11,
+        "framing_bytes": [
+          {
+            "end": 20,
+            "start": 18
+          },
+          {
+            "end": 29,
+            "start": 28
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 18,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#981481bcfb8a689544fd7cb08b7419cb48827288383e362537c76cf34eb7815e": {
+        "byte_len": 4,
+        "framing_bytes": [
+          {
+            "end": 67,
+            "start": 66
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 63,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#9b128dd8ad623ec98870e6636ba324235558d5c5477e0b99176d386b656f15b9": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 8,
+            "start": 7
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 6,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#9ea774aad1aa7fa7210422e0f00c8ec6e207270332b6f10e4227f4b215a2c8c4": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 12,
+            "start": 11
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 10,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#a38a7de57776fc13b1403c472ac30363c52eba053a036fca989be6f2a47a2c33": {
+        "byte_len": 6,
+        "framing_bytes": [
+          {
+            "end": 105,
+            "start": 104
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 99,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#a977a218cc781d280c663182c59c5f8872ab65bbad62fa3ba526c263a8e61cc7": {
+        "byte_len": 81,
+        "framing_bytes": [
+          {
+            "end": 662,
+            "start": 661
+          },
+          {
+            "end": 729,
+            "start": 712
+          }
+        ],
+        "level": "iges.parameter_record",
+        "offset": 648,
+        "parent": "iges:source:part#8e402b6c3f95db384b6f2c30cd6765cc847737271932daeba8bc6fe553537eb6",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#ab5effaf96dac2230335883ebcea603a5638d248440d8cf33c36e5a64e838034": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 534,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#ac53fbba713d3af1d6ed1eda7095fedf2ca975e6ba62df6833d3fe162bb8380a": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 445,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#b31bc6822a14479109078439ba4236e6496d579fc091b1e7b6a8927bb54974bc": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 8,
+            "start": 7
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 6,
+        "parent": "iges:source:part#a977a218cc781d280c663182c59c5f8872ab65bbad62fa3ba526c263a8e61cc7",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/648/729"
+      },
+      "iges:source:part#b95ee3d62f186d6b5a82a3935ce99ff06b58983ed576dc2c580fcc8b9968acd1": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 307,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#bb0b9d92665715c35074d30c76c923ac23f274e7f5b5bb36a265adde63b4428f": {
+        "byte_len": 10,
+        "framing_bytes": [
+          {
+            "end": 10,
+            "start": 8
+          },
+          {
+            "end": 18,
+            "start": 17
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 8,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#bea4ad92f78860548ba0fd7a2dc2d8048f44a56636bc131d580e6828af930373": {
+        "byte_len": 4,
+        "framing_bytes": [
+          {
+            "end": 80,
+            "start": 79
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 76,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#c22e8705586d8719093c86517da645e74dbf04231ee24733e1d17ba60471c359": {
+        "byte_len": 5,
+        "framing_bytes": [
+          {
+            "end": 71,
+            "start": 69
+          },
+          {
+            "end": 74,
+            "start": 73
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 69,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#c49ba3c3961198e3041fdb44d1254b969cdc4b9dcb0536043d59bb2551811f93": {
+        "byte_len": 3,
+        "framing_bytes": [
+          {
+            "end": 62,
+            "start": 60
+          },
+          {
+            "end": 63,
+            "start": 62
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 60,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#c5392557fc6a15a43906074b95657e40a03ca29a5ba595cb8e56e792f3122afa": {
+        "byte_len": 3,
+        "framing_bytes": [
+          {
+            "end": 137,
+            "start": 135
+          },
+          {
+            "end": 138,
+            "start": 137
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 135,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#c8794d55f1417d3f560362b7544926aa030375858aea76e661fcd874451ecf7d": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 12,
+            "start": 11
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 10,
+        "parent": "iges:source:part#a977a218cc781d280c663182c59c5f8872ab65bbad62fa3ba526c263a8e61cc7",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/648/729"
+      },
+      "iges:source:part#cd571827d868f5e79bfb0251df41325f80dc71e37c3f348f5f523bcadae15aee": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 6,
+            "start": 5
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 4,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#ce01e08cddfdaa368cbab431d176a3d857b8d20a973e455638638d18b54c15eb": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 502,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#d35c2c599d57e026d7ae799f10a3fd3d440af09d0b17e782c2c35b425b98a16f": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 259,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#dc175247ebf685932673f199ac1815c997e183c41054dea552608cf7fb54461a": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 291,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#dc8583d21e0ab3e4fa3c332389e7b7f5bbdd6fce7634b42d7b517392695ecd19": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 53,
+            "start": 52
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 51,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#e40b521ecb60c3c9e127d00bc2e58cbd33031e29f817edcae686d3e73774fd2e": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 542,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#ead78e5c8210b4842245a7c870fa4daec3355ed9d09fbe8e6a3176434aa17bba": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 429,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#ef5389ab0ad7cde22a438334daac613332883562ae1faf52d74cf58d9649a3ab": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 22,
+            "start": 21
+          }
+        ],
+        "level": "iges.parameter_field",
+        "offset": 20,
+        "parent": "iges:source:part#6fbd5701a95f6e46824df696d41b4f47a137f663e5b4a57989d6dde9eb440bcc",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/parameter/file/567/648"
+      },
+      "iges:source:part#f02a379f79ba81ccb9412121c7da11a5e7923662663c98d48ee920b4501ab8f0": {
+        "byte_len": 2,
+        "framing_bytes": [
+          {
+            "end": 132,
+            "start": 131
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 130,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#f46a1552194f8e90aaf696fff06b1f6d8c30a02ce3d067aebda4145da40f3f9c": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 356,
+        "parent": "iges:source:part#24fd08376561f2710bbfab1f0e18d95cd39ee4c28232e41450c6a3bd856fc009",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#f67fca277b940d8eb00589bec8077c0de5f0b09c8c1c0927f417e3131072c1ed": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 486,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#fc8680da18cdab2f1c181282803149a5ed32505b7b575fd73fa4eb231d3437e0": {
+        "byte_len": 4,
+        "framing_bytes": [
+          {
+            "end": 57,
+            "start": 56
+          }
+        ],
+        "level": "iges.global_field",
+        "offset": 53,
+        "parent": "iges:source:part#3246ee1667c399cba74eda3a5b153b7343227f01147e94cefb6a523053578737",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:source:part#fedd1a746e8730439f2221710097724e6f780fab49837af3cb290079455d10f6": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 421,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "iges:source:part#ffda92a72540a25f4ea6e150e2287b46f8df806a50261ca3da7db14d6eb833a9": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "iges.directory_field",
+        "offset": 550,
+        "parent": "iges:source:part#11a58a77539deb6ff27fdf1eaad2fb6c4e7c0468d5731263398bf4a06629d3c8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      }
+    },
+    "record_layout": {
+      "iges:entity:directory#1": {
+        "byte_len": 81,
+        "offset": 567,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 572,
+              "start": 571
+            },
+            {
+              "end": 574,
+              "start": 573
+            },
+            {
+              "end": 576,
+              "start": 575
+            },
+            {
+              "end": 578,
+              "start": 577
+            },
+            {
+              "end": 580,
+              "start": 579
+            },
+            {
+              "end": 582,
+              "start": 581
+            },
+            {
+              "end": 584,
+              "start": 583
+            },
+            {
+              "end": 586,
+              "start": 585
+            },
+            {
+              "end": 588,
+              "start": 587
+            }
+          ],
+          "iges/parameter/file/567/648": [
+            {
+              "end": 5,
+              "start": 4
+            },
+            {
+              "end": 7,
+              "start": 6
+            },
+            {
+              "end": 9,
+              "start": 8
+            },
+            {
+              "end": 11,
+              "start": 10
+            },
+            {
+              "end": 13,
+              "start": 12
+            },
+            {
+              "end": 15,
+              "start": 14
+            },
+            {
+              "end": 17,
+              "start": 16
+            },
+            {
+              "end": 19,
+              "start": 18
+            },
+            {
+              "end": 21,
+              "start": 20
+            }
+          ]
+        },
+        "stream": "file"
+      },
+      "iges:entity:directory#3": {
+        "byte_len": 81,
+        "offset": 648,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 653,
+              "start": 652
+            },
+            {
+              "end": 655,
+              "start": 654
+            },
+            {
+              "end": 657,
+              "start": 656
+            },
+            {
+              "end": 659,
+              "start": 658
+            },
+            {
+              "end": 661,
+              "start": 660
+            }
+          ],
+          "iges/parameter/file/648/729": [
+            {
+              "end": 5,
+              "start": 4
+            },
+            {
+              "end": 7,
+              "start": 6
+            },
+            {
+              "end": 9,
+              "start": 8
+            },
+            {
+              "end": 11,
+              "start": 10
+            },
+            {
+              "end": 13,
+              "start": 12
+            }
+          ]
+        },
+        "stream": "file"
+      },
+      "iges:global-field:iges/global/file/81/243:105:7": {
+        "byte_len": 7,
+        "offset": 105,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:112:9": {
+        "byte_len": 9,
+        "offset": 112,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:121:6": {
+        "byte_len": 6,
+        "offset": 121,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:127:3": {
+        "byte_len": 3,
+        "offset": 127,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 219,
+              "start": 217
+            }
+          ],
+          "iges/global/file/81/243": [
+            {
+              "end": 129,
+              "start": 127
+            }
+          ]
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:130:2": {
+        "byte_len": 2,
+        "offset": 130,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:132:3": {
+        "byte_len": 3,
+        "offset": 132,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:135:3": {
+        "byte_len": 3,
+        "offset": 135,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:18:11": {
+        "byte_len": 11,
+        "offset": 18,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 109,
+              "start": 101
+            }
+          ],
+          "iges/global/file/81/243": [
+            {
+              "end": 28,
+              "start": 20
+            }
+          ]
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:29:10": {
+        "byte_len": 10,
+        "offset": 29,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:39:6": {
+        "byte_len": 6,
+        "offset": 39,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:45:3": {
+        "byte_len": 3,
+        "offset": 45,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:48:3": {
+        "byte_len": 3,
+        "offset": 48,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:51:2": {
+        "byte_len": 2,
+        "offset": 51,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:53:4": {
+        "byte_len": 4,
+        "offset": 53,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:57:3": {
+        "byte_len": 3,
+        "offset": 57,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:60:3": {
+        "byte_len": 3,
+        "offset": 60,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:63:4": {
+        "byte_len": 4,
+        "offset": 63,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:67:2": {
+        "byte_len": 2,
+        "offset": 67,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:69:5": {
+        "byte_len": 5,
+        "offset": 69,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 153,
+              "start": 152
+            },
+            {
+              "end": 163,
+              "start": 162
+            }
+          ],
+          "iges/global/file/81/243": [
+            {
+              "end": 73,
+              "start": 71
+            }
+          ]
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:74:2": {
+        "byte_len": 2,
+        "offset": 74,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:76:4": {
+        "byte_len": 4,
+        "offset": 76,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:80:19": {
+        "byte_len": 19,
+        "offset": 80,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:8:10": {
+        "byte_len": 10,
+        "offset": 8,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 98,
+              "start": 91
+            }
+          ],
+          "iges/global/file/81/243": [
+            {
+              "end": 17,
+              "start": 10
+            }
+          ]
+        },
+        "stream": "iges/global/file/81/243"
+      },
+      "iges:global-field:iges/global/file/81/243:99:6": {
+        "byte_len": 6,
+        "offset": 99,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "iges/global/file/81/243"
+      }
     },
     "retained_records": {
       "iges:file:source-image#0": {

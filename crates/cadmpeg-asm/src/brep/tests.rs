@@ -6,9 +6,9 @@ use cadmpeg_test_support::edit;
 
 use super::emit::{emit_attributes, emit_edges, CurveSenseRefs};
 use super::geometry::{
-    analytic_procedural_surface, collapsed_edges, edge_pcurve_parameter_ranges, faced_body_kind,
-    is_asm_stream_delimiter, is_known_record_head, pcurve_ranges_on_domain, point_vector,
-    rational_four_arc_circle,
+    analytic_procedural_surface, classify_body_kinds, collapsed_edges,
+    edge_pcurve_parameter_ranges, faced_body_kind, is_asm_stream_delimiter, is_known_record_head,
+    pcurve_ranges_on_domain, point_vector, rational_four_arc_circle,
 };
 use super::records::{self, BodyNativeKey};
 use super::topology::{shell_faces, shell_wire_roots, subshell_ancestor_shells};
@@ -1536,3 +1536,62 @@ fn collapsed_edges_need_one_vertex_and_a_point_carrier() {
 }
 
 mod attribute_limits;
+
+#[test]
+fn a_body_of_single_sided_loopless_faces_is_a_solid() {
+    use cadmpeg_ir::ids::{BodyId, SurfaceId};
+    use cadmpeg_ir::topology::{Body, BodyKind, Face, FaceLoops, Region, Sense};
+
+    let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
+    let region_id = RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar");
+    let shell_id = ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar");
+    let face_id = FaceId::mint(id(FORMAT, 4).into_string()).expect("identity grammar");
+    // One full torus face: no loops, so no edges to count.
+    let mut brep = AsmBrep {
+        bodies: vec![Body {
+            native_ref: None,
+            id: body_id.clone(),
+            kind: BodyKind::Sheet,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        }],
+        regions: vec![Region {
+            native_ref: None,
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        }],
+        shells: vec![
+            Shell::with_faces(shell_id.clone(), region_id, vec![face_id.clone()]).expect("shell"),
+        ],
+        faces: vec![Face {
+            native_ref: None,
+            id: face_id.clone(),
+            shell: shell_id,
+            surface: SurfaceId::mint(id(FORMAT, 5).into_string()).expect("identity grammar"),
+            sense: Sense::Forward,
+            loops: FaceLoops::unspecified(Vec::new()),
+            name: None,
+            color: None,
+            tolerance: None,
+        }],
+        ..AsmBrep::default()
+    };
+    classify_body_kinds(&mut brep, &HashSet::new());
+    assert_eq!(brep.bodies[0].kind, BodyKind::Solid);
+
+    // The same face stored double-sided is a sheet.
+    brep.face_sidedness.push(records::FaceSidedness {
+        source_namespace: records::identity::NativeRecordNamespace::new(FORMAT),
+        record_index: 4,
+        face: face_id,
+        native_sense: Sense::Forward,
+        carrier_flipped: false,
+        containment: Some(records::FaceContainment::Out),
+    });
+    classify_body_kinds(&mut brep, &HashSet::new());
+    assert_eq!(brep.bodies[0].kind, BodyKind::Sheet);
+}

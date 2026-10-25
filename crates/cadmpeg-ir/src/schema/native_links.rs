@@ -22,3 +22,6 @@ pub fn visit_native_references<'a>(
     }
     crate::document::arena_registry!(visit);
 }
+
+#[cfg(test)]
+mod tests;

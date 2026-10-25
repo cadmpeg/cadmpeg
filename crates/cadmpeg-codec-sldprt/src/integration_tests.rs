@@ -260,12 +260,18 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
 
 #[test]
 fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections() {
-    let decoded = decode(sldprt_with_body_and_history(&triangle_body()));
+    let decoded = decode(crate::test_support::container::native_envelope_fixture(
+        &(sldprt_with_body_and_history(&triangle_body())),
+    ));
     let mut edited = decoded.ir().clone();
     translate_model_x(&mut edited, 3.0);
     let mut bytes = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut bytes)
-        .expect("semantic SLDPRT write");
+    crate::test_support::plan_fixture_write_with_native_envelope(
+        &edited,
+        decoded.source_fidelity(),
+        &mut bytes,
+    )
+    .expect("semantic SLDPRT write");
     let round_trip = decode(bytes);
     assert_eq!(
         round_trip.ir().model.points[0].position().get().x,
@@ -276,7 +282,8 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 }
 
 #[test]
-fn source_less_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir() {
+fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir(
+) {
     let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     assert_eq!(first.ir().model.faces.len(), 6);
     assert_eq!(first.ir().model.edges.len(), 12);
@@ -311,7 +318,7 @@ fn versioned_part() -> Vec<u8> {
         "Contents/SolidWorks",
         br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
     ));
-    bytes
+    crate::test_support::container::native_envelope_fixture(&bytes)
 }
 
 fn plan(
@@ -408,6 +415,12 @@ fn inherit_synthesizes_the_source_dialect_without_retained_bytes() {
 #[test]
 fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     let result = decode(versioned_part());
+    assert!(result
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .is_some());
     let plan = plan(
         &result,
         true,
@@ -432,9 +445,6 @@ fn an_explicit_catalog_row_synthesizes_without_consuming_a_different_dialect() {
     assert_eq!(classify(written), "sldprt:unknown");
 }
 
-/// The §8.3 honesty invariant on the patch path: an edited part still writes
-/// the source's own dialect, because the retained `swSolidWorks` envelope goes
-/// through unchanged, and the report names it.
 #[test]
 fn the_patch_path_names_the_preserved_dialect() {
     let result = decode(versioned_part());
@@ -550,21 +560,17 @@ fn a_retained_source_record_without_data_reports_degraded_fidelity() {
     assert!(!unavailable.message.contains("regenerated from IR"));
 }
 
-/// The §8.3 honesty invariant on the generation path: a part built with nothing
-/// retained lands on the totality row, which is the whole catalog, and the
-/// report names it.
 #[test]
-fn the_generation_path_names_the_catalog_row() {
+fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     let ir = source_less_cube();
-    let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
-        )
-        .expect("nothing to inherit, so the catalog default stands in");
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+    )
+    .expect("nothing to inherit, so the catalog default stands in");
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:unknown");

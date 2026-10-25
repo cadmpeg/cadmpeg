@@ -67,6 +67,12 @@ Use repeatable `--crate NAME` arguments to restrict reported findings to named c
   repeats through a chain of flattened types. The flattened type's name is
   resolved the same way. A type the flattened type reaches through anything
   other than a further `#[serde(flatten)]` is not resolved.
+- Only the `cadmpeg` CLI crate lists `cadmpeg-measure` in `[dependencies]`,
+  `[build-dependencies]` or a `[target.*]` dependency table
+  (`measurement_dependency`). Other crates list it only in
+  `[dev-dependencies]`: a decoder or encoder never selects a layout, carrier,
+  sense, unit or interpretation by measuring geometry, and codec round-trip
+  tests use measurement as an oracle.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and
@@ -175,6 +181,7 @@ test, test-support, golden, integration, and bench paths and filenames containin
 `test`. Comments, literals, and `cfg(test)` items are masked before matching.
 Placement rules inspect `crates/**/*.rs`, following test-only module ancestry.
 The test-collection rule reads `scripts/test_*.py` as Python syntax.
+The manifest rule `measurement_dependency` inspects `crates/*/Cargo.toml`.
 Both scans recognize `cfg(test)` and flat `cfg(all(..., test, ...))` gates.
 Other conditions remain production, including `cfg(not(test))` and
 `cfg(any(feature = "examples", test))`. Comments and literals are masked

@@ -9,6 +9,45 @@ fn source_kinds<'a>(kinds: &'a [(u32, &'a str)]) -> impl Fn(u32, &str) -> bool +
     }
 }
 
+#[test]
+fn hem_direction_fixtures_keep_flip_separate_from_compatibility_lanes() {
+    let controls: [(Vec<u8>, &[u32], bool); 2] = [
+        (
+            crate::test_support::verification::bytes(
+                "hem/flat.bin",
+                include_bytes!("../../../../test_support/hem/flat.bin"),
+            ),
+            &[703, 706, 708, 710, 713, 717, 720, 724],
+            false,
+        ),
+        (
+            crate::test_support::verification::bytes(
+                "hem/flipped.bin",
+                include_bytes!("../../../../test_support/hem/flipped.bin"),
+            ),
+            &[703, 706, 708, 717, 720, 724, 754, 757],
+            true,
+        ),
+    ];
+    for (bytes, references, expected_flip) in controls {
+        let operation = super::exact_hem_operation(
+            &bytes,
+            0,
+            bytes.len(),
+            &references.iter().copied(),
+            &source_kinds(&[(703, "HemGap"), (706, "HemLength")]),
+        )
+        .expect("authored Hem direction control");
+        assert_eq!(operation.flipped, expected_flip);
+        assert_eq!(
+            operation.bend_position,
+            cadmpeg_ir::features::SheetMetalHemBendPosition::Adjacent
+        );
+        assert_eq!(operation.settings_record_index, 724);
+        assert_eq!(operation.bend_radius.get(), 0.25);
+    }
+}
+
 /// Field values written into a synthetic gap-and-length `Hem` frame.
 struct HemFixture {
     header_shift: usize,
@@ -66,7 +105,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         assert_eq!(operation.edge_group_record_index.get(), 251);
         assert_eq!(operation.edge_operand_record_index(), 254);
         assert_eq!(operation.bend_radius.get(), 0.25);
-        assert_eq!(operation.bend_radius_offset, frame.bend_radius_offset);
+        assert_eq!(operation.bend_radius_offset, Some(frame.bend_radius_offset));
     }
 }
 
@@ -130,7 +169,7 @@ fn hem_scope_reads_the_rolled_owner_layout() {
         }
     );
     assert_eq!(operation.bend_radius.get(), 0.25);
-    assert_eq!(operation.bend_radius_offset, 160);
+    assert_eq!(operation.bend_radius_offset, Some(160));
 }
 
 #[test]
@@ -154,7 +193,7 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
         }
     );
     assert_eq!(operation.bend_radius.get(), 0.25);
-    assert_eq!(operation.bend_radius_offset, 170);
+    assert_eq!(operation.bend_radius_offset, Some(170));
 }
 
 #[test]

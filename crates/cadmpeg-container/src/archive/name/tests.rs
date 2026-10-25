@@ -33,7 +33,39 @@ fn unicode(raw: &[u8], value: &[u8], valid_crc: bool) -> Vec<u8> {
     extra
 }
 
-fn check(bytes: &[u8], raw: &[u8], expected: &str, extra_read: Option<(usize, usize)>) {
+fn expected_reads(
+    declaration: u64,
+    name: std::ops::Range<u64>,
+    recovered: bool,
+    extra_reads: &[(usize, usize)],
+) -> Vec<std::ops::Range<u64>> {
+    let mut ranges = if recovered {
+        vec![
+            declaration + 6..declaration + 8,
+            declaration + 26..declaration + 28,
+        ]
+    } else {
+        vec![declaration + 28..declaration + 32]
+    };
+    for (offset, len) in extra_reads {
+        let start = name.end + u64::try_from(*offset).expect("extra field offset fits u64");
+        ranges.push(start..start + u64::try_from(*len).expect("extra field length fits u64"));
+    }
+    ranges.push(name);
+    ranges.sort_by_key(|range| range.start);
+    let mut merged: Vec<std::ops::Range<u64>> = Vec::new();
+    for range in ranges {
+        match merged.last_mut() {
+            Some(previous) if range.start <= previous.end => {
+                previous.end = previous.end.max(range.end);
+            }
+            _ => merged.push(range),
+        }
+    }
+    merged
+}
+
+fn check(bytes: &[u8], raw: &[u8], expected: &str, extra_reads: &[(usize, usize)]) {
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
         .expect("actual source session");
@@ -57,11 +89,12 @@ fn check(bytes: &[u8], raw: &[u8], expected: &str, extra_read: Option<(usize, us
     assert_eq!(captures.len(), 1);
     let start = u64::try_from(source.start()).expect("filename start fits u64");
     let end = u64::try_from(source.end()).expect("filename end fits u64");
-    let mut reads = std::iter::once(start..end).collect::<Vec<std::ops::Range<u64>>>();
-    if let Some((offset, len)) = extra_read {
-        let offset = end + u64::try_from(offset).expect("selected extra offset fits u64");
-        reads.push(offset..offset + u64::try_from(len).expect("selected extra length fits u64"));
-    }
+    let reads = expected_reads(
+        entry.declaration_range().start,
+        start..end,
+        entry.is_recovered(),
+        extra_reads,
+    );
     assert_eq!(captures[0].reads().len(), 1);
     assert_eq!(captures[0].reads()["file"], reads);
 }
@@ -73,13 +106,13 @@ fn central_names_preserve_utf8_first_and_cp437_without_flag_reinterpretation() {
             &fixture("é".as_bytes(), flags, Vec::new(), false),
             "é".as_bytes(),
             "é",
-            None,
+            &[],
         );
         check(
             &fixture(&[0x82], flags, Vec::new(), false),
             &[0x82],
             "é",
-            None,
+            &[],
         );
     }
 }
@@ -90,13 +123,24 @@ fn central_unicode_path_uses_last_valid_original_checksum_and_exact_selected_fie
     let mut extra = unicode(raw, "first".as_bytes(), true);
     let before = extra.len();
     extra.extend(unicode(raw, "水".as_bytes(), true));
+    let wrong = extra.len();
     extra.extend(unicode(raw, b"wrong", false));
+    let invalid = extra.len();
     extra.extend(unicode(raw, &[0xff], true));
     check(
         &fixture(raw, 0, extra, false),
         raw,
         "水",
-        Some((before + 5, 4 + "水".len())),
+        &[
+            (0, 4),
+            (5, 4 + "first".len()),
+            (before, 4),
+            (before + 5, 4 + "水".len()),
+            (wrong, 4),
+            (wrong + 5, 4),
+            (invalid, 4),
+            (invalid + 5, 5),
+        ],
     );
 }
 
@@ -104,8 +148,14 @@ fn central_unicode_path_uses_last_valid_original_checksum_and_exact_selected_fie
 fn invalid_unicode_paths_leave_original_name_and_read_only_original_field() {
     let raw = &[0x82];
     let mut extra = unicode(raw, b"wrong", false);
+    let invalid = extra.len();
     extra.extend(unicode(raw, &[0xff], true));
-    check(&fixture(raw, 0, extra, false), raw, "é", None);
+    check(
+        &fixture(raw, 0, extra, false),
+        raw,
+        "é",
+        &[(0, 4), (5, 4), (invalid, 4), (invalid + 5, 5)],
+    );
 }
 
 #[test]
@@ -114,20 +164,20 @@ fn local_recovery_keeps_flag_specific_lossy_utf8_and_ignores_unicode_extras() {
         &fixture(&[0xff], 0x800, Vec::new(), true),
         &[0xff],
         "�",
-        None,
+        &[],
     );
     check(
         &fixture("é".as_bytes(), 0, Vec::new(), true),
         "é".as_bytes(),
         "├⌐",
-        None,
+        &[],
     );
     let raw = &[0x82];
     check(
         &fixture(raw, 0, unicode(raw, "水".as_bytes(), true), true),
         raw,
         "é",
-        None,
+        &[],
     );
 }
 
@@ -178,7 +228,15 @@ fn foreign_copied_and_tampered_entry_handles_fail_before_any_name_read() {
         .find(|capture| capture.id() == "unrelated:test:entry#admitted-handle")
         .expect("admitted handle capture");
     assert_eq!(admitted.reads().len(), 1);
-    assert_eq!(admitted.reads()["file"], [expected]);
+    assert_eq!(
+        admitted.reads()["file"],
+        expected_reads(
+            archive.entries()[0].declaration_range().start,
+            expected,
+            false,
+            &[]
+        )
+    );
 }
 
 #[test]
@@ -237,6 +295,112 @@ fn admitted_names_use_original_coordinates_for_nonzero_archive_view_starts() {
         );
         let start = u64::try_from(expected_start).expect("physical filename start fits u64");
         assert_eq!(captures[0].reads().len(), 1);
-        assert_eq!(captures[0].reads()["file"], [start..start + 1]);
+        assert_eq!(
+            captures[0].reads()["file"],
+            expected_reads(
+                u64_from_index(padding.len()) + entry.declaration_range().start,
+                start..start + 1,
+                recovered,
+                &[],
+            )
+        );
     }
+}
+
+#[test]
+fn unknown_extra_headers_select_no_content_and_leave_their_body_unread() {
+    let raw = b"original";
+    let mut extra = vec![0x34, 0x12, 3, 0, 9, 8, 7];
+    let unicode_at = extra.len();
+    extra.extend(unicode(raw, "水".as_bytes(), true));
+    check(
+        &fixture(raw, 0, extra, false),
+        raw,
+        "水",
+        &[(0, 4), (unicode_at, 4), (unicode_at + 5, 4 + "水".len())],
+    );
+}
+
+#[test]
+fn candidate_crc_changes_the_selected_name_and_its_genuine_content_reads() {
+    let raw = b"original";
+    for (valid_crc, expected) in [(false, "first"), (true, "second")] {
+        let mut extra = unicode(raw, b"first", true);
+        let second = extra.len();
+        extra.extend(unicode(raw, b"second", valid_crc));
+        let second_read = 4 + if valid_crc { "second".len() } else { 0 };
+        check(
+            &fixture(raw, 0, extra, false),
+            raw,
+            expected,
+            &[
+                (0, 4),
+                (5, 4 + "first".len()),
+                (second, 4),
+                (second + 5, second_read),
+            ],
+        );
+    }
+}
+
+#[test]
+fn recovered_utf8_flag_changes_the_same_raw_name_inside_its_record() {
+    for (flags, expected) in [(0, "\u{a0}"), (0x800, "�")] {
+        check(
+            &fixture(&[0xff], flags, Vec::new(), true),
+            &[0xff],
+            expected,
+            &[],
+        );
+    }
+}
+
+#[test]
+fn a_foreign_context_cannot_read_selectors_from_an_admitted_entry() {
+    let bytes = fixture(b"original", 0, Vec::new(), false);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("original name session");
+    let archive = ArchiveSnapshot::new(&ctx, root).expect("original name archive");
+    let foreign_arena = DecodeArena::new();
+    let (foreign_ctx, foreign_root) =
+        DecodeContext::from_root_bytes(&bytes, &foreign_arena, &DecodePolicy::service())
+            .expect("foreign name session");
+    foreign_ctx
+        .record("unrelated:test:entry#foreign-context", foreign_root, || {
+            let error = archive
+                .read_entry_name(&foreign_ctx, &archive.entries()[0])
+                .expect_err("an admitted entry still belongs to its actual source session");
+            assert!(matches!(error, cadmpeg_core::CodecError::Malformed(message)
+                if message == "record view belongs to another or detached decode session"));
+            Ok(())
+        })
+        .expect("record the rejected foreign-context attempt");
+    let captures = foreign_ctx
+        .take_record_captures()
+        .expect("foreign captures");
+    assert_eq!(captures.len(), 1);
+    assert!(captures[0].reads().is_empty());
+    assert!(ctx
+        .take_record_captures()
+        .expect("original captures")
+        .is_empty());
+}
+
+#[test]
+fn locating_the_original_filename_field_adds_no_semantic_read_credit() {
+    let bytes = fixture(b"original", 0, Vec::new(), false);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("filename navigation session");
+    let archive = ArchiveSnapshot::new(&ctx, root).expect("filename navigation archive");
+    ctx.record("unrelated:test:entry#filename-navigation", root, || {
+        let source = archive.entry_name_source(&archive.entries()[0])?;
+        assert_eq!(source.window(), b"original");
+        Ok(())
+    })
+    .expect("filename navigation does not parse a name");
+    let captures = ctx.take_record_captures().expect("navigation captures");
+    assert_eq!(captures.len(), 1);
+    assert!(captures[0].reads().is_empty());
 }

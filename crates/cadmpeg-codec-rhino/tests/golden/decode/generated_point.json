@@ -59,6 +59,7 @@
             }
           ],
           "name": "Default",
+          "native_ref": "rhino:presentation:layer#284434a6-8100-1c94-6093-9b8d5a958003",
           "visible": true
         }
       ],
@@ -145,7 +146,6 @@
             "locked": false,
             "material_index": -1,
             "name": "Default",
-            "neutral_ref": "rhino:model:layer#000000",
             "parent_uuid": null,
             "plot_color": {
               "a": 1.0,
@@ -322,6 +322,23 @@
       "rhino.layout.rhino:presentation:object#d000213c-3fed-dfd4-5d93-120ab2084742.offset": "622",
       "rhino.object_layout": "[{\"start\":622,\"end\":797}]",
       "rhino.table_layout": "[[268435476,[[2684354598,63,75]]],[268435477,[[536903729,99,147]]],[268435478,[]],[268435493,[]],[268435472,[]],[268435491,[]],[268435473,[[536903760,267,454]]],[268435480,[]],[268435481,[]],[268435488,[]],[268435474,[]],[268435490,[]],[268435489,[]],[268435475,[[536903792,622,797]]],[268435494,[]]]"
+    },
+    "record_layout": {
+      "rhino:object:point#d000213c-3fed-dfd4-5d93-120ab2084742": {
+        "byte_len": 25,
+        "offset": 702,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 727,
+              "start": 702
+            }
+          ]
+        },
+        "stream": "file"
+      }
     },
     "retained_records": {
       "rhino:object:record#000000": {

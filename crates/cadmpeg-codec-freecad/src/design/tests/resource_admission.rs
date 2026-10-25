@@ -201,7 +201,10 @@ fn detached_partial_sketch_and_sheet_keep_native_without_fabricated_failure_auth
         let (_, _, unformed, _) = super::super::transfer(
             &reader,
             &mut projected,
-            &objects,
+            super::super::DesignObjects {
+                objects: &objects,
+                extensions: &[],
+            },
             &properties,
             &[],
             None,

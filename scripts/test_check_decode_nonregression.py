@@ -4,6 +4,7 @@
 
 import copy
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -168,6 +169,12 @@ class ComparatorBoundaryControls(unittest.TestCase):
         leaves, _ = checker.record_facts(head['model']['features'][0], ('features', '#'), foreign_path)
         self.assertIn(('features', '#', 'definition', 'length', 'kind'), leaves)
 
+    def test_a_dimension_holding_an_object_is_unwrapped_once(self):
+        before = document([{'id': 'a', 'definition': {'kind': 'extrude', 'length': {'tokens': ['1']}}}])
+        head = document([{'id': 'a', 'definition': {'kind': 'extrude', 'length': {'kind': 'literal', 'value': {'tokens': ['1']}}}}])
+        base_schema = checker.SchemaPaths(SCHEMA.variant_tags, frozenset())
+        self.assertEqual(checker.compare_neutral(before['model'], head['model'], base_schema, SCHEMA), [])
+
     def test_layout_rule_cannot_remove_a_same_named_key_at_a_different_path(self):
         before = document(native={'test': {'rows': [{'id': 'r', 'offset': 9, 'nested': {'offset': 4}}]}})
         head = document(native={'test': {'rows': [{'id': 'r', 'nested': {}}]}})
@@ -232,11 +239,17 @@ class ComparatorBoundaryControls(unittest.TestCase):
         head = {'test/fixtures/damaged/one.bin': document()}
         self.assertEqual(checker.compare_fixture_sets(before, head, SCHEMA), [])
 
-    def test_script_fails_loudly_without_authoritative_adapters(self):
-        result = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, text=True, check=False)
+    def test_script_takes_no_arguments(self):
+        result = subprocess.run([sys.executable, str(SCRIPT), '--base', 'HEAD'], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 2)
-        self.assertIn('NOT operational', result.stderr)
-        self.assertIn('Appendix B', result.stderr)
+        self.assertIn('takes no arguments', result.stderr)
+
+    def test_script_fails_without_the_base_build(self):
+        environment = {key: value for key, value in os.environ.items() if key != 'CADMPEG_BASE_BIN'}
+        result = subprocess.run([sys.executable, str(SCRIPT)], capture_output=True, text=True,
+                                check=False, env=environment)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('CADMPEG_BASE_BIN', result.stderr)
 
 
 if __name__ == '__main__':

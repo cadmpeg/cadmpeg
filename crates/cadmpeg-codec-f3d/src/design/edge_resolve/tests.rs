@@ -116,7 +116,7 @@ fn identity_radius_candidates_require_member_local_evidence() {
 }
 
 fn fixed_scope() -> DesignParameterScope {
-    serde_json::from_value(serde_json::json!({
+    crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
         "id": "f3d:test:scope",
         "byte_offset": 0,
         "class_tag": "300",
@@ -151,7 +151,6 @@ fn fixed_scope() -> DesignParameterScope {
         "paired_class_tag": "261",
         "paired_byte_offset": 200
     }))
-    .expect("fixed Fillet scope")
 }
 
 fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
@@ -618,50 +617,99 @@ fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
     }
 }
 
-#[test]
-fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
-    let mut first = recipe_edge_operand(10, &[], &[]);
-    first.recipe_references = vec![
-        recipe_reference(&[]),
-        recipe_reference(&[17]),
-        recipe_reference(&[17]),
-    ];
-    let mut second = recipe_edge_operand(11, &[], &[]);
-    second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[18])];
+fn standard_patch_operand(
+    record: u32,
+    header: i32,
+    scalars: Vec<i32>,
+    references: Vec<DesignRecipeReference>,
+) -> DesignEdgeOperand {
+    let mut operand = recipe_edge_operand(record, &[], &[]);
+    operand.recipe_references = references;
+    operand.recipe_structure = Some(
+        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root: 1,
+            sides: vec![
+                crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+                    header_value: header,
+                    scalars,
+                    payload_prefix: vec![0],
+                    entries: Vec::new(),
+                },
+            ],
+        },
+    );
+    operand
+}
 
+#[test]
+fn grouped_surface_patch_recipe_uses_roles_instead_of_reference_order() {
+    let first = standard_patch_operand(
+        10,
+        2,
+        vec![0],
+        vec![
+            recipe_reference(&[88]),
+            recipe_reference(&[17]),
+            recipe_reference(&[99]),
+        ],
+    );
+    let second = standard_patch_operand(
+        11,
+        0,
+        vec![3],
+        vec![
+            recipe_reference(&[99]),
+            recipe_reference(&[]),
+            recipe_reference(&[18]),
+        ],
+    );
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&first, &second]),
+        surface_patch_grouped_recipe_edges(&[&first, &second], &[]),
         SurfacePatchRecipeEdges::Resolved(vec![
             EdgeId::mint("f3d:test:edge#17").expect("identity grammar"),
             EdgeId::mint("f3d:test:edge#18").expect("identity grammar")
         ])
     );
+    for (header, scalars) in [
+        (1, vec![0, 0]),
+        (0, vec![1, 0]),
+        (0, vec![0, 1]),
+        (1, vec![1, 0]),
+    ] {
+        let operand = standard_patch_operand(10, header, scalars, vec![recipe_reference(&[17])]);
+        assert!(matches!(
+            surface_patch_grouped_recipe_edges(&[&operand], &[]),
+            SurfacePatchRecipeEdges::Resolved(_)
+        ));
+    }
 }
 
 #[test]
 fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
-    let mut ambiguous = recipe_edge_operand(10, &[], &[]);
-    ambiguous.recipe_references = vec![recipe_reference(&[17, 18])];
-    let mut contradictory = recipe_edge_operand(11, &[], &[]);
-    contradictory.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[19])];
+    let ambiguous = standard_patch_operand(10, 1, vec![], vec![recipe_reference(&[17, 18])]);
+    let contradictory = standard_patch_operand(
+        11,
+        1,
+        vec![2],
+        vec![recipe_reference(&[18]), recipe_reference(&[19])],
+    );
     let absent = recipe_edge_operand(12, &[], &[]);
-    let mut repeated = recipe_edge_operand(11, &[], &[]);
-    repeated.recipe_references = vec![recipe_reference(&[17])];
+    let repeated = standard_patch_operand(11, 1, vec![], vec![recipe_reference(&[17])]);
 
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&ambiguous]),
+        surface_patch_grouped_recipe_edges(&[&ambiguous], &[]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&contradictory]),
+        surface_patch_grouped_recipe_edges(&[&contradictory], &[]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&absent, &contradictory]),
+        surface_patch_grouped_recipe_edges(&[&absent, &contradictory], &[]),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&repeated, &repeated]),
+        surface_patch_grouped_recipe_edges(&[&repeated, &repeated], &[]),
         SurfacePatchRecipeEdges::Inconclusive
     );
 }
@@ -681,30 +729,8 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
             },
         ])
         .unwrap();
-    let mut first = recipe_edge_operand(10, &[], &[]);
-    first.recipe_references = vec![recipe_reference(&[17])];
-    first.surface_patch_recipe_structure = Some(
-        crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure {
-            clauses: std::array::from_fn(|_| {
-                crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
-                    fields: vec![
-                        vec![0],
-                        vec![0],
-                        vec![2, 0],
-                        vec![0, 0],
-                        vec![0],
-                        vec![0, 0],
-                    ],
-                    face_reference_ordinals: [0, 0],
-                    edge_reference_ordinals: [0, 0],
-
-                    entries: Vec::new(),
-                }
-            }),
-        },
-    );
-    let mut second = recipe_edge_operand(11, &[], &[]);
-    second.recipe_references = vec![recipe_reference(&[18])];
+    let first = standard_patch_operand(10, 1, vec![], vec![recipe_reference(&[17])]);
+    let second = standard_patch_operand(11, 1, vec![], vec![recipe_reference(&[18])]);
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
         .expect("identity grammar");
 
@@ -714,8 +740,11 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
             std::slice::from_ref(&group),
             &[first, second],
             &[],
-            Some(7),
-            &feature_id,
+            &[],
+            super::EdgeGroupTransition {
+                previous_state_id: Some(7),
+                feature_id: &feature_id,
+            },
             decode_ctx,
         )
     })
@@ -734,15 +763,13 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
 #[test]
 fn contradictory_surface_patch_references_suppress_generic_resolution() {
     let group = group(2, 10);
-    let mut operand = recipe_edge_operand(10, &[], &[]);
-    operand.recipe_references = vec![recipe_reference(&[17]), recipe_reference(&[18])];
-    operand.resolved_edge_slot = Some(17);
-    operand.recipe_structure = Some(
-        crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
-            root: 1,
-            sides: Vec::new(),
-        },
+    let mut operand = standard_patch_operand(
+        10,
+        1,
+        vec![2],
+        vec![recipe_reference(&[17]), recipe_reference(&[18])],
     );
+    operand.resolved_edge_slot = Some(17);
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
         .expect("identity grammar");
 
@@ -752,13 +779,180 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
             std::slice::from_ref(&group),
             std::slice::from_ref(&operand),
             &[],
-            Some(7),
-            &feature_id,
+            &[],
+            super::EdgeGroupTransition {
+                previous_state_id: Some(7),
+                feature_id: &feature_id
+            },
             decode_ctx
         ))
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
+}
+
+fn alternate_patch_operand() -> (
+    DesignEdgeOperand,
+    crate::records::topology::historical_context::AsmFaceBoundary,
+) {
+    use crate::records::topology::edge_recipe::{
+        DesignSurfacePatchRecipeClause, DesignSurfacePatchRecipeStructure,
+    };
+    let mut operand = recipe_edge_operand(10, &[], &[]);
+    operand.recipe_references = vec![
+        recipe_reference(&[17, 18]),
+        recipe_reference(&[]),
+        recipe_reference(&[]),
+        recipe_reference(&[19]),
+        recipe_reference(&[]),
+        recipe_reference(&[20]),
+    ];
+    operand.recipe_references[1].candidate_faces =
+        vec![cadmpeg_ir::ids::FaceId::mint("f3d:test:face#91").expect("identity grammar")];
+    operand.surface_patch_recipe_structure = Some(DesignSurfacePatchRecipeStructure {
+        clauses: [([1, 2], [0, 3]), ([4, 1], [5, 0])].map(|(faces, edges)| {
+            DesignSurfacePatchRecipeClause {
+                fields: vec![
+                    vec![i32::try_from(faces[0]).unwrap()],
+                    vec![i32::try_from(faces[1]).unwrap()],
+                    vec![2, i32::try_from(edges[0]).unwrap()],
+                    vec![0, 0],
+                    vec![i32::try_from(edges[1]).unwrap()],
+                    vec![0, 0],
+                ],
+                face_reference_ordinals: faces,
+                edge_reference_ordinals: edges,
+                entries: Vec::new(),
+            }
+        }),
+    });
+    let boundary = crate::records::topology::historical_context::AsmFaceBoundary {
+        id: "f3d:test:asm-face-boundary#7:91".into(),
+        parent: "f3d:test:asm-delta-state#7".into(),
+        face_slot: 91,
+        loops: vec![serde_json::from_value(serde_json::json!({
+            "loop_slot": 5,
+            "coedge_slots": [6],
+            "edge_slots": [17],
+        }))
+        .unwrap()],
+    };
+    operand.recipe_reference_contexts = vec![serde_json::from_value(serde_json::json!({
+        "reference_ordinal": 1,
+        "result_faces": [],
+        "result_shared_edge_slots": [],
+        "preceding_faces": ["f3d:test:face#91"],
+        "preceding_face_boundary_ids": [boundary.id],
+        "shared_edge_slots": [],
+        "changed_shared_edge_slots": [],
+    }))
+    .unwrap()];
+    (operand, boundary)
+}
+
+#[test]
+fn grouped_surface_patch_alternate_intersects_the_exact_face_boundary() {
+    let (mut operand, boundary) = alternate_patch_operand();
+    let expected = SurfacePatchRecipeEdges::Resolved(vec![
+        EdgeId::mint("f3d:test:edge#17").expect("identity grammar")
+    ]);
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&operand], std::slice::from_ref(&boundary)),
+        expected,
+    );
+    let structure = operand.surface_patch_recipe_structure.as_mut().unwrap();
+    structure.clauses[0].face_reference_ordinals = [1, 1];
+    structure.clauses[0].edge_reference_ordinals = [0, 0];
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&operand], &[boundary]),
+        expected,
+    );
+}
+
+#[test]
+fn grouped_surface_patch_alternate_rejects_wrong_or_missing_exact_faces() {
+    let (operand, boundary) = alternate_patch_operand();
+    let resolve = |operand: &DesignEdgeOperand, boundaries: &[_]| {
+        surface_patch_grouped_recipe_edges(&[operand], boundaries)
+    };
+    let mut wrong = boundary.clone();
+    wrong.face_slot = 92;
+    assert_eq!(
+        resolve(&operand, &[wrong]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    let mut wrong = operand.clone();
+    wrong.recipe_references[1].candidate_faces[0] =
+        cadmpeg_ir::ids::FaceId::mint("f3d:test:face#92").expect("identity grammar");
+    assert_eq!(
+        resolve(&wrong, std::slice::from_ref(&boundary)),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    let mut missing = operand.clone();
+    missing.recipe_references[1].alternate_selector_faces =
+        missing.recipe_references[1].candidate_faces.clone();
+    missing.recipe_references[1].candidate_faces.clear();
+    assert_eq!(
+        resolve(&missing, std::slice::from_ref(&boundary)),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    let mut duplicate = operand.clone();
+    let face = duplicate.recipe_references[1].candidate_faces[0].clone();
+    duplicate.recipe_references[1].candidate_faces.push(face);
+    assert_eq!(
+        resolve(&duplicate, std::slice::from_ref(&boundary)),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    let mut repeated = boundary.clone();
+    repeated.id.push_str(":duplicate");
+    let mut wrong = operand.clone();
+    wrong.recipe_reference_contexts[0]
+        .preceding_face_boundary_ids
+        .push(repeated.id.clone());
+    assert_eq!(
+        resolve(&wrong, &[boundary.clone(), repeated]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    assert_eq!(
+        resolve(&operand, &[]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+    assert_eq!(
+        resolve(&operand, &[boundary.clone(), boundary]),
+        SurfacePatchRecipeEdges::Inconclusive
+    );
+}
+
+#[test]
+fn grouped_surface_patch_alternate_rejects_ambiguous_roles_and_remaining_edges() {
+    let (operand, mut boundary) = alternate_patch_operand();
+    boundary.loops[0] = serde_json::from_value(
+        serde_json::json!({"loop_slot":5,"coedge_slots":[6,9],"edge_slots":[17,18]}),
+    )
+    .unwrap();
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&operand], std::slice::from_ref(&boundary)),
+        SurfacePatchRecipeEdges::Inconclusive,
+    );
+    boundary.loops[0] = serde_json::from_value(
+        serde_json::json!({"loop_slot":5,"coedge_slots":[6],"edge_slots":[99]}),
+    )
+    .unwrap();
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&operand], &[boundary]),
+        SurfacePatchRecipeEdges::Inconclusive,
+    );
+    let (mut operand, boundary) = alternate_patch_operand();
+    operand
+        .surface_patch_recipe_structure
+        .as_mut()
+        .unwrap()
+        .clauses[1]
+        .edge_reference_ordinals = [0, 3];
+    assert_eq!(
+        surface_patch_grouped_recipe_edges(&[&operand], &[boundary]),
+        SurfacePatchRecipeEdges::Inconclusive,
+    );
 }
 
 #[test]

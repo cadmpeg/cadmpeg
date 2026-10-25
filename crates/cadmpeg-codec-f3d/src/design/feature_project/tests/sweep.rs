@@ -22,11 +22,11 @@ fn sweep_input() -> (
             draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
                 construction: Some(DesignSweepConstruction {
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: 128,
+                    operation_offset: Some(128),
                     values: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
                         .map(|value| FiniteReal::new(value).unwrap()),
                     record_indexes: [0; 6],
-                    value_offsets: [128; 6],
+                    value_offsets: Some([128; 6]),
                 }),
                 sweep_profile: None,
             }));

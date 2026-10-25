@@ -1091,9 +1091,11 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     };
     assert_eq!(*parameter_interval, [0.0, 1.0]);
     assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
+        matches!(
+            result.report().losses.as_slice(),
+            [loss] if loss.code == IgesLossCode::BoundaryWindingUnresolved.kind()
+        ),
+        "a boundary with no closed parameter-space image keeps its source traversal with one loss"
     );
     let validation =
         cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");

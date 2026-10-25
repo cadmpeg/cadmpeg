@@ -24,13 +24,13 @@ pub(super) fn exact_copy_paste_bodies_operation(
     let mut operands = Vec::new();
     let mut bodies = Vec::new();
     let parsed = (|| -> Option<DesignCopyPasteBodiesOperation> {
-        let start = usize::try_from(scope.byte_offset()).ok()?;
+        let start = usize::try_from(scope.byte_offset()?).ok()?;
         let body_group_record_index = marked_record_reference(bytes, start + 29)?;
         let relation_record_index = marked_record_reference(bytes, start + 40)?;
         if *scope.reference_members().values().next()? != body_group_record_index {
             return None;
         }
-        let search_at = usize::try_from(scope.paired_byte_offset())
+        let search_at = usize::try_from(scope.paired_byte_offset()?)
             .ok()?
             .checked_add(1)?;
         let body_group_at = records.first_at_or_after(search_at, body_group_record_index)?;
@@ -52,9 +52,9 @@ pub(super) fn exact_copy_paste_bodies_operation(
             if actual != *expected {
                 return None;
             }
-            operands.push(crate::records::identity::Located {
+            operands.push(crate::records::identity::Sourced {
                 value: actual,
-                offset: u64::try_from(body_group_cursor + 1).ok()?,
+                offset: Some(u64::try_from(body_group_cursor + 1).ok()?),
             });
             body_group_cursor = body_group_cursor.checked_add(11)?;
         }
@@ -90,16 +90,16 @@ pub(super) fn exact_copy_paste_bodies_operation(
             let copied_at = source_at.checked_add(15)?;
             bodies.push(body_ops::DesignCopiedBody {
                 operand,
-                source: crate::records::identity::Located {
+                source: crate::records::identity::Sourced {
                     value: body_reference(source_at, 10)?,
-                    offset: u64::try_from(source_at + 1).ok()?,
+                    offset: Some(u64::try_from(source_at + 1).ok()?),
                 },
-                copied: crate::records::identity::Located {
+                copied: crate::records::identity::Sourced {
                     value: body_reference(
                         copied_at,
                         if ordinal + 1 == body_count { 6 } else { 10 },
                     )?,
-                    offset: u64::try_from(copied_at + 1).ok()?,
+                    offset: Some(u64::try_from(copied_at + 1).ok()?),
                 },
             });
         }

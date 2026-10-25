@@ -519,6 +519,38 @@ fn parses_joined_seam_pcurve_continuity_token() {
 }
 
 #[test]
+fn indirect_surface_frames_turn_the_neutral_normal_around() {
+    let parse = |kind, tokens: &[&str]| {
+        parse_analytic_surface(kind, &mut TokenCursor::new(tokens)).expect("analytic surface")
+    };
+    // Origin, axis, x direction, then a y direction along or against axis × x.
+    let direct = ["0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "1", "0"];
+    let indirect = ["0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0"];
+    assert!(!parse(AnalyticSurfaceKind::Plane, &direct).normal_reversed());
+    assert!(parse(AnalyticSurfaceKind::Plane, &indirect).normal_reversed());
+    let cylinder = |frame: &[&str]| {
+        let mut tokens = frame.to_vec();
+        tokens.push("2");
+        parse(AnalyticSurfaceKind::Cylinder, &tokens)
+    };
+    assert!(!cylinder(&direct).normal_reversed());
+    let indirect_cylinder = cylinder(&indirect);
+    assert!(indirect_cylinder.normal_reversed());
+    // A trimmed or offset surface keeps its basis's normal.
+    let trimmed = crate::brep::TextSurface::Trimmed {
+        parameter_ranges: [[0.0, 1.0], [0.0, 1.0]]
+            .map(|range| range.map(|value| FiniteReal::new(value).unwrap())),
+        basis: super::NestedSurface::try_new(indirect_cylinder.clone()).unwrap(),
+    };
+    assert!(trimmed.normal_reversed());
+    let offset = crate::brep::TextSurface::Offset {
+        distance: FiniteReal::ONE,
+        basis: super::NestedSurface::try_new(cylinder(&direct)).unwrap(),
+    };
+    assert!(!offset.normal_reversed());
+}
+
+#[test]
 fn retains_indirect_analytic_surface_parameter_frames() {
     let tokens = [
         "0", "0", "0", "0", "0", "1", "1", "0", "0", "0", "-1", "0", "2", "0.5",

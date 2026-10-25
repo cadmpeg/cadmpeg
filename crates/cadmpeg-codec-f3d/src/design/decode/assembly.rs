@@ -34,7 +34,7 @@ use super::sketch::IndexedRecordOffsets;
 pub(in crate::design::decode) struct LegacyAsBuilt421Alignment {
     pub(super) angle: f64,
     pub(super) offset: [f64; 3],
-    pub(super) owners: Vec<crate::records::identity::Located<u32>>,
+    pub(super) owners: Vec<crate::records::identity::Sourced<u32>>,
     pub(super) limits: DesignAssemblyLimits,
 }
 
@@ -44,7 +44,7 @@ pub(super) fn exact_legacy_as_built_421_alignment(
     lanes: &[&DesignParameterOwner],
 ) -> Option<LegacyAsBuilt421Alignment> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length(),
+        scope.frame_length()?,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
@@ -55,16 +55,16 @@ pub(super) fn exact_legacy_as_built_421_alignment(
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    if usize::try_from(scope.paired_byte_offset()).ok()? != start.checked_add(as_built_421::LEN)?
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
+    if usize::try_from(scope.paired_byte_offset()?).ok()? != start.checked_add(as_built_421::LEN)?
         || scope.reference_count_offset()
-            != u64::try_from(start.checked_add(as_built_421::REFERENCE_COUNT)?).ok()?
+            != Some(u64::try_from(start.checked_add(as_built_421::REFERENCE_COUNT)?).ok()?)
         || View::u32_le_at(bytes, start.checked_add(as_built_421::REFERENCE_COUNT)?)?
             != as_built_421::REFERENCE_COUNT_VALUE
         || View::u32_le_at(bytes, start.checked_add(as_built_421::KIND_LENGTH)?)?
             != as_built_421::KIND_LENGTH_VALUE
         || scope.feature_ordinal_offset()
-            != u64::try_from(start.checked_add(as_built_421::FEATURE_ORDINAL)?).ok()?
+            != Some(u64::try_from(start.checked_add(as_built_421::FEATURE_ORDINAL)?).ok()?)
     {
         return None;
     }
@@ -143,21 +143,25 @@ pub(super) fn exact_legacy_as_built_421_alignment(
         owners: [angle, offset_x, offset_y, offset_z]
             .into_iter()
             .map(|owner| {
-                Some(crate::records::identity::Located {
-                    value: owner.record_index(),
-                    offset: owner.evaluated_value_offset()?,
-                })
+                Some(crate::records::identity::Sourced::at(
+                    owner.record_index(),
+                    owner.evaluated_value_offset()?,
+                ))
             })
             .collect::<Option<Vec<_>>>()?,
-        limits: DesignAssemblyLimitsWire {
-            kind,
-            minimum,
-            maximum,
-            owner_record_indices: limit_owner_record_indices,
-            value_offsets: limit_value_offsets,
-        }
-        .try_into()
-        .ok()?,
+        limits: {
+            let mut limits: crate::records::feature::assembly::DesignAssemblyLimits =
+                DesignAssemblyLimitsWire {
+                    kind,
+                    minimum,
+                    maximum,
+                    owner_record_indices: limit_owner_record_indices,
+                }
+                .try_into()
+                .ok()?;
+            limits.value_offsets = Some(limit_value_offsets);
+            limits
+        },
     })
 }
 
@@ -167,7 +171,7 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     scope: &DesignParameterScope,
 ) -> Option<DesignAssemblySolvedFrame> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length(),
+        scope.frame_length()?,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
@@ -229,11 +233,11 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     let transform_at = frame_start.checked_add(transform_offset)?;
     Some(DesignAssemblySolvedFrame {
         reference_record_index: frame_record_index,
-        reference_offset: frame_reference.offset,
-        record_byte_offset: u64::try_from(frame_start).ok()?,
+        reference_offset: Some(frame_reference.offset),
+        record_byte_offset: Some(u64::try_from(frame_start).ok()?),
         class_tag: expected_class_tag.to_owned().try_into().ok()?,
         transform: rigid_transform_at(bytes, transform_at)?,
-        transform_offset: u64::try_from(transform_at).ok()?,
+        transform_offset: Some(u64::try_from(transform_at).ok()?),
     })
 }
 
@@ -254,7 +258,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
 ) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
     (|| {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
-        scope.frame_length(),
+        scope.frame_length()?,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )?;
@@ -339,21 +343,21 @@ recipes,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
-    let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
+    let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset?)?;
+    let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset?)?;
     Some(Ok(
         crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
             DesignAssemblyLegacyOperand {
                 construction_class_tag: point_class_tag.try_into().ok()?,
                 construction: Box::new(point),
                 selection: first_selection,
-                reference_offset: point_reference.offset,
+                reference_offset: Some(point_reference.offset),
             },
             DesignAssemblyLegacyOperand {
                 construction_class_tag: hole_class_tag.try_into().ok()?,
                 construction: Box::new(hole),
                 selection: second_selection,
-                reference_offset: hole_reference.offset,
+                reference_offset: Some(hole_reference.offset),
             },
         ),
     ))
@@ -375,7 +379,12 @@ fn exact_legacy_as_built_face_selection(
     (record_index, expected_class_tag): (u32, &str),
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignAssemblyLegacySelection>, cadmpeg_core::CodecError> {
-    let Some(scope_start) = usize::try_from(scope.byte_offset()).ok() else {
+    let Some(scope_start) = usize::try_from(
+        scope
+            .byte_offset()
+            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+    )
+    .ok() else {
         return Ok(None);
     };
     let next_byte_offset = (|| {
@@ -441,18 +450,18 @@ fn exact_legacy_as_built_face_selection(
             let next_byte_offset = operand.next_byte_offset();
             Some(Ok(DesignAssemblyLegacySelection {
                 record_index,
-                byte_offset: u64::try_from(byte_offset).ok()?,
+                byte_offset: Some(u64::try_from(byte_offset).ok()?),
                 class_tag: header.class_tag,
                 asset_id: prefix.asset_id.try_into().ok()?,
-                asset_id_offset: prefix.asset_id_offset,
+                asset_id_offset: Some(prefix.asset_id_offset),
                 context_id: prefix.context_id.try_into().ok()?,
-                context_id_offset: prefix.context_id_offset,
+                context_id_offset: Some(prefix.context_id_offset),
                 recipe_record_index: operand.recipe_record_index(),
-                recipe_record_byte_offset: operand.recipe_record_byte_offset(),
+                recipe_record_byte_offset: Some(operand.recipe_record_byte_offset()),
                 recipe_id: operand.recipe_id,
                 recipe_kind: operand.recipe_kind,
                 recipe_references: operand.recipe_references,
-                next_byte_offset,
+                next_byte_offset: Some(next_byte_offset),
             }))
         });
     let Some(candidate) = candidates.next() else {

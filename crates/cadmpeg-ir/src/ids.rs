@@ -1047,7 +1047,19 @@ macro_rules! local_id_type {
         #[serde(transparent)]
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
 
-        rewrite_record!($name, []; (text));
+        impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
+            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
+            }
+            fn visit_local_members(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+                visitor(&self.0)
+            }
+            fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
+            where F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError> {
+                let _depth = ctx.enter_nested("typed rewrite tuple")?;
+                $crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(self.0, ctx, map).map(Self)
+            }
+        }
 
         #[cfg(feature = "schema")]
         impl schemars::JsonSchema for $name {

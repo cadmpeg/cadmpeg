@@ -351,6 +351,35 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
     }
 }
 
+pub(crate) fn ambiguous_thin_join_operation(
+    feature: &Feature,
+    lane_names: &[(&FeatureInputLane, FeatureObjectNames<'_>)],
+) -> bool {
+    feature.input_class.as_deref() == Some("moCutThin_c")
+        && lane_names.iter().any(|(lane, names)| {
+            names.of(feature).is_some_and(|name| {
+                feature_inline_operation_fields(lane, name) == Some((0x0140, 0))
+            })
+        })
+}
+
+/// History feature ids whose inline thin join operation is ambiguous.
+pub(crate) fn ambiguous_thin_features(
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> std::collections::BTreeSet<String> {
+    let lane_names = lanes
+        .iter()
+        .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
+        .collect::<Vec<_>>();
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| ambiguous_thin_join_operation(feature, &lane_names))
+        .map(|feature| feature.id.clone())
+        .collect()
+}
+
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
     class_sources: &ClassSources,
@@ -377,6 +406,9 @@ pub(crate) fn bind_extrusion_operations(
             let Some(history) = native_ref.and_then(|native| history_by_id.get(native)) else {
                 break 'feature_edit;
             };
+            if ambiguous_thin_join_operation(history, &lane_names) {
+                break 'feature_edit;
+            }
             let mut operations = lane_names.iter().filter_map(|(lane, names)| {
                 let name = names.of(history)?;
                 if let Some(operation) = feature_inline_operation(lane, name) {

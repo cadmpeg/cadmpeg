@@ -445,6 +445,33 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         );
     }
 
+    // The component's definition record ends with its name after the UUID;
+    // a name that does not end the record is not the component's.
+    for (record_end, expected) in [(true, Some("Base0")), (false, None)] {
+        let mut named = vec![0xaa, 0xbb];
+        binding(&mut named, 17, 2, CONTEXT_UUID);
+        let name_at = named.len();
+        named.extend_from_slice(&5_u32.to_le_bytes());
+        for code_unit in "Base0".encode_utf16() {
+            named.extend_from_slice(&code_unit.to_le_bytes());
+        }
+        named.extend_from_slice(&[0, 0]);
+        if record_end {
+            named.extend_from_slice(&3_u32.to_le_bytes());
+            named.extend_from_slice(b"262");
+            named.extend_from_slice(&18_u32.to_le_bytes());
+        } else {
+            named.extend_from_slice(&[7; 11]);
+        }
+        let decoded = with_scan(&archive(&named), decode_component_naming_spaces)
+            .expect("named component naming space");
+        let [space] = decoded.as_slice() else {
+            panic!("expected one component naming space");
+        };
+        assert_eq!(space.name.as_deref(), expected);
+        assert_eq!(space.name_offset, expected.map(|_| u64_from_index(name_at)));
+    }
+
     let mut overlapping_reference = vec![1];
     binding(
         &mut overlapping_reference,
@@ -462,6 +489,61 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     };
     assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
 
+    // A component definition stored as two records that repeat one record
+    // index, each naming the component, binds one context UUID in each.
+    let revised_uuid = "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb";
+    let header = |out: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(class_tag);
+        out.extend_from_slice(&record_index.to_le_bytes());
+    };
+    let named = |out: &mut Vec<u8>, name: &str| {
+        out.extend_from_slice(
+            &(u32::try_from(name.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
+        for code_unit in name.encode_utf16() {
+            out.extend_from_slice(&code_unit.to_le_bytes());
+        }
+        out.extend_from_slice(&[0, 0]);
+    };
+    let revisions = |second_index: u32, second_name: &str| {
+        let mut bulk = Vec::new();
+        header(&mut bulk, b"290", 16);
+        binding(&mut bulk, 17, 3, CONTEXT_UUID);
+        named(&mut bulk, "Feet");
+        header(&mut bulk, b"334", second_index);
+        binding(&mut bulk, 17, 3, revised_uuid);
+        named(&mut bulk, second_name);
+        header(&mut bulk, b"300", 99);
+        bulk
+    };
+    let decoded = with_scan(
+        &archive(&revisions(16, "Feet")),
+        decode_component_naming_spaces,
+    )
+    .expect("one binding per revision");
+    let mut bound = decoded
+        .iter()
+        .map(|space| (space.context_uuid.as_str(), space.name.as_deref()))
+        .collect::<Vec<_>>();
+    bound.sort_unstable();
+    assert_eq!(
+        bound,
+        [(CONTEXT_UUID, Some("Feet")), (revised_uuid, Some("Feet"))]
+    );
+    // A second UUID in a record with another index, or under another name,
+    // is no revision.
+    assert!(with_scan(
+        &archive(&revisions(18, "Feet")),
+        decode_component_naming_spaces
+    )
+    .is_err());
+    assert!(with_scan(
+        &archive(&revisions(16, "Legs")),
+        decode_component_naming_spaces
+    )
+    .is_err());
+
     let mut conflicting = Vec::new();
     binding(&mut conflicting, 17, 3, CONTEXT_UUID);
     binding(
@@ -474,6 +556,77 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         decode_component_naming_spaces(scan)
     })
     .expect_err("conflicting component UUIDs must be rejected");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn component_naming_space_binds_through_a_linked_entity() {
+    const CONTEXT_UUID: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+
+    /// The link entity 5 is registered to `link_type_guid`, or to no type.
+    fn archive(link_type_guid: Option<&str>) -> Vec<u8> {
+        let component = (
+            "11111111-2222-3333-4444-555555555555",
+            "21F379C8-CAFD-4985-B461-767673A4C502",
+            0,
+            "Component",
+            &[17_u64][..],
+        );
+        let types = match link_type_guid {
+            Some(link_type_guid) => vec![
+                component,
+                (
+                    link_type_guid,
+                    "046D6232-EDAB-414D-9CB0-A2E3F115AE1C",
+                    4,
+                    "Fusion",
+                    &[5_u64][..],
+                ),
+            ],
+            None => vec![component],
+        };
+        let meta = design_metastream_with_records(&types, &[]);
+        let mut bulk = vec![0xaa, 0xbb, 1];
+        bulk.extend_from_slice(&17_u64.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0, 1]);
+        bulk.extend_from_slice(&5_u64.to_le_bytes());
+        bulk.extend_from_slice(&[0, 0]);
+        crate::test_support::lp_utf16(&mut bulk, CONTEXT_UUID);
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    let spaces = with_scan(
+        &archive(Some("8ACBA2E5-5A4C-4438-8351-276DE96E6982")),
+        decode_component_naming_spaces,
+    )
+    .expect("linked component naming space");
+    let [space] = spaces.as_slice() else {
+        panic!("expected one component naming space");
+    };
+    assert_eq!(space.component_record_index, 17);
+    assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
+    assert_eq!(space.byte_offset, Some(2));
+    assert_eq!(space.context_uuid_offset, Some(u64_from_index(2 + 11 + 11)));
+
+    // A link entity the stream registers to no type binds the same way.
+    let unregistered = with_scan(&archive(None), decode_component_naming_spaces)
+        .expect("component naming space through an unregistered entity");
+    assert_eq!(unregistered, spaces);
+
+    let error = with_scan(
+        &archive(Some("99999999-8888-7777-6666-555555555555")),
+        decode_component_naming_spaces,
+    )
+    .expect_err("a link entity of another type does not bind the component");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
@@ -660,4 +813,60 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         .expect_err("incompatible timeline registration metadata must be rejected");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     }
+}
+
+#[test]
+fn a_design_bulk_stream_ends_before_an_unindexed_record_run() {
+    fn record(out: &mut Vec<u8>, class: &[u8; 3], record_index: u32) {
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(class);
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+    }
+    fn archive(trailing_index: u32) -> Vec<u8> {
+        let mut bulk = Vec::new();
+        record(&mut bulk, b"300", 1);
+        record(&mut bulk, b"300", 2);
+        record(&mut bulk, b"301", trailing_index);
+        record(&mut bulk, b"302", trailing_index + 1);
+        let meta = design_metastream_with_records(&[], &[(1, 0), (2, 21)]);
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+    let bulk = "FusionAssetName[Active]/Design1/BulkStream.dat";
+
+    with_scan(&archive(1), |scan| {
+        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 42);
+        let [(name, run, stored)] = scan.unindexed_record_runs.as_slice() else {
+            panic!("one unindexed record run");
+        };
+        assert_eq!(name, bulk);
+        assert_eq!(
+            *run,
+            super::UnindexedRecordRun {
+                start: 42,
+                first_record_index: 1,
+                headers: 2,
+            }
+        );
+        assert_eq!(*stored, 84);
+        let mut losses = Vec::new();
+        crate::report::header_losses(scan, &mut losses).unwrap();
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::UnindexedRecordsRetained.kind()));
+    });
+
+    with_scan(&archive(2), |scan| {
+        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 84);
+        assert!(scan.unindexed_record_runs.is_empty());
+    });
 }

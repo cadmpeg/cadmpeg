@@ -55,6 +55,7 @@ pub(crate) struct XrefTable {
     /// `(XREF ordinal, placement-record count)` pairs whose structured
     /// placements were superseded by scope-bound Component Insert carriers.
     pub(crate) placement_overrides: Vec<PlacementOverride>,
+    pub(crate) placement_metadata_missing: bool,
 }
 
 /// One XREF ordinal whose structured placements were superseded.
@@ -358,6 +359,7 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
         references: admitted_references,
         placement_failures: Vec::new(),
         placement_overrides: Vec::new(),
+        placement_metadata_missing: false,
     })
 }
 
@@ -540,7 +542,7 @@ fn bind_occurrences(
                     .iter()
                     .find(|candidate| candidate.name.strip_prefix(prefix) == Some("MetaStream.dat"))
             });
-        let (serializer_magic, placement_offsets) = if let Some(meta_entry) = meta_entry {
+        let (serializer_magic, headers) = if let Some(meta_entry) = meta_entry {
             let meta = scan.parsed_metastream(&meta_entry.name)?;
             let meta_bytes = scan.entry_bytes(&meta_entry.name)?;
             (
@@ -548,18 +550,14 @@ fn bind_occurrences(
                     meta_bytes,
                     &meta_entry.name,
                 )?),
-                Some(typed_occurrence_placement_offsets(&meta)?),
+                typed_occurrence_placement_records(bytes, &meta)?,
             )
         } else {
-            (None, None)
+            table.placement_metadata_missing = true;
+            (None, Vec::new())
         };
-        let headers = indexed_records(bytes);
-        let (placements, failures) = occurrence_placements_with_failures(
-            bytes,
-            &headers,
-            serializer_magic,
-            placement_offsets.as_ref(),
-        )?;
+        let (placements, failures) =
+            occurrence_placements_with_failures(bytes, &headers, serializer_magic, None)?;
 
         streams.push((placements, failures, crate::ids::native_scope(&entry.name)));
     }
@@ -694,38 +692,45 @@ fn superseded_placement_count(
 /// Return the `BulkStream` offsets whose type-table identity is the stable
 /// occurrence-placement type. Dynamic class tags and record shape are not
 /// sufficient because unrelated component records can share that shape.
-fn typed_occurrence_placement_offsets(
+fn typed_occurrence_placement_records(
+    bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> Result<HashSet<usize>, CodecError> {
-    let mut placement_entities = HashSet::new();
-    for entity in meta
-        .types
-        .iter()
-        .filter(|design_type| {
-            design_type
+) -> Result<Vec<IndexedRecord>, CodecError> {
+    let mut placement_entities = std::collections::HashMap::new();
+    for (ordinal, design_type) in meta.types.iter().enumerate().filter(|(_, design_type)| {
+        design_type.module == "Component"
+            && design_type
                 .type_guid
                 .as_str()
                 .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
-        })
-        .flat_map(|design_type| design_type.entities.values().copied())
-    {
-        if !placement_entities.contains(&entity) {
-            placement_entities.insert(entity);
+    }) {
+        for &entity in design_type.entities.values() {
+            placement_entities.insert(entity, ordinal);
         }
     }
-    let mut offsets = HashSet::new();
-    for record in meta.records.iter().chain(meta.secondary_records.iter()) {
-        if !placement_entities.contains(&record.entity_id) {
+    let mut records = Vec::new();
+    for frame in crate::metastream::primary_record_frames(meta, bytes.len())? {
+        let Some(&ordinal) = placement_entities.get(&frame.entity_id) else {
             continue;
-        }
-        let offset = usize::try_from(record.bulk_offset).map_err(|_| {
-            CodecError::Malformed("F3D occurrence-placement BulkStream offset exceeds usize".into())
+        };
+        let header = bytes.get(frame.start..frame.member_end).ok_or_else(|| {
+            CodecError::malformed("F3D occurrence-placement index is outside its BulkStream")
         })?;
-        if !offsets.contains(&offset) {
-            offsets.insert(offset);
+        let class_matches = lp_ascii_strict(header, 0, 3..=3)
+            .and_then(|(tag, _)| tag.parse::<usize>().ok())
+            .and_then(|tag| tag.checked_sub(256))
+            == Some(ordinal);
+        if !class_matches || View::u64_le_at(header, 7) != Some(frame.entity_id) {
+            return Err(CodecError::malformed(
+                "F3D occurrence-placement header disagrees with its registered primary index",
+            ));
         }
+        records.push(IndexedRecord {
+            offset: frame.start,
+            end: frame.member_end,
+        });
     }
-    Ok(offsets)
+    Ok(records)
 }
 
 #[derive(Debug)]
@@ -747,6 +752,7 @@ fn occurrence_transforms(
         .collect::<Vec<_>>()
 }
 
+#[cfg(test)]
 fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
     let mut records: Vec<IndexedRecord> = Vec::new();
     for at in bytes
@@ -1300,7 +1306,10 @@ fn modern_occurrence_placement(
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
 fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f64; 4]; 4]>)> {
-    let mut at = legacy_occurrence_prefix(body)?;
+    let (mut at, targets_match) = legacy_occurrence_prefix(body)?;
+    if !targets_match {
+        return None;
+    }
     let identity_marker = *body.get(at)?;
     at += 1;
     let transform = match identity_marker {
@@ -1334,7 +1343,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
 /// so the caller can report an undecoded typed placement against the correct
 /// external reference instead of treating it as an unrelated record.
 fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
-    let mut at = legacy_occurrence_prefix(body)?;
+    let (mut at, _) = legacy_occurrence_prefix(body)?;
     match *body.get(at)? {
         1 => at += 1,
         0 => at = at.checked_add(129)?,
@@ -1349,7 +1358,7 @@ fn legacy_occurrence_role(body: &[u8]) -> Option<Utf16View<'_>> {
 }
 
 /// Parse the shared prefix of the legacy identity and matrix forms.
-fn legacy_occurrence_prefix(body: &[u8]) -> Option<usize> {
+fn legacy_occurrence_prefix(body: &[u8]) -> Option<(usize, bool)> {
     let (_class_tag, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
     let mut at = after_tag.checked_add(8)?;
     let (_name, after_name) = lp_ascii_strict(body, at, 0..=256)?;
@@ -1362,7 +1371,7 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<usize> {
         return None;
     }
     at += 4;
-    take_legacy_occurrence_reference(body, &mut at)?;
+    let first_target = take_legacy_occurrence_reference(body, &mut at)?;
     View::u32_le_at(body, at)?;
     at += 4;
     if View::u32_le_at(body, at)? != 1 {
@@ -1388,21 +1397,37 @@ fn legacy_occurrence_prefix(body: &[u8]) -> Option<usize> {
         return None;
     }
     at += 1;
-    take_legacy_occurrence_reference(body, &mut at)?;
-    Some(at)
+    let second_target = take_legacy_occurrence_reference(body, &mut at)?;
+    let targets_match = first_target.entity == second_target.entity
+        && first_target.source_occurrence_identity == second_target.source_occurrence_identity
+        && first_target
+            .type_guid
+            .eq_ignore_ascii_case(second_target.type_guid);
+    Some((at, targets_match))
+}
+
+struct LegacyOccurrenceTarget<'a> {
+    entity: u64,
+    source_occurrence_identity: u64,
+    type_guid: &'a str,
 }
 
 /// Consume one legacy occurrence target reference.
-fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
+fn take_legacy_occurrence_reference<'a>(
+    body: &'a [u8],
+    at: &mut usize,
+) -> Option<LegacyOccurrenceTarget<'a>> {
     if body.get(*at) != Some(&1) {
         return None;
     }
     *at += 1;
+    let entity = View::u64_le_at(body, *at)?;
     *at = at.checked_add(8)?;
     if body.get(*at) != Some(&1) {
         return None;
     }
     *at += 1;
+    let source_occurrence_identity = View::u64_le_at(body, *at)?;
     *at = at.checked_add(8)?;
     if body.get(*at) != Some(&0) {
         return None;
@@ -1417,7 +1442,11 @@ fn take_legacy_occurrence_reference(body: &[u8], at: &mut usize) -> Option<()> {
         return None;
     }
     *at += 1;
-    Some(())
+    Some(LegacyOccurrenceTarget {
+        entity,
+        source_occurrence_identity,
+        type_guid,
+    })
 }
 
 /// Parse the target-path prefix shared by every occurrence-placement form.

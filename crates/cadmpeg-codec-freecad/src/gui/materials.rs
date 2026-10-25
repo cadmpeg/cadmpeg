@@ -13,7 +13,7 @@ pub(super) fn transfer_shape_appearances(
 ) -> Result<(), CodecError> {
     let properties = sources.properties;
     let payloads = sources.payloads;
-    let element_maps = sources.element_maps;
+    let topology_occurrences = sources.topology_occurrences;
     for provider in &graph.providers {
         let provider_key = provider_identity_key(&provider.name);
         let Some(object_id) = provider
@@ -34,10 +34,14 @@ pub(super) fn transfer_shape_appearances(
             continue;
         };
         let body_ids = displayed_shape_bodies(ir, object_id, properties, payloads)?;
-        let group = displayed_shape_group(object_id, properties, payloads, element_maps, "Face")?;
-        let mapped_count = group.map_or(0, |(_, group)| {
-            crate::element_map::topology_index_count(group)
-        });
+        let group = displayed_shape_topology(
+            object_id,
+            properties,
+            payloads,
+            topology_occurrences,
+            "Face",
+        )?;
+        let mapped_count = group.len();
         if materials.count == 1 && materials.materials.contains_key(&0) {
             let legacy_id = object_appearance_id(&provider_key)?;
             plan.bindings
@@ -46,7 +50,8 @@ pub(super) fn transfer_shape_appearances(
                 .retain(|appearance| appearance.id != legacy_id);
             plan.remove_appearances.insert(legacy_id);
         }
-        let bind_faces = materials.count != 1 && group.is_some() && materials.count == mapped_count;
+        let bind_faces =
+            materials.count != 1 && mapped_count > 0 && materials.count == mapped_count;
         if materials.count != 1 && !bind_faces {
             push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!(
                         "FCStd provider {} ShapeAppearance material count {} does not match {} mapped Face subelements; native material list retained and neutral face override withheld",
@@ -103,21 +108,11 @@ pub(super) fn transfer_shape_appearances(
                         channels: BTreeMap::new(),
                     });
                 }
-            } else if let Some((nodes, group)) = group.filter(|_| bind_faces) {
-                let Some(displayed) = displayed_shape_payload(object_id, properties, payloads)?
-                else {
-                    continue;
-                };
+            } else if let Some(topology_ids) = group.get(index).filter(|_| bind_faces) {
                 bind_material_faces(
                     ir,
                     plan,
-                    (
-                        nodes,
-                        group,
-                        sources.topology_occurrences,
-                        &displayed.property,
-                    ),
-                    index,
+                    topology_ids,
                     &appearance_id,
                     (&provider_key, object_id),
                 )?;
@@ -193,22 +188,13 @@ pub(super) fn material_appearance(
 fn bind_material_faces(
     ir: &CadIr,
     plan: &mut AppearancePlan,
-    mapping: (
-        &ElementMapNodes,
-        &ElementMapGroup,
-        &[crate::topology_transfer::TopologyOccurrence],
-        &str,
-    ),
-    material_index: usize,
+    topology_ids: &[&str],
     appearance_id: &AppearanceId,
     provider: (&IdentityKey, &str),
 ) -> Result<(), CodecError> {
     let (provider_key, object_id) = provider;
-    let (nodes, group, occurrences, property) = mapping;
     let mut bound = HashSet::new();
-    for topology_id in
-        crate::element_map::topology_ids(nodes, group, occurrences, property, material_index + 1)
-    {
+    for &topology_id in topology_ids {
         if !bound.insert(topology_id) {
             continue;
         }

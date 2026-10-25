@@ -48,11 +48,13 @@ jobs:
             cadmpeg-codec-iges
             cadmpeg-codec-inventor
             cadmpeg-codec-nx
+            cadmpeg-codec-pvz
             cadmpeg-codec-rhino
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt
             cadmpeg-codec-step
             cadmpeg-registry
+            cadmpeg-measure
             cadmpeg
           )
           version="${GITHUB_REF_NAME#v}"

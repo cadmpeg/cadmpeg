@@ -1627,3 +1627,96 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
                 ]
     ));
 }
+
+/// The subset construction, its spline cache, and the ranges of the edges on
+/// the decoded subset curve.
+fn subset_state(
+    ir: &cadmpeg_ir::CadIr,
+) -> (
+    [f64; 2],
+    cadmpeg_ir::geometry::nurbs::NurbsCurve,
+    Vec<[f64; 2]>,
+) {
+    let (owner, interval) = ir
+        .model
+        .procedural_curves
+        .iter()
+        .find_map(|procedural| match procedural.definition() {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) => Some((
+                ir.model.procedural_curve_owner(&procedural.id)?,
+                subset.parameter_range().endpoints(),
+            )),
+            _ => None,
+        })
+        .expect("subset construction");
+    let curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *owner)
+        .unwrap();
+    let Some(SolvedCurveGeometry::Nurbs(cache)) = curve.geometry.solved() else {
+        panic!("subset spline cache");
+    };
+    let ranges = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve() == Some(owner))
+        .map(|edge| edge.param_range().unwrap().get())
+        .collect();
+    (interval, cache.clone(), ranges)
+}
+
+#[test]
+fn generated_source_less_subset_curve_restates_its_stored_subset_int_cur() {
+    use crate::test_support::smbh_curves_test::synthetic_geometry_with_subset_curve_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("subset curve decode");
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less
+        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
+    let (interval, cache, ranges) = subset_state(&source_less);
+    assert_eq!(interval, [-1.5, 3.5]);
+    let span = interval[1] - interval[0];
+    assert!(!ranges.is_empty());
+    for [start, end] in &ranges {
+        assert!(
+            *start >= 0.0 && *end <= span,
+            "local edge range {start}..{end}"
+        );
+    }
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("source-less subset curve encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less subset curve round trip");
+    let (round_interval, round_cache, round_ranges) = subset_state(round_trip.ir());
+    assert_eq!(round_interval, interval);
+    assert_eq!(round_cache.pole_rows(), cache.pole_rows());
+    assert_eq!(round_cache.knots().len(), cache.knots().len());
+    for (actual, expected) in round_cache.knots().iter().zip(cache.knots().iter()) {
+        assert!(
+            (actual - expected).abs() < 1.0e-12,
+            "{actual} != {expected}"
+        );
+    }
+    assert_eq!(round_ranges.len(), ranges.len());
+    for (actual, expected) in round_ranges.iter().zip(&ranges) {
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!(
+                (actual - expected).abs() < 1.0e-12,
+                "{actual} != {expected}"
+            );
+        }
+    }
+}

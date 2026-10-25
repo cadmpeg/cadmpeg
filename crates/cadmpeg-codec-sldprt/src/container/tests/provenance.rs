@@ -134,9 +134,10 @@ fn invalid_crc_and_empty_invalid_members_publish_no_expanded_block_view() {
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
-        let scan = container::scan(&ctx, root).unwrap();
-        assert!(scan.blocks.is_empty());
-        assert!(scan.block_views.is_empty());
+        let Err(error) = container::scan(&ctx, root) else {
+            panic!("a declared local member that fails CRC validation is malformed");
+        };
+        assert!(error.to_string().contains("local member at 8"), "{error}");
         assert_eq!(ctx.source_streams().unwrap().len(), 1);
     }
 }
@@ -147,18 +148,23 @@ fn invalid_declared_size_skips_candidate_without_publishing_an_expanded_source()
         let mut block = make_block(0x42, "Contents/Invalid", b"native");
         block[super::super::block_hdr::UNCOMP_SZ..super::super::block_hdr::UNCOMP_SZ + 4]
             .copy_from_slice(&declared.to_le_bytes());
+        let block_len = block.len();
         let mut source = outer_header();
         source.extend(block);
         source.extend(make_block(0x43, "Contents/Kept", b"kept"));
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
-        let scan = container::scan(&ctx, root).unwrap();
-        assert_eq!(scan.blocks.len(), 1);
-        assert_eq!(scan.blocks[0].type_id, 0x43);
-        assert_eq!(scan.block_view(&scan.blocks[0]).unwrap().window(), b"kept");
-        assert_eq!(ctx.source_streams().unwrap().len(), 2);
-        assert!(ctx.finish_session().is_ok());
+        let invalid = 8..8 + block_len;
+        let Err(error) = container::scan(&ctx, root) else {
+            panic!("a declared local member with a wrong expanded size is malformed");
+        };
+        assert!(error.to_string().contains("local member at 8"), "{error}");
+        assert!(ctx.source_streams().unwrap().iter().all(|stream| !matches!(
+            stream.origin(),
+            SourceOrigin::Expanded { extent, .. }
+                if invalid.contains(&usize::try_from(extent.start).unwrap())
+        )));
     }
 }
 

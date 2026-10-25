@@ -13,48 +13,36 @@ use serde::{Serialize, Serializer};
 #[derive(Serialize)]
 struct VertexRecipeRef<'a> {
     record_index: u32,
-    byte_offset: u64,
     class_tag: &'a str,
-    paired_byte_offset: u64,
     paired_class_tag: &'a str,
     recipe_record_index: u32,
-    recipe_record_byte_offset: u64,
     recipe_id: &'a str,
-    recipe_prefix_offset: u64,
     recipe_prefix_bytes: NativeBytes<&'a [u8]>,
     recipe_references: &'a [DesignRecipeReference],
-    recipe_program_offset: u64,
     recipe_program: &'a [i32],
     #[serde(skip_serializing_if = "Option::is_none")]
     recipe_state_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     resolved_vertex_slot: Option<i64>,
     next_record_index: u32,
-    next_byte_offset: u64,
 }
 
 impl Serialize for DesignVertexRecipe {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         VertexRecipeRef {
             record_index: self.record_index(),
-            byte_offset: self.byte_offset(),
             class_tag: self.class_tag.as_str(),
-            paired_byte_offset: self.paired_byte_offset,
             paired_class_tag: self.paired_class_tag.as_str(),
             recipe_record_index: self.recipe_record_index(),
-            recipe_record_byte_offset: self.recipe_record_byte_offset,
             recipe_id: &self.recipe_id,
-            recipe_prefix_offset: self.recipe_prefix_offset(),
             recipe_prefix_bytes: (&self.recipe_prefix_bytes).into(),
             recipe_references: &self.recipe_references,
-            recipe_program_offset: self.recipe_program_offset,
             recipe_program: &self.recipe_program,
             recipe_state_id: self.resolution.map(|resolution| resolution.state_id),
             resolved_vertex_slot: self
                 .resolution
                 .map(super::DesignVertexResolution::vertex_slot),
             next_record_index: self.next_record_index(),
-            next_byte_offset: self.next_byte_offset,
         }
         .serialize(serializer)
     }
@@ -63,7 +51,6 @@ impl Serialize for DesignVertexRecipe {
 #[derive(Serialize)]
 struct WorkPointInputRef<'a> {
     record_index: u32,
-    reference_offset: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     carrier: Option<WorkPointCarrierRef<'a>>,
 }
@@ -89,16 +76,11 @@ enum WorkPointCarrierRef<'a> {
 struct PlaneSelectionRef<'a> {
     class_tag: &'a str,
     asset_id: &'a super::DesignRelaxedGuidText,
-    asset_id_offset: u64,
     context_id: &'a super::DesignRelaxedGuidText,
-    context_id_offset: u64,
     identity_record_index: u32,
-    identity_record_offset: u64,
     primary_identity: u64,
-    primary_identity_offset: u64,
     work_plane_scope_record_index: u32,
     next_record_index: u32,
-    next_byte_offset: u64,
 }
 
 impl<'a> PlaneSelectionRef<'a> {
@@ -106,16 +88,11 @@ impl<'a> PlaneSelectionRef<'a> {
         Self {
             class_tag: selection.class_tag.as_str(),
             asset_id: &selection.asset_id,
-            asset_id_offset: selection.asset_id_offset,
             context_id: &selection.context_id,
-            context_id_offset: selection.context_id_offset,
             identity_record_index: record_index + 3,
-            identity_record_offset: selection.identity_record_offset,
             primary_identity: selection.primary_identity,
-            primary_identity_offset: selection.primary_identity_offset(),
             work_plane_scope_record_index: selection.work_plane_scope_record_index,
             next_record_index: record_index + 4,
-            next_byte_offset: selection.next_byte_offset(),
         }
     }
 }
@@ -124,18 +101,12 @@ impl<'a> PlaneSelectionRef<'a> {
 struct SketchPointSelectionRef<'a> {
     class_tag: &'a str,
     asset_id: &'a super::DesignRelaxedGuidText,
-    asset_id_offset: u64,
     context_id: &'a super::DesignRelaxedGuidText,
-    context_id_offset: u64,
     identity_record_index: u32,
-    identity_record_offset: u64,
     sketch_record_index: u32,
-    sketch_record_index_offset: u64,
     point_persistent_id: u64,
-    point_persistent_id_offset: u64,
     point_native_id: &'a str,
     next_record_index: u32,
-    next_byte_offset: u64,
 }
 
 impl<'a> SketchPointSelectionRef<'a> {
@@ -143,18 +114,12 @@ impl<'a> SketchPointSelectionRef<'a> {
         Self {
             class_tag: selection.class_tag.as_str(),
             asset_id: &selection.asset_id,
-            asset_id_offset: selection.asset_id_offset,
             context_id: &selection.context_id,
-            context_id_offset: selection.context_id_offset,
             identity_record_index: record_index + 3,
-            identity_record_offset: selection.identity_record_offset,
             sketch_record_index: selection.sketch_record_index,
-            sketch_record_index_offset: selection.sketch_record_index_offset(),
             point_persistent_id: selection.point_persistent_id,
-            point_persistent_id_offset: selection.point_persistent_id_offset(),
             point_native_id: &selection.point_native_id,
             next_record_index: record_index + 4,
-            next_byte_offset: selection.next_byte_offset(),
         }
     }
 }
@@ -181,7 +146,6 @@ impl Serialize for DesignWorkPointInput {
         });
         WorkPointInputRef {
             record_index: self.record_index,
-            reference_offset: self.reference_offset,
             carrier,
         }
         .serialize(serializer)
@@ -221,20 +185,14 @@ mod tests {
     fn vertex_recipe() -> DesignVertexRecipe {
         serde_json::from_value(serde_json::json!({
             "record_index": 2,
-            "byte_offset": 10,
             "class_tag": "369",
-            "paired_byte_offset": 20,
             "paired_class_tag": "261",
             "recipe_record_index": 5,
-            "recipe_record_byte_offset": 30,
             "recipe_id": "f3d:design:recipe#1",
-            "recipe_prefix_offset": 41,
             "recipe_prefix_bytes": "00ff",
             "recipe_references": [],
-            "recipe_program_offset": 43,
             "recipe_program": [0],
-            "next_record_index": 7,
-            "next_byte_offset": 50
+            "next_record_index": 7
         }))
         .expect("vertex recipe wire")
     }
@@ -269,7 +227,7 @@ mod tests {
     fn work_point_input_borrowed_json_bytes_match_owned_wire() {
         let input = DesignWorkPointInput::try_new(
             2,
-            12,
+            Some(12),
             Some(Box::new(super::DesignWorkPointInputCarrier::VertexRecipe {
                 recipe: vertex_recipe(),
             })),

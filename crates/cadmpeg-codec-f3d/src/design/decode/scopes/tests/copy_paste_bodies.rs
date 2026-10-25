@@ -35,7 +35,7 @@ fn generated_copy_paste_bodies_scope_matches_operation_layout() {
             .collect::<Vec<_>>(),
         [1_500, 1_600]
     );
-    assert_eq!(scope.frame_length(), 225);
+    assert_eq!(scope.frame_length(), Some(225));
     let operation =
         crate::design::decode::scopes::copy_paste_bodies::exact_copy_paste_bodies_operation(
             &bytes, &records, &scope,

@@ -6,7 +6,7 @@ use crate::records::identity::ReferenceRun;
 use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
 use crate::records::references::DesignClassTag;
 
-fn push_lp_utf16(bytes: &mut Vec<u8>, value: &str) {
+pub(super) fn push_lp_utf16(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(
         &u32::try_from(value.encode_utf16().count())
             .unwrap()
@@ -17,13 +17,13 @@ fn push_lp_utf16(bytes: &mut Vec<u8>, value: &str) {
     }
 }
 
-fn push_marked(bytes: &mut Vec<u8>, target: u32) {
+pub(super) fn push_marked(bytes: &mut Vec<u8>, target: u32) {
     bytes.push(1);
     bytes.extend_from_slice(&target.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
 }
 
-fn push_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+pub(super) fn push_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(class_tag);
     bytes.extend_from_slice(&record_index.to_le_bytes());
@@ -31,7 +31,12 @@ fn push_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
 
 /// A wide locator `index` with its typed path `index + 1` and wrapper
 /// `index + 2`, owned by scope `scope_record_index`.
-fn push_wide_operand_path(bytes: &mut Vec<u8>, index: u32, scope_record_index: u32, guid: &str) {
+pub(super) fn push_wide_operand_path(
+    bytes: &mut Vec<u8>,
+    index: u32,
+    scope_record_index: u32,
+    guid: &str,
+) {
     let start = bytes.len();
     push_header(bytes, b"283", index);
     bytes.resize(start + 39, 0);
@@ -65,7 +70,7 @@ fn push_wide_operand_path(bytes: &mut Vec<u8>, index: u32, scope_record_index: u
     push_marked(bytes, index + 1);
 }
 
-fn exact_assembly_alignment_with_types(
+pub(super) fn exact_assembly_alignment_with_types(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -207,7 +212,7 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
     assert_eq!(alignment.angle(), -1.0);
     assert_eq!(alignment.offset(), [0.0, 0.0, 0.5]);
     let frames = alignment.operand_frames().expect("frames");
-    assert_eq!(frames[0].transform_offset, 50);
+    assert_eq!(frames[0].transform_offset, Some(50));
     assert_eq!(frames[1].transform.rows()[2][3], 1.7);
     let paths = alignment.operand_path_refs().expect("both operand paths");
     assert_eq!(
@@ -237,17 +242,29 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
 }
 
 #[test]
-fn compact_wide_operand_flag_is_zero_or_one() {
+fn compact_wide_operand_flag_is_the_frame_sense() {
+    use crate::records::feature::assembly::DesignJointFrameSense;
     let types = std::collections::HashMap::new();
-    let frames = |flag: u8| {
+    let alignment = |flag: u8| {
         let (mut bytes, scope, owners) = compact_wide_scope_fixture(true);
         bytes[21] = flag;
         let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
-        exact_assembly_alignment_with_types(&bytes, &records, &scope, &owners, &types)
-            .unwrap()
-            .and_then(|alignment| alignment.operand_frames())
+        exact_assembly_alignment_with_types(&bytes, &records, &scope, &owners, &types).unwrap()
     };
-    assert!(frames(0).is_some());
-    assert!(frames(1).is_some());
-    assert!(frames(2).is_none());
+    // 0: the operand frames mate with their z axes aligned; 1: opposed.
+    for (flag, sense) in [
+        (0, DesignJointFrameSense::Aligned),
+        (1, DesignJointFrameSense::Opposed),
+    ] {
+        let alignment = alignment(flag).expect("alignment");
+        assert!(alignment.operand_frames().is_some());
+        assert_eq!(alignment.frame_sense, Some(sense));
+        let wire = serde_json::to_value(&alignment).unwrap();
+        let back: crate::records::feature::assembly::DesignAssemblyAlignment =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(back.frame_sense, Some(sense));
+    }
+    assert!(alignment(2)
+        .and_then(|alignment| alignment.operand_frames())
+        .is_none());
 }

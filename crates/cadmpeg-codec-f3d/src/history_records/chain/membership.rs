@@ -44,6 +44,7 @@ pub(super) struct Memberships {
     edge_curves: BTreeSet<i64>,
     coedge_pcurves: BTreeSet<i64>,
     point_positions: BTreeSet<i64>,
+    edge_samples: BTreeSet<i64>,
 }
 
 fn apply_entities(
@@ -215,6 +216,7 @@ impl Memberships {
         apply_rows(&mut self.edge_curves, &rows.edge_curves)?;
         apply_rows(&mut self.coedge_pcurves, &rows.coedge_pcurves)?;
         apply_rows(&mut self.point_positions, &rows.point_positions)?;
+        apply_rows(&mut self.edge_samples, &rows.edge_samples)?;
 
         for (members, repeats, delta, changes) in [
             (

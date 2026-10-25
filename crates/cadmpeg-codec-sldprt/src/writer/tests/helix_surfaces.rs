@@ -82,7 +82,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

@@ -12,8 +12,8 @@ use crate::records::feature::assembly_features::DesignComponentInsertMatrix;
 use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::scope::DesignScopePayloadMut;
-use crate::records::identity::Located;
 use crate::records::identity::ReferenceRun;
+use crate::records::identity::Sourced;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::references::DesignClassTag;
@@ -52,8 +52,8 @@ fn assembly_path_source_layout(
     let paths = alignment.operand_path_refs().unwrap();
     let extent = source
         .child(
-            usize::try_from(scope.byte_offset()).unwrap(),
-            usize::try_from(scope.paired_byte_offset()).unwrap(),
+            usize::try_from(scope.byte_offset().unwrap()).unwrap(),
+            usize::try_from(scope.paired_byte_offset().unwrap()).unwrap(),
         )
         .unwrap();
     let mut pointers = std::collections::BTreeMap::new();
@@ -700,7 +700,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             .iter()
             .map(|owner| owner.offset)
             .collect::<Vec<_>>(),
-        vec![2_008, 2_009, 2_010, 2_011]
+        vec![Some(2_008), Some(2_009), Some(2_010), Some(2_011)]
     );
     let frames = alignment.operand_frames().expect("legacy operand frames");
     assert_eq!(
@@ -888,7 +888,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
             .iter()
             .map(|owner| owner.offset)
             .collect::<Vec<_>>(),
-        [2_004, 2_005, 2_006, 2_007]
+        [Some(2_004), Some(2_005), Some(2_006), Some(2_007)]
     );
     let frames = alignment
         .operand_frames()
@@ -1074,173 +1074,6 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     )
     .unwrap()
     .is_none());
-}
-
-#[test]
-fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
-    let scope_record_index = 10_u32;
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
-        DesignFeatureKind::AsBuilt,
-        scope_record_index,
-    );
-    scope.class_tag = DesignClassTag::try_from("439".to_owned()).unwrap();
-    scope
-        .try_edit(|draft| {
-            draft.frame_length = 399;
-            draft.reference_members = ReferenceRun::unlocated(vec![50, 51, 52, 53]);
-            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    scope.paired_class_tag = DesignClassTag::try_from("262".to_owned()).unwrap();
-    scope
-        .try_edit(|draft| {
-            draft.paired_byte_offset = 399;
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-
-    let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
-        DesignParameterOwner::try_from(DesignParameterOwnerWire {
-            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
-            byte_offset: (evaluated_value_offset) - 40,
-            frame_length: 103,
-            class_tag: DesignClassTag::try_from("321".to_owned()).unwrap(),
-            record_index,
-            scope_record_index,
-            local_ordinal,
-            evaluated_value,
-            evaluated_value_offset,
-            parameter_record_index: record_index + 1,
-            owned_ordinal: local_ordinal,
-            variant: None,
-            companion_record_index: record_index + 2,
-        })
-        .unwrap()
-    };
-    let owners = [
-        owner(50, 0, 0.25, 501),
-        owner(51, 1, 1.0, 502),
-        owner(52, 2, 2.0, 503),
-        owner(53, 3, 3.0, 504),
-    ];
-
-    let mut bytes = vec![0_u8; 399];
-    bytes[..4].copy_from_slice(&3_u32.to_le_bytes());
-    bytes[4..7].copy_from_slice(b"439");
-    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
-    bytes[47..51].copy_from_slice(&2_u32.to_le_bytes());
-    for (at, locator_record_index) in [(51, 64_u32), (62, 67_u32)] {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&locator_record_index.to_le_bytes());
-    }
-    bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(b"262");
-    bytes.extend_from_slice(&scope_record_index.to_le_bytes());
-    bytes.extend_from_slice(&[0; 17]);
-    let first_locator_at = bytes.len();
-    append_as_built_path_envelope(
-        &mut bytes,
-        scope_record_index,
-        64,
-        70,
-        "11111111-1111-1111-1111-111111111111",
-        [1.0, 2.0, 3.0],
-    );
-    let second_locator_at = bytes.len();
-    append_as_built_path_envelope(
-        &mut bytes,
-        scope_record_index,
-        67,
-        80,
-        "22222222-2222-2222-2222-222222222222",
-        [4.0, 5.0, 6.0],
-    );
-    bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(b"396");
-    bytes.extend_from_slice(&90_u32.to_le_bytes());
-
-    let alignment = exact_assembly_alignment(
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-        &owners,
-    )
-    .unwrap()
-    .expect("exact As-built alignment");
-    assert_eq!(alignment.angle(), 0.25);
-    assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
-    assert_eq!(
-        alignment
-            .owners
-            .iter()
-            .map(|owner| owner.value)
-            .collect::<Vec<_>>(),
-        [50, 51, 52, 53]
-    );
-    assert_eq!(
-        alignment
-            .owners
-            .iter()
-            .map(|owner| owner.offset)
-            .collect::<Vec<_>>(),
-        [501, 502, 503, 504]
-    );
-    let frames = alignment.operand_frames().expect("locator transforms");
-    assert_eq!(
-        frames
-            .each_ref()
-            .map(|frame| (frame.reference_record_index, frame.transform[0][3])),
-        [(70, 1.0), (80, 4.0)]
-    );
-    assert_eq!(
-        frames.each_ref().map(|frame| frame.transform_offset),
-        [
-            u64::try_from(first_locator_at + 33).expect("fixture offset fits u64"),
-            u64::try_from(second_locator_at + 33).expect("fixture offset fits u64"),
-        ]
-    );
-    let paths = alignment.operand_paths().expect("locator occurrence paths");
-    assert_eq!(
-        paths.each_ref().map(|path| (
-            path.link().locator_record_index,
-            path.occurrence_guids()[0].as_str()
-        )),
-        [
-            (64, "11111111-1111-1111-1111-111111111111"),
-            (67, "22222222-2222-2222-2222-222222222222"),
-        ]
-    );
-
-    let mut invalid_transform = bytes.clone();
-    invalid_transform[first_locator_at + 33..first_locator_at + 41]
-        .copy_from_slice(&2.0_f64.to_le_bytes());
-    let incomplete = exact_assembly_alignment(
-        &invalid_transform,
-        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_transform),
-        &scope,
-        &owners,
-    )
-    .unwrap()
-    .expect("alignment scalars remain exact");
-    assert_eq!(incomplete.operand_frames(), None);
-    assert_eq!(incomplete.operand_paths(), None);
-
-    let mut duplicate_reference = bytes;
-    duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
-    let incomplete = exact_assembly_alignment(
-        &duplicate_reference,
-        &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_reference),
-        &scope,
-        &owners,
-    )
-    .unwrap()
-    .expect("alignment scalars remain exact");
-    assert_eq!(incomplete.operand_frames(), None);
-    assert_eq!(incomplete.operand_paths(), None);
 }
 
 fn legacy_class_383_258_fixture(scope_record_index: u32, members: &[u32]) -> Vec<u8> {
@@ -1817,28 +1650,28 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
         0.0,
         [0.0; 3],
         vec![
-            Located {
+            Sourced {
                 value: 90,
-                offset: 1,
+                offset: Some(1),
             },
-            Located {
+            Sourced {
                 value: 91,
-                offset: 2,
+                offset: Some(2),
             },
         ],
         Some(DesignAssemblyAlignmentForm::Frames {
             frames: [
                 DesignAssemblyOperandFrame {
                     reference_record_index: 70,
-                    reference_offset: 1,
+                    reference_offset: Some(1),
                     transform: transforms[0].try_into().unwrap(),
-                    transform_offset: 2,
+                    transform_offset: Some(2),
                 },
                 DesignAssemblyOperandFrame {
                     reference_record_index: 80,
-                    reference_offset: 3,
+                    reference_offset: Some(3),
                     transform: transforms[1].try_into().unwrap(),
-                    transform_offset: 4,
+                    transform_offset: Some(4),
                 },
             ],
         }),
@@ -1858,21 +1691,25 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
             carrier_record_index: record_index + 2,
             occurrence_identity: None,
             neutron_role: role.into(),
-            neutron_role_offset: 0,
+            neutron_role_offset: Some(0),
             placement: Some(DesignComponentInsertMatrix {
-                scope: Located {
+                scope: Sourced {
                     value: SketchPlacementMatrix::IDENTITY,
-                    offset: 0,
+                    offset: Some(0),
                 },
-                carrier_offset: Some(0),
+                carrier: Some(Sourced::at((), 0)),
             }),
         });
     }
     scope
 }
 
+mod as_built_locators;
+
 mod axial;
 
 mod compact_wide;
 
 mod legacy_alignment;
+
+mod rigid_as_built;

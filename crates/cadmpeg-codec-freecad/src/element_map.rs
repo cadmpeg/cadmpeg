@@ -6,8 +6,6 @@ use cadmpeg_core::CodecError;
 
 pub(crate) mod adopted;
 mod parts;
-mod resolution;
-pub(crate) use resolution::{topology_ids, topology_index_count, topology_indices};
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
 pub(crate) const MAX_MAP_NODES: usize = 1_000_000;

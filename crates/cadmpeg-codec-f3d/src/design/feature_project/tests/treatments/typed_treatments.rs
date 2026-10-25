@@ -11,6 +11,7 @@ use crate::records::feature::scope::DesignParameterScopeDraft;
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::identity::Located;
 use crate::records::identity::ReferenceRun;
+use crate::records::identity::Sourced;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::parameters::DesignParameterSource;
@@ -117,25 +118,25 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     if let DesignScopePayloadMut::Hole(slot) = scopes[2].payload_mut() {
         *slot = Some(DesignHoleConstruction {
             point_record_index: 378,
-            point_record_byte_offset: 10,
+            point_record_byte_offset: Some(10),
             position: crate::test_support::reals([1.25, -2.5, 3.75]),
-            position_offset: 35,
+            position_offset: Some(35),
             direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-            direction_offset: 59,
+            direction_offset: Some(59),
             point_parameters: crate::test_support::reals([0.125, -0.25]),
-            point_parameter_offsets: [83, 91],
+            point_parameter_offsets: Some([83, 91]),
             reference_type: 19,
-            reference_type_offset: 99,
+            reference_type_offset: Some(99),
             tangent_point_data: Some(DesignHoleTangentPoint {
                 prefix: 0,
-                data: Located {
+                data: Sourced {
                     value: crate::test_support::reals([-1.0, -1.0, -1.0]),
-                    offset: 104,
+                    offset: Some(104),
                 },
             }),
-            input_records: vec![Located {
+            input_records: vec![Sourced {
                 value: 378,
-                offset: 129,
+                offset: Some(129),
             }],
             face_selection: None,
         });

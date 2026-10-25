@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::act::{ActChannelGroup, ActClassTail, ActEntity, ActTableRow};
+use crate::records::act::{ActChannelGroup, ActEntity, ActStreamResidue, ActTableRow};
 use std::collections::BTreeMap;
 
 fn group_wire() -> serde_json::Value {
@@ -103,7 +103,7 @@ fn act_group_admission_rejects_invalid_names_counts_and_locations() {
         .is_err());
     }
     for tail_offset in [100, 191, 200] {
-        let tail = ActClassTail::new(vec![1], tail_offset).unwrap();
+        let tail = ActStreamResidue::new(vec![1], tail_offset).unwrap();
         assert!(ActChannelGroup::try_new(
             100,
             Some(200),

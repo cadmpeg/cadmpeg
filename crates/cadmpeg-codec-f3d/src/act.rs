@@ -15,8 +15,8 @@ use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
     act::{
-        ActChannelGroup, ActClassTail, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
-        ActTableReference, ActTableRow,
+        ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
+        ActStreamResidue, ActTableReference, ActTableRow,
     },
     identity::Located,
     references::DesignClassTag,
@@ -490,7 +490,7 @@ struct ChannelGroup {
     entity_id: Option<Located<String, usize>>,
     class_tag: DesignClassTag,
     channels: BTreeMap<String, Located<crate::records::mesh::DesignGuidText>>,
-    class_tail: Option<ActClassTail>,
+    class_tail: Option<ActStreamResidue>,
 }
 
 fn merge_entities(
@@ -624,7 +624,7 @@ fn decode_channel_group(
         None
     } else {
         Some(
-            ActClassTail::new(remainder.to_vec(), u64_from_index(end))
+            ActStreamResidue::new(remainder.to_vec(), u64_from_index(end))
                 .map_err(CodecError::malformed)?,
         )
     };
@@ -886,7 +886,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_group_distinguishes_zero_padding_from_a_class_tail() {
+    fn channel_group_retains_opaque_residue_after_its_semantic_payload() {
         let payload_offset = 11;
         let mut bytes = vec![0; payload_offset + 10];
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -928,15 +928,24 @@ mod tests {
             .expect("table-keyed group");
         assert!(keyless.entity_id.is_none());
 
-        let class_tail = b"\0synthetic-class-tail\x01";
+        let class_tail = b"\0synthetic-stream-residue\x01";
         bytes.truncate(tail_at);
         bytes.extend_from_slice(class_tail);
         frame.end = bytes.len();
         let group = decode_channel_group(&bytes, &frame, "synthetic")
-            .expect("well-framed group with a class tail")
-            .expect("class tail follows the complete channel grammar");
+            .expect("well-framed group with stream residue")
+            .expect("residue follows the complete channel grammar");
         let tail = group.class_tail.as_ref().unwrap();
         assert_eq!(tail.bytes(), Some(class_tail.as_slice()));
         assert_eq!(tail.offset(), Some(u64_from_index(tail_at)));
+        for class_tag in ["258", "269", "271"] {
+            frame.class_tag = class_tag.to_owned().try_into().unwrap();
+            let retained = decode_channel_group(&bytes, &frame, "synthetic")
+                .unwrap()
+                .unwrap();
+            assert_eq!(retained.channels, group.channels);
+            assert_eq!(retained.entity_id, group.entity_id);
+            assert_eq!(retained.class_tail, group.class_tail);
+        }
     }
 }

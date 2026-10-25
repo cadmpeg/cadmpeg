@@ -71,6 +71,8 @@ loss_codes! {
     NurbsTransformNonFinite => "geometry.nurbs-transform-non-finite",
     /// A boundary pcurve leaves the finite parameter domain of its support surface.
     BoundaryPcurveOutsideSupportDomain => "topology.boundary-pcurve-outside-support-domain",
+    /// A Type 144 boundary has no winding about its support normal and keeps its source traversal.
+    BoundaryWindingUnresolved => "topology.boundary-winding-unresolved",
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved => "graph.pointer-unresolved",
     /// Parameter Data has more than one structural trailing pointer-group boundary.
@@ -183,6 +185,7 @@ impl IgesLossCode {
             | Self::SplineClaimRecovered
             | Self::NurbsTransformNonFinite
             | Self::BoundaryPcurveOutsideSupportDomain
+            | Self::BoundaryWindingUnresolved
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
@@ -238,6 +241,7 @@ impl IgesLossCode {
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
             Self::BoundaryPcurveOutsideSupportDomain => LossTaxonomy::SourceTopologyInvalid,
+            Self::BoundaryWindingUnresolved => LossTaxonomy::TopologyGaugeSubstituted,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::DisplayDataNotProjected | Self::LineWeightScaleUnavailable => {
@@ -430,6 +434,7 @@ mod tests {
                 "geometry.spline-claim-recovered",
                 "geometry.nurbs-transform-non-finite",
                 "topology.boundary-pcurve-outside-support-domain",
+                "topology.boundary-winding-unresolved",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",

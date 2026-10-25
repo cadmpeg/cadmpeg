@@ -22,9 +22,25 @@ Spec §12 · layout: byte offsets · size: 22 B
 | 14 | 4 | `context_reference` | `u32` | little | spec | context_reference u32 |
 | 18 | 4 | `source_index` | `u32` | little | spec | source_index u32 |
 
+## `pm_dc_content_header_v28`
+
+Spec §12 · layout: byte offsets · size: 26 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+| 10 | 4 | `flags` | `u32` | little | spec | flags u32 |
+| 14 | 4 | `flags_extension` | `u32` | little | spec | flags_extension u32 = 0 |
+| 18 | 4 | `context_reference` | `u32` | little | spec | context_reference u32 |
+| 22 | 4 | `source_index` | `u32` | little | spec | source_index u32 |
+
 ## `pm_dc_sketch_entity_header`
 
 Spec §12 · layout: byte offsets · size: 30 B
+
+Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -54,6 +70,8 @@ Spec §12 · layout: byte offsets · size: 8 B
 
 Spec §12 · layout: byte offsets · size: 30 B
 
+Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states.
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 22 | `content_header` | `bytes[22]` | little | spec | the content header |
@@ -82,6 +100,8 @@ Spec §12 · layout: byte offsets · size: 8 B
 
 Spec §13 · layout: byte offsets · size: 38 B
 
+Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states.
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 22 | `content_header` | `bytes[22]` | little | spec | the 22-byte content header |
@@ -93,6 +113,8 @@ Spec §13 · layout: byte offsets · size: 38 B
 
 Spec §13 · layout: byte offsets · size: 26 B
 
+Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states.
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 22 | `content_header` | `bytes[22]` | little | spec | the 22-byte content header |
@@ -101,6 +123,8 @@ Spec §13 · layout: byte offsets · size: 26 B
 ## `pm_dc_feature_enumeration`
 
 Spec §13 · layout: byte offsets · size: 26 B
+
+Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -112,6 +136,8 @@ Spec §13 · layout: byte offsets · size: 26 B
 
 Spec §13 · layout: byte offsets · size: 30 B
 
+Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states.
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 22 | `content_header` | `bytes[22]` | little | spec | It adds the same `type_value:i16` |
@@ -122,6 +148,8 @@ Spec §13 · layout: byte offsets · size: 30 B
 ## `pm_dc_fillet_edge_selection`
 
 Spec §13 · layout: byte offsets · size: 30 B
+
+Offsets hold in segment major versions 15 through 22. Later versions extend the embedded content header as section 12 states.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -142,11 +170,25 @@ Spec §13 · layout: byte offsets · size: 26 B
 | 18 | 4 | `parent_reference` | `u32` | little | spec | parent_reference u32 |
 | 22 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
 
+## `pm_dc_linked_element_header_v28`
+
+Spec §13 · layout: byte offsets · size: 30 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 8 | `values` | `u32[2]` | little | spec | values u32[2] |
+| 14 | 4 | `flags_extension` | `u32` | little | spec | flags_extension u32 = 0 |
+| 18 | 4 | `owner_reference` | `u32` | little | spec | owner_reference u32 |
+| 22 | 4 | `parent_reference` | `u32` | little | spec | parent_reference u32 |
+| 26 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+
 ## `pm_dc_parameter_prefix`
 
 Spec §11 · layout: byte offsets · size: 26 B
 
-The counted UTF-16LE parameter name starts at byte 22.
+In segment major versions 15 through 22 the counted UTF-16LE parameter name starts at byte 22. Later versions extend the content header as section 12 states.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -368,3 +410,23 @@ Spec §9 · layout: byte offsets · size: 50 B
 | 38 | 4 | `ordinal_key` | `u32` | little | spec | ordinal_key u32 |
 | 42 | 4 | `related_marker` | `u32` | little | spec | related_marker u32 |
 | 46 | 4 | `related_count` | `u32` | little | spec | related_count u32 |
+
+## `assembly_occurrence_prefix_v28`
+
+Spec §9 · layout: byte offsets · size: 54 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+| 10 | 4 | `flags` | `u32` | little | spec | flags u32 |
+| 14 | 4 | `flags_extension` | `u32` | little | spec | flags_extension u32 = 0 from segment major version 28 |
+| 18 | 4 | `owner_reference` | `u32` | little | spec | owner_reference u32 |
+| 22 | 4 | `node_index` | `u32` | little | spec | node_index u32 |
+| 26 | 8 | `state` | `i32[2]` | little | spec | state i32[2] |
+| 34 | 4 | `relation_marker` | `u32` | little | spec | relation_marker u32 |
+| 38 | 4 | `relation_count` | `u32` | little | spec | relation_count u32 |
+| 42 | 4 | `ordinal_key` | `u32` | little | spec | ordinal_key u32 |
+| 46 | 4 | `related_marker` | `u32` | little | spec | related_marker u32 |
+| 50 | 4 | `related_count` | `u32` | little | spec | related_count u32 |

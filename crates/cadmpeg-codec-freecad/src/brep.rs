@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded framing for text and binary exact-shape side entries.
 
+pub(crate) mod location_identity;
 pub(crate) mod owners;
 pub(crate) mod records;
 mod table;
@@ -2360,6 +2361,24 @@ pub(crate) enum TextSurface {
 }
 
 impl TextSurface {
+    /// Whether the surface's OCCT frame is left-handed. The neutral carrier
+    /// keeps the right-handed frame and a reversed parameter, so its normal is
+    /// opposite the OCCT normal; a trimmed or offset surface inherits it from
+    /// its basis.
+    pub(crate) fn normal_reversed(&self) -> bool {
+        match self {
+            Self::Plane { v_reversed, .. } => *v_reversed,
+            Self::Cylinder { u_reversed, .. }
+            | Self::Cone { u_reversed, .. }
+            | Self::Sphere { u_reversed, .. }
+            | Self::Torus { u_reversed, .. } => *u_reversed,
+            Self::Trimmed { basis, .. } | Self::Offset { basis, .. } => {
+                basis.surface().normal_reversed()
+            }
+            Self::Nurbs(_) | Self::Extrusion { .. } | Self::Revolution { .. } => false,
+        }
+    }
+
     /// Inline records this surface carries over its leaf record.
     const fn nesting_depth(&self) -> usize {
         match self {
@@ -5419,6 +5438,43 @@ pub(crate) fn curve_geometry(
     Ok(geometry)
 }
 
+pub(crate) fn local_curve_geometry(
+    ctx: &DecodeContext<'_>,
+    curve: &TextCurve,
+    id: &CurveId,
+) -> Result<CurveGeometry, CodecError> {
+    let TextCurve::Trimmed {
+        basis,
+        parameter_range,
+    } = curve
+    else {
+        return curve_geometry(ctx, curve);
+    };
+    let _depth = ctx.enter_nested("FreeCAD subset local geometry nesting")?;
+    let basis_id: CurveId = model_identity("curve", id.as_str(), "basis")?;
+    let basis_geometry = local_curve_geometry(ctx, basis.curve(), &basis_id)?;
+    let solved = basis_geometry
+        .solved()
+        .ok_or_else(|| CodecError::NotImplemented("carrier has no solved geometry".into()))?;
+    let parameter_range =
+        crate::topology_transfer::normalize_occt_curve_range(solved, Some(*parameter_range))
+            .unwrap_or(*parameter_range);
+    let subset = cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::from_finite_parts(
+        basis_id,
+        parameter_range,
+        true,
+        None,
+    )
+    .map_err(CodecError::malformed)?;
+    Ok(match subset.local_cache(solved) {
+        Some(cache) => CurveGeometry::Solved(cache),
+        None => CurveGeometry::Procedural {
+            construction: model_identity("curve", id.as_str(), "construction")?,
+            cache: None,
+        },
+    })
+}
+
 fn curve_input<'a>(
     ctx: &DecodeContext<'_>,
     source: Option<&source::projection::geometry::GeometrySource<'_>>,
@@ -5442,12 +5498,12 @@ fn append_text_curve<'owner>(
     let _depth = ctx.enter_nested("FreeCAD curve transfer nesting")?;
     let input = curve_input(ctx, source.as_ref(), id.as_str(), curve)?;
     let curve = input.as_ref();
-    let geometry = curve_geometry(ctx, curve)?;
+    let mut geometry = curve_geometry(ctx, curve)?;
     match curve {
         TextCurve::Trimmed { basis, .. } => {
             let basis_id: CurveId = model_identity("curve", id.as_str(), "basis")?;
             let basis_source = source.as_ref().map(|source| source.basis()).transpose()?;
-            append_text_curve(
+            let basis_index = append_text_curve(
                 ctx,
                 basis.curve(),
                 basis_id.clone(),
@@ -5483,6 +5539,17 @@ fn append_text_curve<'owner>(
                     None,
                 )
                 .map_err(CodecError::malformed)?;
+            geometry = match transfer.curves[basis_index]
+                .geometry
+                .solved()
+                .and_then(|basis| admitted.local_cache(basis))
+            {
+                Some(cache) => CurveGeometry::Solved(cache),
+                None => CurveGeometry::Procedural {
+                    construction: construction_id.clone(),
+                    cache: None,
+                },
+            };
             transfer.procedural.push((
                 id.clone(),
                 ProceduralCurve::new(construction_id, ProceduralCurveDefinition::Subset(admitted)),

@@ -119,7 +119,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         );
         assert_eq!(group.opaque_index.get(), 180);
         assert_eq!(group.opaque_scalar().get(), 0.25);
-        assert!(group.variant);
+        assert_eq!(group.variant, Some(true));
         assert_eq!(group.paired_byte_offset(), u64_from_index(paired_at));
 
         let member_record = DesignRecordHeader {
@@ -159,6 +159,41 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 .expect("terminal fixed Extrude selection member");
         assert_eq!(terminal_member.next_byte_offset(), 190);
         assert_eq!(terminal_member.next_record_index, 0);
+
+        let mut long_member_bytes = member_bytes[..190].to_vec();
+        long_member_bytes.push(0);
+        long_member_bytes.extend_from_slice(&2u32.to_le_bytes());
+        long_member_bytes.extend_from_slice(&1u64.to_le_bytes());
+        long_member_bytes.push(0);
+        indexed_header(&mut long_member_bytes, *b"290", 201);
+        let long_member =
+            parse_extrude_selection_member(&long_member_bytes, &group, 0, &member_record)
+                .expect("selection member with the fourteen-byte tail");
+        assert_eq!(long_member.local_id, 586);
+        assert_eq!(long_member.next_byte_offset(), 204);
+        assert_eq!(long_member.next_record_index, 201);
+        assert!(long_member.tail_slot_present);
+        assert_eq!(
+            serde_json::from_value::<
+                crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
+            >(serde_json::to_value(&long_member).unwrap())
+            .unwrap(),
+            long_member
+        );
+        let terminal_long_member =
+            parse_extrude_selection_member(&long_member_bytes[..204], &group, 0, &member_record)
+                .expect("terminal selection member with the fourteen-byte tail");
+        assert_eq!(terminal_long_member.next_byte_offset(), 204);
+        assert_eq!(terminal_long_member.next_record_index, 0);
+        for at in 190..204 {
+            let mut invalid = long_member_bytes.clone();
+            invalid[at] ^= 0x80;
+            assert!(parse_extrude_selection_member(&invalid, &group, 0, &member_record).is_none());
+        }
+        long_member_bytes[185] = 0;
+        assert!(
+            parse_extrude_selection_member(&long_member_bytes, &group, 0, &member_record).is_none()
+        );
 
         let mut edge_identity_bytes = Vec::new();
         indexed_header(&mut edge_identity_bytes, *b"278", 5887);
@@ -337,6 +372,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             primary_id: std::num::NonZeroU64::new(586).unwrap(),
             secondary_id: 0,
             geometry: None,
+            planar_z_noise: None,
         };
         bind_extrude_selection_geometry(
             std::slice::from_mut(&mut member),

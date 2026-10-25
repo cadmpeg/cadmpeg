@@ -16,6 +16,7 @@ pub mod bytes;
 pub mod comparison;
 pub mod compound;
 pub mod contract;
+pub mod data_checks;
 pub mod decode;
 pub mod depth;
 pub mod detection;
@@ -29,6 +30,7 @@ pub mod refusal;
 /// Names removed by the v8 codec rules and checked by the contract gates.
 pub mod removed_names;
 pub mod roundtrip;
+pub mod solids;
 pub mod unknown_keys;
 pub mod wire;
 pub mod zip_fixture;

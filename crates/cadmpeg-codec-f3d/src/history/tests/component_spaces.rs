@@ -71,6 +71,8 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
                 .try_into()
                 .expect("GUID"),
             context_uuid_offset: Some(12),
+            name: None,
+            name_offset: None,
         },
         crate::records::recipes::DesignComponentNamingSpace {
             id: crate::ids::native_design_component_naming_space_id(design_stream, 100),
@@ -81,6 +83,8 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
                 .try_into()
                 .expect("GUID"),
             context_uuid_offset: Some(112),
+            name: None,
+            name_offset: None,
         },
     ];
     let binding = |map_ordinal, at, entity_suffix, blob_name: &str| {

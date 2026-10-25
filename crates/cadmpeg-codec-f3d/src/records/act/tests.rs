@@ -329,7 +329,7 @@ fn act_channels_reject_unpaired_keys_and_preserve_split_wire_maps() {
 }
 
 #[test]
-fn act_class_tail_requires_nonpadding_bytes_and_a_bounded_offset() {
+fn act_stream_residue_requires_nonpadding_bytes_and_a_bounded_offset() {
     let wire = serde_json::json!({
         "id": "f3d:stream:act-entity#7", "record_index": 7, "entity_id": "0_1",
         "in_table": false, "channel_class_tag": "261", "channels": {"Appearance":"11111111-2222-3333-4444-555555555555"}, "class_tail_frame": serde_json::to_value(super::super::source_frame::SourceFrame::from(vec![0,1])).unwrap(), });
@@ -691,10 +691,10 @@ fn root_strings_edit_without_fabricated_cadir_source_layout() {
 
 #[test]
 fn actual_act_tail_admission_checks_padding_and_overflow() {
-    assert!(super::ActClassTail::new(Vec::new(), 300).is_err());
-    assert!(super::ActClassTail::new(vec![0, 0], 300).is_err());
-    assert!(super::ActClassTail::new(vec![1], u64::MAX).is_err());
-    let tail = super::ActClassTail::new(vec![0, 1], 300).unwrap();
+    assert!(super::ActStreamResidue::new(Vec::new(), 300).is_err());
+    assert!(super::ActStreamResidue::new(vec![0, 0], 300).is_err());
+    assert!(super::ActStreamResidue::new(vec![1], u64::MAX).is_err());
+    let tail = super::ActStreamResidue::new(vec![0, 1], 300).unwrap();
     assert_eq!(tail.bytes(), Some([0, 1].as_slice()));
     assert_eq!(tail.offset(), Some(300));
 }

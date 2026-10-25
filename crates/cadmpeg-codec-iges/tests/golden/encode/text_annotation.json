@@ -113,7 +113,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES native arena quarantined_parameter_records holds 1 quarantined record(s) that the bounded semantic writer does not regenerate, because a record that failed typing has no fields to write",
+        "message": "IGES native arena unknowns is not regenerated; 1 record(s) omitted",
         "severity": "warning"
       },
       {
@@ -144,7 +144,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.annotations`",
+        "message": "the iges write omits 2 native record(s) from `iges.annotations`: iges:presentation:annotation#D1, iges:presentation:annotation#D3",
         "severity": "info"
       },
       {
@@ -154,7 +154,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
         "severity": "info"
       },
       {
@@ -164,7 +164,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.entities`",
+        "message": "the iges write omits 2 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#3",
         "severity": "info"
       },
       {
@@ -174,17 +174,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 1 native record(s) from `iges.quarantined_parameter_records`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],

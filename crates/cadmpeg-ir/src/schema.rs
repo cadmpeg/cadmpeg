@@ -3,9 +3,10 @@
 
 use serde::Serialize;
 
-/// Typed native-reference access over the complete neutral arena registry.
+/// Typed native-reference access over every registered neutral arena.
 pub mod native_links;
-
+/// Caller-accounted exact access to every registered neutral record.
+pub mod neutral_records;
 /// Generated-schema identities for compiled dimension and D10 types.
 #[cfg(feature = "schema")]
 pub mod query;
@@ -324,7 +325,7 @@ impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
     id;
-    id, input_of, bodies, faces, edges, vertices, native_ref
+    id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref
 );
 impl EntitySchema for crate::features::FeatureResultTopology {
     fn native_reference(&self) -> Option<&str> {

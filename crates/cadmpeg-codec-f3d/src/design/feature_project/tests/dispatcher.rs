@@ -52,9 +52,9 @@ fn dispatcher_projects_datum_feature_scopes() {
         *slot = Some(
             crate::records::feature::work_geometry::DesignWorkPointConstruction {
                 point_record_index: 4,
-                point_record_byte_offset: 0,
+                point_record_byte_offset: Some(0),
                 position: crate::test_support::reals([4.0, 5.0, 6.0]),
-                position_offset: 0,
+                position_offset: Some(0),
                 rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                     crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
                         reference_type: 1,
@@ -62,7 +62,7 @@ fn dispatcher_projects_datum_feature_scopes() {
                     },
                 )
                 .expect("compatible WorkPoint rule"),
-                reference_type_offset: 0,
+                reference_type_offset: Some(0),
             },
         );
     }
@@ -114,13 +114,13 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
             center_record_index: 6,
-            center_position: Some(crate::records::identity::Located {
+            center_position: Some(crate::records::identity::Sourced {
                 value: crate::test_support::reals([1.25, -2.5, 3.75]),
-                offset: 40,
+                offset: Some(40),
             }),
             uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
                 .expect("checked fixture value"),
-            uniform_factor_offset: 20,
+            uniform_factor_offset: Some(20),
         });
     }
 
@@ -302,7 +302,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let input = |record_index, work_plane_scope_record_index| {
         DesignWorkPointInput::try_new(
             record_index,
-            u64::from(record_index),
+            Some(u64::from(record_index)),
             Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection::try_new(
                     record_index,
@@ -345,16 +345,16 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 41,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([1.0, 2.0, 3.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::ThreePlaneIntersection {
                     inputs: [input(42, 10), input(46, 20), input(50, 30)],
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let mut scopes = planes.to_vec();
@@ -459,14 +459,14 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([4.0, 3.0, 0.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
                         22,
-                        0,
+                        Some(0),
                         Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                             recipe,
                         })),
@@ -475,7 +475,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let timeline = DesignFeatureTimeline::try_new(
@@ -620,7 +620,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     {
         let value = Some(DesignBaseFlangeOperation {
             thickness: cadmpeg_ir::scalar::PositiveReal::new(0.2).unwrap(),
-            thickness_offset: 0,
+            thickness_offset: Some(0),
             profile_group_record_index: 100,
             profile_record_index: 101,
             thickness_record_index: 102,
@@ -692,7 +692,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
             DesignSurfaceStitchOperation {
                 gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
-                gap_tolerance_offset: 0,
+                gap_tolerance_offset: Some(0),
                 tolerance_record_index: 302,
                 settings_record_index: 303,
             },
@@ -735,9 +735,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .try_into()
                 .expect("GUID"),
             source_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            source_transform_offset: 0,
+            source_transform_offset: Some(0),
             copied_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            copied_transform_offset: 0,
+            copied_transform_offset: Some(0),
         });
     }
 
@@ -752,17 +752,17 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         *slot = Some(
             DesignCopyPasteBodiesOperation::try_new(
                 vec![crate::records::feature::body_ops::DesignCopiedBody {
-                    operand: crate::records::identity::Located {
+                    operand: crate::records::identity::Sourced {
                         value: 502,
-                        offset: 26,
+                        offset: Some(26),
                     },
-                    source: crate::records::identity::Located {
+                    source: crate::records::identity::Sourced {
                         value: 11,
-                        offset: 25,
+                        offset: Some(25),
                     },
-                    copied: crate::records::identity::Located {
+                    copied: crate::records::identity::Sourced {
                         value: 12,
-                        offset: 40,
+                        offset: Some(40),
                     },
                 }],
                 crate::records::feature::body_ops::CopyPasteRecordLocation {
@@ -799,23 +799,23 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 crate::records::feature::base_feature::DesignBaseFeatureResultBody {
                     entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 21,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                     reference: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 601,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                     result: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 603,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                 },
             ]),
             metadata_record: 602,
-            metadata_record_offset: 0,
+            metadata_record_offset: Some(0),
             metadata_field: vec![0, 0].into(),
         });
     }
@@ -830,7 +830,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
-            designation_offset: 0,
+            designation_offset: Some(0),
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
             nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "3.5".to_owned(),
@@ -890,22 +890,54 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
             .unwrap(),
     };
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = &scopes;
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    construction_groups: &groups,
-                    placements: std::slice::from_ref(&placement),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let project =
+        |settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings]| {
+            crate::test_support::with_decode_context(|ctx| {
+                let scopes = &scopes;
+                let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+                crate::design::feature_project::project_parameter_design_with_edge_identities(
+                    ctx,
+                    &crate::design::feature_project::ProjectInputs {
+                        scopes,
+                        construction_groups: &groups,
+                        placements: std::slice::from_ref(&placement),
+                        timelines: &timelines,
+                        sheet_metal_settings: settings,
+                        ..Default::default()
+                    },
+                )
+                .expect("test projection has a synthetic exact timeline")
+            })
+        };
+    let unruled = project(&[]);
+    // Without its settings' rule the flange uses its stored copy, and says so.
+    assert_eq!(unruled.unruled_flange_thicknesses, 1);
+    assert_eq!(
+        unruled
+            .unruled_flange_thickness_loss()
+            .map(|loss| loss.code),
+        Some(crate::loss::F3dLossCode::SheetThicknessUnruled.kind())
+    );
+    let features = unruled.features;
+    // The rule's thickness governs over the stored copy.
+    let ruled: crate::records::sheet_metal_settings::DesignSheetMetalSettings =
+        serde_json::from_value(serde_json::json!({
+            "id": format!("{stream}:design-sheet-metal-settings#20"),
+            "record_index": 103, "byte_offset": 20, "paired_byte_offset": 100,
+            "mask": 240, "inputs": {"version": "v2", "slots": vec![None::<u64>; 7]},
+            "rule_record_index": 51, "presentation_record_index": 52,
+            "owner_record_index": 53, "context_record_index": 54,
+            "rule_thickness": 0.25, "rule_thickness_offset": 900,
+        }))
+        .unwrap();
+    let ruled_projection = project(std::slice::from_ref(&ruled));
+    assert_eq!(ruled_projection.unruled_flange_thicknesses, 0);
+    assert!(ruled_projection.unruled_flange_thickness_loss().is_none());
+    assert!(ruled_projection.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })
+            if thickness.literal().is_some_and(|thickness| thickness.get() == 2.5)
+    )));
     let definition = |kind: &str| {
         features
             .iter()
@@ -1012,22 +1044,22 @@ fn loft_path_preserves_complete_historical_edge_selection() {
 }
 
 #[test]
-fn form_dispatcher_binds_the_legacy_single_cage_gate() {
+fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
     let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut bulk = Vec::new();
-    let mut cage_list = vec![0; 100];
+    let mut cage_list = vec![0; 81];
     cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
-    cage_list[4..7].copy_from_slice(b"355");
+    cage_list[4..7].copy_from_slice(b"335");
     cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
-    cage_list[21] = 1;
-    cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
-    cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
-    cage_list[36] = 1;
-    cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
-    cage_list[47..49].copy_from_slice(&[0xfc, 0]);
+    cage_list[25] = 1;
+    cage_list[26..34].copy_from_slice(&201u64.to_le_bytes());
+    cage_list[58] = 1;
+    cage_list[59..67].copy_from_slice(&971u64.to_le_bytes());
+    cage_list[70] = 1;
+    cage_list[71..79].copy_from_slice(&201u64.to_le_bytes());
     bulk.extend_from_slice(&cage_list);
 
     let mut paired = vec![0; 15];
@@ -1038,7 +1070,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
 
     let mut object = vec![0; 15];
     object[..4].copy_from_slice(&3u32.to_le_bytes());
-    object[4..7].copy_from_slice(b"325");
+    object[4..7].copy_from_slice(b"328");
     object[7..11].copy_from_slice(&971u32.to_le_bytes());
     bulk.extend_from_slice(&object);
 
@@ -1105,12 +1137,13 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
             )
         })
     })
-    .expect("legacy Form cage binding");
+    .expect("retained Form result owner");
     assert_eq!(
         *features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Form {
-                cages: vec![cages[0].id.clone()],
+            cadmpeg_ir::features::FeatureOperation::Native {
+                kind: "Form".into(),
+                parameters: Default::default(),
             }
         )
     );
@@ -1150,97 +1183,113 @@ fn merged_direct_edges_keep_source_order_and_native_fallback() {
 }
 
 #[test]
-fn form_dispatcher_binds_a_unique_long_cage_list() {
+fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
     use std::io::{Cursor, Write};
     use zip::CompressionMethod;
 
-    let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
-    let mut cage_list = vec![0; 99];
-    cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
-    cage_list[4..7].copy_from_slice(b"415");
-    cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
-    cage_list[21] = 1;
-    cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
-    cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
-    cage_list[36] = 1;
-    cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
-    let mut paired = vec![0; 15];
-    paired[..4].copy_from_slice(&3u32.to_le_bytes());
-    paired[4..7].copy_from_slice(b"258");
-    paired[7..11].copy_from_slice(&205u32.to_le_bytes());
-    let mut bulk = cage_list;
-    bulk.extend_from_slice(&paired);
+    for flag_width in [2, 3] {
+        let stream = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+        let mut cage_list = vec![0; 97 + flag_width];
+        cage_list[..4].copy_from_slice(&3u32.to_le_bytes());
+        cage_list[4..7].copy_from_slice(b"415");
+        cage_list[7..11].copy_from_slice(&205u32.to_le_bytes());
+        cage_list[21] = 1;
+        cage_list[22..30].copy_from_slice(&201u64.to_le_bytes());
+        cage_list[32..36].copy_from_slice(&1u32.to_le_bytes());
+        cage_list[36] = 1;
+        cage_list[37..45].copy_from_slice(&971u64.to_le_bytes());
+        cage_list[47..51].copy_from_slice(&252u32.to_le_bytes());
+        cage_list[51..59].copy_from_slice(&0.25f64.to_le_bytes());
+        cage_list[59..63].copy_from_slice(&252u32.to_le_bytes());
+        cage_list[63] = 1;
+        cage_list[64..72].copy_from_slice(&909u64.to_le_bytes());
+        if flag_width == 3 {
+            cage_list[74] = 1;
+        }
+        cage_list[74 + flag_width] = 1;
+        cage_list[75 + flag_width..83 + flag_width].copy_from_slice(&206u64.to_le_bytes());
+        cage_list[86 + flag_width] = 1;
+        cage_list[87 + flag_width..95 + flag_width].copy_from_slice(&201u64.to_le_bytes());
+        let mut paired = vec![0; 15];
+        paired[..4].copy_from_slice(&3u32.to_le_bytes());
+        paired[4..7].copy_from_slice(b"258");
+        paired[7..11].copy_from_slice(&205u32.to_le_bytes());
+        let mut bulk = cage_list;
+        bulk.extend_from_slice(&paired);
 
-    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
-    archive.start_file(stream, stored).unwrap();
-    archive.write_all(&bulk).unwrap();
-    let archive = archive.finish().unwrap().into_inner();
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        archive.start_file(stream, stored).unwrap();
+        archive.write_all(&bulk).unwrap();
+        let archive = archive.finish().unwrap().into_inner();
 
-    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
-        &format!("f3d:{stream}:scope#201"),
-        crate::records::feature::scope::DesignFeatureKind::Form,
-        201,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![205]);
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            &format!("f3d:{stream}:scope#201"),
+            crate::records::feature::scope::DesignFeatureKind::Form,
+            201,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![205]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let feature_id = crate::ids::neutral_feature_id(&scope);
+        let mut features = vec![cadmpeg_ir::features::Feature {
+            needs_recompute: false,
+            id: feature_id,
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: Some("Form".into()),
+            source_text: None,
+            source_content: Default::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native {
+                        kind: "Form".into(),
+                        parameters: Default::default(),
+                    },
+                ),
+            ),
+            native_ref: Some(scope.id.clone()),
+        }];
+        let cages = [cadmpeg_ir::SubdSurface {
+            native_ref: None,
+            id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
+            scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
+            source_object: None,
+            cage: cadmpeg_ir::subd::SubdCage::default(),
+        }];
+
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                crate::design::feature_project::form_cages::bind_form_cages(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    &mut features,
+                    &cages,
+                )
+            })
         })
-        .unwrap();
-    let feature_id = crate::ids::neutral_feature_id(&scope);
-    let mut features = vec![cadmpeg_ir::features::Feature {
-        needs_recompute: false,
-        id: feature_id,
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: Some("Form".into()),
-        source_text: None,
-        source_content: Default::default(),
-
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        .expect("long Form cage binding");
+        assert_eq!(
+            *features[0].evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native {
                     kind: "Form".into(),
                     parameters: Default::default(),
-                },
-            ),
-        ),
-        native_ref: Some(scope.id.clone()),
-    }];
-    let cages = [cadmpeg_ir::SubdSurface {
-        native_ref: None,
-        id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
-        scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-    }];
-
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::form_cages::bind_form_cages(
-                ctx,
-                scan,
-                std::slice::from_ref(&scope),
-                &mut features,
-                &cages,
+                }
             )
-        })
-    })
-    .expect("long Form cage binding");
-    assert_eq!(
-        *features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Form {
-                cages: vec![cages[0].id.clone()],
-            }
-        )
-    );
+        );
+    }
 }

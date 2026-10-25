@@ -21,9 +21,9 @@ fn legacy_scale_resolves_explicit_point_data_center() {
         assert_eq!(operation.center_record_index, 105);
         assert_eq!(
             operation.center_position.map(|center| center.offset),
-            Some(u64_from_index(position_at))
+            Some(Some(u64_from_index(position_at)))
         );
-        assert_eq!(operation.uniform_factor_offset, 21);
+        assert_eq!(operation.uniform_factor_offset, Some(21));
         assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
 
         let position = operation.center_position.expect("point-data center").value;
@@ -45,9 +45,9 @@ fn modern_localized_scale_resolves_explicit_point_data_center() {
     assert_eq!(operation.center_record_index, 105);
     assert_eq!(
         operation.center_position.map(|center| center.offset),
-        Some(u64_from_index(position_at))
+        Some(Some(u64_from_index(position_at)))
     );
-    assert_eq!(operation.uniform_factor_offset, 25);
+    assert_eq!(operation.uniform_factor_offset, Some(25));
     assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
 
     let position = operation.center_position.expect("point-data center").value;

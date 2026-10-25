@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed ZIP filename reads from admitted declaration fields.
 
-use super::{u16_at, u32_at, EntryRecord};
+use super::{u16_at, EntryRecord};
 use crate::layout::{central_header, local_header};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 pub(super) fn raw_source<'a>(root: View<'a>, entry: &EntryRecord) -> Result<View<'a>, CodecError> {
+    source(root, entry, |offset| u16_at(root.window(), offset))
+}
+
+fn source<'a>(
+    root: View<'a>,
+    entry: &EntryRecord,
+    read_length: impl FnOnce(u64) -> Result<u16, CodecError>,
+) -> Result<View<'a>, CodecError> {
     let (fixed, length_at) = if entry.is_recovered() {
         (local_header::LEN, local_header::NAME_LENGTH)
     } else {
@@ -17,15 +25,21 @@ pub(super) fn raw_source<'a>(root: View<'a>, entry: &EntryRecord) -> Result<View
         .start
         .checked_add(u64_from_index(fixed))
         .ok_or_else(|| CodecError::malformed("ZIP filename offset overflows"))?;
-    let length = u64::from(u16_at(
-        root.window(),
-        declaration.start + u64_from_index(length_at),
-    )?);
+    let length = u64::from(read_length(declaration.start + u64_from_index(length_at))?);
     let end = start
         .checked_add(length)
         .filter(|end| *end <= declaration.end)
         .ok_or_else(|| CodecError::malformed("ZIP filename escapes its declaration"))?;
     relative(root, start, end)
+}
+
+fn word(root: View<'_>, offset: u64) -> Result<u16, CodecError> {
+    let end = offset
+        .checked_add(2)
+        .ok_or_else(|| CodecError::malformed("ZIP filename field offset overflows"))?;
+    relative(root, offset, end)?
+        .req_u16_le()
+        .map_err(Into::into)
 }
 
 fn relative(root: View<'_>, start: u64, end: u64) -> Result<View<'_>, CodecError> {
@@ -46,13 +60,13 @@ pub(super) fn read(
     root: View<'_>,
     entry: &EntryRecord,
 ) -> Result<String, CodecError> {
-    let mut raw = raw_source(root, entry)?;
+    let mut raw = source(root, entry, |offset| word(root, offset))?;
     let bytes = raw.req_take(raw.remaining())?;
     let mut selected = bytes;
     if !entry.is_recovered() {
         let raw_end = u64_from_index(raw.end() - root.start());
-        let extra_length = u64::from(u16_at(
-            root.window(),
+        let extra_length = u64::from(word(
+            root,
             entry.declaration_range().start + u64_from_index(central_header::EXTRA_LENGTH),
         )?);
         let extra_end = raw_end
@@ -63,36 +77,42 @@ pub(super) fn read(
         let mut unicode = None;
         let mut original_crc = None;
         while at.checked_add(4).is_some_and(|end| end <= extra_end) {
-            let tag = u16_at(root.window(), at)?;
-            let size = u64::from(u16_at(root.window(), at + 2)?);
+            let mut header = relative(root, at, at + 4)?;
+            let tag = header.req_u16_le()?;
+            let size = u64::from(header.req_u16_le()?);
             let end = at
                 .checked_add(4)
                 .and_then(|value| value.checked_add(size))
                 .filter(|end| *end <= extra_end)
                 .ok_or_else(|| CodecError::malformed("ZIP filename extra is truncated"))?;
             if tag == 0x7075 && size >= 5 {
-                let content = relative(root, at + 9, end)?;
+                let mut checksum = relative(root, at + 5, at + 9)?;
+                let expected = checksum.req_u32_le()?;
                 let original_crc = *original_crc.get_or_insert_with(|| crc32fast::hash(bytes));
-                if u32_at(root.window(), at + 5)? == original_crc
-                    && std::str::from_utf8(content.window()).is_ok()
-                {
-                    unicode = Some((relative(root, at + 5, at + 9)?, content, original_crc));
+                if expected == original_crc {
+                    let mut content = relative(root, at + 9, end)?;
+                    let content = content.req_take(content.remaining())?;
+                    if std::str::from_utf8(content).is_ok() {
+                        unicode = Some(content);
+                    }
                 }
             }
             at = end;
         }
-        if let Some((mut checksum, mut content, original_crc)) = unicode {
-            let expected = checksum.req_u32_le()?;
-            let content = content.req_take(content.remaining())?;
-            if expected != original_crc || std::str::from_utf8(content).is_err() {
-                return Err(CodecError::malformed(
-                    "ZIP selected Unicode name differs from declaration",
-                ));
-            }
+        if let Some(content) = unicode {
             selected = content;
         }
     }
-    let lossy = entry.is_recovered() && entry.uses_utf8_name_encoding();
+    let lossy = if entry.is_recovered() {
+        let start = entry.declaration_range().start;
+        let mut header = relative(root, start, start + u64_from_index(local_header::LEN))?;
+        header
+            .skip(6)
+            .ok_or_else(|| CodecError::malformed("ZIP local filename flags are truncated"))?;
+        header.req_u16_le()? & 0x800 != 0
+    } else {
+        false
+    };
     let utf8 = !entry.is_recovered() && std::str::from_utf8(selected).is_ok();
     let mut length = Some(0usize);
     characters(selected, lossy || utf8, |ch| {

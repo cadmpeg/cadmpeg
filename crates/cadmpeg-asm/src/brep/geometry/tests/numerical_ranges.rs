@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 
 #[test]
-fn cacheless_helix_reversal_refuses_an_unrepresentable_start_frame() {
+fn cacheless_helix_reversal_admits_a_zero_radius_at_the_interval_end() {
     let helix = HelixCurveConstruction::try_new(
         [0.0, std::f64::consts::TAU],
         HelixFrame {
@@ -25,8 +25,12 @@ fn cacheless_helix_reversal_refuses_an_unrepresentable_start_frame() {
     )
     .unwrap();
     let mut definition = ProceduralCurveDefinition::Helix(helix);
-    assert!(reverse_procedural_curve_definition(&mut definition).is_err());
-    assert_eq!(definition, ProceduralCurveDefinition::Helix(helix));
+    reverse_procedural_curve_definition(&mut definition).unwrap();
+    let ProceduralCurveDefinition::Helix(reversed) = definition else {
+        panic!("helix definition");
+    };
+    assert_eq!(reversed.angle_range().get(), [-std::f64::consts::TAU, -0.0]);
+    assert_eq!(reversed.apex_factor().get(), 1.0);
 }
 
 fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {

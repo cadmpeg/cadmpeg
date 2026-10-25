@@ -152,6 +152,7 @@ pub(super) fn encode_design_bulkstream(
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
                 face_boundaries: &native.asm_face_boundaries,
+                sheet_metal_settings: &native.design_sheet_metal_settings,
             },
         )?
         .parameters;
@@ -274,6 +275,10 @@ pub(super) fn encode_design_bulkstream(
         }
         out.push(0);
     }
+    for header in &native.design_record_headers {
+        native_lp_ascii(&mut out, header.class_tag.as_str())?;
+        out.extend_from_slice(&header.record_index.to_le_bytes());
+    }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
         out.extend_from_slice(&3u32.to_le_bytes());
@@ -307,11 +312,10 @@ pub(super) fn encode_design_bulkstream(
             }
         }
     }
-    for header in &native.design_record_headers {
-        native_lp_ascii(&mut out, header.class_tag.as_str())?;
-        out.extend_from_slice(&header.record_index.to_le_bytes());
-    }
     for point in &native.sketch_points {
+        point
+            .validate_for_write(&native.sketch_curve_identities)
+            .map_err(CodecError::Malformed)?;
         let expected = crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE;
         let mut companion_types = registry
             .types

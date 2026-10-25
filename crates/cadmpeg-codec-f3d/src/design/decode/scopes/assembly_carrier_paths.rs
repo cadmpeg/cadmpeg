@@ -196,7 +196,7 @@ fn exact_class_363_operand_path<'a>(
         draft.set_link(
             PathLinkSources::new(
                 source,
-                frame.reference_offset,
+                frame.reference_offset?,
                 carrier_at,
                 locator_scope_reference_offset,
                 wrapper_reference_offset,
@@ -290,9 +290,9 @@ fn exact_class_307_joint_origin(
     Some(DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: frame.reference_record_index,
         class_tag: "307".to_owned().try_into().ok()?,
-        byte_offset: u64::try_from(start).ok()?,
+        byte_offset: Some(u64::try_from(start).ok()?),
         paired_class_tag: "264".to_owned().try_into().ok()?,
-        paired_byte_offset: u64::try_from(paired_at).ok()?,
+        paired_byte_offset: Some(u64::try_from(paired_at).ok()?),
     })
 }
 
@@ -540,9 +540,9 @@ mod tests {
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
-            reference_offset: 9,
+            reference_offset: Some(9),
             transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            transform_offset: 20,
+            transform_offset: Some(20),
         };
 
         assert_eq!(
@@ -570,8 +570,8 @@ mod tests {
             exact_class_307_joint_origin(&bytes, &records, &frame),
             Some(DesignAssemblyOperandQualifier::JointOrigin {
                 scope_record_index: 17,
-                byte_offset: 0,
-                paired_byte_offset: 366,
+                byte_offset: Some(0),
+                paired_byte_offset: Some(366),
                 ..
             })
         ));

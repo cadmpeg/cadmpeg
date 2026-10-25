@@ -10,6 +10,8 @@ use tempfile::tempdir;
 
 use crate::support::{cube_with_source, fixture, minimal_rhino_archive};
 
+mod geometry;
+
 #[test]
 fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let dir = tempdir().unwrap();

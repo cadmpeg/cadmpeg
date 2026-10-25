@@ -103,6 +103,17 @@
   "losses": [
     {
       "code": {
+        "code": "export.no-exportable-solids",
+        "kind": "no_exportable_solids",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "the document holds no exportable geometry",
+      "severity": "warning"
+    },
+    {
+      "code": {
         "code": "target.source-dialect-displaced",
         "kind": "source_dialect_displaced",
         "namespace": "rhino",
@@ -119,7 +130,7 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write does not represent model arena `product_definitions`: 1 record(s) omitted",
+      "message": "the rhino write does not represent model arena `product_definitions`: 1 record(s) omitted: rhino:model:product#61616161-6161-6161-6161-616161616161",
       "severity": "warning"
     },
     {
@@ -129,7 +140,7 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write does not represent model arena `occurrences`: 1 record(s) omitted",
+      "message": "the rhino write does not represent model arena `occurrences`: 1 record(s) omitted: rhino:model:occurrence#0",
       "severity": "warning"
     },
     {
@@ -139,7 +150,7 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`",
+      "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
       "severity": "info"
     },
     {
@@ -149,7 +160,7 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write omits 1 native record(s) from `rhino.product_definitions`",
+      "message": "the rhino write omits 1 native record(s) from `rhino.product_definitions`: rhino:product:definition#61616161-6161-6161-6161-616161616161",
       "severity": "info"
     },
     {
@@ -159,17 +170,7 @@
         "namespace": "export",
         "scope": "namespaced"
       },
-      "message": "the rhino write omits 1 native record(s) from `rhino.product_occurrences`",
-      "severity": "info"
-    },
-    {
-      "code": {
-        "code": "native.records-omitted",
-        "kind": "record_not_typed",
-        "namespace": "export",
-        "scope": "namespaced"
-      },
-      "message": "the rhino write omits 1 native record(s) from `rhino.unknowns`",
+      "message": "the rhino write omits 1 native record(s) from `rhino.product_occurrences`: rhino:product:occurrence#record-000000",
       "severity": "info"
     }
   ],

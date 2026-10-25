@@ -11,8 +11,10 @@ mod authority;
 mod batches;
 pub use authority::DecodeSessionToken;
 mod owners;
+mod part_prefix;
 mod primary_index;
 mod retirement;
+mod source_extent;
 mod source_proof;
 mod streams;
 use super::{
@@ -112,6 +114,8 @@ struct Frame {
     part_attempts: Option<Vec<String>>,
     retired: Vec<retirement::CaptureKey>,
     primaries: Vec<usize>,
+    // Ephemeral observed reads for a grammar-discovered boundary, never credit.
+    boundary_reads: Option<Vec<(SpaceId, Range<u64>)>>,
 }
 
 #[derive(Debug)]
@@ -287,6 +291,10 @@ impl SessionHandle<'_> {
 
     pub(super) fn recover_part(self, expected: ResourceLimit) -> Result<(), ResourceLimit> {
         self.with_budget(|budget| budget.recover_part(expected))
+    }
+
+    pub(super) fn require_source_end(self, view: View<'_>) -> Result<(), CodecError> {
+        self.session(|session| session.streams.require_end(view))
     }
 
     pub(super) fn source_streams(self) -> Result<Vec<SourceStream>, CodecError> {
@@ -598,6 +606,16 @@ impl SessionHandle<'_> {
             return Ok(());
         }
         self.session(|session| {
+            // Boundary observation is independent of semantic record ownership.
+            // Every active discovered transaction sees actual nested reads,
+            // including reads whose semantic transaction later rolls back.
+            if !range.is_empty() {
+                for frame in &mut session.frames {
+                    if let Some(reads) = &mut frame.boundary_reads {
+                        part_prefix::observe_read(&session.budget, reads, space, range.clone())?;
+                    }
+                }
+            }
             let Some(owner) = session
                 .frames
                 .iter()
@@ -703,15 +721,11 @@ impl SessionHandle<'_> {
                     };
                     record.reads.insert(stream, delta.ranges);
                 }
-                reserve_captures(
-                    &session.budget,
-                    &mut frame.captures,
-                    std::slice::from_ref(&record),
-                )?;
+                reserve_working(&session.budget, &mut frame.captures, 1)?;
                 frame.captures.push(record);
             }
             if let Some(parent) = session.frames.last_mut() {
-                reserve_captures(&session.budget, &mut parent.captures, &frame.captures)?;
+                reserve_working(&session.budget, &mut parent.captures, frame.captures.len())?;
                 parent.captures.extend(frame.captures);
                 reserve_working(&session.budget, &mut parent.retired, frame.retired.len())?;
                 parent.retired.extend(frame.retired);
@@ -936,6 +950,7 @@ impl Session {
             part_attempts: part.then(Vec::new),
             retired: Vec::new(),
             primaries,
+            boundary_reads: None,
         });
         Ok(token)
     }

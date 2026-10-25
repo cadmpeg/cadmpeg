@@ -1,0 +1,37 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "478",
+        "crc32": "1305783e",
+        "data_offset": "39",
+        "header_offset": "0",
+        "signature": "PV-PVS0304"
+      },
+      "compression": "stored",
+      "name": "model.pvs",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 439
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "pvs_signature": "PV-PVS0304"
+        },
+        "dialect": "pvz:pvs-0304"
+      }
+    }
+  },
+  "notes": [
+    "structure member model.pvs; 0 geometry members"
+  ]
+}

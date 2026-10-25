@@ -100,6 +100,17 @@
       },
       {
         "code": {
+          "code": "export.no-exportable-solids",
+          "kind": "no_exportable_solids",
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "the document holds no geometry that IGES can encode",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "writer.minimum-resolution-adjusted",
           "kind": "metadata_not_transferred",
           "namespace": "iges",
@@ -115,7 +126,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 14 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 14 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D27, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "info"
       },
       {
@@ -125,7 +136,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 14 native record(s) from `iges.entities`",
+        "message": "the iges write omits 14 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#23, iges:entity:directory#25, iges:entity:directory#27, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -135,7 +146,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],
@@ -239,20 +250,20 @@
             "properties": {
               "disposition": "dropped",
               "records": {
-                "iges:application:property#D1": "regenerated",
-                "iges:application:property#D11": "regenerated",
-                "iges:application:property#D13": "regenerated",
-                "iges:application:property#D15": "regenerated",
-                "iges:application:property#D17": "regenerated",
-                "iges:application:property#D19": "regenerated",
-                "iges:application:property#D21": "regenerated",
-                "iges:application:property#D23": "regenerated",
-                "iges:application:property#D25": "regenerated",
-                "iges:application:property#D27": "regenerated",
-                "iges:application:property#D3": "regenerated",
-                "iges:application:property#D5": "regenerated",
-                "iges:application:property#D7": "regenerated",
-                "iges:application:property#D9": "regenerated"
+                "iges:application:property#D1": "written",
+                "iges:application:property#D11": "written",
+                "iges:application:property#D13": "written",
+                "iges:application:property#D15": "written",
+                "iges:application:property#D17": "written",
+                "iges:application:property#D19": "written",
+                "iges:application:property#D21": "written",
+                "iges:application:property#D23": "written",
+                "iges:application:property#D25": "written",
+                "iges:application:property#D27": "written",
+                "iges:application:property#D3": "written",
+                "iges:application:property#D5": "written",
+                "iges:application:property#D7": "written",
+                "iges:application:property#D9": "written"
               }
             },
             "quarantined_directory_records": {

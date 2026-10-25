@@ -278,3 +278,54 @@ fn face_recipe_postlude_derives_delimiters_and_rejects_other_programs() {
         );
     }
 }
+
+#[test]
+fn face_recipe_ordinals_keep_zero_and_group_design_references() {
+    let mut references = Vec::new();
+    for (offset, design_reference) in [(100, 418), (100, 419), (125, 418), (150, 418), (175, 418)] {
+        let clause_index = (offset - 100) / 25;
+        references.push(serde_json::from_value::<crate::records::dimensions::DesignRecipeReference>(
+            serde_json::json!({"clause_index":clause_index,"selector":1,"selector_offset":offset,"token":"2","token_offset":offset+8,"design_reference":design_reference,"design_reference_offset":offset+17}),
+        ).unwrap());
+    }
+    let side = |fan: [i32; 3]| super::DesignTopologyRecipeSide {
+        header_value: fan[0],
+        scalars: fan[1..].to_vec(),
+        payload_prefix: vec![0],
+        entries: Vec::new(),
+    };
+    let structure = super::DesignFaceRecipeStructure {
+        root: 0,
+        prelude: [0, 2],
+        sides: [side([1, 0, 0]), side([2, 0, 0])],
+        postlude_value: None,
+    };
+    assert!(structure.has_valid_operand_ordinals(&references));
+    let wire = serde_json::to_value(&structure).unwrap();
+    assert_eq!(wire["sides"][0]["field_count"], 3);
+    assert_eq!(wire["sides"][0]["scalars"], serde_json::json!([0, 0]));
+    for pair in [[1, 0], [3, 0], [0, 1], [0, 2]] {
+        let mut valid = structure.clone();
+        valid.root = pair[0];
+        valid.prelude[0] = pair[1];
+        assert!(valid.has_valid_operand_ordinals(&references));
+    }
+    for value in [-1, 4, 5, i32::MAX] {
+        let mut invalid = structure.clone();
+        invalid.root = value;
+        assert!(!invalid.has_valid_operand_ordinals(&references));
+        invalid = structure.clone();
+        invalid.prelude[0] = value;
+        assert!(!invalid.has_valid_operand_ordinals(&references));
+        invalid = structure.clone();
+        invalid.sides[0].header_value = value;
+        assert!(!invalid.has_valid_operand_ordinals(&references));
+        invalid = structure.clone();
+        invalid.sides[1].scalars[1] = value;
+        assert!(!invalid.has_valid_operand_ordinals(&references));
+    }
+    let mut invalid = structure.clone();
+    invalid.prelude[1] = 3;
+    assert!(!invalid.has_valid_operand_ordinals(&references));
+    assert!(!structure.has_valid_operand_ordinals(&[]));
+}

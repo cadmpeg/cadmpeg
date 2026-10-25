@@ -50,17 +50,126 @@ fn binary_transform_dependencies_drop_transitively_and_keep_the_independent_poin
 }
 
 #[test]
-fn binary_late_transform_parameter_fault_drops_dependents_and_preserves_the_independent_peer() {
-    recovered_peer(
-        broken_transform_chain(false),
-        broken_transform_parameter(),
-        &Recovery {
-            peer: 5,
-            failures: 1,
-            detached: &[1],
-            dependents: &[3],
-        },
+fn binary_late_transform_value_fault_gives_up_only_its_value_part_and_drops_the_dependent_projection(
+) {
+    let original = broken_transform_chain(false);
+    let bytes = broken_transform_parameter();
+    assert_eq!(original.len(), bytes.len());
+    assert_eq!(
+        original.iter().zip(&bytes).filter(|(a, b)| a != b).count(),
+        1
     );
+    // The one changed byte is the control byte of the Transformation
+    // Matrix's last value, T3 (coefficient 12). Its format 7 has no width,
+    // so that 5-byte group, the last of the record, is one given-up
+    // `iges.binary_parameter_value`, and T3 is `null`. The record keeps its
+    // other 11 coefficients (iges.md, Binary Parameter Data; #215 rule 1).
+    let control = original
+        .iter()
+        .zip(&bytes)
+        .position(|(a, b)| a != b)
+        .unwrap();
+    let given_up = control..control + 5;
+    let baseline = crate::test_support::decode(original);
+    let decoded = crate::test_support::decode(bytes.clone());
+
+    // The point D3 needs the complete transformation, so its neutral record
+    // is dropped (#215 rule 2) and charges `geometry.not-projected` (iges.md,
+    // a missing required geometry field). The peer D5 is unchanged.
+    let peer = crate::ids::point(&crate::ids::Stem::directory(5_u32));
+    let vertex = crate::ids::vertex(&crate::ids::Stem::directory(5_u32));
+    assert_eq!(baseline.ir().model.points.len(), 2);
+    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().model.points[0].id, peer);
+    assert_eq!(
+        serde_json::to_value(&decoded.ir().model.points[0]).unwrap(),
+        serde_json::to_value(
+            baseline
+                .ir()
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == peer)
+                .unwrap()
+        )
+        .unwrap()
+    );
+    assert_eq!(decoded.ir().model.vertices.len(), 1);
+    assert_eq!(decoded.ir().model.vertices[0].id, vertex);
+
+    let native = decoded.ir().native.namespace("iges").unwrap();
+    let old = baseline.ir().native.namespace("iges").unwrap();
+    let entities = &native.arenas()["entities"];
+    let old_entities = &old.arenas()["entities"];
+    assert_eq!(
+        entities
+            .iter()
+            .map(|record| record.id())
+            .collect::<Vec<_>>(),
+        old_entities
+            .iter()
+            .map(|record| record.id())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        crate::test_support::binary_parts::entity_without_padding(&entities[0]),
+        crate::test_support::binary_parts::entity_with_given_up_rest(&old_entities[0], 11, 1)
+    );
+    assert_eq!(entities[1..], old_entities[1..]);
+    let mut transformations = serde_json::to_value(&old.arenas()["transformations"]).unwrap();
+    transformations[0]["coefficients"][11] = serde_json::Value::Null;
+    assert_eq!(
+        serde_json::to_value(&native.arenas()["transformations"]).unwrap(),
+        transformations
+    );
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+
+    let unknowns = native.arena_as::<NativeUnknownRecord>("unknowns").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let fidelity = decoded.source_fidelity();
+    let part = &fidelity.parts()[&unknowns[0].id];
+    assert_eq!(part.state(), &PartState::GivenUp {});
+    assert_eq!(part.level().as_str(), "iges.binary_parameter_value");
+    assert_eq!(part.offset(), u64::try_from(given_up.start).unwrap());
+    assert_eq!(part.byte_len(), u64::try_from(given_up.len()).unwrap());
+    let record = &fidelity.parts()[part.parent().unwrap()];
+    assert_eq!(record.level().as_str(), "iges.binary_parameter_record");
+    assert_eq!(record.state(), &PartState::Decoded {});
+    assert_eq!(
+        fidelity
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap()
+            .data(),
+        Some(&bytes[given_up])
+    );
+    assert_eq!(
+        fidelity
+            .parts()
+            .values()
+            .filter(|part| part.state() == &PartState::GivenUp {})
+            .count(),
+        1
+    );
+    let codes = |result: &cadmpeg_ir::codec::DecodeResult| {
+        let mut codes: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .map(|loss| loss.code.local_code().to_owned())
+            .collect();
+        codes.sort_unstable();
+        codes
+    };
+    let mut expected = codes(&baseline);
+    expected.extend(["geometry.not-projected", "record.unreadable"].map(str::to_owned));
+    expected.sort_unstable();
+    assert_eq!(codes(&decoded), expected);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "geometry.not-projected" && loss.message.contains("D1")
+    }));
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
 }
 
 #[test]

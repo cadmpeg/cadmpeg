@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 26470,
-      "payload_sha256": "02430344136892f9fc697337f0b85801b88ca7f1d9d0f1e112ead72afdf7555a"
+      "payload_len": 26494,
+      "payload_sha256": "3403c648091f8b310ce0551e26b04eb64babe1edea5dcfaab3382a1034bc3361"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -13,12 +13,12 @@
     {
       "name": "Compound.brp",
       "payload_len": 1477,
-      "payload_sha256": "601dd971920cfbf0d559aa63a3693b9a37bd74596a4b75163f4ea886993bcf0c"
+      "payload_sha256": "292cad249fd2bcdc586bcd2fbb288c957c3c45a7b8a72866262ffea3d6102216"
     },
     {
       "name": "Degenerate.brp",
       "payload_len": 1000,
-      "payload_sha256": "b15d0e9db3fbe0b9e1f190abc792ac3ad2abd5917e252014d13deeaab3aeddc1"
+      "payload_sha256": "a637f9cd12dcac010567552d80614965ec3138b7915e354242e2122524c99387"
     },
     {
       "name": "FreeformSurface.brp",
@@ -28,17 +28,17 @@
     {
       "name": "MultiShell.brp",
       "payload_len": 4911,
-      "payload_sha256": "82c3a6e38302b17db8483a18f384769ad9101212246ca24da0de876da47b2868"
+      "payload_sha256": "47cfa2886b83c9b730bc6978237f6221069d1fd07fd5f243d62344d609231f34"
     },
     {
       "name": "Revolved.brp",
       "payload_len": 2626,
-      "payload_sha256": "f5b152b0e7fd97043f9aeeaa8a2381318bccc4d354c527e20965a75677f3ce92"
+      "payload_sha256": "f01b0c2325332b2516b06742f59a03108766b36a1e2ee75feff79445412dc5bb"
     },
     {
       "name": "Seam.brp",
       "payload_len": 1086,
-      "payload_sha256": "bb4ce3a8200251b7b0b80a5cb9503d80cb869922a8275ff0fc5204c28a9c7824"
+      "payload_sha256": "2408ad3056d54f570534bb5892ecd9c6aa4fcb7a109a9192d0ca372deb828824"
     },
     {
       "name": "Shape1.brp",
@@ -58,17 +58,17 @@
     {
       "name": "Solid.brp",
       "payload_len": 2561,
-      "payload_sha256": "84ec758500201896ae2a36018621389c400f8f6d4c205800421acd6de2667429"
+      "payload_sha256": "32a28957914841cabc4b1d7c6715ecc276795030d66c9870ff2fcb26a005eda7"
     },
     {
       "name": "Swept.brp",
       "payload_len": 1054,
-      "payload_sha256": "f4df8f2e026577cb0896582d51eb41aae8a03e168e1eb1421f339ec1cf629605"
+      "payload_sha256": "2b97f61faaedf58aa94f7eb42cbcb2bb69e836351a20828f4545f617ab7a50db"
     },
     {
       "name": "Void.brp",
-      "payload_len": 5014,
-      "payload_sha256": "b16db1818c3a9f2cdeacfc792c13c326503a6a3a3cd5ba46d9f15d307c980e6d"
+      "payload_len": 4993,
+      "payload_sha256": "c7728986e9fbea32f2c3f221687f4695ae5cdf1c78fe89e65952041dca28c6c9"
     }
   ],
   "report": {
@@ -327,7 +327,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.element_maps`",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.element_maps`: fcstd:native:element-map#CurveCarriers:Shape:map",
         "severity": "info"
       },
       {
@@ -337,7 +337,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 15 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 15 native record(s) from `fcstd.entries`: fcstd:native:entry#Compound.Shape.Map.txt, fcstd:native:entry#Compound.Shape.brp, fcstd:native:entry#CurveCarriers.Shape.Map.txt, fcstd:native:entry#CurveCarriers.Shape.brp, fcstd:native:entry#Degenerate.Shape.brp, fcstd:native:entry#FreeformSurface.Shape.brp, fcstd:native:entry#MultiShell.Shape.Map.txt, fcstd:native:entry#MultiShell.Shape.brp, fcstd:native:entry#Revolved.Shape.brp, fcstd:native:entry#Seam.Shape.brp, fcstd:native:entry#Sheet.Shape.brp, fcstd:native:entry#Solid.Shape.brp, fcstd:native:entry#Swept.Shape.brp, fcstd:native:entry#Void.Shape.brp, fcstd:native:entry#Wire.Shape.brp",
         "severity": "info"
       },
       {
@@ -347,7 +347,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 15 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 15 native record(s) from `fcstd.properties`: fcstd:native:property#Compound:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#CurveCarriers:ExpressionEngine, fcstd:native:property#CurveCarriers:Shape, fcstd:native:property#Degenerate:ExpressionEngine, fcstd:native:property#FreeformSurface:ExpressionEngine, fcstd:native:property#MultiShell:ExpressionEngine, fcstd:native:property#Revolved:ExpressionEngine, fcstd:native:property#Seam:ExpressionEngine, fcstd:native:property#Sheet:ExpressionEngine, fcstd:native:property#Solid:ExpressionEngine, fcstd:native:property#Swept:ExpressionEngine, fcstd:native:property#Void:ExpressionEngine, fcstd:native:property#Wire:ExpressionEngine, fcstd:native:property#Wire:Shape",
         "severity": "info"
       },
       {
@@ -357,7 +357,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.shape_payloads`",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#CurveCarriers:Shape:CurveCarriers.Shape.brp, fcstd:native:shape-payload#Wire:Shape:Wire.Shape.brp",
         "severity": "info"
       }
     ],
@@ -617,9 +617,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

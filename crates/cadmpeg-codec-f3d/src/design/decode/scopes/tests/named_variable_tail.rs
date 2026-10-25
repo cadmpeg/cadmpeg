@@ -78,7 +78,7 @@ fn parameter_scope_parses_named_variable_tail() {
             .collect::<Vec<_>>(),
         [55]
     );
-    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
+    assert_eq!(scope.frame_length(), Some(u64_from_index(paired_at)));
 
     let mut owner_scope = scope.clone();
     owner_scope
@@ -141,6 +141,6 @@ fn parameter_scope_parses_named_variable_tail() {
     assert_eq!(operation.angle.get(), 0.0);
     assert_eq!(operation.angle_record_index, 327);
     assert_eq!(operation.opposite_angle_record_index, 330);
-    assert_eq!(operation.angle_offset, 111);
-    assert_eq!(operation.opposite_angle_offset, 222);
+    assert_eq!(operation.angle_offset, Some(111));
+    assert_eq!(operation.opposite_angle_offset, Some(222));
 }

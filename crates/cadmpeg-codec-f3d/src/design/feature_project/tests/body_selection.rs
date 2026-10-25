@@ -75,17 +75,17 @@ fn copied_body_fixture() -> (DesignParameterScope, DesignBodyBinding) {
         *slot = Some(
             DesignCopyPasteBodiesOperation::try_new(
                 vec![DesignCopiedBody {
-                    operand: crate::records::identity::Located {
+                    operand: crate::records::identity::Sourced {
                         value: 502,
-                        offset: 26,
+                        offset: Some(26),
                     },
-                    source: crate::records::identity::Located {
+                    source: crate::records::identity::Sourced {
                         value: 10,
-                        offset: 25,
+                        offset: Some(25),
                     },
-                    copied: crate::records::identity::Located {
+                    copied: crate::records::identity::Sourced {
                         value: 20,
-                        offset: 40,
+                        offset: Some(40),
                     },
                 }],
                 crate::records::feature::body_ops::CopyPasteRecordLocation {

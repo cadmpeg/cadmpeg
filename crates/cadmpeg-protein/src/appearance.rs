@@ -196,10 +196,9 @@ fn finite_float_property(
     suffix: &str,
     default: FiniteReal,
 ) -> FiniteReal {
-    match property_with_suffix(record, suffix) {
-        Some(crate::property::PropertyValue::Float(value)) => *value,
-        _ => default,
-    }
+    property_with_suffix(record, suffix)
+        .and_then(crate::property::PropertyValue::float_value)
+        .unwrap_or(default)
 }
 
 fn boolean_property(record: &crate::DecodedRecord, suffix: &str) -> Option<bool> {

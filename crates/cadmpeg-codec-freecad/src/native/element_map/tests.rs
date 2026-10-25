@@ -317,13 +317,34 @@ fn topology_binding_preserves_empty_indexed_name_slots() {
     );
     let group = nodes.root().groups[0].as_ref().unwrap();
     assert_eq!(
-        crate::element_map::topology_ids(&nodes, group, &occurrences, "property", 1)
+        occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.property == "property"
+                    && occurrence.indexed_name == group.indexed_name
+                    && occurrence.source_index == 1
+            })
+            .map(|occurrence| occurrence.topology_id.as_str())
             .collect::<Vec<_>>(),
         ["edge-first-placement", "edge-second-placement"]
     );
+    assert!(group.names[0].as_ref().unwrap().is_empty());
     assert_eq!(
-        crate::element_map::topology_ids(&nodes, group, &occurrences, "property", 2).count(),
-        0
+        group.names[1].as_ref().unwrap()[0].resolved.as_deref(),
+        Some("stable")
+    );
+    assert!(group.names[2].as_ref().unwrap().is_empty());
+    assert_eq!(
+        occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.property == "property"
+                    && occurrence.indexed_name == group.indexed_name
+                    && occurrence.source_index == 2
+            })
+            .map(|occurrence| occurrence.topology_id.as_str())
+            .collect::<Vec<_>>(),
+        ["unmapped-edge"]
     );
     assert!(
         serde_json::to_value(nodes).unwrap()[0]["groups"][0]["names"][1][0]

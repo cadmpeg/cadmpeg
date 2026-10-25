@@ -343,7 +343,9 @@ struct DesignProjectionGaps {
     unprojected_sketch_curves: usize,
     unprojected_sketch_surfaces: usize,
     unprojected_sketch_texts: usize,
+    unprojected_sketch_text_styles: usize,
     unprojected_sketch_relations: usize,
+    unprojected_sketch_pattern_states: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
     path_selections: usize,
@@ -530,7 +532,8 @@ fn linear_termination_is_resolved(termination: &cadmpeg_ir::features::LinearTerm
         | LinearTermination::ThroughAll {}
         | LinearTermination::ThroughNext {}
         | LinearTermination::ToFirst {}
-        | LinearTermination::ToLast {} => true,
+        | LinearTermination::ToLast {}
+        | LinearTermination::ToPlane { .. } => true,
     }
 }
 
@@ -643,7 +646,9 @@ fn feature_definition_is_incomplete_with_parameters(
             let start_is_resolved = match start {
                 ExtrudeStart::Unresolved {} => false,
                 ExtrudeStart::FromFace { face, .. } => face_selection_is_resolved(face),
-                ExtrudeStart::ProfilePlane {} | ExtrudeStart::OffsetProfilePlane { .. } => true,
+                ExtrudeStart::ProfilePlane {}
+                | ExtrudeStart::OffsetProfilePlane { .. }
+                | ExtrudeStart::FromPlane { .. } => true,
             };
             let extent_is_resolved = match extent {
                 ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -1342,12 +1347,36 @@ fn design_projection_gaps(
         unprojected_sketch_texts: native
             .sketch_texts
             .iter()
-            .filter(|text| !projected_sketch_entity_refs.contains(text.id.as_str()))
+            .filter(|text| {
+                !projected_sketch_entity_refs.contains(text.id.as_str())
+                    && crate::design::decode::sketch::sketch_text_neutral_state(text) != Some(false)
+            })
+            .count(),
+        unprojected_sketch_text_styles: native
+            .sketch_texts
+            .iter()
+            .filter(|text| {
+                !projected_sketch_entity_refs.contains(text.id.as_str())
+                    && crate::design::decode::sketch::sketch_text_neutral_state(text) == Some(false)
+            })
             .count(),
         unprojected_sketch_relations: native
             .sketch_relations
             .iter()
-            .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
+            .filter(|relation| {
+                !projected_constraint_refs.contains(relation.id.as_str())
+                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation)
+                        != Some(false)
+            })
+            .count(),
+        unprojected_sketch_pattern_states: native
+            .sketch_relations
+            .iter()
+            .filter(|relation| {
+                !projected_constraint_refs.contains(relation.id.as_str())
+                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation)
+                        == Some(false)
+            })
             .count(),
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(native);
@@ -1792,6 +1821,18 @@ fn report_unparsed_parameter_records(
     }
 }
 
+fn report_unparsed_parameter_owners(report: &mut DecodeBody, count: usize) {
+    if count != 0 {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerUnparsed,
+            format_args!(
+                "{count} Design parameter owner binding(s) match no owner grammar; their parameters remain native without interpreted owner bindings."
+            ),
+        );
+    }
+}
+
 fn report_design_projection_gaps(
     report: &mut DecodeBody,
     ctx: &DecodeContext<'_>,
@@ -2098,6 +2139,22 @@ fn report_design_projection_gaps(
                 native.sketch_texts.iter().map(|record| record.id.as_str()),
                 &projected_refs
             )
+        ),
+    )?;
+    push(
+        F3dLossCode::SketchTextStyleUnprojected,
+        gaps.unprojected_sketch_text_styles,
+        format_args!(
+            "{} decoded sketch text record(s) retain unsupported style or orientation state.",
+            gaps.unprojected_sketch_text_styles
+        ),
+    )?;
+    push(
+        F3dLossCode::SketchPatternStateUnprojected,
+        gaps.unprojected_sketch_pattern_states,
+        format_args!(
+            "{} sketch pattern(s) retain unsupported symmetry, suppression or flag state.",
+            gaps.unprojected_sketch_pattern_states
         ),
     )?;
     push(
@@ -2557,6 +2614,20 @@ impl<'a> F3dDecodeSession<'a> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let prereqs = self.decode_product_prereqs(&path)?;
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
+        report_unparsed_parameter_owners(
+            &mut self.report,
+            prereqs.design_parameter_owner_unparsed.len(),
+        );
+        if prereqs.design_superseded_scope_envelopes != 0 {
+            push_loss_vec(
+                &mut self.report.losses,
+                F3dLossCode::FeatureScopeEnvelopeSuperseded,
+                format_args!(
+                    "{} duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
+                    prereqs.design_superseded_scope_envelopes
+                ),
+            );
+        }
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)
@@ -2784,7 +2855,8 @@ impl<'a> F3dDecodeSession<'a> {
                 self.report.notes.extend(materials.notes);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
-                resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
+                let face_losses =
+                    resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
                 self.ir
                     .model
                     .appearance_bindings
@@ -2794,6 +2866,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.ir,
                     materials.has_topology_assignments,
                 );
+                self.report.losses.extend(face_losses);
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match &prereqs.xref {
                     Ok(Some(table)) => {
@@ -2836,6 +2909,11 @@ impl<'a> F3dDecodeSession<'a> {
             scan,
             &prereqs.design_component_naming_spaces,
         )?;
+        self.report
+            .losses
+            .extend(crate::design::decode::components::revised_definitions_loss(
+                &local_components,
+            ));
         let bodies = self
             .ir
             .model
@@ -2905,6 +2983,20 @@ impl<'a> F3dDecodeSession<'a> {
         self.ir.model.assembly_joints = joints.joints;
         self.report.losses.extend(joints.losses);
         projections::standalone_product(&mut self.ir, &self.native);
+        let joint_placed = crate::design::assembly::joint_placed_identity_occurrences(
+            &self.ir.model.occurrences,
+            self.ir
+                .model
+                .assembly_joints
+                .iter()
+                .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors)
+                .map(|connector| &connector.operand.container),
+        );
+        self.report
+            .losses
+            .extend(crate::design::assembly::joint_placed_occurrence_loss(
+                joint_placed,
+            ));
         Ok(finalize_path)
     }
 
@@ -2921,6 +3013,11 @@ impl<'a> F3dDecodeSession<'a> {
                     return Err(CodecError::malformed("source pointer owner is duplicated"));
                 }
             }
+            crate::design::decode::scopes::parameter_scope::add_scope_source_pointers(
+                self.ctx,
+                &mut design.design_parameter_scopes,
+                &mut source_layout_pointers,
+            )?;
         }
         self.report
             .losses
@@ -3923,6 +4020,13 @@ fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close and had no valid carrier.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
+    if table.placement_metadata_missing && !table.references.is_empty() {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::XrefPlacementMetadataMissing,
+            format_args!("external-reference placements were not inferred from Design streams without a paired MetaStream type table and record index"),
+        );
+    }
     for ordinal in &table.placement_failures {
         let Some(reference) = table
             .references
@@ -4478,6 +4582,13 @@ fn populate_annotations(
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
                 note!(projected, "sketch_entity");
+                // Admitted z noise is read as zero, so the projected
+                // endpoints are derived rather than byte-exact.
+                if entity.planar_z_noise.is_some() {
+                    for field in ["geometry.start", "geometry.end"] {
+                        annotations.derived(projected, field)?;
+                    }
+                }
             }
         }
         for entity in &native.sketch_surfaces {
@@ -5125,18 +5236,18 @@ pub(crate) fn reconcile_appearance_loss(
 pub(crate) fn resolve_face_appearance_bindings(
     ir: &mut CadIr,
     face_assignments: &[materials::FaceAppearanceAssignment],
-) -> Result<(), CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
     use std::collections::btree_map::Entry;
 
     struct Assignment<'a> {
-        visual_guid: &'a crate::records::references::DesignVisualToken,
+        visual_guid: Option<&'a crate::records::references::DesignVisualToken>,
         color: Option<cadmpeg_ir::topology::Color>,
     }
 
     if face_assignments.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let mut assignments_by_guid = std::collections::BTreeMap::new();
@@ -5144,17 +5255,17 @@ pub(crate) fn resolve_face_appearance_bindings(
         match assignments_by_guid.entry(assignment.face_guid.as_str()) {
             Entry::Vacant(entry) => {
                 entry.insert(Assignment {
-                    visual_guid: &assignment.visual_guid,
+                    visual_guid: Some(&assignment.visual_guid),
                     color: assignment.color,
                 });
             }
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
-                if !existing.visual_guid.matches(&assignment.visual_guid) {
-                    return Err(CodecError::malformed(format_args!(
-                        "F3D face material GUID {} carries conflicting visual tokens",
-                        assignment.face_guid
-                    )));
+                if existing
+                    .visual_guid
+                    .is_some_and(|token| !token.matches(&assignment.visual_guid))
+                {
+                    existing.visual_guid = None;
                 }
                 match (existing.color, assignment.color) {
                     (Some(left), Some(right)) if left != right => {
@@ -5245,15 +5356,21 @@ pub(crate) fn resolve_face_appearance_bindings(
         face_indices.insert(id, index);
     }
     let mut new_bindings = Vec::new();
+    let mut losses = Vec::new();
     for (face_guid, assignment) in assignments_by_guid {
         let Some(faces) = faces_by_guid.get(face_guid) else {
             continue;
         };
-        let appearance = materials::appearance_for_visual_token(
-            &ir.model.appearances,
-            assignment.visual_guid,
-            None,
-        )?;
+        let appearance = if let Some(token) = assignment.visual_guid {
+            materials::appearance_for_visual_token(&ir.model.appearances, token, None)?
+        } else {
+            losses.push(F3dLossCode::FaceAppearanceAmbiguous.note(format!(
+                "{} face(s) share a material GUID with distinct visual tokens; \
+                 the face appearance was not selected. Assignment records remain in the source image.",
+                faces.len()
+            )));
+            None
+        };
         for face in faces {
             if let Some(color) = assignment.color {
                 if let Some(index) = face_indices.get(face.as_str()).copied() {
@@ -5264,6 +5381,9 @@ pub(crate) fn resolve_face_appearance_bindings(
                 }
             }
             let Some(appearance) = appearance.as_ref() else {
+                continue;
+            };
+            let Some(visual_guid) = assignment.visual_guid else {
                 continue;
             };
             if let Some(existing) = bound_faces.get(*face) {
@@ -5278,16 +5398,13 @@ pub(crate) fn resolve_face_appearance_bindings(
             bound_faces.insert(*face, &appearance.id);
             let target = AppearanceTarget::Face((*face).clone());
             let appearance_id = appearance.id.clone();
-            let id = crate::ids::face_appearance_binding_id(
-                face_guid,
-                assignment.visual_guid.identity_key(),
-                face,
-            )
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "F3D face appearance binding identity is invalid: {error}"
-                ))
-            })?;
+            let id =
+                crate::ids::face_appearance_binding_id(face_guid, visual_guid.identity_key(), face)
+                    .map_err(|error| {
+                        CodecError::malformed(format_args!(
+                            "F3D face appearance binding identity is invalid: {error}"
+                        ))
+                    })?;
             new_bindings.push(AppearanceBinding {
                 native_ref: None,
                 // The face id completes the key: one appearance attribute GUID
@@ -5305,7 +5422,7 @@ pub(crate) fn resolve_face_appearance_bindings(
     }
     drop(bound_faces);
     ir.model.appearance_bindings.extend(new_bindings);
-    Ok(())
+    Ok(losses)
 }
 
 pub(crate) mod design_intent;

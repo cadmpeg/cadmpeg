@@ -495,12 +495,16 @@ fn oriented_face_subtype_composes_face_orientation() {
 
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(
+        decoded.ir().model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Forward
+    );
     assert!(decoded
         .ir()
         .model
         .coedges
         .iter()
-        .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Reversed));
+        .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Forward));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -530,7 +534,7 @@ fn nested_oriented_faces_compose_back_to_the_base_orientation() {
         .model
         .coedges
         .iter()
-        .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Forward));
+        .all(|coedge| coedge.sense == cadmpeg_ir::topology::Sense::Reversed));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

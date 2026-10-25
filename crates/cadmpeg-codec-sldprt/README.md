@@ -8,7 +8,7 @@ ResolvedFeatures sketch-entity records.
 
 <!-- generated: capability sldprt -->
 
-Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
+Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidworks-sldprt)).
 
 <!-- /generated: capability sldprt -->
 
@@ -110,15 +110,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 the retained `source_fidelity` sidecar replays an unchanged source image byte
 for byte after an integrity check, and patches supported edits in place.
 Geometry-only changes may retain or patch the native Parasolid partition when
-the entity graph and provenance permit it. Encoding without that sidecar, or
-when the retained image cannot be replayed, regenerates the container and
-semantic records for the supported source-less profile.
+the entity graph and provenance permit it. Container regeneration requires a
+retained envelope with validated local, central-directory, and end-of-directory
+signature tokens. Source-less IR and unproved envelopes are refused before
+output is written.
 
 Retained writing can synchronize supported feature, sketch, parameter,
 configuration, active-configuration XML, and PMI edits while rejecting
 structural edits it cannot safely rewrite.
 
-Semantic regeneration accepts solid bodies with at most five regions and at
+With a validated retained envelope, semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It
 writes analytic and non-periodic NURBS geometry, body and face base colors,
 selected document attributes, sequential triangle strips, feature history, and

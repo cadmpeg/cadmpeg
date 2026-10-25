@@ -97,6 +97,9 @@ pub(crate) struct SketchCurveSelectionResolution<'a> {
     pub(crate) groups: &'a [DesignConstructionOperandGroup],
     /// Nested entity-selection operands.
     pub(crate) operands: &'a [DesignEntitySelectionOperand],
+    /// Typed-reference profile selections listing Sketch curve loops.
+    pub(crate) profile_curves:
+        &'a [crate::records::topology::entity_selection::DesignProfileCurveSelection],
     /// Projected Sketch placement carriers.
     pub(crate) placements: &'a [DesignSketchPlacement],
     /// Persistent Sketch curve identities.
@@ -114,6 +117,7 @@ pub(crate) struct SketchCurveSelectionResolution<'a> {
 #[derive(Clone, Copy)]
 struct EntitySelectionPathResolution<'a> {
     operands: &'a [DesignEntitySelectionOperand],
+    profile_curves: &'a [crate::records::topology::entity_selection::DesignProfileCurveSelection],
     placements: &'a [DesignSketchPlacement],
     curve_identities: &'a [SketchCurveIdentity],
     sketches: &'a [cadmpeg_ir::sketches::Sketch],
@@ -126,6 +130,7 @@ impl<'a> SketchCurveSelectionResolution<'a> {
     fn path_resolution(&self) -> EntitySelectionPathResolution<'a> {
         EntitySelectionPathResolution {
             operands: self.operands,
+            profile_curves: self.profile_curves,
             placements: self.placements,
             curve_identities: self.curve_identities,
             sketches: self.sketches,
@@ -1172,21 +1177,11 @@ fn transition_profile_selection(
     }
     let entities = resolution.entities;
     let profile_work = resolution.profile_work;
-    let mut states = resolution
-        .histories
-        .iter()
-        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == state_id);
-    let (history, state) = geometric!(states.next());
-    if states.next().is_some()
-        || state
-            .transition
-            .as_ref()
-            .and_then(|transition| transition.previous_state_id)
-            != Some(previous_state_id)
-    {
-        return Ok(None);
-    }
+    let (history, state) = geometric!(linked_transition_state(
+        resolution.histories,
+        state_id,
+        previous_state_id
+    ));
     let topology = geometric!(history.topology(state));
     let inserted_faces = &geometric!(state.transition.as_ref())
         .topology
@@ -1196,18 +1191,26 @@ fn transition_profile_selection(
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = resolution.linear_tolerance;
     let mut inserted_selections = Vec::new();
+    let mut cap_selections = Vec::new();
     for face in inserted_faces {
-        let selection = match historical_face_points(*face, topology) {
+        let points = historical_face_points(*face, topology);
+        let selection = match points.as_deref() {
             Some(points) => selection_containing_points(
                 sketch,
                 entities,
-                &points,
+                points,
                 tolerance,
                 profile_work,
                 resolution.ctx,
             )?,
             None => None,
         };
+        if points
+            .as_deref()
+            .is_some_and(|points| points_share_sketch_offset(sketch, points, tolerance))
+        {
+            cap_selections.push(selection.clone());
+        }
         inserted_selections.push(selection);
     }
     let inserted = transition_inserted_profile_selection(
@@ -1220,6 +1223,14 @@ fn transition_profile_selection(
     )?;
     if inserted.is_some() {
         return Ok(inserted);
+    }
+    // A cap lies in one plane parallel to the Sketch and repeats the profile.
+    // Side faces that a Boolean merges with existing faces can select other
+    // loops, so agreeing caps prove the selection over differing side faces.
+    if !cap_selections.is_empty() && cap_selections.iter().all(Option::is_some) {
+        if let Some(selection) = unique_resolved_selection(cap_selections) {
+            return Ok(Some(selection));
+        }
     }
     let mut cylindrical_selections = Vec::new();
     for face in inserted_faces {
@@ -1236,11 +1247,16 @@ fn transition_profile_selection(
     if let Some(selection) = unique_resolved_selection(cylindrical_selections) {
         return Ok(Some(selection));
     }
+    // Deleted faces exist in the state immediately before the transition.
+    let immediate_previous_state_id = geometric!(state
+        .transition
+        .as_ref()
+        .and_then(|transition| transition.previous_state_id));
     let mut previous_states = resolution
         .histories
         .iter()
         .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == previous_state_id);
+        .filter(|(_, state)| state.state_id == immediate_previous_state_id);
     let (previous_history, previous) = geometric!(previous_states.next());
     if previous_states.next().is_some() {
         return Ok(None);
@@ -1267,6 +1283,88 @@ fn transition_profile_selection(
         selections.push(selection);
     }
     Ok(ordered_unique_profile_selections(selections))
+}
+
+/// The unique state `state_id` whose transition links back to
+/// `previous_state_id`. The link is direct, or it passes through unique
+/// states whose transitions carry no history rows and neither insert nor
+/// delete any topology entity.
+fn linked_transition_state(
+    histories: &[crate::history_records::AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+) -> Option<(
+    &crate::history_records::AsmHistory,
+    &crate::history_records::AsmDeltaState,
+)> {
+    let unique_state = |id: i64| {
+        let mut states = histories
+            .iter()
+            .flat_map(|history| history.states().iter().map(move |state| (history, state)))
+            .filter(move |(_, state)| state.state_id == id);
+        let found = states.next()?;
+        states.next().is_none().then_some(found)
+    };
+    let found = unique_state(state_id)?;
+    let state_count: usize = histories.iter().map(|history| history.states().len()).sum();
+    let mut linked = found.1.transition.as_ref()?.previous_state_id?;
+    for _ in 0..state_count {
+        if linked == previous_state_id {
+            return Some(found);
+        }
+        let transition = unique_state(linked)?.1.transition.as_ref()?;
+        if transition.rows != crate::history_records::AsmHistoricalRowsDelta::default()
+            || !topology_delta_keeps_entities(&transition.topology)
+        {
+            return None;
+        }
+        linked = transition.previous_state_id?;
+    }
+    None
+}
+
+/// Whether a topology delta inserts and deletes no entity of any family.
+fn topology_delta_keeps_entities(
+    delta: &crate::history_records::AsmHistoricalTopologyDelta,
+) -> bool {
+    [
+        &delta.bodies,
+        &delta.regions,
+        &delta.shells,
+        &delta.faces,
+        &delta.loops,
+        &delta.coedges,
+        &delta.edges,
+        &delta.vertices,
+        &delta.points,
+        &delta.surfaces,
+        &delta.curves,
+        &delta.pcurves,
+    ]
+    .into_iter()
+    .all(|family| family.inserted.is_empty() && family.deleted.is_empty())
+}
+
+/// Whether every point lies at one offset along the Sketch normal.
+fn points_share_sketch_offset(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    points: &[Point3],
+    tolerance: f64,
+) -> bool {
+    let Some((origin, normal, _)) = sketch.resolved_placement() else {
+        return false;
+    };
+    let offset = |point: &Point3| {
+        (point.x - origin.x) * normal.x
+            + (point.y - origin.y) * normal.y
+            + (point.z - origin.z) * normal.z
+    };
+    let Some(first) = points.first().map(offset) else {
+        return false;
+    };
+    points
+        .iter()
+        .all(|point| (offset(point) - first).abs() <= tolerance)
 }
 
 fn inserted_cylindrical_profile_selection(
@@ -1453,22 +1551,10 @@ fn transition_spatial_profile_selection(
     previous_state_id: i64,
     linear_tolerance: f64,
 ) -> Result<Option<u32>, CodecError> {
-    let mut states = histories
-        .iter()
-        .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == state_id);
-    let Some((history, state)) = states.next() else {
+    let Some((history, state)) = linked_transition_state(histories, state_id, previous_state_id)
+    else {
         return Ok(None);
     };
-    if states.next().is_some()
-        || state
-            .transition
-            .as_ref()
-            .and_then(|transition| transition.previous_state_id)
-            != Some(previous_state_id)
-    {
-        return Ok(None);
-    }
     let Some(topology) = history.topology(state) else {
         return Ok(None);
     };
@@ -1498,10 +1584,14 @@ fn transition_spatial_profile_selection(
     if let Some(index) = unique(&transition.topology.faces.inserted, topology)? {
         return Ok(Some(index));
     }
+    // Deleted faces exist in the state immediately before the transition.
+    let Some(immediate_previous_state_id) = transition.previous_state_id else {
+        return Ok(None);
+    };
     let mut previous_states = histories
         .iter()
         .flat_map(|history| history.states().iter().map(move |state| (history, state)))
-        .filter(|(_, state)| state.state_id == previous_state_id);
+        .filter(|(_, state)| state.state_id == immediate_previous_state_id);
     let Some((previous_history, previous)) = previous_states.next() else {
         return Ok(None);
     };
@@ -1737,6 +1827,7 @@ pub(super) fn historical_face_points(
         .iter()
         .find(|relation| relation.owner_ref == face)?;
     let mut positions = Vec::new();
+    let mut closed_edges_only = true;
     for loop_ref in &loops.member_refs {
         let coedges = topology
             .loop_coedges
@@ -1751,6 +1842,7 @@ pub(super) fn historical_face_points(
                 .edge_vertices
                 .iter()
                 .find(|edge| edge.edge == coedge.edge)?;
+            closed_edges_only &= edge.start_vertex == edge.end_vertex;
             for vertex_ref in [edge.start_vertex, edge.end_vertex] {
                 let point_ref = topology
                     .vertex_points
@@ -1768,7 +1860,10 @@ pub(super) fn historical_face_points(
             }
         }
     }
-    (positions.len() >= 3).then_some(positions)
+    // Three distinct vertices span a polygonal boundary. A boundary made only
+    // of closed edges, such as full circles, has one vertex per edge, and
+    // those vertices are its complete point set.
+    (positions.len() >= 3 || (closed_edges_only && !positions.is_empty())).then_some(positions)
 }
 
 fn historical_selection_regions(
@@ -2227,6 +2322,7 @@ impl<'a> SketchProfileResolution<'a> {
     fn path_resolution(&self) -> EntitySelectionPathResolution<'a> {
         EntitySelectionPathResolution {
             operands: self.entity_selection_operands,
+            profile_curves: &[],
             placements: self.placements,
             curve_identities: self.curve_identities,
             sketches: self.sketches,
@@ -2235,6 +2331,116 @@ impl<'a> SketchProfileResolution<'a> {
             spatial_sketch_entities: self.spatial_sketch_entities,
         }
     }
+}
+
+/// Resolve a group whose members are typed-reference profile selections.
+///
+/// Every member has exactly one selection. All selections name one Sketch
+/// scope through their chain record; exactly one Sketch placement carries
+/// that scope, and its entity suffix equals every selection's owner text.
+/// Every listed curve then resolves to exactly one curve identity of that
+/// Sketch. Any other outcome keeps the selection native.
+fn resolve_profile_curve_path(
+    group: &DesignConstructionOperandGroup,
+    stream: &str,
+    resolution: &EntitySelectionPathResolution<'_>,
+) -> Option<cadmpeg_ir::features::PathRef> {
+    use cadmpeg_ir::features::PathRef;
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    macro_rules! available {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return None,
+            }
+        };
+    }
+    let mut sketch_scope = None;
+    let mut owner_text = None;
+    let mut selections = Vec::new();
+    for (ordinal, record_index) in group
+        .members()
+        .iter()
+        .map(|member| member.value)
+        .enumerate()
+    {
+        let ordinal = available!(u32::try_from(ordinal).ok());
+        let mut matches = resolution.profile_curves.iter().filter(|selection| {
+            native_stream(&selection.id) == Some(stream)
+                && selection.scope_record_index == group.scope_record_index
+                && selection.group_record_index == group.record_index
+                && selection.group_member_ordinal == ordinal
+                && selection.record_index == record_index
+        });
+        let selection = available!(matches.next());
+        if matches.next().is_some()
+            || sketch_scope.is_some_and(|scope| scope != selection.sketch_scope_record_index)
+            || owner_text.is_some_and(|text: &str| text != selection.owner_text)
+        {
+            return None;
+        }
+        sketch_scope = Some(selection.sketch_scope_record_index);
+        owner_text = Some(selection.owner_text.as_str());
+        selections.push(selection);
+    }
+    let sketch_scope = available!(sketch_scope);
+    let mut matching_placements = resolution.placements.iter().filter(|placement| {
+        native_stream(&placement.id) == Some(stream)
+            && placement.scope_record_index == Some(sketch_scope)
+    });
+    let placement = available!(matching_placements.next());
+    if matching_placements.next().is_some()
+        || owner_text != Some(placement.entity_id.suffix().to_string().as_str())
+    {
+        return None;
+    }
+    let owner_reference = available!(u32::try_from(placement.entity_id.suffix()).ok());
+    let sketch = crate::ids::neutral_sketch_id(placement);
+    if !resolution
+        .sketches
+        .iter()
+        .any(|candidate| candidate.id == sketch)
+    {
+        return None;
+    }
+    let mut seen = HashSet::new();
+    let mut curves = Vec::new();
+    for entry in selections
+        .iter()
+        .flat_map(|selection| selection.loop_lists.iter().flatten().flatten())
+    {
+        let mut matches = resolution.curve_identities.iter().filter(|curve| {
+            native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(owner_reference)
+                && curve.primary_id.get() == entry.primary_id
+                && (entry.secondary_id == 0 || curve.secondary_id == entry.secondary_id)
+        });
+        let curve = available!(matches.next());
+        if matches.next().is_some() {
+            return None;
+        }
+        let identity = (curve.primary_id.get(), curve.secondary_id);
+        if !seen.insert(identity) {
+            return None;
+        }
+        curves.push(crate::ids::neutral_sketch_curve_id(
+            &sketch, identity.0, identity.1,
+        ));
+    }
+    if curves.iter().any(|curve| {
+        !resolution.sketch_entities.iter().any(|entity| {
+            entity.sketch == sketch
+                && entity.id() == curve
+                && !matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+        })
+    }) {
+        return None;
+    }
+    PathRef::sketch_curves(sketch, curves).ok()
 }
 
 /// Resolve one complete ordered entity-selection group to a neutral Sketch
@@ -2261,6 +2467,13 @@ fn resolve_entity_selection_path(
         return None;
     }
     let stream = available!(native_stream(&group.id));
+    if resolution.profile_curves.iter().any(|selection| {
+        native_stream(&selection.id) == Some(stream)
+            && selection.scope_record_index == group.scope_record_index
+            && selection.group_record_index == group.record_index
+    }) {
+        return resolve_profile_curve_path(group, stream, resolution);
+    }
     let mut selected_identities = Vec::new();
     let mut member_records = HashSet::new();
     let mut primary_identity = None;

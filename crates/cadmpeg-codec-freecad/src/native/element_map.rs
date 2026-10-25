@@ -124,16 +124,6 @@ impl TryFrom<Vec<ElementMapNode>> for ElementMapNodes {
 }
 
 impl ElementMapNodes {
-    pub(crate) fn node(&self, index: usize) -> Option<&ElementMapNode> {
-        if index == self.nodes.len() + 1 {
-            Some(&self.root)
-        } else {
-            self.nodes
-                .get(index.checked_sub(1)?)
-                .and_then(Option::as_ref)
-        }
-    }
-
     pub(crate) fn validate_child(
         node_index: usize,
         indexed_name: &str,

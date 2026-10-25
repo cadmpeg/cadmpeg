@@ -23,7 +23,12 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         br#"<?xml version="1.0"?><swSolidWorks swVersion="13100"><swModel swName="part" swConfigurationName="Default"/></swSolidWorks>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .expect("versioned part decodes");
     let (mut ir, _, fidelity) = decoded.into_parts();
     let attributes = ir
@@ -100,6 +105,11 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
     fidelity
         .insert_retained_record(source_image_id, record)
         .expect("source image identity is unique");
+    assert!(fidelity
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .is_some());
     let plan = Encoder::plan(
         &SldprtCodec,
         EncodeInput::new(&ir, Some(&fidelity)),

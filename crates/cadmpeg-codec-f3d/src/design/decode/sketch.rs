@@ -212,8 +212,18 @@ pub(crate) fn decode_sketch_placements(
         let Some(records) = record_offsets.get(&stream_scope) else {
             continue;
         };
-        let start = usize::try_from(scope.byte_offset()).ok();
-        let end = usize::try_from(scope.paired_byte_offset()).ok();
+        let start = usize::try_from(
+            scope
+                .byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+        )
+        .ok();
+        let end = usize::try_from(
+            scope
+                .paired_byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+        )
+        .ok();
         let Some(frame) = start
             .zip(end)
             .and_then(|(start, end)| bytes.get(start..end))
@@ -298,8 +308,8 @@ pub(crate) fn decode_sketch_placements(
         let mut matching_scopes = scopes.iter().filter(|scope| {
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
                 && native_stream(&scope.id) == Some(stream)
-                && scope.byte_offset() > entity_offset
-                && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
+                && scope.byte_offset() > Some(entity_offset)
+                && next_entity_offset.is_none_or(|end| scope.byte_offset() < Some(end))
         });
         if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
             placement.scope_record_index = Some(scope.record_index);
@@ -475,6 +485,10 @@ fn decode_sketch_visibility_member(
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
+/// The explicit head frame whose closing reference at offset 151 carries an
+/// inline type GUID: forty bytes longer than the plain frame.
+const TYPED_MEMBER_RUN_HEAD_FRAME: usize = MEMBER_RUN_HEAD_FRAME + 40;
+
 /// Parse a member-run head placement: the paired same-index record after the
 /// sketch's entity header opens with a marked
 /// reference naming a head record. A 34-byte head denotes the identity
@@ -526,8 +540,11 @@ fn parse_member_run_head_placement(
                     paired_byte_offset: u64_from_index(paired_at),
                 }
             }
-            MEMBER_RUN_HEAD_FRAME
-                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) =>
+            MEMBER_RUN_HEAD_FRAME | TYPED_MEMBER_RUN_HEAD_FRAME
+                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..])
+                    && (frame_length == MEMBER_RUN_HEAD_FRAME
+                        || crate::bytes::typed_local_reference_target(bytes, head_at + 151)
+                            .is_some()) =>
             {
                 let values = f64s_at::<16>(bytes, head_at + 22)?;
                 let mut transform = [[0.0; 4]; 4];
@@ -540,6 +557,7 @@ fn parse_member_run_head_placement(
                 DesignSketchFrameForm::MemberExplicit {
                     paired_byte_offset: u64_from_index(paired_at),
                     transform: SketchPlacementMatrix::try_from(transform).ok()?,
+                    typed_reference: frame_length == TYPED_MEMBER_RUN_HEAD_FRAME,
                 }
             }
             _ => return None,
@@ -686,9 +704,12 @@ fn parse_sketch_placement_candidates(
 /// Decode the persistent u64 point and curve identity references
 /// (`pt_tag`, `crv_primary_id`, `crv_secondary_id`, each typed
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
-/// sorted by stream offset.
+/// sorted by stream offset. Each reference is parsed inside its record scope,
+/// and its source offsets are `record_layout` pointers in `pointers`.
 pub(crate) fn decode_persistent_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
+    pointers: &mut SourcePointers,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
     for (entry_ordinal, entry) in scan
@@ -697,8 +718,17 @@ pub(crate) fn decode_persistent_references(
         .enumerate()
         .filter(|(_, entry)| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        decode_persistent_references_from_stream(entry_ordinal, &entry.name, bytes, &mut out)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        decode_persistent_references_from_stream(
+            ctx,
+            entry_ordinal,
+            &entry.name,
+            source,
+            &mut out,
+            pointers,
+        )?;
     }
     Ok(finish_persistent_references(out))
 }
@@ -727,12 +757,64 @@ fn finish_persistent_references(
     references
 }
 
-fn decode_persistent_references_from_stream(
+/// The `IntrinsicMetaTypeuint64` type name of a persistent reference value.
+const PERSISTENT_REFERENCE_TYPE: &[u8] = b"IntrinsicMetaTypeuint64";
+
+/// The end of the persistent-reference property whose name ends at
+/// `after_name`: the type descriptor, the type name and the u64 value. The
+/// descriptor is the compact form (a u32 type-name length 23) or the long form
+/// (u32 2, u32 14, 14 bytes, then the u32 23). This locates the property
+/// (Appendix C `scan_recovery` of `f3d.bulk_property` for
+/// `persistent_references`); its scope parses it.
+fn persistent_property_end(bytes: &[u8], after_name: usize) -> Option<usize> {
+    let type_offset = if View::u32_le_at(bytes, after_name) == Some(23) {
+        after_name
+    } else if View::u32_le_at(bytes, after_name) == Some(2)
+        && View::u32_le_at(bytes, after_name + 4) == Some(14)
+        && View::u32_le_at(bytes, after_name + 22) == Some(23)
+    {
+        after_name + 22
+    } else {
+        return None;
+    };
+    type_offset
+        .checked_add(4 + PERSISTENT_REFERENCE_TYPE.len() + 8)
+        .filter(|end| *end <= bytes.len())
+}
+
+/// Parse one persistent-reference property, read whole from its record
+/// scope: the name, the type descriptor, the type name and the u64 value.
+/// Returns the value offset relative to the property start and the value.
+fn parse_persistent_property(property: &[u8], name: &[u8]) -> Option<(usize, u64)> {
+    if property.get(..name.len()) != Some(name) {
+        return None;
+    }
+    let after_name = name.len();
+    let type_offset = match View::u32_le_at(property, after_name)? {
+        23 => after_name,
+        2 if View::u32_le_at(property, after_name + 4) == Some(14) => after_name + 22,
+        _ => return None,
+    };
+    if View::u32_le_at(property, type_offset) != Some(23) {
+        return None;
+    }
+    let type_end = type_offset + 4 + PERSISTENT_REFERENCE_TYPE.len();
+    if property.get(type_offset + 4..type_end) != Some(PERSISTENT_REFERENCE_TYPE) {
+        return None;
+    }
+    let value = View::u64_le_at(property, type_end)?;
+    (type_end + 8 == property.len()).then_some((type_end, value))
+}
+
+pub(crate) fn decode_persistent_references_from_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entry_ordinal: usize,
     entry_name: &str,
-    bytes: &[u8],
+    source: View<'_>,
     out: &mut Vec<(usize, PersistentReference)>,
+    pointers: &mut SourcePointers,
 ) -> Result<(), CodecError> {
+    let bytes = source.window();
     for &(name, kind) in &[
         (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
         (
@@ -747,59 +829,75 @@ fn decode_persistent_references_from_stream(
         let mut cursor = 0;
         while let Some(offset) = find_from(bytes, name, cursor) {
             cursor = offset + name.len();
-            let compact_type_offset = offset + name.len();
-            let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
-                compact_type_offset
-            } else if View::u32_le_at(bytes, compact_type_offset) == Some(2)
-                && View::u32_le_at(bytes, compact_type_offset + 4) == Some(14)
-                && bytes
-                    .get(compact_type_offset + 8..compact_type_offset + 22)
-                    .is_some()
-                && View::u32_le_at(bytes, compact_type_offset + 22) == Some(23)
-            {
-                compact_type_offset + 22
-            } else {
+            let Some(end) = persistent_property_end(bytes, offset + name.len()) else {
                 continue;
             };
-            if View::u32_le_at(bytes, type_offset) != Some(23) {
-                continue;
+            let extent = source
+                .start()
+                .checked_add(offset)
+                .zip(source.start().checked_add(end))
+                .and_then(|(start, end)| source.child(start, end))
+                .ok_or_else(|| {
+                    CodecError::malformed("F3D persistent reference exceeds its stream")
+                })?;
+            let id = design_record_id(entry_name, ":persistent-reference#", u64_from_index(offset));
+            if pointers.contains_key(&id) {
+                return Err(CodecError::malformed(
+                    "F3D persistent-reference source owner is duplicated",
+                ));
             }
-            let type_name = b"IntrinsicMetaTypeuint64";
-            if bytes.get(type_offset + 4..type_offset + 4 + type_name.len()) != Some(type_name) {
-                continue;
-            }
-            let value_offset = type_offset + 4 + type_name.len();
-            let Some(value) = View::u64_le_at(bytes, value_offset) else {
-                continue;
-            };
-
-            out.push((
-                entry_ordinal,
-                PersistentReference {
-                    id: design_record_id(
-                        entry_name,
-                        ":persistent-reference#",
-                        u64_from_index(offset),
-                    ),
+            // The property grammar consumes every byte of its extent, so the
+            // scope reads the extent whole. A candidate that is not a property
+            // rolls its scope back and leaves no capture.
+            let parsed = ctx.record(&id, extent, || {
+                let property =
+                    extent
+                        .read_slice(extent.start()..extent.end())
+                        .ok_or_else(|| {
+                            CodecError::malformed("F3D persistent reference is unreadable")
+                        })?;
+                let (value_offset, value) =
+                    parse_persistent_property(property, name).ok_or_else(|| {
+                        CodecError::malformed(
+                            "F3D persistent-reference candidate is not a property",
+                        )
+                    })?;
+                let reference = PersistentReference {
+                    id: id.clone(),
                     byte_offset: Some(u64_from_index(offset)),
-                    value_offset: Some(u32::try_from(value_offset - offset).map_err(|_| {
+                    value_offset: Some(u32::try_from(value_offset).map_err(|_| {
                         CodecError::malformed(
                             "f3d persistent reference relative offset exceeds u32",
                         )
                     })?),
                     kind,
                     value,
-                },
-            ));
+                };
+                let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+                    ctx,
+                    reference.source_offsets(),
+                )?;
+                Ok((reference, fields))
+            });
+            let (reference, fields) = match parsed {
+                Ok(parsed) => parsed,
+                Err(CodecError::Malformed(_)) => continue,
+                Err(error) => return Err(error),
+            };
+            pointers.insert(id, fields);
+            out.push((entry_ordinal, reference));
         }
     }
     Ok(())
 }
 
 /// Decode every indexed `EDGE_REFERENCE_LOST` record from each design
-/// `BulkStream` entry in `scan`.
+/// `BulkStream` entry in `scan`. Each record is parsed inside its record
+/// scope, and its source offsets are `record_layout` pointers in `pointers`.
 pub(crate) fn decode_lost_edge_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
+    pointers: &mut SourcePointers,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -807,19 +905,82 @@ pub(crate) fn decode_lost_edge_references(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        decode_lost_edge_references_from_stream(&entry.name, bytes, &mut out)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let mut frame_ends = std::collections::BTreeMap::new();
+        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
+            for frame in crate::metastream::primary_record_frames(&meta, source.window().len())? {
+                frame_ends.insert(frame.start, frame.end);
+            }
+        }
+        decode_lost_edge_references_from_stream(
+            ctx,
+            &entry.name,
+            source,
+            &frame_ends,
+            &mut out,
+            pointers,
+        )?;
     }
     Ok(out)
 }
 
-fn decode_lost_edge_references_from_stream(
+/// The byte length of an `EDGE_REFERENCE_LOST` record from its header to the
+/// following indexed header: the 29-byte header and the 19-byte marker.
+const LOST_EDGE_RECORD_LENGTH: usize = 48;
+/// The byte length of the following indexed header that the record names: a
+/// u32 class-tag length 3, three ASCII digits and the u32 record index.
+const LOST_EDGE_NEXT_HEADER_LENGTH: usize = 11;
+
+/// Parse one lost-edge record and the following indexed header, each read
+/// whole from the record scope. Returns the class tag, the record index, the
+/// next class tag and the next record index.
+fn parse_lost_edge_record<'a>(
+    record: &'a [u8],
+    next: &'a [u8],
+    marker: &[u8],
+) -> Option<(&'a str, u32, &'a str, u32)> {
+    let (class_tag, after_tag) = lp_ascii_filtered_view(record, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if after_tag != 7
+        || record.get(11..25) != Some(&[0; 14])
+        || View::u32_le_at(record, 25) != u32::try_from(marker.len()).ok()
+        || record.get(29..) != Some(marker)
+    {
+        return None;
+    }
+    let record_index = View::u32_le_at(record, after_tag)?;
+    let (next_class_tag, after_next_tag) =
+        lp_ascii_filtered_view(next, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if after_next_tag != 7 {
+        return None;
+    }
+    let next_record_index = View::u32_le_at(next, after_next_tag)?;
+    (class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        && next_class_tag.bytes().all(|byte| byte.is_ascii_digit()))
+    .then_some((class_tag, record_index, next_class_tag, next_record_index))
+}
+
+pub(crate) fn decode_lost_edge_references_from_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entry_name: &str,
-    bytes: &[u8],
+    source: View<'_>,
+    frame_ends: &std::collections::BTreeMap<usize, usize>,
     out: &mut Vec<LostEdgeReference>,
+    pointers: &mut SourcePointers,
 ) -> Result<(), CodecError> {
+    let bytes = source.window();
     let marker = b"EDGE_REFERENCE_LOST";
+    let child = |start: usize, end: usize| {
+        source
+            .start()
+            .checked_add(start)
+            .zip(source.start().checked_add(end))
+            .and_then(|(start, end)| source.child(start, end))
+    };
     let mut cursor = 0;
+    // The marker locates candidate records (Appendix C `scan_recovery` of
+    // `f3d.bulk_class_members` for `lost_edge_references`).
     while let Some(relative) = bytes[cursor..]
         .windows(marker.len())
         .position(|window| window == marker)
@@ -829,55 +990,63 @@ fn decode_lost_edge_references_from_stream(
         let Some(header_offset) = offset.checked_sub(29) else {
             continue;
         };
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, header_offset, 0..=2000, u8::is_ascii_graphic)
-        else {
-            continue;
-        };
-        if after_tag != header_offset + 7
-            || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
-            || View::u32_le_at(bytes, header_offset + 25)
-                != Some(u32::try_from(marker.len()).map_err(|_| {
-                    CodecError::malformed("f3d lost edge marker length exceeds u32")
-                })?)
-        {
-            continue;
-        }
-        let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
-            continue;
-        };
-        let next_byte_offset = offset + marker.len();
-        let Some((next_class_tag, after_next_tag)) =
-            lp_ascii_filtered_view(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)
-        else {
-            continue;
-        };
-        if after_next_tag != next_byte_offset + 7 {
-            continue;
-        }
-        let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
-            continue;
-        };
-        if !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            continue;
-        }
-
-        let Ok(reference) = LostEdgeReference::new(
-            design_record_id(
-                entry_name,
-                ":lost-edge-reference#",
-                u64_from_index(header_offset),
-            ),
-            u64_from_index(header_offset),
-            class_tag.to_owned(),
-            record_index,
-            next_class_tag.to_owned(),
-            next_record_index,
+        let record_end = header_offset + LOST_EDGE_RECORD_LENGTH;
+        let (Some(record), Some(next)) = (
+            child(header_offset, record_end),
+            child(record_end, record_end + LOST_EDGE_NEXT_HEADER_LENGTH),
         ) else {
             continue;
         };
+        // An indexed record's extent is its primary-index frame.
+        let extent = match frame_ends.get(&header_offset) {
+            Some(&end) if end >= record_end => child(header_offset, end).ok_or_else(|| {
+                CodecError::malformed("F3D lost edge reference frame exceeds its stream")
+            })?,
+            _ => record,
+        };
+        let id = design_record_id(
+            entry_name,
+            ":lost-edge-reference#",
+            u64_from_index(header_offset),
+        );
+        if pointers.contains_key(&id) {
+            return Err(CodecError::malformed(
+                "F3D lost-edge-reference source owner is duplicated",
+            ));
+        }
+        // The record grammar consumes the record and the class tag and index
+        // of the following header; the scope reads both whole. A candidate
+        // that is not a record rolls its scope back and leaves no capture.
+        let parsed = ctx.record(&id, extent, || {
+            fn read(view: View<'_>) -> Result<&[u8], CodecError> {
+                view.read_slice(view.start()..view.end())
+                    .ok_or_else(|| CodecError::malformed("F3D lost edge reference is unreadable"))
+            }
+            let (class_tag, record_index, next_class_tag, next_record_index) =
+                parse_lost_edge_record(read(record)?, read(next)?, marker).ok_or_else(|| {
+                    CodecError::malformed("F3D lost-edge candidate is not a record")
+                })?;
+            let reference = LostEdgeReference::new(
+                id.clone(),
+                u64_from_index(header_offset),
+                class_tag.to_owned(),
+                record_index,
+                next_class_tag.to_owned(),
+                next_record_index,
+            )
+            .map_err(CodecError::Malformed)?;
+            let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+                ctx,
+                reference.source_offsets(),
+            )?;
+            Ok((reference, fields))
+        });
+        let (reference, fields) = match parsed {
+            Ok(parsed) => parsed,
+            Err(CodecError::Malformed(_)) => continue,
+            Err(error) => return Err(error),
+        };
+        pointers.insert(id, fields);
         out.push(reference);
     }
     Ok(())
@@ -1035,12 +1204,43 @@ fn parse_legacy_sketch_member_run(
     primary_at: usize,
     entity_suffix: u32,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    parse_legacy_sketch_member_run_with(bytes, primary_at, entity_suffix, false)
+        .or_else(|| parse_legacy_sketch_member_run_with(bytes, primary_at, entity_suffix, true))
+}
+
+/// Target of the local reference at `at` in one spelling: the eleven-byte
+/// `01 + u32 + six zero bytes` or the 51-byte typed reference.
+fn legacy_sketch_reference_target(bytes: &[u8], at: usize, typed: bool) -> Option<u32> {
+    if typed {
+        crate::bytes::typed_local_reference_target(bytes, at)
+    } else if bytes.get(at) == Some(&1) && bytes.get(at + 5..at + 11) == Some(&[0u8; 6][..]) {
+        View::u32_le_at(bytes, at + 1)
+    } else {
+        None
+    }
+}
+
+/// Parse the legacy counted sketch member run with one reference spelling.
+///
+/// The paired header is followed by eight zero bytes, a reference at offset
+/// 19, eleven bytes, the u32 member count, and that many references; every
+/// reference in the run uses the same spelling.
+fn parse_legacy_sketch_member_run_with(
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+    typed: bool,
+) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    let width = if typed {
+        crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+    } else {
+        11
+    };
     let parsed = (|| {
         let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
         if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
             || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
-            || bytes.get(paired_at + 19) != Some(&1)
-            || bytes.get(paired_at + 24..paired_at + 30) != Some(&[0u8; 6][..])
+            || legacy_sketch_reference_target(bytes, paired_at + 19, typed).is_none()
         {
             return None;
         }
@@ -1052,27 +1252,23 @@ fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        let count = usize::try_from(View::u32_le_at(bytes, paired_at + 41)?).ok()?;
+        let count_at = paired_at + 19 + width + 11;
+        let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
         if count == 0 {
             return None;
         }
-        let run_end = (paired_at + 45).checked_add(count.checked_mul(11)?)?;
+        let run_end = (count_at + 4).checked_add(count.checked_mul(width)?)?;
         if run_end > bytes.len() {
             return None;
         }
-        Some((paired_at, count))
+        Some((count_at + 4, count))
     })();
-    let (paired_at, count) = parsed?;
+    let (first, count) = parsed?;
     let mut members = Vec::new();
     for ordinal in 0..count {
-        let marker = paired_at + 45 + ordinal * 11;
-        if bytes.get(marker) != Some(&1)
-            || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
-        {
-            return None;
-        }
+        let marker = first + ordinal * width;
         members.push(crate::records::identity::Located {
-            value: View::u32_le_at(bytes, marker + 1)?,
+            value: legacy_sketch_reference_target(bytes, marker, typed)?,
             offset: u64_from_index(marker + 1),
         });
     }
@@ -1296,17 +1492,62 @@ pub(crate) fn decode_record_headers(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
-    let references = entities.iter().flat_map(|entity| {
-        native_stream(&entity.id)
-            .into_iter()
-            .flat_map(move |scope| {
-                entity
-                    .reference_values()
-                    .map(move |record_index| (scope, *record_index))
-            })
-    });
+    // Sketch-relation records name their sketch through `ParentNode`; a
+    // legacy counted member run does not list them. The stream's type table
+    // registers every relation-class entity, and an entity ID repeats its
+    // record index, so those registrations name the relation records.
+    let types = decode_types(scan)?;
+    let mut relation_records = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let scope = crate::ids::native_scope(&entry.name);
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
+        for record_index in registered_relation_record_indices(stream_types.into_values()) {
+            relation_records.push((scope.clone(), record_index));
+        }
+    }
+    let references = entities
+        .iter()
+        .flat_map(|entity| {
+            native_stream(&entity.id)
+                .into_iter()
+                .flat_map(move |scope| {
+                    entity
+                        .reference_values()
+                        .map(move |record_index| (scope, *record_index))
+                })
+        })
+        .chain(
+            relation_records
+                .iter()
+                .map(|(scope, record_index)| (scope.as_str(), *record_index)),
+        );
     let wanted = wanted_record_indices(references);
     decode_headers_for_indices(scan, &wanted)
+}
+
+/// Record indices of the sketch-relation records a type table registers:
+/// every entity of a sketch-relation class type, whose entity ID repeats its
+/// record index.
+pub(in crate::design) fn registered_relation_record_indices<'a>(
+    types: impl IntoIterator<Item = &'a crate::records::entity_header::SegmentType>,
+) -> Vec<u32> {
+    let mut out = Vec::new();
+    for design_type in types {
+        if SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version).is_none() {
+            continue;
+        }
+        for &entity_id in design_type.entities.values() {
+            let Ok(record_index) = u32::try_from(entity_id) else {
+                continue;
+            };
+            out.push(record_index);
+        }
+    }
+    out
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) named by
@@ -1405,6 +1646,45 @@ pub(crate) fn decode_sketch_relations(
         let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
+        let mut framed_offsets = std::collections::HashSet::new();
+        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
+            for frame in design_primary_frames(bytes, &meta)? {
+                let design_type = frame.design_type;
+                if !matches!(
+                    SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version),
+                    Some(
+                        SketchRelationClass::Tangent
+                            | SketchRelationClass::CircularPattern
+                            | SketchRelationClass::RectangularPattern
+                            | SketchRelationClass::TextFrame
+                    )
+                ) {
+                    continue;
+                }
+                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                    CodecError::malformed("F3D sketch-relation entity ID exceeds u32")
+                })?;
+                let record = DesignRecordHeader {
+                    id: design_record_id(
+                        &entry.name,
+                        ":design-record-header#",
+                        u64_from_index(frame.start),
+                    ),
+                    record_index,
+                    class_tag: frame.class_tag,
+                    byte_offset: Some(u64_from_index(frame.start)),
+                };
+                framed_offsets.insert(u64_from_index(frame.start));
+                decode_sketch_relation_record(
+                    &mut out,
+                    &entry.name,
+                    &record,
+                    &bytes[frame.start..frame.end],
+                    design_type.type_guid.as_str(),
+                    design_type.version,
+                )?;
+            }
+        }
         for record in records
             .iter()
             .filter(|record| native_stream(&record.id) == Some(scope.as_str()))
@@ -1412,6 +1692,9 @@ pub(crate) fn decode_sketch_relations(
             let Some(record_offset) = record.byte_offset else {
                 continue;
             };
+            if framed_offsets.contains(&record_offset) {
+                continue;
+            }
             let Ok(at) = usize::try_from(record_offset) else {
                 continue;
             };
@@ -1419,35 +1702,96 @@ pub(crate) fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
-            let class = stream_types
-                .get(&record.class_tag.code())
-                .and_then(|design_type| {
-                    SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
-                });
-            let parsed = match class {
-                Some(class) => parse_classed_sketch_relation(payload, class)?,
-                None => None,
-            };
-            let Some(mut parsed) = parsed else {
+            let Some(design_type) = stream_types.get(&record.class_tag.code()) else {
                 continue;
             };
-            if payload
-                .get(parsed.parsed_end..)
-                .is_none_or(|padding| padding.iter().any(|byte| *byte != 0))
-            {
-                continue;
-            }
-            let pattern = decode_pattern_definition(payload, &mut parsed);
-            let Ok(definition) = crate::records::sketch_relations::SketchRelationDefinition::new(
-                parsed.state,
-                pattern,
-            ) else {
-                continue;
-            };
-            admit_sketch_relation(&mut out, &entry.name, record, payload, parsed, definition)?;
+            decode_sketch_relation_record(
+                &mut out,
+                &entry.name,
+                record,
+                payload,
+                design_type.type_guid.as_str(),
+                design_type.version,
+            )?;
         }
     }
     Ok(out)
+}
+
+pub(crate) fn decode_sketch_relation_record(
+    out: &mut Vec<SketchRelation>,
+    stream: &str,
+    record: &DesignRecordHeader,
+    payload: &[u8],
+    type_guid: &str,
+    version: u32,
+) -> Result<(), CodecError> {
+    let Some(class) = SketchRelationClass::of(type_guid, version) else {
+        return Ok(());
+    };
+    let Some(mut parsed) = parse_classed_sketch_relation(payload, class)? else {
+        return Ok(());
+    };
+    if payload
+        .get(parsed.parsed_end..)
+        .is_none_or(|padding| padding.iter().any(|byte| *byte != 0))
+    {
+        return Ok(());
+    }
+    let pattern = decode_pattern_definition(payload, &mut parsed);
+    let Ok(definition) =
+        crate::records::sketch_relations::SketchRelationDefinition::new(parsed.state, pattern)
+    else {
+        return Ok(());
+    };
+    admit_sketch_relation(out, stream, record, payload, parsed, definition)
+}
+
+pub(crate) fn rectangular_pattern_flags(payload: &[u8]) -> Option<[u8; 3]> {
+    let parsed =
+        parse_classed_sketch_relation(payload, SketchRelationClass::RectangularPattern).ok()??;
+    if parsed.state != 0x2000_0000
+        || payload
+            .get(parsed.parsed_end..)?
+            .iter()
+            .any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    let RelationClassMembers::Rectangular { flags, .. } = parsed.class_members else {
+        return None;
+    };
+    Some(flags)
+}
+
+pub(crate) fn sketch_pattern_neutral_state(relation: &SketchRelation) -> Option<bool> {
+    use crate::records::sketch_relations::SketchPatternDefinition;
+    let class = match relation.definition.pattern()? {
+        SketchPatternDefinition::Circular { .. } => SketchRelationClass::CircularPattern,
+        SketchPatternDefinition::Rectangular { .. } => SketchRelationClass::RectangularPattern,
+        _ => return None,
+    };
+    let raw_bytes = relation.raw_bytes()?;
+    let parsed = parse_classed_sketch_relation(raw_bytes, class).ok()??;
+    if parsed.state != relation.definition.state()
+        || raw_bytes
+            .get(parsed.parsed_end..)?
+            .iter()
+            .any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    match parsed.class_members {
+        RelationClassMembers::CircularPattern {
+            has_suppression, ..
+        } => Some(!has_suppression),
+        RelationClassMembers::Rectangular {
+            flags,
+            has_suppression,
+            ..
+        } => Some(!has_suppression && matches!(flags, [0 | 1, 0, 0])),
+        _ => None,
+    }
 }
 
 fn admit_sketch_relation(
@@ -1518,35 +1862,34 @@ fn admit_sketch_relation(
 
 /// Decode the pattern definition a relation's class members carry, reading them
 /// beside the auxiliary references the parse recorded. Circular patterns store
-/// the angle- and count-parameter references, the evaluated f64 total angle six
-/// zero bytes after the count-parameter reference, and the evaluated u32
-/// instance count directly after it. Rectangular patterns store, per direction,
-/// the evaluated u32 count, the count-parameter reference, a three-component
-/// f64 unit direction six zero bytes after that reference, the evaluated f64
-/// source distance, and the distance-parameter reference. A non-empty counted
-/// reference run stores adjacent spacing; an empty run stores the total
-/// seed-to-final span. Text-frame relations repeat the sketch-text member as an
-/// auxiliary reference.
+/// optional angle- and count-parameter references, the evaluated f64 total
+/// angle, and the evaluated u32 instance count. Rectangular direction clauses
+/// store an evaluated count, optional count reference, unit direction, evaluated
+/// signed distance, and optional distance reference. Text-frame relations retain
+/// the second class reference as the text entity.
 fn decode_pattern_definition(
     payload: &[u8],
     parsed: &mut ParsedSketchRelation,
 ) -> Option<crate::records::sketch_relations::SketchPatternDefinition> {
     use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
-    let reference_end = |ordinal: usize| Some(parsed.auxiliary_references.get(ordinal)?.offset + 4);
     match &mut parsed.class_members {
-        RelationClassMembers::CircularPattern => {
-            if parsed.state != 0x1000_0000 || parsed.auxiliary_references.len() != 2 {
+        RelationClassMembers::CircularPattern {
+            angle_parameter,
+            count_parameter,
+            evaluated_offset,
+            ..
+        } => {
+            if parsed.state != 0x1000_0000 {
                 return None;
             }
-            let angle_at = reference_end(1)? + 6;
-            let evaluated_angle = FiniteReal::new(View::f64_le_at(payload, angle_at)?)?;
+            let evaluated_angle = FiniteReal::new(View::f64_le_at(payload, *evaluated_offset)?)?;
             let evaluated_count = crate::records::sketch_relations::SketchPatternCount::try_from(
-                View::u32_le_at(payload, angle_at + 8)?,
+                View::u32_le_at(payload, *evaluated_offset + 8)?,
             )
             .ok()?;
             return Some(SketchPatternDefinition::Circular {
-                angle_parameter: parsed.auxiliary_references[0].value,
-                count_parameter: parsed.auxiliary_references[1].value,
+                angle_parameter: *angle_parameter,
+                count_parameter: *count_parameter,
                 evaluated_angle,
                 evaluated_count,
             });
@@ -1555,33 +1898,26 @@ fn decode_pattern_definition(
             if parsed.state != 0x2000_0000 {
                 return None;
             }
-            let [first_count, first_distance, second_count, second_distance] = (*clauses)?;
-            let directions = [
-                (first_count, first_distance),
-                (second_count, second_distance),
-            ]
-            .map(|(count, distance)| {
-                let count_at = count.offset.checked_sub(5)?;
+            let directions = clauses.map(|clause| {
                 let evaluated_count =
                     crate::records::sketch_relations::SketchPatternCount::try_from(
-                        View::u32_le_at(payload, count_at)?,
+                        View::u32_le_at(payload, clause.count_offset)?,
                     )
                     .ok()?;
-                let direction_at = count.offset + 4 + 6;
                 let direction = [
-                    View::f64_le_at(payload, direction_at)?,
-                    View::f64_le_at(payload, direction_at + 8)?,
-                    View::f64_le_at(payload, direction_at + 16)?,
+                    View::f64_le_at(payload, clause.direction_offset)?,
+                    View::f64_le_at(payload, clause.direction_offset + 8)?,
+                    View::f64_le_at(payload, clause.direction_offset + 16)?,
                 ];
                 Some(SketchPatternDirection {
                     evaluated_count,
-                    count_parameter: count.value,
+                    count_parameter: clause.count_parameter,
                     direction: direction.try_into().ok()?,
                     evaluated_distance: FiniteReal::new(View::f64_le_at(
                         payload,
-                        direction_at + 24,
+                        clause.direction_offset + 24,
                     )?)?,
-                    distance_parameter: distance.value,
+                    distance_parameter: clause.distance_parameter,
                 })
             });
             let [first, second] = directions;
@@ -1589,17 +1925,15 @@ fn decode_pattern_definition(
                 directions: [first?, second?],
             });
         }
-        RelationClassMembers::TextFrame => {
+        RelationClassMembers::TextFrame { text_reference } => {
+            let text_reference = (*text_reference)?;
             if parsed.state == 0x100_0000_0000
-                && parsed.auxiliary_references.len() == 1
                 && parsed
                     .members
                     .iter()
-                    .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
+                    .any(|member| member.reference.value == text_reference)
             {
-                return Some(SketchPatternDefinition::TextFrame {
-                    text_reference: parsed.auxiliary_references[0].value,
-                });
+                return Some(SketchPatternDefinition::TextFrame { text_reference });
             }
         }
         RelationClassMembers::TextPath { glyph_transforms } => {
@@ -1629,11 +1963,18 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     View::u32_le_at(record, tail + 1)
 }
 
-fn decode_sketch_points_from_stream(
-    bytes: &[u8],
+/// Source pointers of record captures, by record id.
+pub(crate) type SourcePointers =
+    std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>;
+
+pub(crate) fn decode_sketch_points_from_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: View<'_>,
     meta: &crate::metastream::MetaStream,
     stream: &str,
+    pointers: &mut SourcePointers,
 ) -> Result<Vec<SketchPoint>, CodecError> {
+    let bytes = source.window();
     let frames = design_primary_frames(bytes, meta)?;
     let mut frames_by_entity = HashMap::new();
     let mut types_by_entity = HashMap::new();
@@ -1651,6 +1992,19 @@ fn decode_sketch_points_from_stream(
             ),
         );
     }
+    // A frame-relative range of the stream, read through its source view.
+    let frame_view = |start: usize, end: usize| {
+        source
+            .start()
+            .checked_add(start)
+            .zip(source.start().checked_add(end))
+            .and_then(|(start, end)| source.child(start, end))
+            .ok_or_else(|| CodecError::malformed("F3D sketch-point frame exceeds its stream"))
+    };
+    fn read<'a>(view: View<'a>) -> Result<&'a [u8], CodecError> {
+        view.read_slice(view.start()..view.end())
+            .ok_or_else(|| CodecError::malformed("F3D sketch-point frame is unreadable"))
+    }
     let mut out = Vec::new();
     for frame in &frames {
         if !frame
@@ -1663,66 +2017,83 @@ fn decode_sketch_points_from_stream(
         {
             continue;
         }
-        let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded =
-            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                crate::design::text::malformed_design(format_args!(
-                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
-                    frame.design_type.version
-                ))
-            })?;
-        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
-        if !point_target_has_guid(
-            &types_by_entity,
-            decoded.trailing_reference(),
-            SKETCH_CONTAINER_TYPE_GUID,
-        ) {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch point {record_index} has an invalid trailing container reference"
-            )));
+        let id = design_record_id(stream, ":sketch-point#", u64_from_index(frame.start));
+        if pointers.contains_key(&id) {
+            return Err(CodecError::malformed(
+                "F3D sketch-point source owner is duplicated",
+            ));
         }
-        let (record_form, companion) = frames_by_entity
-            .get(&decoded.paired_reference)
-            .filter(|companion_frame| {
-                let design_type = companion_frame.design_type;
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
-                    && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
-                    && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
-            })
-            .and_then(|companion_frame| {
-                decode_sketch_point_companion(
-                    &bytes[companion_frame.start..companion_frame.end],
+        let extent = frame_view(frame.start, frame.end)?;
+        // The point grammar and its companion grammar consume every byte of
+        // their frames, so each frame is read whole inside the point's scope.
+        let (point, fields) = ctx.record(&id, extent, || {
+            let payload = read(extent)?;
+            let decoded = decode_sketch_point_record(payload, frame.design_type.version)
+                .ok_or_else(|| {
+                    crate::design::text::malformed_design(format_args!(
+                        "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                        frame.design_type.version
+                    ))
+                })?;
+            let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
+            if !point_target_has_guid(
+                &types_by_entity,
+                decoded.trailing_reference(),
+                SKETCH_CONTAINER_TYPE_GUID,
+            ) {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch point {record_index} has an invalid trailing container reference"
+                )));
+            }
+            let companion_frame =
+                frames_by_entity
+                    .get(&decoded.paired_reference)
+                    .filter(|companion_frame| {
+                        let design_type = companion_frame.design_type;
+                        design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
+                            && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
+                            && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
+                    });
+            let (record_form, companion) = match companion_frame {
+                Some(companion_frame) => decode_sketch_point_companion(
+                    read(frame_view(companion_frame.start, companion_frame.end)?)?,
                     record_index,
                     decoded.record_form.clone(),
                     &types_by_entity,
-                )
-            })
+                ),
+                None => None,
+            }
             .ok_or_else(|| {
                 crate::design::text::malformed_design(format_args!(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-
-        out.push(
-            SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-                id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
+            let point = SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+                id: id.clone(),
                 record_index,
                 owner_reference: decoded.owner_reference,
                 class_tag: frame.class_tag.clone(),
                 byte_offset: Some(u64_from_index(frame.start)),
-                coordinate_offset: decoded.coordinate_offset,
+                coordinate_offset: Some(decoded.coordinate_offset),
                 record_form,
                 companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
-            .map_err(CodecError::Malformed)?,
-        );
+            .map_err(CodecError::Malformed)?;
+            let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+                ctx,
+                point.source_offsets(),
+            )?;
+            Ok((point, fields))
+        })?;
+        pointers.insert(id, fields);
+        out.push(point);
     }
     Ok(out)
 }
@@ -1733,9 +2104,34 @@ fn decode_sketch_points_from_stream(
 /// converted centimetre→millimetre. Class version 0 supplies `(u,v)` and no
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
 /// point record with a malformed or non-finite member sequence makes the
-/// stream malformed.
-pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_points_from_stream)
+/// stream malformed. Each point is parsed inside its record scope, and its
+/// source offsets are `record_layout` pointers in `pointers`.
+pub(crate) fn decode_sketch_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    pointers: &mut SourcePointers,
+) -> Result<Vec<SketchPoint>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        out.extend(decode_sketch_points_from_stream(
+            ctx,
+            source,
+            &meta,
+            &entry.name,
+            pointers,
+        )?);
+    }
+    Ok(out)
 }
 
 struct SketchProperty<'a> {
@@ -1909,7 +2305,7 @@ const SKETCH_TEXT_TRAILING_RUN: usize = 30;
 const TEXT_PLACEMENT_TOLERANCE: f64 = 1.0e-9;
 
 /// Bytes between the end of the stored `txt_tag` rotation and the four f32 RGBA
-/// components. The first byte is zero and four further bytes are unclassified.
+/// components: one style byte and four residual bytes.
 const TXT_TAG_POST_ROTATION_RUN: usize = 5;
 
 /// Bytes between the text-anchor coordinates and the u32 text count in the
@@ -2027,6 +2423,7 @@ struct SketchTextHead {
     font_family: String,
     height: PositiveLength,
     color: Color,
+    style: u8,
     cursor: usize,
 }
 
@@ -2036,6 +2433,7 @@ struct SketchTextTail {
     text: String,
     font_weight: i32,
     owner_reference: u32,
+    neutral_orientation: bool,
 }
 
 /// Read the class-defined leading block: the presence byte, and when it is
@@ -2092,16 +2490,17 @@ fn decode_sketch_text_head(
             (None, None) if class_version < TXT_TAG_IDENTITY_KEY_VERSION => true,
             (None, None) => return None,
         };
-        let (identity, color, persistent_id) = if is_txt_tag {
+        let (identity, color, persistent_id, style) = if is_txt_tag {
             let rotation = Angle::new(View::f64_le_at(payload, cursor)?)?;
             cursor = cursor.checked_add(8)?;
-            (payload.get(cursor)? == &0).then_some(())?;
+            let style = *payload.get(cursor)?;
             cursor = cursor.checked_add(TXT_TAG_POST_ROTATION_RUN)?;
             let color = read_sketch_text_color(payload, &mut cursor)?;
             (
                 SketchTextIdentity::TxtTag { rotation },
                 color,
                 property("txt_tag"),
+                style,
             )
         } else {
             (payload.get(cursor)? == &1).then_some(())?;
@@ -2113,6 +2512,7 @@ fn decode_sketch_text_head(
                 SketchTextIdentity::TextexTag { width_factor },
                 color,
                 property("textex_tag"),
+                0,
             )
         };
         let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
@@ -2135,6 +2535,7 @@ fn decode_sketch_text_head(
                 font_family,
                 height,
                 color,
+                style,
                 cursor,
             },
             identity,
@@ -2186,6 +2587,7 @@ fn decode_indexed_sketch_text_head(
                 font_family,
                 height,
                 color,
+                style: 0,
                 cursor,
             },
             width_factor,
@@ -2208,6 +2610,7 @@ fn decode_sketch_text_tail(
         let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
         // Horizontal alignment enum and three flag bytes.
         let horizontal_alignment = View::u32_le_at(payload, cursor)?;
+        let horizontal_neutral = payload.get(cursor + 4..cursor + 7)? == [0; 3];
         cursor = cursor.checked_add(7)?;
         let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
         if text_count == 0 || text_count > 1_048_576 {
@@ -2218,8 +2621,8 @@ fn decode_sketch_text_tail(
         let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
         // Vertical alignment enum, one flag byte, and the font weight.
         let vertical_alignment = View::u32_le_at(payload, cursor)?;
-        let font_weight = i32::try_from(View::u32_le_at(payload, cursor.checked_add(5)?)?).ok()?;
-        matches!(font_weight, 400 | 500 | 750).then_some(())?;
+        let vertical_neutral = payload.get(cursor + 4)? == &0;
+        let font_weight = View::i32_le_at(payload, cursor.checked_add(5)?)?;
         cursor = cursor.checked_add(9)?;
         // The class tail opens with the text-type enum, which gates the placement
         // transform: frame text stores a 4x4 transform, path text stores none. One
@@ -2251,6 +2654,7 @@ fn decode_sketch_text_tail(
             text,
             font_weight,
             owner_reference: reference_index(&owner)?,
+            neutral_orientation: horizontal_neutral && vertical_neutral,
         }))
     })()
     .transpose()
@@ -2270,6 +2674,7 @@ fn decode_txt_tag_sketch_text_tail(
     rotation: Angle,
 ) -> Result<Option<SketchTextTail>, CodecError> {
     (|| {
+        let neutral_orientation = payload.get(cursor..cursor + 2)? == [0; 2];
         cursor = cursor.checked_add(2)?;
         let anchor = Point2::new(
             View::f64_le_at(payload, cursor)? * 10.0,
@@ -2296,12 +2701,7 @@ fn decode_txt_tag_sketch_text_tail(
         for _ in 0..references {
             take_reference(payload, &mut cursor)?;
         }
-        let font_weight = i32::try_from(View::u32_le_at(
-            payload,
-            cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?,
-        )?)
-        .ok()?;
-        matches!(font_weight, 400 | 500 | 750).then_some(())?;
+        let font_weight = View::i32_le_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)?;
         cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
         let owner = take_reference(payload, &mut cursor)?;
         (cursor == payload.len()).then_some(())?;
@@ -2312,6 +2712,7 @@ fn decode_txt_tag_sketch_text_tail(
             text,
             font_weight,
             owner_reference: reference_index(&owner)?,
+            neutral_orientation,
         }))
     })()
     .transpose()
@@ -2334,6 +2735,7 @@ fn decode_indexed_sketch_text_tail(
     (|| {
         let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
         let horizontal_alignment = View::u32_le_at(payload, cursor)?;
+        let horizontal_neutral = payload.get(cursor + 4..cursor + 7)? == [0; 3];
         cursor = cursor.checked_add(7)?;
         let text_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
         if text_count == 0 || text_count > 1_048_576 {
@@ -2343,8 +2745,8 @@ fn decode_indexed_sketch_text_tail(
         cursor = after_text;
         let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
         let vertical_alignment = View::u32_le_at(payload, cursor)?;
-        let font_weight = i32::try_from(View::u32_le_at(payload, cursor.checked_add(5)?)?).ok()?;
-        matches!(font_weight, 400 | 500 | 750).then_some(())?;
+        let vertical_neutral = payload.get(cursor + 4)? == &0;
+        let font_weight = View::i32_le_at(payload, cursor.checked_add(5)?)?;
         cursor = cursor.checked_add(9)?;
         if !matches!(View::u32_le_at(payload, cursor)?, 0 | 1)
             || View::u32_le_at(payload, cursor.checked_add(4)?)? != 1
@@ -2387,6 +2789,7 @@ fn decode_indexed_sketch_text_tail(
             text,
             font_weight,
             owner_reference: reference_index(&owner)?,
+            neutral_orientation: horizontal_neutral && vertical_neutral,
         }))
     })()
     .transpose()
@@ -2416,6 +2819,62 @@ fn decode_indexed_sketch_text_record_tail(
         }
     }
     Ok(closed)
+}
+
+fn decode_legacy_sketch_text_record_tail(
+    payload: &[u8],
+    cursor: usize,
+    identity: SketchTextIdentity,
+    class_version: u32,
+) -> Result<Option<SketchTextTail>, CodecError> {
+    match identity {
+        SketchTextIdentity::TxtTag { rotation } => {
+            decode_txt_tag_sketch_text_tail(payload, cursor, class_version, rotation)
+        }
+        SketchTextIdentity::TextexTag { width_factor } => {
+            let mut closed = None;
+            for first_slot in TEXT_REFERENCE_SLOTS {
+                for second_slot in TEXT_REFERENCE_SLOTS {
+                    if let Some(tail) = decode_sketch_text_tail(
+                        payload,
+                        cursor,
+                        first_slot,
+                        second_slot,
+                        width_factor,
+                    )? {
+                        if closed.replace(tail).is_some() {
+                            return Ok(None);
+                        }
+                    }
+                }
+            }
+            Ok(closed)
+        }
+    }
+}
+
+pub(crate) fn sketch_text_neutral_state(text: &SketchText) -> Option<bool> {
+    let payload = text.raw_bytes.data()?;
+    if let Some((head, identity)) = decode_sketch_text_head(payload, text.class_version).ok()? {
+        if let Some(tail) = decode_legacy_sketch_text_record_tail(
+            payload,
+            head.cursor,
+            identity,
+            text.class_version,
+        )
+        .ok()?
+        {
+            return Some(
+                head.style & !1 == 0
+                    && (head.style & 1 == 0 || text.font_weight == 750)
+                    && tail.neutral_orientation,
+            );
+        }
+    }
+    let (head, width_factor) = decode_indexed_sketch_text_head(payload).ok()??;
+    let tail =
+        decode_indexed_sketch_text_record_tail(payload, head.cursor, width_factor).ok()??;
+    Some(tail.neutral_orientation)
 }
 
 struct SketchTextRecord<'a> {
@@ -2482,48 +2941,14 @@ pub(crate) fn decode_sketch_text_record(
             Err(error) => return Some(Err(error)),
         };
         if let Some((head, identity)) = legacy_head {
-            let tail = match identity {
-                SketchTextIdentity::TextexTag { width_factor } => {
-                    let mut closed = None;
-                    let mut ambiguous = false;
-                    'forms: for first_slot in TEXT_REFERENCE_SLOTS {
-                        for second_slot in TEXT_REFERENCE_SLOTS {
-                            let tail = decode_sketch_text_tail(
-                                payload,
-                                head.cursor,
-                                first_slot,
-                                second_slot,
-                                width_factor,
-                            );
-                            let Some(tail) = (match tail {
-                                Ok(tail) => tail,
-                                Err(error) => return Some(Err(error)),
-                            }) else {
-                                continue;
-                            };
-                            // Two slot forms both ending on the owning-sketch reference
-                            // leave the parameter references undetermined.
-                            if closed.replace(tail).is_some() {
-                                ambiguous = true;
-                                break 'forms;
-                            }
-                        }
-                    }
-                    if ambiguous {
-                        None
-                    } else {
-                        closed
-                    }
-                }
-                SketchTextIdentity::TxtTag { rotation } => match decode_txt_tag_sketch_text_tail(
-                    payload,
-                    head.cursor,
-                    class_version,
-                    rotation,
-                ) {
-                    Ok(tail) => tail,
-                    Err(error) => return Some(Err(error)),
-                },
+            let tail = match decode_legacy_sketch_text_record_tail(
+                payload,
+                head.cursor,
+                identity,
+                class_version,
+            ) {
+                Ok(tail) => tail,
+                Err(error) => return Some(Err(error)),
             };
             if let Some(tail) = tail {
                 return Some(assemble_sketch_text(
@@ -3022,14 +3447,15 @@ fn decode_sketch_curve_identities_from_stream(
         } else {
             None
         };
-        let (geometry, geometry_offset) = match parsed_geometry {
+        let (geometry, geometry_offset, planar_z_noise) = match parsed_geometry {
             Some(parsed) => (
                 Some(parsed.geometry),
                 Some(u32::try_from(parsed.geometry_offset).map_err(|_| {
                     CodecError::malformed("f3d sketch curve geometry offset exceeds u32")
                 })?),
+                parsed.planar_z_noise,
             ),
-            None => (None, None),
+            None => (None, None, None),
         };
 
         out.push(SketchCurveIdentity {
@@ -3047,6 +3473,7 @@ fn decode_sketch_curve_identities_from_stream(
             primary_id,
             secondary_id,
             geometry,
+            planar_z_noise,
         });
     }
     Ok(out)
@@ -3496,6 +3923,7 @@ fn decode_sketch_curve_identity_variant(
 struct DecodedSketchCurveGeometry {
     geometry: SketchCurveGeometry,
     geometry_offset: usize,
+    planar_z_noise: Option<[f64; 3]>,
 }
 
 fn decode_sketch_curve_geometry(
@@ -3508,12 +3936,23 @@ fn decode_sketch_curve_geometry(
     let Some(geometry_payload) = payload.get(geometry_shift..) else {
         return Ok(None);
     };
+    let mut planar_z_noise = None;
     let decoded = match class {
         SketchCurveClass::Line => {
-            if let Some((geometry, _)) = decode_line_family(geometry_payload, record_at)? {
+            if let Some((geometry, form)) = decode_line_family(geometry_payload, record_at)? {
+                if form == COMPACT_PLANAR_LINE_VALUES {
+                    planar_z_noise = compact_planar_line_z_noise(geometry_payload);
+                }
                 Some((geometry, 133))
             } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
-                decode_line_family(referenced, record_at)?.map(|(geometry, _)| (geometry, 11 + 133))
+                let decoded = decode_line_family(referenced, record_at)?;
+                if decoded
+                    .as_ref()
+                    .is_some_and(|(_, form)| *form == COMPACT_PLANAR_LINE_VALUES)
+                {
+                    planar_z_noise = compact_planar_line_z_noise(referenced);
+                }
+                decoded.map(|(geometry, _)| (geometry, 11 + 133))
             } else {
                 None
             }
@@ -3548,6 +3987,7 @@ fn decode_sketch_curve_geometry(
         decoded.map(|(geometry, offset)| DecodedSketchCurveGeometry {
             geometry,
             geometry_offset: geometry_shift + offset,
+            planar_z_noise,
         }),
     )
 }
@@ -3868,6 +4308,9 @@ fn decode_line(
     decode_line_values(payload, 133, record_at)
 }
 
+/// Value count that `decode_line_family` reports for the compact planar line.
+const COMPACT_PLANAR_LINE_VALUES: usize = 9;
+
 fn decode_compact_planar_line(
     payload: &[u8],
     record_at: usize,
@@ -3880,16 +4323,38 @@ fn decode_compact_planar_line(
         };
         *value = parsed;
     }
-    if values[2] != 0.0 || values[5] != 0.0 || values[8] != 0.0 {
-        return Ok(None);
+    // Each z component is zero or floating-point noise below the resolution
+    // of the same vector's own coordinates; the projection reads it as zero.
+    for z in [2, 5, 8] {
+        if !planar_z_is_zero(values[z - 2], values[z - 1], values[z]) {
+            return Ok(None);
+        }
+        values[z] = 0.0;
     }
-    let Some((_, reference_end)) = marked_u32(payload, values_at + 9 * 8) else {
-        return Ok(None);
-    };
-    if payload.get(reference_end..reference_end + 6) != Some(&[0; 6]) {
+    // The values are followed by one reference: the plain eleven-byte
+    // spelling or the 51-byte typed spelling.
+    let reference_at = values_at + 9 * 8;
+    let plain = marked_u32(payload, reference_at).is_some_and(|(_, reference_end)| {
+        payload.get(reference_end..reference_end + 6) == Some(&[0; 6])
+    });
+    if !plain && crate::bytes::typed_local_reference_target(payload, reference_at).is_none() {
         return Ok(None);
     }
     decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)
+}
+
+/// Whether `z` is zero for a planar vector `(x, y, z)` stored in centimetres:
+/// exactly zero, or at most `f64::EPSILON * max(|x|, |y|, 1 cm)`.
+pub(in crate::design) fn planar_z_is_zero(x: f64, y: f64, z: f64) -> bool {
+    z == 0.0 || z.abs() <= f64::EPSILON * x.abs().max(y.abs()).max(1.0)
+}
+
+/// Raw z components of a compact planar line at `payload` offset 133 when
+/// at least one is nonzero noise admitted by [`planar_z_is_zero`].
+pub(in crate::design) fn compact_planar_line_z_noise(payload: &[u8]) -> Option<[f64; 3]> {
+    let raw = [2usize, 5, 8].map(|index| View::f64_le_at(payload, 133 + index * 8));
+    let raw = [raw[0]?, raw[1]?, raw[2]?];
+    raw.iter().any(|z| *z != 0.0).then_some(raw)
 }
 
 fn decode_line_family(
@@ -3899,7 +4364,8 @@ fn decode_line_family(
     if let Some(geometry) = decode_line(payload, record_at)? {
         return Ok(Some((geometry, 12)));
     }
-    Ok(decode_compact_planar_line(payload, record_at)?.map(|geometry| (geometry, 9)))
+    Ok(decode_compact_planar_line(payload, record_at)?
+        .map(|geometry| (geometry, COMPACT_PLANAR_LINE_VALUES)))
 }
 
 fn decode_line_values(
@@ -4154,6 +4620,15 @@ enum AuxiliaryRelationReference {
     Present(crate::records::identity::Located<u32, usize>),
 }
 
+impl AuxiliaryRelationReference {
+    fn value(self) -> Option<u32> {
+        match self {
+            Self::Absent => None,
+            Self::Present(reference) => Some(reference.value),
+        }
+    }
+}
+
 /// Take one reference member that the class may leave absent, recording it in
 /// the auxiliary run when it is present. An absent reference is one zero byte
 /// and names nothing, so it contributes no entry.
@@ -4180,7 +4655,7 @@ fn take_auxiliary_relation_reference(
 /// Skip the two tables both pattern classes write after their own leading
 /// members: a u32-counted map whose entry is a u64 key, a u32 count, and that
 /// many u64 values; then a u32-counted run of u32.
-fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
+fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<usize> {
     let entries = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
     if entries > MAX_RELATION_RUN {
         return None;
@@ -4198,19 +4673,36 @@ fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
         return None;
     }
     *cursor += 4 + ordinals * 4;
-    (*cursor <= payload.len()).then_some(())
+    (*cursor <= payload.len()).then_some(ordinals)
+}
+
+#[derive(Clone, Copy)]
+struct ParsedSketchPatternDirection {
+    count_offset: usize,
+    count_parameter: Option<u32>,
+    direction_offset: usize,
+    distance_parameter: Option<u32>,
 }
 
 /// What a sketch-relation subclass leaves behind after its own members.
 enum RelationClassMembers {
     Plain,
     Tangent,
-    CircularPattern,
-    Rectangular {
-        reference_count: u32,
-        clauses: Option<[crate::records::identity::Located<u32, usize>; 4]>,
+    CircularPattern {
+        angle_parameter: Option<u32>,
+        count_parameter: Option<u32>,
+        evaluated_offset: usize,
+        has_suppression: bool,
     },
-    TextFrame,
+    Rectangular {
+        flags: [u8; 3],
+        reference_count: u32,
+        clauses: [ParsedSketchPatternDirection; 2],
+        has_suppression: bool,
+    },
+    TextFrame {
+        text_reference: Option<u32>,
+    },
     TextPath {
         glyph_transforms: Vec<SketchGlyphTransform>,
     },
@@ -4246,27 +4738,31 @@ fn parse_relation_class_members(
             }
             SketchRelationClass::TextFrame => {
                 take!()?;
-                take!()?;
-                RelationClassMembers::TextFrame
+                let text_reference = take!()?.value();
+                RelationClassMembers::TextFrame { text_reference }
             }
             SketchRelationClass::CircularPattern => {
-                take!()?;
-                take!()?;
-                // The evaluated total angle and the evaluated instance count.
+                let angle_parameter = take!()?.value();
+                let count_parameter = take!()?.value();
+                let evaluated_offset = *cursor;
                 *cursor += 12;
-                skip_pattern_tables(payload, cursor)?;
+                let has_suppression = skip_pattern_tables(payload, cursor)? != 0;
                 if payload.get(*cursor)? != &0 {
                     return None;
                 }
                 *cursor += 1;
-                RelationClassMembers::CircularPattern
+                RelationClassMembers::CircularPattern {
+                    angle_parameter,
+                    count_parameter,
+                    evaluated_offset,
+                    has_suppression,
+                }
             }
             SketchRelationClass::RectangularPattern => {
-                use AuxiliaryRelationReference::Present;
-
-                // The three flags are not checked the way the tangency class's are:
-                // the counted runs and the unit directions that follow them already
-                // reject a misframed record, and the flags do not.
+                let flags = payload
+                    .get(*cursor..cursor.checked_add(3)?)?
+                    .try_into()
+                    .ok()?;
                 *cursor += 3;
                 let reference_count = View::u32_le_at(payload, *cursor)?;
                 let references = usize::try_from(reference_count).ok()?;
@@ -4277,21 +4773,26 @@ fn parse_relation_class_members(
                 for _ in 0..references {
                     take!()?;
                 }
-                skip_pattern_tables(payload, cursor)?;
-                let mut clauses = [AuxiliaryRelationReference::Absent; 4];
-                for pair in clauses.chunks_exact_mut(2) {
+                let has_suppression = skip_pattern_tables(payload, cursor)? != 0;
+                let mut clauses = [ParsedSketchPatternDirection {
+                    count_offset: 0,
+                    count_parameter: None,
+                    direction_offset: 0,
+                    distance_parameter: None,
+                }; 2];
+                for clause in &mut clauses {
+                    clause.count_offset = *cursor;
                     *cursor += 4;
-                    pair[0] = take!()?;
+                    clause.count_parameter = take!()?.value();
+                    clause.direction_offset = *cursor;
                     *cursor += 32;
-                    pair[1] = take!()?;
+                    clause.distance_parameter = take!()?.value();
                 }
-                let clauses = match clauses {
-                    [Present(a), Present(b), Present(c), Present(d)] => Some([a, b, c, d]),
-                    _ => None,
-                };
                 RelationClassMembers::Rectangular {
+                    flags,
                     reference_count,
                     clauses,
+                    has_suppression,
                 }
             }
 

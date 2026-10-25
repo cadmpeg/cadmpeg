@@ -15,6 +15,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::design::components::ComponentInserts;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
+use crate::records::feature::scope::generation::DesignAssemblyFrame;
 use crate::records::feature::{
     assembly::{
         DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandQualifier,
@@ -94,7 +95,7 @@ impl AssemblyScopeGeneration {
             Axial, Compact, CompactWide, LegacyClass388, Standard, Wide,
         };
         let (operand_frame, lanes, locator_offsets) = match frame_length {
-            399 => (None, Some((4, 0, 4)), Some([51, 62])),
+            378 | 399 => (None, Some((4, 0, 4)), Some([51, 62])),
             604 => (None, Some((8, 4, 8)), None),
             627 | 637 | 692 => (Some(Standard), Some((4, 0, 4)), Some([366, 377])),
             633 => (Some(Compact), Some((4, 0, 4)), Some([362, 373])),
@@ -110,6 +111,12 @@ impl AssemblyScopeGeneration {
             806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
             850 => (Some(CompactWide), Some((6, 0, 4)), Some([556, 567])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
+            269 => {
+                (None, Some((0, 0, 0)), Some([
+                    crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
+                    crate::layout::assembly_rigid_as_built_scope::SECOND_LOCATOR_REFERENCE,
+                ]))
+            }
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
@@ -117,8 +124,54 @@ impl AssemblyScopeGeneration {
                 ])),
             length if length == u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) => (
                 (class_tag == "383" && paired_class_tag == "258").then_some(Standard), Some((20, 8, 12)), None),
+            // A rigid group with more than two members keeps the 269-byte
+            // prefix; its first two locators lead the run.
+            length if rigid_group_member_count(length).is_some() => (None, Some((0, 0, 0)), Some([
+                crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
+                crate::layout::assembly_rigid_as_built_scope::SECOND_LOCATOR_REFERENCE,
+            ])),
             _ => (None, None, None),
         };
+        Self::classify(
+            operand_frame,
+            lanes,
+            locator_offsets,
+            class_tag,
+            paired_class_tag,
+        )
+    }
+
+    /// Classify a decoded or loaded scope by its generation: the assembly
+    /// frame length the generation names, or no fixed length for the general
+    /// envelope.
+    pub(crate) fn of_scope(scope: &DesignParameterScope) -> Self {
+        match scope
+            .assembly_frame()
+            .and_then(DesignAssemblyFrame::frame_length)
+        {
+            Some(frame_length) => Self::new(
+                frame_length,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            ),
+            None => Self::classify(
+                None,
+                None,
+                None,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            ),
+        }
+    }
+
+    fn classify(
+        operand_frame: Option<AssemblyOperandFrameVariant>,
+        lanes: Option<(usize, usize, usize)>,
+        locator_offsets: Option<[usize; 2]>,
+        class_tag: &str,
+        paired_class_tag: &str,
+    ) -> Self {
+        use AssemblyOperandFrameVariant::Standard;
         if variable_reference_assembly_generation(class_tag, paired_class_tag) {
             Self {
                 operand_frame: Some(Standard),
@@ -158,6 +211,136 @@ impl AssemblyScopeGeneration {
     pub(crate) fn operand_path_locator_offsets(self) -> Option<[usize; 2]> {
         self.locator_offsets
     }
+}
+
+/// Inserted-design occurrences that store the identity while a joint places
+/// them. A joint names an occurrence directly, or names an inserted design
+/// through an external operand container, which the neutral model cannot tie
+/// to one occurrence: each distinct external document then accounts for at
+/// most one identity occurrence. Their pose is the one their joints define,
+/// which is not solved.
+pub(crate) fn joint_placed_identity_occurrences<'a>(
+    occurrences: &[cadmpeg_ir::products::Occurrence],
+    containers: impl IntoIterator<Item = &'a cadmpeg_ir::OperandContainer>,
+) -> usize {
+    let mut named = std::collections::HashSet::new();
+    let mut documents = Vec::new();
+    for container in containers {
+        match container {
+            cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. } => {
+                named.insert(occurrence);
+            }
+            cadmpeg_ir::OperandContainer::External { external_document } => {
+                if !documents.contains(&external_document) {
+                    documents.push(external_document);
+                }
+            }
+            cadmpeg_ir::OperandContainer::Root {} => {}
+        }
+    }
+    let (direct, unnamed) = occurrences
+        .iter()
+        .filter(|occurrence| {
+            matches!(
+                occurrence.prototype,
+                cadmpeg_ir::products::PrototypeReference::External { .. }
+            ) && occurrence.transform.as_ref().is_none_or(|transform| {
+                transform.rows() == cadmpeg_ir::transform::Transform::identity().rows()
+            })
+        })
+        .fold((0_usize, 0_usize), |(direct, unnamed), occurrence| {
+            if named.contains(&occurrence.id) {
+                (direct + 1, unnamed)
+            } else {
+                (direct, unnamed + 1)
+            }
+        });
+    direct + unnamed.min(documents.len())
+}
+
+/// The loss note for joint-placed identity occurrences, when there are any.
+pub(crate) fn joint_placed_occurrence_loss(
+    joint_placed: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (joint_placed != 0).then(|| {
+        F3dLossCode::JointPlacedOccurrenceUnsolved.note(format!(
+            "{joint_placed} inserted-design occurrence(s) store the identity and are placed by their joints; the joint-solved pose is not computed, so they are placed at the identity."
+        ))
+    })
+}
+
+/// The rigid `As-built` scope of a rigid group: no parameter owners and one
+/// wide operand-path locator per member. The 269-byte frame has two members;
+/// each further member adds one 11-byte locator reference. Its class tags are
+/// per-file dynamic values, so its kind and frame length identify it.
+pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
+    as_built && rigid_group_member_count(frame_length).is_some()
+}
+
+/// The 378-byte `As-built` form, whose four owners are `OffsetX`, `OffsetY`,
+/// `OffsetZ`, and `AngleZ` in local order.
+pub(crate) fn placement_ordered_as_built_scope(frame_length: u64, as_built: bool) -> bool {
+    as_built && frame_length == 378
+}
+
+/// An `As-built` scope whose operand-path locators are wide locators: a rigid
+/// group, or the 378-byte form with four alignment owners.
+pub(crate) fn wide_as_built_scope(frame_length: u64, as_built: bool) -> bool {
+    rigid_as_built_scope(frame_length, as_built)
+        || placement_ordered_as_built_scope(frame_length, as_built)
+}
+
+/// The assembly frame length a scope's generation names. The general
+/// envelope has no fixed frame length.
+pub(crate) fn scope_frame_length(scope: &DesignParameterScope) -> Option<u64> {
+    scope
+        .assembly_frame()
+        .and_then(DesignAssemblyFrame::frame_length)
+}
+
+/// Whether `scope` is a rigid-group `As-built` scope.
+pub(crate) fn scope_is_rigid_as_built(scope: &DesignParameterScope) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && scope
+            .assembly_frame()
+            .and_then(DesignAssemblyFrame::rigid_members)
+            .is_some()
+}
+
+/// Whether `scope` is the 378-byte `As-built` form with placement-ordered owners.
+pub(crate) fn scope_is_placement_ordered_as_built(scope: &DesignParameterScope) -> bool {
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && scope.assembly_frame() == Some(DesignAssemblyFrame::Frame378)
+}
+
+/// Whether `scope` is an `As-built` scope with wide operand-path locators.
+pub(crate) fn scope_is_wide_as_built(scope: &DesignParameterScope) -> bool {
+    scope_frame_length(scope).is_some_and(|frame_length| {
+        wide_as_built_scope(
+            frame_length,
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        )
+    })
+}
+
+/// The legacy 421-byte `As-built` generation of `scope`, when it has one.
+pub(crate) fn scope_legacy_as_built_421_generation(
+    scope: &DesignParameterScope,
+) -> Option<LegacyAsBuilt421Generation> {
+    legacy_as_built_421_generation(
+        scope_frame_length(scope)?,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
+    )
+}
+
+/// The member count a rigid `As-built` frame length implies.
+pub(crate) fn rigid_group_member_count(frame_length: u64) -> Option<usize> {
+    let extra = frame_length.checked_sub(269)?;
+    if extra % 11 != 0 {
+        return None;
+    }
+    usize::try_from(extra / 11).ok()?.checked_add(2)
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.
@@ -311,13 +494,14 @@ pub(crate) fn project_assembly_joints(
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
+    let mut unprojected_members = 0_usize;
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion) {
-            Ok(Some((joint, undecoded))) => {
+            Ok(Some((mut joint, undecoded))) => {
                 let paired = scope
                     .assembly_alignment()
                     .and_then(|alignment| alignment.operand_path_refs())
@@ -329,11 +513,34 @@ pub(crate) fn project_assembly_joints(
                 if paired {
                     paired_joints += 1;
                 }
+                // Every projected `Assemble` joint is paired.
+                joint.set_frame_sense(
+                    scope
+                        .assembly_alignment()
+                        .and_then(|alignment| alignment.frame_sense)
+                        .map(|sense| match sense {
+                            crate::records::feature::assembly::DesignJointFrameSense::Aligned => {
+                                cadmpeg_ir::products::PlaneSense::Aligned
+                            }
+                            crate::records::feature::assembly::DesignJointFrameSense::Opposed => {
+                                cadmpeg_ir::products::PlaneSense::Opposed
+                            }
+                        }),
+                );
                 if let Some(reason) = undecoded {
                     undecoded_motion_count += 1;
                     undecoded_motions.insert(reason);
                 }
                 joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
+                let members =
+                    rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts);
+                paired_joints += members.paired;
+                unprojected_members += members.unprojected;
+                for member in members.joints {
+                    joints
+                        .entry(member.id.as_str().to_owned())
+                        .or_insert(member);
+                }
             }
             Ok(None) => {}
             Err(_) => unprojected += 1,
@@ -354,6 +561,11 @@ pub(crate) fn project_assembly_joints(
     if unprojected != 0 {
         losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
             "{unprojected} Design assembly joint scope(s) were retained natively: their operands, connector frames, limits, or alignment values do not project."
+        )));
+    }
+    if unprojected_members != 0 {
+        losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+            "{unprojected_members} rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects."
         )));
     }
     AssemblyJointProjection {
@@ -451,6 +663,18 @@ fn project_assembly_joint(
     let Some(alignment) = scope.assembly_alignment() else {
         return Ok(None);
     };
+    // A rigid group's joint record has a motion record with no freedom entry.
+    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && scope
+            .assembly_frame()
+            .and_then(DesignAssemblyFrame::rigid_members)
+            .is_some()
+        && motion.is_some_and(|motion| !motion.freedoms.is_empty())
+    {
+        return Err(CodecError::NotImplemented(
+            "rigid group joint record states a freedom".into(),
+        ));
+    }
     let (frames, operands, limits) = match alignment.form.as_ref() {
         Some(
             crate::records::feature::assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
@@ -498,13 +722,9 @@ fn project_assembly_joint(
         // A wide scope always qualifies its operands; frames without
         // qualifiers are an unprojected joint, not an absent one.
         Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
-            if AssemblyScopeGeneration::new(
-                scope.frame_length(),
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .operand_frame_variant()
-            .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
+            if AssemblyScopeGeneration::of_scope(scope)
+                .operand_frame_variant()
+                .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
         {
             return Err(CodecError::NotImplemented(
                 "wide assembly joint operand paths are unresolved".into(),
@@ -613,14 +833,111 @@ fn project_assembly_joint(
     Ok(Some((joint, undecoded)))
 }
 
+/// The fixed joints of a rigid group's members after its first two, with the
+/// number of those joints whose operand paths carry occurrence identity pairs
+/// and the number of members that do not project.
+#[derive(Default)]
+struct RigidGroupMemberJoints {
+    joints: Vec<AssemblyJoint>,
+    paired: usize,
+    unprojected: usize,
+}
+
+/// The fixed joints that tie each rigid-group member after the first two to
+/// the group's first member, at their as-built relative pose. Every such joint
+/// names the group's scope as its native record, as the joint between the
+/// first two members does. A member whose operand or frame does not project is
+/// counted and skipped; the group's other joints still project.
+fn rigid_group_member_joints(
+    scope: &DesignParameterScope,
+    stream: &str,
+    occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
+    scopes: &[DesignParameterScope],
+    inserts: &ComponentInserts,
+) -> RigidGroupMemberJoints {
+    let mut projected = RigidGroupMemberJoints::default();
+    let Some(alignment) = scope.assembly_alignment() else {
+        return projected;
+    };
+    let Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified([first, _])) =
+        alignment.form.as_ref()
+    else {
+        return projected;
+    };
+    let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle());
+    let offset = alignment
+        .offset()
+        .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value * 10.0));
+    let first_frame = super::components::neutral_transform(first.frame.transform.rows());
+    let (Some(angle), [Some(x), Some(y), Some(z)], Ok(first_frame)) = (angle, offset, first_frame)
+    else {
+        projected.unprojected = alignment.additional_members.len();
+        return projected;
+    };
+    let first_paired = first
+        .qualifier
+        .occurrence_path()
+        .is_some_and(|path| !path.paired_occurrence_keys().is_empty());
+    for (ordinal, member) in alignment.additional_members.iter().enumerate() {
+        let operands = project_qualified_operands(
+            [&first.qualifier, &member.qualifier],
+            stream,
+            occurrences,
+            scopes,
+            inserts,
+        );
+        let member_frame = super::components::neutral_transform(member.frame.transform.rows());
+        let (Some([first_operand, member_operand]), Ok(member_frame)) = (operands, member_frame)
+        else {
+            projected.unprojected += 1;
+            continue;
+        };
+        let mut joint = AssemblyJoint::paired(
+            crate::ids::neutral_assembly_group_joint_id(scope, ordinal + 2),
+            PairedJointKind::Fixed {
+                angle: Some(angle),
+                translation_offset: Some([x, y, z]),
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                JointConnector {
+                    operand: first_operand,
+                    frame: first_frame,
+                    detached: false,
+                },
+                JointConnector {
+                    operand: member_operand,
+                    frame: member_frame,
+                    detached: false,
+                },
+            ],
+            None,
+        );
+        joint.native_ref = Some(scope.id.clone());
+        if first_paired
+            || member
+                .qualifier
+                .occurrence_path()
+                .is_some_and(|path| !path.paired_occurrence_keys().is_empty())
+        {
+            projected.paired += 1;
+        }
+        projected.joints.push(joint);
+    }
+    projected
+}
+
 /// Bind each native `Assemble` feature to the joint that product projection
 /// emitted for its scope.
 pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &mut [AssemblyJoint]) {
-    let joints_by_scope = joints
-        .iter()
-        .enumerate()
-        .filter_map(|(index, joint)| Some((joint.native_ref.as_deref()?.to_owned(), index)))
-        .collect::<BTreeMap<_, _>>();
+    // A rigid group's joints share its scope; the feature binds the first.
+    let mut joints_by_scope = BTreeMap::new();
+    for (index, joint) in joints.iter().enumerate() {
+        if let Some(scope) = joint.native_ref.as_deref() {
+            joints_by_scope.entry(scope.to_owned()).or_insert(index);
+        }
+    }
     for feature in features {
         let Some(index) = feature
             .native_ref
@@ -778,82 +1095,82 @@ mod tests {
             axis_record_index: 10,
             axis_class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
                 .unwrap(),
-            axis_byte_offset: 100,
+            axis_byte_offset: Some(100),
             axis_paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
             .unwrap(),
-            axis_paired_byte_offset: 120,
+            axis_paired_byte_offset: Some(120),
             selector_record_index: 13,
             selector_class_tag: crate::records::references::DesignClassTag::try_from(
                 "277".to_owned(),
             )
             .unwrap(),
-            selector_byte_offset: 200,
+            selector_byte_offset: Some(200),
             selector_paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
             .unwrap(),
-            selector_paired_byte_offset: 560,
+            selector_paired_byte_offset: Some(560),
             nested_record_index: 16,
-            nested_record_index_offset: 223,
+            nested_record_index_offset: Some(223),
             selector_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_asset_id_offset: 241,
+            selector_asset_id_offset: Some(241),
             selector_context_id: "bcdefabc-defa-4bcd-8efa-bcdefabcdefa"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            selector_context_id_offset: 317,
+            selector_context_id_offset: Some(317),
             occurrence_reference: 1_001,
-            occurrence_reference_offset: 402,
+            occurrence_reference_offset: Some(402),
             external_object_reference: 2_001,
-            external_object_reference_offset: 417,
+            external_object_reference_offset: Some(417),
             external_segment: 7,
-            external_segment_offset: 426,
+            external_segment_offset: Some(426),
             external_asset_id: "abcdefab-cdef-4abc-8def-abcdefabcdef"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            external_asset_id_offset: 434,
+            external_asset_id_offset: Some(434),
             external_link_name: "component-link".into(),
-            external_link_name_offset: 511,
+            external_link_name_offset: Some(511),
             external_version: None,
             role_record_index: 18,
             role_class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned())
                 .unwrap(),
-            role_byte_offset: 600,
+            role_byte_offset: Some(600),
             occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            occurrence_role_offset: 629,
+            occurrence_role_offset: Some(629),
         }
     }
 
     fn second_selector() -> DesignAssemblyAxialSelectorIdentity {
         let mut selector = selector();
         selector.axis_record_index = 30;
-        selector.axis_byte_offset = 720;
-        selector.axis_paired_byte_offset = 740;
+        selector.axis_byte_offset = Some(720);
+        selector.axis_paired_byte_offset = Some(740);
         selector.selector_record_index = 33;
-        selector.selector_byte_offset = 760;
-        selector.selector_paired_byte_offset = 1_120;
+        selector.selector_byte_offset = Some(760);
+        selector.selector_paired_byte_offset = Some(1_120);
         selector.nested_record_index = 36;
-        selector.nested_record_index_offset = 783;
-        selector.selector_asset_id_offset = 801;
-        selector.selector_context_id_offset = 877;
+        selector.nested_record_index_offset = Some(783);
+        selector.selector_asset_id_offset = Some(801);
+        selector.selector_context_id_offset = Some(877);
         selector.occurrence_reference = 1_002;
-        selector.occurrence_reference_offset = 962;
-        selector.external_object_reference_offset = 977;
-        selector.external_segment_offset = 986;
-        selector.external_asset_id_offset = 994;
-        selector.external_link_name_offset = 1_071;
+        selector.occurrence_reference_offset = Some(962);
+        selector.external_object_reference_offset = Some(977);
+        selector.external_segment_offset = Some(986);
+        selector.external_asset_id_offset = Some(994);
+        selector.external_link_name_offset = Some(1_071);
         selector.role_record_index = 38;
-        selector.role_byte_offset = 1_140;
-        selector.occurrence_role_offset = 1_169;
+        selector.role_byte_offset = Some(1_140);
+        selector.occurrence_role_offset = Some(1_169);
         selector
     }
 
@@ -903,9 +1220,9 @@ mod tests {
         rows[0][3] = f64::MAX;
         let frames = [1, 2].map(|index| DesignAssemblyOperandFrame {
             reference_record_index: index,
-            reference_offset: 0,
+            reference_offset: Some(0),
             transform: rows.try_into().unwrap(),
-            transform_offset: 0,
+            transform_offset: Some(0),
         });
         let qualifiers =
             [1, 2].map(
@@ -1020,12 +1337,12 @@ mod tests {
         let scopes = |typed: bool, paired: bool| {
             let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
                 reference_record_index: index,
-                reference_offset: 0,
+                reference_offset: Some(0),
                 transform: cadmpeg_ir::transform::Transform::identity()
                     .rows()
                     .try_into()
                     .unwrap(),
-                transform_offset: 0,
+                transform_offset: Some(0),
             });
             let qualifiers = [11, 21].map(|index| {
                 let mut path = path(index, typed).unwrap();
@@ -1090,8 +1407,162 @@ mod tests {
             [crate::loss::F3dLossCode::AssemblyOperandPathPairsNative.kind()]
         );
 
+        // A stored frame sense is the neutral joint's frame sense.
+        let mut sensed = scopes(true, false);
+        sensed[0]
+            .try_edit(|draft| {
+                if let DesignScopePayload::Assemble(Some(alignment)) = &mut draft.payload {
+                    alignment.frame_sense =
+                        Some(crate::records::feature::assembly::DesignJointFrameSense::Opposed);
+                }
+            })
+            .unwrap();
+        let projection = super::project_assembly_joints(&sensed, &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 1);
+        assert_eq!(
+            projection.joints[0].frame_sense(),
+            Some(cadmpeg_ir::products::PlaneSense::Opposed)
+        );
+        assert!(projection.losses.is_empty());
+
+        // A rigid group's members after its first two each tie to its first
+        // member, and every joint names the group's scope.
+        let member =
+            |qualifier| crate::records::feature::assembly::DesignQualifiedAssemblyOperand {
+                frame: DesignAssemblyOperandFrame {
+                    reference_record_index: 30,
+                    reference_offset: Some(0),
+                    transform: cadmpeg_ir::transform::Transform::identity()
+                        .rows()
+                        .try_into()
+                        .unwrap(),
+                    transform_offset: Some(0),
+                },
+                qualifier,
+            };
+        let grouped = |paired: bool, members: Vec<_>| {
+            let mut group = scopes(true, paired);
+            group[0]
+                .try_edit(|draft| {
+                    if let DesignScopePayload::Assemble(Some(alignment)) = &mut draft.payload {
+                        alignment.additional_members = members;
+                    }
+                })
+                .unwrap();
+            group
+        };
+        let third = || {
+            member(DesignAssemblyOperandQualifier::OccurrencePath {
+                path: path(31, true).unwrap(),
+            })
+        };
+        let group = grouped(false, vec![third()]);
+        let projection = super::project_assembly_joints(&group, &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 2);
+        assert!(projection
+            .joints
+            .iter()
+            .all(|joint| joint.native_ref.as_deref() == Some(group[0].id.as_str())));
+        assert_ne!(projection.joints[0].id, projection.joints[1].id);
+        assert!(projection.losses.is_empty());
+
+        // The pairs loss counts each projected joint whose paths carry pairs.
+        let projection =
+            super::project_assembly_joints(&grouped(true, vec![third()]), &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 2);
+        let [loss] = projection.losses.as_slice() else {
+            panic!("one pairs loss");
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::AssemblyOperandPathPairsNative.kind()
+        );
+        assert!(loss.message.starts_with("2 projected"));
+
+        // A member whose operand does not project is counted on its own, and
+        // the group's other joints still project.
+        let unresolved = member(DesignAssemblyOperandQualifier::JointOrigin {
+            scope_record_index: 99,
+            class_tag: "300".to_owned().try_into().unwrap(),
+            byte_offset: Some(0),
+            paired_class_tag: "301".to_owned().try_into().unwrap(),
+            paired_byte_offset: Some(0),
+        });
+        let projection = super::project_assembly_joints(
+            &grouped(false, vec![unresolved, third()]),
+            &[],
+            &inserts,
+            &[],
+        );
+        assert_eq!(projection.joints.len(), 2);
+        let [loss] = projection.losses.as_slice() else {
+            panic!("one unprojected-member loss");
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
+        );
+        assert!(loss.message.starts_with("1 rigid group member(s)"));
+
         // The class tag alone admits no external path and no untyped arity.
         assert!(path(11, false).is_err());
+    }
+
+    #[test]
+    fn joint_placed_identity_occurrences_count_each_inserted_design_once() {
+        let occurrence = |id: &str, scope: &str| -> cadmpeg_ir::products::Occurrence {
+            let prototype = if scope == "external" {
+                serde_json::json!({"scope": "external", "document": {"resolution": "path", "path": format!("{id}.f3d")}})
+            } else {
+                serde_json::json!({"scope": "local", "definition": "f3d:model:product_definition#1"})
+            };
+            serde_json::from_value(serde_json::json!({
+                "id": format!("f3d:model:occurrence#{id}"),
+                "prototype": prototype,
+                "parent": {"kind": "root"},
+                "ordinal": 0,
+                "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
+            }))
+            .unwrap()
+        };
+        let occurrences = [
+            occurrence("xref-0-0", "external"),
+            occurrence("xref-1-0", "external"),
+            occurrence("local", "local"),
+        ];
+        let container = |value: serde_json::Value| -> cadmpeg_ir::OperandContainer {
+            serde_json::from_value(value).unwrap()
+        };
+        let external = container(serde_json::json!({
+            "container": "external",
+            "external_document": {"resolution": "document_id", "document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
+        }));
+        let named = container(serde_json::json!({
+            "container": "occurrence",
+            "occurrence": "f3d:model:occurrence#xref-1-0",
+        }));
+        // One inserted design named twice accounts for one occurrence.
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&external, &external]),
+            1
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&named]),
+            1
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, [&named, &external]),
+            2
+        );
+        assert_eq!(
+            super::joint_placed_identity_occurrences(&occurrences, []),
+            0
+        );
+        assert_eq!(
+            super::joint_placed_occurrence_loss(1).map(|loss| loss.code),
+            Some(crate::loss::F3dLossCode::JointPlacedOccurrenceUnsolved.kind())
+        );
+        assert!(super::joint_placed_occurrence_loss(0).is_none());
     }
 
     #[test]
@@ -1121,9 +1592,9 @@ mod tests {
             rows[2][3] = if index == 2 { 1.0 } else { 0.0 };
             DesignAssemblyOperandFrame {
                 reference_record_index: index,
-                reference_offset: 0,
+                reference_offset: Some(0),
                 transform: rows.try_into().unwrap(),
-                transform_offset: 0,
+                transform_offset: Some(0),
             }
         });
         let qualifiers =
@@ -1167,6 +1638,7 @@ mod tests {
                     offset: 950,
                 })
                 .collect(),
+            entry_words: Vec::new(),
             limits: Some(DesignJointLimitLanes {
                 flags_offset: 811,
                 first_flag: flags[0],
@@ -1212,6 +1684,45 @@ mod tests {
 
         assert_eq!(kind(&project(&[motion(&[8], [0, 0])]))["kind"], "slider");
 
+        // A rigid group is fixed: one whose joint record states a freedom is
+        // left unprojected.
+        let rigid_scopes = {
+            let mut rigid_scopes = scopes.clone();
+            let group = rigid_scopes.last_mut().unwrap();
+            group
+                .try_edit(|draft| {
+                    let DesignScopePayload::Assemble(alignment) = &draft.payload else {
+                        panic!("an Assemble payload");
+                    };
+                    draft.payload = DesignScopePayload::AsBuilt(alignment.clone());
+                    crate::design::test_support::lengthen_scope_frame(draft, 269);
+                })
+                .unwrap();
+            rigid_scopes
+        };
+        let project_rigid = |motions: &[DesignJointMotion]| {
+            super::project_assembly_joints(
+                &rigid_scopes,
+                &[],
+                &crate::design::components::ComponentInserts::default(),
+                motions,
+            )
+        };
+        assert_eq!(
+            kind(&project_rigid(&[motion(&[], [0, 0])]))["kind"],
+            "fixed"
+        );
+        let freed = project_rigid(&[motion(&[2], [0, 0])]);
+        assert!(freed.joints.is_empty());
+        assert_eq!(
+            freed
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()]
+        );
+
         // Unconfirmed codes, one-sided flags and translation limits stay fixed.
         for undecoded in [
             motion(&[0], [0, 0]),
@@ -1242,12 +1753,12 @@ mod tests {
         };
         let frames = [17, 45].map(|index| DesignAssemblyOperandFrame {
             reference_record_index: index,
-            reference_offset: 0,
+            reference_offset: Some(0),
             transform: cadmpeg_ir::transform::Transform::identity()
                 .rows()
                 .try_into()
                 .unwrap(),
-            transform_offset: 0,
+            transform_offset: Some(0),
         });
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -1654,7 +2165,7 @@ mod tests {
                     carrier_record_index: 202,
                     occurrence_identity: None,
                     neutron_role: "component-role".into(),
-                    neutron_role_offset: 0,
+                    neutron_role_offset: Some(0),
                     placement: None,
                 },
             );
@@ -1668,12 +2179,12 @@ mod tests {
                     "305".to_owned(),
                 )
                 .unwrap(),
-                construction_byte_offset: 1_300,
-                construction_transform_offset: 1_348,
-                axis_record_index_offsets: [1_493, 1_509],
+                construction_byte_offset: Some(1_300),
+                construction_transform_offset: Some(1_348),
+                axis_record_index_offsets: Some([1_493, 1_509]),
                 construction_paired_class_tag:
                     crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
-                construction_paired_byte_offset: 1_680,
+                construction_paired_byte_offset: Some(1_680),
                 selectors: Box::new([selector(), second_selector()]),
             },
             DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
@@ -1792,7 +2303,9 @@ mod tests {
         let first = selector();
         let mut second = first.clone();
         second.occurrence_reference += 1;
-        second.occurrence_reference_offset += 100;
+        second.occurrence_reference_offset = second
+            .occurrence_reference_offset
+            .map(|offset| offset + 100);
         second.selector_asset_id = second
             .selector_asset_id
             .as_str()

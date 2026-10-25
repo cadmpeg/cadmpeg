@@ -9,6 +9,7 @@
         {
           "id": "fcstd:model:attribute#0:Comment:property",
           "name": "Comment",
+          "native_ref": "fcstd:native:property#0:Comment",
           "target": {
             "kind": "document"
           },
@@ -22,6 +23,7 @@
         {
           "id": "fcstd:model:attribute#0:Company:property",
           "name": "Company",
+          "native_ref": "fcstd:native:property#0:Company",
           "target": {
             "kind": "document"
           },
@@ -35,6 +37,7 @@
         {
           "id": "fcstd:model:attribute#0:CreatedBy:property",
           "name": "CreatedBy",
+          "native_ref": "fcstd:native:property#0:CreatedBy",
           "target": {
             "kind": "document"
           },
@@ -48,6 +51,7 @@
         {
           "id": "fcstd:model:attribute#0:CreationDate:property",
           "name": "CreationDate",
+          "native_ref": "fcstd:native:property#0:CreationDate",
           "target": {
             "kind": "document"
           },
@@ -61,6 +65,7 @@
         {
           "id": "fcstd:model:attribute#0:Id:property",
           "name": "Id",
+          "native_ref": "fcstd:native:property#0:Id",
           "target": {
             "kind": "document"
           },
@@ -74,6 +79,7 @@
         {
           "id": "fcstd:model:attribute#0:Label:property",
           "name": "Label",
+          "native_ref": "fcstd:native:property#0:Label",
           "target": {
             "kind": "document"
           },
@@ -87,6 +93,7 @@
         {
           "id": "fcstd:model:attribute#0:LastModifiedBy:property",
           "name": "LastModifiedBy",
+          "native_ref": "fcstd:native:property#0:LastModifiedBy",
           "target": {
             "kind": "document"
           },
@@ -100,6 +107,7 @@
         {
           "id": "fcstd:model:attribute#0:LastModifiedDate:property",
           "name": "LastModifiedDate",
+          "native_ref": "fcstd:native:property#0:LastModifiedDate",
           "target": {
             "kind": "document"
           },
@@ -113,6 +121,7 @@
         {
           "id": "fcstd:model:attribute#0:License:property",
           "name": "License",
+          "native_ref": "fcstd:native:property#0:License",
           "target": {
             "kind": "document"
           },
@@ -126,6 +135,7 @@
         {
           "id": "fcstd:model:attribute#0:LicenseURL:property",
           "name": "LicenseURL",
+          "native_ref": "fcstd:native:property#0:LicenseURL",
           "target": {
             "kind": "document"
           },
@@ -139,6 +149,7 @@
         {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
+          "native_ref": "fcstd:native:property#0:ShowHidden",
           "target": {
             "kind": "document"
           },
@@ -152,6 +163,7 @@
         {
           "id": "fcstd:model:attribute#0:TipName:property",
           "name": "TipName",
+          "native_ref": "fcstd:native:property#0:TipName",
           "target": {
             "kind": "document"
           },
@@ -165,6 +177,7 @@
         {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
+          "native_ref": "fcstd:native:property#0:UseHasher",
           "target": {
             "kind": "document"
           },
@@ -178,6 +191,7 @@
         {
           "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
           "name": "Label2",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#CorpusMetadata"
@@ -194,6 +208,7 @@
         {
           "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
           "name": "Label",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#CorpusMetadata"
@@ -210,6 +225,7 @@
         {
           "id": "fcstd:model:attribute#CorpusMetadata:License:property",
           "name": "License",
+          "native_ref": "fcstd:native:property#CorpusMetadata:License",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#CorpusMetadata"
@@ -226,6 +242,7 @@
         {
           "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
           "name": "Purpose",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#CorpusMetadata"
@@ -242,6 +259,7 @@
         {
           "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
           "name": "Visibility",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#CorpusMetadata"
@@ -258,6 +276,7 @@
         {
           "id": "fcstd:model:attribute#ExternalPrototype:Label2:property",
           "name": "Label2",
+          "native_ref": "fcstd:native:property#ExternalPrototype:Label2",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#ExternalPrototype"
@@ -274,6 +293,7 @@
         {
           "id": "fcstd:model:attribute#ExternalPrototype:Label:property",
           "name": "Label",
+          "native_ref": "fcstd:native:property#ExternalPrototype:Label",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#ExternalPrototype"
@@ -290,6 +310,7 @@
         {
           "id": "fcstd:model:attribute#ExternalPrototype:Visibility:property",
           "name": "Visibility",
+          "native_ref": "fcstd:native:property#ExternalPrototype:Visibility",
           "target": {
             "id": {
               "source_id": "fcstd:native:object#ExternalPrototype"
@@ -306,18 +327,18 @@
       ],
       "bodies": [
         {
-          "id": "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13",
+          "id": "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1",
           "kind": "solid",
           "regions": [
-            "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13"
+            "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1"
           ]
         }
       ],
       "coedges": [
         {
-          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5",
-          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1",
+          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5%40location1",
+          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1",
           "pcurves": [
             {
               "parameter_range": [
@@ -327,13 +348,13 @@
               "pcurve": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:6%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D"
             }
           ],
-          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A3",
+          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A3",
           "sense": "reversed"
         },
         {
-          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
-          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1",
+          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2%40location1",
+          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1",
           "pcurves": [
             {
               "parameter_range": [
@@ -343,13 +364,13 @@
               "pcurve": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D"
             }
           ],
-          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1%3A1",
+          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1%3A1",
           "sense": "reversed"
         },
         {
-          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4",
-          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A2",
-          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1",
+          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%40location1",
+          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A2",
+          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1",
           "pcurves": [
             {
               "parameter_range": [
@@ -359,13 +380,13 @@
               "pcurve": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%284.0%29%5D"
             }
           ],
-          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A4",
+          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A4",
           "sense": "forward"
         },
         {
-          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5",
-          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A3",
-          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1",
+          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5%40location1",
+          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A3",
+          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1",
           "pcurves": [
             {
               "parameter_range": [
@@ -375,13 +396,13 @@
               "pcurve": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D"
             }
           ],
-          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1%3A1",
+          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1%3A1",
           "sense": "forward"
         },
         {
-          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4",
-          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A4",
-          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1",
+          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%40location1",
+          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A4",
+          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1",
           "pcurves": [
             {
               "parameter_range": [
@@ -391,13 +412,13 @@
               "pcurve": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%284.0%29%5D"
             }
           ],
-          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A2",
+          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A2",
           "sense": "reversed"
         },
         {
-          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
-          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1%3A1",
-          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1",
+          "edge": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2%40location1",
+          "id": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1%3A1",
+          "owner_loop": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1",
           "pcurves": [
             {
               "parameter_range": [
@@ -407,7 +428,7 @@
               "pcurve": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2%3ASome%28SurfaceParameterAffine%20%7B%20u_scale%3A%201.0%2C%20u_offset%3A%200.0%2C%20v_scale%3A%201.0%2C%20v_offset%3A%200.0%20%7D%29%3A%5BFiniteReal%280.0%29%2C%20FiniteReal%286.283185307179586%29%5D"
             }
           ],
-          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A1",
+          "radial_next": "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A1",
           "sense": "forward"
         }
       ],
@@ -496,9 +517,9 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
-          "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
-          "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
+          "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
+          "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2%40location1",
+          "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -509,9 +530,9 @@
               4.0
             ]
           },
-          "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
-          "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4",
-          "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
+          "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
+          "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%40location1",
+          "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%40location1",
           "tolerance": 1e-7
         },
         {
@@ -522,49 +543,49 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
-          "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5",
-          "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
+          "end": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%40location1",
+          "id": "fcstd:model:edge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:5%40location1",
+          "start": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%40location1",
           "tolerance": 1e-7
         }
       ],
       "faces": [
         {
-          "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
+          "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1",
           "loops": {
             "classification": "unspecified",
             "loops": [
-              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1"
+              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1"
             ]
           },
           "sense": "reversed",
-          "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
+          "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12%40location1",
           "surface": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
           "tolerance": 1e-7
         },
         {
-          "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
+          "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1",
           "loops": {
             "classification": "unspecified",
             "loops": [
-              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1"
+              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1"
             ]
           },
           "sense": "forward",
-          "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
+          "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12%40location1",
           "surface": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
           "tolerance": 1e-7
         },
         {
-          "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
+          "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1",
           "loops": {
             "classification": "unspecified",
             "loops": [
-              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1"
+              "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1"
             ]
           },
           "sense": "forward",
-          "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
+          "shell": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12%40location1",
           "surface": "fcstd:model:surface#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:2",
           "tolerance": 1e-7
         }
@@ -574,35 +595,35 @@
         {
           "boundary": {
             "coedges": [
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1%3A1"
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1%3A1"
             ],
             "kind": "ring"
           },
-          "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
-          "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%3A1"
+          "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1",
+          "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1%3A1"
         },
         {
           "boundary": {
             "coedges": [
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A1",
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A2",
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A3",
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1%3A4"
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A1",
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A4",
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A3",
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1%3A2"
             ],
             "kind": "ring"
           },
-          "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
-          "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%3A1"
+          "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1",
+          "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1%3A1"
         },
         {
           "boundary": {
             "coedges": [
-              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1%3A1"
+              "fcstd:model:coedge#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1%3A1"
             ],
             "kind": "ring"
           },
-          "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
-          "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%3A1"
+          "face": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1",
+          "id": "fcstd:model:loop#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1%3A1"
         }
       ],
       "occurrences": [],
@@ -760,7 +781,7 @@
       "pmi": [],
       "points": [
         {
-          "id": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
+          "id": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
           "position": {
             "x": 5.0,
             "y": -1e-15,
@@ -772,7 +793,7 @@
           }
         },
         {
-          "id": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
+          "id": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%40location1",
           "position": {
             "x": 5.0,
             "y": -1e-15,
@@ -791,32 +812,32 @@
       "product_definitions": [],
       "regions": [
         {
-          "body": "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13",
-          "id": "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13",
+          "body": "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1",
+          "id": "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1",
           "shells": [
-            "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12"
+            "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12%40location1"
           ]
         }
       ],
       "semantic_annotations": [],
       "shells": [
         {
-          "id": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12",
+          "id": "fcstd:model:shell#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:12%40location1",
           "members": [
             {
-              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7",
+              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:7%40location1",
               "kind": "face"
             },
             {
-              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9",
+              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:9%40location1",
               "kind": "face"
             },
             {
-              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11",
+              "id": "fcstd:model:face#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:11%40location1",
               "kind": "face"
             }
           ],
-          "region": "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13"
+          "region": "fcstd:model:region#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1"
         }
       ],
       "sketch_constraints": [],
@@ -907,13 +928,13 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
-          "point": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1",
+          "id": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
+          "point": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
-          "id": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
-          "point": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3",
+          "id": "fcstd:model:vertex#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%40location1",
+          "point": "fcstd:model:point#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:3%40location1",
           "tolerance": 1e-7
         }
       ],
@@ -946,21 +967,21 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "98d1e7aea7fad26ea35e5663ad6a9bb99f3e7261ad5e7f36e3ab60c2b333f8c3",
+          "applications": "59302333e95a7492fdabd071a660589ee7a664a3e14a32c574eaf512da497a58",
           "carrier_census": "e95a1b83acd883c9ab1ecc44f91c31c6bd42096296cc5e150b840f0fb4e1c054",
           "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "document": "7cfb1eb06c9f334c540c5a686f2da950a097b17e083b388910a4efd0b2f4d8e8",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "72395c18c142131dbcb33afd373f6523c7162bf2b1feda515c3c2e38a69cbd8e",
+          "entries": "799c4132a1750f3258574d8d2c99180f5619ba4ed0de17d6573a9e45273edc4c",
           "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "objects": "7d5ebcd50df92825374f87214660d39cd9ee824589680ade403653f36ef5ca77",
+          "objects": "c674271da41e6516b45daf5103b120b1e6efb5b32ad1bba63ec3264e317806f8",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "2abf24a2dd57828c052b82fcd664f3cb9317683cc43caabdb030156428262206",
+          "properties": "f9f53b61d665f07dd26b3504bf85ab27ca511bbc470a38014af90b76c6532acc",
           "shape_payloads": "46841be02adcab0a0ce346701134f00c0c2d838a6386e38f444bc7086fc2d0ab",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
         }
@@ -1194,52 +1215,2969 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "freecad_ledgers": {
+      "file": {
+        "byte_coverage": {
+          "classification_bytes": {
+            "named_opaque": 178,
+            "structural": 1459,
+            "typed": 9148
+          },
+          "exact": true,
+          "id": "fcstd:native:byte-coverage#0",
+          "logical_byte_len": 10785,
+          "logical_entry_count": 2,
+          "logical_span_count": 74,
+          "named_opaque_entries": [
+            "Document.xml"
+          ],
+          "physical_byte_len": 2218,
+          "physical_span_count": 15
+        },
+        "logical_ledger": [
+          {
+            "classification": "structural",
+            "end": 350,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#0",
+            "owner": null,
+            "start": 0
+          },
+          {
+            "classification": "typed",
+            "end": 423,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#1",
+            "owner": "fcstd:native:property#0:FileName",
+            "start": 350
+          },
+          {
+            "classification": "structural",
+            "end": 432,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#2",
+            "owner": null,
+            "start": 423
+          },
+          {
+            "classification": "typed",
+            "end": 498,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#3",
+            "owner": "fcstd:native:property#0:Tip",
+            "start": 432
+          },
+          {
+            "classification": "structural",
+            "end": 507,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#4",
+            "owner": null,
+            "start": 498
+          },
+          {
+            "classification": "typed",
+            "end": 584,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#5",
+            "owner": "fcstd:native:property#0:TransientDir",
+            "start": 507
+          },
+          {
+            "classification": "structural",
+            "end": 593,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#6",
+            "owner": null,
+            "start": 584
+          },
+          {
+            "classification": "typed",
+            "end": 696,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#7",
+            "owner": "fcstd:native:property#0:Comment",
+            "start": 593
+          },
+          {
+            "classification": "structural",
+            "end": 705,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#8",
+            "owner": null,
+            "start": 696
+          },
+          {
+            "classification": "typed",
+            "end": 808,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#9",
+            "owner": "fcstd:native:property#0:Company",
+            "start": 705
+          },
+          {
+            "classification": "structural",
+            "end": 817,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#10",
+            "owner": null,
+            "start": 808
+          },
+          {
+            "classification": "typed",
+            "end": 922,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#11",
+            "owner": "fcstd:native:property#0:CreatedBy",
+            "start": 817
+          },
+          {
+            "classification": "structural",
+            "end": 931,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#12",
+            "owner": null,
+            "start": 922
+          },
+          {
+            "classification": "typed",
+            "end": 1077,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#13",
+            "owner": "fcstd:native:property#0:CreationDate",
+            "start": 931
+          },
+          {
+            "classification": "structural",
+            "end": 1086,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#14",
+            "owner": null,
+            "start": 1077
+          },
+          {
+            "classification": "typed",
+            "end": 1184,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#15",
+            "owner": "fcstd:native:property#0:Id",
+            "start": 1086
+          },
+          {
+            "classification": "structural",
+            "end": 1193,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#16",
+            "owner": null,
+            "start": 1184
+          },
+          {
+            "classification": "typed",
+            "end": 1330,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#17",
+            "owner": "fcstd:native:property#0:Label",
+            "start": 1193
+          },
+          {
+            "classification": "structural",
+            "end": 1339,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#18",
+            "owner": null,
+            "start": 1330
+          },
+          {
+            "classification": "typed",
+            "end": 1449,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#19",
+            "owner": "fcstd:native:property#0:LastModifiedBy",
+            "start": 1339
+          },
+          {
+            "classification": "structural",
+            "end": 1458,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#20",
+            "owner": null,
+            "start": 1449
+          },
+          {
+            "classification": "typed",
+            "end": 1608,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#21",
+            "owner": "fcstd:native:property#0:LastModifiedDate",
+            "start": 1458
+          },
+          {
+            "classification": "structural",
+            "end": 1617,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#22",
+            "owner": null,
+            "start": 1608
+          },
+          {
+            "classification": "typed",
+            "end": 1750,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#23",
+            "owner": "fcstd:native:property#0:License",
+            "start": 1617
+          },
+          {
+            "classification": "structural",
+            "end": 1759,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#24",
+            "owner": null,
+            "start": 1750
+          },
+          {
+            "classification": "typed",
+            "end": 1925,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#25",
+            "owner": "fcstd:native:property#0:LicenseURL",
+            "start": 1759
+          },
+          {
+            "classification": "structural",
+            "end": 1934,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#26",
+            "owner": null,
+            "start": 1925
+          },
+          {
+            "classification": "typed",
+            "end": 2051,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#27",
+            "owner": "fcstd:native:property#0:Material",
+            "start": 1934
+          },
+          {
+            "classification": "structural",
+            "end": 2060,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#28",
+            "owner": null,
+            "start": 2051
+          },
+          {
+            "classification": "typed",
+            "end": 2173,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#29",
+            "owner": "fcstd:native:property#0:Meta",
+            "start": 2060
+          },
+          {
+            "classification": "structural",
+            "end": 2182,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#30",
+            "owner": null,
+            "start": 2173
+          },
+          {
+            "classification": "typed",
+            "end": 2300,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#31",
+            "owner": "fcstd:native:property#0:ShowHidden",
+            "start": 2182
+          },
+          {
+            "classification": "structural",
+            "end": 2309,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#32",
+            "owner": null,
+            "start": 2300
+          },
+          {
+            "classification": "typed",
+            "end": 2430,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#33",
+            "owner": "fcstd:native:property#0:TipName",
+            "start": 2309
+          },
+          {
+            "classification": "structural",
+            "end": 2439,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#34",
+            "owner": null,
+            "start": 2430
+          },
+          {
+            "classification": "typed",
+            "end": 2588,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#35",
+            "owner": "fcstd:native:property#0:Uid",
+            "start": 2439
+          },
+          {
+            "classification": "structural",
+            "end": 2597,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#36",
+            "owner": null,
+            "start": 2588
+          },
+          {
+            "classification": "typed",
+            "end": 3403,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#37",
+            "owner": "fcstd:native:property#0:UnitSystem",
+            "start": 2597
+          },
+          {
+            "classification": "structural",
+            "end": 3412,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#38",
+            "owner": null,
+            "start": 3403
+          },
+          {
+            "classification": "typed",
+            "end": 3535,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#39",
+            "owner": "fcstd:native:property#0:UseHasher",
+            "start": 3412
+          },
+          {
+            "classification": "structural",
+            "end": 4003,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#40",
+            "owner": null,
+            "start": 3535
+          },
+          {
+            "classification": "typed",
+            "end": 4209,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#41",
+            "owner": "fcstd:native:property#CorpusMetadata:ExpressionEngine",
+            "start": 4003
+          },
+          {
+            "classification": "structural",
+            "end": 4226,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#42",
+            "owner": null,
+            "start": 4209
+          },
+          {
+            "classification": "typed",
+            "end": 4487,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#43",
+            "owner": "fcstd:native:property#CorpusMetadata:InertValue",
+            "start": 4226
+          },
+          {
+            "classification": "structural",
+            "end": 4504,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#44",
+            "owner": null,
+            "start": 4487
+          },
+          {
+            "classification": "typed",
+            "end": 4654,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#45",
+            "owner": "fcstd:native:property#CorpusMetadata:Label",
+            "start": 4504
+          },
+          {
+            "classification": "structural",
+            "end": 4671,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#46",
+            "owner": null,
+            "start": 4654
+          },
+          {
+            "classification": "typed",
+            "end": 4807,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#47",
+            "owner": "fcstd:native:property#CorpusMetadata:Label2",
+            "start": 4671
+          },
+          {
+            "classification": "structural",
+            "end": 4824,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#48",
+            "owner": null,
+            "start": 4807
+          },
+          {
+            "classification": "typed",
+            "end": 5014,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#49",
+            "owner": "fcstd:native:property#CorpusMetadata:License",
+            "start": 4824
+          },
+          {
+            "classification": "structural",
+            "end": 5031,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#50",
+            "owner": null,
+            "start": 5014
+          },
+          {
+            "classification": "typed",
+            "end": 5187,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#51",
+            "owner": "fcstd:native:property#CorpusMetadata:Proxy",
+            "start": 5031
+          },
+          {
+            "classification": "structural",
+            "end": 5204,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#52",
+            "owner": null,
+            "start": 5187
+          },
+          {
+            "classification": "typed",
+            "end": 5422,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#53",
+            "owner": "fcstd:native:property#CorpusMetadata:Purpose",
+            "start": 5204
+          },
+          {
+            "classification": "structural",
+            "end": 5439,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#54",
+            "owner": null,
+            "start": 5422
+          },
+          {
+            "classification": "typed",
+            "end": 5574,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#55",
+            "owner": "fcstd:native:property#CorpusMetadata:Visibility",
+            "start": 5439
+          },
+          {
+            "classification": "structural",
+            "end": 5731,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#56",
+            "owner": null,
+            "start": 5574
+          },
+          {
+            "classification": "typed",
+            "end": 5815,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#57",
+            "owner": "fcstd:native:property#ExternalPrototype:_ElementMapVersion",
+            "start": 5731
+          },
+          {
+            "classification": "structural",
+            "end": 5832,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#58",
+            "owner": null,
+            "start": 5815
+          },
+          {
+            "classification": "typed",
+            "end": 6038,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#59",
+            "owner": "fcstd:native:property#ExternalPrototype:ExpressionEngine",
+            "start": 5832
+          },
+          {
+            "classification": "structural",
+            "end": 6055,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#60",
+            "owner": null,
+            "start": 6038
+          },
+          {
+            "classification": "typed",
+            "end": 6206,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#61",
+            "owner": "fcstd:native:property#ExternalPrototype:Label",
+            "start": 6055
+          },
+          {
+            "classification": "structural",
+            "end": 6223,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#62",
+            "owner": null,
+            "start": 6206
+          },
+          {
+            "classification": "typed",
+            "end": 6359,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#63",
+            "owner": "fcstd:native:property#ExternalPrototype:Label2",
+            "start": 6223
+          },
+          {
+            "classification": "structural",
+            "end": 6376,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#64",
+            "owner": null,
+            "start": 6359
+          },
+          {
+            "classification": "typed",
+            "end": 6782,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#65",
+            "owner": "fcstd:native:property#ExternalPrototype:Placement",
+            "start": 6376
+          },
+          {
+            "classification": "structural",
+            "end": 6799,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#66",
+            "owner": null,
+            "start": 6782
+          },
+          {
+            "classification": "typed",
+            "end": 7002,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#67",
+            "owner": "fcstd:native:property#ExternalPrototype:Shape",
+            "start": 6799
+          },
+          {
+            "classification": "structural",
+            "end": 7019,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#68",
+            "owner": null,
+            "start": 7002
+          },
+          {
+            "classification": "named_opaque",
+            "end": 7197,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#69",
+            "owner": "fcstd:native:property#ExternalPrototype:ShapeMaterial",
+            "start": 7019
+          },
+          {
+            "classification": "structural",
+            "end": 7214,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#70",
+            "owner": null,
+            "start": 7197
+          },
+          {
+            "classification": "typed",
+            "end": 7349,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#71",
+            "owner": "fcstd:native:property#ExternalPrototype:Visibility",
+            "start": 7214
+          },
+          {
+            "classification": "structural",
+            "end": 7424,
+            "entry": "Document.xml",
+            "id": "fcstd:native:logical-span#72",
+            "owner": null,
+            "start": 7349
+          },
+          {
+            "classification": "typed",
+            "end": 3361,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:logical-span#73",
+            "owner": "fcstd:native:entry#ExternalPrototype.Shape.brp",
+            "start": 0
+          }
+        ],
+        "physical_ledger": [
+          {
+            "end": 4,
+            "entry": "Document.xml",
+            "id": "fcstd:native:archive-span#0",
+            "role": "local-signature",
+            "start": 0
+          },
+          {
+            "end": 30,
+            "entry": "Document.xml",
+            "id": "fcstd:native:archive-span#1",
+            "role": "local-fields",
+            "start": 4
+          },
+          {
+            "end": 42,
+            "entry": "Document.xml",
+            "id": "fcstd:native:archive-span#2",
+            "role": "local-name",
+            "start": 30
+          },
+          {
+            "end": 1545,
+            "entry": "Document.xml",
+            "id": "fcstd:native:archive-span#3",
+            "role": "compressed-payload",
+            "start": 42
+          },
+          {
+            "end": 1549,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:archive-span#4",
+            "role": "local-signature",
+            "start": 1545
+          },
+          {
+            "end": 1575,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:archive-span#5",
+            "role": "local-fields",
+            "start": 1549
+          },
+          {
+            "end": 1602,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:archive-span#6",
+            "role": "local-name",
+            "start": 1575
+          },
+          {
+            "end": 2040,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:archive-span#7",
+            "role": "compressed-payload",
+            "start": 1602
+          },
+          {
+            "end": 2044,
+            "entry": "Document.xml",
+            "id": "fcstd:native:archive-span#8",
+            "role": "central-signature",
+            "start": 2040
+          },
+          {
+            "end": 2086,
+            "entry": "Document.xml",
+            "id": "fcstd:native:archive-span#9",
+            "role": "central-fields",
+            "start": 2044
+          },
+          {
+            "end": 2098,
+            "entry": "Document.xml",
+            "id": "fcstd:native:archive-span#10",
+            "role": "central-name",
+            "start": 2086
+          },
+          {
+            "end": 2102,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:archive-span#11",
+            "role": "central-signature",
+            "start": 2098
+          },
+          {
+            "end": 2144,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:archive-span#12",
+            "role": "central-fields",
+            "start": 2102
+          },
+          {
+            "end": 2171,
+            "entry": "ExternalPrototype.Shape.brp",
+            "id": "fcstd:native:archive-span#13",
+            "role": "central-name",
+            "start": 2144
+          },
+          {
+            "end": 2218,
+            "entry": null,
+            "id": "fcstd:native:archive-span#14",
+            "role": "end-record",
+            "start": 2171
+          }
+        ]
+      }
+    },
     "metadata": {
-      "document_local_sha256": "8402620379ae8833db3a2d85781e029dea053f1234daa24b4342bf9bd1d603d5",
+      "document_local_sha256": "14920acb4cef0368c1370eb672166d19652977eb16a5faa7eefbc1a907714162",
       "fcstd.archive_entry_count": "2",
       "fcstd.object_count": "2",
       "fcstd.physical_archive_bytes": "2218",
       "fcstd.physical_ledger_spans": "15"
     },
-    "retained_records": {
-      "fcstd:native:entry#Document.xml": {
-        "bytes": {
-          "data": "PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0ndXRmLTgnPz4KPCEtLQogRnJlZUNBRCBEb2N1bWVudCwgc2VlIGh0dHBzOi8vd3d3LmZyZWVjYWQub3JnIGZvciBtb3JlIGluZm9ybWF0aW9uLi4uCi0tPgo8RG9jdW1lbnQgU2NoZW1hVmVyc2lvbj0iNCIgUHJvZ3JhbVZlcnNpb249IjEuMVIyMDI2MDQxNCAoR2l0IHNoYWxsb3cpIiBGaWxlVmVyc2lvbj0iMSIgU3RyaW5nSGFzaGVyPSIxIj4KICAgIDxTdHJpbmdIYXNoZXIgc2F2ZWFsbD0iMCIgdGhyZXNob2xkPSIwIiBjb3VudD0iMCI+PC9TdHJpbmdIYXNoZXI+CiAgICA8UHJvcGVydGllcyBDb3VudD0iMTciIFRyYW5zaWVudENvdW50PSIzIj4KICAgICAgICA8X1Byb3BlcnR5IG5hbWU9IkZpbGVOYW1lIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjUwMzMxNjQ5Ii8+CiAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJUaXAiIHR5cGU9IkFwcDo6UHJvcGVydHlMaW5rIiBzdGF0dXM9IjMzNTU0NDMzIi8+CiAgICAgICAgPF9Qcm9wZXJ0eSBuYW1lPSJUcmFuc2llbnREaXIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNTAzMzE2NDkiLz4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iQ29tbWVudCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IkNvbXBhbnkiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDcmVhdGVkQnkiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJDcmVhdGlvbkRhdGUiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIyMDI2LTAxLTAxVDAwOjAwOjAwWiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IklkIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIj4KICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTGFiZWwiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJleHRlcm5hbF9jb21wb25lbnQiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYXN0TW9kaWZpZWRCeSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9Ikxhc3RNb2RpZmllZERhdGUiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSIyMDI2LTAxLTAxVDAwOjAwOjAwWiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxpY2Vuc2UiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iMSI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IkFsbCByaWdodHMgcmVzZXJ2ZWQiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMaWNlbnNlVVJMIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjEiPgogICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJodHRwczovL2VuLndpa2lwZWRpYS5vcmcvd2lraS9BbGxfcmlnaHRzX3Jlc2VydmVkIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTWF0ZXJpYWwiIHR5cGU9IkFwcDo6UHJvcGVydHlNYXAiPgogICAgICAgICAgICA8TWFwIGNvdW50PSIwIj4KICAgICAgICAgICAgPC9NYXA+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iTWV0YSIgdHlwZT0iQXBwOjpQcm9wZXJ0eU1hcCI+CiAgICAgICAgICAgIDxNYXAgY291bnQ9IjAiPgogICAgICAgICAgICA8L01hcD4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJTaG93SGlkZGVuIiB0eXBlPSJBcHA6OlByb3BlcnR5Qm9vbCIgc3RhdHVzPSIxIj4KICAgICAgICAgICAgPEJvb2wgdmFsdWU9ImZhbHNlIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iVGlwTmFtZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSI4Mzg4NjA4MCI+CiAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgPFByb3BlcnR5IG5hbWU9IlVpZCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVVVSUQiIHN0YXR1cz0iMTY3NzcyMTciPgogICAgICAgICAgICA8VXVpZCB2YWx1ZT0iMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIi8+CiAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICA8UHJvcGVydHkgbmFtZT0iVW5pdFN5c3RlbSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUVudW1lcmF0aW9uIiBzdGF0dXM9IjEiPgogICAgICAgICAgICA8SW50ZWdlciB2YWx1ZT0iMCIgQ3VzdG9tRW51bT0idHJ1ZSIvPgogICAgICAgICAgICA8Q3VzdG9tRW51bUxpc3QgY291bnQ9IjEwIj4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJTdGFuZGFyZCAobW0sIGtnLCBzLCDCsCkiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJNS1MgKG0sIGtnLCBzLCDCsCkiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJVUyBjdXN0b21hcnkgKGluLCBsYikiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJJbXBlcmlhbCBkZWNpbWFsIChpbiwgbGIpIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iQnVpbGRpbmcgRXVybyAoY20sIG3CsiwgbcKzKSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9IkJ1aWxkaW5nIFVTIChmdC1pbiwgc3FmdCwgY2Z0KSIvPgogICAgICAgICAgICAgICAgPEVudW0gdmFsdWU9Ik1ldHJpYyBzbWFsbCBwYXJ0cyAmYW1wOyBDTkMgKG1tLCBtbS9taW4pIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iSW1wZXJpYWwgZm9yIENpdmlsIEVuZyAoZnQsIGxiLCBtcGgpIi8+CiAgICAgICAgICAgICAgICA8RW51bSB2YWx1ZT0iRkVNIChtbSwgTiwgcykiLz4KICAgICAgICAgICAgICAgIDxFbnVtIHZhbHVlPSJNZXRlciBkZWNpbWFsIChtLCBtwrIsIG3CsykiLz4KICAgICAgICAgICAgPC9DdXN0b21FbnVtTGlzdD4KICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJVc2VIYXNoZXIiIHR5cGU9IkFwcDo6UHJvcGVydHlCb29sIiBzdGF0dXM9IjY3MTA4ODY1Ij4KICAgICAgICAgICAgPEJvb2wgdmFsdWU9InRydWUiLz4KICAgICAgICA8L1Byb3BlcnR5PgogICAgPC9Qcm9wZXJ0aWVzPgogICAgPE9iamVjdHMgQ291bnQ9IjIiIERlcGVuZGVuY2llcz0iMSI+CiAgICAgICAgPE9iamVjdERlcHMgTmFtZT0iQ29ycHVzTWV0YWRhdGEiIENvdW50PSIwIi8+CiAgICAgICAgPE9iamVjdERlcHMgTmFtZT0iRXh0ZXJuYWxQcm90b3R5cGUiIENvdW50PSIwIi8+CiAgICAgICAgPE9iamVjdCB0eXBlPSJBcHA6OkZlYXR1cmVQeXRob24iIG5hbWU9IkNvcnB1c01ldGFkYXRhIiBpZD0iMSIgLz4KICAgICAgICA8T2JqZWN0IHR5cGU9IlBhcnQ6OkZlYXR1cmUiIG5hbWU9IkV4dGVybmFsUHJvdG90eXBlIiBpZD0iMiIgLz4KICAgIDwvT2JqZWN0cz4KICAgIDxPYmplY3REYXRhIENvdW50PSIyIj4KICAgICAgICA8T2JqZWN0IG5hbWU9IkNvcnB1c01ldGFkYXRhIj4KICAgICAgICAgICAgPFByb3BlcnRpZXMgQ291bnQ9IjgiIFRyYW5zaWVudENvdW50PSIwIj4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJFeHByZXNzaW9uRW5naW5lIiB0eXBlPSJBcHA6OlByb3BlcnR5RXhwcmVzc2lvbkVuZ2luZSIgc3RhdHVzPSI2NzEwODg2NCI+CiAgICAgICAgICAgICAgICAgICAgPEV4cHJlc3Npb25FbmdpbmUgY291bnQ9IjAiPgogICAgICAgICAgICAgICAgICAgIDwvRXhwcmVzc2lvbkVuZ2luZT4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iSW5lcnRWYWx1ZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVB5dGhvbk9iamVjdCIgZ3JvdXA9IkNvcnB1cyIgZG9jPSIiIGF0dHI9IjAiIHJvPSIwIiBoaWRlPSIwIiBzdGF0dXM9IjIwOTcxNTIiPgogICAgICAgICAgICAgICAgICAgIDxQeXRob24gdmFsdWU9ImV5SnpZV1psSWpvZ2RISjFaU3dnSW1WNFpXTjFkR1VpT2lCbVlXeHpaWDA9IiBlbmNvZGVkPSJ5ZXMiIGpzb249InllcyIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSIxMzQyMTc3MjgiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IkNvcnB1c01ldGFkYXRhIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxhYmVsMiIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSI2NzEwODk5MiI+CiAgICAgICAgICAgICAgICAgICAgPFN0cmluZyB2YWx1ZT0iIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkxpY2Vuc2UiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIGdyb3VwPSJDb3JwdXMiIGRvYz0iIiBhdHRyPSIwIiBybz0iMCIgaGlkZT0iMCIgc3RhdHVzPSIyMDk3MTUyIj4KICAgICAgICAgICAgICAgICAgICA8U3RyaW5nIHZhbHVlPSJDQzAtMS4wIi8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlByb3h5IiB0eXBlPSJBcHA6OlByb3BlcnR5UHl0aG9uT2JqZWN0Ij4KICAgICAgICAgICAgICAgICAgICA8UHl0aG9uIHZhbHVlPSJiblZzYkE9PSIgZW5jb2RlZD0ieWVzIiBqc29uPSJ5ZXMiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iUHVycG9zZSIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgZ3JvdXA9IkNvcnB1cyIgZG9jPSIiIGF0dHI9IjAiIHJvPSIwIiBoaWRlPSIwIiBzdGF0dXM9IjIwOTcxNTIiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IkV4dGVybmFsbHkgbGlua2VkIHByb2R1Y3QgY29tcG9uZW50Ii8+CiAgICAgICAgICAgICAgICA8L1Byb3BlcnR5PgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IlZpc2liaWxpdHkiIHR5cGU9IkFwcDo6UHJvcGVydHlCb29sIiBzdGF0dXM9IjY0OCI+CiAgICAgICAgICAgICAgICAgICAgPEJvb2wgdmFsdWU9InRydWUiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgIDwvUHJvcGVydGllcz4KICAgICAgICA8L09iamVjdD4KICAgICAgICA8T2JqZWN0IG5hbWU9IkV4dGVybmFsUHJvdG90eXBlIj4KICAgICAgICAgICAgPFByb3BlcnRpZXMgQ291bnQ9IjciIFRyYW5zaWVudENvdW50PSIxIj4KICAgICAgICAgICAgICAgIDxfUHJvcGVydHkgbmFtZT0iX0VsZW1lbnRNYXBWZXJzaW9uIiB0eXBlPSJBcHA6OlByb3BlcnR5U3RyaW5nIiBzdGF0dXM9IjIzNDg4MTAyNCIvPgogICAgICAgICAgICAgICAgPFByb3BlcnR5IG5hbWU9IkV4cHJlc3Npb25FbmdpbmUiIHR5cGU9IkFwcDo6UHJvcGVydHlFeHByZXNzaW9uRW5naW5lIiBzdGF0dXM9IjY3MTA4ODY0Ij4KICAgICAgICAgICAgICAgICAgICA8RXhwcmVzc2lvbkVuZ2luZSBjb3VudD0iMCI+CiAgICAgICAgICAgICAgICAgICAgPC9FeHByZXNzaW9uRW5naW5lPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbCIgdHlwZT0iQXBwOjpQcm9wZXJ0eVN0cmluZyIgc3RhdHVzPSIxMzQyMTc3MjgiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IkV4dGVybmFsIHNwYWNlciIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJMYWJlbDIiIHR5cGU9IkFwcDo6UHJvcGVydHlTdHJpbmciIHN0YXR1cz0iNjcxMDg5OTIiPgogICAgICAgICAgICAgICAgICAgIDxTdHJpbmcgdmFsdWU9IiIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJQbGFjZW1lbnQiIHR5cGU9IkFwcDo6UHJvcGVydHlQbGFjZW1lbnQiIHN0YXR1cz0iODM4ODYwOCI+CiAgICAgICAgICAgICAgICAgICAgPFByb3BlcnR5UGxhY2VtZW50IFB4PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFB5PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFB6PSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEwPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFExPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEyPSIwLjAwMDAwMDAwMDAwMDAwMDAiIFEzPSIxLjAwMDAwMDAwMDAwMDAwMDAiIEE9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3g9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3k9IjAuMDAwMDAwMDAwMDAwMDAwMCIgT3o9IjEuMDAwMDAwMDAwMDAwMDAwMCIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgICAgIDxQcm9wZXJ0eSBuYW1lPSJTaGFwZSIgdHlwZT0iUGFydDo6UHJvcGVydHlQYXJ0U2hhcGUiPgogICAgICAgICAgICAgICAgICAgIDxQYXJ0IEVsZW1lbnRNYXA9IjE1LjcwMjAwLjUiIGZpbGU9IkV4dGVybmFsUHJvdG90eXBlLlNoYXBlLmJycCIvPgogICAgICAgICAgICAgICAgICAgIDxFbGVtZW50TWFwLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iU2hhcGVNYXRlcmlhbCIgdHlwZT0iTWF0ZXJpYWxzOjpQcm9wZXJ0eU1hdGVyaWFsIj4KICAgICAgICAgICAgICAgICAgICA8UHJvcGVydHlNYXRlcmlhbCB1dWlkPSI3ZjlmZDczYi01MGM5LTQxZDgtYjdiMi01NzVhMDMwYzFlZWIiLz4KICAgICAgICAgICAgICAgIDwvUHJvcGVydHk+CiAgICAgICAgICAgICAgICA8UHJvcGVydHkgbmFtZT0iVmlzaWJpbGl0eSIgdHlwZT0iQXBwOjpQcm9wZXJ0eUJvb2wiIHN0YXR1cz0iNjQ4Ij4KICAgICAgICAgICAgICAgICAgICA8Qm9vbCB2YWx1ZT0idHJ1ZSIvPgogICAgICAgICAgICAgICAgPC9Qcm9wZXJ0eT4KICAgICAgICAgICAgPC9Qcm9wZXJ0aWVzPgogICAgICAgIDwvT2JqZWN0PgogICAgPC9PYmplY3REYXRhPgo8L0RvY3VtZW50Pgo=",
-          "retention": "inline"
+    "parts": {
+      "fcstd:source:part#0abfd9f50c8bc058bd79c90388a47f93b604fb72f6d2cbad21598b6a54d9da2a": {
+        "byte_len": 36,
+        "framing_bytes": [
+          {
+            "end": 1281,
+            "start": 1274
+          },
+          {
+            "end": 1310,
+            "start": 1308
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 1274,
+        "parent": "fcstd:source:part#0cbee9df26fb21e4894ec8998eb92e575b979d12bf5ad279f445acefc1164f86",
+        "state": {
+          "state": "decoded"
         },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#0cbee9df26fb21e4894ec8998eb92e575b979d12bf5ad279f445acefc1164f86": {
+        "byte_len": 137,
+        "framing_bytes": [
+          {
+            "end": 1202,
+            "start": 1193
+          },
+          {
+            "end": 1261,
+            "start": 1260
+          },
+          {
+            "end": 1330,
+            "start": 1319
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 1193,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#19f99daccbf0872f52602591c39ee6aab26859edc731b7916275006dac88570b": {
+        "byte_len": 438,
+        "framing_bytes": [],
+        "level": "zip.entry",
+        "offset": 1602,
+        "parent": "fcstd:source:part#33d0398caf5c270c9210fd70e8c9ea8e7c4826a34a71b9e1d34199ffa50e77eb",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "fcstd:source:part#1ebc391687670cdc21d8ec4e1c20f49abe428a210a991444a94540f6dc354ada": {
+        "byte_len": 57,
+        "framing_bytes": [
+          {
+            "end": 1549,
+            "start": 1545
+          },
+          {
+            "end": 1553,
+            "start": 1551
+          },
+          {
+            "end": 1567,
+            "start": 1563
+          },
+          {
+            "end": 1575,
+            "start": 1571
+          }
+        ],
+        "level": "zip.local_header",
+        "offset": 1545,
+        "parent": "fcstd:source:part#33d0398caf5c270c9210fd70e8c9ea8e7c4826a34a71b9e1d34199ffa50e77eb",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "fcstd:source:part#22b556e48c9a937ba174ca2265d4e8ced0e708b1e0537a81feaf7caebf86a9d4": {
+        "byte_len": 121,
+        "framing_bytes": [
+          {
+            "end": 2318,
+            "start": 2309
+          },
+          {
+            "end": 2379,
+            "start": 2378
+          },
+          {
+            "end": 2430,
+            "start": 2419
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 2309,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#33d0398caf5c270c9210fd70e8c9ea8e7c4826a34a71b9e1d34199ffa50e77eb": {
+        "byte_len": 2218,
+        "framing_bytes": [],
+        "level": "zip.archive",
         "offset": 0,
-        "stream": "Document.xml",
-        "untyped": []
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "fcstd:source:part#350c019f2510ee24236303c271260e17c5fd5690cf58ffddee5f24795e151b1a": {
+        "byte_len": 118,
+        "framing_bytes": [
+          {
+            "end": 2191,
+            "start": 2182
+          },
+          {
+            "end": 2246,
+            "start": 2245
+          },
+          {
+            "end": 2300,
+            "start": 2289
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 2182,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#3c5e95e1ce02d224578e4e74fb3281cd285549b4d67ab4e6302fee0834a48692": {
+        "byte_len": 20,
+        "framing_bytes": [
+          {
+            "end": 3500,
+            "start": 3495
+          },
+          {
+            "end": 3515,
+            "start": 3513
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 3495,
+        "parent": "fcstd:source:part#4150d0f04dc60c8a1a15d6ba7dc8f483a6c5074059b5b4c797f975accce17b1e",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#3f3f8982f95895492a7602d88e71957d44c41800acc896fa18eff1823dd946e2": {
+        "byte_len": 37,
+        "framing_bytes": [
+          {
+            "end": 1700,
+            "start": 1693
+          },
+          {
+            "end": 1730,
+            "start": 1728
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 1693,
+        "parent": "fcstd:source:part#645e083a8ee10432e8446164a492990839e77115b39daa139c66aa804f60cb06",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#4150d0f04dc60c8a1a15d6ba7dc8f483a6c5074059b5b4c797f975accce17b1e": {
+        "byte_len": 123,
+        "framing_bytes": [
+          {
+            "end": 3421,
+            "start": 3412
+          },
+          {
+            "end": 3482,
+            "start": 3481
+          },
+          {
+            "end": 3535,
+            "start": 3524
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 3412,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#435d6faa4ded78d630d488d8c324bc426ef83eecd738a8c9f902e3dc67688f4b": {
+        "byte_len": 146,
+        "framing_bytes": [
+          {
+            "end": 940,
+            "start": 931
+          },
+          {
+            "end": 1006,
+            "start": 1005
+          },
+          {
+            "end": 1077,
+            "start": 1066
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 931,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#4f8b617e8700b65b0081b91875bfa838ad99128ef5ea6e65d9e10e0cde5ee960": {
+        "byte_len": 110,
+        "framing_bytes": [
+          {
+            "end": 1348,
+            "start": 1339
+          },
+          {
+            "end": 1398,
+            "start": 1397
+          },
+          {
+            "end": 1449,
+            "start": 1438
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 1339,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#50e8fdf7611b1c4147261875fcbd32981217bf5798ebbe2d9c43399692eb05f8": {
+        "byte_len": 18,
+        "framing_bytes": [
+          {
+            "end": 665,
+            "start": 658
+          },
+          {
+            "end": 676,
+            "start": 674
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 658,
+        "parent": "fcstd:source:part#cb5da582506977c41393ccb9f787ad39f077ac4efdbeec1123edf981074dbaf1",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#573168edfb371375bdce298e2ed2a98bb0fb9d0d17b61087e2d413453dd3c0a0": {
+        "byte_len": 42,
+        "framing_bytes": [
+          {
+            "end": 4,
+            "start": 0
+          },
+          {
+            "end": 8,
+            "start": 6
+          },
+          {
+            "end": 22,
+            "start": 18
+          },
+          {
+            "end": 30,
+            "start": 26
+          }
+        ],
+        "level": "zip.local_header",
+        "offset": 0,
+        "parent": "fcstd:source:part#33d0398caf5c270c9210fd70e8c9ea8e7c4826a34a71b9e1d34199ffa50e77eb",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "fcstd:source:part#573340b10aefc6a433a3154a598151471e340dde6847973a3ebe4ba420a9be39": {
+        "byte_len": 103,
+        "framing_bytes": [
+          {
+            "end": 714,
+            "start": 705
+          },
+          {
+            "end": 757,
+            "start": 756
+          },
+          {
+            "end": 808,
+            "start": 797
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 705,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#5c647f4e5992cf9d3b5ce831a7fb737de80fa716cb50488fb4ea6c71b80223a1": {
+        "byte_len": 38,
+        "framing_bytes": [
+          {
+            "end": 1026,
+            "start": 1019
+          },
+          {
+            "end": 1057,
+            "start": 1055
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 1019,
+        "parent": "fcstd:source:part#435d6faa4ded78d630d488d8c324bc426ef83eecd738a8c9f902e3dc67688f4b",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#62374a05b8cb8ea61af4b427bc0652203a6e059aacdbe30c7feea20739f9d370": {
+        "byte_len": 18,
+        "framing_bytes": [
+          {
+            "end": 777,
+            "start": 770
+          },
+          {
+            "end": 788,
+            "start": 786
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 770,
+        "parent": "fcstd:source:part#573340b10aefc6a433a3154a598151471e340dde6847973a3ebe4ba420a9be39",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#645e083a8ee10432e8446164a492990839e77115b39daa139c66aa804f60cb06": {
+        "byte_len": 133,
+        "framing_bytes": [
+          {
+            "end": 1626,
+            "start": 1617
+          },
+          {
+            "end": 1680,
+            "start": 1679
+          },
+          {
+            "end": 1750,
+            "start": 1739
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 1617,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#652fa159687410bebd0915954fd1764242615d39b38da8154aa431cbfe2759b1": {
+        "byte_len": 67,
+        "framing_bytes": [
+          {
+            "end": 1845,
+            "start": 1838
+          },
+          {
+            "end": 1905,
+            "start": 1903
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 1838,
+        "parent": "fcstd:source:part#cc2f600957acf2ce713651fc739a4d26eb2e123912a0fc4b1bffaee160ec77ad",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#9845bd72a8adcd9a08638f7ba023f3d721a45010f87100f0d942db8b50a63725": {
+        "byte_len": 1503,
+        "framing_bytes": [],
+        "level": "zip.entry",
+        "offset": 42,
+        "parent": "fcstd:source:part#33d0398caf5c270c9210fd70e8c9ea8e7c4826a34a71b9e1d34199ffa50e77eb",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "fcstd:source:part#a2a641c246e81d049a02d56b09f5e3b4d16b3a0927a16f551f0f1a64deb8a623": {
+        "byte_len": 150,
+        "framing_bytes": [
+          {
+            "end": 1467,
+            "start": 1458
+          },
+          {
+            "end": 1537,
+            "start": 1536
+          },
+          {
+            "end": 1608,
+            "start": 1597
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 1458,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#a698b44d4d389d9d47e9ac51f540834d410f56fc6a60305390638dede5d2a0b2": {
+        "byte_len": 18,
+        "framing_bytes": [
+          {
+            "end": 1418,
+            "start": 1411
+          },
+          {
+            "end": 1429,
+            "start": 1427
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 1411,
+        "parent": "fcstd:source:part#4f8b617e8700b65b0081b91875bfa838ad99128ef5ea6e65d9e10e0cde5ee960",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#b39fbe02f021787a8ad894b235869455e166440824a7b4f80f3262b16e4379ac": {
+        "byte_len": 18,
+        "framing_bytes": [
+          {
+            "end": 2399,
+            "start": 2392
+          },
+          {
+            "end": 2410,
+            "start": 2408
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 2392,
+        "parent": "fcstd:source:part#22b556e48c9a937ba174ca2265d4e8ced0e708b1e0537a81feaf7caebf86a9d4",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def": {
+        "byte_len": 3254,
+        "framing_bytes": [
+          {
+            "end": 310,
+            "start": 299
+          },
+          {
+            "end": 341,
+            "start": 340
+          },
+          {
+            "end": 3553,
+            "start": 3540
+          }
+        ],
+        "level": "freecad.properties",
+        "offset": 299,
+        "parent": "fcstd:source:part#f3179cb78dd5e882b585cac487914f5a7bdd4747147afba9a681522275af05ae",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#b98a02b9618b6835d2edcbe8cbdd5b6ffd055755852119c02863528e95cc21af": {
+        "byte_len": 98,
+        "framing_bytes": [
+          {
+            "end": 1095,
+            "start": 1086
+          },
+          {
+            "end": 1133,
+            "start": 1132
+          },
+          {
+            "end": 1184,
+            "start": 1173
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 1086,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#cb5da582506977c41393ccb9f787ad39f077ac4efdbeec1123edf981074dbaf1": {
+        "byte_len": 103,
+        "framing_bytes": [
+          {
+            "end": 602,
+            "start": 593
+          },
+          {
+            "end": 645,
+            "start": 644
+          },
+          {
+            "end": 696,
+            "start": 685
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 593,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#cc00afda20b0d64f867af4ed81e4db2b84e2fb0ba5a9f1ca29e0c0829271478e": {
+        "byte_len": 105,
+        "framing_bytes": [
+          {
+            "end": 826,
+            "start": 817
+          },
+          {
+            "end": 871,
+            "start": 870
+          },
+          {
+            "end": 922,
+            "start": 911
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 817,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#cc2f600957acf2ce713651fc739a4d26eb2e123912a0fc4b1bffaee160ec77ad": {
+        "byte_len": 166,
+        "framing_bytes": [
+          {
+            "end": 1768,
+            "start": 1759
+          },
+          {
+            "end": 1825,
+            "start": 1824
+          },
+          {
+            "end": 1925,
+            "start": 1914
+          }
+        ],
+        "level": "freecad.property",
+        "offset": 1759,
+        "parent": "fcstd:source:part#b78effc06d75e4efee64162063f42237e7da49d268c989ca0eaaa3d1775b4def",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#cf55656abc400b4fd06d944e35913bd3d5865655c89c1708fd9e13fb5c2c7655": {
+        "byte_len": 18,
+        "framing_bytes": [
+          {
+            "end": 891,
+            "start": 884
+          },
+          {
+            "end": 902,
+            "start": 900
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 884,
+        "parent": "fcstd:source:part#cc00afda20b0d64f867af4ed81e4db2b84e2fb0ba5a9f1ca29e0c0829271478e",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#d52db2a0f24ecd37637466f9b8d9a564ed6ca8074086a97b1489836676c12e3c": {
+        "byte_len": 38,
+        "framing_bytes": [
+          {
+            "end": 1557,
+            "start": 1550
+          },
+          {
+            "end": 1588,
+            "start": 1586
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 1550,
+        "parent": "fcstd:source:part#a2a641c246e81d049a02d56b09f5e3b4d16b3a0927a16f551f0f1a64deb8a623",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#db5f246a28ececabb60ca6619c46b4e1d7046de1f42bcbbc0f6510233a4ccbb1": {
+        "byte_len": 21,
+        "framing_bytes": [
+          {
+            "end": 2264,
+            "start": 2259
+          },
+          {
+            "end": 2280,
+            "start": 2278
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 2259,
+        "parent": "fcstd:source:part#350c019f2510ee24236303c271260e17c5fd5690cf58ffddee5f24795e151b1a",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#eabdb0fa8c1ea61ad656336443f63a54777d659325a4e0386061ac1efec31e6a": {
+        "byte_len": 7424,
+        "framing_bytes": [],
+        "level": "freecad.document_xml",
+        "offset": 0,
+        "parent": "fcstd:source:part#9845bd72a8adcd9a08638f7ba023f3d721a45010f87100f0d942db8b50a63725",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#ed38aff1b42f2a949923d58b9635adfe7b417f439ba831b42dcd17919040335b": {
+        "byte_len": 18,
+        "framing_bytes": [
+          {
+            "end": 1153,
+            "start": 1146
+          },
+          {
+            "end": 1164,
+            "start": 1162
+          }
+        ],
+        "level": "freecad.property_value",
+        "offset": 1146,
+        "parent": "fcstd:source:part#b98a02b9618b6835d2edcbe8cbdd5b6ffd055755852119c02863528e95cc21af",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:source:part#f3179cb78dd5e882b585cac487914f5a7bdd4747147afba9a681522275af05ae": {
+        "byte_len": 7304,
+        "framing_bytes": [
+          {
+            "end": 128,
+            "start": 119
+          },
+          {
+            "end": 224,
+            "start": 223
+          },
+          {
+            "end": 7423,
+            "start": 7412
+          }
+        ],
+        "level": "freecad.document",
+        "offset": 119,
+        "parent": "fcstd:source:part#eabdb0fa8c1ea61ad656336443f63a54777d659325a4e0386061ac1efec31e6a",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      }
+    },
+    "record_layout": {
+      "fcstd:native:document#0": {
+        "byte_len": 7304,
+        "offset": 119,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 189,
+              "start": 163
+            },
+            {
+              "end": 205,
+              "start": 204
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:entry#Document.xml": {
+        "byte_len": 7424,
+        "offset": 0,
+        "payloads": {},
+        "pointers": {
+          "archive.data_end": 1545,
+          "archive.data_start": 42,
+          "archive.declaration_end": 2098,
+          "archive.declaration_start": 2040,
+          "byte_len": 7424
+        },
+        "reads": {},
+        "stream": "zip:4:file:0:2218:Document.xml"
       },
       "fcstd:native:entry#ExternalPrototype.Shape.brp": {
-        "bytes": {
-          "data": "CkNBU0NBREUgVG9wb2xvZ3kgVjEsIChjKSBNYXRyYS1EYXRhdmlzaW9uCkxvY2F0aW9ucyAxCjEKMS4wMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAgCjAuMDAwMDAwMDAwMDAwMDAwIDEuMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwIAowLjAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMCAKQ3VydmUyZHMgNgoxIDAuMDAwMDAwMDAwMDAwMDAwMDAgNC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgCjIgMC4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDEuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAtMC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDUuMDAwMDAwMDAwMDAwMDAwMDAKMSA2LjI4MzE4NTMwNzE3OTU4NjIzIC0wLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAKMSAwLjAwMDAwMDAwMDAwMDAwMDAwIC0wLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAKMSAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIAoyIDAuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgLTAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCA1LjAwMDAwMDAwMDAwMDAwMDAwCkN1cnZlcyAzCjIgMC4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDQuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDEuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIC0wLjAwMDAwMDAwMDAwMDAwMDAwIC0wLjAwMDAwMDAwMDAwMDAwMDAwIDEuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCA1LjAwMDAwMDAwMDAwMDAwMDAwCjEgNS4wMDAwMDAwMDAwMDAwMDAwMCAtMC4wMDAwMDAwMDAwMDAwMDEyMiAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIAoyIDAuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDEuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAtMC4wMDAwMDAwMDAwMDAwMDAwMCAtMC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgNS4wMDAwMDAwMDAwMDAwMDAwMApQb2x5Z29uM0QgMApQb2x5Z29uT25Ucmlhbmd1bGF0aW9ucyAwClN1cmZhY2VzIDMKMiAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgLTAuMDAwMDAwMDAwMDAwMDAwMDAgLTAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDUuMDAwMDAwMDAwMDAwMDAwMDAKMSAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgNC4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgLTAuMDAwMDAwMDAwMDAwMDAwMDAgLTAuMDAwMDAwMDAwMDAwMDAwMDAgMS4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIAoxIDAuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAwLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDEuMDAwMDAwMDAwMDAwMDAwMDAgMC4wMDAwMDAwMDAwMDAwMDAwMCAtMC4wMDAwMDAwMDAwMDAwMDAwMCAtMC4wMDAwMDAwMDAwMDAwMDAwMCAxLjAwMDAwMDAwMDAwMDAwMDAwIDAuMDAwMDAwMDAwMDAwMDAwMDAgClRyaWFuZ3VsYXRpb25zIDAKClRTaGFwZXMgMTMKVmUKMC4wMDAwMDAxMDAwMDAwMDAKNS4wMDAwMDAwMDAwMDAwMDAgLTAuMDAwMDAwMDAwMDAwMDAxIDQuMDAwMDAwMDAwMDAwMDAwCjAgMAoKMDEwMTEwMQoqCkVkCiAwLjAwMDAwMDEwMDAwMDAwMCAxIDEgMAoxICAxIDAgMC4wMDAwMDAwMDAwMDAwMDAgNi4yODMxODUzMDcxNzk1ODYKMiAgMSAxIDAgMC4wMDAwMDAwMDAwMDAwMDAgNi4yODMxODUzMDcxNzk1ODYKMiAgMiAyIDAgMC4wMDAwMDAwMDAwMDAwMDAgNi4yODMxODUzMDcxNzk1ODYKMAoKMDEwMTAwMAorMTMgMCAtMTMgMCAqClZlCjAuMDAwMDAwMTAwMDAwMDAwCjUuMDAwMDAwMDAwMDAwMDAwIC0wLjAwMDAwMDAwMDAwMDAwMSAwLjAwMDAwMDAwMDAwMDAwMAowIDAKCjAxMDExMDEKKgpFZAogMC4wMDAwMDAxMDAwMDAwMDAgMSAxIDAKMSAgMiAwIDAuMDAwMDAwMDAwMDAwMDAwIDQuMDAwMDAwMDAwMDAwMDAwCjMgIDMgNENOIDEgMCAwLjAwMDAwMDAwMDAwMDAwMCA0LjAwMDAwMDAwMDAwMDAwMAowCgowMTAxMDAwCi0xMyAwICsxMSAwICoKRWQKIDAuMDAwMDAwMTAwMDAwMDAwIDEgMSAwCjEgIDMgMCAwLjAwMDAwMDAwMDAwMDAwMCA2LjI4MzE4NTMwNzE3OTU4NgoyICA1IDEgMCAwLjAwMDAwMDAwMDAwMDAwMCA2LjI4MzE4NTMwNzE3OTU4NgoyICA2IDMgMCAwLjAwMDAwMDAwMDAwMDAwMCA2LjI4MzE4NTMwNzE3OTU4NgowCgowMTAxMDAwCisxMSAwIC0xMSAwICoKV2kKCjAxMDExMDAKLTEyIDAgKzEwIDAgKzkgMCAtMTAgMCAqCkZhCjAgIDAuMDAwMDAwMTAwMDAwMDAwIDEgMAoKMDExMTAwMAorOCAwICoKV2kKCjAxMDExMDAKKzEyIDAgKgpGYQowICAwLjAwMDAwMDEwMDAwMDAwMCAyIDAKCjAxMTEwMDAKKzYgMCAqCldpCgowMTAxMTAwCi05IDAgKgpGYQowICAwLjAwMDAwMDEwMDAwMDAwMCAzIDAKCjAxMTEwMDAKLTQgMCAqClNoCgowMTAxMTAwCis3IDAgKzUgMCAtMyAwICoKU28KCjExMDAwMDAKKzIgMCAqCgorMSAxIA==",
-          "retention": "inline"
-        },
+        "byte_len": 3361,
         "offset": 0,
-        "stream": "ExternalPrototype.Shape.brp",
-        "untyped": []
+        "payloads": {},
+        "pointers": {
+          "archive.data_end": 2040,
+          "archive.data_start": 1602,
+          "archive.declaration_end": 2171,
+          "archive.declaration_start": 2098,
+          "byte_len": 3361
+        },
+        "reads": {},
+        "stream": "zip:4:file:0:2218:ExternalPrototype.Shape.brp"
       },
       "fcstd:native:object#CorpusMetadata": {
-        "bytes": {
-          "byte_len": 1716,
-          "retention": "digest",
-          "sha256": "3c3af613d0a79188faf472b6949be17d9af5129cacd47bec7b1ec2cf6e9217de"
+        "byte_len": 65,
+        "offset": 3714,
+        "payloads": {
+          "raw_xml": "3c4f626a656374206e616d653d22436f727075734d65746164617461223e0a2020202020202020202020203c50726f7065727469657320436f756e743d223822205472616e7369656e74436f756e743d2230223e0a202020202020202020202020202020203c50726f7065727479206e616d653d2245787072657373696f6e456e67696e652220747970653d224170703a3a50726f706572747945787072657373696f6e456e67696e6522207374617475733d223637313038383634223e0a20202020202020202020202020202020202020203c45787072657373696f6e456e67696e6520636f756e743d2230223e0a20202020202020202020202020202020202020203c2f45787072657373696f6e456e67696e653e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d22496e65727456616c75652220747970653d224170703a3a50726f7065727479507974686f6e4f626a656374222067726f75703d22436f727075732220646f633d222220617474723d22302220726f3d22302220686964653d223022207374617475733d2232303937313532223e0a20202020202020202020202020202020202020203c507974686f6e2076616c75653d2265794a7a59575a6c496a6f6764484a315a537767496d56345a574e31644755694f69426d5957787a5a58303d2220656e636f6465643d2279657322206a736f6e3d22796573222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d224c6162656c2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d22313334323137373238223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d22436f727075734d65746164617461222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d224c6162656c322220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223637313038393932223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d22222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d224c6963656e73652220747970653d224170703a3a50726f7065727479537472696e67222067726f75703d22436f727075732220646f633d222220617474723d22302220726f3d22302220686964653d223022207374617475733d2232303937313532223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d224343302d312e30222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d2250726f78792220747970653d224170703a3a50726f7065727479507974686f6e4f626a656374223e0a20202020202020202020202020202020202020203c507974686f6e2076616c75653d22626e567362413d3d2220656e636f6465643d2279657322206a736f6e3d22796573222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d22507572706f73652220747970653d224170703a3a50726f7065727479537472696e67222067726f75703d22436f727075732220646f633d222220617474723d22302220726f3d22302220686964653d223022207374617475733d2232303937313532223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d2245787465726e616c6c79206c696e6b65642070726f6475637420636f6d706f6e656e74222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d225669736962696c6974792220747970653d224170703a3a50726f7065727479426f6f6c22207374617475733d22363438223e0a20202020202020202020202020202020202020203c426f6f6c2076616c75653d2274727565222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a2020202020202020202020203c2f50726f706572746965733e0a20202020202020203c2f4f626a6563743e"
         },
-        "offset": 3902,
-        "stream": "Document.xml",
-        "untyped": []
+        "pointers": {
+          "byte_end": 5618,
+          "byte_start": 3902
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 3746,
+              "start": 3728
+            },
+            {
+              "end": 3768,
+              "start": 3754
+            },
+            {
+              "end": 3930,
+              "start": 3916
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
       },
       "fcstd:native:object#ExternalPrototype": {
-        "bytes": {
-          "byte_len": 1766,
-          "retention": "digest",
-          "sha256": "e0b43a9646573966f4a21481360b3203d16951466c27a266891ecc46367c207d"
+        "byte_len": 63,
+        "offset": 3788,
+        "payloads": {
+          "raw_xml": "3c4f626a656374206e616d653d2245787465726e616c50726f746f74797065223e0a2020202020202020202020203c50726f7065727469657320436f756e743d223722205472616e7369656e74436f756e743d2231223e0a202020202020202020202020202020203c5f50726f7065727479206e616d653d225f456c656d656e744d617056657273696f6e2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d22323334383831303234222f3e0a202020202020202020202020202020203c50726f7065727479206e616d653d2245787072657373696f6e456e67696e652220747970653d224170703a3a50726f706572747945787072657373696f6e456e67696e6522207374617475733d223637313038383634223e0a20202020202020202020202020202020202020203c45787072657373696f6e456e67696e6520636f756e743d2230223e0a20202020202020202020202020202020202020203c2f45787072657373696f6e456e67696e653e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d224c6162656c2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d22313334323137373238223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d2245787465726e616c20737061636572222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d224c6162656c322220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223637313038393932223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d22222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d22506c6163656d656e742220747970653d224170703a3a50726f7065727479506c6163656d656e7422207374617475733d2238333838363038223e0a20202020202020202020202020202020202020203c50726f7065727479506c6163656d656e742050783d22302e30303030303030303030303030303030222050793d22302e303030303030303030303030303030302220507a3d22302e30303030303030303030303030303030222051303d22302e30303030303030303030303030303030222051313d22302e30303030303030303030303030303030222051323d22302e30303030303030303030303030303030222051333d22312e303030303030303030303030303030302220413d22302e3030303030303030303030303030303022204f783d22302e3030303030303030303030303030303022204f793d22302e3030303030303030303030303030303022204f7a3d22312e30303030303030303030303030303030222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d2253686170652220747970653d22506172743a3a50726f7065727479506172745368617065223e0a20202020202020202020202020202020202020203c5061727420456c656d656e744d61703d2231352e37303230302e35222066696c653d2245787465726e616c50726f746f747970652e53686170652e627270222f3e0a20202020202020202020202020202020202020203c456c656d656e744d61702f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d2253686170654d6174657269616c2220747970653d224d6174657269616c733a3a50726f70657274794d6174657269616c223e0a20202020202020202020202020202020202020203c50726f70657274794d6174657269616c20757569643d2237663966643733622d353063392d343164382d623762322d353735613033306331656562222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a202020202020202020202020202020203c50726f7065727479206e616d653d225669736962696c6974792220747970653d224170703a3a50726f7065727479426f6f6c22207374617475733d22363438223e0a20202020202020202020202020202020202020203c426f6f6c2076616c75653d2274727565222f3e0a202020202020202020202020202020203c2f50726f70657274793e0a2020202020202020202020203c2f50726f706572746965733e0a20202020202020203c2f4f626a6563743e"
         },
-        "offset": 5627,
-        "stream": "Document.xml",
-        "untyped": []
+        "pointers": {
+          "byte_end": 7393,
+          "byte_start": 5627
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 3815,
+              "start": 3802
+            },
+            {
+              "end": 3840,
+              "start": 3823
+            },
+            {
+              "end": 5658,
+              "start": 5641
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
       },
+      "fcstd:native:property#0:Comment": {
+        "byte_len": 103,
+        "offset": 593,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d22436f6d6d656e742220747970653d224170703a3a50726f7065727479537472696e67223e0a2020202020202020202020203c537472696e672076616c75653d22222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 696,
+          "byte_start": 593
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 616,
+              "start": 609
+            },
+            {
+              "end": 643,
+              "start": 624
+            },
+            {
+              "end": 671,
+              "start": 666
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:Company": {
+        "byte_len": 103,
+        "offset": 705,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d22436f6d70616e792220747970653d224170703a3a50726f7065727479537472696e67223e0a2020202020202020202020203c537472696e672076616c75653d22222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 808,
+          "byte_start": 705
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 728,
+              "start": 721
+            },
+            {
+              "end": 755,
+              "start": 736
+            },
+            {
+              "end": 783,
+              "start": 778
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:CreatedBy": {
+        "byte_len": 105,
+        "offset": 817,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224372656174656442792220747970653d224170703a3a50726f7065727479537472696e67223e0a2020202020202020202020203c537472696e672076616c75653d22222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 922,
+          "byte_start": 817
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 842,
+              "start": 833
+            },
+            {
+              "end": 869,
+              "start": 850
+            },
+            {
+              "end": 897,
+              "start": 892
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:CreationDate": {
+        "byte_len": 146,
+        "offset": 931,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224372656174696f6e446174652220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223136373737323137223e0a2020202020202020202020203c537472696e672076616c75653d22323032362d30312d30315430303a30303a30305a222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22323032362d30312d30315430303a30303a30305a222f3e"
+        },
+        "pointers": {
+          "byte_end": 1077,
+          "byte_start": 931
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 959,
+              "start": 947
+            },
+            {
+              "end": 986,
+              "start": 967
+            },
+            {
+              "end": 1004,
+              "start": 996
+            },
+            {
+              "end": 1032,
+              "start": 1027
+            },
+            {
+              "end": 1054,
+              "start": 1034
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:FileName": {
+        "byte_len": 73,
+        "offset": 350,
+        "payloads": {
+          "raw_xml": "3c5f50726f7065727479206e616d653d2246696c654e616d652220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223530333331363439222f3e"
+        },
+        "pointers": {
+          "byte_end": 423,
+          "byte_start": 350
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 375,
+              "start": 367
+            },
+            {
+              "end": 402,
+              "start": 383
+            },
+            {
+              "end": 420,
+              "start": 412
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:Id": {
+        "byte_len": 98,
+        "offset": 1086,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d2249642220747970653d224170703a3a50726f7065727479537472696e67223e0a2020202020202020202020203c537472696e672076616c75653d22222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 1184,
+          "byte_start": 1086
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 1104,
+              "start": 1102
+            },
+            {
+              "end": 1131,
+              "start": 1112
+            },
+            {
+              "end": 1159,
+              "start": 1154
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:Label": {
+        "byte_len": 137,
+        "offset": 1193,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6162656c2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223136373737323137223e0a2020202020202020202020203c537472696e672076616c75653d2265787465726e616c5f636f6d706f6e656e74222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d2265787465726e616c5f636f6d706f6e656e74222f3e"
+        },
+        "pointers": {
+          "byte_end": 1330,
+          "byte_start": 1193
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 1214,
+              "start": 1209
+            },
+            {
+              "end": 1241,
+              "start": 1222
+            },
+            {
+              "end": 1259,
+              "start": 1251
+            },
+            {
+              "end": 1287,
+              "start": 1282
+            },
+            {
+              "end": 1307,
+              "start": 1289
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:LastModifiedBy": {
+        "byte_len": 110,
+        "offset": 1339,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6173744d6f64696669656442792220747970653d224170703a3a50726f7065727479537472696e67223e0a2020202020202020202020203c537472696e672076616c75653d22222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 1449,
+          "byte_start": 1339
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 1369,
+              "start": 1355
+            },
+            {
+              "end": 1396,
+              "start": 1377
+            },
+            {
+              "end": 1424,
+              "start": 1419
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:LastModifiedDate": {
+        "byte_len": 150,
+        "offset": 1458,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6173744d6f646966696564446174652220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223136373737323137223e0a2020202020202020202020203c537472696e672076616c75653d22323032362d30312d30315430303a30303a30305a222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22323032362d30312d30315430303a30303a30305a222f3e"
+        },
+        "pointers": {
+          "byte_end": 1608,
+          "byte_start": 1458
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 1490,
+              "start": 1474
+            },
+            {
+              "end": 1517,
+              "start": 1498
+            },
+            {
+              "end": 1535,
+              "start": 1527
+            },
+            {
+              "end": 1563,
+              "start": 1558
+            },
+            {
+              "end": 1585,
+              "start": 1565
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:License": {
+        "byte_len": 133,
+        "offset": 1617,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6963656e73652220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d2231223e0a2020202020202020202020203c537472696e672076616c75653d22416c6c20726967687473207265736572766564222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22416c6c20726967687473207265736572766564222f3e"
+        },
+        "pointers": {
+          "byte_end": 1750,
+          "byte_start": 1617
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 1640,
+              "start": 1633
+            },
+            {
+              "end": 1667,
+              "start": 1648
+            },
+            {
+              "end": 1678,
+              "start": 1677
+            },
+            {
+              "end": 1706,
+              "start": 1701
+            },
+            {
+              "end": 1727,
+              "start": 1708
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:LicenseURL": {
+        "byte_len": 166,
+        "offset": 1759,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6963656e736555524c2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d2231223e0a2020202020202020202020203c537472696e672076616c75653d2268747470733a2f2f656e2e77696b6970656469612e6f72672f77696b692f416c6c5f7269676874735f7265736572766564222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d2268747470733a2f2f656e2e77696b6970656469612e6f72672f77696b692f416c6c5f7269676874735f7265736572766564222f3e"
+        },
+        "pointers": {
+          "byte_end": 1925,
+          "byte_start": 1759
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 1785,
+              "start": 1775
+            },
+            {
+              "end": 1812,
+              "start": 1793
+            },
+            {
+              "end": 1823,
+              "start": 1822
+            },
+            {
+              "end": 1851,
+              "start": 1846
+            },
+            {
+              "end": 1902,
+              "start": 1853
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:Material": {
+        "byte_len": 117,
+        "offset": 1934,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224d6174657269616c2220747970653d224170703a3a50726f70657274794d6170223e0a2020202020202020202020203c4d617020636f756e743d2230223e0a2020202020202020202020203c2f4d61703e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c4d617020636f756e743d2230223e0a2020202020202020202020203c2f4d61703e"
+        },
+        "pointers": {
+          "byte_end": 2051,
+          "byte_start": 1934
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 1958,
+              "start": 1950
+            },
+            {
+              "end": 1982,
+              "start": 1966
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:Meta": {
+        "byte_len": 113,
+        "offset": 2060,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224d6574612220747970653d224170703a3a50726f70657274794d6170223e0a2020202020202020202020203c4d617020636f756e743d2230223e0a2020202020202020202020203c2f4d61703e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c4d617020636f756e743d2230223e0a2020202020202020202020203c2f4d61703e"
+        },
+        "pointers": {
+          "byte_end": 2173,
+          "byte_start": 2060
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 2080,
+              "start": 2076
+            },
+            {
+              "end": 2104,
+              "start": 2088
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:ShowHidden": {
+        "byte_len": 118,
+        "offset": 2182,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d2253686f7748696464656e2220747970653d224170703a3a50726f7065727479426f6f6c22207374617475733d2231223e0a2020202020202020202020203c426f6f6c2076616c75653d2266616c7365222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c426f6f6c2076616c75653d2266616c7365222f3e"
+        },
+        "pointers": {
+          "byte_end": 2300,
+          "byte_start": 2182
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 2208,
+              "start": 2198
+            },
+            {
+              "end": 2233,
+              "start": 2216
+            },
+            {
+              "end": 2244,
+              "start": 2243
+            },
+            {
+              "end": 2270,
+              "start": 2265
+            },
+            {
+              "end": 2277,
+              "start": 2272
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:Tip": {
+        "byte_len": 66,
+        "offset": 432,
+        "payloads": {
+          "raw_xml": "3c5f50726f7065727479206e616d653d225469702220747970653d224170703a3a50726f70657274794c696e6b22207374617475733d223333353534343333222f3e"
+        },
+        "pointers": {
+          "byte_end": 498,
+          "byte_start": 432
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 452,
+              "start": 449
+            },
+            {
+              "end": 477,
+              "start": 460
+            },
+            {
+              "end": 495,
+              "start": 487
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:TipName": {
+        "byte_len": 121,
+        "offset": 2309,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d225469704e616d652220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223833383836303830223e0a2020202020202020202020203c537472696e672076616c75653d22222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 2430,
+          "byte_start": 2309
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 2332,
+              "start": 2325
+            },
+            {
+              "end": 2359,
+              "start": 2340
+            },
+            {
+              "end": 2377,
+              "start": 2369
+            },
+            {
+              "end": 2405,
+              "start": 2400
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:TransientDir": {
+        "byte_len": 77,
+        "offset": 507,
+        "payloads": {
+          "raw_xml": "3c5f50726f7065727479206e616d653d225472616e7369656e744469722220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223530333331363439222f3e"
+        },
+        "pointers": {
+          "byte_end": 584,
+          "byte_start": 507
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 536,
+              "start": 524
+            },
+            {
+              "end": 563,
+              "start": 544
+            },
+            {
+              "end": 581,
+              "start": 573
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:Uid": {
+        "byte_len": 149,
+        "offset": 2439,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d225569642220747970653d224170703a3a50726f70657274795555494422207374617475733d223136373737323137223e0a2020202020202020202020203c557569642076616c75653d2230303030303030302d303030302d303030302d303030302d303030303030303030303031222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c557569642076616c75653d2230303030303030302d303030302d303030302d303030302d303030303030303030303031222f3e"
+        },
+        "pointers": {
+          "byte_end": 2588,
+          "byte_start": 2439
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 2458,
+              "start": 2455
+            },
+            {
+              "end": 2483,
+              "start": 2466
+            },
+            {
+              "end": 2501,
+              "start": 2493
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:UnitSystem": {
+        "byte_len": 806,
+        "offset": 2597,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d22556e697453797374656d2220747970653d224170703a3a50726f7065727479456e756d65726174696f6e22207374617475733d2231223e0a2020202020202020202020203c496e74656765722076616c75653d22302220437573746f6d456e756d3d2274727565222f3e0a2020202020202020202020203c437573746f6d456e756d4c69737420636f756e743d223130223e0a202020202020202020202020202020203c456e756d2076616c75653d225374616e6461726420286d6d2c206b672c20732c20c2b029222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224d4b5320286d2c206b672c20732c20c2b029222f3e0a202020202020202020202020202020203c456e756d2076616c75653d22555320637573746f6d6172792028696e2c206c6229222f3e0a202020202020202020202020202020203c456e756d2076616c75653d22496d70657269616c20646563696d616c2028696e2c206c6229222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224275696c64696e67204575726f2028636d2c206dc2b22c206dc2b329222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224275696c64696e67205553202866742d696e2c20737166742c2063667429222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224d657472696320736d616c6c2070617274732026616d703b20434e4320286d6d2c206d6d2f6d696e29222f3e0a202020202020202020202020202020203c456e756d2076616c75653d22496d70657269616c20666f7220436976696c20456e67202866742c206c622c206d706829222f3e0a202020202020202020202020202020203c456e756d2076616c75653d2246454d20286d6d2c204e2c207329222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224d6574657220646563696d616c20286d2c206dc2b22c206dc2b329222f3e0a2020202020202020202020203c2f437573746f6d456e756d4c6973743e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c496e74656765722076616c75653d22302220437573746f6d456e756d3d2274727565222f3e",
+          "values.1.raw_xml": "3c437573746f6d456e756d4c69737420636f756e743d223130223e0a202020202020202020202020202020203c456e756d2076616c75653d225374616e6461726420286d6d2c206b672c20732c20c2b029222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224d4b5320286d2c206b672c20732c20c2b029222f3e0a202020202020202020202020202020203c456e756d2076616c75653d22555320637573746f6d6172792028696e2c206c6229222f3e0a202020202020202020202020202020203c456e756d2076616c75653d22496d70657269616c20646563696d616c2028696e2c206c6229222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224275696c64696e67204575726f2028636d2c206dc2b22c206dc2b329222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224275696c64696e67205553202866742d696e2c20737166742c2063667429222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224d657472696320736d616c6c2070617274732026616d703b20434e4320286d6d2c206d6d2f6d696e29222f3e0a202020202020202020202020202020203c456e756d2076616c75653d22496d70657269616c20666f7220436976696c20456e67202866742c206c622c206d706829222f3e0a202020202020202020202020202020203c456e756d2076616c75653d2246454d20286d6d2c204e2c207329222f3e0a202020202020202020202020202020203c456e756d2076616c75653d224d6574657220646563696d616c20286d2c206dc2b22c206dc2b329222f3e0a2020202020202020202020203c2f437573746f6d456e756d4c6973743e",
+          "values.10.raw_xml": "3c456e756d2076616c75653d2246454d20286d6d2c204e2c207329222f3e",
+          "values.11.raw_xml": "3c456e756d2076616c75653d224d6574657220646563696d616c20286d2c206dc2b22c206dc2b329222f3e",
+          "values.2.raw_xml": "3c456e756d2076616c75653d225374616e6461726420286d6d2c206b672c20732c20c2b029222f3e",
+          "values.3.raw_xml": "3c456e756d2076616c75653d224d4b5320286d2c206b672c20732c20c2b029222f3e",
+          "values.4.raw_xml": "3c456e756d2076616c75653d22555320637573746f6d6172792028696e2c206c6229222f3e",
+          "values.5.raw_xml": "3c456e756d2076616c75653d22496d70657269616c20646563696d616c2028696e2c206c6229222f3e",
+          "values.6.raw_xml": "3c456e756d2076616c75653d224275696c64696e67204575726f2028636d2c206dc2b22c206dc2b329222f3e",
+          "values.7.raw_xml": "3c456e756d2076616c75653d224275696c64696e67205553202866742d696e2c20737166742c2063667429222f3e",
+          "values.8.raw_xml": "3c456e756d2076616c75653d224d657472696320736d616c6c2070617274732026616d703b20434e4320286d6d2c206d6d2f6d696e29222f3e",
+          "values.9.raw_xml": "3c456e756d2076616c75653d22496d70657269616c20666f7220436976696c20456e67202866742c206c622c206d706829222f3e"
+        },
+        "pointers": {
+          "byte_end": 3403,
+          "byte_start": 2597
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 2623,
+              "start": 2613
+            },
+            {
+              "end": 2655,
+              "start": 2631
+            },
+            {
+              "end": 2666,
+              "start": 2665
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#0:UseHasher": {
+        "byte_len": 123,
+        "offset": 3412,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d225573654861736865722220747970653d224170703a3a50726f7065727479426f6f6c22207374617475733d223637313038383635223e0a2020202020202020202020203c426f6f6c2076616c75653d2274727565222f3e0a20202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c426f6f6c2076616c75653d2274727565222f3e"
+        },
+        "pointers": {
+          "byte_end": 3535,
+          "byte_start": 3412
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 3437,
+              "start": 3428
+            },
+            {
+              "end": 3462,
+              "start": 3445
+            },
+            {
+              "end": 3480,
+              "start": 3472
+            },
+            {
+              "end": 3506,
+              "start": 3501
+            },
+            {
+              "end": 3512,
+              "start": 3508
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:ExpressionEngine": {
+        "byte_len": 206,
+        "offset": 4003,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d2245787072657373696f6e456e67696e652220747970653d224170703a3a50726f706572747945787072657373696f6e456e67696e6522207374617475733d223637313038383634223e0a20202020202020202020202020202020202020203c45787072657373696f6e456e67696e6520636f756e743d2230223e0a20202020202020202020202020202020202020203c2f45787072657373696f6e456e67696e653e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c45787072657373696f6e456e67696e6520636f756e743d2230223e0a20202020202020202020202020202020202020203c2f45787072657373696f6e456e67696e653e"
+        },
+        "pointers": {
+          "byte_end": 4209,
+          "byte_start": 4003
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 4035,
+              "start": 4019
+            },
+            {
+              "end": 4072,
+              "start": 4043
+            },
+            {
+              "end": 4090,
+              "start": 4082
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:InertValue": {
+        "byte_len": 261,
+        "offset": 4226,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d22496e65727456616c75652220747970653d224170703a3a50726f7065727479507974686f6e4f626a656374222067726f75703d22436f727075732220646f633d222220617474723d22302220726f3d22302220686964653d223022207374617475733d2232303937313532223e0a20202020202020202020202020202020202020203c507974686f6e2076616c75653d2265794a7a59575a6c496a6f6764484a315a537767496d56345a574e31644755694f69426d5957787a5a58303d2220656e636f6465643d2279657322206a736f6e3d22796573222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c507974686f6e2076616c75653d2265794a7a59575a6c496a6f6764484a315a537767496d56345a574e31644755694f69426d5957787a5a58303d2220656e636f6465643d2279657322206a736f6e3d22796573222f3e"
+        },
+        "pointers": {
+          "byte_end": 4487,
+          "byte_start": 4226
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 4252,
+              "start": 4242
+            },
+            {
+              "end": 4285,
+              "start": 4260
+            },
+            {
+              "end": 4300,
+              "start": 4294
+            },
+            {
+              "end": 4316,
+              "start": 4315
+            },
+            {
+              "end": 4323,
+              "start": 4322
+            },
+            {
+              "end": 4332,
+              "start": 4331
+            },
+            {
+              "end": 4349,
+              "start": 4342
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:Label": {
+        "byte_len": 150,
+        "offset": 4504,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6162656c2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d22313334323137373238223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d22436f727075734d65746164617461222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22436f727075734d65746164617461222f3e"
+        },
+        "pointers": {
+          "byte_end": 4654,
+          "byte_start": 4504
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 4525,
+              "start": 4520
+            },
+            {
+              "end": 4552,
+              "start": 4533
+            },
+            {
+              "end": 4571,
+              "start": 4562
+            },
+            {
+              "end": 4623,
+              "start": 4609
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:Label2": {
+        "byte_len": 136,
+        "offset": 4671,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6162656c322220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223637313038393932223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d22222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 4807,
+          "byte_start": 4671
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 4693,
+              "start": 4687
+            },
+            {
+              "end": 4720,
+              "start": 4701
+            },
+            {
+              "end": 4738,
+              "start": 4730
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:License": {
+        "byte_len": 190,
+        "offset": 4824,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6963656e73652220747970653d224170703a3a50726f7065727479537472696e67222067726f75703d22436f727075732220646f633d222220617474723d22302220726f3d22302220686964653d223022207374617475733d2232303937313532223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d224343302d312e30222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d224343302d312e30222f3e"
+        },
+        "pointers": {
+          "byte_end": 5014,
+          "byte_start": 4824
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 4847,
+              "start": 4840
+            },
+            {
+              "end": 4874,
+              "start": 4855
+            },
+            {
+              "end": 4889,
+              "start": 4883
+            },
+            {
+              "end": 4905,
+              "start": 4904
+            },
+            {
+              "end": 4912,
+              "start": 4911
+            },
+            {
+              "end": 4921,
+              "start": 4920
+            },
+            {
+              "end": 4938,
+              "start": 4931
+            },
+            {
+              "end": 4983,
+              "start": 4976
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:Proxy": {
+        "byte_len": 156,
+        "offset": 5031,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d2250726f78792220747970653d224170703a3a50726f7065727479507974686f6e4f626a656374223e0a20202020202020202020202020202020202020203c507974686f6e2076616c75653d22626e567362413d3d2220656e636f6465643d2279657322206a736f6e3d22796573222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c507974686f6e2076616c75653d22626e567362413d3d2220656e636f6465643d2279657322206a736f6e3d22796573222f3e"
+        },
+        "pointers": {
+          "byte_end": 5187,
+          "byte_start": 5031
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 5052,
+              "start": 5047
+            },
+            {
+              "end": 5085,
+              "start": 5060
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:Purpose": {
+        "byte_len": 218,
+        "offset": 5204,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d22507572706f73652220747970653d224170703a3a50726f7065727479537472696e67222067726f75703d22436f727075732220646f633d222220617474723d22302220726f3d22302220686964653d223022207374617475733d2232303937313532223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d2245787465726e616c6c79206c696e6b65642070726f6475637420636f6d706f6e656e74222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d2245787465726e616c6c79206c696e6b65642070726f6475637420636f6d706f6e656e74222f3e"
+        },
+        "pointers": {
+          "byte_end": 5422,
+          "byte_start": 5204
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 5227,
+              "start": 5220
+            },
+            {
+              "end": 5254,
+              "start": 5235
+            },
+            {
+              "end": 5269,
+              "start": 5263
+            },
+            {
+              "end": 5285,
+              "start": 5284
+            },
+            {
+              "end": 5292,
+              "start": 5291
+            },
+            {
+              "end": 5301,
+              "start": 5300
+            },
+            {
+              "end": 5318,
+              "start": 5311
+            },
+            {
+              "end": 5391,
+              "start": 5356
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#CorpusMetadata:Visibility": {
+        "byte_len": 135,
+        "offset": 5439,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d225669736962696c6974792220747970653d224170703a3a50726f7065727479426f6f6c22207374617475733d22363438223e0a20202020202020202020202020202020202020203c426f6f6c2076616c75653d2274727565222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c426f6f6c2076616c75653d2274727565222f3e"
+        },
+        "pointers": {
+          "byte_end": 5574,
+          "byte_start": 5439
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 5465,
+              "start": 5455
+            },
+            {
+              "end": 5490,
+              "start": 5473
+            },
+            {
+              "end": 5503,
+              "start": 5500
+            },
+            {
+              "end": 5543,
+              "start": 5539
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:ExpressionEngine": {
+        "byte_len": 206,
+        "offset": 5832,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d2245787072657373696f6e456e67696e652220747970653d224170703a3a50726f706572747945787072657373696f6e456e67696e6522207374617475733d223637313038383634223e0a20202020202020202020202020202020202020203c45787072657373696f6e456e67696e6520636f756e743d2230223e0a20202020202020202020202020202020202020203c2f45787072657373696f6e456e67696e653e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c45787072657373696f6e456e67696e6520636f756e743d2230223e0a20202020202020202020202020202020202020203c2f45787072657373696f6e456e67696e653e"
+        },
+        "pointers": {
+          "byte_end": 6038,
+          "byte_start": 5832
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 5864,
+              "start": 5848
+            },
+            {
+              "end": 5901,
+              "start": 5872
+            },
+            {
+              "end": 5919,
+              "start": 5911
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:Label": {
+        "byte_len": 151,
+        "offset": 6055,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6162656c2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d22313334323137373238223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d2245787465726e616c20737061636572222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d2245787465726e616c20737061636572222f3e"
+        },
+        "pointers": {
+          "byte_end": 6206,
+          "byte_start": 6055
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 6076,
+              "start": 6071
+            },
+            {
+              "end": 6103,
+              "start": 6084
+            },
+            {
+              "end": 6122,
+              "start": 6113
+            },
+            {
+              "end": 6175,
+              "start": 6160
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:Label2": {
+        "byte_len": 136,
+        "offset": 6223,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d224c6162656c322220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d223637313038393932223e0a20202020202020202020202020202020202020203c537472696e672076616c75653d22222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c537472696e672076616c75653d22222f3e"
+        },
+        "pointers": {
+          "byte_end": 6359,
+          "byte_start": 6223
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 6245,
+              "start": 6239
+            },
+            {
+              "end": 6272,
+              "start": 6253
+            },
+            {
+              "end": 6290,
+              "start": 6282
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:Placement": {
+        "byte_len": 406,
+        "offset": 6376,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d22506c6163656d656e742220747970653d224170703a3a50726f7065727479506c6163656d656e7422207374617475733d2238333838363038223e0a20202020202020202020202020202020202020203c50726f7065727479506c6163656d656e742050783d22302e30303030303030303030303030303030222050793d22302e303030303030303030303030303030302220507a3d22302e30303030303030303030303030303030222051303d22302e30303030303030303030303030303030222051313d22302e30303030303030303030303030303030222051323d22302e30303030303030303030303030303030222051333d22312e303030303030303030303030303030302220413d22302e3030303030303030303030303030303022204f783d22302e3030303030303030303030303030303022204f793d22302e3030303030303030303030303030303022204f7a3d22312e30303030303030303030303030303030222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c50726f7065727479506c6163656d656e742050783d22302e30303030303030303030303030303030222050793d22302e303030303030303030303030303030302220507a3d22302e30303030303030303030303030303030222051303d22302e30303030303030303030303030303030222051313d22302e30303030303030303030303030303030222051323d22302e30303030303030303030303030303030222051333d22312e303030303030303030303030303030302220413d22302e3030303030303030303030303030303022204f783d22302e3030303030303030303030303030303022204f793d22302e3030303030303030303030303030303022204f7a3d22312e30303030303030303030303030303030222f3e"
+        },
+        "pointers": {
+          "byte_end": 6782,
+          "byte_start": 6376
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 6401,
+              "start": 6392
+            },
+            {
+              "end": 6431,
+              "start": 6409
+            },
+            {
+              "end": 6448,
+              "start": 6441
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:Shape": {
+        "byte_len": 203,
+        "offset": 6799,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d2253686170652220747970653d22506172743a3a50726f7065727479506172745368617065223e0a20202020202020202020202020202020202020203c5061727420456c656d656e744d61703d2231352e37303230302e35222066696c653d2245787465726e616c50726f746f747970652e53686170652e627270222f3e0a20202020202020202020202020202020202020203c456c656d656e744d61702f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c5061727420456c656d656e744d61703d2231352e37303230302e35222066696c653d2245787465726e616c50726f746f747970652e53686170652e627270222f3e",
+          "values.1.raw_xml": "3c456c656d656e744d61702f3e"
+        },
+        "pointers": {
+          "byte_end": 7002,
+          "byte_start": 6799
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 6820,
+              "start": 6815
+            },
+            {
+              "end": 6851,
+              "start": 6828
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:ShapeMaterial": {
+        "byte_len": 178,
+        "offset": 7019,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d2253686170654d6174657269616c2220747970653d224d6174657269616c733a3a50726f70657274794d6174657269616c223e0a20202020202020202020202020202020202020203c50726f70657274794d6174657269616c20757569643d2237663966643733622d353063392d343164382d623762322d353735613033306331656562222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c50726f70657274794d6174657269616c20757569643d2237663966643733622d353063392d343164382d623762322d353735613033306331656562222f3e"
+        },
+        "pointers": {
+          "byte_end": 7197,
+          "byte_start": 7019
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 7048,
+              "start": 7035
+            },
+            {
+              "end": 7083,
+              "start": 7056
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:Visibility": {
+        "byte_len": 135,
+        "offset": 7214,
+        "payloads": {
+          "raw_xml": "3c50726f7065727479206e616d653d225669736962696c6974792220747970653d224170703a3a50726f7065727479426f6f6c22207374617475733d22363438223e0a20202020202020202020202020202020202020203c426f6f6c2076616c75653d2274727565222f3e0a202020202020202020202020202020203c2f50726f70657274793e",
+          "values.0.raw_xml": "3c426f6f6c2076616c75653d2274727565222f3e"
+        },
+        "pointers": {
+          "byte_end": 7349,
+          "byte_start": 7214
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 7240,
+              "start": 7230
+            },
+            {
+              "end": 7265,
+              "start": 7248
+            },
+            {
+              "end": 7278,
+              "start": 7275
+            },
+            {
+              "end": 7318,
+              "start": 7314
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:property#ExternalPrototype:_ElementMapVersion": {
+        "byte_len": 84,
+        "offset": 5731,
+        "payloads": {
+          "raw_xml": "3c5f50726f7065727479206e616d653d225f456c656d656e744d617056657273696f6e2220747970653d224170703a3a50726f7065727479537472696e6722207374617475733d22323334383831303234222f3e"
+        },
+        "pointers": {
+          "byte_end": 5815,
+          "byte_start": 5731
+        },
+        "reads": {
+          "file": [
+            {
+              "end": 1545,
+              "start": 42
+            }
+          ],
+          "zip:4:file:0:2218:Document.xml": [
+            {
+              "end": 5766,
+              "start": 5748
+            },
+            {
+              "end": 5793,
+              "start": 5774
+            },
+            {
+              "end": 5812,
+              "start": 5803
+            }
+          ]
+        },
+        "stream": "zip:4:file:0:2218:Document.xml"
+      },
+      "fcstd:native:string-table#0": {
+        "byte_len": 0,
+        "offset": 0,
+        "payloads": {},
+        "pointers": {},
+        "reads": {},
+        "stream": "fcstd:string-table-text:30:zip:4:file:0:2218:Document.xml:229:65"
+      }
+    },
+    "retained_records": {
       "fcstd:native:property#0:Comment": {
         "bytes": {
           "byte_len": 103,
@@ -1600,40 +4538,13 @@
         "stream": "Document.xml",
         "untyped": []
       },
-      "fcstd:native:source-layout#byte-coverage": {
-        "bytes": {
-          "data": "eyJpZCI6ImZjc3RkOm5hdGl2ZTpieXRlLWNvdmVyYWdlIzAiLCJwaHlzaWNhbF9ieXRlX2xlbiI6MjIxOCwicGh5c2ljYWxfc3Bhbl9jb3VudCI6MTUsImxvZ2ljYWxfZW50cnlfY291bnQiOjIsImxvZ2ljYWxfYnl0ZV9sZW4iOjEwNzg1LCJsb2dpY2FsX3NwYW5fY291bnQiOjc0LCJjbGFzc2lmaWNhdGlvbl9ieXRlcyI6eyJuYW1lZF9vcGFxdWUiOjE3OCwic3RydWN0dXJhbCI6MTQ1OSwidHlwZWQiOjkxNDh9LCJuYW1lZF9vcGFxdWVfZW50cmllcyI6WyJEb2N1bWVudC54bWwiXSwiZXhhY3QiOnRydWV9",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "fcstd:source:layout#archive",
-        "untyped": []
-      },
-      "fcstd:native:source-layout#logical-ledger": {
-        "bytes": {
-          "data": "W3siaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjowLCJlbmQiOjM1MCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjozNTAsImVuZCI6NDIzLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpGaWxlTmFtZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0MjMsImVuZCI6NDMyLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjQzMiwiZW5kIjo0OTgsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlRpcCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0OTgsImVuZCI6NTA3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUwNywiZW5kIjo1ODQsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlRyYW5zaWVudERpciJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1ODQsImVuZCI6NTkzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU5MywiZW5kIjo2OTYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkNvbW1lbnQifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6Njk2LCJlbmQiOjcwNSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MDUsImVuZCI6ODA4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDb21wYW55In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4MDgsImVuZCI6ODE3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo4MTcsImVuZCI6OTIyLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDcmVhdGVkQnkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkyMiwiZW5kIjo5MzEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjkzMSwiZW5kIjoxMDc3LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpDcmVhdGlvbkRhdGUifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxNCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEwNzcsImVuZCI6MTA4NiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTA4NiwiZW5kIjoxMTg0LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpJZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzE2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTE4NCwiZW5kIjoxMTkzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMTkzLCJlbmQiOjEzMzAsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMTgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxMzMwLCJlbmQiOjEzMzksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMxOSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjEzMzksImVuZCI6MTQ0OSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6TGFzdE1vZGlmaWVkQnkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyMCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE0NDksImVuZCI6MTQ1OCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzIxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTQ1OCwiZW5kIjoxNjA4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpMYXN0TW9kaWZpZWREYXRlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNjA4LCJlbmQiOjE2MTcsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE2MTcsImVuZCI6MTc1MCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6TGljZW5zZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTc1MCwiZW5kIjoxNzU5LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoxNzU5LCJlbmQiOjE5MjUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOkxpY2Vuc2VVUkwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMyNiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjE5MjUsImVuZCI6MTkzNCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI3IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MTkzNCwiZW5kIjoyMDUxLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpNYXRlcmlhbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzI4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjA1MSwiZW5kIjoyMDYwLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMjkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyMDYwLCJlbmQiOjIxNzMsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOk1ldGEifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzMCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjIxNzMsImVuZCI6MjE4MiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzMxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjE4MiwiZW5kIjoyMzAwLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpTaG93SGlkZGVuIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyMzAwLCJlbmQiOjIzMDksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzMyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjIzMDksImVuZCI6MjQzMCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5IzA6VGlwTmFtZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM0IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjQzMCwiZW5kIjoyNDM5LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzUiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyNDM5LCJlbmQiOjI1ODgsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlVpZCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MjU4OCwiZW5kIjoyNTk3LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jMzciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0IjoyNTk3LCJlbmQiOjM0MDMsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSMwOlVuaXRTeXN0ZW0ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiMzOCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjM0MDMsImVuZCI6MzQxMiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzM5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6MzQxMiwiZW5kIjozNTM1LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjMDpVc2VIYXNoZXIifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0MCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjM1MzUsImVuZCI6NDAwMywiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQxIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NDAwMywiZW5kIjo0MjA5LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQ29ycHVzTWV0YWRhdGE6RXhwcmVzc2lvbkVuZ2luZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NDIwOSwiZW5kIjo0MjI2LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0MjI2LCJlbmQiOjQ0ODcsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNDb3JwdXNNZXRhZGF0YTpJbmVydFZhbHVlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0NDg3LCJlbmQiOjQ1MDQsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0NSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjQ1MDQsImVuZCI6NDY1NCwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOkxhYmVsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0NjU0LCJlbmQiOjQ2NzEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM0NyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjQ2NzEsImVuZCI6NDgwNywiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOkxhYmVsMiJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzQ4IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NDgwNywiZW5kIjo0ODI0LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNDkiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo0ODI0LCJlbmQiOjUwMTQsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNDb3JwdXNNZXRhZGF0YTpMaWNlbnNlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1MDE0LCJlbmQiOjUwMzEsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1MSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUwMzEsImVuZCI6NTE4NywiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOlByb3h5In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTIiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1MTg3LCJlbmQiOjUyMDQsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1MyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjUyMDQsImVuZCI6NTQyMiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0NvcnB1c01ldGFkYXRhOlB1cnBvc2UifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1NCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU0MjIsImVuZCI6NTQzOSwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTQzOSwiZW5kIjo1NTc0LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjQ29ycHVzTWV0YWRhdGE6VmlzaWJpbGl0eSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU2IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTU3NCwiZW5kIjo1NzMxLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNTciLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo1NzMxLCJlbmQiOjU4MTUsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlcm5hbFByb3RvdHlwZTpfRWxlbWVudE1hcFZlcnNpb24ifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM1OCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjU4MTUsImVuZCI6NTgzMiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzU5IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NTgzMiwiZW5kIjo2MDM4LCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjRXh0ZXJuYWxQcm90b3R5cGU6RXhwcmVzc2lvbkVuZ2luZSJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYwIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjAzOCwiZW5kIjo2MDU1LCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjEiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2MDU1LCJlbmQiOjYyMDYsImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlcm5hbFByb3RvdHlwZTpMYWJlbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzYyIiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjIwNiwiZW5kIjo2MjIzLCJjbGFzc2lmaWNhdGlvbiI6InN0cnVjdHVyYWwiLCJvd25lciI6bnVsbH0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2MjIzLCJlbmQiOjYzNTksImNsYXNzaWZpY2F0aW9uIjoidHlwZWQiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlcm5hbFByb3RvdHlwZTpMYWJlbDIifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2NCIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjYzNTksImVuZCI6NjM3NiwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzY1IiwiZW50cnkiOiJEb2N1bWVudC54bWwiLCJzdGFydCI6NjM3NiwiZW5kIjo2NzgyLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6cHJvcGVydHkjRXh0ZXJuYWxQcm90b3R5cGU6UGxhY2VtZW50In0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjYiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo2NzgyLCJlbmQiOjY3OTksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2NyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjY3OTksImVuZCI6NzAwMiwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0V4dGVybmFsUHJvdG90eXBlOlNoYXBlIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNjgiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MDAyLCJlbmQiOjcwMTksImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM2OSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjcwMTksImVuZCI6NzE5NywiY2xhc3NpZmljYXRpb24iOiJuYW1lZF9vcGFxdWUiLCJvd25lciI6ImZjc3RkOm5hdGl2ZTpwcm9wZXJ0eSNFeHRlcm5hbFByb3RvdHlwZTpTaGFwZU1hdGVyaWFsIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTpsb2dpY2FsLXNwYW4jNzAiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCIsInN0YXJ0Ijo3MTk3LCJlbmQiOjcyMTQsImNsYXNzaWZpY2F0aW9uIjoic3RydWN0dXJhbCIsIm93bmVyIjpudWxsfSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3MSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjcyMTQsImVuZCI6NzM0OSwiY2xhc3NpZmljYXRpb24iOiJ0eXBlZCIsIm93bmVyIjoiZmNzdGQ6bmF0aXZlOnByb3BlcnR5I0V4dGVybmFsUHJvdG90eXBlOlZpc2liaWxpdHkifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmxvZ2ljYWwtc3BhbiM3MiIsImVudHJ5IjoiRG9jdW1lbnQueG1sIiwic3RhcnQiOjczNDksImVuZCI6NzQyNCwiY2xhc3NpZmljYXRpb24iOiJzdHJ1Y3R1cmFsIiwib3duZXIiOm51bGx9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6bG9naWNhbC1zcGFuIzczIiwiZW50cnkiOiJFeHRlcm5hbFByb3RvdHlwZS5TaGFwZS5icnAiLCJzdGFydCI6MCwiZW5kIjozMzYxLCJjbGFzc2lmaWNhdGlvbiI6InR5cGVkIiwib3duZXIiOiJmY3N0ZDpuYXRpdmU6ZW50cnkjRXh0ZXJuYWxQcm90b3R5cGUuU2hhcGUuYnJwIn1d",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "fcstd:source:layout#archive",
-        "untyped": []
-      },
-      "fcstd:native:source-layout#physical-ledger": {
-        "bytes": {
-          "data": "W3siaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzAiLCJzdGFydCI6MCwiZW5kIjo0LCJyb2xlIjoibG9jYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxIiwic3RhcnQiOjQsImVuZCI6MzAsInJvbGUiOiJsb2NhbC1maWVsZHMiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzIiLCJzdGFydCI6MzAsImVuZCI6NDIsInJvbGUiOiJsb2NhbC1uYW1lIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMzIiwic3RhcnQiOjQyLCJlbmQiOjE1NDUsInJvbGUiOiJjb21wcmVzc2VkLXBheWxvYWQiLCJlbnRyeSI6IkRvY3VtZW50LnhtbCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzQiLCJzdGFydCI6MTU0NSwiZW5kIjoxNTQ5LCJyb2xlIjoibG9jYWwtc2lnbmF0dXJlIiwiZW50cnkiOiJFeHRlcm5hbFByb3RvdHlwZS5TaGFwZS5icnAifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM1Iiwic3RhcnQiOjE1NDksImVuZCI6MTU3NSwicm9sZSI6ImxvY2FsLWZpZWxkcyIsImVudHJ5IjoiRXh0ZXJuYWxQcm90b3R5cGUuU2hhcGUuYnJwIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jNiIsInN0YXJ0IjoxNTc1LCJlbmQiOjE2MDIsInJvbGUiOiJsb2NhbC1uYW1lIiwiZW50cnkiOiJFeHRlcm5hbFByb3RvdHlwZS5TaGFwZS5icnAifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiM3Iiwic3RhcnQiOjE2MDIsImVuZCI6MjA0MCwicm9sZSI6ImNvbXByZXNzZWQtcGF5bG9hZCIsImVudHJ5IjoiRXh0ZXJuYWxQcm90b3R5cGUuU2hhcGUuYnJwIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jOCIsInN0YXJ0IjoyMDQwLCJlbmQiOjIwNDQsInJvbGUiOiJjZW50cmFsLXNpZ25hdHVyZSIsImVudHJ5IjoiRG9jdW1lbnQueG1sIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jOSIsInN0YXJ0IjoyMDQ0LCJlbmQiOjIwODYsInJvbGUiOiJjZW50cmFsLWZpZWxkcyIsImVudHJ5IjoiRG9jdW1lbnQueG1sIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMTAiLCJzdGFydCI6MjA4NiwiZW5kIjoyMDk4LCJyb2xlIjoiY2VudHJhbC1uYW1lIiwiZW50cnkiOiJEb2N1bWVudC54bWwifSx7ImlkIjoiZmNzdGQ6bmF0aXZlOmFyY2hpdmUtc3BhbiMxMSIsInN0YXJ0IjoyMDk4LCJlbmQiOjIxMDIsInJvbGUiOiJjZW50cmFsLXNpZ25hdHVyZSIsImVudHJ5IjoiRXh0ZXJuYWxQcm90b3R5cGUuU2hhcGUuYnJwIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMTIiLCJzdGFydCI6MjEwMiwiZW5kIjoyMTQ0LCJyb2xlIjoiY2VudHJhbC1maWVsZHMiLCJlbnRyeSI6IkV4dGVybmFsUHJvdG90eXBlLlNoYXBlLmJycCJ9LHsiaWQiOiJmY3N0ZDpuYXRpdmU6YXJjaGl2ZS1zcGFuIzEzIiwic3RhcnQiOjIxNDQsImVuZCI6MjE3MSwicm9sZSI6ImNlbnRyYWwtbmFtZSIsImVudHJ5IjoiRXh0ZXJuYWxQcm90b3R5cGUuU2hhcGUuYnJwIn0seyJpZCI6ImZjc3RkOm5hdGl2ZTphcmNoaXZlLXNwYW4jMTQiLCJzdGFydCI6MjE3MSwiZW5kIjoyMjE4LCJyb2xlIjoiZW5kLXJlY29yZCIsImVudHJ5IjpudWxsfV0=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "fcstd:source:layout#archive",
-        "untyped": []
-      },
       "fcstd:source:image#archive": {
         "bytes": {
           "data": "UEsDBBQAAAAIAAAAIQAdUzz03wUAAAAdAAAMAAAARG9jdW1lbnQueG1s5Vnrcto4FP6fp9D6xyadCcY2EEgW0kkIaenmwpaSbvMnI2wBamzZleUQ8lQ7u2/QJ9sjX7gYm0CaZjtbhgEk65zznaOjcxH11/eOje4I96nLGtu6qm0jwkzXomzY2A7EoFDbfn24Vf+lUNhCp5yQ5tEJOnHNwCFM7CKfEDQSwvMPisXxeKwOYIWJLdXlQzRwOXJcThBl8NPBAiSoqrpVKAC/hAXqmiPi4KsYgFJWUIe7Q46d6ZSu6u8NzdjTynoZ7byhAvkjbNvu+JWCTqlNZgsV1BUcgL/F/ohwOXG4heBVn59GPr4jQN9QNAWJESf+yLWtcGS6ARPy12G9OE8ScwFgHuGCEh81o5V6VUEfOGY+BVXiuVIsNCS5iWkmiGGHNBSJ9wJ+geSJB+Mjzzs4SNZEIhXkCywCv6FUtFJJ3yvvK8UVHD9QL5PZGWW3M1alUqVSLpdKq1klmpxQ/nSAKaZN15H7vIrfjHhus9AdtgMgWOBdTChXyvMwm7ycPE6wINbxC0sEhz8BuWttk75XrVYN8NWVMOQRK2g6vD9o2kH4vt4UWtt6MSuc4T6xn1F9ci8IZ9i+McGBXCZddmNEvjiHwDmgL+oO82J/QJc4oyZh/pqoVsM5sm3E6XAkfARRm/A7Yj0RTe/92XMASjIfYeqY3lKPWBTL1FeUoyLAvYng3jwV7jnsJ6c428/PsZeGB1NzSWzxWREebiidCPzfSO6O3PFbalmEZco/dl17xSbJx8kWDbANzreh2SGnrp2ka6VabU+rLSn9bYe6R7Mjaa/XPnn8FPcCaiWStfhVyPiIX/rG6BgV3YkviJMJssWgtONhjlqxS20myBDKsQSngpqBL1xHUjcUwYOFbQtJZgvOqC8Sf9PTtg/XylUJ767AzMLcQjuOs4tuh1C37qKvf71KC1giPP+9CzQbkfS6yAxhYj5BO5TtIrv/OFXb8cKDjixiUge+16Y8Dqgti3XUCriLdkxA63z9W378swExoN4ZiIIU6n8ZQGFvDsQa5iHg5CbyAbCNPMwhMP+KHe831LxoRrZ2nKJD2Qb6y6ahSe+ojVoAa0dCsfvAxxs9zuS0dR5JvQAt1kIP7jc1+CrD1YuLrrfhcfFJ1EesEcz2qroGAaWyKqalz0Yaw3QMnUo8c9n/TEwx7VsMBZ0QjzAIsCYsWjyd8WJY4KOLuKbmXuDLdGBhmRKaSaAvrqJqxRUVgBGuVHwl4bxpTqHADTjpTMRIhhCWCYJaYceXy6kD/jhllTDJwCT5GFM+9WJsqgXDQV2FZ7ZblpiJMLWDy91jbbl5zAxlKXdq3XtQT8iWF44IZdlpanlRysPKGZKiI5KizEvrM+9LU2SokHFK8tRrMxhcSU/PVCxyisjuChpyN/ASyyvIck3ItQgLwcOMwt3wa0StKMMkNjC0/apeMfI0imRMO4PJu4dPH6/t9md3aL19p193x8O2c1W+/nihW2969JIeO58+3j9c/6k1lOjyhIBPTQgA+uzLiwn5MysabWCVDdqdUhlKgqpRy9NusTJJOe1zwDTWwhn64f5+7ibkF1BPArZGG/J9nCll7qZW0FXtW9WB4X12i7lwPtby7z678vtHje/nu52Ae+4PYPsk+NsTZFN2SyzkcdcKTFlJZvT8T1H1ivq0T20qsjcnlevLuWd0Vbp/DNdy+o9mI5/IS17LmfHR/JVx+Zmu8kPK9D3jTcsm8k4Q2sL47natgGGUyrWarhnlTGP8XEnyu6WDxA2Q72ETKtb/az7o2KBe7sX03NNUn58bUtOUqHMP7qBqqZeCOpOc+Yfs+T+0nHk9Z97ImS/Jv1KW54+yl1/mwL/MgX/5kMn+G7epO8Le9OxGFf3U0jCKHudtCSxAs1AD8CpqVTM0Ta0oaEDtrKCnhhzVPveykIdsZxyfQ7f0DV8y9udv2+Ilj7hesg4FgexpqoP9gVUt9QsVzdwvlHWrVuhX+0ahUq1graSZOiH9nyXdJSPZxx1u1YvJv4+HW/8CUEsDBBQAAAAIAAAAIQA/sZRHtgEAACENAAAbAAAARXh0ZXJuYWxQcm90b3R5cGUuU2hhcGUuYnJw3Vbfb4IwEH6/v6KPmwzDtYL4aNA97VeCcc+NOiUx1ICa+N+vLepmWrciWbJASSHH3df7vrsCkAzTZDgak4nYiLVYHsgUH8jd7J48823B/RHf8n1WZiKHJzHjW3lTEgQ5usHlQYKbLGCaboO2AN0GDcmu2C/ovCQRoPlcevQsNgPZhq3QqdVss7lC+q7BoWmTDKMujRnGIQv62B+EcUSZHdJ1mSuq/QVmE9n+WyV025WE1cjL1ohNODXi6Uze5mdvTYvVXAapu2DO7dYMsj01eBPrw1LkbETO96/5pMh4vtytj5+DANJd8cFnNZu33cK5v6/as4lrkG5P8cHYDTBJV3wjdwMymC7O/yV4CgGjXywvNbMtIFDYEgblCR0Yz4EY2ATlUN2nLpafG+NjLzdsFePqTOVwcz5mq1L3kMkgX8+dBqIYy9YUxZ66KTUjhJFe8nJFGEttvrhWLD1EzfWXhJi78GGdKkXOyBdVQl2lKvP37CSs4kQ1p0DNA+0UaKdHLitgJahxscKNDUBPA16PpxfxkZnQ4Mdw9j3c72nfdPVt+b4iEioiVUumAgCrePCq1GSOksYnUEsBAhQDFAAAAAgAAAAhAB1TPPTfBQAAAB0AAAwAAAAAAAAAAAAAAKSBAAAAAERvY3VtZW50LnhtbFBLAQIUAxQAAAAIAAAAIQA/sZRHtgEAACENAAAbAAAAAAAAAAAAAACkgQkGAABFeHRlcm5hbFByb3RvdHlwZS5TaGFwZS5icnBQSwUGAAAAAAIAAgCDAAAA+AcAABkAY2FkbXBlZyBDQzAgRkNTdGQgZml4dHVyZQ==",
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "fcstd:source:image#archive",
+        "stream": "file",
         "untyped": []
       }
     },

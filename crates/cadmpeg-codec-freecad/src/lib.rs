@@ -921,7 +921,6 @@ impl FcstdCodec {
         let mut cycle_affected_design_objects = BTreeSet::new();
         let gui_losses;
         let mut transfer_losses = Vec::new();
-        let mut model_dependency_closure_done = false;
         // One `classify` call feeds the report identity, loss, and notes.
         let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
         let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
@@ -1099,17 +1098,6 @@ impl FcstdCodec {
                 &mut entry_interpretations,
                 &mut parts,
             )?);
-            let mut element_maps = parts
-                .native()
-                .namespace("fcstd")
-                .map(|namespace| {
-                    namespace.arena_as_for_decode::<native::element_map::ElementMapRecord>(
-                        ctx,
-                        "element_maps",
-                    )
-                })
-                .transpose()?
-                .unwrap_or_default();
             let declared_entries = container::parts::declared_entries(&entry_records);
             let (mut gui_graph, gui_whitespace, gui_entry_interpretations) =
                 if let Some(gui_source) = gui_source {
@@ -1128,7 +1116,6 @@ impl FcstdCodec {
                             objects: &graph.objects,
                             properties: &graph.properties,
                             payloads: &shape_payloads,
-                            element_maps: &element_maps,
                             topology_occurrences: &[],
                             requires_alpha_conversion: gui::requires_alpha_conversion(
                                 scan.document.program_version.as_deref(),
@@ -1194,7 +1181,7 @@ impl FcstdCodec {
             let shape_payloads = brep::records::payloads(ctx, namespace)?;
             let string_tables =
                 namespace.arena_as_for_decode::<native::StringTableRecord>(ctx, "string_tables")?;
-            element_maps = namespace.arena_as_for_decode(ctx, "element_maps")?;
+            let element_maps = namespace.arena_as_for_decode(ctx, "element_maps")?;
             entry_records = namespace.arena_as_for_decode(ctx, "entries")?;
             gui_graph.documents = namespace.arena_as_for_decode(ctx, "gui_documents")?;
             gui_graph.providers = namespace.arena_as_for_decode(ctx, "gui_view_providers")?;
@@ -1329,11 +1316,20 @@ impl FcstdCodec {
                     Some(&brep_projection_sources),
                 )?;
                 topology_transfer::apply_body_names(&mut ir, &shape_payloads, &graph.properties);
+                design::hide_intermediate_bodies(
+                    &mut ir,
+                    &graph.objects,
+                    &graph.properties,
+                    &shape_payloads,
+                );
                 if ctx.depth() == DecodeDepth::Full {
                     let (cycle_affected, design_losses, unformed, bindings) = design::transfer(
                         &property_reader,
                         &mut ir,
-                        &graph.objects,
+                        design::DesignObjects {
+                            objects: &graph.objects,
+                            extensions: &graph.extensions,
+                        },
                         &graph.properties,
                         &shape_payloads,
                         scan.document.program_version.as_deref(),
@@ -1347,13 +1343,22 @@ impl FcstdCodec {
                     cycle_affected_design_objects = cycle_affected;
                     transfer_losses.extend(design_losses);
                     expression_bindings = bindings;
+                    design::resolve_subelement_selections(
+                        &mut ir,
+                        &graph.properties,
+                        &topology_occurrences,
+                    );
                 }
                 ctx.admit_entities(
                     cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                     &mut admitted_entities,
                     "admit FCStd entities",
                 )?;
-                let link_occurrences = product::link_occurrence_count(&product_nodes)?;
+                let link_occurrences = product::link_occurrence_count(
+                    &product_nodes,
+                    &graph.objects,
+                    &graph.properties,
+                )?;
                 ctx.admit_entities(
                     cadmpeg_core::decode::u64_from_index(ir.model.entity_count())
                         .checked_add(link_occurrences)
@@ -1419,7 +1424,6 @@ impl FcstdCodec {
                         objects: &graph.objects,
                         properties: &graph.properties,
                         payloads: &shape_payloads,
-                        element_maps: &element_maps,
                         topology_occurrences: &topology_occurrences,
                         requires_alpha_conversion: gui::requires_alpha_conversion(
                             scan.document.program_version.as_deref(),
@@ -1436,7 +1440,9 @@ impl FcstdCodec {
             )?;
             if !ctx.container_only() {
                 writer::body_styles::apply(&mut ir, &shape_payloads, &graph.properties)?;
-                let property_reader = property_reader.with_part_failures(&source_failures);
+                let property_reader = property_reader
+                    .parameter_phase(None)
+                    .with_part_failures(&source_failures);
                 let (attribute_losses, attribute_unformed) = attributes::transfer_source(
                     ctx,
                     &mut ir,
@@ -1453,7 +1459,6 @@ impl FcstdCodec {
                 transfer_losses.extend(attribute_losses);
             }
             source_failures.prune_late_model(ctx, &mut ir.model)?;
-            model_dependency_closure_done = true;
             if ctx.depth() == DecodeDepth::Full {
                 let (design_census, census_unformed) = design::census_source(
                     &property_reader,
@@ -1510,9 +1515,6 @@ impl FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "element_maps", &element_maps)?;
-        }
-        if !model_dependency_closure_done {
-            source_failures.prune_late_model(ctx, &mut ir.model)?;
         }
         source_failures.apply(ctx, &source_fidelity, &mut part_losses)?;
         let mut losses = if ctx.container_only() {

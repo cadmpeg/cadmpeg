@@ -43,7 +43,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
             bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-            bend_radius_offset: 156,
+            bend_radius_offset: Some(156),
             height_datum: DesignSheetMetalHeightDatum::InnerFaces,
             bend_position: DesignBendPosition::Adjacent,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -597,7 +597,7 @@ fn edge_flange_to_object_fixture(
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
             bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-            bend_radius_offset: 156,
+            bend_radius_offset: Some(156),
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
             bend_position: DesignBendPosition::Inside,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -960,7 +960,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 343,
             bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-            bend_radius_offset: 156,
+            bend_radius_offset: Some(156),
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
             bend_position: DesignBendPosition::Inside,
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
@@ -1014,6 +1014,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         if let crate::records::feature::scope::DesignScopePayloadMut::SurfacePatch(slot) =
             scope.payload_mut()
         {
+            let slot = &mut slot.boundaries;
             *slot = boundaries;
         }
         scope
@@ -1092,6 +1093,7 @@ fn surface_patch_weights_preserve_source_encoding_and_boundary_order() {
         (DesignPatchContinuity::Curvature, 0.5),
     ];
     if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+        let boundaries = &mut boundaries.boundaries;
         *boundaries = raw
             .into_iter()
             .map(|(continuity, scale)| DesignSurfacePatchBoundary {
@@ -1147,6 +1149,7 @@ fn surface_patch_abstains_on_unsupported_active_weights() {
             let mut scope =
                 DesignParameterScope::empty("f3d:test:scope#1", DesignFeatureKind::SurfacePatch, 1);
             if let DesignScopePayloadMut::SurfacePatch(boundaries) = scope.payload_mut() {
+                let boundaries = &mut boundaries.boundaries;
                 *boundaries = vec![DesignSurfacePatchBoundary {
                     scope_reference_ordinal: 0,
                     record_index: 0,
@@ -1203,6 +1206,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     if let crate::records::feature::scope::DesignScopePayloadMut::SurfacePatch(slot) =
         scope.payload_mut()
     {
+        let slot = &mut slot.boundaries;
         *slot = vec![
             DesignSurfacePatchBoundary {
                 scope_reference_ordinal: 3,
@@ -1281,7 +1285,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     };
     let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &shifted_groups, &[], &[])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &shifted_groups, &[], &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1311,12 +1315,12 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
     else {
         panic!("SurfacePatch fixture");
     };
-    for (boundary, ordinal) in boundaries.iter_mut().zip([2_u32, 5, 8]) {
+    for (boundary, ordinal) in boundaries.boundaries.iter_mut().zip([2_u32, 5, 8]) {
         boundary.scope_reference_ordinal = ordinal;
     }
     let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &endpoint_groups, &[], &[])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &endpoint_groups, &[], &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1459,7 +1463,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         parameter_owners,
         settings_record_index: 724,
         bend_radius: cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive bend radius"),
-        bend_radius_offset: 100,
+        bend_radius_offset: Some(100),
     };
     let project = |record_index: u32,
                    operation: DesignHemOperation,

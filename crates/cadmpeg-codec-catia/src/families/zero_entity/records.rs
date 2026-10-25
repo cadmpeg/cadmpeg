@@ -1884,29 +1884,30 @@ fn zero_entity_model_curve_construction(
         [second, first]
     };
     let slope = (end.v - start.v) / (end.u - start.u);
-    let start_radius = radius + start.v * half_angle.sin();
-    if !slope.is_finite() || !start_radius.is_finite() || start_radius == 0.0 {
+    let zero_angle_v = start.v - slope * start.u;
+    let zero_angle_radius = radius + zero_angle_v * half_angle.sin();
+    if !slope.is_finite() || !zero_angle_radius.is_finite() || zero_angle_radius == 0.0 {
         return None;
     }
     let transverse = axis.cross(*ref_direction);
     let major = cadmpeg_ir::math::Vector3::new(
-        start_radius * ref_direction.x,
-        start_radius * ref_direction.y,
-        start_radius * ref_direction.z,
+        zero_angle_radius * ref_direction.x,
+        zero_angle_radius * ref_direction.y,
+        zero_angle_radius * ref_direction.z,
     );
     let minor = cadmpeg_ir::math::Vector3::new(
-        start_radius * transverse.x,
-        start_radius * transverse.y,
-        start_radius * transverse.z,
+        zero_angle_radius * transverse.x,
+        zero_angle_radius * transverse.y,
+        zero_angle_radius * transverse.z,
     );
     Some(ProceduralCurveDefinition::Helix(
         cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
             [start.u, end.u],
             cadmpeg_ir::geometry::HelixFrame {
                 center: Point3::new(
-                    origin.x + start.v * half_angle.cos() * axis.x,
-                    origin.y + start.v * half_angle.cos() * axis.y,
-                    origin.z + start.v * half_angle.cos() * axis.z,
+                    origin.x + zero_angle_v * half_angle.cos() * axis.x,
+                    origin.y + zero_angle_v * half_angle.cos() * axis.y,
+                    origin.z + zero_angle_v * half_angle.cos() * axis.z,
                 ),
                 major,
                 minor,
@@ -1917,7 +1918,7 @@ fn zero_entity_model_curve_construction(
                 ),
                 axis: *axis,
             },
-            std::f64::consts::TAU * slope * half_angle.sin() / start_radius,
+            std::f64::consts::TAU * slope * half_angle.sin() / zero_angle_radius,
             None,
         )
         .ok()?,

@@ -323,7 +323,10 @@ pub(crate) fn bind_pattern_count_caches(
     relations: &[SketchRelation],
 ) {
     use crate::records::sketch_relations::SketchPatternDefinition;
-    let mut bind = |scope: &str, owner: u32, count: u32| {
+    let mut bind = |scope: &str, owner: Option<u32>, count: u32| {
+        let Some(owner) = owner else {
+            return;
+        };
         let mut candidates = native.iter().filter(|parameter| {
             native_stream(&parameter.id) == Some(scope)
                 && parameter.owner_record_index() == Some(owner)
@@ -368,7 +371,7 @@ pub(crate) fn bind_pattern_count_caches(
 struct RectangularPatternSourceDirection {
     direction: [f64; 2],
     count: u32,
-    distance: cadmpeg_ir::scalar::NonNegativeLength,
+    distance: cadmpeg_ir::scalar::Length,
     distance_parameter: Option<cadmpeg_ir::features::ParameterId>,
     count_parameter: Option<cadmpeg_ir::features::ParameterId>,
 }
@@ -389,16 +392,18 @@ fn exact_rectangular_pattern(
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if crate::design::relation_kinds::sole_constraint_kind(relation).is_none()
+        || crate::design::decode::sketch::sketch_pattern_neutral_state(relation) != Some(true)
         || entities.len() != relation.return_members().len()
     {
         return Ok(None);
     }
-    let Some(counted_references) = relation.rectangular_counted_reference_count else {
+    let Some(raw_bytes) = relation.raw_bytes() else {
         return Ok(None);
     };
-    let distance_form = match counted_references {
-        0 => RectangularPatternDistanceForm::SeedToFinalSpan,
-        _ => RectangularPatternDistanceForm::AdjacentSpacing,
+    let distance_form = match crate::design::decode::sketch::rectangular_pattern_flags(raw_bytes) {
+        Some([0, 0, 0]) => RectangularPatternDistanceForm::AdjacentSpacing,
+        Some([1, 0, 0]) => RectangularPatternDistanceForm::SeedToFinalSpan,
+        _ => return Ok(None),
     };
     let pattern = relation.definition.pattern();
     let Some(SketchPatternDefinition::Rectangular { directions }) = pattern else {
@@ -412,11 +417,15 @@ fn exact_rectangular_pattern(
             }
             let count_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
-                    && parameter.owner_record_index() == Some(direction.count_parameter)
+                    && direction
+                        .count_parameter
+                        .is_some_and(|record| parameter.owner_record_index() == Some(record))
             });
             let distance_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
-                    && parameter.owner_record_index() == Some(direction.distance_parameter)
+                    && direction
+                        .distance_parameter
+                        .is_some_and(|record| parameter.owner_record_index() == Some(record))
             });
             let count = direction.evaluated_count.get();
             if count_parameter.is_some_and(|parameter| {
@@ -424,9 +433,8 @@ fn exact_rectangular_pattern(
             }) {
                 return None;
             }
-            let distance = cadmpeg_ir::scalar::NonNegativeLength::new(
-                direction.evaluated_distance.get() * 10.0,
-            );
+            let distance =
+                cadmpeg_ir::scalar::Length::new(direction.evaluated_distance.get() * 10.0);
             let distance = distance?;
             if (count == 1 && !scalar_close(distance.get(), 0.0))
                 || distance_parameter.is_some_and(|parameter| {
@@ -489,7 +497,7 @@ fn rectangular_pattern_directions(
                 }
             }
         };
-        if !spacing.is_finite() || spacing < 0.0 {
+        if !spacing.is_finite() {
             return Ok(None);
         }
         let dimension = source.distance_parameter.clone().map_or_else(
@@ -753,6 +761,7 @@ fn exact_circular_pattern(
     };
 
     if crate::design::relation_kinds::sole_constraint_kind(relation).is_none()
+        || crate::design::decode::sketch::sketch_pattern_neutral_state(relation) != Some(true)
         || members.len() != relation.members().len()
         || returned.len() != relation.return_members().len()
     {
@@ -770,11 +779,11 @@ fn exact_circular_pattern(
     };
     let angle_parameter = parameters.iter().find(|parameter| {
         native_stream(&parameter.id) == Some(scope)
-            && parameter.owner_record_index() == Some(*angle_parameter)
+            && angle_parameter.is_some_and(|record| parameter.owner_record_index() == Some(record))
     });
     let count_parameter = parameters.iter().find(|parameter| {
         native_stream(&parameter.id) == Some(scope)
-            && parameter.owner_record_index() == Some(*count_parameter)
+            && count_parameter.is_some_and(|record| parameter.owner_record_index() == Some(record))
     });
     let angle = cadmpeg_ir::scalar::Angle::from_assigned_real(*evaluated_angle);
     if angle_parameter.is_some_and(|parameter| {

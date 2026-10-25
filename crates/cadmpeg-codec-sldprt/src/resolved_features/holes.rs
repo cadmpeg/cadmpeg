@@ -10,6 +10,7 @@ use super::scalars::{feature_object_name, FeatureObjectNames, FeatureObjectStart
 use super::transforms::sketch_frame_marker_transform;
 use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{classify, FeatureClass};
+use crate::parasolid::control_vertices::control_vertices;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
@@ -45,9 +46,8 @@ const EPS_HOLE_EXACT_GEOMETRY: f64 = 1.0e-12;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
 
-/// Resolve helix placement from the counted curve mesh stored in its feature
-/// object. Promotion requires one mesh stream and a circular-helix fit whose
-/// residual is small relative to its radius.
+/// Resolve helix placement from the unique referenced construction controls.
+/// The fit requires a residual small relative to the resulting radius.
 pub(crate) fn project_helix_axes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
@@ -94,9 +94,7 @@ pub(crate) fn project_helix_axes(
                 continue;
             };
             for stream in crate::parasolid::extract_streams_with_offsets(object, ctx)?.streams {
-                if let Some(points) =
-                    crate::parasolid::mesh_polyline_from_header(&stream.payload, &stream.header)
-                {
+                if let Some(points) = control_vertices(ctx, &stream.payload, &stream.header)? {
                     meshes.push(points);
                 }
             }

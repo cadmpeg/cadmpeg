@@ -75,7 +75,7 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         "edge_wrapper_record_index":1, "edge_group_record_index":2, "edge_operand_record_index":5,
         "aggregate_group_record_index":6, "aggregate_operand_record_index":9,
         "parameter_owners":{"kind":"gap_length", "gap_owner_record_index":10, "length_owner_record_index":11},
-        "settings_record_index":12, "bend_radius":0.25, "bend_radius_offset":100,
+        "settings_record_index":12, "bend_radius":0.25,
         "bend_position": "adjacent", "flipped": false
     });
     let mut flipped = wire.clone();
@@ -94,7 +94,11 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         assert!(serde_json::from_value::<DesignHemOperation>(invalid).is_err());
     }
     let mut operation: DesignHemOperation = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(operation).unwrap(), wire);
+    assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+    operation = crate::records::feature::test_support::assert_located_at(
+        operation,
+        &[("bend_radius_offset", 100)],
+    );
     for (group, operand) in [
         ("edge_group_record_index", "edge_operand_record_index"),
         (

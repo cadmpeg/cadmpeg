@@ -51,7 +51,6 @@ impl DesignEdgeIdentityLayout {
     }
 
     /// The two shortened framings share the on-wire `compact_layout` flag.
-    #[cfg(test)]
     pub(crate) fn is_compact(self) -> bool {
         !matches!(self, Self::Full)
     }
@@ -274,9 +273,11 @@ impl DesignEdgeIdentityOperand {
     pub(crate) fn byte_offset(&self) -> Option<u64> {
         self.frame.map(|frame| frame.offset(0))
     }
-    #[cfg(test)]
     pub(crate) fn layout(&self) -> Option<DesignEdgeIdentityLayout> {
         self.layout
+    }
+    pub(crate) fn lineage_key(&self) -> (&str, &str) {
+        (self.asset_id.as_str(), self.context_id.as_str())
     }
     fn asset_id_offset(&self) -> Option<u64> {
         self.local_id_offset()?.checked_add(18)

@@ -50,9 +50,22 @@ pub(crate) enum InventorLossCode {
     FeatureRecordMalformed,
     /// An optional feature label is empty and has no neutral display name.
     FeatureLabelUnusable,
+    /// Sketch curves carry entity flags whose construction meaning is
+    /// unresolved.
+    SketchConstructionUnresolved,
+    /// Profile-body records do not decode, so the profiles that select them
+    /// stay native.
+    FeatureProfileBodyUndecoded,
+    /// A feature label name stores unpaired UTF-16 surrogates, which the
+    /// neutral name replaces.
+    FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
-    /// Inventor operations retain native result-body identity with unresolved state.
+    /// Thread annotations retain sizing and termination operands only natively.
+    FeatureThreadDefinitionPartial,
+    /// Thicken selections and thickness side remain native operands.
+    FeatureThickenOperandsNative,
+    /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Parameter records have a unit or expression graph that is not closed.
     ParameterGraphOpen,
@@ -122,7 +135,12 @@ impl InventorLossCode {
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
         Self::FeatureLabelUnusable,
+        Self::SketchConstructionUnresolved,
+        Self::FeatureProfileBodyUndecoded,
+        Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureThreadDefinitionPartial,
+        Self::FeatureThickenOperandsNative,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
@@ -168,7 +186,12 @@ impl InventorLossCode {
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
+            Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
+            Self::FeatureProfileBodyUndecoded => "feature.profile-body-undecoded",
+            Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
+            Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
+            Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
@@ -231,6 +254,10 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureThreadDefinitionPartial
+            | Self::FeatureThickenOperandsNative
+            | Self::FeatureProfileBodyUndecoded
+            | Self::SketchConstructionUnresolved
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
@@ -238,7 +265,8 @@ impl InventorLossCode {
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
             Self::NeutralRecordUnprojected
             | Self::MetadataPropertyUnmapped
-            | Self::FeatureLabelUnusable => LossTaxonomy::MetadataNotTransferred,
+            | Self::FeatureLabelUnusable
+            | Self::FeatureLabelNameReplaced => LossTaxonomy::MetadataNotTransferred,
             Self::ProteinCatalogUndecodable
             | Self::ProteinAssetRejected
             | Self::ProteinAppearanceAbsent
@@ -472,7 +500,12 @@ mod tests {
                 "sketch.record-malformed",
                 "feature.record-malformed",
                 "feature.label-unusable",
+                "sketch.construction-unresolved",
+                "feature.profile-body-undecoded",
+                "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.thread-definition-partial",
+                "feature.thicken-operands-native",
                 "feature.state-unresolved",
                 "parameter.graph-open",
                 "parameter.expression-bounded",

@@ -9,6 +9,7 @@ use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
+mod query_measure_reports;
 mod query_support;
 mod support;
 
@@ -109,7 +110,7 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             Some(serde_json::json!(0)),
             Some(serde_json::json!(false)),
             Some(serde_json::json!("unsupported")),
-            Some(serde_json::json!("6")),
+            Some(serde_json::json!("11")),
             Some(serde_json::json!("13")),
             Some(serde_json::json!("14")),
             Some(serde_json::json!("18")),
@@ -118,9 +119,9 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             Some(serde_json::json!("24")),
             Some(serde_json::json!("30")),
             Some(serde_json::json!("32")),
+            Some(serde_json::json!("7")),
             Some(serde_json::json!("9")),
             Some(serde_json::json!("10")),
-            Some(serde_json::json!("11")),
             Some(serde_json::json!("12")),
             Some(serde_json::json!({})),
         ] {
@@ -1609,7 +1610,10 @@ fn every_view_json_is_a_query_command_report() {
     let source = dir.path().join("triangle.sldprt");
     fs::write(
         &source,
-        include_bytes!("fixtures/sldprt_triangle_body.sldprt").as_slice(),
+        include_bytes!(
+            "../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"
+        )
+        .as_slice(),
     )
     .unwrap();
     let doc = dir.path().join("triangle.cadir.json");
@@ -1899,4 +1903,31 @@ mod schema_type_identities {
                         cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::Length>,
                     >())));
     }
+}
+
+#[test]
+fn effective_reports_the_resolved_display_colour_of_each_record() {
+    let dir = tempdir().unwrap();
+    let mut document =
+        serde_json::to_value(unit_cube().expect("unit cube fixture is admitted")).unwrap();
+    let color = serde_json::json!({"r": 0.25, "g": 0.5, "b": 0.75, "a": 1.0});
+    document["model"]["bodies"][0]["color"] = color.clone();
+    let body = document["model"]["bodies"][0]["id"].as_str().unwrap().to_owned();
+    let model = write(dir.path(), "cube.cadir.json", &document.to_string());
+    let output = cadmpeg()
+        .args(["query", "effective", "--json", model.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = &value["payload"];
+    assert_eq!(payload["protocol"], "cadmpeg-effective-values-v1");
+    let row = payload["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["arena"] == "bodies" && row["id"] == body.as_str())
+        .expect("the coloured body has an effective-value row");
+    assert_eq!(row["display_color"], color);
+    assert!(payload["configurations"].as_object().unwrap().is_empty());
 }

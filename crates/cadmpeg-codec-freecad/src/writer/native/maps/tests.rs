@@ -91,7 +91,13 @@ fn unavailable_table_payload_is_omitted_without_fabricating_an_empty_table() {
     let mut entries = BTreeMap::new();
     let mut outcomes =
         NativeDispositions::for_namespace("fcstd", ["string_tables"], NativeDisposition::Written);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let encode_ctx = cadmpeg_core::decode::DecodeContext::for_encode(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    );
     let dictionary = write(
+        &encode_ctx,
         &ir,
         &mut [],
         &HashMap::new(),
@@ -173,7 +179,13 @@ fn sparse_naming_write_warns_and_omits_group_without_relabeling_its_names() {
     );
     let mut objects = [object];
     let mut losses = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let encode_ctx = cadmpeg_core::decode::DecodeContext::for_encode(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    );
     write(
+        &encode_ctx,
         &ir,
         &mut objects,
         &HashMap::from([(property.owner.clone(), "Shape".into())]),
@@ -247,7 +259,13 @@ fn rewritten_table_identity_resolves_to_the_emitted_hasher_ordinal() {
     let mut objects = [object];
     let mut losses = Vec::new();
     let mut entries = BTreeMap::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let encode_ctx = cadmpeg_core::decode::DecodeContext::for_encode(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    );
     let dictionary = write(
+        &encode_ctx,
         &ir,
         &mut objects,
         &HashMap::from([(property.owner.clone(), "Shape".into())]),
@@ -385,7 +403,13 @@ fn unknown_hasher_policy_does_not_become_default_metadata_on_write() {
     let mut entries = BTreeMap::new();
     let mut losses = Vec::new();
     let mut outcomes = super::super::super::dispositions::initial();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let encode_ctx = cadmpeg_core::decode::DecodeContext::for_encode(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    );
     assert!(write(
+        &encode_ctx,
         &ir,
         &mut [],
         &HashMap::new(),
@@ -621,16 +645,30 @@ fn source_less_sparse_modern_names_keep_healthy_labels_and_unchanged_sid_prefixe
         );
     }
     let occurrences = crate::test_support::topology_occurrences(written.ir());
-    assert_eq!(crate::element_map::topology_index_count(root), 3);
-    assert_eq!(
-        crate::element_map::topology_indices(&map.maps, root, &occurrences, &map.property)
-            .collect::<std::collections::BTreeSet<_>>(),
-        [1, 3].into_iter().collect()
-    );
+    let persistent_indices = root
+        .children
+        .iter()
+        .flatten()
+        .flat_map(|child| {
+            let fields = child.split_ascii_whitespace().collect::<Vec<_>>();
+            let local = fields[0].parse::<usize>().unwrap();
+            let offset = fields[1].parse::<usize>().unwrap();
+            let count = fields[2].parse::<usize>().unwrap();
+            local + offset..local + offset + count
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(persistent_indices.last(), Some(&3));
+    assert_eq!(persistent_indices, [1, 3].into_iter().collect());
     for index in [1, 3] {
-        let ids =
-            crate::element_map::topology_ids(&map.maps, root, &occurrences, &map.property, index)
-                .collect::<Vec<_>>();
+        let ids = occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.property == map.property
+                    && occurrence.indexed_name == "Face"
+                    && occurrence.source_index == index
+            })
+            .map(|occurrence| occurrence.topology_id.as_str())
+            .collect::<Vec<_>>();
         assert_eq!(ids.len(), 1);
         assert!(written.ir().model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Face(face) if face.as_str() == ids[0])));
     }

@@ -43,6 +43,39 @@ then execute `tools/validate_fcstd_interop.py` inside `FreeCADCmd`. The validato
 document is refused. Set `CADMPEG_FCSTD_REQUIRE_NATIVE_RESAVE=1` for fixtures expected to recompute,
 save, and reopen without application-specific external assets.
 
+## Design projection boundaries
+
+Neutral sketch profiles are derived from active explicit coincident endpoint constraints. They do
+not reproduce the cached shape's wires or the result of application recomputation. Unconstrained
+equal or nearby endpoint coordinates remain separate; no decoder tolerance creates connectivity.
+Non-construction entities participate in chains, including independently closed curves as single
+entity profiles. Constraint branches and overlapping unconstrained entities do not acquire an
+arbitrary continuation. Native geometry, constraints, cached topology, and operation selectors
+remain independent retained records.
+
+For deterministic neutral serialization, the lowest unused geometry ordinal seeds a chain with its
+native direction. A unique explicit continuation extends each end, reversing an entity use when
+its matching end requires that direction. Disconnected chains retain seed order. Closed chains
+stop when no unused entity remains in the component. This ordering is a CADIR convention; it does
+not claim persisted profile identity or producer wire traversal order. Full cached-wire-to-sketch
+entity correspondence is not projected.
+
+Non-container neutral feature dependencies include declared object dependencies and non-hidden link
+runtime operands, without name or source-order filtering. Dependencies are resolved before stable
+ordinal assignment. Known runtime and attachment-extension hidden-scope overrides apply in addition
+to hidden link runtime names. Expression-engine dependencies resolve local object-name selectors and
+unambiguous `<<Label>>` selectors, excluding quoted strings and external-document selectors. This
+owner resolution does not evaluate formulas or claim complete expression-language coverage; unresolved
+and external expressions remain native. PartDesign bodies keep membership as parent/child structure. Source declaration
+order breaks ties between independently ready features. Cyclic native relations remain native and
+use the existing blocking history diagnostic.
+
+External cache association first uses a valid persisted export index, then a current mapped key,
+and finally a unique historical alias. An out-of-range index or ambiguous historical alias leaves
+the solved cached geometry unbound and reports `sketch.external-reference-unresolved`. Other
+cache records and live external links remain available. Historical alias collisions alone do not
+refuse a cache whose current keys are distinct.
+
 ## Implementation checklist
 
 Apply this boundary to every phase:
@@ -55,3 +88,87 @@ Apply this boundary to every phase:
   unknowns in the open-items file.
 - Keep every contribution self-contained and reproducible after all analysis-only resources are
   removed.
+
+## Pcurve location identity
+
+Pcurve candidates match by surface identity and the fully composed native location chain. The
+last serialized matching representation supplies the pcurve references and range. Compound aliases
+match after adjacent datum-power reduction; distinct elementary datums do not match even when their
+matrices are equal. The edge placement and representation location compose before comparison with
+the placed face support.
+
+If no native chain matches but a candidate has an equal matrix, the affected coedge retains its
+edge incidence and omits its neutral pcurve with blocking `pcurve.location-ambiguous`. Native records
+remain retained. The native record model does not distinguish an empty compound location from an
+elementary location with no factors. Projection conservatively treats each such table row as a
+distinct datum; it does not infer an empty chain from an identity matrix.
+
+## Product metadata projection
+
+Neutral part-number selection uses the runtime, not the validity or nonemptiness of competing
+carriers. `App::Part`, `Assembly::AssemblyObject`, and `Assembly::AssemblyLink` select `Id`; an
+absent, empty, or invalid `Id` leaves the neutral field unset. Their custom `PartNumber` string
+remains a named BOM property. Other product runtimes project a valid nonempty `PartNumber` string
+by the CADIR metadata convention; a same-named `Id` has no neutral part-number meaning. All native
+properties remain independently retained. This convention does not prescribe a FreeCAD BOM
+workbench's choice of columns.
+
+Neutral link-occurrence transforms compose the local affine placements and scales before
+`linked_prototype`; their separate neutral scale vector is unity. Native records retain the scalar
+and per-element scale carriers. This keeps nonuniform scale in its source position relative to
+rotations and translations.
+
+## Rectangular-trimmed face support
+
+A face on a rectangular-trimmed surface binds to the unrestricted basis surface. Nested outer trims
+are removed from that face's support chain, and its pcurves use the basis UV chart. This preserves
+evaluation at and outside the declared rectangle without clamping or changing pcurve coordinates.
+The bounded subset constructions and the native trim bounds remain retained independently. Each
+bypassed subset carrier has the support geometry role so exporters do not emit it as a separate
+free surface.
+
+## Topology appearance association
+
+Face materials and face, edge, and vertex colors bind through the saved shape's ordered topology
+indices. The mapping does not require an element map and does not use the number of persistent
+names as the topology count. Each index can target all neutral occurrences of that source
+subelement. Missing indices withhold the override; they do not compact the remaining indices.
+
+An indexed list whose length differs from the transferred topology count remains native and emits
+`appearance.topology-color-count-mismatch`. An empty color list supplies no override. Empty material
+lists remain count mismatches when a shape has faces. Duplicate `Shape` properties or payloads are
+malformed; no source-order choice associates a view provider with one of them.
+
+Multi-material lists whose length equals the solid count still require the face count to match.
+The decoder does not infer per-solid materials from that equality, expand identical entries into a
+uniform material, or assign a prefix of an unmatched list. Such lists remain native and keep the
+count-mismatch warning. The warning identifies the absent face association; it does not determine
+why the saved list and shape have different counts.
+
+An admitted edge or vertex color array replaces the corresponding default color bindings on its
+indexed targets. The effective array appearances retain the default line width or point size.
+An empty or mismatched array leaves those default bindings in place.
+
+## Exact location identity
+
+Topology indexing, vertex and edge sharing, and representation association use ordered elementary
+datum identities and signed powers. Equal affine matrices do not merge distinct datum identities. Adjacent equal datums
+combine their powers, and a zero sum cancels that pair. Records with no retained factors keep a
+distinct table identity, including records whose affine matrix is the identity matrix.
+
+One interned chain has one canonical transform evaluated from its reduced datum powers. A canceled
+chain evaluates to the exact identity transform. Topology labels and ordered source indices use
+native chain identity; curve and surface placement caches use their canonical affine matrices.
+Repeated shape/chain states are visited once per root or source-index target, preserving first
+encounter order.
+
+Canonical location words admit at most 65,536 terms. Location-table reconstruction admits the
+larger of 16,777,216 term visits and 1,024 visits per location row, including intermediate powers
+and compositions. Compound powers use repeated squaring. Word expansion, work exhaustion, or
+signed 64-bit exponent overflow returns a local bound outcome; the caller withholds the affected
+topology and reports a loss. Topology admission also bounds visits, composition calls and term scans, cached products, and total
+interned terms by the larger of 16,777,216 and 1,024 times the combined location and shape row count.
+Admission completes before topology mutation. A bound withholds that payload's entire neutral
+topology with blocking `topology.location-identity-bounded`; later payloads continue. Allocation
+failures remain decode errors. Canonical identities are
+derived state and do not change the native record format.

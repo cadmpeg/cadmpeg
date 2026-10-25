@@ -803,3 +803,81 @@ fn named_and_positional_order_tables_decode_one_row() {
     assert_eq!(named.rows.len(), 1);
     assert_eq!(positional.rows.len(), 1);
 }
+
+fn reference_order_tables(
+    prototype_reference: Option<&[u8]>,
+    rows: &[u8],
+) -> [crate::feature::definitions::FeatureOrderTable; 2] {
+    let mut named = b"order_table\0\xf8\x03\xf7\x42\xfb\xe2\
+        \xe0\x01ext_id\0\x09\xe0\x01int_id\0\x01\xe0\x01bitmask\0\x00"
+        .to_vec();
+    let mut positional = b"prefix\xf8\x03\xf7\x42\xfb\xe2\xf7\x43\x09\x01\x00".to_vec();
+    if let Some(reference) = prototype_reference {
+        named.extend_from_slice(b"\xe0\x01rg_ref_id\0");
+        named.extend_from_slice(reference);
+        positional.extend_from_slice(reference);
+    }
+    for payload in [&mut named, &mut positional] {
+        payload.extend_from_slice(b"\xf1\xf7\x42\xe2");
+        payload.extend_from_slice(rows);
+    }
+    [
+        order_table(&named, 0, named.len()).expect("named order-table header"),
+        positional_order_table(&positional, 0, positional.len(), 66)
+            .expect("positional order-table header"),
+    ]
+}
+
+#[test]
+fn order_tables_accept_prototype_declared_null_rg_ref_id() {
+    let rows = b"\x0a\x02\x01\xf6\xe2\x0b\x03\x00\xf6\xe0\x01next\0";
+    for table in reference_order_tables(Some(b"\xf6"), rows) {
+        assert!(table.has_prototype);
+        assert!(table.is_complete());
+        assert_eq!(table.declared_count, 3);
+        assert_eq!(table.rows.len(), 2);
+        assert_eq!(table.rows[0].bitmask, 1);
+        assert_eq!(table.rows[1].bitmask, 0);
+        assert_eq!(table.internal_id(10), Some(2));
+        assert_eq!(table.external_id(3), Some(11));
+    }
+}
+
+#[test]
+fn order_tables_require_the_null_rg_ref_id_on_each_row() {
+    for suffix in [b"".as_slice(), b"\x01", b"\xe0\x01next\0", b"\xf6\xf6"] {
+        let mut rows = b"\x0a\x02\x01\xf6\xe2\x0b\x03\x00".to_vec();
+        rows.extend_from_slice(suffix);
+        for table in reference_order_tables(Some(b"\xf6"), &rows) {
+            assert!(table.has_prototype);
+            assert!(!table.is_complete());
+            assert_eq!(table.rows.len(), 1);
+            assert_eq!(table.rows[0].external_id, 10);
+            assert_eq!(table.internal_id(10), None);
+            assert_eq!(table.external_id(2), None);
+        }
+    }
+}
+
+#[test]
+fn order_tables_do_not_assign_nonnull_rg_ref_id_semantics() {
+    for reference in [b"\x01".as_slice(), b"\x80\x80", b"\xf5"] {
+        for table in
+            reference_order_tables(Some(reference), b"\x0a\x02\x01\xf6\xe2\x0b\x03\x00\xf6")
+        {
+            assert!(!table.is_complete());
+            assert_eq!(table.internal_id(10), None);
+            assert_eq!(table.external_id(3), None);
+        }
+    }
+}
+
+#[test]
+fn order_tables_do_not_infer_a_reference_slot_without_its_prototype() {
+    for table in reference_order_tables(None, b"\x0a\x02\x01\xe2\x0b\x03\x00\xf6") {
+        assert!(table.has_prototype);
+        assert!(!table.is_complete());
+        assert_eq!(table.rows.len(), 1);
+        assert_eq!(table.internal_id(10), None);
+    }
+}

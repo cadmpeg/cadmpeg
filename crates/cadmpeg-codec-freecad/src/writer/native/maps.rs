@@ -22,6 +22,7 @@ fn hex(value: i64) -> String {
 }
 
 pub(crate) fn write(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     objects: &mut [Object],
     names: &HashMap<String, String>,
@@ -260,7 +261,7 @@ pub(crate) fn write(
             .filter(|payload| payload.property == original.property)
             .collect::<Vec<_>>();
         let indices = if let [payload] = payloads.as_slice() {
-            crate::topology_transfer::canonical_indices::for_payload(payload)?
+            crate::topology_transfer::canonical_indices::for_payload(ctx, payload)?
         } else {
             Vec::new()
         };

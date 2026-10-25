@@ -35,7 +35,7 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
         .remove(cadmpeg_ir::hash::DOCUMENT_FINGERPRINT_METADATA_KEY);
 
     let mut encoded = Vec::new();
-    let path = crate::test_support::plan_inherited_write(
+    let path = crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -90,7 +90,7 @@ fn semantic_writer_synthesizes_edited_swobjects_semantics() {
 }
 
 #[test]
-fn encoder_writes_source_less_ir() {
+fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].name = None;
     ir.model.faces.iter_mut().for_each(|face| face.name = None);
@@ -100,14 +100,16 @@ fn encoder_writes_source_less_ir() {
         .for_each(|edge| edge.set_param_range(None));
 
     let mut encoded = Vec::new();
-    let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
-    // No retained source content reached the writer, so it authored every byte.
+    let report = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
+    // Geometry is authored in the explicit retained envelope.
     assert!(matches!(
         report.write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let scan = crate::test_support::container::scan(&encoded);
     assert_eq!(
@@ -157,10 +159,12 @@ fn semantic_writer_emits_face_records_deterministically() {
     let mut expected = None;
     for _ in 0..4 {
         let mut encoded = Vec::new();
-        SldprtCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut encoded))
-            .unwrap();
+        crate::test_support::plan_fixture_with_native_envelope(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Inherit,
+        )
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
         if let Some(expected) = &expected {
             assert_eq!(expected, &encoded);
         } else {
@@ -237,7 +241,7 @@ fn encoder_reports_source_less_unresolved_extrusion_profile() {
 }
 
 #[test]
-fn encoder_writes_source_less_line_sketches() {
+fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
@@ -546,10 +550,12 @@ fn encoder_writes_source_less_line_sketches() {
 
     ir.model.finalize();
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let scan = crate::test_support::container::scan(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
@@ -741,7 +747,7 @@ fn encoder_writes_source_less_line_sketches() {
 }
 
 #[test]
-fn encoder_writes_source_less_spatial_point_and_line_sketches() {
+fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_sketches() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::sketches::{
@@ -822,10 +828,12 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
     });
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

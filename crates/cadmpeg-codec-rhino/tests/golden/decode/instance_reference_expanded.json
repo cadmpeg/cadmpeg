@@ -129,9 +129,6 @@
             "member_object_ids": [],
             "meters_per_unit": 0.0254,
             "name": "modern definition",
-            "neutral_refs": [
-              "rhino:model:product#61616161-6161-6161-6161-616161616161"
-            ],
             "source_uuid": "61616161-6161-6161-6161-616161616161",
             "unit_system": 8,
             "url": "https://example.test",
@@ -147,9 +144,6 @@
               "rhino:product:definition#61616161-6161-6161-6161-616161616161"
             ],
             "name": "",
-            "neutral_refs": [
-              "rhino:model:occurrence#0"
-            ],
             "parent_definition_uuids": [],
             "source_uuid": "00000000-0000-0000-0000-000000000000",
             "transform": [
@@ -198,7 +192,7 @@
       }
     },
     "scope": {
-      "design": true,
+      "design": false,
       "model": true
     },
     "source": {
@@ -310,6 +304,17 @@
         },
         "message": "rhino:object:record#record-000000-offset-582: layer index -1 is absent or ambiguous",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "parametric_record_omitted",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -318,7 +323,7 @@
     "transfer": {
       "geometry_transferred": false,
       "scope": {
-        "design": true,
+        "design": false,
         "model": true
       }
     }

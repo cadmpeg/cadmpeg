@@ -155,7 +155,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
         "severity": "info"
       },
       {
@@ -165,7 +165,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.entities`",
+        "message": "the iges write omits 2 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#3",
         "severity": "info"
       },
       {
@@ -175,7 +175,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],

@@ -474,9 +474,13 @@ fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::Valid
     let options = cadmpeg_ir::codec::DecodeOptions::default();
     let document = crate::loader::load_artifact(&inputs, &path, options, None)
         .expect("load the FreeCAD design-history fixture");
-    let validation =
-        crate::application::validators::validate_loaded(&inputs, &document, &options.policy)
-            .expect("validate the FreeCAD design-history fixture");
+    let validation = crate::application::validators::validate_loaded(
+        &inputs,
+        &document,
+        &options.policy,
+        cadmpeg_measure::WorkProfile::Desktop,
+    )
+    .expect("validate the FreeCAD design-history fixture");
     assert_eq!(validation.error_count(), 0, "{validation:?}");
     (document, validation)
 }
@@ -498,6 +502,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
             path,
             forced: None,
             options: DecodeOptions::default(),
+            work: cadmpeg_measure::WorkProfile::Desktop,
         },
         export_target(TargetSelection::new(Format::Step, None)),
         &super::ConversionPolicy {

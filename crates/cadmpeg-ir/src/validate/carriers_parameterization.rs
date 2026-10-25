@@ -15,8 +15,6 @@ use crate::report::{
     Severity,
 };
 
-use super::pcurve_parameter_domain;
-
 const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
@@ -922,10 +920,44 @@ pub(super) fn check_parameter_domains(
             add(curve.id.as_str(), &curve.geometry);
         }
     });
+    let subset_spans = crate::index::identities::BorrowedIdentities::build(|add| {
+        for procedural in &ir.model.procedural_curves {
+            if let crate::geometry::ProceduralCurveDefinition::Subset(subset) =
+                procedural.definition()
+            {
+                add(procedural.id.as_str(), subset.parameter_range());
+            }
+        }
+    });
     for edge in &ir.model.edges {
         let Some([start, end]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
+        let subset_span = edge
+            .curve()
+            .and_then(|id| curves.get(id.as_str()))
+            .and_then(|geometry| geometry.procedural_construction())
+            .and_then(|construction| subset_spans.get(construction.as_str()))
+            .map(|range| {
+                let [first, last] = range.endpoints();
+                last - first
+            });
+        if let Some(span) = subset_span {
+            let tolerance =
+                EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9 * span.abs().max(1.0);
+            if start < -tolerance || end > span + tolerance {
+                super::record_finding(
+                    findings,
+                    Check::ParameterDomain,
+                    Severity::Error,
+                    Some(edge.id.as_str()),
+                    format_args!(
+                        "edge parameter range [{start}, {end}] is outside the local domain \
+                         [0, {span}] of its subset curve"
+                    ),
+                );
+            }
+        }
         let mut valid = true;
         let curve = match edge.curve() {
             Some(id) => curves.get(id.as_str()).copied(),
@@ -1033,7 +1065,8 @@ pub(super) fn check_parameter_domains(
             let geometry = pcurves.get(use_.pcurve.as_str()).copied();
             let mut valid = geometry.is_some();
             if let Some(geometry) = geometry {
-                let domain = pcurve_parameter_domain(ctx, geometry)?
+                let domain = geometry
+                    .parameter_domain(ctx)?
                     .map(crate::topology::IncreasingParameterInterval::endpoints);
                 match domain {
                     Some([lower, upper]) => {
@@ -1071,7 +1104,7 @@ fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
 
 /// Whether a carrier that states no parameter domain is defective.
 ///
-/// [`pcurve_parameter_domain`](super::pcurve_parameter_domain) answers `None`
+/// [`PcurveGeometry::parameter_domain`] answers `None`
 /// for two different reasons, and only one of them is a defect. An analytic
 /// carrier has no bounded domain because it has none to state. A NURBS carrier
 /// always has one, so a `None` there means the knot vector cannot yield an
@@ -1081,7 +1114,7 @@ fn parameter_in_domain(value: f64, domain: [f64; 2]) -> bool {
 /// offset keep the basis's parameterization outright. A trim reaches this
 /// question only with equal endpoints, where it states no interval of its own
 /// and the basis's parameterization governs — the same fallback
-/// `pcurve_parameter_domain` takes. So an unusable NURBS is reported under any
+/// `PcurveGeometry::parameter_domain` takes. So an unusable NURBS is reported under any
 /// mixture of wrappers exactly as it is reported bare.
 ///
 /// The match is exhaustive, so a new pcurve variant states its answer here.

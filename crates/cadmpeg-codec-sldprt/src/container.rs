@@ -21,6 +21,8 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ContainerSummary;
 use std::io::Read;
 
+pub(crate) mod native_layout;
+
 use crate::layout::block_frame_header as block_hdr;
 use crate::layout::cache_cell_header as cache_hdr;
 use crate::layout::outer_header as outer_hdr;
@@ -172,14 +174,12 @@ pub(crate) struct DirectoryEntry {
     pub(crate) offset: usize,
     /// Frame `type_id`.
     pub(crate) type_id: u32,
-    /// The section's stored/uncompressed size.
+    /// ZIP compressed size.
     pub(crate) size: u32,
     /// Decoded section name.
     pub(crate) name: String,
     /// Per-entry descriptor bytes at frame offset +26.
     pub(crate) descriptor: [u8; 14],
-    /// File-level directory trailer following the encoded name.
-    pub(crate) trailer: [u8; 6],
 }
 
 /// One cache-cell section-index entry.
@@ -189,6 +189,7 @@ pub(crate) struct CacheCell {
     pub(crate) offset: usize,
     /// The logical cell size `L`.
     pub(crate) logical_len: u32,
+    pub(crate) physical_range: Option<std::ops::Range<usize>>,
     /// Decoded section name.
     pub(crate) name: String,
 }
@@ -421,6 +422,7 @@ fn walk_native_markers<'a>(
     let mut block_views = BTreeMap::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
+    let mut invalid_local_frame = None;
     let mut i = outer_hdr::LEN;
     while i + MARKER.len() <= bytes.len() {
         if bytes[i..i + MARKER.len()] != MARKER {
@@ -429,20 +431,38 @@ fn walk_native_markers<'a>(
         }
         if let Some((block, view)) = try_block(ctx, root, i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
-            ctx.charge_entities(1, "admit SLDPRT block")?;
             block_views.insert(block.offset, view);
             blocks.push(block.into_block());
             continue;
         }
         if let Some(cell) = try_cache_cell(bytes, i) {
-            ctx.charge_entities(1, "admit SLDPRT cache cell")?;
             cache_cells.push(cell);
         } else if let Some(entry) = try_directory_entry(bytes, i) {
-            ctx.charge_entities(1, "admit SLDPRT directory entry")?;
             directory.push(entry);
+        } else if read_block_frame(bytes, i).is_some_and(|(frame, start, _)| {
+            index_from_u32(frame.uncomp_sz) <= MAX_UNCOMP
+                && bytes
+                    .get(i + block_hdr::LEN..start)
+                    .and_then(nibble_swap_name)
+                    .is_some()
+        }) {
+            invalid_local_frame =
+                Some(invalid_local_frame.map_or(i, |offset: usize| offset.min(i)));
         }
         i += 1;
     }
+    let tail_start = native_layout::validate(bytes, &mut blocks, &mut cache_cells, &mut directory)?;
+    if let Some(offset) = invalid_local_frame.filter(|offset| *offset < tail_start) {
+        return Err(CodecError::malformed(format_args!(
+            "declared native local member at {offset} failed DEFLATE, size or CRC validation"
+        )));
+    }
+    ctx.charge_entities(u64_from_index(blocks.len()), "admit SLDPRT block")?;
+    ctx.charge_entities(u64_from_index(cache_cells.len()), "admit SLDPRT cache cell")?;
+    ctx.charge_entities(
+        u64_from_index(directory.len()),
+        "admit SLDPRT directory entry",
+    )?;
     Ok(NativeMarkers {
         blocks,
         block_views,
@@ -811,6 +831,7 @@ fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
     Some(CacheCell {
         offset: off,
         logical_len: l,
+        physical_range: None,
         name,
     })
 }
@@ -836,9 +857,7 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
     let descriptor = bytes
         .get(off + dir_ent::DESCRIPTOR..off + dir_ent::LEN)
         .and_then(|value| value.try_into().ok())?;
-    let trailer = bytes
-        .get(name_start + index_from_u32(name_len)..name_start + index_from_u32(name_len) + 6)
-        .and_then(|value| value.try_into().ok())?;
+    bytes.get(name_start + index_from_u32(name_len)..name_start + index_from_u32(name_len) + 6)?;
     let name = nibble_swap_name(raw)?;
     Some(DirectoryEntry {
         offset: off,
@@ -846,7 +865,6 @@ fn try_directory_entry(bytes: &[u8], off: usize) -> Option<DirectoryEntry> {
         size,
         name,
         descriptor,
-        trailer,
     })
 }
 

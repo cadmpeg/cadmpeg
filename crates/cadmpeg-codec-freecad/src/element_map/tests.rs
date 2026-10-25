@@ -695,27 +695,23 @@ Co 1001000 +2 0 *
     let occurrences = crate::test_support::topology_occurrences(result.ir());
     for (group, index) in [(0, 1), (1, 1), (1, 2), (2, 1), (2, 2)] {
         assert_eq!(
-            super::topology_ids(
-                &shape_map.maps,
-                groups[group].as_ref().unwrap(),
-                &occurrences,
-                &shape_map.property,
-                index
-            )
-            .count(),
+            occurrences
+                .iter()
+                .filter(|occurrence| {
+                    occurrence.property == shape_map.property
+                        && occurrence.indexed_name == groups[group].as_ref().unwrap().indexed_name
+                        && occurrence.source_index == index
+                })
+                .count(),
             1
         );
     }
-    let shape_face_ids = (0..groups[0].as_ref().unwrap().names.len())
-        .flat_map(|index| {
-            super::topology_ids(
-                &shape_map.maps,
-                groups[0].as_ref().unwrap(),
-                &occurrences,
-                &shape_map.property,
-                index,
-            )
+    let shape_face_ids = occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence.property == shape_map.property && occurrence.indexed_name == "Face"
         })
+        .map(|occurrence| occurrence.topology_id.as_str())
         .collect::<std::collections::HashSet<_>>();
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
         matches!(

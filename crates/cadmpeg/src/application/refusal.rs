@@ -259,6 +259,8 @@ pub(crate) enum RefusalStage {
     Check,
     /// Export loss policy or artifact emission refused.
     Export,
+    /// Measurement of a loaded document refused.
+    Measure,
 }
 
 impl fmt::Display for RefusalStage {
@@ -268,6 +270,7 @@ impl fmt::Display for RefusalStage {
             Self::Decode => "decode",
             Self::Check => "check",
             Self::Export => "export",
+            Self::Measure => "measure",
         })
     }
 }
@@ -984,6 +987,7 @@ mod tests {
             (super::RefusalStage::Check, "check"),
             (super::RefusalStage::Plan, "plan"),
             (super::RefusalStage::Export, "export"),
+            (super::RefusalStage::Measure, "measure"),
         ] {
             let error = anyhow::Error::new(cadmpeg_core::CodecError::ResourceLimit(limit))
                 .context("writing an artifact");

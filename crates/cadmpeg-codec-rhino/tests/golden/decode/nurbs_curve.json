@@ -130,7 +130,7 @@
       }
     },
     "scope": {
-      "design": true,
+      "design": false,
       "model": true
     },
     "source": {
@@ -215,6 +215,17 @@
         },
         "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "parametric_record_omitted",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -223,7 +234,7 @@
     "transfer": {
       "geometry_transferred": true,
       "scope": {
-        "design": true,
+        "design": false,
         "model": true
       }
     }
@@ -241,6 +252,27 @@
       "rhino.history_layout": "[]",
       "rhino.object_layout": "[{\"start\":177,\"end\":434}]",
       "rhino.table_layout": "[[268435476,[]],[268435477,[[536903729,105,153]]],[268435475,[[536903792,177,434]]]]"
+    },
+    "record_layout": {
+      "rhino:object:curve#record-000000-offset-177": {
+        "byte_len": 145,
+        "offset": 257,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 282,
+              "start": 257
+            },
+            {
+              "end": 402,
+              "start": 330
+            }
+          ]
+        },
+        "stream": "file"
+      }
     },
     "retained_records": {
       "rhino:object:record#000000": {

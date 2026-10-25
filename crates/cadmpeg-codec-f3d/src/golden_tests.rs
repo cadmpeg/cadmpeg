@@ -21,6 +21,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
+use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::snapshots_agree;
 
 use super::F3dCodec;
@@ -841,12 +842,18 @@ fn fixtures_synthesize_without_source_bytes() {
 /// How far the mutation lane moves a point, in millimetres.
 const MUTATION_MM: f64 = 1.0;
 
+/// Fixtures whose measures the mutation lane compares across the patch
+/// writer: every fixture with a point except `design_copy_paste`, whose
+/// occurrences place its bodies.
+const MEASURED_FIXTURE_FLOOR: usize = 59;
+
 /// Fixtures with no point for the mutation lane to move.
 const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
 
 /// An edit has the same meaning through preservation and synthesis.
 #[test]
 fn an_edit_survives_native_writer_fallback() {
+    let mut measured_count = 0usize;
     let mut skipped = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
@@ -886,8 +893,17 @@ fn an_edit_survives_native_writer_fallback() {
             cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
             "{name}"
         );
+        if measures_decide(name, &edited).expect("the fixture is measured") {
+            measures_agree(name, &edited, preserved.ir())
+                .expect("the round trip keeps its measured geometry");
+            measured_count += 1;
+        }
     }
     assert_eq!(skipped, FIXTURES_WITHOUT_POINTS);
+    assert!(
+        measured_count >= MEASURED_FIXTURE_FLOOR,
+        "fewer fixtures than the floor measure a comparable body through the patch writer"
+    );
 }
 
 /// Every committed fixture must still match its builder bytes.

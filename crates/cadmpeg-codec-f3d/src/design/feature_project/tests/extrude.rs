@@ -200,19 +200,19 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                         reference: None,
                         operation: DesignExtrudeOperation::NewBody,
-                        operation_offset: 128,
+                        operation_offset: Some(128),
                         direction_face_extend_values: [1, 2],
                         side_extent_discriminators: [1, 0],
-                        side_extent_discriminator_offsets: [177, 190],
+                        side_extent_discriminator_offsets: Some([177, 190]),
                         first_side_target_ordinal: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
-                        direction_face_extend_offsets: [132, 136],
+                        direction_face_extend_offsets: Some([132, 136]),
                         direction_reversed: false,
-                        direction_reversed_offset: 140,
+                        direction_reversed_offset: Some(140),
                         solid_operation: true,
-                        solid_operation_offset: 141,
+                        solid_operation_offset: Some(141),
                         start: DesignExtrudeStart::ProfilePlane,
-                        start_offset: 142,
+                        start_offset: Some(142),
                     }),
                     extrude_profile: Some(
                         DesignSketchProfileOperand::try_new(
@@ -368,20 +368,20 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         {
             slot.get_or_insert_with(Default::default).extrude_prologue =
                 Some(DesignExtrudePrologue::LegacyShifted {
-                    operation_prefix_marker_offset: None,
+                    operation_prefix_marker: None,
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: 127,
+                    operation_offset: Some(127),
                     direction_face_extend_values: [3, 2],
                     side_extent_discriminators: [1, 0],
-                    side_extent_discriminator_offsets: [206, 210],
+                    side_extent_discriminator_offsets: Some([206, 210]),
                     extent: Some(DesignExtrudeExtent::SymmetricDistance),
-                    direction_face_extend_offsets: [131, 135],
+                    direction_face_extend_offsets: Some([131, 135]),
                     direction_reversed: false,
-                    direction_reversed_offset: 139,
+                    direction_reversed_offset: Some(139),
                     solid_operation: true,
-                    solid_operation_offset: 140,
+                    solid_operation_offset: Some(140),
                     start: DesignExtrudeStart::ProfilePlane,
-                    start_offset: 141,
+                    start_offset: Some(141),
                 });
         }
         let symmetric = crate::test_support::with_decode_context(|decode_ctx| {
@@ -483,7 +483,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 opaque_index_offset: 747,
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 751,
-                variant: false,
+                variant: Some(false),
+                typed_references: false,
                 paired_class_tag: "259".to_owned(),
                 paired_byte_offset: 800,
             },
@@ -512,6 +513,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             &[],
             &[],
             &crate::design::profile_select::SketchCurveSelectionResolution {
+                profile_curves: &[],
                 scopes: &[],
                 groups: &[],
                 operands: &[],
@@ -947,7 +949,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         };
         *first_side_target_ordinal = Some(DesignExtrudeTargetOrdinal {
             scope_reference_ordinal: target_shape_group.scope_reference_ordinal,
-            scope_reference_ordinal_offset: 187,
+            scope_reference_ordinal_offset: Some(187),
         });
         let mut unrelated_target_group = target_shape_group.clone();
         unrelated_target_group.id = "f3d:Design/BulkStream.dat:operand-group#106".into();
@@ -1237,12 +1239,14 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     DesignFixedExtrudeScalar {
                         value: cadmpeg_ir::scalar::PositiveReal::new(0.55).unwrap(),
                         record_index: 105,
-                        value_offset: 600,
+                        value_offset: Some(600),
                     },
                 )),
                 taper_angle: None,
                 against_distance: None,
                 side_two_taper_angle: None,
+                profile_offset: None,
+                side_one_offset: None,
             });
             if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)

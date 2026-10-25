@@ -1277,8 +1277,9 @@ and the canonical parameter is `v = u`. If `R1 < R2`, `major_direction` is
 `p[2] = axis × p[1]`, `minor_radius` is `R1`, and the canonical parameter is
 `v = u - π/2`. Numeric `TRIMMED_CURVE` selectors apply this phase after
 angular-unit conversion. Cartesian selectors invert the canonical carrier and
-therefore apply no phase. Curve replicas, nested trims, and spatial offsets
-inherit the phase; the source STEP record is unchanged.
+therefore apply no phase. Curve replicas and spatial offsets inherit the
+phase; the source STEP record is unchanged. A trimmed ellipse runs on its local
+parameter, so a trim nested on it applies no phase.
 
 ISO 10303-42 defines `TRIMMED_CURVE` as a selected portion of an unchanged
 basis curve. Trim selects are parameter values, Cartesian points, or both.
@@ -1290,7 +1291,8 @@ and `s = t1 - t` for a FALSE sense. On a cyclic basis, the forward directed
 branch increases the second select by one period when it is below the first;
 the reversed directed branch increases the first select by one period when it
 is below the second. The domain is `0..abs(t2-t1)` after that branch
-adjustment. The stored sense maps local parameters in the increasing or
+adjustment. A `TRIMMED_CURVE` whose basis is a `TRIMMED_CURVE` states its
+parameter selects on the local parameter `s` of that basis. The stored sense maps local parameters in the increasing or
 decreasing parent direction. A
 `CURVE_REPLICA` retains the complete parent relation, including a trim, and
 inherits the parent's parameter range and parameterization; its transformation
@@ -1408,6 +1410,24 @@ creates an occurrence-specific edge whose endpoints follow the composed curve
 direction. The edge occurrence carries the wireframe use. A committed body
 graph has complete ownership and valid referenced indices. Recoverable
 non-manifold incidence remains attached and is reported.
+
+ISO 10303-42 derives the `cfs_faces` of an `ORIENTED_OPEN_SHELL` or an
+`ORIENTED_CLOSED_SHELL` as `conditional_reverse(orientation,
+shell_element.cfs_faces)`. With `orientation = FALSE`, each face of the base
+shell is used through `face_reversed`, the `ORIENTED_FACE` of that face with
+the opposite orientation. An `ORIENTED_FACE` derives its
+`bounds` as `conditional_reverse(orientation, face_element.bounds)`, so a
+reversed face also reverses every face bound, and a reversed face bound
+reverses the loop traversal. A reversed face use therefore reverses the
+oriented normal and the traversal of every bound together. Oriented-shell and
+oriented-face orientations compose by exclusive or over the chain from the
+shell occurrence to the base face.
+
+CADIR decision: the decoder applies the composed face reversal to the face
+`sense` and to the traversal of every loop of the face. The loop winding and
+the face `sense` then state the same oriented normal. A void of a
+`BREP_WITH_VOIDS` is an `ORIENTED_CLOSED_SHELL` with `orientation = FALSE`, so
+the CADIR void faces are the reverse of the base closed-shell faces.
 
 Connected face sets join through common edges or common vertices. Edge-based
 and shell-based wireframe models preserve their connected edge and vertex

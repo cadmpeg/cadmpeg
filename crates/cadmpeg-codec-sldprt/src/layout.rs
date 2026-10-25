@@ -67,7 +67,7 @@ pub(crate) mod outer_header {
 /// Spec §1.1. Record length 26 B.
 ///
 /// ```text
-/// Fixed prefix only. `preamble[pre_sz]` and `payload[comp_sz]` follow; the record extent is `block_end = marker_offset + 26 + pre_sz + comp_sz`.
+/// Marker-relative zero-extra-length projection of the native ZIP local header; the marker starts four bytes after the substituted local signature. Names and compressed bytes follow this prefix. Existing constant names denote packed ZIP fields.
 /// ```
 pub(crate) mod block_frame_header {
     /// Record length in bytes. Spec §1.1.
@@ -91,18 +91,18 @@ pub(crate) mod block_frame_header {
 /// Spec §1.2. Record length 26 B.
 ///
 /// ```text
-/// Fixed prefix only; a nibble-swapped section name of `name_len` bytes follows at +26. The three size fields are redundant scalings of one logical value `L`.
+/// Marker-relative prefix. Its packed time/date word copies an attached physical successor local member; it is not selected through the decoded cell name.
 /// ```
 pub(crate) mod cache_cell_header {
     /// Record length in bytes. Spec §1.2.
     pub(crate) const LEN: usize = 26;
-    /// Offset of `two_l` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `two_l` (`u32`, little-endian). Spec §1.2.
     pub(crate) const TWO_L: usize = 10;
-    /// Offset of `half_l` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `half_l` (`u32`, little-endian). Spec §1.2.
     pub(crate) const HALF_L: usize = 14;
-    /// Offset of `l` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `l` (`u32`, little-endian). Spec §1.2.
     pub(crate) const L: usize = 18;
-    /// Offset of `name_len` (`u32`, endianness unstated). Spec §1.2.
+    /// Offset of `name_len` (`u32`, little-endian). Spec §1.2.
     pub(crate) const NAME_LEN: usize = 22;
 }
 
@@ -111,7 +111,7 @@ pub(crate) mod cache_cell_header {
 /// Spec §1.3. Record length 40 B.
 ///
 /// ```text
-/// Fixed prefix only. `name[name_len]` follows at +40 and a 6-byte trailer follows the name.
+/// Compatibility scan projection for an empty local member with zero extra length. It is a subset of central-directory fields, not a separate native record family. Bytes after the name belong to the following central record or other archive structure.
 /// ```
 pub(crate) mod tail_directory_entry {
     /// Record length in bytes. Spec §1.3.
@@ -128,6 +128,46 @@ pub(crate) mod tail_directory_entry {
     pub(crate) const NAME_LEN: usize = 22;
     /// Offset of `descriptor` (`bytes[14]`). Spec §1.3.
     pub(crate) const DESCRIPTOR: usize = 26;
+}
+
+/// Byte offsets for the `zip_central_header` record.
+///
+/// Spec §1.3. Record length 46 B.
+///
+/// ```text
+/// Complete ZIP central header from its substituted signature. Name, extra bytes, then comment follow. Local offset is relative to archive base at absolute file offset 8.
+/// ```
+pub(crate) mod zip_central_header {
+    /// Record length in bytes. Spec §1.3.
+    pub(crate) const LEN: usize = 46;
+    /// Offset of `version_made_by` (`u16`, little-endian). Spec §1.3.
+    pub(crate) const VERSION_MADE_BY: usize = 4;
+    /// Offset of `version_needed` (`u16`, little-endian). Spec §1.3.
+    pub(crate) const VERSION_NEEDED: usize = 6;
+    /// Offset of `comp_sz` (`u32`, little-endian). Spec §1.3.
+    pub(crate) const COMP_SZ: usize = 20;
+    /// Offset of `name_len` (`u16`, little-endian). Spec §1.3.
+    pub(crate) const NAME_LEN: usize = 28;
+    /// Offset of `extra_len` (`u16`, little-endian). Spec §1.3.
+    pub(crate) const EXTRA_LEN: usize = 30;
+    /// Offset of `comment_len` (`u16`, little-endian). Spec §1.3.
+    pub(crate) const COMMENT_LEN: usize = 32;
+    /// Offset of `disk_start` (`u16`, little-endian). Spec §1.3.
+    pub(crate) const DISK_START: usize = 34;
+    /// Offset of `local_offset` (`u32`, little-endian). Spec §1.3.
+    pub(crate) const LOCAL_OFFSET: usize = 42;
+}
+
+/// Byte offsets for the `zip_central_descriptor` record.
+///
+/// Spec §1.3. Record length 14 B.
+///
+/// ```text
+/// Final fourteen fixed bytes of a ZIP central header, beginning at central signature plus 32.
+/// ```
+pub(crate) mod zip_central_descriptor {
+    /// Offset of `local_offset` (`u32`, little-endian). Spec §1.3.
+    pub(crate) const LOCAL_OFFSET: usize = 10;
 }
 
 /// Byte offsets for the `zlb_wrapper_header` record.
@@ -195,6 +235,194 @@ pub(crate) mod world_point {
     pub(crate) const XYZ: usize = 14;
 }
 
+/// Byte offsets for the `face_bare` record.
+///
+/// Spec §4. Record length 37 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod face_bare {
+    /// Offset of `attributes_head` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTRIBUTES_HEAD: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 8;
+    /// Offset of `refs` (`u16[5]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 16;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 26;
+}
+
+/// Byte offsets for the `face_tripled` record.
+///
+/// Spec §4. Record length 48 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod face_tripled {
+    /// Offset of `attributes_head` (`bytes[3]`). Spec §4.
+    pub(crate) const ATTRIBUTES_HEAD: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 9;
+    /// Offset of `refs` (`bytes[15]`). Spec §4.
+    pub(crate) const REFS: usize = 17;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 32;
+}
+
+/// Byte offsets for the `edge_bare` record.
+///
+/// Spec §4. Record length 30 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod edge_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `attributes_head` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTRIBUTES_HEAD: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 8;
+    /// Offset of `refs` (`u16[7]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 16;
+}
+
+/// Byte offsets for the `edge_tripled` record.
+///
+/// Spec §4. Record length 38 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod edge_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 38;
+    /// Offset of `attributes_head` (`bytes[3]`). Spec §4.
+    pub(crate) const ATTRIBUTES_HEAD: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 9;
+    /// Offset of `refs` (`bytes[21]`). Spec §4.
+    pub(crate) const REFS: usize = 17;
+}
+
+/// Byte offsets for the `vertex_bare` record.
+///
+/// Spec §4. Record length 26 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod vertex_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 26;
+    /// Offset of `node_id` (`u32`, big-endian). Spec §4.
+    pub(crate) const NODE_ID: usize = 2;
+    /// Offset of `refs` (`u16[5]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 16;
+    /// Offset of `owner` (`u16`, big-endian). Spec §4.
+    pub(crate) const OWNER: usize = 24;
+}
+
+/// Byte offsets for the `vertex_tripled` record.
+///
+/// Spec §4. Record length 32 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod vertex_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `node_id` (`u32`, big-endian). Spec §4.
+    pub(crate) const NODE_ID: usize = 2;
+    /// Offset of `refs` (`bytes[15]`). Spec §4.
+    pub(crate) const REFS: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 21;
+    /// Offset of `owner` (`bytes[3]`). Spec §4.
+    pub(crate) const OWNER: usize = 29;
+}
+
+/// Byte offsets for the `world_point_tripled` record.
+///
+/// Spec §4. Record length 42 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod world_point_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 42;
+    /// Offset of `refs` (`bytes[12]`). Spec §4.
+    pub(crate) const REFS: usize = 6;
+    /// Offset of `xyz` (`f64[3]`, big-endian). Spec §4.
+    pub(crate) const XYZ: usize = 18;
+}
+
+/// Byte offsets for the `loop_bare` record.
+///
+/// Spec §4. Record length 14 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod loop_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 14;
+    /// Offset of `refs` (`u16[4]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 6;
+}
+
+/// Byte offsets for the `loop_tripled` record.
+///
+/// Spec §4. Record length 18 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod loop_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 18;
+    /// Offset of `refs` (`bytes[12]`). Spec §4.
+    pub(crate) const REFS: usize = 6;
+}
+
+/// Byte offsets for the `fin_bare` record.
+///
+/// Spec §4. Record length 21 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod fin_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `refs` (`u16[9]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 2;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 20;
+}
+
+/// Byte offsets for the `fin_tripled` record.
+///
+/// Spec §4. Record length 30 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod fin_tripled {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `refs` (`bytes[27]`). Spec §4.
+    pub(crate) const REFS: usize = 2;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 29;
+}
+
 /// Byte offsets for the `entity_common_header` record.
 ///
 /// Spec §5. Record length 12 B.
@@ -223,8 +451,6 @@ pub(crate) mod entity_common_header {
 /// Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record.
 /// ```
 pub(crate) mod attribute_instance_00_51 {
-    /// Record length in bytes. Spec §5.
-    pub(crate) const LEN: usize = 14;
     /// Offset of `zero_selector` (`u16`, big-endian). Spec §5.
     pub(crate) const ZERO_SELECTOR: usize = 6;
     /// Offset of `definition_node_id` (`u16`, big-endian). Spec §5.
@@ -2115,10 +2341,9 @@ pub(crate) mod display_lists_inline_visual_properties_prefix {
 pub(crate) mod visual_states_feature_appearance_prefix {
     /// Record length in bytes. Spec §8.
     pub(crate) const LEN: usize = 36;
-    /// Offset of `version` (`u32`, little-endian). Spec §8.
-    pub(crate) const VERSION: usize = 0;
-    /// Stated value of `version` (`u32`). Spec §8.
-    pub(crate) const VERSION_VALUE: u32 = 0x0000_4268;
+    /// Offset of `prelude` (`u32`, little-endian). Spec §8.
+    #[cfg(test)]
+    pub(crate) const PRELUDE: usize = 0;
     /// Offset of `feature_source_id` (`u32`, little-endian). Spec §8.
     pub(crate) const FEATURE_SOURCE_ID: usize = 4;
     /// Offset of `feature_timestamp` (`u32`, little-endian). Spec §8.
@@ -2149,16 +2374,28 @@ pub(crate) mod visual_states_feature_appearance_prefix {
 
 /// Byte offsets for the `transformed_reference_plane_metadata` record.
 ///
+/// Spec §8. Record length 25 B.
+///
+/// ```text
+/// Body-relative fixed prologue; ten f64 values follow only when extent_present is one.
+/// ```
+pub(crate) mod transformed_reference_plane_metadata {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `extent_present` (`u8`). Spec §8.
+    pub(crate) const EXTENT_PRESENT: usize = 24;
+}
+
+/// Byte offsets for the `transformed_reference_enclosure_extent` record.
+///
 /// Spec §8. Record length 80 B.
 ///
 /// ```text
-/// Offsets begin immediately after the `moTransRefPlaneData_c` class token.
+/// Relative to the optional extent at class body +25. All fields are stored lengths in metres.
 /// ```
-pub(crate) mod transformed_reference_plane_metadata {
-    /// Stated value of `prefix` (`bytes[8]`). Spec §8.
-    pub(crate) const PREFIX_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-    /// Offset of `center` (`f64[3]`, little-endian). Spec §8.
-    pub(crate) const CENTER: usize = 8;
+pub(crate) mod transformed_reference_enclosure_extent {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 80;
 }
 
 /// Byte offsets for the `display_lists_compact_face_header` record.
@@ -2431,4 +2668,234 @@ pub(crate) mod wide_spatial_marker_coordinate_prefix {
     pub(crate) const COORDINATE_TAG: usize = 64;
     /// Offset of `coordinates` (`f64[3]`, little-endian). Spec §2.
     pub(crate) const COORDINATES: usize = 66;
+}
+
+/// Byte offsets for the `attribute_definition_short_refs` record.
+///
+/// Spec §5. Record length 38 B.
+///
+/// ```text
+/// Body-relative after the type tag and optional first-of-type ff. Short pointer indexes occupy two bytes. Field types follow the fixed prefix; their count is field_count.
+/// ```
+pub(crate) mod attribute_definition_short_refs {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 38;
+    /// Offset of `field_count` (`u32`, big-endian). Spec §5.
+    pub(crate) const FIELD_COUNT: usize = 0;
+    /// Offset of `node_index` (`u16`, big-endian). Spec §5.
+    pub(crate) const NODE_INDEX: usize = 4;
+    /// Offset of `next_definition` (`u16`, big-endian). Spec §5.
+    pub(crate) const NEXT_DEFINITION: usize = 6;
+    /// Offset of `identifier` (`u16`, big-endian). Spec §5.
+    pub(crate) const IDENTIFIER: usize = 8;
+    /// Offset of `actions` (`bytes[8]`). Spec §5.
+    pub(crate) const ACTIONS: usize = 14;
+    /// Offset of `field_names` (`u16`, big-endian). Spec §5.
+    pub(crate) const FIELD_NAMES: usize = 22;
+    /// Offset of `legal_owners` (`bytes[14]`). Spec §5.
+    pub(crate) const LEGAL_OWNERS: usize = 24;
+}
+
+/// Byte offsets for the `attribute_short_references` record.
+///
+/// Spec §5. Record length 22 B.
+///
+/// ```text
+/// Body-relative prefix after the tag and optional unchanged-schema marker. Schema-ordered value references follow this prefix.
+/// ```
+pub(crate) mod attribute_short_references {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 22;
+    /// Offset of `value_count` (`u32`, big-endian). Spec §5.
+    pub(crate) const VALUE_COUNT: usize = 0;
+    /// Offset of `node_index` (`u16`, big-endian). Spec §5.
+    pub(crate) const NODE_INDEX: usize = 4;
+    /// Offset of `sequence` (`u32`, big-endian). Spec §5.
+    pub(crate) const SEQUENCE: usize = 6;
+    /// Offset of `owner` (`u16`, big-endian). Spec §5.
+    pub(crate) const OWNER: usize = 12;
+}
+
+/// Byte offsets for the `display_lists_extended_metadata` record.
+///
+/// Spec §8. Record length 128 B.
+///
+/// ```text
+/// Offsets begin at the exact sixth-descriptor payload end M. The complete interval ends before the next table header.
+/// ```
+pub(crate) mod display_lists_extended_metadata {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 128;
+    /// Offset of `a` (`u32`, little-endian). Spec §8.
+    pub(crate) const A: usize = 92;
+    /// Offset of `one` (`u32`, little-endian). Spec §8.
+    pub(crate) const ONE: usize = 96;
+    /// Stated value of `one` (`u32`). Spec §8.
+    pub(crate) const ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `b` (`u32`, little-endian). Spec §8.
+    pub(crate) const B: usize = 104;
+    /// Offset of `c` (`u32`, little-endian). Spec §8.
+    pub(crate) const C: usize = 108;
+    /// Offset of `tuple` (`bytes[16]`). Spec §8.
+    pub(crate) const TUPLE: usize = 112;
+}
+
+/// Byte offsets for the `parasolid_b_curve_short` record.
+///
+/// Spec §2. Record length 21 B.
+///
+/// ```text
+/// Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+/// ```
+pub(crate) mod parasolid_b_curve_short {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 21;
+}
+
+/// Byte offsets for the `parasolid_nurbs_curve_short` record.
+///
+/// Spec §2. Record length 25 B.
+///
+/// ```text
+/// Offsets begin after the type and optional first-of-type schema marker. This layout uses short XMT/pointer fields; extended indices shift subsequent fields.
+/// ```
+pub(crate) mod parasolid_nurbs_curve_short {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 25;
+}
+
+/// Byte offsets for the `parasolid_edited_type_header` record.
+///
+/// Spec §4.1. Record length 3 B.
+pub(crate) mod parasolid_edited_type_header {
+    /// Offset of `node_type` (`u16`, big-endian). Spec §4.1.
+    pub(crate) const NODE_TYPE: usize = 0;
+    /// Offset of `field_count` (`u8`). Spec §4.1.
+    pub(crate) const FIELD_COUNT: usize = 2;
+}
+
+/// Byte offsets for the `parasolid_construction_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// Relative to the end of the schema token. Zero user-field width and a first BODY define this supported construction-stream prefix.
+/// ```
+pub(crate) mod parasolid_construction_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Stated value of `user_field_width` (`u32`). Spec §2.
+    pub(crate) const USER_FIELD_WIDTH_VALUE: u32 = 0x0000_0000;
+    /// Stated value of `first_node_type` (`u16`). Spec §2.
+    pub(crate) const FIRST_NODE_TYPE_VALUE: u16 = 0x000c;
+}
+
+/// Byte offsets for the `visual_component_body_prefix` record.
+///
+/// Spec §8. Record length 17 B.
+///
+/// ```text
+/// Relative to a moCompSolidBody_c body. The identity scalar resolves only through a current BODY native attribute owner.
+/// ```
+pub(crate) mod visual_component_body_prefix {
+    /// Record length in bytes. Spec §8.
+    pub(crate) const LEN: usize = 17;
+    /// Offset of `class_token` (`u16`, little-endian). Spec §8.
+    pub(crate) const CLASS_TOKEN: usize = 0;
+    /// Offset of `zero_padding` (`bytes[7]`). Spec §8.
+    pub(crate) const ZERO_PADDING: usize = 2;
+    /// Stated value of `zero_padding` (`bytes[7]`). Spec §8.
+    pub(crate) const ZERO_PADDING_VALUE: [u8; 7] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `identity` (`u32`, little-endian). Spec §8.
+    pub(crate) const IDENTITY: usize = 9;
+    /// Offset of `identity_copy` (`u32`, little-endian). Spec §8.
+    pub(crate) const IDENTITY_COPY: usize = 13;
+}
+
+/// Byte offsets for the `named_padding_header` record.
+///
+/// Spec §1.4. Record length 40 B.
+///
+/// ```text
+/// Marker-relative central-like padding prefix. The name follows at +40; the complete physical cell includes its opaque prefix and residual.
+/// ```
+pub(crate) mod named_padding_header {
+    /// Record length in bytes. Spec §1.4.
+    pub(crate) const LEN: usize = 40;
+    /// Offset of `two_l` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const TWO_L: usize = 10;
+    /// Offset of `half_l` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const HALF_L: usize = 14;
+    /// Offset of `l` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const L: usize = 18;
+    /// Offset of `name_len` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const NAME_LEN: usize = 22;
+    /// Offset of `extra_len` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const EXTRA_LEN: usize = 24;
+}
+
+/// Byte offsets for the `footer_padding_body` record.
+///
+/// Spec §1.4. Record length 18 B.
+///
+/// ```text
+/// Body-relative ordinary footer fields. Complete cell stride and body displacement come from the five_l scaling and exact footer tiling.
+/// ```
+pub(crate) mod footer_padding_body {
+    /// Record length in bytes. Spec §1.4.
+    pub(crate) const LEN: usize = 18;
+    /// Offset of `disk_fields` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const DISK_FIELDS: usize = 0;
+    /// Offset of `entries_disk` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const ENTRIES_DISK: usize = 4;
+    /// Offset of `entries_total` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const ENTRIES_TOTAL: usize = 6;
+    /// Offset of `named_stride` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const NAMED_STRIDE: usize = 8;
+    /// Offset of `five_l` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const FIVE_L: usize = 12;
+    /// Offset of `comment_len` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const COMMENT_LEN: usize = 16;
+}
+
+/// Byte offsets for the `zip_eocd_header` record.
+///
+/// Spec §1.4. Record length 22 B.
+///
+/// ```text
+/// Native ZIP EOCD header, including substituted signature. Its count and both directory locators distinguish the real root from ordinary footer bodies.
+/// ```
+pub(crate) mod zip_eocd_header {
+    /// Record length in bytes. Spec §1.4.
+    pub(crate) const LEN: usize = 22;
+    /// Offset of `disk_number` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const DISK_NUMBER: usize = 4;
+    /// Offset of `central_disk` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const CENTRAL_DISK: usize = 6;
+    /// Offset of `entries_disk` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const ENTRIES_DISK: usize = 8;
+    /// Offset of `entries_total` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const ENTRIES_TOTAL: usize = 10;
+    /// Offset of `central_size` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const CENTRAL_SIZE: usize = 12;
+    /// Offset of `central_offset` (`u32`, little-endian). Spec §1.4.
+    pub(crate) const CENTRAL_OFFSET: usize = 16;
+    /// Offset of `comment_len` (`u16`, little-endian). Spec §1.4.
+    pub(crate) const COMMENT_LEN: usize = 20;
+}
+
+/// Byte offsets for the `integer_values_header` record.
+///
+/// Spec §5. Record length 6 B.
+///
+/// ```text
+/// Body-relative prefix after the type tag and optional unchanged-schema marker. Exactly count u32 values follow the prefix.
+/// ```
+pub(crate) mod integer_values_header {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 6;
+    /// Offset of `count` (`u32`, big-endian). Spec §5.
+    pub(crate) const COUNT: usize = 0;
+    /// Offset of `node_index` (`u16`, big-endian). Spec §5.
+    pub(crate) const NODE_INDEX: usize = 4;
 }

@@ -87,12 +87,16 @@ pub(crate) enum SldprtLossCode {
     FeatureInputObjectUnbound,
     /// Typed feature retains native or unresolved required operation operands.
     FeatureTypedOperandIncomplete,
+    /// Thin extrusion retains an ambiguous inline Boolean operation.
+    FeatureThinOperationAmbiguous,
     /// Body delete/keep feature retains native selection without a decoded mode.
     FeatureBodyRetentionUnresolved,
     /// Face or procedural construction references an untyped support surface.
     GeometryFaceSupportSurfaceUntyped,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
+    /// Referenced POINT records have conflicting complete frames.
+    GeometryPointRecordAmbiguous,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
     /// A NURBS surface solver exhausted its local work cap; the derived pcurve is skipped.
@@ -103,19 +107,25 @@ pub(crate) enum SldprtLossCode {
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
     AppearanceAssignmentUnresolved,
+    /// Native appearance ownership, state, or precedence has no unique scope.
+    NativeAppearanceScopeUnresolved,
     /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
     TessellationFaceOwnershipUnresolved,
     /// Surface-owner assignment ran out of its local work cap.
     TessellationOwnerWorkCapped,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
-    /// One face owner has multiple non-equivalent face-use bridges.
-    TopologyFaceOwnerAmbiguous,
     /// Shared-edge coedge senses give an odd-parity face cycle, so some face
     /// sense contradicts one of its edges.
     TopologyFaceSenseConflict,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
+    /// Referenced FIN records have conflicting complete frames.
+    TopologyFinRecordAmbiguous,
+    /// Referenced LOOP records have conflicting complete frames.
+    TopologyLoopRecordAmbiguous,
+    /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
+    TopologyVertexRecordUnresolved,
     /// A NURBS edge's vertex range is off its bound surface; no pcurve is derived.
     TopologyPcurveCarrierOffSurface,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
@@ -160,6 +170,8 @@ pub(crate) enum SldprtLossCode {
     WriterUnboundAppearancesOmitted,
     /// Export omits records named by the counted loss message.
     WriterTessellationMetadataOmitted,
+    /// Semantic regeneration omits native cache or directory-padding bytes.
+    WriterNativeEnvelopeAuxiliaryOmitted,
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
@@ -221,20 +233,25 @@ impl SldprtLossCode {
         Self::FeatureNativeKindRetained,
         Self::FeatureInputObjectUnbound,
         Self::FeatureTypedOperandIncomplete,
+        Self::FeatureThinOperationAmbiguous,
         Self::FeatureBodyRetentionUnresolved,
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
+        Self::GeometryPointRecordAmbiguous,
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
+        Self::NativeAppearanceScopeUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TessellationOwnerWorkCapped,
         Self::TopologyBodyHierarchyDerived,
-        Self::TopologyFaceOwnerAmbiguous,
         Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
+        Self::TopologyFinRecordAmbiguous,
+        Self::TopologyLoopRecordAmbiguous,
+        Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
         Self::GeometryParasolidNotTransferred,
         Self::TopologyGraphNotTransferred,
@@ -252,6 +269,7 @@ impl SldprtLossCode {
         Self::WriterAttributesOmitted,
         Self::WriterUnboundAppearancesOmitted,
         Self::WriterTessellationMetadataOmitted,
+        Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::SourceDialectDisplaced,
         Self::WriterArenaOmitted,
         Self::WriterEntityOmitted,
@@ -299,20 +317,25 @@ impl SldprtLossCode {
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureInputObjectUnbound => "feature.input-object-unbound",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
+            Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
+            Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
+            Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
-            Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
             Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
+            Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
+            Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
+            Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
@@ -330,6 +353,9 @@ impl SldprtLossCode {
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
             Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
+            Self::WriterNativeEnvelopeAuxiliaryOmitted => {
+                "writer.native-envelope-auxiliary-omitted"
+            }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::WriterArenaOmitted => "writer.arena-omitted",
             Self::WriterEntityOmitted => "writer.entity-omitted",
@@ -358,6 +384,7 @@ impl SldprtLossCode {
             Self::SourceOpaqueRecordsUnrepresented => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
@@ -398,20 +425,25 @@ impl SldprtLossCode {
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureThinOperationAmbiguous
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryPointRecordAmbiguous
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
+            | Self::NativeAppearanceScopeUnresolved
             | Self::TessellationFaceOwnershipUnresolved
             | Self::TessellationOwnerWorkCapped
             | Self::TopologyBodyHierarchyDerived
-            | Self::TopologyFaceOwnerAmbiguous
             | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
+            | Self::TopologyFinRecordAmbiguous
+            | Self::TopologyLoopRecordAmbiguous
+            | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
             | Self::ContainerParasolidProbeCapped
@@ -437,6 +469,7 @@ impl SldprtLossCode {
             }
             Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
@@ -451,23 +484,27 @@ impl SldprtLossCode {
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
-            Self::TopologyBodyHierarchyDerived
-            | Self::TopologyFaceOwnerAmbiguous
-            | Self::TopologyFaceSenseConflict => LossTaxonomy::TopologyGaugeSubstituted,
-            Self::TopologyFaceUnclaimed => LossTaxonomy::TopologyNotTransferred,
+            Self::TopologyBodyHierarchyDerived | Self::TopologyFaceSenseConflict => {
+                LossTaxonomy::TopologyGaugeSubstituted
+            }
+            Self::TopologyFaceUnclaimed
+            | Self::TopologyFinRecordAmbiguous
+            | Self::TopologyLoopRecordAmbiguous
+            | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryPointRecordAmbiguous
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
                 LossTaxonomy::PcurveOmitted
             }
-            Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {
-                LossTaxonomy::MaterialNotTransferred
-            }
+            Self::AppearanceFaceColorUnresolved
+            | Self::AppearanceAssignmentUnresolved
+            | Self::NativeAppearanceScopeUnresolved => LossTaxonomy::MaterialNotTransferred,
             Self::TessellationFaceOwnershipUnresolved | Self::TessellationOwnerWorkCapped => {
                 LossTaxonomy::ReferenceGraphNotClosed
             }
@@ -501,6 +538,7 @@ impl SldprtLossCode {
             | Self::FeatureNativeKindRetained
             | Self::FeatureInputObjectUnbound
             | Self::FeatureTypedOperandIncomplete
+            | Self::FeatureThinOperationAmbiguous
             | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
         }
     }
@@ -663,6 +701,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Reduced,
     ),
     (
+        SldprtLossCode::FeatureThinOperationAmbiguous,
+        Representation::Reduced,
+    ),
+    (
         SldprtLossCode::FeatureBodyRetentionUnresolved,
         Representation::Reduced,
     ),
@@ -672,6 +714,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (
         SldprtLossCode::GeometryEdgeSupportCurveUntyped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometryPointRecordAmbiguous,
         Representation::Model,
     ),
     (
@@ -695,6 +741,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Model,
     ),
     (
+        SldprtLossCode::NativeAppearanceScopeUnresolved,
+        Representation::Model,
+    ),
+    (
         SldprtLossCode::TessellationFaceOwnershipUnresolved,
         Representation::Reduced,
     ),
@@ -707,14 +757,22 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
         Representation::Reduced,
     ),
     (
-        SldprtLossCode::TopologyFaceOwnerAmbiguous,
-        Representation::Reduced,
-    ),
-    (
         SldprtLossCode::TopologyFaceSenseConflict,
         Representation::Reduced,
     ),
     (SldprtLossCode::TopologyFaceUnclaimed, Representation::Model),
+    (
+        SldprtLossCode::TopologyFinRecordAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyLoopRecordAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyVertexRecordUnresolved,
+        Representation::Model,
+    ),
     (
         SldprtLossCode::TopologyPcurveCarrierOffSurface,
         Representation::Model,
@@ -781,6 +839,10 @@ const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
     ),
     (
         SldprtLossCode::WriterTessellationMetadataOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterNativeEnvelopeAuxiliaryOmitted,
         Representation::Writer,
     ),
     (
@@ -1077,20 +1139,25 @@ mod tests {
                 "feature.native-kind-retained",
                 "feature.input-object-unbound",
                 "feature.typed-operand-incomplete",
+                "feature.thin-operation-ambiguous",
                 "feature.body-retention-unresolved",
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
+                "geometry.point-record-ambiguous",
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
+                "appearance.native-scope-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "tessellation.owner-work-capped",
                 "topology.body-hierarchy-derived",
-                "topology.face-owner-ambiguous",
                 "topology.face-sense-conflict",
                 "topology.face-unclaimed",
+                "topology.fin-record-ambiguous",
+                "topology.loop-record-ambiguous",
+                "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",
                 "geometry.parasolid-not-transferred",
                 "topology.graph-not-transferred",
@@ -1108,6 +1175,7 @@ mod tests {
                 "writer.attributes-omitted",
                 "writer.unbound-appearances-omitted",
                 "writer.tessellation-metadata-omitted",
+                "writer.native-envelope-auxiliary-omitted",
                 "target.source-dialect-displaced",
                 "writer.arena-omitted",
                 "writer.entity-omitted",

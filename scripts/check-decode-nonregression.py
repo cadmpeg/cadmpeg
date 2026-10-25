@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Compare decoded JSON facts for #219 using guarded local producer collection.
+"""The §4.4 decode non-regression gate (#219).
 
-The importable comparator never infers a field move from its spelling. Its
-schema paths, record types and move rows must come from the owning adapters.
-The executable collects when real producer proofs are installed; missing
-resolver, Appendix B and coverage obligations remain explicit failures.
+Decodes every fixture with the base build (`CADMPEG_BASE_BIN`, from
+`scripts/base-build.sh`) and with the head build, compares the two decodes and
+the base and head decode goldens, and prints one JSON line per finding. The
+comparison functions here are importable without a build.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from decode_nonregression_schema import SchemaPaths
 JsonPath = tuple[str, ...]
 FLOAT_TOLERANCE = 1.0e-12  # cadmpeg_ir::compare::FLOAT_TOLERANCE
 MISSING = object()
+D10_COMPANIONS = frozenset({'parameter', 'distance_parameter', 'angle_parameter', 'count_parameter'})
 NATIVE_TAGS = frozenset({'native', 'native_set', 'Native', 'NativeSet'})
 
 
@@ -47,6 +48,7 @@ class LayoutMove:
     native_type: str
     field_path: JsonPath
     pointer_name: str
+    store: str = 'pointers'
 
 
 @dataclass(frozen=True)
@@ -58,9 +60,13 @@ class Evidence:
     fidelity: Mapping[str, Any] = field(default_factory=dict)
 
 
-REMOVED_NATIVE_ARENAS = frozenset({
+# Arenas §4.4 removes outright; their records need no preservation proof.
+GONE_NATIVE_ARENAS = frozenset({
     ('f3d', 'design_intent_failures'),
     ('fcstd', 'physical_ledger'), ('fcstd', 'logical_ledger'), ('fcstd', 'byte_coverage'),
+})
+# The failure arenas of §4.5 rule 1; each record needs its Rule B preservation proof.
+FAILURE_NATIVE_ARENAS = frozenset({
     ('fcstd', 'unreadable_entries'),
     ('iges', 'quarantined_directory_records'), ('iges', 'quarantined_parameter_records'),
     ('inventor', 'assembly_record_issues'), ('inventor', 'database_issues'),
@@ -71,6 +77,7 @@ REMOVED_NATIVE_ARENAS = frozenset({
     ('inventor', 'structural_issues'), ('creo', 'brep_face_admission_rejections'),
     ('nx', 'parasolid_deltas_residual_spans'),
 })
+REMOVED_NATIVE_ARENAS = GONE_NATIVE_ARENAS | FAILURE_NATIVE_ARENAS
 
 # These are record-root paths in their named owning arenas, never a key-name
 # blacklist. Deletion still requires rule-1 preservation evidence below.
@@ -137,7 +144,9 @@ def exemption(path: JsonPath, schema: SchemaPaths) -> str | None:
         return 'cell-resolver'
     if arena == 'sketch_constraints' and key == 'driving':
         return 'dimension-driving'
-    if any(prefix(path, companion) for companion in schema.d10_companions):
+    if any(prefix(path, companion) for companion in schema.d10_companions) or (
+        arena.startswith(('sketch', 'spatial_sketch')) and path[-1] in D10_COMPANIONS
+    ):
         return 'dimension-resolver'
     return None
 
@@ -160,13 +169,13 @@ def record_facts(record: Any, path: JsonPath, schema: SchemaPaths) -> tuple[Coun
     leaves: Counter = Counter()
     tags: Counter = Counter()
 
-    def walk(value: Any, here: JsonPath) -> None:
+    def walk(value: Any, here: JsonPath, unwrapped: bool = False) -> None:
         if value is None:
             return
-        if here in schema.dimensions and isinstance(value, dict):
+        if here in schema.dimensions and isinstance(value, dict) and not unwrapped:
             if set(value) != {'kind', 'value'} or value['kind'] not in {'literal', 'parameter'}:
                 raise ValueError(f'invalid Dimension wrapper at {here}')
-            walk(value['value'], here)
+            walk(value['value'], here, True)
         elif isinstance(value, dict):
             for key, child in value.items():
                 walk(child, here + (key,))
@@ -288,8 +297,8 @@ def compare_native(before: Mapping, after: Mapping, evidence: Evidence) -> list[
                     value = at(record, move.field_path)
                     if value is MISSING:
                         continue
-                    pointers = evidence.fidelity.get('record_layout', {}).get(identity, {}).get('pointers', {})
-                    if move.pointer_name not in pointers or not values_agree(value, pointers[move.pointer_name]):
+                    stored = evidence.fidelity.get('record_layout', {}).get(identity, {}).get(move.store, {})
+                    if move.pointer_name not in stored or not values_agree(value, stored[move.pointer_name]):
                         findings.append(Finding('layout-value-preservation', root + (identity,) + move.field_path, 'base moved value is absent or unequal in record_layout pointers'))
                     else:
                         witnessed.add(move.field_path)
@@ -341,58 +350,115 @@ def compare_fixture_sets(before: Mapping[str, Any], after: Mapping[str, Any], sc
     return findings
 
 
+def git(repo: Path, *args: str) -> str:
+    return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
+
+
+def committed_goldens(repo: Path, revision: str) -> dict[tuple[str, ...], str]:
+    from decode_nonregression_run import golden_key, is_decode_golden
+    listing = subprocess.run(['git', '-C', str(repo), 'ls-tree', '-rz', '--name-only', '--full-tree', revision],
+                             check=True, stdout=subprocess.PIPE).stdout
+    result = {}
+    for raw in listing.split(b'\0'):
+        path = raw.decode('utf-8')
+        if path and is_decode_golden(path):
+            key = golden_key(path)
+            if key in result:
+                raise ValueError(f'ambiguous golden stem: {path} and {result[key]}')
+            result[key] = path
+    return result
+
+
+def committed_json(repo: Path, revision: str, path: str) -> Any:
+    return json.loads(subprocess.check_output(['git', '-C', str(repo), 'show', f'{revision}:{path}']))
+
+
+def build_base(repo: Path) -> Path:
+    """The verified scripts/base-build.sh output that CADMPEG_BASE_BIN names."""
+    configured = os.environ.get('CADMPEG_BASE_BIN')
+    if not configured:
+        raise ValueError('CADMPEG_BASE_BIN is unset; run `eval "$(scripts/base-build.sh)"` first')
+    return base_binary(repo, configured)
+
+
+def build_head(repo: Path) -> Path:
+    subprocess.run(['cargo', 'build', '-q', '--release', '-p', 'cadmpeg', '--bin', 'cadmpeg'], cwd=repo, check=True)
+    binary = repo / 'target' / 'release' / 'cadmpeg'
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        raise ValueError('head build wrote no executable')
+    return binary
+
+
+def run_gate(repo: Path) -> list[tuple[str, Finding]]:
+    from decode_nonregression_run import (
+        Build, appendix_b_moves, compare_pair, dump, effective_values, golden_parts, new_golden_findings,
+        variant_guard_findings,
+    )
+    base = git(repo, 'merge-base', 'HEAD', 'origin/main')
+    old_fixtures, new_fixtures = discover(repo, base), discover(repo, 'HEAD')
+    pairs, failures = pair_fixtures(old_fixtures, new_fixtures)
+    report: list[tuple[str, Finding]] = [
+        (failure.split(': ', 1)[1], Finding(failure.split(':', 1)[0], (), failure)) for failure in failures
+    ]
+    base_build, head_build = Build('base', build_base(repo)), Build('head', build_head(repo))
+    moves = appendix_b_moves()
+    report.extend(('schema', finding) for finding in variant_guard_findings(sys.modules[__name__], base_build, head_build))
+    paired = {new.key for _, new in pairs}
+    with tempfile.TemporaryDirectory(prefix='cadmpeg-nonregression-') as directory:
+        scratch = Path(directory)
+        for index, (old, new) in enumerate(pairs):
+            print(f'fixture {index + 1}/{len(pairs)}: {new.path}', file=sys.stderr, flush=True)
+            source = repo / new.path
+            base_doc, base_side = dump(base_build, source, scratch / 'base.json')
+            head_doc, head_side = dump(head_build, source, scratch / 'head.json')
+            report.extend((new.path, finding) for finding in compare_pair(
+                sys.modules[__name__], base_doc, head_doc, base_side, head_side, base_build, head_build, moves,
+                effective_values(head_build, head_doc, scratch)))
+        for key, fixture in sorted(new_fixtures.items()):
+            if key in paired or key in old_fixtures:
+                continue
+            head_doc, head_side = dump(head_build, repo / fixture.path, scratch / 'head.json')
+            if 'decode_error' in head_doc:
+                report.append((fixture.path, Finding('head-decode-error', (), head_doc['decode_error'])))
+            report.extend((fixture.path, finding) for finding in new_golden_findings(
+                sys.modules[__name__], fixture.path, head_side))
+    old_goldens, new_goldens = committed_goldens(repo, base), committed_goldens(repo, 'HEAD')
+    for index, (key, path) in enumerate(sorted(old_goldens.items())):
+        print(f'golden {index + 1}/{len(old_goldens)}: {path}', file=sys.stderr, flush=True)
+        if key not in new_goldens:
+            report.append((path, Finding('golden-missing', (), 'base decode golden is absent at head')))
+            continue
+        base_doc, base_side = golden_parts(committed_json(repo, base, path))
+        head_doc, head_side = golden_parts(committed_json(repo, 'HEAD', new_goldens[key]))
+        with tempfile.TemporaryDirectory(prefix='cadmpeg-nonregression-') as directory:
+            values = effective_values(head_build, head_doc, Path(directory))
+        report.extend((new_goldens[key], finding) for finding in compare_pair(
+            sys.modules[__name__], base_doc, head_doc, base_side, head_side, base_build, head_build, moves, values))
+    for key, path in sorted(new_goldens.items()):
+        if key not in old_goldens:
+            _, head_side = golden_parts(committed_json(repo, 'HEAD', path))
+            report.extend((path, finding) for finding in new_golden_findings(sys.modules[__name__], path, head_side))
+    return report
+
+
 def main() -> int:
     if len(sys.argv) != 1:
-        print('check-decode-nonregression.py takes no arguments or exemption switches', file=sys.stderr)
+        print('check-decode-nonregression.py takes no arguments', file=sys.stderr)
         return 2
     repo = Path(__file__).resolve().parent.parent
     try:
-        base = subprocess.check_output(
-            ['git', '-C', str(repo), 'merge-base', 'HEAD', 'origin/main'], text=True,
-        ).strip()
-        _, fixture_failures = pair_fixtures(discover(repo, base), discover(repo, 'HEAD'))
-    except (OSError, subprocess.CalledProcessError, ValueError) as error:
-        print(f'fixture-discovery: {error}', file=sys.stderr)
-        return 2
-    if fixture_failures:
-        print('\n'.join(fixture_failures), file=sys.stderr)
+        report = run_gate(repo)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'decode non-regression gate failed to run: {error}', file=sys.stderr)
         return 1
-    if all(os.environ.get(name) for name in (
-        'CADMPEG_BASE_PRODUCER', 'CADMPEG_HEAD_PRODUCER', 'CADMPEG_BASE_SCHEMA_HELPER',
-    )):
-        from decode_nonregression_collect import BaselineHelper, Producer, collect_fixture
-        try:
-            verified_base = base_binary(repo, os.environ.get('CADMPEG_BASE_BIN'))
-            baseline = Producer.load(repo, Path(os.environ['CADMPEG_BASE_PRODUCER']), 'baseline')
-            if verified_base.resolve() != Path(baseline.proof['binary']).resolve():
-                raise ValueError('baseline producer is not the verified base-build executable')
-            current = Producer.load(repo, Path(os.environ['CADMPEG_HEAD_PRODUCER']), 'head')
-            if current.proof['commit'] != subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip():
-                raise ValueError('head producer does not match the committed gate input')
-            if baseline.proof['commit'] != base:
-                raise ValueError('baseline producer is not the actual merge base')
-            helper = BaselineHelper.load(baseline, Path(os.environ['CADMPEG_BASE_SCHEMA_HELPER']))
-            pairs, failures = pair_fixtures(discover(repo, base), discover(repo, current.proof['commit']))
-            if failures:
-                raise ValueError('; '.join(failures))
-            with tempfile.TemporaryDirectory(prefix='cadmpeg-nonregression-') as directory:
-                for index, pair in enumerate(pairs):
-                    report = collect_fixture(sys.modules[__name__], pair[1].path, baseline, current, helper,
-                                             Path(directory) / str(index))
-                    print(json.dumps(report, sort_keys=True))
-            # A full run cannot pass while the report has uncovered obligations.
-            return 1
-        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
-            print(f'collection-proof: {error}', file=sys.stderr)
-            return 1
-    print(
-        'decode non-regression gate is NOT operational: authoritative base/head CLI dumps, '
-        'CADMPEG_BASE_BIN verification, schema/typed-record and Appendix B adapters, resolver equality, '
-        'Rule B payload/part/read proofs and §3.4 guards are not installed. '
-        'The independently tested JSON comparator is not a passing corpus gate.',
-        file=sys.stderr,
-    )
-    return 2
+    for source, finding in report:
+        print(json.dumps({'input': source, 'code': finding.code, 'path': list(finding.path),
+                          'message': finding.message}, sort_keys=True))
+    codes = Counter(finding.code for _, finding in report)
+    for code, count in sorted(codes.items()):
+        print(f'{code}: {count}', file=sys.stderr)
+    print(f'{len(report)} finding(s) over {len({source for source, _ in report})} input(s)', file=sys.stderr)
+    return 1 if report else 0
 
 
 if __name__ == '__main__':

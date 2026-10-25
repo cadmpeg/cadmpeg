@@ -170,7 +170,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 4 native record(s) from `iges.boundary_vertex_sewing`",
+        "message": "the iges write omits 4 native record(s) from `iges.boundary_vertex_sewing`: iges:topology:boundary-vertex#D13_0_0, iges:topology:boundary-vertex#D13_0_1, iges:topology:boundary-vertex#D13_0_2, iges:topology:boundary-vertex#D13_0_3",
         "severity": "info"
       },
       {
@@ -180,7 +180,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 7 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 7 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "info"
       },
       {
@@ -190,7 +190,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 7 native record(s) from `iges.entities`",
+        "message": "the iges write omits 7 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -200,7 +200,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],

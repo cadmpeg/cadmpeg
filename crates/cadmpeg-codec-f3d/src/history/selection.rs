@@ -1940,6 +1940,7 @@ pub(crate) fn bind_edge_identity_history(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: super::BindingHistories<'_>,
     scope_histories: &HashMap<String, String>,
+    lineage_scopes: &HashSet<String>,
 ) {
     struct EdgeTreatmentTransitionCandidates {
         radii: Vec<crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate>,
@@ -2023,7 +2024,9 @@ pub(crate) fn bind_edge_identity_history(
             .unwrap_or(&history_identities);
         if let Some((kind, entity_ref, states)) = scoped_identities
             .selection_identity_kind(operand.local_id)
-            .filter(|(_, _, states)| states.contains(&previous_state_id))
+            .filter(|(_, _, states)| {
+                !lineage_scopes.contains(&scope.id) && states.contains(&previous_state_id)
+            })
         {
             operand.historical = Some(crate::records::topology::fillet::HistoricalBinding {
                 kind,
@@ -2143,7 +2146,12 @@ pub(crate) fn bind_edge_identity_history(
                             // The geometric chain is transition-scoped. The deleted-
                             // set fallback is group-scoped because its proof depends
                             // on this operand group's distinct identity-member count.
-                            if treatment_edges.is_empty() {
+                            if lineage_scopes.contains(&scope.id) {
+                                if treatment_edges.len() != 1 {
+                                    treatment_edges.clear();
+                                    operand.treatment_radius_candidates.clear();
+                                }
+                            } else if treatment_edges.is_empty() {
                                 let is_edge_treatment = matches!(
                                     crate::design::design_feature_family(&scope.kind()),
                                     Some(
@@ -2170,6 +2178,9 @@ pub(crate) fn bind_edge_identity_history(
                                 treatment_edges.into_iter().collect::<Vec<_>>();
                         }
                     }
+                }
+                if lineage_scopes.contains(&scope.id) {
+                    continue;
                 }
                 let direct = if let Some(binding) = operand
                     .historical

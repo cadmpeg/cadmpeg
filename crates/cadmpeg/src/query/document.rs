@@ -11,8 +11,9 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
-use super::item::{ambiguous_message, miss_id_message, unknown_arena_message, ArenaTarget};
+use super::item::{unknown_arena_message, ArenaTarget};
 use super::{read_input, sniff_kind, ArtifactKind};
+use crate::selection::{ambiguous_message, miss_id_message, resolve_one, ResolveError};
 
 /// One addressable JSON-array arena and its records.
 #[derive(Debug)]
@@ -303,39 +304,6 @@ impl CadirDocument {
 /// Top-level JSON-string `id`, if present.
 fn record_id(record: &Value) -> Option<&str> {
     record.get("id").and_then(Value::as_str)
-}
-
-/// Failure to select one record by ID.
-pub(super) enum ResolveError {
-    Missing,
-    Ambiguous(Vec<String>),
-}
-
-/// Resolves the first exact ID or one unique suffix match.
-pub(super) fn resolve_one<'a, T: Copy>(
-    request: &str,
-    indexed: impl Iterator<Item = (Option<&'a str>, T)> + Clone,
-) -> Result<T, ResolveError> {
-    for (id, value) in indexed.clone() {
-        if id == Some(request) {
-            return Ok(value);
-        }
-    }
-    let mut suffix = Vec::new();
-    for (id, value) in indexed {
-        if let Some(id) = id {
-            if id.ends_with(request) {
-                suffix.push((id, value));
-            }
-        }
-    }
-    match suffix.as_slice() {
-        [] => Err(ResolveError::Missing),
-        [(_, value)] => Ok(*value),
-        _ => Err(ResolveError::Ambiguous(
-            suffix.into_iter().map(|(id, _)| id.to_owned()).collect(),
-        )),
-    }
 }
 
 /// Admits a CADIR document of this build's `IR_VERSION` and refuses the other

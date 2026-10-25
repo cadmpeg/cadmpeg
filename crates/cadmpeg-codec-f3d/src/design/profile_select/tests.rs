@@ -177,6 +177,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
         secondary_id,
         geometry: None,
+        planar_z_noise: None,
     }
 }
 
@@ -277,7 +278,8 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
                 opaque_index_offset: 47,
                 opaque_scalar: 0.0,
                 opaque_scalar_offset: 51,
-                variant: false,
+                variant: Some(false),
+                typed_references: false,
                 paired_class_tag: "277".to_owned(),
                 paired_byte_offset: 100,
             },
@@ -712,6 +714,7 @@ fn entity_selection_path_uses_spatial_sketch_for_nonplanar_owner() {
         native_ref: Some(placement.id.clone()),
     }];
     let resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: &curves,
@@ -810,6 +813,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         );
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: &curves,
@@ -836,6 +840,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         })
         .unwrap();
     let ambiguous_resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: &curves,
@@ -890,6 +895,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         .unwrap();
     let operands = [operand(10, 0, 100)];
     let resolution = EntitySelectionPathResolution {
+        profile_curves: &[],
         operands: &operands,
         placements: std::slice::from_ref(&placement),
         curve_identities: std::slice::from_ref(&curve),
@@ -1719,3 +1725,194 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
 }
 
 mod carrier_boundaries;
+
+#[test]
+fn historical_face_points_admit_a_boundary_of_closed_edges() {
+    use crate::history_records::{
+        AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalPoint,
+        AsmHistoricalRelation,
+    };
+
+    // An annular face: two loops, each one closed circular edge with one vertex.
+    let coedge = |coedge, owner_loop, edge| AsmHistoricalCoedge {
+        coedge,
+        owner_loop,
+        edge,
+        next: coedge,
+        previous: coedge,
+        radial_next: coedge,
+    };
+    let mut topology = crate::history_records::AsmHistoricalTopology {
+        faces: vec![10],
+        loops: vec![11, 12],
+        coedges: vec![13, 14],
+        edges: vec![20, 21],
+        vertices: vec![30, 31],
+        points: vec![40, 41],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: 10,
+            member_refs: vec![11, 12],
+        }],
+        loop_coedges: vec![
+            AsmHistoricalRelation {
+                owner_ref: 11,
+                member_refs: vec![13],
+            },
+            AsmHistoricalRelation {
+                owner_ref: 12,
+                member_refs: vec![14],
+            },
+        ],
+        coedge_topology: vec![coedge(13, 11, 20), coedge(14, 12, 21)],
+        edge_vertices: vec![
+            AsmHistoricalEdge {
+                edge: 20,
+                start_vertex: 30,
+                end_vertex: 30,
+            },
+            AsmHistoricalEdge {
+                edge: 21,
+                start_vertex: 31,
+                end_vertex: 31,
+            },
+        ],
+        vertex_points: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 30,
+                carrier: 40,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 31,
+                carrier: 41,
+            },
+        ],
+        point_positions: vec![
+            AsmHistoricalPoint {
+                point: 40,
+                position: Point3::new(3.0, 0.0, 0.0),
+            },
+            AsmHistoricalPoint {
+                point: 41,
+                position: Point3::new(1.5, 0.0, 0.0),
+            },
+        ],
+        ..crate::history_records::AsmHistoricalTopology::default()
+    };
+    assert_eq!(
+        crate::design::profile_select::historical_face_points(10, &topology),
+        Some(vec![Point3::new(3.0, 0.0, 0.0), Point3::new(1.5, 0.0, 0.0)])
+    );
+
+    // Two distinct vertices on an open edge do not span a boundary.
+    topology.edge_vertices[0].end_vertex = 31;
+    assert_eq!(
+        crate::design::profile_select::historical_face_points(10, &topology),
+        None
+    );
+}
+
+fn linked_state(
+    state_id: i64,
+    previous_state_id: Option<i64>,
+    topology: crate::history_records::AsmHistoricalTopologyDelta,
+) -> crate::history_records::AsmDeltaState {
+    crate::history_records::AsmDeltaState {
+        id: format!("f3d:history:state#{state_id}"),
+        parent: "f3d:history".into(),
+        byte_offset: Some(0),
+        state_id,
+        version_flag: 1,
+        state_flag: 0,
+        previous_ref: None,
+        next_ref: None,
+        node_index: 0,
+        partner_ref: None,
+        owner_ref: 0,
+        bulletin_boards: Vec::new(),
+        records: Vec::new(),
+        transition: previous_state_id.map(|previous_state_id| {
+            crate::history_records::AsmHistoricalTransition {
+                previous_state_id: Some(previous_state_id),
+                records: crate::history_records::AsmHistoricalEntityDelta::default(),
+                topology,
+                record_revisions: Vec::new(),
+                rows: crate::history_records::AsmHistoricalRowsDelta::default(),
+            }
+        }),
+    }
+}
+
+#[test]
+fn a_linked_transition_passes_only_through_states_that_keep_topology() {
+    use crate::history_records::{
+        AsmHistoricalEntityDelta, AsmHistoricalTopologyDelta, AsmHistory,
+    };
+
+    let updated_faces = AsmHistoricalTopologyDelta {
+        faces: AsmHistoricalEntityDelta {
+            updated: vec![7],
+            ..AsmHistoricalEntityDelta::default()
+        },
+        ..AsmHistoricalTopologyDelta::default()
+    };
+    let inserted_faces = AsmHistoricalTopologyDelta {
+        faces: AsmHistoricalEntityDelta {
+            inserted: vec![8],
+            ..AsmHistoricalEntityDelta::default()
+        },
+        ..AsmHistoricalTopologyDelta::default()
+    };
+    let history = |between| {
+        vec![AsmHistory::new(
+            "f3d:history".into(),
+            0,
+            None,
+            false,
+            vec![
+                linked_state(1, None, AsmHistoricalTopologyDelta::default()),
+                linked_state(2, Some(1), between),
+                linked_state(3, Some(2), inserted_faces.clone()),
+            ],
+        )]
+    };
+
+    let histories = history(updated_faces);
+    let (_, state) = super::linked_transition_state(&histories, 3, 1).expect("linked state");
+    assert_eq!(state.state_id, 3);
+    assert!(super::linked_transition_state(&histories, 3, 2).is_some());
+    assert!(super::linked_transition_state(&histories, 3, 4).is_none());
+
+    let histories = history(inserted_faces.clone());
+    assert!(super::linked_transition_state(&histories, 3, 1).is_none());
+}
+
+#[test]
+fn a_cap_lies_at_one_offset_along_the_sketch_normal() {
+    let sketch = Sketch {
+        id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 2.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    };
+    let cap = [
+        Point3::new(0.0, 0.0, 5.0),
+        Point3::new(3.0, 0.0, 5.0),
+        Point3::new(3.0, 1.0, 5.0),
+    ];
+    let side = [
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(3.0, 0.0, 2.0),
+        Point3::new(3.0, 0.0, 5.0),
+    ];
+    assert!(super::points_share_sketch_offset(&sketch, &cap, 1.0e-6));
+    assert!(!super::points_share_sketch_offset(&sketch, &side, 1.0e-6));
+    assert!(!super::points_share_sketch_offset(&sketch, &[], 1.0e-6));
+}

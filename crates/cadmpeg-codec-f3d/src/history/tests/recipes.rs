@@ -137,14 +137,14 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 201,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([4.0, 3.0, 0.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
                         202,
-                        0,
+                        Some(0),
                         Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                             recipe,
                         })),
@@ -153,7 +153,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
@@ -1395,3 +1395,13 @@ fn opaque_history_span_retains_the_precise_framing_error() {
 }
 
 mod hem_carriers;
+
+#[test]
+fn surface_patch_reference_roles_deduplicate_repeated_ordinals() {
+    let common = crate::history::common_surface_patch_reference;
+    assert_eq!(common([1, 1], [3, 1]), Some(1));
+    assert_eq!(common([0, 2], [0, 4]), Some(0));
+    assert_eq!(common([0, 0], [0, 0]), Some(0));
+    assert_eq!(common([1, 2], [1, 2]), None);
+    assert_eq!(common([1, 2], [3, 4]), None);
+}

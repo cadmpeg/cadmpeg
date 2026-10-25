@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 13149,
-      "payload_sha256": "d78980ed52416542fc45ec59d0a0b8651815450d63ba9cd8a79d949f5eff9848"
+      "payload_len": 14275,
+      "payload_sha256": "c577cd6054abb3cd852436da92148042b1d73c6c746dd796116a198810f7b361"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -24,7 +24,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 46,
+        "attributes": 42,
         "bodies": 0,
         "coedges": 0,
         "configurations": 0,
@@ -34,10 +34,11 @@
         "faces": 0,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 0,
+        "features": 3,
         "loops": 0,
         "native.fcstd.applications": 7,
         "native.fcstd.attachments": 3,
+        "native.fcstd.design_census": 3,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 7,
         "native.fcstd.extensions": 2,
@@ -210,16 +211,6 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#FemAnalysis:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
         "message": "attribute fcstd:model:attribute#Mesh:Label:property conflicts with operation property Label",
         "severity": "warning"
       },
@@ -231,26 +222,6 @@
           "scope": "namespaced"
         },
         "message": "attribute fcstd:model:attribute#PointCloud:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Label:property conflicts with operation property Label",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "attribute fcstd:model:attribute#Toolpath:Label:property conflicts with operation property Label",
         "severity": "warning"
       },
       {
@@ -291,7 +262,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.entries`: fcstd:native:entry#MeshKernel.bms, fcstd:native:entry#Normals, fcstd:native:entry#PointCloud, fcstd:native:entry#Points, fcstd:native:entry#Toolpath.nc, fcstd:native:entry#cc0_payload.bin",
         "severity": "info"
       },
       {
@@ -301,7 +272,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 15 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 15 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExtensionPayload:ExpressionEngine, fcstd:native:property#ExtensionPayload:Members, fcstd:native:property#ExtensionPayload:Payload, fcstd:native:property#FemAnalysis:ExpressionEngine, fcstd:native:property#FemAnalysis:Group, fcstd:native:property#Mesh:ExpressionEngine, fcstd:native:property#Mesh:Mesh, fcstd:native:property#PointCloud:ExpressionEngine, fcstd:native:property#PointCloud:Points, fcstd:native:property#TemperatureConstraint:ExpressionEngine, fcstd:native:property#TemperatureConstraint:Normals, fcstd:native:property#TemperatureConstraint:Points, fcstd:native:property#Toolpath:ExpressionEngine, fcstd:native:property#Toolpath:Path",
         "severity": "info"
       }
     ],
@@ -336,7 +307,12 @@
               "disposition": "dropped"
             },
             "design_census": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#FemAnalysis:projection": "regenerated",
+                "fcstd:native:design-census#TemperatureConstraint:projection": "regenerated",
+                "fcstd:native:design-census#Toolpath:projection": "regenerated"
+              }
             },
             "document": {
               "disposition": "dropped",
@@ -380,11 +356,11 @@
               "records": {
                 "fcstd:native:object#CorpusMetadata": "written",
                 "fcstd:native:object#ExtensionPayload": "written",
-                "fcstd:native:object#FemAnalysis": "written",
+                "fcstd:native:object#FemAnalysis": "regenerated",
                 "fcstd:native:object#Mesh": "written",
                 "fcstd:native:object#PointCloud": "written",
-                "fcstd:native:object#TemperatureConstraint": "written",
-                "fcstd:native:object#Toolpath": "written"
+                "fcstd:native:object#TemperatureConstraint": "regenerated",
+                "fcstd:native:object#Toolpath": "regenerated"
               }
             },
             "product_nodes": {
@@ -470,9 +446,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

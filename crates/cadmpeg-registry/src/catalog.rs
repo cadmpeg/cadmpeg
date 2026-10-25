@@ -227,7 +227,8 @@ impl InputCatalog {
                         feature = "rhino",
                         feature = "step",
                         feature = "iges",
-                        feature = "sat"
+                        feature = "sat",
+                        feature = "pvz"
                     ))]
                     crate::descriptors::FormatKind::Native(native) => InputDescriptor::from(native),
                 })
@@ -468,11 +469,13 @@ mod tests {
             panic!("markerless ZIP must remain ambiguous");
         };
         assert_eq!(tie.confidence(), Confidence::Low);
-        let expected = if cfg!(feature = "step") {
-            vec!["fcstd", "f3d", "step"]
-        } else {
-            vec!["fcstd", "f3d"]
-        };
+        let mut expected = vec!["fcstd", "f3d"];
+        if cfg!(feature = "step") {
+            expected.push("step");
+        }
+        if cfg!(feature = "pvz") {
+            expected.push("pvz");
+        }
         assert_eq!(
             tie.candidates()
                 .iter()
@@ -513,6 +516,44 @@ mod tests {
             .descriptors()
             .any(|descriptor| descriptor.format_id().as_str() == "iges"
                 && descriptor.codec().is_some()));
+    }
+
+    /// A package whose leading member is a signed `.pvs` member resolves to
+    /// the read-only PVZ codec at high confidence.
+    #[cfg(feature = "pvz")]
+    #[test]
+    fn a_signed_pvz_package_resolves_to_the_read_only_pvz_codec() {
+        use super::Selection;
+        use cadmpeg_ir::codec::Confidence;
+        use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "pvz")
+            .expect("PVZ descriptor exists");
+        assert_eq!(descriptor.extensions(), ["pvz"]);
+        assert_eq!(
+            crate::Format::from_name("pvz").expect("embedded registry loads"),
+            None
+        );
+
+        let package = archive(&[
+            RawEntry::stored("model.pvs", b"PV-PVS0304\0structure"),
+            RawEntry::stored("model.ol", b"DIV-OL09BL\0geometry"),
+        ]);
+        let ResolvedSource::Native { codec, selection } =
+            resolve(&catalog, &package, None).expect("detection")
+        else {
+            panic!("a signed package resolves to a native codec");
+        };
+        assert_eq!(codec.id().as_str(), "pvz");
+        assert_eq!(
+            selection,
+            Selection::Detected {
+                confidence: Confidence::High
+            }
+        );
     }
 
     #[test]

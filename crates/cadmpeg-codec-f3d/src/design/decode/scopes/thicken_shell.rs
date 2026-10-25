@@ -23,12 +23,12 @@ pub(super) fn exact_legacy_thicken_class_347(
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "347"
         || scope.paired_class_tag.as_str() != "258"
-        || scope.frame_length() != u64::try_from(thicken_347::LEN).ok()?
+        || scope.frame_length() != Some(u64::try_from(thicken_347::LEN).ok()?)
         || scope.reference_members().len() != 3
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     if bytes.get(start + thicken_347::ZERO_RUN_10..start + thicken_347::FEATURE_FORM)
         != Some(&[0; 10])
         || View::u32_le_at(bytes, start + thicken_347::FEATURE_FORM)? != 4
@@ -81,7 +81,7 @@ pub(super) fn exact_legacy_thicken_class_347(
         direct_face::DesignThickenOperation {
             signed_thickness: scalar.value,
             thickness_record_index,
-            thickness_offset: scalar.value_offset,
+            thickness_offset: Some(scalar.value_offset),
         },
     ))
 }
@@ -93,12 +93,12 @@ pub(super) fn exact_shell_class_369_261(
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "369"
         || scope.paired_class_tag.as_str() != "261"
-        || scope.frame_length() != u64_from_index(shell_369_261::LEN)
+        || scope.frame_length() != Some(u64_from_index(shell_369_261::LEN))
         || scope.reference_members().len() != 3
     {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     if bytes.get(start + shell_369_261::ZERO_RUN_9..start + shell_369_261::FEATURE_FORM)
         != Some(&[0; 9])
         || bytes.get(start + shell_369_261::FEATURE_FORM)
@@ -167,9 +167,9 @@ pub(super) fn exact_shell_class_369_261(
         direct_face::DesignShellOperation {
             thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
             thickness_record_index,
-            thickness_offset: scalar.value_offset,
+            thickness_offset: Some(scalar.value_offset),
             outward,
-            outward_offset: u64::try_from(start + shell_369_261::OUTWARD).ok()?,
+            outward_offset: Some(u64::try_from(start + shell_369_261::OUTWARD).ok()?),
         },
     ))
 }

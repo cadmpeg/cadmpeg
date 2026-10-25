@@ -139,6 +139,7 @@ fn reloaded_sketch_curve_edit_requires_actual_baseline_geometry_position() {
         primary_id: std::num::NonZeroU64::new(10).unwrap(),
         secondary_id: 11,
         geometry: Some(line(10.0)),
+        planar_z_noise: None,
     };
     let mut after: SketchCurveIdentity =
         serde_json::from_value(serde_json::to_value(&before).unwrap()).unwrap();

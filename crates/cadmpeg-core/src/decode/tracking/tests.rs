@@ -524,3 +524,63 @@ fn tracking_charges_the_shared_account_body_once_without_recharging_encode_clone
     ctx.finish_session()
         .expect("one actual account body charge");
 }
+
+#[test]
+fn a_primary_capture_slot_is_charged_once_at_every_nesting_depth() {
+    let mut used = Vec::new();
+    for depth in [1, 4] {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = u64::MAX;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(b"ABC", &arena, &policy)
+            .expect("fresh context without an absolute retained-byte ceiling");
+        let initial = ctx.retained_bytes_available();
+        // Equal frame capacity isolates capture slots from unchanged frame charges.
+        let mut transactions = Vec::new();
+        for _ in 0..4 {
+            transactions.push(ctx.read_transaction().expect("warm frame capacity"));
+        }
+        while let Some(transaction) = transactions.pop() {
+            drop(transaction);
+        }
+        for _ in 1..depth {
+            transactions.push(ctx.read_transaction().expect("open containing transaction"));
+        }
+        ctx.record("primary", root, || {
+            assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+            Ok(())
+        })
+        .expect("commit primary capture into its containing transaction");
+        while let Some(transaction) = transactions.pop() {
+            transaction.commit().expect("commit containing transaction");
+        }
+        used.push(initial - ctx.retained_bytes_available());
+        if depth == 4 {
+            for _ in 1..depth {
+                transactions.push(ctx.read_transaction().expect("open rollback parent"));
+            }
+            let before = ctx.retained_bytes_available();
+            let failed: Result<(), CodecError> = ctx.record("rolled-back-primary", root, || {
+                assert_eq!(root.read_at(0, 3), Some(b"ABC".as_slice()));
+                Err(CodecError::malformed("synthetic primary rollback"))
+            });
+            assert!(failed.is_err());
+            assert_eq!(ctx.retained_bytes_available(), before);
+            while let Some(transaction) = transactions.pop() {
+                drop(transaction);
+            }
+            assert_eq!(ctx.retained_bytes_available(), before);
+        }
+        let captures = ctx.take_record_captures().expect("one primary capture");
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].id(), "primary");
+        assert_eq!(captures[0].stream(), "file");
+        assert_eq!((captures[0].offset(), captures[0].byte_len()), (0, 3));
+        assert_eq!(
+            captures[0].reads(),
+            &ranges(std::iter::once(0..3).collect())
+        );
+        ctx.finish_session().expect("unfused completed session");
+    }
+    assert_eq!(used[0], used[1]);
+}

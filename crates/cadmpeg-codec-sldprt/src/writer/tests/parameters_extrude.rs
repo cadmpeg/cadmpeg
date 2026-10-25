@@ -27,7 +27,12 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let sketch1 = decoded
@@ -74,7 +79,7 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .unwrap()
         .name = "Width".into();
     let mut renamed = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut renamed,
@@ -185,7 +190,12 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1@Sketch1">2mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="11"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
@@ -207,7 +217,7 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -454,7 +464,12 @@ fn semantic_writer_applies_neutral_parameter_order() {
         br#"<Keywords><Feature Name="Ordered" Type="EquationDriven" id="41"><Dimension Name="First">1</Dimension><Child Name="Nested" Type="Folder" id="42"/><Dimension Name="Second">2</Dimension></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     for parameter in &mut decoded.ir_mut().model.parameters {
@@ -466,7 +481,7 @@ fn semantic_writer_applies_neutral_parameter_order() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1206,7 +1221,12 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -1241,7 +1261,7 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
     decoded.ir_mut().model.features[0].name = Some("Renamed round".into());
     decoded.ir_mut().model.features[1].name = Some("Renamed bevel".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1705,7 +1725,12 @@ fn semantic_writer_retains_partial_native_wall_operations() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -1738,7 +1763,7 @@ fn semantic_writer_retains_partial_native_wall_operations() {
     decoded.ir_mut().model.features[0].name = Some("Renamed shell".into());
     decoded.ir_mut().model.features[1].name = Some("Renamed thicken".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

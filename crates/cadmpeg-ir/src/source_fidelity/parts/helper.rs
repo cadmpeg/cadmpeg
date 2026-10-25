@@ -347,11 +347,8 @@ impl DecodeParts for DecodeContext<'_> {
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
-        self.decode_sequential_part(output, extent, spec, |stage| {
-            decode(stage).map(|value| (value, extent.window().len()))
-        })
+        decode_part_with_failure_extent(self, output, extent, spec, extent, decode)
     }
-
     fn decode_sequential_part<T>(
         &self,
         output: &mut PartOutput,
@@ -387,186 +384,282 @@ impl DecodeParts for DecodeContext<'_> {
             output.preflight(&staged)?;
             Ok((value, consumed))
         })?;
-        let (capture, result) = outcome.into_parts();
-        let id = part_id(
+        finish_part(
             self,
-            output.codec,
-            spec.level,
-            capture.stream(),
-            capture.offset(),
-        )?;
-        if output.fidelity.parts.contains_key(&id) || staged.fidelity.parts.contains_key(&id) {
-            return Err(CodecError::malformed("duplicate part invocation identity"));
+            output,
+            spec,
+            extent,
+            (framing_valid, declared_parent),
+            staged,
+            outcome,
+        )
+    }
+}
+
+pub(super) fn decode_part_with_failure_extent<T>(
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+    extent: View<'_>,
+    spec: PartSpec,
+    failure_extent: View<'_>,
+    decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    // Framing bytes come from the format's header fields, which damaged
+    // input can corrupt. A framing error is a failure of this part only.
+    output.bind_context(ctx)?;
+    let declared_parent = spec
+        .parent
+        .as_ref()
+        .map(|parent| parent.validate(ctx, failure_extent))
+        .transpose()?;
+    let framing = spec.validate(extent);
+    let framing_valid = framing.is_ok();
+    let mut staged = PartOutput::stage(output.codec);
+    staged.bind_context(ctx)?;
+    let parse = || {
+        framing?;
+        let value = decode(&mut staged)?;
+        output.preflight(&staged)?;
+        Ok(value)
+    };
+    let outcome = if failure_extent.end() == extent.end() {
+        ctx.part_transaction(extent, parse)
+    } else {
+        ctx.part_transaction_with_failure_extent(extent, failure_extent, parse)
+    }?;
+    finish_part(
+        ctx,
+        output,
+        spec,
+        failure_extent,
+        (framing_valid, declared_parent),
+        staged,
+        outcome,
+    )
+}
+
+pub(super) fn decode_discovered_part<'source, T>(
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+    prefix: View<'source>,
+    spec: PartSpec,
+    failure_extent: View<'source>,
+    decode: impl FnOnce(&mut PartOutput) -> Result<(T, View<'source>), CodecError>,
+) -> Result<Option<(T, usize)>, CodecError> {
+    output.bind_context(ctx)?;
+    let declared_parent = spec
+        .parent
+        .as_ref()
+        .map(|parent| parent.validate(ctx, failure_extent))
+        .transpose()?;
+    let framing = spec.validate(prefix);
+    let framing_valid = framing.is_ok();
+    let mut staged = PartOutput::stage(output.codec);
+    staged.bind_context(ctx)?;
+    let outcome = ctx.part_transaction_discovered(prefix, failure_extent, || {
+        framing?;
+        let (value, consumed) = decode(&mut staged)?;
+        spec.validate(consumed)?;
+        output.preflight(&staged)?;
+        Ok(((value, consumed.end()), consumed))
+    })?;
+    finish_part(
+        ctx,
+        output,
+        spec,
+        failure_extent,
+        (framing_valid, declared_parent),
+        staged,
+        outcome,
+    )
+}
+
+fn finish_part<T>(
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+    spec: PartSpec,
+    failure_extent: View<'_>,
+    framing: (bool, Option<UnknownId>),
+    mut staged: PartOutput,
+    outcome: cadmpeg_core::decode::PartOutcome<T>,
+) -> Result<Option<T>, CodecError> {
+    let (framing_valid, declared_parent) = framing;
+    let (capture, result) = outcome.into_parts();
+    let id = part_id(
+        ctx,
+        output.codec,
+        spec.level,
+        capture.stream(),
+        capture.offset(),
+    )?;
+    if output.fidelity.parts.contains_key(&id) || staged.fidelity.parts.contains_key(&id) {
+        return Err(CodecError::malformed("duplicate part invocation identity"));
+    }
+    ctx.retain_bytes(
+        u64_from_index(size_of::<PartRecord>())
+            .checked_add(u64_from_index(capture.stream().len()))
+            .and_then(|len| len.checked_add(u64_from_index(id.as_str().len())))
+            .ok_or_else(|| CodecError::malformed("part tree storage overflows"))?,
+        "part tree node",
+    )?;
+    for node in staged.fidelity.parts.values_mut() {
+        if node.parent.is_none() {
+            ctx.retain_bytes(u64_from_index(id.as_str().len()), "part parent identity")?;
+            node.parent = Some(id.clone());
         }
-        self.retain_bytes(
-            u64_from_index(size_of::<PartRecord>())
-                .checked_add(u64_from_index(capture.stream().len()))
-                .and_then(|len| len.checked_add(u64_from_index(id.as_str().len())))
-                .ok_or_else(|| CodecError::malformed("part tree storage overflows"))?,
-            "part tree node",
-        )?;
-        for node in staged.fidelity.parts.values_mut() {
-            if node.parent.is_none() {
-                self.retain_bytes(u64_from_index(id.as_str().len()), "part parent identity")?;
-                node.parent = Some(id.clone());
-            }
+    }
+    let state = if result.is_ok() {
+        PartState::Decoded {}
+    } else {
+        PartState::GivenUp {}
+    };
+    // Invalid framing intervals are not recorded; the whole extent is then
+    // content of the given-up part.
+    let spec = if framing_valid {
+        spec
+    } else {
+        PartSpec::new(spec.level, Vec::new())
+    };
+    let mut record = PartRecord::captured(&capture, spec, state);
+    record.parent = declared_parent;
+    match result {
+        Ok(value) => {
+            staged.fidelity.parts.insert(id, record);
+            output.append(ctx, staged)?;
+            Ok(Some(value))
         }
-        let state = if result.is_ok() {
-            PartState::Decoded {}
-        } else {
-            PartState::GivenUp {}
-        };
-        // Invalid framing intervals are not recorded; the whole extent is then
-        // content of the given-up part.
-        let spec = if framing_valid {
-            spec
-        } else {
-            PartSpec::new(spec.level, Vec::new())
-        };
-        let mut record = PartRecord::captured(&capture, spec, state);
-        record.parent = declared_parent;
-        match result {
-            Ok(value) => {
-                staged.fidelity.parts.insert(id, record);
-                output.append(self, staged)?;
-                Ok(Some(value))
+        Err(error) => {
+            let independent = parent::independent_state(ctx, &mut staged, &id)?;
+            let independently_failed = independent
+                .failures
+                .iter()
+                .flat_map(|failure| failure.dropped.iter().map(String::as_str))
+                .collect::<BTreeSet<_>>();
+            let mut dropped = Vec::new();
+            reserve(ctx, &mut dropped, staged.ids.len())?;
+            for dropped_id in &staged.ids {
+                ctx.retain_bytes(u64_from_index(dropped_id.len()), "dropped part identity")?;
+                dropped.push(dropped_id.clone());
             }
-            Err(error) => {
-                let independent = parent::independent_state(self, &mut staged, &id)?;
-                let independently_failed = independent
-                    .failures
-                    .iter()
-                    .flat_map(|failure| failure.dropped.iter().map(String::as_str))
-                    .collect::<BTreeSet<_>>();
-                let mut dropped = Vec::new();
-                reserve(self, &mut dropped, staged.ids.len())?;
-                for dropped_id in &staged.ids {
-                    self.retain_bytes(u64_from_index(dropped_id.len()), "dropped part identity")?;
-                    dropped.push(dropped_id.clone());
+            let mut dropped_set = dropped.into_iter().collect::<BTreeSet<_>>();
+            for attempted in capture.attempted_record_ids() {
+                if !dropped_set.contains(attempted)
+                    && !independently_failed.contains(attempted.as_str())
+                {
+                    ctx.retain_bytes(
+                        u64_from_index(attempted.len()),
+                        "discarded parser record identity",
+                    )?;
+                    dropped_set.insert(attempted.clone());
                 }
-                let mut dropped_set = dropped.into_iter().collect::<BTreeSet<_>>();
-                for attempted in capture.attempted_record_ids() {
-                    if !dropped_set.contains(attempted)
-                        && !independently_failed.contains(attempted.as_str())
-                    {
-                        self.retain_bytes(
-                            u64_from_index(attempted.len()),
-                            "discarded parser record identity",
+            }
+            for failure in &staged.failures {
+                for id in &failure.dropped {
+                    if !dropped_set.contains(id) {
+                        ctx.retain_bytes(
+                            u64_from_index(id.len()),
+                            "discarded descendant identity",
                         )?;
-                        dropped_set.insert(attempted.clone());
+                        dropped_set.insert(id.clone());
                     }
                 }
-                for failure in &staged.failures {
-                    for id in &failure.dropped {
-                        if !dropped_set.contains(id) {
-                            self.retain_bytes(
-                                u64_from_index(id.len()),
-                                "discarded descendant identity",
-                            )?;
-                            dropped_set.insert(id.clone());
-                        }
-                    }
-                }
-                let mut dropped = Vec::new();
-                reserve(self, &mut dropped, dropped_set.len())?;
-                dropped.extend(dropped_set);
-                let mut parts = std::mem::take(&mut staged.fidelity.parts);
-                for node in parts.values_mut() {
-                    self.retain_bytes(u64_from_index(id.as_str().len()), "covering part identity")?;
-                    node.state = PartState::Covered { by: id.clone() };
-                }
-                parts.insert(id.clone(), record);
-                // All staged model/native/retention/layout/loss state is dropped.
-                drop(staged);
-                let mut replacement = independent;
-                replacement.bind_context(self)?;
-                let links = capture
-                    .record_id()
-                    .map(|id| {
-                        crate::ids::Identity::new(id.to_owned()).map_err(CodecError::malformed)
-                    })
-                    .transpose()?
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                let untyped = given_up_classes(&output.model, &links);
-                let stub = NativeUnknownRecord {
-                    id: id.clone(),
-                    links,
-                };
-                replacement.admit_id(self, id.as_str())?;
-                replacement.register_native_owner::<NativeUnknownRecord>(self, id.as_str())?;
-                self.charge_entities(1, "given-up part stub")?;
-                let native = NativeRecord::from(&stub);
-                self.retain_bytes(
-                    u64_from_index(native.text_len()),
-                    "given-up part native stub",
-                )?;
-                let unknowns = replacement
-                    .native
-                    .namespace_mut(output.codec.as_str())
-                    .arenas_mut()
-                    .entry("unknowns".to_owned())
-                    .or_default();
-                reserve_output(self, true, unknowns, 1)?;
-                unknowns.push(native);
-                let length = extent.window().len();
-                self.retain_bytes(u64_from_index(length), "given-up part source bytes")?;
-                let mut bytes = self.alloc_filled(length, 0u8, "given-up part source bytes")?;
-                bytes.copy_from_slice(extent.window());
-                let retained = RetainedSourceRecord::from_bytes(
-                    capture.stream().to_owned(),
-                    capture.offset(),
-                    RetainedBytes::Inline { data: bytes },
-                )?
-                .with_untyped(untyped);
-                replacement
-                    .fidelity
-                    .insert_retained_record(id.clone(), retained)?;
-                self.retain_bytes(
-                    u64_from_index(size_of::<RecordLayout>())
-                        .checked_add(u64_from_index(capture.stream().len()))
-                        .and_then(|len| len.checked_add(u64_from_index(id.as_str().len())))
-                        .ok_or_else(|| CodecError::malformed("part layout storage overflows"))?,
-                    "given-up part layout",
-                )?;
-                replacement.fidelity.record_layout.insert(
-                    id.as_str().to_owned(),
-                    RecordLayout::from_part_capture(&capture),
-                );
-                replacement.fidelity.parts.append(&mut parts);
-                let prefix = format!(
-                    "{} stream={} offset={} length={} record={} error={}",
-                    replacement.fidelity.parts[&id].level.as_str(),
-                    capture.stream(),
-                    capture.offset(),
-                    capture.byte_len(),
-                    capture.record_id().unwrap_or("none"),
-                    error
-                );
-                let message = format!(
-                    "{prefix} dropped={}",
-                    serde_json::to_string(&dropped).map_err(CodecError::malformed)?
-                );
-                let mut provenance = SourceProvenance::in_stream(
-                    output.codec.as_str(),
-                    StreamName::try_from(capture.stream().to_owned())
-                        .map_err(CodecError::malformed)?,
-                    capture.offset(),
-                );
-                // The loss names the part's span (#217 §5.6); an empty part has none.
-                if capture.byte_len() != 0 {
-                    provenance = provenance.with_byte_len(capture.byte_len())?;
-                }
-                replacement.push_loss(
-                    self,
-                    DecodeLossCode::RecordUnreadable
-                        .note(message)
-                        .with_provenance(provenance),
-                )?;
-                replacement.record_failure(self, id, dropped, prefix, extent)?;
-                output.append(self, replacement)?;
-                Ok(None)
             }
+            let mut dropped = Vec::new();
+            reserve(ctx, &mut dropped, dropped_set.len())?;
+            dropped.extend(dropped_set);
+            let mut parts = std::mem::take(&mut staged.fidelity.parts);
+            for node in parts.values_mut() {
+                ctx.retain_bytes(u64_from_index(id.as_str().len()), "covering part identity")?;
+                node.state = PartState::Covered { by: id.clone() };
+            }
+            parts.insert(id.clone(), record);
+            // All staged model/native/retention/layout/loss state is dropped.
+            drop(staged);
+            let mut replacement = independent;
+            replacement.bind_context(ctx)?;
+            let links = capture
+                .record_id()
+                .map(|id| crate::ids::Identity::new(id.to_owned()).map_err(CodecError::malformed))
+                .transpose()?
+                .into_iter()
+                .collect::<Vec<_>>();
+            let untyped = given_up_classes(&output.model, &links);
+            let stub = NativeUnknownRecord {
+                id: id.clone(),
+                links,
+            };
+            replacement.admit_id(ctx, id.as_str())?;
+            replacement.register_native_owner::<NativeUnknownRecord>(ctx, id.as_str())?;
+            ctx.charge_entities(1, "given-up part stub")?;
+            let native = NativeRecord::from(&stub);
+            ctx.retain_bytes(
+                u64_from_index(native.text_len()),
+                "given-up part native stub",
+            )?;
+            let unknowns = replacement
+                .native
+                .namespace_mut(output.codec.as_str())
+                .arenas_mut()
+                .entry("unknowns".to_owned())
+                .or_default();
+            reserve_output(ctx, true, unknowns, 1)?;
+            unknowns.push(native);
+            let length = failure_extent.window().len();
+            ctx.retain_bytes(u64_from_index(length), "given-up part source bytes")?;
+            let mut bytes = ctx.alloc_filled(length, 0u8, "given-up part source bytes")?;
+            bytes.copy_from_slice(failure_extent.window());
+            let retained = RetainedSourceRecord::from_bytes(
+                capture.stream().to_owned(),
+                capture.offset(),
+                RetainedBytes::Inline { data: bytes },
+            )?
+            .with_untyped(untyped);
+            replacement
+                .fidelity
+                .insert_retained_record(id.clone(), retained)?;
+            ctx.retain_bytes(
+                u64_from_index(size_of::<RecordLayout>())
+                    .checked_add(u64_from_index(capture.stream().len()))
+                    .and_then(|len| len.checked_add(u64_from_index(id.as_str().len())))
+                    .ok_or_else(|| CodecError::malformed("part layout storage overflows"))?,
+                "given-up part layout",
+            )?;
+            replacement.fidelity.record_layout.insert(
+                id.as_str().to_owned(),
+                RecordLayout::from_part_capture(&capture),
+            );
+            replacement.fidelity.parts.append(&mut parts);
+            let prefix = format!(
+                "{} stream={} offset={} length={} record={} error={}",
+                replacement.fidelity.parts[&id].level.as_str(),
+                capture.stream(),
+                capture.offset(),
+                capture.byte_len(),
+                capture.record_id().unwrap_or("none"),
+                error
+            );
+            let message = format!(
+                "{prefix} dropped={}",
+                serde_json::to_string(&dropped).map_err(CodecError::malformed)?
+            );
+            let mut provenance = SourceProvenance::in_stream(
+                output.codec.as_str(),
+                StreamName::try_from(capture.stream().to_owned()).map_err(CodecError::malformed)?,
+                capture.offset(),
+            );
+            // The loss names the part's span (#217 §5.6); an empty part has none.
+            if capture.byte_len() != 0 {
+                provenance = provenance.with_byte_len(capture.byte_len())?;
+            }
+            replacement.push_loss(
+                ctx,
+                DecodeLossCode::RecordUnreadable
+                    .note(message)
+                    .with_provenance(provenance),
+            )?;
+            replacement.record_failure(ctx, id, dropped, prefix, failure_extent)?;
+            output.append(ctx, replacement)?;
+            Ok(None)
         }
     }
 }

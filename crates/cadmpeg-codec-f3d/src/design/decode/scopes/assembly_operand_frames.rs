@@ -14,6 +14,7 @@ use crate::layout::assembly_class_383_258_scope_1011 as class_383_scope;
 use crate::layout::assembly_class_388_266_scope_968 as class_388_assemble;
 use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
 use crate::layout::assembly_operand_path_locator as path_locator;
+use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::scope::DesignParameterScope;
 
@@ -38,9 +39,9 @@ pub(super) fn exact_assembly_operand_frames(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     let frame_variant = crate::design::assembly::AssemblyScopeGeneration::new(
-        scope.frame_length(),
+        scope.frame_length()?,
         scope.class_tag.as_str(),
         scope.paired_class_tag.as_str(),
     )
@@ -87,8 +88,8 @@ pub(super) fn exact_assembly_operand_frames(
             )
         }
     };
-    if usize::try_from(scope.paired_byte_offset()).ok()?
-        != start.checked_add(usize::try_from(scope.frame_length()).ok()?)?
+    if usize::try_from(scope.paired_byte_offset()?).ok()?
+        != start.checked_add(usize::try_from(scope.frame_length()?).ok()?)?
         || bytes.get(start + 11..start + 20)? != [0; 9]
     {
         return None;
@@ -116,7 +117,7 @@ pub(super) fn exact_assembly_operand_frames(
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
     ) {
         let standard_tail_marker_offset = if scope.frame_length()
-            == u64_from_index(class_383_scope::LEN)
+            == Some(u64_from_index(class_383_scope::LEN))
             && scope.class_tag.as_str() == "383"
             && scope.paired_class_tag.as_str() == "258"
         {
@@ -155,7 +156,11 @@ pub(super) fn exact_assembly_operand_frames(
         }
         // The limit-owner run: the 850-byte scope names its two limit owners,
         // owner-local ordinals 4 and 5, and the other forms store count 0.
-        let limit_owners = if scope.frame_length() == 850 { 2 } else { 0 };
+        let limit_owners = if scope.frame_length() == Some(850) {
+            2
+        } else {
+            0
+        };
         let run = start + 526;
         let stride =
             limit_run::SECOND_LIMIT_OWNER_REFERENCE - limit_run::FIRST_LIMIT_OWNER_REFERENCE;
@@ -214,9 +219,9 @@ pub(super) fn exact_assembly_operand_frames(
             crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()?;
         Some(DesignAssemblyOperandFrame {
             reference_record_index,
-            reference_offset: u64_from_index(reference_at + 1),
+            reference_offset: Some(u64_from_index(reference_at + 1)),
             transform,
-            transform_offset: u64_from_index(transform_at),
+            transform_offset: Some(u64_from_index(transform_at)),
         })
     };
     let first = frame(start + frame_offsets.0, start + frame_offsets.1)?;
@@ -224,23 +229,67 @@ pub(super) fn exact_assembly_operand_frames(
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
+/// The operand frames an as-built scope's two locators carry. A common locator
+/// stores its transform; a wide locator (`wide`) stores one only when its
+/// identity flag is 0, and its frame is the identity otherwise, located at the
+/// flag.
 pub(super) fn exact_as_built_operand_frames(
     bytes: &[u8],
     paths: &[ParsedOperandPath<'_>; 2],
+    wide: bool,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
-    let frames = paths.each_ref().map(|path| {
-        let locator_at = path.source.locator_start()?;
-        let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
-        let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
-        Some(DesignAssemblyOperandFrame {
-            reference_record_index: marked_record_reference(bytes, reference_at)?,
-            reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
-            transform: rigid_transform_at(bytes, transform_at)?,
-            transform_offset: u64::try_from(transform_at).ok()?,
-        })
-    });
+    let frames = paths
+        .each_ref()
+        .map(|path| exact_as_built_operand_frame(bytes, path, wide));
     let [Some(first), Some(second)] = frames else {
         return None;
     };
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
+}
+
+/// The operand frame one as-built locator carries, as
+/// [`exact_as_built_operand_frames`] reads it.
+pub(super) fn exact_as_built_operand_frame(
+    bytes: &[u8],
+    path: &ParsedOperandPath<'_>,
+    wide: bool,
+) -> Option<DesignAssemblyOperandFrame> {
+    let locator_at = path.source.locator_start()?;
+    let (reference_at, transform_at, transform) = if wide {
+        let reference_at = locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?;
+        let flag_at = locator_at.checked_add(wide_locator::IDENTITY_FLAG)?;
+        match bytes.get(flag_at)? {
+            0 => {
+                let transform_at = locator_at.checked_add(wide_locator::TRANSFORM)?;
+                (
+                    reference_at,
+                    transform_at,
+                    rigid_transform_at(bytes, transform_at)?,
+                )
+            }
+            1 => (
+                reference_at,
+                flag_at,
+                cadmpeg_ir::transform::Transform::identity()
+                    .rows()
+                    .try_into()
+                    .ok()?,
+            ),
+            _ => return None,
+        }
+    } else {
+        let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
+        let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
+        (
+            reference_at,
+            transform_at,
+            rigid_transform_at(bytes, transform_at)?,
+        )
+    };
+    Some(DesignAssemblyOperandFrame {
+        reference_record_index: marked_record_reference(bytes, reference_at)?,
+        reference_offset: Some(u64::try_from(reference_at.checked_add(1)?).ok()?),
+        transform,
+        transform_offset: Some(u64::try_from(transform_at).ok()?),
+    })
 }

@@ -9,6 +9,7 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
+use crate::layout::current_extrude_operation_fields as extrude_fields;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::fixed_parameters::DesignFixedChamferDistance;
@@ -27,7 +28,8 @@ use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 /// Fixed scalar lanes of a distance Extrude. A one-sided or symmetric Extrude
 /// uses lane zero for the first-side distance and lane one for its taper. A
 /// two-sided Extrude adds lane two for the second-side distance and lane three
-/// for the second-side taper.
+/// for the second-side taper. A one-sided reference-aware Extrude whose lanes
+/// do not follow that order names each lane through its prologue.
 pub(super) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -38,6 +40,27 @@ pub(super) fn exact_fixed_extrude_parameters(
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude) {
         return None;
     }
+    exact_ordered_fixed_extrude_lanes(bytes, records, scope, parameters, parameter_owners).or_else(
+        || {
+            let owners = reference_aware_lane_owners(bytes, scope.extrude_prologue()?)?;
+            exact_named_fixed_extrude_lanes(
+                bytes,
+                records,
+                scope,
+                &owners,
+                (parameters, parameter_owners),
+            )
+        },
+    )
+}
+
+fn exact_ordered_fixed_extrude_lanes(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[crate::records::parameters::DesignParameterOwner],
+) -> Option<DesignFixedExtrudeParameters> {
     let lane_count = match scope
         .extrude_prologue()
         .and_then(DesignExtrudePrologue::extent)?
@@ -69,7 +92,7 @@ pub(super) fn exact_fixed_extrude_parameters(
         DesignFixedExtrudeDistance::DistanceConstruction(DesignFixedExtrudeScalar {
             value: lane.value,
             record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         })
     });
     let mut taper_angle = None;
@@ -101,7 +124,7 @@ pub(super) fn exact_fixed_extrude_parameters(
         let scalar = DesignFixedExtrudeScalar {
             value: lane.value,
             record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         };
         let nonzero = |scalar: DesignFixedExtrudeScalar| {
             Some(DesignFixedExtrudeScalar {
@@ -145,7 +168,172 @@ pub(super) fn exact_fixed_extrude_parameters(
         taper_angle,
         against_distance,
         side_two_taper_angle,
+        profile_offset: None,
+        side_one_offset: None,
     })
+}
+
+/// Lane owners that a one-sided reference-aware Extrude prologue names.
+struct ReferenceAwareLaneOwners {
+    /// Nullable slot zero: the start offset.
+    profile_offset: Option<u32>,
+    /// Nullable slot two: the first-side distance.
+    along_distance: Option<u32>,
+    /// Nullable slot five: the first-side taper.
+    taper_angle: Option<u32>,
+    /// First reference of a first-side extent `2` target payload: the
+    /// termination offset.
+    side_one_offset: Option<u32>,
+}
+
+/// Read the seven nullable reference slots after the profile normal of a
+/// one-sided distance or to-face reference-aware Extrude.
+///
+/// The slot run must end at the stored first-side extent value, which
+/// excludes the shape-target form.
+fn reference_aware_lane_owners(
+    bytes: &[u8],
+    prologue: DesignExtrudePrologue,
+) -> Option<ReferenceAwareLaneOwners> {
+    let DesignExtrudePrologue::ReferenceAware {
+        operation_offset,
+        extent,
+        side_extent_discriminators,
+        side_extent_discriminator_offsets,
+        first_side_target_ordinal: None,
+        ..
+    } = prologue
+    else {
+        return None;
+    };
+    if !matches!(
+        extent,
+        DesignExtrudeExtent::OneSidedDistance | DesignExtrudeExtent::OneSidedToFace
+    ) {
+        return None;
+    }
+    let mut at = usize::try_from(operation_offset?)
+        .ok()?
+        .checked_add(extrude_fields::PROFILE_NORMAL + 3 * 8)?;
+    let mut slots = [None; 7];
+    for slot in &mut slots {
+        match bytes.get(at)? {
+            0 => at += 1,
+            1 => {
+                *slot = Some(marked_record_reference(bytes, at)?);
+                at += 11;
+            }
+            _ => return None,
+        }
+    }
+    if u64::try_from(at).ok()? != side_extent_discriminator_offsets?[0] {
+        return None;
+    }
+    let side_one_offset = match side_extent_discriminators[0] {
+        2 => Some(marked_record_reference(bytes, at.checked_add(4)?)?),
+        _ => None,
+    };
+    Some(ReferenceAwareLaneOwners {
+        profile_offset: slots[0],
+        along_distance: slots[2],
+        taper_angle: slots[5],
+        side_one_offset,
+    })
+}
+
+/// Assign every fixed scalar lane owned by the scope to the prologue slot
+/// that names it. A lane that no slot names, or whose linked parameter has
+/// another source kind, leaves the lanes unassigned.
+fn exact_named_fixed_extrude_lanes(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    owners: &ReferenceAwareLaneOwners,
+    (parameters, parameter_owners): (&[DesignParameter], &[DesignParameterOwner]),
+) -> Option<DesignFixedExtrudeParameters> {
+    let linked_source_kind = |record_index: u32| {
+        parameter_owners
+            .iter()
+            .find(|owner| {
+                native_stream(owner.id()) == native_stream(&scope.id)
+                    && owner.scope_record_index() == Some(scope.record_index)
+                    && owner.record_index() == record_index
+            })
+            .and_then(|owner| {
+                parameters
+                    .iter()
+                    .find(|parameter| {
+                        native_stream(&parameter.id) == native_stream(&scope.id)
+                            && parameter.record_index == owner.parameter_record_index()
+                    })
+                    .map(DesignParameter::source_kind)
+            })
+    };
+    let mut parameters = DesignFixedExtrudeParameters {
+        along_distance: None,
+        taper_angle: None,
+        against_distance: None,
+        side_two_taper_angle: None,
+        profile_offset: None,
+        side_one_offset: None,
+    };
+    let mut lane_count = 0;
+    for record_index in scope.reference_members().values() {
+        let Some(lane) = exact_fixed_scalar(bytes, records, *record_index)
+            .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
+        else {
+            continue;
+        };
+        lane_count += 1;
+        let scalar = DesignFixedExtrudeScalar {
+            value: lane.value,
+            record_index: *record_index,
+            value_offset: Some(lane.value_offset),
+        };
+        let expected_kind = if owners.along_distance == Some(*record_index) {
+            "AlongDistance"
+        } else if owners.taper_angle == Some(*record_index) {
+            "TaperAngle"
+        } else if owners.profile_offset == Some(*record_index) {
+            "ProfileOffset"
+        } else if owners.side_one_offset == Some(*record_index) {
+            "Side1Offset"
+        } else {
+            return None;
+        };
+        if linked_source_kind(*record_index).is_some_and(|kind| kind.as_str() != expected_kind) {
+            return None;
+        }
+        let slot = if owners.along_distance == Some(*record_index) {
+            &mut parameters.along_distance
+        } else {
+            let slot = if owners.taper_angle == Some(*record_index) {
+                &mut parameters.taper_angle
+            } else if owners.profile_offset == Some(*record_index) {
+                &mut parameters.profile_offset
+            } else if owners.side_one_offset == Some(*record_index) {
+                &mut parameters.side_one_offset
+            } else {
+                return None;
+            };
+            if slot.replace(scalar).is_some() {
+                return None;
+            }
+            continue;
+        };
+        let distance = DesignFixedExtrudeScalar {
+            value: NonZeroReal::new(scalar.value.get())?,
+            record_index: scalar.record_index,
+            value_offset: scalar.value_offset,
+        };
+        if slot
+            .replace(DesignFixedExtrudeDistance::FixedScalar(distance))
+            .is_some()
+        {
+            return None;
+        }
+    }
+    (lane_count > 0).then_some(parameters)
 }
 
 fn exact_embedded_extrude_distance(
@@ -221,7 +409,7 @@ pub(super) fn exact_fixed_fillet_parameters(
     let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
         value: scalar.value,
         record_index: *record_index,
-        value_offset: scalar.value_offset,
+        value_offset: Some(scalar.value_offset),
     };
     let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
         DesignFixedFilletGroup::try_new(tangency_lane.map(scalar), law).ok()
@@ -294,7 +482,7 @@ pub(super) fn exact_fixed_chamfer_parameters(
         Some(DesignFixedChamferDistance {
             value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
             record_index,
-            value_offset: scalar.value_offset,
+            value_offset: Some(scalar.value_offset),
         })
     });
     let first = distances.next()??;

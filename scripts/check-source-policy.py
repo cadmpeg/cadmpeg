@@ -19,6 +19,7 @@ import json
 import multiprocessing
 import os
 import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1577,6 +1578,62 @@ def scan_authoring_paths() -> list[Finding]:
     return findings
 
 
+MEASUREMENT_CRATE = "cadmpeg-measure"
+MEASUREMENT_CONSUMERS = {"cadmpeg"}
+PRODUCTION_DEPENDENCY_HEADER = re.compile(
+    r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
+)
+TABLE_HEADER = re.compile(r"^\s*\[")
+
+
+def dependency_packages(table: object) -> set[str]:
+    """The package names a dependency table lists, following `package` renames."""
+    if not isinstance(table, dict):
+        return set()
+    packages = set()
+    for key, value in table.items():
+        package = value.get("package") if isinstance(value, dict) else None
+        packages.add(package if isinstance(package, str) else key)
+    return packages
+
+
+def scan_measurement_dependency() -> list[Finding]:
+    """Report a production dependency on the measurement crate outside the CLI."""
+    findings: list[Finding] = []
+    for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
+        if manifest.parent.name in MEASUREMENT_CONSUMERS:
+            continue
+        text = manifest.read_text(encoding="utf-8", errors="replace")
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError:
+            continue
+        tables = [data.get(name) for name in ("dependencies", "build-dependencies")]
+        targets = data.get("target")
+        if isinstance(targets, dict):
+            for target in targets.values():
+                if isinstance(target, dict):
+                    tables += [target.get(name) for name in ("dependencies", "build-dependencies")]
+        if not any(MEASUREMENT_CRATE in dependency_packages(table) for table in tables):
+            continue
+        line = 1
+        production = False
+        for number, content in enumerate(text.splitlines(), start=1):
+            if TABLE_HEADER.match(content):
+                production = bool(PRODUCTION_DEPENDENCY_HEADER.match(content))
+            if production and MEASUREMENT_CRATE in content:
+                line = number
+                break
+        findings.append(Finding(
+            "measurement_dependency",
+            str(manifest.relative_to(ROOT)),
+            line,
+            f"Only the cadmpeg CLI lists {MEASUREMENT_CRATE} outside [dev-dependencies]; "
+            "a decoder or encoder never consumes measurement.",
+        ))
+    return findings
+
+
 def is_main_guard(node: ast.AST) -> bool:
     """Whether one statement is the ``if __name__ == "__main__":`` block."""
     if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
@@ -2261,6 +2318,7 @@ SOURCE_SCANS = {
     "native_byte_fields": lambda sources: scan_native_byte_fields(sources),
     "module_visibility": lambda sources: scan_module_visibility(sources),
     "authoring_paths": lambda sources: scan_authoring_paths(),
+    "measurement_dependency": lambda sources: scan_measurement_dependency(),
     "script_tests": lambda sources: scan_script_tests(),
 }
 _TASK_SOURCES: dict[Path, str] = {}

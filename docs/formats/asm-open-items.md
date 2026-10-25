@@ -225,6 +225,64 @@ the record grammar does not identify one construction.
 
 **Need.** A stream with one of these pcurves present, together with the surface whose chart reproduces a known point of the construction, gives the chart. A pcurve on an analytic support then converts with the rule of §6.2, and the F3D writer inverts it.
 
+### GC-40. Support parameters of a revolved conic
+
+**Question.** How does the neutral model state an intersection support whose pcurves use the parameters of a `rot_spl_sur` construction with an `ellipse` profile, when the solved B-spline surface of that construction has other parameters at the same points?
+
+**Known.** `asm.md` §6.3 `rot_spl_sur` gives the profile curve, axis, and solved surface. In an `int_int_cur` whose support is such a surface, the support pcurve stores the conic angle of the profile `ellipse` as U and the right-handed revolution angle about the stored axis direction as V. The solved surface uses rational quadratic arcs whose knots are the same angles; between knots its parameter is not the angle. One stream with an oblate revolved ellipse misses its intcurve end points by 0.065 mm and 0.104 mm when the pcurve is evaluated on the solved surface, and by less than `1e-8` mm when the same parameters are evaluated on the exact revolution or mapped through the half-angle relation of each rational arc.
+
+**Need.** The support contract and the pcurve evaluation require the exact construction. The decoder can state the exact revolution with a conic directrix, but a direct procedural carrier cannot keep the solved surface and its fit tolerance, and a procedural carrier with a solved cache evaluates on the cache.
+
+**Conflict.** `cad-ir.md` reads `cache_fit_tolerance` as the deviation between the construction and its solved carrier at the same parameters. These solved surfaces agree with the construction in position, not in parameters. The model needs a decision: retain such a cache without evaluation precedence, map pcurves into the cache parameters, or keep the support pcurve out of the contract.
+
+### GC-41. Origin of the `helix_int_cur` apex term
+
+**Question.** Does the apex term of a `helix_int_cur` count revolutions from angle zero or from the interval start `t0`?
+
+**Known.** `asm.md` §6.3 `helix_int_cur` counts the pitch term from angle zero: the edge endpoints of helices with a nonzero `t0` lie on their vertices only with `q=t/(2π)`. The formula of that paragraph and the evaluator apply the same `q` to the apex term. No decoded helix has both a nonzero `t0` and a nonzero apex factor, and at `t0=0` the two origins agree.
+
+**Need.** A conical helix with a nonzero `t0` and a nonzero apex factor, together with its edge vertices, separates the two origins. A wrong origin offsets the radius of every evaluated point by the same length.
+
+### GC-42. Profile angle of a `helix_spl_circ`
+
+**Question.** Which point of the profile circle does a profile parameter `u` select, and what does the angle stored before the path control?
+
+**Known.** `asm.md` §6.3 `helix_spl_circ` gives the swept circle. The stored angle is `0`, `π`, or `-π`. The map `u ↦ C(t)+r·(-cos(u+a)·ρ̂(t)+sin(u+a)·n)`, with `a` the stored angle and `ρ̂(t)` the unit vector of `ρ(t)`, puts the pcurves of helix and spline edges on their edges. It puts some pcurves of circular cap edges a quarter or half turn away from their edges. On two coil faces with `a=0`, a zero apex factor, and a path interval starting at `t=0`, every trim pcurve endpoint, including the `u=±π` ends of the circular cap-edge pcurves, maps onto its edge vertex, and `u=±π` gives the outer seam helix at distance `|major|+r` from the axis.
+
+**Need.** A writer that emits pcurves on this surface needs the map. A rule that also holds for the cap-edge pcurves settles it.
+
+### GC-43. Tangential and apex terms of a `helix_spl_line` profile
+
+**Question.** Does the `y` coefficient of a `helix_spl_line` direction scale `τ(t)`, and does the profile vector include the apex factor's radial scale?
+
+**Known.** `asm.md` §6.3 `helix_spl_circ` gives the linear surface `S(u,t)` with `y` on `τ(t)` and no apex scale. Every decoded direction has `y=0`, and every decoded path has a zero apex factor, so neither term is observed.
+
+**Need.** A thread surface with a tangential profile component or on a conical path, together with its edges, fixes both terms.
+
+### GC-44. Blend supports whose cache misses the intersection curve
+
+**Question.** Which contract does an `int_int_cur` meet when its support is a blend spline surface whose solved cache lies farther from the intersection curve than the cache fit tolerance?
+
+**Known.** `asm.md` §6.3 "**`int_int_cur`** has context-first" states the construction as the intersection of the two ordered supports, each with a BS2 parameter curve. An embedded `spline` support decodes to its solved NURBS cache; its subtype and its cache fit tolerance are not retained. For `rb_blend_spl_sur` and `srf_srf_v_bl_spl_sur` supports the cache fit tolerance is at most `0.01` mm, but the intersection curve endpoints lie up to `0.033` mm from the cache surface, and the support pcurve endpoints mapped through the cache lie up to `0.066` mm from them. The edges on these curves carry no tolerance. `asm.md` §6.3 "**`var_blend_spl_sur` / `srf_srf_v_bl_spl_sur`**" defines an approximation-current integer: `0` marks a cache that does not describe the surface.
+
+**Need.** The approximation-current values and cache fit tolerances of the failing supports, together with the exact blend surface evaluated at the support pcurve endpoints, show whether the cache or the pcurve departs from the construction. That evidence fixes the endpoint contract of such a support.
+
+### GC-45. Shift and scale of a reversed `off_surf_int_cur`
+
+**Question.** How do the shift and scale of an `off_surf_int_cur` relate the curve parameter to the parameter of its base curve, and how does a reversed record sense change that relation?
+
+**Known.** `asm.md` §6.3 "**`off_surf_int_cur`**" stores base-surface U and V intervals, a base curve with its interval, and distance, shift, and scale doubles; it does not state the map that shift and scale define. `asm.md` §6.6 "An `intcurve` or `spline` record" states that a reversed intcurve parameterizes as the negation of its cache and keeps its support pcurves on the subtype parameter. The decoder restates the support context of a reversed record on `-t`, swaps the two base endpoints so that each stays paired with its context endpoint, and keeps the base ranges, shift, and scale as stored.
+
+**Need.** A reversed and a forward `off_surf_int_cur` on the same base curve, with the base-curve parameter of known points on the cache, give the map and whether reversal negates scale or moves shift.
+
+### GC-46. Selector of a reversed `sss_int_cur`
+
+**Question.** Does the integer selector of an `sss_int_cur` choose an intersection branch by the direction of the curve, so that a reversed record selects another branch?
+
+**Known.** `asm.md` §6.3 "**`sss_int_cur`**" stores the surface-related prefix, an integer selector, and a third support surface with its BS2 parameter curve. It does not state what the selector chooses. The decoder restates the support context and the third side of a reversed record on `-t` and keeps the selector as stored.
+
+**Need.** A reversed and a forward `sss_int_cur` through the same three supports, with their selectors, show whether the selector depends on the curve direction.
+
 ## 2. Topology
 
 ### TG-01. Missing partner coedge substitution

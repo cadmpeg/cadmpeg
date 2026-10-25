@@ -85,6 +85,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         cadmpeg_ir::features::FeatureOperation::Hole {
             profile,
             profile_filter,
+            direction,
             shape,
             extent,
             bottom,
@@ -132,6 +133,26 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
     ));
     assert!(taper_angle.is_some());
     assert_eq!(*allow_multi_profile_faces, Some(true));
+    // The profile's normal is +z; the hole drills against it unless reversed.
+    assert_eq!(direction.map(|d| d.get().z), Some(-1.0));
+    let reversed = archive(&document.replace(
+        r#"Count="26">"#,
+        r#"Count="27"><Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>"#,
+    ));
+    let reversed = FcstdCodec.decode(&mut Cursor::new(reversed), &DecodeOptions::default());
+    let reversed = reversed.expect("reversed hole");
+    let reversed_hole = reversed
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|f| f.name.as_deref() == Some("Hole"));
+    assert!(matches!(
+        reversed_hole.expect("hole feature").evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Hole { direction: Some(d), .. },
+        ) if d.get().z == 1.0
+    ));
     let cadmpeg_ir::features::holes::HoleSpecification::Threaded {
         standard,
         designation,
@@ -1861,8 +1882,9 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .expect("design history");
     assert_eq!(result.ir().model.sketches.len(), 1);
     assert_eq!(result.ir().model.sketch_entities.len(), 4);
-    assert_eq!(result.ir().model.sketches[0].profiles.len(), 1);
-    assert_eq!(result.ir().model.sketches[0].profiles[0].len(), 4);
+    let profiles = &result.ir().model.sketches[0].profiles;
+    assert_eq!(profiles.len(), 4);
+    assert!(profiles.iter().all(|profile| profile.len() == 1));
     let (origin, normal, _) = result.ir().model.sketches[0]
         .resolved_placement()
         .expect("resolved sketch placement");

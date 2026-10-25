@@ -546,4 +546,54 @@ mod tests {
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.ends_with("(plane=2)."));
     }
+    #[test]
+    fn conic_native_incidence_is_retained_and_counted_by_existing_loss() {
+        let constraints =
+            crate::decode::sketch_transfer::conic_owner_tests::authored_conic_incidence();
+        let transfer = crate::decode::coverage::design_constraint_transfer_coverage(
+            &constraints,
+            ":skamp:",
+            "creo:skamp:",
+        );
+        assert_eq!(transfer.transferred, 1);
+        assert_eq!(transfer.active, 1);
+        assert_eq!(transfer.native, 1);
+        assert_eq!(transfer.active_native, 1);
+        assert_eq!(transfer.typed().expect("consistent counts"), 0);
+        assert_eq!(transfer.active_typed().expect("consistent counts"), 0);
+        assert_eq!(
+            transfer.native_by_kind,
+            std::collections::BTreeMap::from([(0, 1)])
+        );
+        assert_eq!(
+            transfer.active_native_by_kind,
+            std::collections::BTreeMap::from([(0, 1)])
+        );
+        let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
+        coverage.record(
+            crate::coverage::ACTIVE_NATIVE_FEATURE_SKAMP_CONSTRAINT_COUNT,
+            transfer.active_native,
+        );
+        for (kind, count) in transfer.active_native_by_kind {
+            coverage.record_indexed(
+                crate::coverage::ACTIVE_NATIVE_FEATURE_SKAMP_TYPE_CONSTRAINT_COUNT,
+                kind,
+                count,
+            );
+        }
+        let mut losses = Vec::new();
+        push_coverage_drop_losses(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            &mut losses,
+            &coverage,
+            &[],
+        )
+        .expect("report retained incidence");
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::CreoLossCode::SectionIncidenceNative.kind()
+        );
+        assert_eq!(losses[0].message, "1 active section incidence constraint(s) retain native operands because their neutral semantics or referenced geometry remain unresolved (type 0=1).");
+    }
 }

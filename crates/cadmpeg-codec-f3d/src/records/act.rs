@@ -71,13 +71,14 @@ impl ActTableRow {
     }
 }
 
-/// Opaque ACT tail evidence. Actual source bytes and location are transient.
+/// Opaque stream residue retained after the final ACT channel group. Actual
+/// source bytes and location are transient.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ActClassTail {
+pub(crate) struct ActStreamResidue {
     frame: super::source_frame::SourceFrame,
     offset: Option<u64>,
 }
-impl ActClassTail {
+impl ActStreamResidue {
     pub(crate) fn new(bytes: Vec<u8>, offset: u64) -> Result<Self, String> {
         if bytes.iter().all(|byte| *byte == 0) {
             return Err("channel_class_tail must contain non-padding bytes".into());
@@ -112,7 +113,7 @@ pub(crate) struct ActChannelGroup {
     entity_id_offset: Option<u64>,
     class_tag: DesignClassTag,
     channels: BTreeMap<String, ActChannel>,
-    class_tail: Option<ActClassTail>,
+    class_tail: Option<ActStreamResidue>,
 }
 fn validate_act_channel_name(name: &str) -> Result<(), String> {
     if name.is_empty() || name.len() > 128 || !name.is_ascii() {
@@ -126,7 +127,7 @@ impl ActChannelGroup {
         entity_id_offset: Option<u64>,
         class_tag: DesignClassTag,
         channels: BTreeMap<String, Located<DesignGuidText>>,
-        class_tail: Option<ActClassTail>,
+        class_tail: Option<ActStreamResidue>,
     ) -> Result<Self, String> {
         if channels.is_empty() || channels.len() > 8 {
             return Err("ACT channels must contain 1 through 8 entries".into());
@@ -444,7 +445,7 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                 entity_id_offset: None,
                 class_tag: wire.channel_class_tag.try_into()?,
                 channels,
-                class_tail: wire.class_tail_frame.map(|frame| ActClassTail {
+                class_tail: wire.class_tail_frame.map(|frame| ActStreamResidue {
                     frame,
                     offset: None,
                 }),

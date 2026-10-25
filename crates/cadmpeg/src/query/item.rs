@@ -15,9 +15,10 @@ use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::document::{reject_non_cadir, resolve_one, RecordSelection, ResolveError};
+use super::document::{reject_non_cadir, RecordSelection};
 use super::output::{Output, OutputArgs};
 use super::{print_json, read_input};
+use crate::selection::{ambiguous_message, miss_id_message, resolve_one, ResolveError};
 
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
@@ -265,49 +266,6 @@ pub(super) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String
          `cadmpeg query counts FILE` for entries per arena",
         target.dotted(),
         list
-    )
-}
-
-pub(super) fn miss_id_message(
-    arena: &str,
-    request: &str,
-    entry_count: u64,
-    all_ids: &[String],
-) -> String {
-    const SHOWN: usize = 10;
-    let lower = request.to_lowercase();
-    let mut label = "close ids";
-    let mut names: Vec<&str> = all_ids
-        .iter()
-        .filter(|id| id.to_lowercase().contains(&lower))
-        .take(SHOWN)
-        .map(String::as_str)
-        .collect();
-    if names.is_empty() {
-        label = "ids include";
-        names = all_ids.iter().take(SHOWN).map(String::as_str).collect();
-    }
-    if names.is_empty() {
-        format!(
-            "no record in {arena} ({entry_count} entries) has string id {request:?}; \
-             none of the entries carry a JSON-string `id` field"
-        )
-    } else {
-        format!(
-            "no record in {arena} ({entry_count} entries) has id {request:?}; {label}: {}; \
-             pass a longer suffix or the full id",
-            names.join(", ")
-        )
-    }
-}
-
-pub(super) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
-    const SHOWN: usize = 10;
-    let shown: Vec<&str> = matches.iter().take(SHOWN).map(String::as_str).collect();
-    format!(
-        "ambiguous id suffix {request:?} in {arena}; matches: {}; pass a longer \
-         suffix or the full id",
-        shown.join(", ")
     )
 }
 

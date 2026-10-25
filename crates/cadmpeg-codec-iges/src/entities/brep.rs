@@ -122,6 +122,24 @@ fn compose_sense(left: Sense, right: Sense) -> Sense {
     }
 }
 
+/// The coedge a pole-vertex use follows in the face-use traversal. A Type 508
+/// loop runs about the support normal, so a reversed face use traverses it
+/// backward and the use follows the next edge use of the source order.
+fn vertex_use_anchor(
+    coedge_by_use: &BTreeMap<usize, CoedgeId>,
+    use_index: usize,
+    use_count: usize,
+    face_sense: Sense,
+) -> Option<&CoedgeId> {
+    (1..=use_count).find_map(|distance| {
+        let neighbour = match face_sense {
+            Sense::Forward => (use_index + use_count - distance) % use_count,
+            Sense::Reversed => (use_index + distance) % use_count,
+        };
+        coedge_by_use.get(&neighbour)
+    })
+}
+
 fn first_coedge_positions(coedges: &[Coedge]) -> BTreeMap<CoedgeId, usize> {
     let mut positions = BTreeMap::new();
     for (position, coedge) in coedges.iter().enumerate() {
@@ -268,10 +286,15 @@ fn source_edge_for_vertices<'a>(
     matching.ok_or(SourceEdgeSelectionError::NoMatch)
 }
 
+/// The neutral uses of one Type 508 parameter-curve collection, in the
+/// traversal order of its owner. `traversal` is that traversal relative to the
+/// source order: a backward traversal lists the uses in reverse source order,
+/// and each use states the reversed interval of its parameter curve.
 fn project_pcurve_uses(
     candidate: &mut ModelDraft,
     uses: &[(bool, u32)],
     resolved: Vec<(PcurveGeometry, [f64; 2])>,
+    traversal: Sense,
     fit_tolerance: Option<f64>,
     id_stem: &crate::ids::Stem,
     ctx: &DecodeContext<'_>,
@@ -281,6 +304,18 @@ fn project_pcurve_uses(
         let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
             PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
         )?;
+        let use_range = match traversal {
+            Sense::Forward => None,
+            Sense::Reversed => Some(
+                cadmpeg_ir::geometry::DirectedParameterRange::new([range[1], range[0]]).map_err(
+                    |_| {
+                        PcurveProjectionError::Invalid(
+                            "a parameter curve has no interval whose reversal a use can state",
+                        )
+                    },
+                )?,
+            ),
+        };
         let checked_tolerance = fit_tolerance
             .map(|value| {
                 cadmpeg_ir::geometry::FitTolerance::try_new(value).map_err(|_| {
@@ -300,8 +335,11 @@ fn project_pcurve_uses(
         projected.push(PcurveUse {
             pcurve: id,
             isoparametric: Some(*isoparametric),
-            parameter_range: None,
+            parameter_range: use_range,
         });
+    }
+    if traversal == Sense::Reversed {
+        projected.reverse();
     }
     Ok(projected)
 }
@@ -1194,14 +1232,12 @@ pub(super) fn project(
                             else {
                                 continue;
                             };
-                            let after = if coedge_ids.is_empty() {
-                                None
-                            } else {
-                                (1..=uses.len()).find_map(|distance| {
-                                    let prior = (use_index + uses.len() - distance) % uses.len();
-                                    coedge_by_use.get(&prior)
-                                })
-                            }
+                            let after = vertex_use_anchor(
+                                &coedge_by_use,
+                                use_index,
+                                uses.len(),
+                                face_sense,
+                            )
                             .cloned();
                             let expected = vertex_lists[vertex_list][*vertex_index];
                             let Some(resolved) = (match resolve_pcurve_uses(
@@ -1250,6 +1286,7 @@ pub(super) fn project(
                                 &mut candidate,
                                 pcurves,
                                 resolved,
+                                face_sense,
                                 Some(tolerance),
                                 &shell_stem.child(loop_sequence).slot(use_index),
                                 ctx,
@@ -1453,6 +1490,7 @@ pub(super) fn project(
                             &mut candidate,
                             pcurves,
                             resolved,
+                            face_sense,
                             Some(tolerance),
                             &shell_stem.child(loop_sequence).slot(use_index),
                             ctx,
@@ -1490,7 +1528,7 @@ pub(super) fn project(
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
                             radial_next: coedge_id.clone(),
-                            sense: *sense,
+                            sense: compose_sense(*sense, face_sense),
                             pcurves: projected,
                             use_curve: None,
                         });
@@ -1512,6 +1550,10 @@ pub(super) fn project(
                         }
                         LoopBoundary::Vertex { vertex, pcurves }
                     } else {
+                        if face_sense == Sense::Reversed {
+                            coedge_ids.reverse();
+                            loop_vertex_uses.reverse();
+                        }
                         let Some(vertex_uses) = loop_vertex_uses
                             .into_iter()
                             .map(|(vertex, after, pcurves)| {

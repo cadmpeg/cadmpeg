@@ -20,7 +20,8 @@ use crate::decode::sketch_transfer::identity::{
 };
 use crate::decode::sketch_transfer::loci::section_degenerate_axis_line;
 use crate::decode::sketch_transfer::profiles::{
-    unique_section_incidence_curve_family, SectionEntityIncidenceFamily,
+    section_entity_has_conic_owner, unique_section_incidence_curve_family,
+    SectionEntityIncidenceFamily,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
@@ -593,6 +594,9 @@ pub(super) fn transfer_section_entities(
         let Some(id) = sketch_entity_id(sketch_id, &suffix) else {
             continue;
         };
+        let owned_conic = complete_segment_table
+            && unique_external_id
+            && section_entity_has_conic_owner(definition, segment.external_id);
         let kind = unique_external_id
             .then(|| unique_section_incidence_curve_family(definition, segment.external_id))
             .flatten();
@@ -605,7 +609,9 @@ pub(super) fn transfer_section_entities(
             Some(SectionEntityIncidenceFamily::Circular) => Some("circle"),
             _ => None,
         };
-        let geometry = if let Some(kind) = static_kind {
+        let geometry = if owned_conic {
+            native_section_geometry("conic")?
+        } else if let Some(kind) = static_kind {
             native_section_geometry(kind)?
         } else {
             let kind = format!("segment_type:{}", segment.kind);

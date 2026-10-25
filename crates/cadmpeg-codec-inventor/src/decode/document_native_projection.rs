@@ -57,7 +57,7 @@ pub(super) fn project(
             .map(|representation| representation.active_model_state.as_str()),
         _ => None,
     };
-    for state in ufrx.model_states() {
+    for state in ufrx.model_states().iter().filter(|_| ir.scope.design) {
         let is_active = active == Some(state.name.as_str());
         let mut overrides = std::collections::BTreeMap::new();
         for parameter in &state.parameters {
@@ -130,7 +130,11 @@ pub(super) fn project(
                 .filter_map(|record| record.native_ref.as_deref()),
         )
         .collect::<std::collections::BTreeSet<_>>();
-    if let Some(namespace) = ir.native.namespace("inventor") {
+    if let Some(namespace) = ir
+        .native
+        .namespace("inventor")
+        .filter(|_| ir.scope.design)
+    {
         for arena in [
             "pm_dc_parameters",
             "pm_dc_features",

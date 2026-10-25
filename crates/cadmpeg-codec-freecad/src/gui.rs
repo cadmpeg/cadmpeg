@@ -31,11 +31,11 @@ use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
-use crate::native::element_map::{ElementMapGroup, ElementMapNodes, ElementMapRecord};
 use crate::native::{
     parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord,
     ObjectRecord, PropertyRecord, ValueRecord,
 };
+use crate::topology_transfer::TopologyOccurrence;
 
 /// Checks that typed local target slots agree with the retained GUI carriers.
 pub(crate) fn validate_property_links(property: &GuiPropertyRecord) -> Result<(), CodecError> {
@@ -204,8 +204,7 @@ pub(crate) struct GuiSources<'a, 'b> {
         Option<&'a BTreeMap<String, crate::persistence::object_parts::ObjectSource<'b>>>,
     pub(crate) properties: &'a [PropertyRecord],
     pub(crate) payloads: &'a [ShapePayloadRecord],
-    pub(crate) element_maps: &'a [ElementMapRecord],
-    pub(crate) topology_occurrences: &'a [crate::topology_transfer::TopologyOccurrence],
+    pub(crate) topology_occurrences: &'a [TopologyOccurrence],
     pub(crate) requires_alpha_conversion: bool,
 }
 
@@ -377,8 +376,10 @@ fn project_graph(
         if !body_ids.is_empty() {
             plan.body_visibility_owners.insert(object_id.to_owned());
         }
-        for body_id in &body_ids {
-            push_body_update(&mut plan, body_id, visibility);
+        if let Some(visible) = visibility {
+            for body_id in &body_ids {
+                push_body_update(&mut plan, body_id, Some(visible));
+            }
         }
         if let Some(file) = values
             .get("DiffuseColor")
@@ -1300,7 +1301,7 @@ fn displayed_shape_bodies(
     ))
 }
 
-fn select_shape_bodies<'a>(
+pub(crate) fn select_shape_bodies<'a>(
     ir: &CadIr,
     payload_ids: impl IntoIterator<Item = &'a str>,
 ) -> Vec<cadmpeg_ir::ids::BodyId> {
@@ -1351,44 +1352,29 @@ fn displayed_shape_payload<'a>(
     Ok(Some(payload))
 }
 
-fn displayed_shape_group<'a>(
+fn displayed_shape_topology<'a>(
     object_id: &str,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
-    element_maps: &'a [ElementMapRecord],
+    occurrences: &'a [TopologyOccurrence],
     indexed_name: &str,
-) -> Result<Option<(&'a ElementMapNodes, &'a ElementMapGroup)>, CodecError> {
+) -> Result<Vec<Vec<&'a str>>, CodecError> {
     let Some(payload) = displayed_shape_payload(object_id, properties, payloads)? else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
-    let mut shape_maps = element_maps
-        .iter()
-        .filter(|map| map.property == payload.property);
-    let Some(map) = shape_maps.next() else {
-        return Ok(None);
-    };
-    if shape_maps.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "Shape property {} has multiple element maps",
-            payload.property
-        )));
+    let mut indexed = BTreeMap::<usize, Vec<&str>>::new();
+    for occurrence in occurrences.iter().filter(|occurrence| {
+        occurrence.property == payload.property && occurrence.indexed_name == indexed_name
+    }) {
+        indexed
+            .entry(occurrence.source_index)
+            .or_default()
+            .push(&occurrence.topology_id);
     }
-    let root = map.maps.root();
-    let mut groups = root
-        .groups
-        .iter()
-        .flatten()
-        .filter(|group| group.indexed_name == indexed_name);
-    let Some(group) = groups.next() else {
-        return Ok(None);
-    };
-    if groups.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "Shape property {} has multiple {indexed_name} groups",
-            payload.property
-        )));
+    if indexed.keys().copied().ne(1..=indexed.len()) {
+        return Ok(Vec::new());
     }
-    Ok(Some((&map.maps, group)))
+    Ok(indexed.into_values().collect())
 }
 
 #[derive(Clone, Copy)]
@@ -1471,19 +1457,41 @@ fn transfer_topology_colors(
         return Ok(());
     };
     let count = values.len();
-    let group = displayed_shape_group(
+    let group = displayed_shape_topology(
         object_id,
         sources.properties,
         sources.payloads,
-        sources.element_maps,
+        sources.topology_occurrences,
         kind.name(),
     )?;
-    let mapped_count = group.map_or(0, |(_, group)| {
-        crate::element_map::topology_index_count(group)
-    });
-    let matched = group.is_some() && mapped_count > 0 && (count == 1 || count == mapped_count);
-    if group.is_some() && count != 1 && count != mapped_count {
+    let mapped_count = group.len();
+    let matched = mapped_count > 0 && (count == 1 || count == mapped_count);
+    if mapped_count > 0 && count != 0 && count != 1 && count != mapped_count {
         push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!("FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; indexed bindings withheld", kind.name()), provenance);
+    }
+    let default_appearance = match kind {
+        TopologyColorKind::Face => None,
+        TopologyColorKind::Edge => Some(edge_appearance_id(provider_key)?),
+        TopologyColorKind::Vertex => Some(vertex_appearance_id(provider_key)?),
+    };
+    if let Some(default_appearance) = default_appearance.filter(|_| matched) {
+        let overridden = group
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| values[if count == 1 { 0 } else { *index }].is_some())
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect::<HashSet<_>>();
+        plan.bindings.retain(|binding| {
+            if binding.appearance != default_appearance {
+                return true;
+            }
+            let topology_id = match &binding.target {
+                AppearanceTarget::Edge(id) => id.as_str(),
+                AppearanceTarget::Vertex(id) => id.as_str(),
+                _ => return true,
+            };
+            !overridden.contains(topology_id)
+        });
     }
     for (index, value) in values.iter().enumerate() {
         let Some(value) = value else { continue };
@@ -1500,31 +1508,19 @@ fn transfer_topology_colors(
                 value: *value,
                 alpha: sources.requires_alpha_conversion,
             })?);
-        let Some((nodes, group)) = group.filter(|_| matched) else {
+        if !matched {
             continue;
-        };
-        let Some(displayed) =
-            displayed_shape_payload(object_id, sources.properties, sources.payloads)?
-        else {
-            continue;
-        };
-        let indices = crate::element_map::topology_indices(
-            nodes,
-            group,
-            sources.topology_occurrences,
-            &displayed.property,
-        )
-        .filter(|source_index| count == 1 || *source_index == index + 1);
+        }
+        let uniform_names = (count == 1)
+            .then_some(&group)
+            .into_iter()
+            .flat_map(|groups| groups.iter().flatten());
+        let indexed_names = (count != 1)
+            .then_some(&group[index])
+            .into_iter()
+            .flat_map(|names| names.iter());
         let mut bound_topology = HashSet::new();
-        for topology_id in indices.flat_map(|source_index| {
-            crate::element_map::topology_ids(
-                nodes,
-                group,
-                sources.topology_occurrences,
-                &displayed.property,
-                source_index,
-            )
-        }) {
+        for &topology_id in uniform_names.chain(indexed_names) {
             if !bound_topology.insert(topology_id) {
                 continue;
             }
@@ -1746,9 +1742,8 @@ mod color_tests {
 
 #[cfg(test)]
 mod shape_association_tests {
-    use super::{displayed_shape_group, select_shape_bodies};
+    use super::{displayed_shape_topology, select_shape_bodies};
     use crate::brep::{ShapePayload, ShapePayloadRecord};
-    use crate::native::element_map::{ElementMapGroup, ElementMapNode, ElementMapRecord};
     use crate::native::{PropertyFamily, PropertyRecord};
 
     fn shape_property(id: &str) -> PropertyRecord {
@@ -1779,35 +1774,6 @@ mod shape_association_tests {
         }
     }
 
-    fn element_map(property: &str, groups: Vec<ElementMapGroup>) -> ElementMapRecord {
-        ElementMapRecord {
-            id: "map".into(),
-            property: property.into(),
-            version: "1.0".into(),
-            hasher_index: None,
-            string_table: None,
-            source_entry: None,
-            map_id: 1,
-            declared_count: Some(0),
-            legacy_records: None,
-            postfixes: Vec::new(),
-            maps: vec![ElementMapNode {
-                map_id: 1,
-                groups: groups.into_iter().map(Some).collect(),
-            }]
-            .try_into()
-            .expect("valid shape-association map"),
-        }
-    }
-
-    fn group(indexed_name: &str) -> ElementMapGroup {
-        ElementMapGroup {
-            indexed_name: indexed_name.into(),
-            children: Vec::new(),
-            names: Vec::new(),
-        }
-    }
-
     fn shape_ir() -> cadmpeg_ir::CadIr {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.bodies.push(cadmpeg_ir::topology::Body {
@@ -1834,18 +1800,57 @@ mod shape_association_tests {
     }
 
     #[test]
+    fn topology_color_indices_ignore_transfer_order_and_require_complete_prefix() {
+        let property = shape_property("property");
+        let payload = shape_payload("payload", "property");
+        let occurrence = |index, id: &str| crate::topology_transfer::TopologyOccurrence {
+            property: "property".into(),
+            indexed_name: "Face",
+            source_index: index,
+            topology_id: id.into(),
+        };
+        let occurrences = [
+            occurrence(2, "second-face"),
+            occurrence(1, "first-face"),
+            occurrence(1, "first-face-other-body"),
+        ];
+        assert_eq!(
+            displayed_shape_topology(
+                "object",
+                std::slice::from_ref(&property),
+                std::slice::from_ref(&payload),
+                &occurrences,
+                "Face"
+            )
+            .unwrap(),
+            vec![
+                vec!["first-face", "first-face-other-body"],
+                vec!["second-face"]
+            ]
+        );
+        assert!(displayed_shape_topology(
+            "object",
+            &[property],
+            &[payload],
+            &occurrences[..1],
+            "Face"
+        )
+        .unwrap()
+        .is_empty());
+    }
+
+    #[test]
     fn rejects_ambiguous_shape_association_candidates() {
         let property = shape_property("property");
         let payload = shape_payload("payload", "property");
-        let map = element_map("property", vec![group("Face")]);
 
         let duplicate_property = shape_property("property-2");
         assert!(matches!(
-            displayed_shape_group(
+            displayed_shape_topology(
                 "object",
                 &[property.clone(), duplicate_property],
                 std::slice::from_ref(&payload),
-                std::slice::from_ref(&map),
+                &[],
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))
@@ -1856,38 +1861,11 @@ mod shape_association_tests {
             ..payload.clone()
         };
         assert!(matches!(
-            displayed_shape_group(
+            displayed_shape_topology(
                 "object",
                 std::slice::from_ref(&property),
                 &[payload.clone(), duplicate_payload],
-                std::slice::from_ref(&map),
-                "Face"
-            ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-
-        let duplicate_map = ElementMapRecord {
-            id: "map-2".into(),
-            ..map.clone()
-        };
-        assert!(matches!(
-            displayed_shape_group(
-                "object",
-                std::slice::from_ref(&property),
-                std::slice::from_ref(&payload),
-                &[map, duplicate_map],
-                "Face"
-            ),
-            Err(cadmpeg_core::CodecError::Malformed(_))
-        ));
-
-        let duplicate_group = element_map("property", vec![group("Face"), group("Face")]);
-        assert!(matches!(
-            displayed_shape_group(
-                "object",
-                &[property],
-                &[payload],
-                &[duplicate_group],
+                &[],
                 "Face"
             ),
             Err(cadmpeg_core::CodecError::Malformed(_))

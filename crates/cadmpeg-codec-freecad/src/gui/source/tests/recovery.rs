@@ -22,7 +22,6 @@ fn check(bytes: &[u8], inspect: impl FnOnce(Graph, PartOutput)) {
         object_sources: None,
         properties: &[],
         payloads: &[],
-        element_maps: &[],
         topology_occurrences: &[],
         requires_alpha_conversion: false,
     };
@@ -639,7 +638,6 @@ fn recursive_gui_state_refusal_is_local_and_keeps_the_later_peer() {
         object_sources: None,
         properties: &[],
         payloads: &[],
-        element_maps: &[],
         topology_occurrences: &[],
         requires_alpha_conversion: false,
     };

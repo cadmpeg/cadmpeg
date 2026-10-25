@@ -22,7 +22,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::SldprtCodec;
 
 #[test]
-fn encoder_writes_source_less_curved_sketches() {
+fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
@@ -585,10 +585,12 @@ fn encoder_writes_source_less_curved_sketches() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -921,7 +923,7 @@ fn encoder_writes_source_less_curved_sketches() {
 }
 
 #[test]
-fn encoder_binds_multiple_source_less_sketches_by_object_id() {
+fn encoder_binds_multiple_authored_with_retained_native_envelope_sketches_by_object_id() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -988,10 +990,12 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1023,7 +1027,7 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
 }
 
 #[test]
-fn encoder_writes_source_less_native_features() {
+fn encoder_writes_authored_with_retained_native_envelope_native_features() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{
         features::{
@@ -1292,10 +1296,12 @@ fn encoder_writes_source_less_native_features() {
     }
 
     let mut encoded = Vec::new();
-    SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .unwrap();
+    crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Inherit,
+    )
+    .and_then(|plan| plan.write_to(&mut encoded))
+    .unwrap();
     let scan = crate::test_support::container::scan(&encoded);
     assert!(scan.blocks.iter().any(|block| {
         block
@@ -1593,7 +1599,12 @@ fn semantic_writer_retains_partial_native_flex_construction() {
         </Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert_eq!(decoded.ir().model.features.len(), 4);
@@ -1627,7 +1638,7 @@ fn semantic_writer_retains_partial_native_flex_construction() {
         feature.name = Some(format!("Renamed flex {}", index + 1));
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

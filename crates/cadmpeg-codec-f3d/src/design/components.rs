@@ -444,10 +444,9 @@ impl<'a> Projector<'a> {
         let id = crate::ids::neutral_component_id(&root.context_uuid);
         if !self.definitions.contains_key(id.as_str()) {
             let bodies = self.cluster_bodies(stream, root.root_entity);
-            self.definitions.insert(
-                id.as_str().to_owned(),
-                component_definition(id.clone(), bodies),
-            );
+            let mut definition = component_definition(id.clone(), bodies);
+            definition.source_name.clone_from(&root.name);
+            self.definitions.insert(id.as_str().to_owned(), definition);
         }
         id
     }
@@ -855,6 +854,7 @@ mod tests {
                         ComponentDefinition {
                             root_entity: COMPONENT_ROOT,
                             context_uuid: guid(COMPONENT_CONTEXT),
+                            name: Some("Bracket".to_owned()),
                         },
                     ),
                     (
@@ -862,10 +862,12 @@ mod tests {
                         ComponentDefinition {
                             root_entity: DOCUMENT_ROOT,
                             context_uuid: guid(ROOT_CONTEXT),
+                            name: None,
                         },
                     ),
                 ]),
                 root_component,
+                revised_definitions: 0,
             },
         )])
     }
@@ -982,6 +984,12 @@ mod tests {
             [BodyId::mint(COMPONENT_BODY).unwrap()]
         );
         assert_eq!(definition(&root).bodies, [BodyId::mint(ROOT_BODY).unwrap()]);
+        // The component's stored name is its definition's source name.
+        assert_eq!(
+            definition(&component).source_name.as_deref(),
+            Some("Bracket")
+        );
+        assert_eq!(definition(&root).source_name, None);
 
         let occurrence = |id: cadmpeg_ir::ids::OccurrenceId| {
             projection
@@ -1140,9 +1148,9 @@ mod tests {
                 source_occurrence_guid: SOURCE.to_owned().try_into().expect("GUID"),
                 copied_occurrence_guid: COPY.to_owned().try_into().expect("GUID"),
                 source_transform: identity_matrix().try_into().unwrap(),
-                source_transform_offset: 0,
+                source_transform_offset: Some(0),
                 copied_transform: identity_matrix().try_into().unwrap(),
-                copied_transform_offset: 0,
+                copied_transform_offset: Some(0),
             });
         }
 
@@ -1177,7 +1185,7 @@ mod tests {
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
                 transform: identity_matrix().try_into().unwrap(),
-                transform_offset: 473,
+                transform_offset: Some(473),
             });
         }
         let native_occurrence = DesignComponentOccurrence::try_new(
@@ -1262,7 +1270,7 @@ mod tests {
                     carrier_record_index: record_index + 2,
                     occurrence_identity: None,
                     neutron_role: role.into(),
-                    neutron_role_offset: 0,
+                    neutron_role_offset: Some(0),
                     placement: None,
                 },
             );
@@ -1286,11 +1294,11 @@ mod tests {
         {
             construction.placement = Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
-                    scope: crate::records::identity::Located {
+                    scope: crate::records::identity::Sourced {
                         value: matrix.try_into().unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     },
-                    carrier_offset: None,
+                    carrier: None,
                 },
             );
         }

@@ -5,12 +5,15 @@
 //! held. It consumes typed records, never archive entries or retained bytes.
 
 use crate::{brep, native};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
-pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
+pub(super) fn project(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
     if ir.scope.model {
         return Ok(None);
     }
@@ -22,10 +25,7 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         return Ok(None);
     }
     let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let property_reader = crate::property_reader::PropertyReader::typed(&ctx)
+    let property_reader = crate::property_reader::PropertyReader::typed(ctx)
         .with_entries(namespace.arena_as::<crate::native::EntryRecord>("entries")?);
     let mut typed_properties = Vec::new();
     for property in properties {
@@ -37,15 +37,15 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
     let mut scope = projected.scope;
     scope.model = true;
     projected.set_scope(scope).map_err(CodecError::malformed)?;
-    let shape_owners = brep::owners::gui(&ctx, Some(namespace))?;
+    let shape_owners = brep::owners::gui(ctx, Some(namespace))?;
     let mut curves = brep::transfer_text_curves(
-        &ctx,
+        ctx,
         &payloads,
         brep::owners::Properties::new(&typed_properties, &shape_owners),
         None,
     )?;
     let surfaces = brep::transfer_text_surfaces(
-        &ctx,
+        ctx,
         &payloads,
         brep::owners::Properties::new(&typed_properties, &shape_owners),
         &mut curves,
@@ -63,7 +63,7 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         .map_err(CodecError::malformed)?;
     let mut losses = Vec::new();
     let topology_occurrences = crate::topology_transfer::transfer(
-        &ctx,
+        ctx,
         &mut projected,
         &payloads,
         brep::owners::Properties::new(&typed_properties, &shape_owners),
@@ -109,8 +109,6 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         &drawings,
     )?;
     if super::target::projection::gui_xml_lossy(namespace, &mut losses)?.is_some() {
-        let element_maps =
-            namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
         let documents = namespace.arena_as::<native::DocumentFacts>("document")?;
         let version = documents
             .first()
@@ -132,7 +130,6 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
                 object_sources: None,
                 properties: &typed_properties,
                 payloads: &payloads,
-                element_maps: &element_maps,
                 topology_occurrences: &topology_occurrences,
                 requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
             },
@@ -141,6 +138,5 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
     }
     super::body_styles::apply(&mut projected, &payloads, &typed_properties)?;
     crate::attributes::transfer(&mut projected, &objects, &typed_properties)?;
-    ctx.finish_session()?;
     Ok(Some((projected, losses)))
 }

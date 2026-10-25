@@ -70,7 +70,6 @@
         ],
         "assembly_occurrences": [],
         "assembly_placements": [],
-        "assembly_record_issues": [],
         "body_native_keys": [],
         "database_issues": [],
         "databases": [
@@ -236,7 +235,6 @@
         "pm_graphics_faces": [],
         "pm_graphics_primary_color_styles": [],
         "pm_graphics_style_collections": [],
-        "presentation_record_issues": [],
         "properties": [],
         "property_sections": [],
         "property_set_issues": [],
@@ -450,7 +448,6 @@
       "assembly_occurrences": 0,
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
-      "assembly_record_issues": 0,
       "design_parameters_transferred": 0,
       "design_record_issues": 0,
       "embedded_references": 0,
@@ -482,7 +479,6 @@
       "pm_graphics_faces": 0,
       "pm_graphics_primary_color_styles": 0,
       "pm_graphics_style_collections": 0,
-      "presentation_record_issues": 0,
       "preview_assets": 0,
       "properties": 0,
       "property_sets": 0,
@@ -543,7 +539,7 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "the active kernel carrier decoded no surfaces, points, or faces",
+        "message": "the part has no bodies: its active kernel carrier holds no model records",
         "severity": "blocking"
       },
       {
@@ -571,6 +567,166 @@
     "metadata": {
       "inventor:kernel:carrier.carrier_offset": "18",
       "inventor:rse:record#seg-0.payload_offset": "4"
+    },
+    "parts": {
+      "inventor:source:part#299cb4127cc858cc49c3a53583d7d2b935b559f3037f1f885e5669cd27161fe8": {
+        "byte_len": 90,
+        "framing_bytes": [],
+        "level": "inventor.meta_body",
+        "offset": 2817,
+        "parent": "inventor:source:part#dd6f82acb672fe1b8e821b597a23a43d7c6dc46137e0c6039d2237ba493fb0b6",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "inventor:source:part#8fc1c71edc90677eb692f8453b182dbcd383541f01750a29f049f582dd8c8855": {
+        "byte_len": 108,
+        "framing_bytes": [
+          {
+            "end": 2360,
+            "start": 2356
+          }
+        ],
+        "level": "inventor.rse_database",
+        "offset": 2304,
+        "parent": "inventor:source:part#9391a3f0cce3acae74001aa6c1b7f2dd0c34b3c2c0ab61e7903b398c542398e2",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "inventor:source:part#9391a3f0cce3acae74001aa6c1b7f2dd0c34b3c2c0ab61e7903b398c542398e2": {
+        "byte_len": 108,
+        "framing_bytes": [],
+        "level": "cfb.stream",
+        "offset": 2304,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "inventor:source:part#adb3c073f810de25c612c73ab68c9b78c84fde8d6d9bb90e06e49e37bfc07094": {
+        "byte_len": 8,
+        "framing_bytes": [],
+        "level": "cfb.stream",
+        "offset": 2432,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "inventor:source:part#d9b18f2d8d5675a677e951f94e24281c98189ee562bf3fade6e749bbf0e51bd1": {
+        "byte_len": 28,
+        "framing_bytes": [],
+        "level": "inventor.type_descriptor",
+        "offset": 46,
+        "parent": "inventor:source:part#e9bfbf3651b79ef017e9e884f8439dc0a4babc4b6d0c42d274f340e838f2be56",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zlib:4:file:2817:90"
+      },
+      "inventor:source:part#dd6f82acb672fe1b8e821b597a23a43d7c6dc46137e0c6039d2237ba493fb0b6": {
+        "byte_len": 219,
+        "framing_bytes": [],
+        "level": "cfb.stream",
+        "offset": 2688,
+        "parent": null,
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "file"
+      },
+      "inventor:source:part#e9bfbf3651b79ef017e9e884f8439dc0a4babc4b6d0c42d274f340e838f2be56": {
+        "byte_len": 36,
+        "framing_bytes": [
+          {
+            "end": 46,
+            "start": 42
+          },
+          {
+            "end": 78,
+            "start": 74
+          }
+        ],
+        "level": "inventor.meta_forward_section",
+        "offset": 42,
+        "parent": "inventor:source:part#299cb4127cc858cc49c3a53583d7d2b935b559f3037f1f885e5669cd27161fe8",
+        "state": {
+          "state": "decoded"
+        },
+        "stream": "zlib:4:file:2817:90"
+      }
+    },
+    "record_layout": {
+      "inventor:rse:database#v1": {
+        "byte_len": 108,
+        "offset": 2304,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 2412,
+              "start": 2304
+            }
+          ]
+        },
+        "stream": "file"
+      },
+      "inventor:rse:meta-type#seg-0": {
+        "byte_len": 28,
+        "offset": 46,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 2907,
+              "start": 2817
+            }
+          ],
+          "zlib:4:file:2817:90": [
+            {
+              "end": 74,
+              "start": 46
+            }
+          ]
+        },
+        "stream": "zlib:4:file:2817:90"
+      },
+      "inventor:rse:segment#seg": {
+        "byte_len": 219,
+        "offset": 2688,
+        "payloads": {},
+        "pointers": {},
+        "reads": {
+          "file": [
+            {
+              "end": 2907,
+              "start": 2817
+            }
+          ],
+          "zlib:4:file:2817:90": [
+            {
+              "end": 18,
+              "start": 14
+            },
+            {
+              "end": 46,
+              "start": 22
+            },
+            {
+              "end": 78,
+              "start": 74
+            }
+          ]
+        },
+        "stream": "file"
+      }
     },
     "retained_records": {
       "inventor:kernel:carrier#seg-0": {

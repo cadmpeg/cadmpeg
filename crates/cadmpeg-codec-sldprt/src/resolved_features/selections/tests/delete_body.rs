@@ -52,7 +52,12 @@ fn decode_and_validate_compact_delete_body_selection() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(!decoded
@@ -88,7 +93,7 @@ fn decode_and_validate_compact_delete_body_selection() {
             ).unwrap()
             && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
     ));
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -104,7 +109,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         .expect("delete-body feature")
         .name = Some("Renamed Delete Body".into());
     let mut renamed = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut renamed,

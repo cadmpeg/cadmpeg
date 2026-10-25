@@ -166,7 +166,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -289,7 +289,7 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
             .name = new_name.into();
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -437,7 +437,12 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -477,7 +482,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 
     decoded.ir_mut().model.features[0].name = Some("Renamed equation boss".into());
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -693,7 +698,12 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="D1">2mm</Dimension></Feature><Feature Name="Sketch2" Type="Sketch" id="11"><Dimension Name="D1">3mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="12"><Dimension Name="Result">D1@Sketch1 + D1@Sketch2</Dimension></Feature></Keywords>"#,
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded
@@ -706,7 +716,7 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         .name = Some("Profile".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -805,7 +815,12 @@ fn configuration_local_modeling_edits_without_brep_are_synthesized() {
         ));
     }
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let parameter_id = decoded
         .ir()

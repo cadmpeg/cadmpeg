@@ -30,6 +30,11 @@ pub(super) struct ProductPrereqs {
     /// Per-stream counts of typed parameter frames that match no parameter
     /// grammar; the session reports them as losses.
     pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
+    /// Native parameter identities retained without an interpreted owner frame.
+    pub(super) design_parameter_owner_unparsed: Vec<String>,
+    /// Non-equivalent duplicate scope envelopes superseded by the
+    /// primary-indexed envelope; the session reports them as a loss.
+    pub(super) design_superseded_scope_envelopes: usize,
     pub(super) design_entity_headers: Vec<DesignEntityHeader>,
     /// Headers of the records that entity headers index. Sketch relations
     /// decode from this set only.
@@ -89,6 +94,8 @@ impl ProductPrereqs {
             design_parameters,
             parameter_state_parts,
             design_parameter_unparsed: _,
+            design_parameter_owner_unparsed: _,
+            design_superseded_scope_envelopes: _,
             design_entity_headers,
             design_record_headers,
             design_owner_record_headers,
@@ -148,7 +155,9 @@ pub(super) fn decode(
         }
     }
     let construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
-    let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
+    let mut material_source_pointers = crate::design::decode::sketch::SourcePointers::new();
+    let design_material_assignments =
+        crate::materials::decode_design_assignments(ctx, scan, &mut material_source_pointers)?;
     let design_types = crate::design::decode::meta::decode_types(scan)?;
     let crate::design::decode::parameters::DecodedParameters {
         parameters: mut design_parameters,
@@ -172,7 +181,10 @@ pub(super) fn decode(
         &design_record_headers,
         &parameter_owner_indices(&design_parameters),
     )?;
-    let design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
+    let crate::design::decode::parameters::DecodedParameterOwners {
+        owners: design_parameter_owners,
+        unparsed: design_parameter_owner_unparsed,
+    } = crate::design::decode::parameters::decode_parameter_owners(
         ctx,
         scan,
         &design_parameters,
@@ -196,18 +208,25 @@ pub(super) fn decode(
             recipes: &construction_recipes,
         },
     )?;
-    crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
-        ctx,
-        &mut design_parameter_scopes,
-        &history_index,
-    )?;
+    let primary_frames =
+        crate::design::decode::scopes::parameter_scope::design_primary_frame_offsets(scan)?;
+    let design_superseded_scope_envelopes =
+        crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
+            ctx,
+            &mut design_parameter_scopes,
+            &history_index,
+            &primary_frames,
+        )?;
     let mut source_layout_pointers =
-        crate::design::decode::scopes::parameter_scope::capture_assembly_path_layouts(
+        crate::design::decode::scopes::parameter_scope::capture_scope_layouts(
             ctx,
             &design_parameter_scopes,
             source_layout_drafts,
         )?;
-    for (id, pointers) in parameter_source_pointers {
+    for (id, pointers) in parameter_source_pointers
+        .into_iter()
+        .chain(material_source_pointers)
+    {
         if source_layout_pointers.insert(id, pointers).is_some() {
             return Err(CodecError::malformed("source pointer owner is duplicated"));
         }
@@ -235,6 +254,8 @@ pub(super) fn decode(
         design_parameters,
         parameter_state_parts,
         design_parameter_unparsed,
+        design_parameter_owner_unparsed,
+        design_superseded_scope_envelopes,
         design_entity_headers,
         design_record_headers,
         design_owner_record_headers,

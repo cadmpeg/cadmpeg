@@ -67,7 +67,6 @@ fn kept_schema_value_comes_from_exact_entity_or_alias_bytes_in_nonzero_source_wi
             object_sources: None,
             properties: &[],
             payloads: &[],
-            element_maps: &[],
             topology_occurrences: &[],
             requires_alpha_conversion: false,
         };
@@ -127,7 +126,6 @@ fn rejected_provider_transfer_keeps_source_only_behavior_without_speculative_sch
         object_sources: None,
         properties: &[],
         payloads: &[],
-        element_maps: &[],
         topology_occurrences: &[],
         requires_alpha_conversion: false,
     };
@@ -193,7 +191,6 @@ fn a_foreign_context_cannot_accept_a_preparsed_source_document() {
         object_sources: None,
         properties: &[],
         payloads: &[],
-        element_maps: &[],
         topology_occurrences: &[],
         requires_alpha_conversion: false,
     };

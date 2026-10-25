@@ -5,7 +5,7 @@ use crate::records::feature::thread::{
 };
 
 fn thread_wire() -> serde_json::Value {
-    serde_json::json!({"form":"standard", "designation_offset":38, "designation":"M1", "nominal_size_text":"1.0", "nominal_size":1.0, "profile":"ISO Metric profile", "major_diameter":1.0, "minor_diameter":0.5, "pitch":0.1, "pitch_diameter":0.75, "face_group_record_indices":[10]})
+    serde_json::json!({"form":"standard", "designation":"M1", "nominal_size_text":"1.0", "nominal_size":1.0, "profile":"ISO Metric profile", "major_diameter":1.0, "minor_diameter":0.5, "pitch":0.1, "pitch_diameter":0.75, "face_group_record_indices":[10]})
 }
 
 #[test]

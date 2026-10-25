@@ -10,11 +10,11 @@ use crate::records::feature::thread::{DesignThreadConstruction, DesignThreadForm
 #[test]
 fn compact_thread_trailer_record_is_a_related_record() {
     let construction = DesignThreadConstruction {
-        form: DesignThreadForm::Compact(Some(crate::records::identity::Located {
+        form: DesignThreadForm::Compact(Some(crate::records::identity::Sourced {
             value: std::num::NonZeroU32::new(2075).unwrap(),
-            offset: 144,
+            offset: Some(144),
         })),
-        designation_offset: 38,
+        designation_offset: Some(38),
         designation: cadmpeg_core::text::NonBlankString::new("M3x0.5").unwrap(),
         nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
             "3.0".to_owned(),

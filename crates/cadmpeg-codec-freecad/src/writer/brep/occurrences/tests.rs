@@ -114,7 +114,13 @@ fn indistinguishable_repeated_source_roots_have_no_invented_association() {
     assert_eq!(ir.model.bodies.len(), 2);
     let payloads =
         crate::brep::records::payloads_untracked(ir.native.namespace("fcstd").unwrap()).unwrap();
-    let canonical = crate::topology_transfer::canonical_indices::for_payload(&payloads[0]).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    );
+    let canonical =
+        crate::topology_transfer::canonical_indices::for_payload(&ctx, &payloads[0]).unwrap();
     assert_eq!(
         canonical
             .into_iter()

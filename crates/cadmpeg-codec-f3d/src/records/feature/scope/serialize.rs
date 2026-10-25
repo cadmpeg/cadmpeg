@@ -18,29 +18,10 @@ impl Serialize for ReferenceValues<'_> {
     }
 }
 
-struct ReferenceOffsets<'a>(&'a ReferenceRun<u32>);
-
-impl Serialize for ReferenceOffsets<'_> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut sequence = serializer.serialize_seq(Some(self.0.offsets().len()))?;
-        for offset in self.0.offsets() {
-            sequence.serialize_element(offset)?;
-        }
-        sequence.end()
-    }
-}
-
 fn maybe_value<T>(field: &MaybeRecordedValue<T>) -> &T {
     match field {
         MaybeRecordedValue::Located(located) => &located.value,
         MaybeRecordedValue::Unlocated(value) => value,
-    }
-}
-
-fn maybe_offset<T>(field: &MaybeRecordedValue<T>) -> Option<u64> {
-    match field {
-        MaybeRecordedValue::Located(located) => Some(located.offset),
-        MaybeRecordedValue::Unlocated(_) => None,
     }
 }
 
@@ -87,12 +68,10 @@ impl Serialize for DesignParameterScope {
         }
 
         emit!("id", &self.id);
-        emit!("byte_offset", self.byte_offset);
         emit!("class_tag", self.class_tag.as_str());
         emit!("record_index", self.record_index);
-        emit!("frame_length", self.frame_length);
+        emit!("generation", self.generation);
         emit!("kind", self.kind_name());
-        emit!("kind_offset", self.kind_offset);
 
         if let Some(extrude) = self.extrude() {
             emit_opt!("extrude_prologue", extrude.extrude_prologue.as_ref());
@@ -105,45 +84,29 @@ impl Serialize for DesignParameterScope {
         if let Some(coil) = self.coil() {
             if let Some(value) = coil.operation.as_ref() {
                 emit!("coil_operation", &value.value);
-                emit!("coil_operation_offset", value.offset);
             }
             if let Some(value) = coil.extent.as_ref() {
                 emit!("coil_extent", maybe_value(value));
-                emit_opt!("coil_extent_offset", maybe_offset(value));
             }
             if let Some(value) = coil.section.as_ref() {
                 emit!("coil_section", maybe_value(value));
-                emit_opt!("coil_section_offset", maybe_offset(value));
             }
             if let Some(value) = coil.section_placement.as_ref() {
                 emit!("coil_section_placement", maybe_value(value));
-                emit_opt!("coil_section_placement_offset", maybe_offset(value));
             }
             if let Some(value) = coil.clockwise.as_ref() {
                 emit!("coil_clockwise", maybe_value(value));
-                emit_opt!("coil_clockwise_offset", maybe_offset(value));
             }
             emit_opt!("coil_placement", coil.placement.as_ref());
             emit_opt!("coil_transform", coil.transform.as_ref());
         }
 
         emit!("feature_ordinal", self.feature_ordinal.get());
-        emit!("feature_ordinal_offset", self.feature_ordinal_offset);
         emit_opt!("history_state_id", self.history_state_id);
-        emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);
-        emit!(
-            "previous_history_state_id_offset",
-            self.previous_history_state_id_offset.unwrap_or(0)
-        );
-        emit!("reference_count_offset", self.reference_count_offset);
         emit!(
             "reference_members",
             ReferenceValues(&self.reference_members)
-        );
-        emit!(
-            "reference_member_offsets",
-            ReferenceOffsets(&self.reference_members)
         );
 
         match &self.payload {
@@ -188,10 +151,11 @@ impl Serialize for DesignParameterScope {
                 base_flange.base_flange_profile.as_ref()
             );
         }
-        if let DesignScopePayload::SurfacePatch(boundaries) = &self.payload {
-            if !boundaries.is_empty() {
-                emit!("surface_patch_boundaries", boundaries);
+        if let DesignScopePayload::SurfacePatch(patch) = &self.payload {
+            if !patch.boundaries.is_empty() {
+                emit!("surface_patch_boundaries", &patch.boundaries);
             }
+            emit_opt!("surface_patch_normal", patch.normal.as_ref());
         }
         emit_opt!("edge_flange_operation", self.edge_flange_operation());
         emit_opt!("hem_operation", self.hem_operation());
@@ -265,16 +229,8 @@ impl Serialize for DesignParameterScope {
         );
         if let Some(frame) = self.work_plane_frame() {
             emit!("work_plane_transform", &frame.work_plane_transform);
-            emit!(
-                "work_plane_transform_offset",
-                frame.work_plane_transform_offset
-            );
             if let Some(reference) = frame.reference.as_ref() {
                 emit!("work_plane_reference", reference.work_plane_reference);
-                emit!(
-                    "work_plane_reference_offset",
-                    reference.work_plane_reference_offset
-                );
             }
             emit_opt!(
                 "work_plane_construction",
@@ -284,16 +240,8 @@ impl Serialize for DesignParameterScope {
         emit_opt!("work_axis_construction", self.work_axis_construction());
         if let Some(frame) = self.joint_origin_frame() {
             emit!("joint_origin_transform", &frame.joint_origin_transform);
-            emit!(
-                "joint_origin_transform_offset",
-                frame.joint_origin_transform_offset
-            );
             if let Some(reference) = frame.reference.as_ref() {
                 emit!("joint_origin_reference", reference.joint_origin_reference);
-                emit!(
-                    "joint_origin_reference_offset",
-                    reference.joint_origin_reference_offset
-                );
             }
         }
         emit_opt!("work_point_construction", self.work_point_construction());
@@ -307,10 +255,8 @@ impl Serialize for DesignParameterScope {
         if let Some(sketch) = self.sketch_entity() {
             emit!("entity_id", sketch.entity_id.as_str());
             emit!("entity_suffix", sketch.entity_id.suffix());
-            emit!("entity_reference_offset", sketch.entity_reference_offset);
         }
         emit!("paired_class_tag", self.paired_class_tag.as_str());
-        emit!("paired_byte_offset", self.paired_byte_offset);
         map.end()
     }
 }

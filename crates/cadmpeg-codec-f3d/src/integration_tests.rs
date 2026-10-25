@@ -3,12 +3,15 @@
 
 mod assembly_local;
 mod attribute_colors;
+mod body_reference_tails;
 mod design_containment;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
+mod measured_geometry;
 mod optional_payloads;
 mod placement_history;
+mod reference_layouts;
 mod root_product;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};

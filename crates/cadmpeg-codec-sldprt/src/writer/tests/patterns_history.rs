@@ -173,7 +173,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
 
     let mut inconsistent = decoded.ir().clone();
     inconsistent.model.features[1].dependencies.clear();
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
         &inconsistent,
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -400,7 +400,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         &resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]),
     ));
     source.extend(make_block(
-        0x49,
+        0x0021_0049,
         "Contents/PMISemanticDataDB",
         &pmi_semantic_payload_record(
             "D1@MatrizL1",
@@ -411,7 +411,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         ),
     ));
     source.extend(make_block(
-        0x49,
+        0x0021_004a,
         "Contents/PMISemanticDataDB",
         &pmi_semantic_payload_record(
             "D2@MatrizL1",
@@ -422,8 +422,21 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         ),
     ));
 
+    let pmi_dates: Vec<_> = crate::test_support::container::scan(&source)
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some("Contents/PMISemanticDataDB"))
+        .map(|block| block.type_id)
+        .collect();
+    assert_eq!(pmi_dates, [0x0021_0049, 0x0021_004a]);
+
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let parameter_index = decoded
@@ -527,7 +540,12 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
     ));
 
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert!(matches!(
@@ -546,7 +564,7 @@ fn semantic_writer_retains_unresolved_native_pattern_construction() {
     decoded.ir_mut().model.features[0].name = Some("Renamed pattern".into());
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::plan_fixture_write_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

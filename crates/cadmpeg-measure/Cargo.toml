@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "cadmpeg-measure"
+description = "Geometric measurement of decoded cadmpeg CAD models."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+
+[features]
+# `test_support::round_trip` for the tests of writer crates, which take this
+# feature in their dev-dependencies.
+test-support = []
+
+[dependencies]
+cadmpeg-core.workspace = true
+cadmpeg-ir.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+cadmpeg-ir = { workspace = true, features = ["examples"] }
+serde_json.workspace = true
+
+[lints]
+workspace = true

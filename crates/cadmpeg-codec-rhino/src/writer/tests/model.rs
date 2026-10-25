@@ -263,3 +263,27 @@ fn unbounded_or_collapsed_free_line_does_not_invent_a_native_domain_or_geometry(
         Err(cadmpeg_core::CodecError::UnsupportedContent(_))
     ));
 }
+
+#[test]
+fn shell_face_listing_order_is_not_the_arena_order() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    for face in &mut ir.model.faces {
+        face.name = None;
+    }
+    let arena: Vec<_> = ir.model.faces.iter().map(|face| face.id.clone()).collect();
+    assert_ne!(ir.model.shells[0].faces(), arena.as_slice());
+    assert!(WritableModel::try_new(&ir).is_ok());
+    let shell = &ir.model.shells[0];
+    ir.model.shells[0] = cadmpeg_ir::topology::Shell::new(
+        shell.id.clone(),
+        shell.region.clone(),
+        shell.faces()[1..].to_vec(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("a shell with faces");
+    let error = WritableModel::try_new(&ir)
+        .err()
+        .expect("a shell face missing from the arena is inconsistent");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}

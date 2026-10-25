@@ -58,6 +58,39 @@ fn legacy_top_level_manifest_accepts_both_terminal_forms() {
 }
 
 #[test]
+fn top_level_manifest_reads_a_secondary_asset_folder_group() {
+    fn manifest(secondary: &str) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_ascii(&mut bytes, "3-2-0-0").unwrap();
+        push_ascii(&mut bytes, "FusionDocType").unwrap();
+        push_utf16(&mut bytes, ".f3d").unwrap();
+        push_utf16(&mut bytes, "Fusion Document").unwrap();
+        push_utf16(&mut bytes, "A Fusion Document").unwrap();
+        push_utf16(&mut bytes, GENERATED_DOCUMENT_GUID).unwrap();
+        push_utf16(&mut bytes, GENERATED_DOCUMENT_ASSET_GUID).unwrap();
+        push_u32(&mut bytes, 0x0800_06e1);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_utf16(&mut bytes, DESIGN_GUID).unwrap();
+        push_u32(&mut bytes, 2);
+        push_utf16(&mut bytes, "Design Base").unwrap();
+        push_utf16(&mut bytes, "Toolpath").unwrap();
+        push_u32(&mut bytes, 1);
+        push_utf16(&mut bytes, secondary).unwrap();
+        bytes.push(1);
+        push_utf16(&mut bytes, "NA_EXPORT").unwrap();
+        bytes
+    }
+
+    let parsed = parse_top_level(&manifest("Simulation Model")).unwrap();
+    assert_eq!(
+        parsed.asset_folder_bases,
+        ["Design Base", "Toolpath", "Simulation Model"]
+    );
+    assert!(parse_top_level(&manifest("Toolpath")).is_err());
+}
+
+#[test]
 fn top_level_manifest_accepts_a_terminal_export_flag_without_a_marker() {
     let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     let mut marker = Vec::new();
@@ -210,6 +243,68 @@ fn top_level_manifest_rejects_trailing_bytes() {
     let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     bytes.push(0);
     assert!(parse_top_level(&bytes).is_err());
+}
+
+#[test]
+fn top_level_manifest_reports_unframed_suffix_after_lineage_urn() {
+    let original = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut terminal = vec![1];
+    push_utf16(&mut terminal, "NA_EXPORT").unwrap();
+
+    for version in [TOP_LEVEL_MANIFEST_VERSION, "3-3-0-0"] {
+        let mut bytes = with_version(&original, version);
+        assert!(bytes.ends_with(&terminal));
+        bytes.truncate(bytes.len() - terminal.len());
+        bytes.push(0);
+        push_utf16(&mut bytes, OTHER_GUID).unwrap();
+        push_utf16(&mut bytes, "urn:synthetic:lineage").unwrap();
+        assert_eq!(
+            parse_top_level(&bytes).unwrap().asset_folder_bases,
+            ["Design Base"]
+        );
+
+        let suffix_offset = bytes.len();
+        bytes.extend_from_slice(&[0xa5; 6]);
+        let error = parse_top_level(&bytes).unwrap_err();
+        assert!(
+            matches!(&error, CodecError::Malformed(message)
+            if message.contains(version)
+                && message.contains("grammar does not fit")
+                && message.contains("top-level manifest terminal: 6 trailing byte(s)")
+                && message.contains(&format!(
+                    "no exact tail framing is valid; furthest candidate stopped at stream offset {suffix_offset}:"
+                ))),
+            "expected the terminal-consumption error and offset, found {error:?}"
+        );
+    }
+}
+
+#[test]
+fn top_level_manifest_reports_invalid_lineage_urn() {
+    let original = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut terminal = vec![1];
+    push_utf16(&mut terminal, "NA_EXPORT").unwrap();
+
+    for lineage in ["synthetic:lineage", OTHER_GUID] {
+        let mut bytes = original.clone();
+        assert!(bytes.ends_with(&terminal));
+        bytes.truncate(bytes.len() - terminal.len());
+        bytes.push(0);
+        push_utf16(&mut bytes, "Synthetic Document").unwrap();
+        push_utf16(&mut bytes, lineage).unwrap();
+
+        let error = parse_top_level(&bytes).unwrap_err();
+        assert!(
+            matches!(&error, CodecError::Malformed(message)
+            if message.contains("top-level manifest lineage URN")
+                && message.contains("value is not a nonempty ASCII URN")
+                && message.contains(&format!(
+                    "no exact tail framing is valid; furthest candidate stopped at stream offset {}:",
+                    bytes.len()
+                ))),
+            "expected the lineage validation error and offset, found {error:?}"
+        );
+    }
 }
 
 #[test]

@@ -24,6 +24,7 @@ pub mod geometry;
 pub mod key_maps;
 pub mod records;
 pub mod stats;
+mod subsets;
 use stats::Stats;
 mod topology;
 pub mod transfer;
@@ -447,6 +448,8 @@ enum ProceduralCurveSource {
         construction: Box<ProceduralCurveConstruction>,
         cache_fit_tolerance: Option<f64>,
         parsed_domain: Option<[f64; 2]>,
+        /// Whether the curve record's sense reversed the cache.
+        reversed: bool,
     },
     Cacheless(Box<cadmpeg_ir::geometry::ProceduralCurveDefinition>),
 }
@@ -647,7 +650,7 @@ fn decode_with_table(
         &mut reach,
     )?;
 
-    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach)?;
+    let (reversed_curve_refs, forward_curve_refs) = classify_edge_curve_senses(records, &reach);
 
     emit_carrier_records(
         &mut out,

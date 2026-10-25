@@ -66,13 +66,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(scope.feature_ordinal.get(), 1);
     assert_eq!(
         scope.feature_ordinal_offset(),
-        u64_from_index(feature_ordinal_at)
+        Some(u64_from_index(feature_ordinal_at))
     );
     assert_eq!(scope.history_state_id(), Some(7));
     assert_eq!(scope.previous_history_state_id(), Some(2));
     assert_eq!(
         scope.reference_count_offset(),
-        u64_from_index(reference_count_at)
+        Some(u64_from_index(reference_count_at))
     );
     assert_eq!(
         scope
@@ -90,9 +90,9 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             .collect::<Vec<_>>(),
         [u64_from_index(reference_at)]
     );
-    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
+    assert_eq!(scope.frame_length(), Some(u64_from_index(paired_at)));
     assert_eq!(scope.paired_class_tag.as_str(), "261");
-    assert_eq!(scope.paired_byte_offset(), u64_from_index(paired_at));
+    assert_eq!(scope.paired_byte_offset(), Some(u64_from_index(paired_at)));
     let discovered =
         crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
             &bytes,
@@ -129,7 +129,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         compact.kind(),
         crate::records::feature::scope::DesignFeatureKind::Sketch
     );
-    assert_eq!(compact.frame_length(), u64_from_index(paired_at) - 1);
+    assert_eq!(compact.frame_length(), Some(u64_from_index(paired_at) - 1));
     assert_eq!(compact.previous_history_state_id(), Some(2));
     assert!(
         !crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
@@ -251,7 +251,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(copy.feature_ordinal.get(), 2);
     assert_eq!(
         copy.feature_ordinal_offset(),
-        u64_from_index(copy_feature_ordinal_at)
+        Some(u64_from_index(copy_feature_ordinal_at))
     );
     assert_eq!(copy.history_state_id(), None);
     assert_eq!(copy.previous_history_state_id(), None);
@@ -259,7 +259,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         copy.previous_history_state_id_offset(),
         Some(u64_from_index(copy_feature_ordinal_at + 53))
     );
-    assert_eq!(copy.frame_length(), u64_from_index(copy_paired_at));
+    assert_eq!(copy.frame_length(), Some(u64_from_index(copy_paired_at)));
 
     let mut operation_bytes = vec![0; 148];
     operation_bytes[29] = 1;
@@ -312,7 +312,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(operation.body_group_record_index, 55);
     assert_eq!(
         operation.body_group_byte_offset(),
-        u64_from_index(body_group_at)
+        Some(u64_from_index(body_group_at))
     );
     assert_eq!(
         operation
@@ -325,7 +325,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(operation.relation_record_index, 44);
     assert_eq!(
         operation.relation_byte_offset(),
-        u64_from_index(relation_at)
+        Some(u64_from_index(relation_at))
     );
     assert_eq!(
         operation
@@ -621,8 +621,8 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [0.0, -3.0, 4.0]
     );
-    assert_eq!(construction.origin_offset, 25);
-    assert_eq!(construction.displacement_offset, 49);
+    assert_eq!(construction.origin_offset, Some(25));
+    assert_eq!(construction.displacement_offset, Some(49));
     assert!(matches!(
         construction.source,
         Some(

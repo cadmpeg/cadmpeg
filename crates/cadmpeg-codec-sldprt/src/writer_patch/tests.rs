@@ -9,9 +9,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::test_support::container::anchored_cache_cell;
 use crate::test_support::container::make_block;
-use crate::test_support::container::make_cache_cell;
-use crate::test_support::container::make_directory_entry;
+use crate::test_support::container::native_envelope_fixture;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::sldprt_with_body_and_history;
 use crate::test_support::native::update_sldprt_native;
@@ -154,6 +154,7 @@ fn synthesis_preserves_edited_nurbs_beside_omitted_untyped_surfaces() {
     body.extend(world_point(261, [11.0, 0.0, 0.0]));
     body.extend(world_point(262, [10.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -333,6 +334,7 @@ fn untyped_surface_content_cannot_reenter_through_a_point_patch() {
         "SCH_SW_33103_11000",
         &line_carrier(800, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     );
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let mut source = sldprt_with_body(&body);
     source.extend(make_block(0x21, "Contents/Config-0-Deltas", &deltas));
     let decoded = SldprtCodec
@@ -391,6 +393,7 @@ fn unrepresented_source_synthesizes_without_patch_provenance() {
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -453,6 +456,7 @@ fn synthesis_preserves_edited_analytic_carriers_beside_omitted_untyped_surfaces(
     body.extend(world_point(261, [11.0, 0.0, 0.0]));
     body.extend(world_point(262, [10.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -575,6 +579,7 @@ fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
     body.extend(world_point(60, [0.0, 0.0, 0.0]));
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let mut source = sldprt_with_body_and_history(&body);
     source.extend(make_block(
         0x66,
@@ -586,37 +591,14 @@ fn auxiliary_edit_synthesizes_without_opaque_partition_content() {
         "Contents/Config-0-GhostPartition",
         b"opaque-ghost",
     ));
-    source.extend(make_cache_cell(90, "Contents/Config-0-Partition"));
-    source.extend(make_cache_cell(100, "Contents/Keywords"));
-    let indexed = crate::test_support::container::scan(&source);
-    let partition = indexed
-        .blocks
-        .iter()
-        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
-        .unwrap();
-    let keywords = indexed
-        .blocks
-        .iter()
-        .find(|block| block.section.name() == Some("Contents/Keywords"))
-        .unwrap();
-    let mut directory = make_directory_entry(
-        partition.type_id,
-        partition.uncomp_sz().try_into().unwrap(),
+    source.extend(anchored_cache_cell(
+        100,
+        9,
         "Contents/Config-0-Partition",
-    );
-    directory[26] = 0xab;
-    let trailer = directory.len() - 6;
-    directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
-    source.extend(directory);
-    let mut directory = make_directory_entry(
-        keywords.type_id,
-        keywords.uncomp_sz().try_into().unwrap(),
-        "Contents/Keywords",
-    );
-    directory[26] = 0xcd;
-    let trailer = directory.len() - 6;
-    directory[trailer..trailer + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
-    source.extend(directory);
+        0,
+    ));
+    source.extend(anchored_cache_cell(100, 10, "Contents/Keywords", 0xff));
+    source = native_envelope_fixture(&source);
     let source_scan = crate::test_support::container::scan(&source);
     let source_partition = source_scan
         .blocks
@@ -853,6 +835,7 @@ fn unrepresented_source_does_not_redecode_retained_bytes_for_content() {
     body.extend(world_point(61, [1.0, 0.0, 0.0]));
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
 
+    crate::test_support::parasolid::complete_fixture_vertex_owners(&mut body);
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),

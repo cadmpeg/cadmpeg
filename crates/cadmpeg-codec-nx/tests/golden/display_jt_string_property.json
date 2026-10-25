@@ -10,6 +10,7 @@
           {
             "id": "nx:document:attribute#jt-string-0",
             "name": "JT string property",
+            "native_ref": "nx:display-jt:segment#0-row-0-0-string-property-atom-0",
             "target": {
               "id": {
                 "source_id": "nx:display-jt:segment#0-row-0-0-string-property-atom-0"
@@ -247,10 +248,14 @@
           ],
           "display_jt_string_property_atoms": [
             {
+              "code_units": [
+                74,
+                84
+              ],
               "element": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
               "id": "nx:display-jt:segment#0-row-0-0-string-property-atom-0",
-              "neutral_attribute": "nx:document:attribute#jt-string-0",
-              "object_id": 1
+              "object_id": 1,
+              "value": "JT"
             }
           ],
           "unknowns": [

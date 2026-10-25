@@ -379,3 +379,47 @@ fn generated_f3d_rewrites_face_and_coedge_sense() {
         cadmpeg_ir::topology::Sense::Reversed
     );
 }
+
+#[test]
+fn generated_f3d_rewrites_a_subset_edge_range_on_its_local_parameter() {
+    use crate::test_support::smbh_curves_test::synthetic_geometry_with_subset_curve_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_subset_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("subset curve decode");
+    let (mut edited, _, fidelity) = decoded.into_parts();
+    let owner = edited
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| {
+            matches!(
+                procedural.definition(),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
+            )
+        })
+        .and_then(|procedural| edited.model.procedural_curve_owner(&procedural.id))
+        .cloned()
+        .expect("subset curve");
+    let index = edited
+        .model
+        .edges
+        .iter()
+        .position(|edge| edge.curve() == Some(&owner))
+        .expect("edge on the subset curve");
+    edited.model.edges[index].carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(Some(owner), Some([0.5, 4.0])).unwrap();
+
+    let mut regenerated = Vec::new();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
+        .expect("subset edge-range regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    let [start, end] = round_trip.ir().model.edges[index]
+        .param_range()
+        .unwrap()
+        .get();
+    assert!((start - 0.5).abs() < 1.0e-12 && (end - 4.0).abs() < 1.0e-12);
+}

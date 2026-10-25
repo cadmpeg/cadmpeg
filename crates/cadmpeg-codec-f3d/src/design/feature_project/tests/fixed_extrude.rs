@@ -24,7 +24,7 @@ fn distance(
     DesignFixedExtrudeScalar {
         value: cadmpeg_ir::scalar::NonZeroReal::new(value).unwrap(),
         record_index,
-        value_offset: u64::from(record_index) * 100,
+        value_offset: Some(u64::from(record_index) * 100),
     }
 }
 
@@ -80,19 +80,19 @@ fn fixed_extrude(
                     extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                         reference: None,
                         operation: DesignExtrudeOperation::NewBody,
-                        operation_offset: 128,
+                        operation_offset: Some(128),
                         direction_face_extend_values: [direction, 0],
                         side_extent_discriminators: [1, 1],
-                        side_extent_discriminator_offsets: [177, 190],
+                        side_extent_discriminator_offsets: Some([177, 190]),
                         first_side_target_ordinal: None,
                         extent,
-                        direction_face_extend_offsets: [132, 136],
+                        direction_face_extend_offsets: Some([132, 136]),
                         direction_reversed: false,
-                        direction_reversed_offset: 140,
+                        direction_reversed_offset: Some(140),
                         solid_operation: true,
-                        solid_operation_offset: 141,
+                        solid_operation_offset: Some(141),
                         start: DesignExtrudeStart::ProfilePlane,
-                        start_offset: 142,
+                        start_offset: Some(142),
                     }),
                     fixed_extrude_parameters: Some(fixed),
                     extrude_profile: Some(
@@ -179,6 +179,8 @@ fn fixed_two_sided_distance_lanes_project_two_blind_sides() {
             taper_angle: None,
             against_distance: Some(distance(0.2, 17)),
             side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
         },
     );
     let definition = projected(&scope).expect("typed two-sided Extrude");
@@ -218,6 +220,8 @@ fn fixed_symmetric_distance_lane_keeps_the_native_feature() {
             taper_angle: None,
             against_distance: None,
             side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
         },
     );
     assert!(projected(&scope).is_none());

@@ -2,13 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 87416,
-      "payload_sha256": "5db04f481a4a306df9d6bb414d8833d2a196ffd79d2ea364559c52abef4f5fd2"
+      "payload_len": 75884,
+      "payload_sha256": "c53bd0535293bb5353ada9a914e194669e1948dd400e0df396a547dd40f2c0a3"
     },
     {
       "name": "BracketPrototype.brp",
       "payload_len": 2536,
-      "payload_sha256": "96621c0afb2203241ea22e2bb7f188c8555a619f6e9a444580ee13e487aef5cd"
+      "payload_sha256": "42e80872703d58b4d2c5604eaa99e6e277d5f498ad9153b4baa0abc0adf4e899"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -23,7 +23,7 @@
     {
       "name": "PinPrototype.brp",
       "payload_len": 1086,
-      "payload_sha256": "75d2d453ec38ff3d2832a33b8696b42878cc2a475785a06711281226cf070ee7"
+      "payload_sha256": "b0031cee05f4b506f56bf0b75fb645104786e27cd0c7a602c05f29329b6d615c"
     }
   ],
   "report": {
@@ -34,7 +34,7 @@
         "appearances": 0,
         "assembly_joints": 2,
         "assets": 0,
-        "attributes": 170,
+        "attributes": 174,
         "bodies": 2,
         "coedges": 30,
         "configurations": 0,
@@ -58,7 +58,7 @@
         "native.fcstd.properties": 328,
         "native.fcstd.shape_payloads": 2,
         "native.fcstd.string_tables": 1,
-        "occurrences": 24,
+        "occurrences": 15,
         "parameters": 0,
         "pcurves": 30,
         "pmi": 0,
@@ -67,7 +67,7 @@
         "presentation_layers": 0,
         "procedural_curves": 0,
         "procedural_surfaces": 0,
-        "product_definitions": 14,
+        "product_definitions": 12,
         "regions": 2,
         "semantic_annotations": 0,
         "shells": 2,
@@ -485,6 +485,16 @@
           "scope": "namespaced"
         },
         "message": "attribute fcstd:model:attribute#ExternalOccurrence:_LinkOwner:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#GroundBracket:Label:property conflicts with operation property Label",
         "severity": "warning"
       },
       {
@@ -1254,6 +1264,16 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#RevoluteJoint:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#XY_Plane:Label:property conflicts with operation property Label",
         "severity": "warning"
       },
@@ -1389,6 +1409,26 @@
       },
       {
         "code": {
+          "code": "occurrence.not-transferred",
+          "kind": "assembly_placements_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "occurrence fcstd:model:occurrence#ExternalOccurrence:instance omitted because its placement or an ancestor placement is unknown",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "occurrence.not-transferred",
+          "kind": "assembly_placements_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "occurrence fcstd:model:occurrence#PrototypeGroup:container omitted because its placement or an ancestor placement is unknown",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "feature.not-transferred",
           "kind": "parametric_record_omitted",
           "namespace": "fcstd",
@@ -1414,7 +1454,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 12 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 12 native record(s) from `fcstd.entries`: fcstd:native:entry#BracketPrototype.Shape.brp, fcstd:native:entry#PinPrototype.Shape.brp, fcstd:native:entry#PlacementList, fcstd:native:entry#PlacementList1, fcstd:native:entry#PlacementList2, fcstd:native:entry#PlacementList3, fcstd:native:entry#PlacementList4, fcstd:native:entry#ScaleList, fcstd:native:entry#ScaleList1, fcstd:native:entry#ScaleList2, fcstd:native:entry#ScaleList3, fcstd:native:entry#ScaleList4",
         "severity": "info"
       },
       {
@@ -1424,7 +1464,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 52 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 54 native record(s) from `fcstd.properties`: fcstd:native:property#Assembly:Visibility, fcstd:native:property#BracketOccurrence:PlacementList, fcstd:native:property#BracketOccurrence:ScaleList, fcstd:native:property#BracketOccurrence:ScaleVector, fcstd:native:property#BracketOccurrence:Visibility, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExternalOccurrence:PlacementList, fcstd:native:property#ExternalOccurrence:ScaleList, fcstd:native:property#ExternalOccurrence:ScaleVector, fcstd:native:property#ExternalOccurrence:Visibility, fcstd:native:property#GroundBracket:ExpressionEngine, fcstd:native:property#NestedBracketOccurrence:PlacementList, fcstd:native:property#NestedBracketOccurrence:ScaleList, fcstd:native:property#NestedBracketOccurrence:ScaleVector, fcstd:native:property#NestedBracketOccurrence:Visibility, fcstd:native:property#OccurrenceGroup:Visibility, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Origin:OriginFeatures, fcstd:native:property#PinArray:PlacementList, fcstd:native:property#PinArray:ScaleList, fcstd:native:property#PinArray:ScaleVector, fcstd:native:property#PinArray:Visibility, fcstd:native:property#PinArray_i0:ScaleVector, fcstd:native:property#PinArray_i0:Visibility, fcstd:native:property#PinArray_i1:ScaleVector, fcstd:native:property#PinArray_i1:Visibility, fcstd:native:property#PinArray_i2:ScaleVector, fcstd:native:property#PinArray_i2:Visibility, fcstd:native:property#PinOccurrence:ColoredElements, fcstd:native:property#PinOccurrence:ElementCount, fcstd:native:property#PinOccurrence:ElementList, fcstd:native:property#PinOccurrence:ExpressionEngine, fcstd:native:property#PinOccurrence:Label2, fcstd:native:property#PinOccurrence:LinkCopyOnChangeGroup, fcstd:native:property#PinOccurrence:LinkCopyOnChangeSource, fcstd:native:property#PinOccurrence:LinkExecute, fcstd:native:property#PinOccurrence:LinkPlacement, fcstd:native:property#PinOccurrence:PlacementList, fcstd:native:property#PinOccurrence:Scale, fcstd:native:property#PinOccurrence:ScaleList, fcstd:native:property#PinOccurrence:ScaleVector, fcstd:native:property#PinOccurrence:ShowElement, fcstd:native:property#PinOccurrence:Visibility, fcstd:native:property#PinOccurrence:VisibilityList, fcstd:native:property#PinOccurrence:_LinkOwner, fcstd:native:property#PrototypeGroup:Visibility, fcstd:native:property#RevoluteJoint:ExpressionEngine, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -1559,7 +1599,7 @@
                 "fcstd:native:object#BracketPrototype": "regenerated",
                 "fcstd:native:object#CorpusMetadata": "written",
                 "fcstd:native:object#ExternalOccurrence": "regenerated",
-                "fcstd:native:object#GroundBracket": "regenerated",
+                "fcstd:native:object#GroundBracket": "written",
                 "fcstd:native:object#NestedBracketOccurrence": "regenerated",
                 "fcstd:native:object#OccurrenceGroup": "regenerated",
                 "fcstd:native:object#Origin": "written",
@@ -1571,7 +1611,7 @@
                 "fcstd:native:object#PinOccurrence": "regenerated",
                 "fcstd:native:object#PinPrototype": "regenerated",
                 "fcstd:native:object#PrototypeGroup": "regenerated",
-                "fcstd:native:object#RevoluteJoint": "regenerated",
+                "fcstd:native:object#RevoluteJoint": "written",
                 "fcstd:native:object#XY_Plane": "written",
                 "fcstd:native:object#XZ_Plane": "written",
                 "fcstd:native:object#X_Axis": "written",
@@ -1691,7 +1731,6 @@
                 "fcstd:native:property#ExternalOccurrence:ShowElement": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:VisibilityList": "written",
                 "fcstd:native:property#ExternalOccurrence:_LinkOwner": "regenerated",
-                "fcstd:native:property#GroundBracket:ExpressionEngine": "regenerated",
                 "fcstd:native:property#GroundBracket:Label": "regenerated",
                 "fcstd:native:property#GroundBracket:Label2": "regenerated",
                 "fcstd:native:property#GroundBracket:ObjectToGround": "written",
@@ -1826,12 +1865,11 @@
                 "fcstd:native:property#RevoluteJoint:Detach1": "regenerated",
                 "fcstd:native:property#RevoluteJoint:EnableAngleMax": "regenerated",
                 "fcstd:native:property#RevoluteJoint:EnableAngleMin": "regenerated",
-                "fcstd:native:property#RevoluteJoint:ExpressionEngine": "regenerated",
                 "fcstd:native:property#RevoluteJoint:JointType": "written",
                 "fcstd:native:property#RevoluteJoint:Label": "regenerated",
                 "fcstd:native:property#RevoluteJoint:Label2": "regenerated",
                 "fcstd:native:property#RevoluteJoint:Offset1": "written",
-                "fcstd:native:property#RevoluteJoint:Offset2": "regenerated",
+                "fcstd:native:property#RevoluteJoint:Offset2": "written",
                 "fcstd:native:property#RevoluteJoint:Placement1": "written",
                 "fcstd:native:property#RevoluteJoint:Placement2": "written",
                 "fcstd:native:property#RevoluteJoint:Proxy": "written",
@@ -1891,9 +1929,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

@@ -142,7 +142,7 @@ fn original_point_coordinates_keep_exact_nonzero_windows_native_values_and_sourc
 }
 
 #[test]
-fn bad_point_coordinate_gives_up_only_its_parameter_record_and_keeps_an_unchanged_peer() {
+fn bad_point_coordinate_gives_up_the_rest_of_its_parameter_values_and_keeps_an_unchanged_peer() {
     let original = point_pair(1, false);
     let bytes = point_pair(1, true);
     assert_eq!(original.len(), bytes.len());
@@ -150,6 +150,17 @@ fn bad_point_coordinate_gives_up_only_its_parameter_record_and_keeps_an_unchange
         original.iter().zip(&bytes).filter(|(a, b)| a != b).count(),
         1
     );
+    // The one changed byte is the X control byte. Its format 7 has no width,
+    // so the group and the rest of the Point record (X, Y, Z and the display
+    // symbol, four 5-byte groups) are one given-up
+    // `iges.binary_parameter_value` (iges.md, Binary Parameter Data; #215
+    // rule 1).
+    let control = original
+        .iter()
+        .zip(&bytes)
+        .position(|(a, b)| a != b)
+        .expect("changed control byte");
+    let given_up = control..control + 4 * 5;
     let baseline = crate::test_support::decode(original);
     let decoded = crate::test_support::decode(bytes.clone());
     assert_eq!(decoded.ir().model.points.len(), 1);
@@ -161,13 +172,15 @@ fn bad_point_coordinate_gives_up_only_its_parameter_record_and_keeps_an_unchange
     );
     let native = decoded.ir().native.namespace("iges").expect("native");
     let old = baseline.ir().native.namespace("iges").expect("baseline");
-    // #215 rule 1: the Directory record keeps its fields; only its Parameter
-    // Data record is given up.
+    // #215 rule 1: the Point keeps its Directory fields, its entity type and
+    // one `null` slot for the given-up X; no later value is read.
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(
-        serde_json::to_value(&native.arenas()["entities"][0]).expect("damaged entity"),
-        crate::test_support::binary_parts::entity_without_parameter_data(
-            &old.arenas()["entities"][0]
+        crate::test_support::binary_parts::entity_without_padding(&native.arenas()["entities"][0]),
+        crate::test_support::binary_parts::entity_with_given_up_rest(
+            &old.arenas()["entities"][0],
+            0,
+            1
         )
     );
     assert_eq!(native.arenas()["entities"][1], old.arenas()["entities"][1]);
@@ -182,37 +195,41 @@ fn bad_point_coordinate_gives_up_only_its_parameter_record_and_keeps_an_unchange
     let (_ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("original source");
     let sections = crate::binary::parse_sections(source).expect("actual sections");
-    for (level, section) in [("iges.binary_parameter_record", sections.parameter)] {
-        let (_, extent, _) =
-            crate::binary::counted_record(section, 0, "source").expect("actual failed extent");
-        let part = fidelity
-            .parts()
-            .values()
-            .find(|part| part.level().as_str() == level && part.state() == &PartState::GivenUp {})
-            .expect("owning failed part");
-        assert_eq!(
-            part.offset(),
-            u64::try_from(extent.start()).expect("source offset")
-        );
-        assert_eq!(
-            part.byte_len(),
-            u64::try_from(extent.window().len()).expect("source size")
-        );
-        let home = unknowns
-            .iter()
-            .find(|unknown| fidelity.parts()[&unknown.id].offset() == part.offset())
-            .expect("exact failed home");
-        assert_eq!(
-            fidelity
-                .retained_record(home.id.as_str())
-                .expect("source bytes")
-                .data(),
-            Some(extent.window())
-        );
-        assert!(fidelity.record_layout()[home.id.as_str()]
-            .reads()
-            .is_empty());
-    }
+    let (_, record, _) =
+        crate::binary::counted_record(sections.parameter, 0, "source").expect("actual record");
+    assert_eq!(record.end(), given_up.end);
+    let part = fidelity
+        .parts()
+        .values()
+        .find(|part| part.state() == &PartState::GivenUp {})
+        .expect("owning failed part");
+    assert_eq!(part.level().as_str(), "iges.binary_parameter_value");
+    assert_eq!(
+        part.offset(),
+        u64::try_from(given_up.start).expect("source offset")
+    );
+    assert_eq!(
+        part.byte_len(),
+        u64::try_from(given_up.len()).expect("source size")
+    );
+    assert_eq!(
+        fidelity.parts()[part.parent().expect("record part")].state(),
+        &PartState::Decoded {}
+    );
+    let home = unknowns
+        .iter()
+        .find(|unknown| fidelity.parts()[&unknown.id].offset() == part.offset())
+        .expect("exact failed home");
+    assert_eq!(
+        fidelity
+            .retained_record(home.id.as_str())
+            .expect("source bytes")
+            .data(),
+        Some(&bytes[given_up.clone()])
+    );
+    assert!(fidelity.record_layout()[home.id.as_str()]
+        .reads()
+        .is_empty());
     let errors: Vec<_> = decoded
         .report()
         .losses
@@ -223,6 +240,7 @@ fn bad_point_coordinate_gives_up_only_its_parameter_record_and_keeps_an_unchange
     assert!(errors
         .iter()
         .all(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
+    assert!(errors[0].message.contains("iges.binary_parameter_value"));
     let stream = fidelity
         .parts()
         .values()

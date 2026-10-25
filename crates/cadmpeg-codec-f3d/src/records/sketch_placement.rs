@@ -162,6 +162,7 @@ impl SketchPlacementMatrix {
         self.0.rows()
     }
     /// The matrix rows in storage order.
+    #[cfg(test)]
     pub(crate) fn iter(&self) -> std::slice::Iter<'_, [f64; 4]> {
         self.0.iter()
     }
@@ -217,6 +218,9 @@ pub(crate) enum DesignSketchFrameForm {
     MemberExplicit {
         paired_byte_offset: u64,
         transform: SketchPlacementMatrix,
+        /// The closing head reference carries an inline type GUID, making
+        /// the frame forty bytes longer.
+        typed_reference: bool,
     },
 }
 
@@ -277,7 +281,15 @@ impl DesignSketchFrame {
             DesignSketchFrameForm::ScopeExplicit(_) => 329,
             DesignSketchFrameForm::ScopeGenesisExplicit(_) => 341,
             DesignSketchFrameForm::MemberCompact { .. } => 34,
-            DesignSketchFrameForm::MemberExplicit { .. } => 162,
+            DesignSketchFrameForm::MemberExplicit {
+                typed_reference, ..
+            } => {
+                if typed_reference {
+                    202
+                } else {
+                    162
+                }
+            }
         })
     }
     fn transform(&self) -> &[[f64; 4]; 4] {

@@ -7,10 +7,11 @@ use std::io::Write;
 use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
-    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface,
+    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
+    HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId, ShellId};
 use cadmpeg_ir::pmi::{
@@ -32,6 +33,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
+pub(crate) mod approximation;
 mod non_manifold;
 mod ownership;
 mod wire;
@@ -221,10 +223,14 @@ struct WrittenSurface {
 
 mod pcurves;
 
+/// A pcurve's parameter-space start and end.
+type PcurveEnds = ([f64; 2], [f64; 2]);
+
 /// One coedge's parameter-space use, including its own parameter interval.
 #[derive(Clone, Copy)]
 struct PcurveUse<'a> {
     use_: &'a cadmpeg_ir::topology::PcurveUse,
+    coedge: &'a str,
     surface: &'a str,
     face: &'a str,
 }
@@ -270,6 +276,25 @@ pub(crate) struct Builder<'a> {
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
     written_procedural_curves: BTreeSet<String>,
+    /// Whole-period parameter-space shift per coedge that joins its pcurve to
+    /// the previous pcurve of its loop, computed once over every face.
+    pcurve_period_shifts: HashMap<&'a str, [f64; 2]>,
+    /// Helix constructions written as fitted B-splines because they carry no
+    /// solved carrier.
+    fitted_helix_curves: BTreeSet<String>,
+    /// Helix surface constructions written as fitted B-spline surfaces
+    /// because they carry no solved carrier.
+    fitted_helix_surfaces: BTreeSet<String>,
+    /// Helix constructions without a solved carrier whose B-spline fit
+    /// failed, with the reason.
+    failed_helix_fits: BTreeMap<String, &'static str>,
+    /// Pcurves omitted because their surface is a fitted helix surface.
+    fitted_surface_pcurves: BTreeSet<String>,
+    /// Procedural surface constructions written as sampled B-spline
+    /// carriers.
+    sampled_surfaces: BTreeSet<String>,
+    /// Procedural curve constructions written as sampled B-spline carriers.
+    sampled_curves: BTreeSet<String>,
     /// Analytic surface records the writer put in the file, in emission order.
     written_analytic_surfaces: Vec<WrittenAnalyticSurface<'a>>,
 
@@ -324,6 +349,7 @@ pub(crate) struct Builder<'a> {
     ratio_unit: Option<Ref>,
     geometry_emission_depth: usize,
     construction_supports: BTreeSet<String>,
+    approximations: approximation::Approximator<'a>,
 }
 
 /// STEP names for entities that carry an id and an optional source name.
@@ -390,12 +416,14 @@ impl<'a> Builder<'a> {
                     .or_default()
                     .push(PcurveUse {
                         use_: pcurve,
+                        coedge: coedge.id.as_str(),
                         surface,
                         face,
                     });
             }
         }
-        Ok(Builder {
+        let mut builder = Builder {
+            approximations: approximation::Approximator::new(ir),
             ir,
             schema,
             model_name: "cadmpeg_model",
@@ -487,6 +515,13 @@ impl<'a> Builder<'a> {
             active_curves: BTreeSet::new(),
             written_procedural_surfaces: BTreeSet::new(),
             written_procedural_curves: BTreeSet::new(),
+            pcurve_period_shifts: HashMap::new(),
+            fitted_helix_curves: BTreeSet::new(),
+            fitted_helix_surfaces: BTreeSet::new(),
+            failed_helix_fits: BTreeMap::new(),
+            fitted_surface_pcurves: BTreeSet::new(),
+            sampled_surfaces: BTreeSet::new(),
+            sampled_curves: BTreeSet::new(),
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
@@ -524,7 +559,9 @@ impl<'a> Builder<'a> {
             ratio_unit: None,
             geometry_emission_depth: 0,
             construction_supports,
-        })
+        };
+        builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
+        Ok(builder)
     }
 
     fn loss(&mut self, code: StepLossCode, message: String) {
@@ -1803,7 +1840,7 @@ impl<'a> Builder<'a> {
             if closed {
                 self.split_non_manifold_edges(&region.shells);
             }
-            let Some((outer, mut shells_closed)) = self.emit_shell(outer_id.as_str(), closed)
+            let Some((outer, mut shells_closed)) = self.emit_shell(outer_id.as_str(), closed, false)
             else {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
@@ -1813,8 +1850,12 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let mut voids = Vec::new();
+            // A solid void is the base shell of an `ORIENTED_CLOSED_SHELL`
+            // with orientation false, so its base faces carry the reverse of
+            // the CADIR face use.
+            let void_reversed = closed;
             for sid in void_ids {
-                if let Some((void, void_closed)) = self.emit_shell(sid.as_str(), closed) {
+                if let Some((void, void_closed)) = self.emit_shell(sid.as_str(), closed, void_reversed) {
                     shells_closed &= void_closed;
                     voids.push(void);
                 } else {
@@ -2539,6 +2580,7 @@ impl<'a> Builder<'a> {
                     if let Some((surface, face)) = self.coedge_faces.get(coedge.id.as_str()) {
                         pcurves.extend(coedge.pcurves.iter().map(|pcurve| PcurveUse {
                             use_: pcurve,
+                            coedge: coedge.id.as_str(),
                             surface,
                             face,
                         }));
@@ -2551,7 +2593,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<(Ref, bool)> {
+    fn emit_shell(&mut self, shell_id: &str, closed: bool, reversed: bool) -> Option<(Ref, bool)> {
         let shell = self.shells.get(shell_id).copied()?;
         let face_ids: Vec<String> = shell
             .faces()
@@ -2561,7 +2603,7 @@ impl<'a> Builder<'a> {
         let mut face_refs = Vec::new();
         let prior_topology_losses = self.topology_relation_losses.len();
         for fid in &face_ids {
-            if let Some(r) = self.emit_face(fid) {
+            if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
             } else {
                 let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
@@ -2594,10 +2636,13 @@ impl<'a> Builder<'a> {
         ))
     }
 
-    fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
+    /// Writes the face use, or its reverse when `reversed` is set: the
+    /// reverse flips the face `same_sense` and the orientation of every bound.
+    fn emit_face(&mut self, face_id: &str, reversed: bool) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
         let surface_id = face.surface.as_str();
-        let same_sense = matches!(face.sense, Sense::Forward);
+        let same_sense = matches!(face.sense, Sense::Forward) != reversed;
+        let bound_flag = if reversed { ".F." } else { ".T." };
 
         // Surface emission admits either a writable construction or a solved
         // carrier. An absent or opaque solved cache cannot veto a construction.
@@ -2615,7 +2660,9 @@ impl<'a> Builder<'a> {
                 } else {
                     "FACE_BOUND"
                 };
-                let b = self.emitter.emit(kind, &format!("'',{loop_ref},.T."));
+                let b = self
+                    .emitter
+                    .emit(kind, &format!("'',{loop_ref},{bound_flag}"));
                 bound_refs.push(b);
             } else {
                 let code = match face.loop_role(loop_id) {
@@ -2823,7 +2870,7 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             };
-            if !geometry::curve_is_supported(&curve.geometry) {
+            if !self.curve_is_writable(curve) {
                 self.curveless_edges.insert(edge_key.to_string());
                 self.topology_relation_loss(
                     format!("edge:{edge_key}:unsupported-curve:{curve_id}"),
@@ -3020,11 +3067,12 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        if self
+        let unwritable = self
             .curves
             .get(curve_id.as_str())
-            .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
-        {
+            .copied()
+            .is_some_and(|curve| !self.curve_is_writable(curve));
+        if unwritable {
             self.curveless_edges.insert(edge_id.to_string());
             self.topology_relation_loss(
                 format!("edge:{edge_id}:unsupported-curve:{curve_id}"),
@@ -3048,6 +3096,8 @@ impl<'a> Builder<'a> {
             let face_id = use_.face;
             if let Some(pcurve) = self.emit_pcurve(use_, edge) {
                 pcurve_refs.push(pcurve);
+            } else if self.surface_is_fitted_helix(surface_id) {
+                self.fitted_surface_pcurves.insert(pcurve_id.to_string());
             } else if self.surface_chart_reversed(surface_id) {
                 self.loss(
                     StepLossCode::PcurveCarrierUnwritable,
@@ -3079,14 +3129,30 @@ impl<'a> Builder<'a> {
         let pcurve_id = use_.use_.pcurve.as_str();
         let surface_id = use_.surface;
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
-        let carrier = self.curves.get(edge.curve()?.as_str()).copied()?;
-        let aligned = pcurves::align_periodic_spline(
-            &pcurve.geometry,
-            use_.use_.parameter_range,
-            edge,
-            &carrier.geometry,
-        );
+        self.curves.get(edge.curve()?.as_str())?;
         let surface = self.emit_surface(surface_id)?;
+        if self.surface_is_fitted_helix(surface_id) {
+            return None;
+        }
+        let range = self
+            .directed_use_range(
+                &pcurve.geometry,
+                use_.use_.parameter_range,
+                surface_id,
+                edge,
+            )
+            .ok()
+            .flatten();
+        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, range, edge);
+        let shift = self
+            .pcurve_period_shifts
+            .get(use_.coedge)
+            .copied()
+            .unwrap_or([0.0; 2]);
+        let aligned = match pcurves::shifted(aligned.as_ref(), shift) {
+            Some(moved) if shift != [0.0, 0.0] => std::borrow::Cow::Owned(moved),
+            _ => aligned,
+        };
         let reversed_cone = self.surface_chart_reversed(surface_id);
         let curve = if reversed_cone {
             geometry::pcurve_on_reversed_cone(&mut self.emitter, &aligned)?
@@ -3111,6 +3177,168 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("PCURVE", &format!("'',{surface},{representation}")),
         )
+    }
+
+    /// The nonzero pcurve period shifts of every loop on a periodic surface.
+    fn loop_pcurve_period_shifts(
+        &self,
+    ) -> Result<HashMap<&'a str, [f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+        let mut shifts = HashMap::new();
+        for face in self.faces.values() {
+            let Some(surface) = self
+                .surfaces
+                .get(face.surface.as_str())
+                .and_then(|surface| surface.geometry.solved())
+            else {
+                continue;
+            };
+            let periods = pcurves::surface_periods(surface);
+            if periods == [None, None] {
+                continue;
+            }
+            for loop_id in &face.loops {
+                let Some(lp) = self.loops.get(loop_id.as_str()).copied() else {
+                    continue;
+                };
+                let Some(ends) = lp
+                    .coedges()
+                    .iter()
+                    .map(|coedge_id| self.coedge_pcurve_ends(coedge_id.as_str()))
+                    .collect::<Result<Option<Vec<_>>, _>>()?
+                else {
+                    continue;
+                };
+                for (coedge_id, shift) in lp
+                    .coedges()
+                    .iter()
+                    .zip(pcurves::loop_period_shifts(&ends, periods))
+                {
+                    if shift != [0.0, 0.0] {
+                        shifts.insert(coedge_id.as_str(), shift);
+                    }
+                }
+            }
+        }
+        Ok(shifts)
+    }
+
+    /// The parameter-space start and end of `coedge`'s spline pcurve on its
+    /// edge's range, in the coedge's direction.
+    fn coedge_pcurve_ends(
+        &self,
+        coedge: &str,
+    ) -> Result<Option<PcurveEnds>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(coedge) = self.coedges.get(coedge).copied() else {
+            return Ok(None);
+        };
+        let (Some(use_), Some(edge)) = (
+            coedge.pcurves.first(),
+            self.edges.get(coedge.edge.as_str()).copied(),
+        ) else {
+            return Ok(None);
+        };
+        let Some(pcurve) = self.pcurves.get(use_.pcurve.as_str()).copied() else {
+            return Ok(None);
+        };
+        let Some(range) = edge.param_range() else {
+            return Ok(None);
+        };
+        if !matches!(
+            pcurve.geometry,
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
+        ) {
+            return Ok(None);
+        }
+        let Some((surface, _)) = self.coedge_faces.get(coedge.id.as_str()).copied() else {
+            return Ok(None);
+        };
+        let directed =
+            self.directed_use_range(&pcurve.geometry, use_.parameter_range, surface, edge)?;
+        let aligned = pcurves::align_spline_to_edge(&pcurve.geometry, directed, edge);
+        let at = |parameter: f64| {
+            Ok::<_, cadmpeg_core::decode::ResourceLimit>(
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    aligned.as_ref(),
+                    parameter,
+                ))?
+                .map(|point| {
+                    let point = point.get();
+                    [point.u, point.v]
+                }),
+            )
+        };
+        let [start, end] = range.get();
+        let (Some(start), Some(end)) = (at(start)?, at(end)?) else {
+            return Ok(None);
+        };
+        Ok(Some(match coedge.sense {
+            Sense::Forward => (start, end),
+            Sense::Reversed => (end, start),
+        }))
+    }
+
+    /// A pcurve use interval directed from `edge`'s start to its end. The IR
+    /// states a use interval in either order, so the end whose surface image
+    /// lies nearer the edge's start vertex starts it. The two ends of a closed
+    /// edge lift to one vertex, so only an increasing interval is directed
+    /// there.
+    fn directed_use_range(
+        &self,
+        pcurve: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+        range: Option<cadmpeg_ir::geometry::DirectedParameterRange>,
+        surface: &str,
+        edge: &Edge,
+    ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+        use cadmpeg_ir::eval::admission::EvaluationAdmission;
+        use cadmpeg_ir::eval::finite_or_refusal;
+        let Some([first, second]) =
+            range.map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+        else {
+            return Ok(None);
+        };
+        let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+            let vertex = self.vertices.get(vertex.as_str())?;
+            Some(self.points.get(vertex.point.as_str())?.position().get())
+        };
+        let (Some(surface), Some(start), Some(end)) = (
+            self.surfaces.get(surface),
+            position(&edge.start),
+            position(&edge.end),
+        ) else {
+            return Ok(None);
+        };
+        let lift = |parameter: f64| {
+            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                EvaluationAdmission::Standard,
+                pcurve,
+                parameter,
+            ))?
+            else {
+                return Ok(None);
+            };
+            let uv = uv.get();
+            finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                EvaluationAdmission::Standard,
+                self.ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            ))
+            .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+        };
+        let (Some(at_first), Some(at_second)) = (lift(first)?, lift(second)?) else {
+            return Ok(None);
+        };
+        let forward = at_first.distance(start).max(at_second.distance(end));
+        let backward = at_first.distance(end).max(at_second.distance(start));
+        Ok(if forward < backward {
+            Some([first, second])
+        } else if backward < forward {
+            Some([second, first])
+        } else {
+            (first <= second).then_some([first, second])
+        })
     }
 
     fn emit_vertex(&mut self, vertex_id: &str) -> Option<Ref> {
@@ -3164,11 +3392,25 @@ impl<'a> Builder<'a> {
             let (r, reversed) = if let Some((id, reference, reversed)) = emitted {
                 self.written_procedural_surfaces.insert(id);
                 (reference, reversed)
-            } else {
-                let solved = solved?;
-                if !geometry::surface_is_supported(solved) || unwritable_cone(solved) {
+            } else if let Some((id, helix)) = self.unsolved_helix_surface(surface_id) {
+                if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
+                let fitted = match helix_surface_nurbs(helix, self.ir.tolerances.linear) {
+                    Ok(fitted) => fitted,
+                    Err(error) => {
+                        self.failed_helix_fits
+                            .insert(id.to_owned(), helix_fit_failure(&error));
+                        return None;
+                    }
+                };
+                let reference =
+                    geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
+                self.fitted_helix_surfaces.insert(id.to_owned());
+                (reference, false)
+            } else if let Some(solved) =
+                solved.filter(|solved| geometry::surface_is_supported(solved) && !unwritable_cone(solved))
+            {
                 // The basis is taken before the record is emitted, so the
                 // census cannot miss a record the writer put in the file.
                 let basis = geometry::emitted_basis(solved);
@@ -3177,6 +3419,12 @@ impl<'a> Builder<'a> {
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let reversed = matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0);
                 (reference, reversed)
+            } else {
+                let procedural = self.procedural_surfaces.get(surface_id)?.id.to_string();
+                let surface = self.approximations.surface(surface_id)?;
+                let reference = geometry::surface(&mut self.emitter, &surface)?;
+                self.sampled_surfaces.insert(procedural);
+                (reference, false)
             };
             Some((r, reversed))
         })();
@@ -3409,10 +3657,30 @@ impl<'a> Builder<'a> {
                         }
                     ),
                 )
-            } else if !geometry::curve_is_supported(&geometry) {
-                return None;
-            } else {
+            } else if let Some((id, helix)) = self.unsolved_helix(curve_id) {
+                if self.failed_helix_fits.contains_key(id) {
+                    return None;
+                }
+                let fitted = match helix_nurbs(helix, self.ir.tolerances.linear) {
+                    Ok(fitted) => fitted,
+                    Err(error) => {
+                        self.failed_helix_fits
+                            .insert(id.to_owned(), helix_fit_failure(&error));
+                        return None;
+                    }
+                };
+                let reference =
+                    geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(fitted))?;
+                self.fitted_helix_curves.insert(id.to_owned());
+                reference
+            } else if geometry::curve_is_supported(&geometry) {
                 geometry::curve(&mut self.emitter, geometry.solved()?)?
+            } else {
+                let procedural = self.procedural_curves.get(curve_id)?.id.to_string();
+                let curve = self.approximations.curve(curve_id)?;
+                let reference = geometry::curve(&mut self.emitter, &curve)?;
+                self.sampled_curves.insert(procedural);
+                reference
             };
             Some(r)
         })();
@@ -3422,6 +3690,78 @@ impl<'a> Builder<'a> {
             self.curve_refs.insert(curve_id.to_string(), r);
         }
         result
+    }
+
+    /// Whether `curve` has a STEP carrier: a supported solved carrier, a
+    /// helix construction the writer fits, a procedural curve the writer
+    /// samples, or a subset of a writable source, which [`Self::emit_curve`]
+    /// writes as a `TRIMMED_CURVE` whatever its cache.
+    fn curve_is_writable(&mut self, curve: &Curve) -> bool {
+        let mut visited = BTreeSet::new();
+        let mut current = curve;
+        loop {
+            if geometry::curve_is_supported(&current.geometry)
+                || self.unsolved_helix(current.id.as_str()).is_some()
+                || self.approximations.curve(current.id.as_str()).is_some()
+            {
+                return true;
+            }
+            let Some(ProceduralCurveDefinition::Subset(subset)) = self
+                .procedural_curves
+                .get(current.id.as_str())
+                .copied()
+                .map(ProceduralCurve::definition)
+            else {
+                return false;
+            };
+            if !visited.insert(current.id.clone()) {
+                return false;
+            }
+            let Some(source) = self.curves.get(subset.source().as_str()).copied() else {
+                return false;
+            };
+            current = source;
+        }
+    }
+
+    /// The construction id and helix of a curve whose helix construction
+    /// carries no solved carrier.
+    fn unsolved_helix(&self, curve_id: &str) -> Option<(&'a str, &'a HelixCurveConstruction)> {
+        let curve = self.curves.get(curve_id)?;
+        if curve.geometry.solved().is_some() {
+            return None;
+        }
+        let procedural = self.procedural_curves.get(curve_id)?;
+        match procedural.definition() {
+            ProceduralCurveDefinition::Helix(helix) => Some((procedural.id.as_str(), helix)),
+            _ => None,
+        }
+    }
+
+    /// The construction id and helix of a surface whose helix construction
+    /// carries no solved carrier.
+    fn unsolved_helix_surface(
+        &self,
+        surface_id: &str,
+    ) -> Option<(&'a str, &'a HelixSurfaceConstruction)> {
+        let surface = self.surfaces.get(surface_id)?;
+        if surface.geometry.solved().is_some() {
+            return None;
+        }
+        let procedural = self.procedural_surfaces.get(surface_id)?;
+        match procedural.definition() {
+            ProceduralSurfaceDefinition::Helix { construction } => {
+                Some((procedural.id.as_str(), construction))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the writer wrote `surface_id` as a fitted helix surface.
+    fn surface_is_fitted_helix(&self, surface_id: &str) -> bool {
+        self.procedural_surfaces
+            .get(surface_id)
+            .is_some_and(|procedural| self.fitted_helix_surfaces.contains(procedural.id.as_str()))
     }
 
     fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
@@ -5169,6 +5509,8 @@ impl<'a> Builder<'a> {
                     && !self
                         .written_procedural_surfaces
                         .contains(procedural.id.as_str())
+                    && !self.fitted_helix_surfaces.contains(procedural.id.as_str())
+                    && !self.sampled_surfaces.contains(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -5180,6 +5522,8 @@ impl<'a> Builder<'a> {
                     && !self
                         .written_procedural_curves
                         .contains(procedural.id.as_str())
+                    && !self.fitted_helix_curves.contains(procedural.id.as_str())
+                    && !self.sampled_curves.contains(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -5192,6 +5536,9 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_surfaces
                     .contains(procedural.id.as_str())
+                    && !self.fitted_helix_surfaces.contains(procedural.id.as_str())
+                    && !self.failed_helix_fits.contains_key(procedural.id.as_str())
+                    && !self.sampled_surfaces.contains(procedural.id.as_str())
                     && !reduced_surfaces.contains(procedural.id.as_str())
             })
             .count();
@@ -5204,6 +5551,9 @@ impl<'a> Builder<'a> {
                 !self
                     .written_procedural_curves
                     .contains(procedural.id.as_str())
+                    && !self.fitted_helix_curves.contains(procedural.id.as_str())
+                    && !self.failed_helix_fits.contains_key(procedural.id.as_str())
+                    && !self.sampled_curves.contains(procedural.id.as_str())
                     && !reduced_curves.contains(procedural.id.as_str())
             })
             .count();
@@ -5214,6 +5564,54 @@ impl<'a> Builder<'a> {
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
                     "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
+                ),
+            );
+        }
+        if !self.fitted_helix_curves.is_empty() || !self.fitted_helix_surfaces.is_empty() {
+            self.loss(
+                StepLossCode::HelixFittedToBspline,
+                format!(
+                    "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance",
+                    self.fitted_helix_curves.len(),
+                    self.fitted_helix_surfaces.len()
+                ),
+            );
+        }
+        if !self.sampled_curves.is_empty() || !self.sampled_surfaces.is_empty() {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{} procedural curve definition(s) and {} procedural surface definition(s) without another STEP carrier were written as sampled cubic B-splines with sampled residuals of at most {}",
+                    self.sampled_curves.len(),
+                    self.sampled_surfaces.len(),
+                    self.approximations.residual_limit()
+                ),
+            );
+        }
+        if !self.failed_helix_fits.is_empty() {
+            let mut reasons = BTreeMap::<&str, usize>::new();
+            for reason in self.failed_helix_fits.values() {
+                *reasons.entry(reason).or_default() += 1;
+            }
+            let reasons = reasons
+                .into_iter()
+                .map(|(reason, count)| format!("{count} {reason}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                StepLossCode::HelixFitFailed,
+                format!(
+                    "{} helix definition(s) without a solved carrier were not written because no B-spline fit succeeded: {reasons}",
+                    self.failed_helix_fits.len()
+                ),
+            );
+        }
+        if !self.fitted_surface_pcurves.is_empty() {
+            self.loss(
+                StepLossCode::PcurveOnFittedHelixSurface,
+                format!(
+                    "{} pcurve(s) on fitted helix surfaces were not written; the fitted surface does not keep the native profile parameter",
+                    self.fitted_surface_pcurves.len()
                 ),
             );
         }
@@ -5266,3 +5664,16 @@ mod accounting_tests;
 mod construction_tests;
 #[cfg(test)]
 mod non_manifold_tests;
+
+/// Why a helix B-spline fit failed, for the loss report.
+fn helix_fit_failure(error: &cadmpeg_ir::eval::helix_nurbs::HelixNurbsError) -> &'static str {
+    match error {
+        cadmpeg_ir::eval::helix_nurbs::HelixNurbsError::NotFinite => {
+            "with a non-finite point or tangent"
+        }
+        cadmpeg_ir::eval::helix_nurbs::HelixNurbsError::ToleranceNotMet => {
+            "beyond the linear tolerance at the segment bound"
+        }
+        cadmpeg_ir::eval::helix_nurbs::HelixNurbsError::Refused(_) => "with a refused evaluation",
+    }
+}

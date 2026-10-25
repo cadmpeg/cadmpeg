@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct DesignSurfaceStitchOperation {
     /// Positive maximum stitched-boundary gap in centimetres.
     pub(crate) gap_tolerance: PositiveReal,
-    /// Byte offset of `gap_tolerance`.
-    pub(crate) gap_tolerance_offset: u64,
+    /// Byte offset of `gap_tolerance`. of a located scope.
+    #[serde(skip)]
+    pub(crate) gap_tolerance_offset: Option<u64>,
     /// Indexed tolerance-record identity.
     pub(crate) tolerance_record_index: u32,
     /// Indexed operation-settings record identity.
@@ -36,26 +37,30 @@ pub(crate) enum DesignSurfaceExtendMethod {
 pub(crate) struct DesignSurfaceExtendOperation {
     /// Extension distance in source centimetres.
     pub(crate) distance: FiniteReal,
-    /// Byte offset of `distance`.
-    pub(crate) distance_offset: u64,
+    /// Byte offset of `distance` of a located scope.
+    #[serde(skip)]
+    pub(crate) distance_offset: Option<u64>,
     /// Indexed scalar record carrying `distance`.
     pub(crate) distance_record_index: u32,
     /// Geometric continuation law.
     pub(crate) method: DesignSurfaceExtendMethod,
-    /// Byte offset of the method enum.
-    pub(crate) method_offset: u64,
+    /// Byte offset of the method enum. of a located scope.
+    #[serde(skip)]
+    pub(crate) method_offset: Option<u64>,
     /// Indexed boundary-carrier record.
     pub(crate) boundary_record_index: u32,
     /// Additional indexed reference carried by the boundary tail.
     pub(crate) boundary_reference_record_index: u32,
-    /// Byte offset of `boundary_reference_record_index`'s marked reference.
-    pub(crate) boundary_reference_offset: u64,
+    /// Byte offset of `boundary_reference_record_index`'s marked reference. of a located scope.
+    #[serde(skip)]
+    pub(crate) boundary_reference_offset: Option<u64>,
     /// Ordered edge-recipe records contained by the boundary carrier.
     pub(crate) edge_record_indices: Vec<u32>,
     /// Modelling tolerance in source centimetres.
     pub(crate) tolerance: cadmpeg_ir::scalar::PositiveReal,
-    /// Byte offset of `tolerance`.
-    pub(crate) tolerance_offset: u64,
+    /// Byte offset of `tolerance`. of a located scope.
+    #[serde(skip)]
+    pub(crate) tolerance_offset: Option<u64>,
 }
 
 /// Source selection form named by a `SurfaceOffset` scope.
@@ -68,14 +73,17 @@ pub(crate) enum DesignSurfaceOffsetSupport {
         boundary_record_index: u32,
         /// Additional indexed reference carried by the boundary tail.
         boundary_reference_record_index: u32,
-        /// Byte offset of `boundary_reference_record_index`'s marked reference.
-        boundary_reference_offset: u64,
+        /// Byte offset of `boundary_reference_record_index`'s marked
+        /// reference of a located scope.
+        #[serde(skip)]
+        boundary_reference_offset: Option<u64>,
         /// Ordered edge-recipe records contained by the boundary carrier.
         edge_record_indices: Vec<u32>,
         /// Modelling tolerance in source centimetres.
         tolerance: cadmpeg_ir::scalar::PositiveReal,
-        /// Byte offset of `tolerance`.
-        tolerance_offset: u64,
+        /// Byte offset of `tolerance` of a located scope.
+        #[serde(skip)]
+        tolerance_offset: Option<u64>,
     },
     /// Counted role-0x41 groups containing bounded-face recipes.
     FaceGroups {
@@ -89,8 +97,9 @@ pub(crate) enum DesignSurfaceOffsetSupport {
 pub(crate) struct DesignSurfaceOffsetOperation {
     /// Signed offset distance in source centimetres.
     pub(crate) distance: FiniteReal,
-    /// Byte offset of `distance`.
-    pub(crate) distance_offset: u64,
+    /// Byte offset of `distance` of a located scope.
+    #[serde(skip)]
+    pub(crate) distance_offset: Option<u64>,
     /// Indexed scalar record carrying `distance`.
     pub(crate) distance_record_index: u32,
     /// Exact source selection form.
@@ -372,16 +381,19 @@ pub(crate) enum DesignRuledSurfaceCorner {
 pub(crate) struct DesignRuledSurfaceOperation {
     /// Direction law.
     pub(crate) method: DesignRuledSurfaceMethod,
-    /// Byte offset of the direction-law enum.
-    pub(crate) method_offset: u64,
+    /// Byte offset of the direction-law enum. of a located scope.
+    #[serde(skip)]
+    pub(crate) method_offset: Option<u64>,
     /// Corner construction law.
     pub(crate) corner: DesignRuledSurfaceCorner,
-    /// Byte offset of the corner-law enum.
-    pub(crate) corner_offset: u64,
+    /// Byte offset of the corner-law enum. of a located scope.
+    #[serde(skip)]
+    pub(crate) corner_offset: Option<u64>,
     /// Whether the opposite incident face supplies the angle reference.
     pub(crate) alternate_face: bool,
-    /// Byte offset of the alternate-face Boolean.
-    pub(crate) alternate_face_offset: u64,
+    /// Byte offset of the alternate-face Boolean. of a located scope.
+    #[serde(skip)]
+    pub(crate) alternate_face_offset: Option<u64>,
     /// Referenced ruled-angle parameter owner.
     pub(crate) angle_owner_record_index: u32,
     /// Referenced ruled-distance parameter owner.
@@ -422,42 +434,21 @@ impl DesignPatchContinuity {
     }
 }
 
-/// Pipe generated-section shape selector.
+/// Versioned whole-surface normal state, independent of boundary-side ordinals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "u8", into = "u8")]
-pub(crate) enum DesignPipeSectionShape {
-    Circular,
-    Unknown(u8),
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum DesignSurfacePatchNormalState {
+    Explicit {
+        reversed: crate::records::identity::Sourced<bool>,
+    },
+    Unsupported,
 }
 
-impl DesignPipeSectionShape {
-    #[must_use]
-    pub(crate) fn from_code(code: u8) -> Self {
-        match code {
-            1 => Self::Circular,
-            code => Self::Unknown(code),
-        }
-    }
-
-    #[must_use]
-    fn code(self) -> u8 {
-        match self {
-            Self::Circular => 1,
-            Self::Unknown(code) => code,
-        }
-    }
-}
-
-impl From<u8> for DesignPipeSectionShape {
-    fn from(code: u8) -> Self {
-        Self::from_code(code)
-    }
-}
-
-impl From<DesignPipeSectionShape> for u8 {
-    fn from(shape: DesignPipeSectionShape) -> Self {
-        shape.code()
-    }
+/// Boundary settings and whole-surface normal state of one `SurfacePatch`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DesignSurfacePatchScope {
+    pub(crate) boundaries: Vec<DesignSurfacePatchBoundary>,
+    pub(crate) normal: Option<DesignSurfacePatchNormalState>,
 }
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.
@@ -478,6 +469,81 @@ pub(crate) struct DesignSurfacePatchBoundary {
     /// Indexed record the `rPatchModelRef` reference names: this boundary
     /// component's model reference.
     pub(crate) model_reference: u32,
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignSurfaceStitchOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("gap_tolerance_offset", &mut self.gap_tolerance_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignSurfaceExtendOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("distance_offset", &mut self.distance_offset);
+        offsets.offset("method_offset", &mut self.method_offset);
+        offsets.offset(
+            "boundary_reference_offset",
+            &mut self.boundary_reference_offset,
+        );
+        offsets.offset("tolerance_offset", &mut self.tolerance_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignSurfaceOffsetOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("distance_offset", &mut self.distance_offset);
+        offsets.record("support", &mut self.support);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignSurfaceOffsetSupport {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        if let Self::BoundaryCarrier {
+            boundary_reference_offset,
+            tolerance_offset,
+            ..
+        } = self
+        {
+            offsets.nested("value", |offsets| {
+                offsets.offset("boundary_reference_offset", boundary_reference_offset);
+                offsets.offset("tolerance_offset", tolerance_offset);
+            });
+        }
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignRuledSurfaceOperation {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        offsets.offset("method_offset", &mut self.method_offset);
+        offsets.offset("corner_offset", &mut self.corner_offset);
+        offsets.offset("alternate_face_offset", &mut self.alternate_face_offset);
+    }
+}
+
+impl crate::records::source_offsets::SourceOffsets for DesignSurfacePatchNormalState {
+    fn visit_source_offsets(
+        &mut self,
+        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
+    ) {
+        if let Self::Explicit { reversed } = self {
+            offsets.sourced("reversed", reversed);
+        }
+    }
 }
 
 #[cfg(test)]

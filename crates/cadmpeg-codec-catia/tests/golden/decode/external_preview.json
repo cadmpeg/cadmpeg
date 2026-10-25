@@ -27,7 +27,23 @@
       "faces": [],
       "features": [],
       "loops": [],
-      "occurrences": [],
+      "occurrences": [
+        {
+          "id": "catia:document:occurrence#external-0",
+          "native_ref": "catia:outer:external-reference#0",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "document": {
+              "path": "Support.CATPart",
+              "resolution": "path"
+            },
+            "scope": "external"
+          }
+        }
+      ],
       "parameters": [],
       "pcurves": [],
       "pmi": [],
@@ -565,16 +581,6 @@
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "External-reference record catia:outer:external-reference#0 identifies Support.CATPart, but no occurrence placement is decoded; its typed reference remains held without inventing an identity transform.",
-        "severity": "warning"
       },
       {
         "code": {

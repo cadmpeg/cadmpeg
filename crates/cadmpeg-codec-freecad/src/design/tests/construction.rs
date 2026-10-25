@@ -12,6 +12,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 mod binders;
+mod part_scale;
 mod tolerance_modes;
 
 #[test]
@@ -384,147 +385,6 @@ fn rejects_malformed_polygon_vector_list_side_streams() {
         matches!(definition(&result, "Polygon"), FeatureDefinition::Operation(FeatureOperation::Polyline { chain }) if !chain.closed() && chain.points().len() == 2)
     );
     assert_valid_document(result.ir());
-}
-
-#[test]
-fn transfers_uniform_and_anisotropic_part_scale() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
- <Object type="Part::Box" name="Source" id="1"/>
- <Object type="Part::Scale" name="Uniform" id="2"/>
- <Object type="Part::Scale" name="Anisotropic" id="3"/>
-</Objects>
-<ObjectData Count="3">
- <Object name="Source"><Properties Count="3">
-  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
-  <Property name="Width" type="App::PropertyLength"><Float value="1"/></Property>
-  <Property name="Height" type="App::PropertyLength"><Float value="1"/></Property>
- </Properties></Object>
- <Object name="Uniform"><Properties Count="3">
-  <Property name="Base" type="App::PropertyLink"><Link value="Source"/></Property>
-  <Property name="Uniform" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="UniformScale" type="App::PropertyFloat"><Float value="-2"/></Property>
- </Properties></Object>
- <Object name="Anisotropic"><Properties Count="5">
-  <Property name="Base" type="App::PropertyLink"><Link value="Source"/></Property>
-  <Property name="Uniform" type="App::PropertyBool"><Bool value="false"/></Property>
-  <Property name="XScale" type="App::PropertyFloat"><Float value="2"/></Property>
-  <Property name="YScale" type="App::PropertyFloat"><Float value="3"/></Property>
-  <Property name="ZScale" type="App::PropertyFloat"><Float value="4"/></Property>
- </Properties></Object>
-</ObjectData></Document>"#;
-    let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect("Part scale");
-    let definition = |name: &str| {
-        result
-            .ir()
-            .model
-            .features
-            .iter()
-            .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("missing {name}"))
-            .evaluation
-            .definition()
-    };
-    assert!(matches!(
-        definition("Uniform"),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Scale {
-            center: Some(cadmpeg_ir::features::ScaleCenter::ModelOrigin),
-            factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
-            ..
-        }) if result.ir().dimension_value(factor).expect("resolved dimension").get() == -2.0
-    ));
-    assert!(matches!(
-        definition("Anisotropic"),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::PerAxis { factors },
-            ..
-        }) if factors.each_ref().map(|value| result.ir().dimension_value(value).unwrap().get()) == [2.0, 3.0, 4.0]
-    ));
-}
-
-#[test]
-fn distinguishes_absent_and_malformed_part_scale_uniform_flag() {
-    fn document(uniform_property: Option<&str>) -> String {
-        let uniform = uniform_property.unwrap_or_default();
-        let count = 5 + usize::from(!uniform.is_empty());
-        format!(
-            r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2"><Object type="Part::Box" name="Source"/><Object type="Part::Scale" name="Scale"/></Objects>
-<ObjectData Count="2"><Object name="Source"><Properties Count="3">
-<Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
-<Property name="Width" type="App::PropertyLength"><Float value="1"/></Property>
-<Property name="Height" type="App::PropertyLength"><Float value="1"/></Property>
-</Properties></Object>
-<Object name="Scale"><Properties Count="{count}">
-<Property name="Base" type="App::PropertyLink"><Link value="Source"/></Property>
-{uniform}
-<Property name="UniformScale" type="App::PropertyFloat"><Float value="2"/></Property>
-<Property name="XScale" type="App::PropertyFloat"><Float value="3"/></Property>
-<Property name="YScale" type="App::PropertyFloat"><Float value="4"/></Property>
-<Property name="ZScale" type="App::PropertyFloat"><Float value="5"/></Property>
-</Properties></Object></ObjectData></Document>"#
-        )
-    }
-
-    let absent = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(&document(None))),
-            &DecodeOptions::default(),
-        )
-        .expect("absent Part scale flag");
-    assert!(matches!(
-        definition(&absent, "Scale"),
-        FeatureDefinition::Operation(FeatureOperation::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::Uniform { factor },
-            ..
-        }) if absent.ir().dimension_value(factor).expect("resolved dimension").get() == 2.0
-    ));
-    assert_valid_document(absent.ir());
-
-    let valid =
-        r#"<Property name="Uniform" type="App::PropertyBool"><Bool value="false"/></Property>"#;
-    let valid = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(&document(Some(valid)))),
-            &DecodeOptions::default(),
-        )
-        .expect("valid Part scale flag");
-    assert!(matches!(
-        definition(&valid, "Scale"),
-        FeatureDefinition::Operation(FeatureOperation::Scale {
-            factors: cadmpeg_ir::features::ScaleFactors::PerAxis { factors },
-            ..
-        }) if factors.each_ref().map(|value| valid.ir().dimension_value(value).unwrap().get()) == [3.0, 4.0, 5.0]
-    ));
-    assert_valid_document(valid.ir());
-
-    let malformed_values = [
-        r#"<Property name="TARGET" type="App::PropertyString"><String value="false"/></Property>"#,
-        r#"<Property name="TARGET" type="App::PropertyInteger"><Integer value="0"/></Property>"#,
-        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="1"/></Property>"#,
-        r#"<Property name="TARGET" type="App::PropertyBool"><Wrapper><Bool value="false"/></Wrapper></Property>"#,
-        r#"<Property name="TARGET" type="App::PropertyBool"><Bool value="false"/><Bool value="true"/></Property>"#,
-    ];
-    for malformed in malformed_values {
-        let replacement = malformed.replace("TARGET", "Uniform");
-        let result = FcstdCodec
-            .decode(
-                &mut Cursor::new(archive(&document(Some(&replacement)))),
-                &DecodeOptions::default(),
-            )
-            .expect("malformed Part scale flag");
-        assert!(matches!(
-            definition(&result, "Scale"),
-            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "Part::Scale"
-        ));
-        crate::design::tests::assert_native_retention(&result, 1);
-        assert_valid_document(result.ir());
-    }
 }
 
 #[test]
@@ -1899,4 +1759,102 @@ fn rejects_ambiguous_single_source_design_operands() {
             && loss.code.local_code() == "feature.native-kind-retained"
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
+}
+
+#[test]
+fn indexed_subelement_selections_resolve_to_the_linked_shape() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Feature" name="Base" id="1"/>
+ <Object type="PartDesign::Thickness" name="Thickness" id="2"/>
+ <Object type="PartDesign::Fillet" name="Fillet" id="3"/>
+ <Object type="PartDesign::Chamfer" name="Chamfer" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Base"><Properties Count="1">
+  <Property name="Shape" type="Part::PropertyPartShape"><Part file="Base.Shape.brp"/></Property>
+ </Properties></Object>
+ <Object name="Thickness"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1"/></LinkSub></Property>
+  <Property name="Value" type="App::PropertyLength"><Float value="1"/></Property>
+ </Properties></Object>
+ <Object name="Fillet"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value=";#1:2;:G.Edge2"/></LinkSub></Property>
+  <Property name="Radius" type="App::PropertyLength"><Float value="1"/></Property>
+ </Properties></Object>
+ <Object name="Chamfer"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="2"><Sub value="Edge1"/><Sub value="Edge3"/></LinkSub></Property>
+  <Property name="Size" type="App::PropertyLength"><Float value="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    // One face bounded by two edges.
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 8
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +8 0 -7 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +7 0 -8 0 *
+Wi 1001000 +6 0 +5 0 *
+Fa 0 0.001 1 0 1001000 +4 0 *
+Sh 1001000 +3 0 *
+So 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("Base.Shape.brp", brep),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("subelement selections");
+    let model = &result.ir().model;
+    let operation = |name: &str| match model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("{name}"))
+        .evaluation
+        .definition()
+    {
+        FeatureDefinition::PostProcess { operation, .. }
+        | FeatureDefinition::Operation(operation) => operation.clone(),
+    };
+    let FeatureOperation::Shell { removed_faces, .. } = operation("Thickness") else {
+        panic!("shell");
+    };
+    let cadmpeg_ir::features::FaceSelection::Resolved { faces, native } = removed_faces else {
+        panic!("resolved faces: {removed_faces:?}");
+    };
+    assert_eq!(faces.len(), 1);
+    assert!(model.faces.iter().any(|face| face.id == faces[0]));
+    assert_eq!(native, "fcstd:native:property#Thickness:Base");
+    let FeatureOperation::Fillet { groups, .. } = operation("Fillet") else {
+        panic!("fillet");
+    };
+    let cadmpeg_ir::features::EdgeSelection::Resolved { edges, .. } = &groups[0].edges else {
+        panic!("resolved edges: {:?}", groups[0].edges);
+    };
+    assert_eq!(edges.len(), 1);
+    assert!(model.edges.iter().any(|edge| edge.id == edges[0]));
+    // Edge3 does not exist, so the whole selection stays native.
+    let FeatureOperation::Chamfer { groups, .. } = operation("Chamfer") else {
+        panic!("chamfer");
+    };
+    assert!(matches!(
+        &groups[0].edges,
+        cadmpeg_ir::features::EdgeSelection::Native(native)
+            if native == "fcstd:native:property#Chamfer:Base"
+    ));
+    assert_valid_document(result.ir());
 }

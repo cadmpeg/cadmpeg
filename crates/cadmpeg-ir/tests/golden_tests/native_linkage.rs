@@ -22,6 +22,7 @@ const GOLDEN_ROOTS: &[&str] = &[
     "crates/cadmpeg-codec-iges/src/golden_tests.rs",
     "crates/cadmpeg-codec-inventor/src/golden_tests.rs",
     "crates/cadmpeg-codec-nx/src/golden_tests.rs",
+    "crates/cadmpeg-codec-pvz/src/golden_tests.rs",
     "crates/cadmpeg-codec-rhino/src/golden_tests.rs",
     "crates/cadmpeg-codec-sat/src/golden_tests.rs",
     "crates/cadmpeg-codec-sldprt/src/golden_tests.rs",

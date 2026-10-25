@@ -63,7 +63,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
         slot.get_or_insert_with(Default::default).operation =
             Some(crate::records::identity::RecordedValue {
                 value: DesignExtrudeOperation::NewBody,
-                offset: 62,
+                offset: Some(62),
             });
     }
     if let crate::records::feature::scope::DesignScopePayloadMut::SpirePrimitive(slot)
@@ -116,7 +116,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
             ]
             .try_into()
             .unwrap(),
-            transform_offset: 77,
+            transform_offset: Some(77),
         });
     }
     let parameters = [
@@ -222,7 +222,7 @@ fn coil_body_group() -> crate::records::topology::construction::DesignConstructi
         )
         .unwrap(),
         operand_role: DesignConstructionOperandRole::Other(
-            crate::records::topology::extrude_selection::DesignOperandRole::BODIES_B,
+            crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A,
         ),
         role_offset: 0,
         paired_class_tag: "261".to_owned().try_into().unwrap(),
@@ -240,7 +240,7 @@ fn coil_join_projects_boolean_result() {
     {
         slot.as_mut().unwrap().operation = Some(crate::records::identity::RecordedValue {
             value: DesignExtrudeOperation::Join,
-            offset: 62,
+            offset: Some(62),
         });
     }
     let group = coil_body_group();

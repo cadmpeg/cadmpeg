@@ -7,8 +7,8 @@
     },
     {
       "name": "BinaryCarrier.brp",
-      "payload_len": 1895,
-      "payload_sha256": "87d89af8cb61958e98dc886c42c4d8c14551fed19360d9b8def3ca95f80b1c65"
+      "payload_len": 1873,
+      "payload_sha256": "578b7e2ba58b90f60ace43097e5f7b4c5f5159691d0be541fd1a945f938908f8"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -151,7 +151,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.entries`: fcstd:native:entry#BinaryCarrier.Shape.bin",
         "severity": "info"
       },
       {
@@ -161,7 +161,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#BinaryCarrier:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -289,9 +289,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

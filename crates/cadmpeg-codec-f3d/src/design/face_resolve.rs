@@ -4,6 +4,7 @@
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::native_stream;
+use crate::records::feature::scope::generation::{DesignExtrudeFrame, DesignScopeGeneration};
 use crate::records::{
     feature::{
         extrude::{DesignExtrudeExtent, DesignExtrudePrologue},
@@ -42,7 +43,8 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
     side_one_offset_count == 0
         && scope.class_tag.as_str() == "330"
         && scope.paired_class_tag.as_str() == "258"
-        && scope.frame_length() == 476
+        && scope.generation()
+            == DesignScopeGeneration::Extrude(DesignExtrudeFrame::ReferenceAware476)
         && matches!(
             prologue,
             DesignExtrudePrologue::ReferenceAware {
@@ -1251,10 +1253,11 @@ fn is_split_face_context_member(operand: &DesignFaceOperand) -> bool {
                 )
             })
         && !operand.recipe_nodes.is_empty()
-        && operand
-            .recipe_nodes
-            .iter()
-            .all(|node| node.recipe_structure.is_some())
+        && operand.recipe_nodes.iter().all(|node| {
+            node.recipe_structure.as_ref().is_some_and(|structure| {
+                structure.has_valid_operand_ordinals(&operand.recipe_references)
+            })
+        })
         && face_operand_candidates(operand).is_empty()
         && operand.alternate_selector_candidate_faces.is_empty()
         && operand.preceding_candidate_faces.is_empty()
@@ -1383,10 +1386,11 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
         return None;
     };
     if operand.recipe_nodes.is_empty()
-        || !operand
-            .recipe_nodes
-            .iter()
-            .all(|node| node.recipe_structure.is_some())
+        || !operand.recipe_nodes.iter().all(|node| {
+            node.recipe_structure.as_ref().is_some_and(|structure| {
+                structure.has_valid_operand_ordinals(&operand.recipe_references)
+            })
+        })
     {
         return None;
     }
@@ -2593,7 +2597,7 @@ mod tests {
                 "program": [0, -1, 1],
                 "recipe_structure": {
                     "root": 0,
-                    "prelude": [0, 0],
+                    "prelude": [0, 2],
                     "sides": [
                         {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []},
                         {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []}
@@ -2607,6 +2611,41 @@ mod tests {
         })).unwrap();
         operand.recipe_references = vec![reference(10, "selected", 201)];
         operand
+    }
+
+    #[test]
+    fn complete_face_recipe_requires_grouped_zero_based_ordinals() {
+        let mut operand = legacy_face_candidate_limit_fixture();
+        let structure = operand.recipe_nodes[0].recipe_structure.as_mut().unwrap();
+        structure.prelude[1] = 2;
+        structure.sides[0].scalars = vec![0, 0];
+        structure.sides[1].scalars = vec![0, 0];
+        assert_eq!(super::complete_counted_face_recipe(&operand), Some(1));
+        let source_program = operand.recipe_program.clone();
+        let mut same_operand = operand.recipe_references[0].clone();
+        same_operand.design_reference += 1;
+        operand.recipe_references.push(same_operand);
+        operand.recipe_nodes[0]
+            .recipe_structure
+            .as_mut()
+            .unwrap()
+            .root = 1;
+        assert_eq!(super::complete_counted_face_recipe(&operand), None);
+        assert_eq!(operand.recipe_program, source_program);
+        operand.recipe_references[1].selector_offset = operand.recipe_references[1]
+            .selector_offset
+            .map(|offset| offset + 25);
+        operand.recipe_references[1].token_offset = operand.recipe_references[1]
+            .token_offset
+            .map(|offset| offset + 25);
+        operand.recipe_references[1].clause_index = 1;
+        assert_eq!(super::complete_counted_face_recipe(&operand), Some(1));
+        operand.recipe_nodes[0]
+            .recipe_structure
+            .as_mut()
+            .unwrap()
+            .prelude[1] = 0;
+        assert_eq!(super::complete_counted_face_recipe(&operand), None);
     }
 
     #[test]
@@ -2654,27 +2693,27 @@ mod tests {
             .expect("legacy SplitFace target operand")
         }
 
-        let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
-            "id": "f3d:test:scope#100",
-            "byte_offset": 0,
-            "class_tag": "277",
-            "record_index": 100,
-            "frame_length": 407,
-            "kind": "SplitFace",
-            "kind_offset": 65,
-            "feature_ordinal": 1,
-            "feature_ordinal_offset": 335,
-            "history_state_id": 50,
-            "history_state_id_offset": 57,
-            "previous_history_state_id": 49,
-            "previous_history_state_id_offset": 365,
-            "reference_count_offset": 9,
-            "reference_members": [150, 200, 201, 202],
-            "reference_member_offsets": [14, 25, 36, 47],
-            "paired_class_tag": "258",
-            "paired_byte_offset": 407
-        }))
-        .expect("legacy SplitFace scope");
+        let scope: DesignParameterScope =
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+                "id": "f3d:test:scope#100",
+                "byte_offset": 0,
+                "class_tag": "277",
+                "record_index": 100,
+                "frame_length": 407,
+                "kind": "SplitFace",
+                "kind_offset": 65,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 335,
+                "history_state_id": 50,
+                "history_state_id_offset": 57,
+                "previous_history_state_id": 49,
+                "previous_history_state_id_offset": 365,
+                "reference_count_offset": 9,
+                "reference_members": [150, 200, 201, 202],
+                "reference_member_offsets": [14, 25, 36, 47],
+                "paired_class_tag": "258",
+                "paired_byte_offset": 407
+            }));
         let group: DesignConstructionOperandGroup =
             DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
                 scope_record_index: 100,
@@ -3043,7 +3082,7 @@ mod tests {
     }
 
     fn loft_scope() -> DesignParameterScope {
-        serde_json::from_value(serde_json::json!({
+        crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
             "id": "f3d:test:scope#1811",
             "byte_offset": 0,
             "class_tag": "272",
@@ -3063,7 +3102,6 @@ mod tests {
             "paired_class_tag": "274",
             "paired_byte_offset": 200
         }))
-        .expect("Loft scope")
     }
 
     fn loft_group() -> DesignConstructionOperandGroup {
@@ -3283,7 +3321,7 @@ mod tests {
         operand.recipe_nodes[0].recipe_structure =
             Some(crate::records::topology::face::DesignFaceRecipeStructure {
                 root: 0,
-                prelude: [0, 0],
+                prelude: [0, 2],
                 sides: [side.clone(), side],
                 postlude_value: None,
             });
@@ -3446,7 +3484,7 @@ mod tests {
                 "program": [0, -1, 1],
                 "recipe_structure": {
                     "root": 0,
-                    "prelude": [0, 0],
+                    "prelude": [0, 2],
                     "sides": [
                         {"field_count": 1, "header_value": 0, "scalars": [], "payload_prefix": [], "payload_entry_count": 0, "entries": []},
                         {"field_count": 1, "header_value": 0, "scalars": [], "payload_prefix": [], "payload_entry_count": 0, "entries": []}

@@ -728,57 +728,77 @@ fn failed_array_rows_keep_prototypes_and_other_original_occurrence_slots() {
 #[test]
 fn failed_array_header_without_a_known_count_retains_unknown_arity() {
     let xml = document("App::Link", "<Property name='LinkedObject' type='App::PropertyXLink'><XLink file='' name='Target'/></Property><Property name='PlacementList' type='App::PropertyPlacementList'><PlacementList file='Rows'/></Property>", 2);
-    let bytes = archive_entries(&[("Document.xml", xml.as_bytes()), ("Rows", &[1, 2, 3])]);
-    for depth in depths() {
-        let result = FcstdCodec
-            .decode(
-                &mut Cursor::new(&bytes),
-                &DecodeOptions {
-                    depth,
-                    ..DecodeOptions::default()
-                },
-            )
-            .unwrap();
-        let products = result
-            .ir()
-            .native
-            .namespace("fcstd")
-            .unwrap()
-            .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
-            .unwrap();
-        let product = products
-            .iter()
-            .find(|row| row.object == "fcstd:native:object#Owner")
-            .unwrap();
-        assert!(!product.element_transforms_known());
-        assert!(product.element_scales_known());
-        assert_eq!(
-            product.element_cardinality(),
-            Some(crate::native::LinkArrayCardinality::Unknown)
-        );
-        let wire = serde_json::to_value(product).unwrap();
-        assert!(wire["element_transforms"].is_null());
-        assert_eq!(wire["element_scales"], serde_json::json!([]));
-        assert_eq!(
-            serde_json::from_value::<crate::native::ProductNodeRecord>(wire).unwrap(),
-            *product
-        );
-        assert!(result
-            .ir()
-            .model
-            .occurrences
-            .iter()
-            .all(|row| row.native_ref.as_deref() != Some("fcstd:native:object#Owner")));
-        if depth != DecodeDepth::Container {
-            assert!(result
+    for expanded in [true, false] {
+        let xml = if expanded {
+            xml.clone()
+        } else {
+            xml.replace("<Properties Count='2'><Property name='LinkedObject'", "<Properties Count='3'><Property name='ShowElement' type='App::PropertyBool'><Bool value='false'/></Property><Property name='LinkedObject'")
+        };
+        let bytes = archive_entries(&[("Document.xml", xml.as_bytes()), ("Rows", &[1, 2, 3])]);
+        for depth in depths() {
+            let result = FcstdCodec
+                .decode(
+                    &mut Cursor::new(&bytes),
+                    &DecodeOptions {
+                        depth,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .unwrap();
+            let products = result
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+                .unwrap();
+            let product = products
+                .iter()
+                .find(|row| row.object == "fcstd:native:object#Owner")
+                .unwrap();
+            assert!(!product.element_transforms_known());
+            assert!(product.element_scales_known());
+            assert_eq!(
+                product.element_cardinality(),
+                Some(crate::native::LinkArrayCardinality::Unknown)
+            );
+            let wire = serde_json::to_value(product).unwrap();
+            assert!(wire["element_transforms"].is_null());
+            assert_eq!(wire["element_scales"], serde_json::json!([]));
+            assert_eq!(
+                serde_json::from_value::<crate::native::ProductNodeRecord>(wire).unwrap(),
+                *product
+            );
+            let occurrences = result
                 .ir()
                 .model
-                .product_definitions
+                .occurrences
                 .iter()
-                .any(|row| row.native_ref.as_deref() == Some("fcstd:native:object#Target")));
+                .filter(|row| row.native_ref.as_deref() == Some("fcstd:native:object#Owner"))
+                .collect::<Vec<_>>();
+            if expanded && depth != DecodeDepth::Container {
+                assert_eq!(occurrences.len(), 1);
+                assert_eq!(occurrences[0].name.as_deref(), Some("Owner"));
+                assert_eq!(occurrences[0].ordinal, 0);
+                assert_eq!(occurrences[0].transform, None);
+                assert!(occurrences[0]
+                    .link
+                    .as_ref()
+                    .is_none_or(|link| link.element_component().is_none()));
+            } else {
+                assert!(occurrences.is_empty());
+            }
+            if depth != DecodeDepth::Container {
+                assert!(result
+                    .ir()
+                    .model
+                    .product_definitions
+                    .iter()
+                    .any(|row| row.native_ref.as_deref() == Some("fcstd:native:object#Target")));
+            }
+            assert!(crate::test_support::validate_native(result.ir()).is_empty());
+            assert_valid_document(result.ir());
         }
-        assert!(crate::test_support::validate_native(result.ir()).is_empty());
-        assert_valid_document(result.ir());
     }
 }
 

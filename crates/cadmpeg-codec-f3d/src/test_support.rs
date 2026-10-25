@@ -21,6 +21,10 @@ use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::F3dCodec;
 
+pub(crate) mod sketch_relations;
+pub(crate) mod sketch_text;
+pub(crate) mod verification;
+
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
 ) -> T {
@@ -193,3 +197,9 @@ pub(crate) mod step_conversion;
 pub(crate) mod loss_codes;
 
 pub(crate) mod record_access;
+
+pub(crate) mod body_reference_tail_test;
+
+pub(crate) mod placement_construction;
+
+pub(crate) mod source_layout;

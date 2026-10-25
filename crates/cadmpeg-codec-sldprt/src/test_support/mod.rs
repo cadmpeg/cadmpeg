@@ -21,6 +21,100 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Supply an authored native envelope for semantic fixture assertions.
+pub(crate) fn plan_fixture_with_native_envelope(
+    input: EncodeInput<'_>,
+    request: TargetRequest<'_>,
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
+    let (ir, fidelity) = fixture_native_envelope_context(input)?;
+    SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)), request)
+}
+
+fn fixture_native_envelope_context(
+    input: EncodeInput<'_>,
+) -> Result<(CadIr, SourceFidelity), CodecError> {
+    let mut ir = input.ir.clone();
+    if input.fidelity.is_none() {
+        ir.set_native_unknowns(
+            &cadmpeg_test_support::service_decode_context(),
+            "sldprt",
+            &[],
+        )?;
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify(None)),
+            std::collections::BTreeMap::default(),
+        ));
+    }
+    let mut fidelity = input.fidelity.cloned().unwrap_or_default();
+    let source = match fidelity.retained_record(crate::SOURCE_IMAGE_ID) {
+        Some(record) => record
+            .data()
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "authored fixture requires available native envelope source bytes".into(),
+                )
+            })?
+            .to_vec(),
+        None => {
+            assert!(
+                input.fidelity.is_none()
+                    || ir
+                        .source
+                        .as_ref()
+                        .is_none_or(|source| source.format() != "sldprt"),
+                "a missing native source image is a contract state, not an authored fixture"
+            );
+            let mut source = container::outer_header();
+            source.extend(container::make_block(
+                0,
+                "FixtureEnvelopeTokenSource",
+                b"authored envelope fixture",
+            ));
+            source
+        }
+    };
+    let scan = container::scan(&source);
+    let source =
+        if crate::container::native_layout::source_envelope(&source, &scan.blocks)?.is_some() {
+            source
+        } else {
+            container::native_envelope_fixture(&source)
+        };
+    let _previous_image = fidelity.remove_retained_record(crate::SOURCE_IMAGE_ID);
+    fidelity.insert_retained_record(
+        crate::source_image_id(),
+        cadmpeg_ir::RetainedSourceRecord::from_bytes(
+            "fixture-native-envelope",
+            0,
+            cadmpeg_ir::source_fidelity::RetainedBytes::Inline { data: source },
+        )
+        .expect("authored source image extent"),
+    )?;
+    if ir
+        .source
+        .as_ref()
+        .is_none_or(|source| source.format() != "sldprt")
+    {
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(crate::dialect::SldprtDialect::classify(None)),
+            std::collections::BTreeMap::default(),
+        ));
+    }
+    Ok((ir, fidelity))
+}
+
+pub(crate) fn plan_fixture_write_with_native_envelope(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+    writer: &mut dyn Write,
+) -> Result<WritePath, CodecError> {
+    let plan = plan_fixture_with_native_envelope(
+        EncodeInput::new(ir, Some(fidelity)),
+        TargetRequest::Inherit,
+    )?;
+    Ok(plan.write_to(writer)?.write_path().clone())
+}
+
 /// Exercise the sealed writer after construction controls changed.
 pub(crate) fn serialize_edited_history(
     ir: &CadIr,

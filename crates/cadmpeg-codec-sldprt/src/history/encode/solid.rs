@@ -251,6 +251,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                     LinearTermination::ToFirst {}
                     | LinearTermination::ToLast {}
+                    | LinearTermination::ToPlane { .. }
                     | LinearTermination::ToShape { .. } => {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} uses an unsupported extrusion termination",

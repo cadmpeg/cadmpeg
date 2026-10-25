@@ -70,32 +70,23 @@
       "curves": [
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
             }
           },
           "id": "rhino:object:curve#record-000000-offset-177.c3-0",
+          "parameter_range": [
+            0.0,
+            1.0
+          ],
           "source_object": {
             "format": "rhino",
             "geometry_role": "support",
@@ -481,7 +472,7 @@
       }
     },
     "scope": {
-      "design": true,
+      "design": false,
       "model": true
     },
     "source": {
@@ -640,6 +631,17 @@
         },
         "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "parametric_record_omitted",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -648,7 +650,7 @@
     "transfer": {
       "geometry_transferred": true,
       "scope": {
-        "design": true,
+        "design": false,
         "model": true
       }
     }

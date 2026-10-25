@@ -134,8 +134,8 @@
           "carrier": {
             "curve": "f3d:brep:entity#19",
             "param_range": [
-              0.0,
-              1.0
+              1.5,
+              2.5
             ]
           },
           "start": "f3d:brep:entity#13",
@@ -234,12 +234,12 @@
             "kind": "nurbs",
             "degree": 2,
             "knots": [
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0
+              1.5,
+              1.5,
+              1.5,
+              2.5,
+              2.5,
+              2.5
             ],
             "poles": {
               "form": "polynomial",
@@ -377,6 +377,7 @@
         "design_body_bounds": [],
         "design_body_members": [],
         "design_body_recipe_operands": [],
+        "design_body_reference_tails": [],
         "design_canvas_images": [],
         "design_component_naming_spaces": [],
         "design_component_occurrences": [],
@@ -412,6 +413,8 @@
         "design_parameter_state_companions": [],
         "design_parameter_states": [],
         "design_parameters": [],
+        "design_placement_constructions": [],
+        "design_profile_curve_selections": [],
         "design_record_headers": [],
         "design_sheet_metal_settings": [],
         "design_sketch_placements": [],
@@ -695,7 +698,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "active_brep_sha256": "776be07e96cf15ea1ae7a2f9d4d5019ccb085ff16adb7936ab9593176a15b1d0",
-      "document_local_sha256": "13453410045e04b975dd16dd5aedacac16e33d6f7a32ebab293e5c866795689c"
+      "document_local_sha256": "6d60334ad3b5cc5ba4d1fb05d09bd13c0803fb6d11fd754274a96a1683a92514"
     },
     "retained_records": {
       "f3d:file:source-image#0": {

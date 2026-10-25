@@ -11,7 +11,7 @@
 //! content is represented; unsupported patches fall back to synthesis.
 //!
 //! <!-- generated: capability f3d -->
-//! Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
+//! Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#fusion-360-f3d)).
 //! <!-- /generated: capability f3d -->
 //!
 //! # Decode
@@ -165,6 +165,14 @@ impl CodecBackend for F3dCodec {
         ir: &CadIr,
     ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
         validate::validate_native(ctx, ir)
+    }
+
+    fn validate_source_layout(
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+        fidelity: &cadmpeg_ir::source_fidelity::SourceFidelity,
+    ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+        validate::source_layout::validate_source_layout(ctx, ir, fidelity)
     }
 
     fn detect_impl(

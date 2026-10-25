@@ -3,7 +3,7 @@
     {
       "name": "Document.xml",
       "payload_len": 52038,
-      "payload_sha256": "bc5239cd7afe43788b6c959d8eba519e684e06b6737317c8a5181e2118744ce2"
+      "payload_sha256": "2dffec9a83b6cfe5c387b897fe7392bd5065cf7f3dec32e54023250343f49b50"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -174,7 +174,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 21 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 21 native record(s) from `fcstd.entries`: fcstd:native:entry#DimensionalRelations.InternalShape.brp, fcstd:native:entry#DimensionalRelations.Shape.Map.txt, fcstd:native:entry#DimensionalRelations.Shape.brp, fcstd:native:entry#GeometricRelations.InternalShape.brp, fcstd:native:entry#GeometricRelations.Shape.Map.txt, fcstd:native:entry#GeometricRelations.Shape.brp, fcstd:native:entry#InactiveRelation.InternalShape.brp, fcstd:native:entry#InactiveRelation.Shape.Map.txt, fcstd:native:entry#InactiveRelation.Shape.brp, fcstd:native:entry#InternalAlignmentRelations.InternalShape.brp, fcstd:native:entry#InternalAlignmentRelations.Shape.Map.txt, fcstd:native:entry#InternalAlignmentRelations.Shape.brp, fcstd:native:entry#OpticalRelation.InternalShape.brp, fcstd:native:entry#OpticalRelation.Shape.Map.txt, fcstd:native:entry#OpticalRelation.Shape.brp, fcstd:native:entry#SplineWeightRelation.InternalShape.brp, fcstd:native:entry#SplineWeightRelation.Shape.Map.txt, fcstd:native:entry#SplineWeightRelation.Shape.brp, fcstd:native:entry#SymmetryRelation.InternalShape.brp, fcstd:native:entry#SymmetryRelation.Shape.Map.txt, fcstd:native:entry#SymmetryRelation.Shape.brp",
         "severity": "info"
       },
       {
@@ -184,7 +184,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 26 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 26 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#DimensionalRelations:ExternalGeo, fcstd:native:property#DimensionalRelations:ExternalGeometry, fcstd:native:property#DimensionalRelations:InternalShape, fcstd:native:property#GeometricRelations:ExpressionEngine, fcstd:native:property#GeometricRelations:ExternalGeo, fcstd:native:property#GeometricRelations:ExternalGeometry, fcstd:native:property#GeometricRelations:InternalShape, fcstd:native:property#InactiveRelation:ExpressionEngine, fcstd:native:property#InactiveRelation:ExternalGeo, fcstd:native:property#InactiveRelation:ExternalGeometry, fcstd:native:property#InactiveRelation:InternalShape, fcstd:native:property#InternalAlignmentRelations:ExpressionEngine, fcstd:native:property#InternalAlignmentRelations:ExternalGeo, fcstd:native:property#InternalAlignmentRelations:ExternalGeometry, fcstd:native:property#InternalAlignmentRelations:InternalShape, fcstd:native:property#OpticalRelation:ExternalGeo, fcstd:native:property#OpticalRelation:ExternalGeometry, fcstd:native:property#OpticalRelation:InternalShape, fcstd:native:property#SplineWeightRelation:ExternalGeo, fcstd:native:property#SplineWeightRelation:ExternalGeometry, fcstd:native:property#SplineWeightRelation:InternalShape, fcstd:native:property#SymmetryRelation:ExpressionEngine, fcstd:native:property#SymmetryRelation:ExternalGeo, fcstd:native:property#SymmetryRelation:ExternalGeometry, fcstd:native:property#SymmetryRelation:InternalShape",
         "severity": "info"
       },
       {
@@ -194,7 +194,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 7 native record(s) from `fcstd.shape_payloads`",
+        "message": "the fcstd write omits 7 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#DimensionalRelations:InternalShape:DimensionalRelations.InternalShape.brp, fcstd:native:shape-payload#GeometricRelations:InternalShape:GeometricRelations.InternalShape.brp, fcstd:native:shape-payload#InactiveRelation:InternalShape:InactiveRelation.InternalShape.brp, fcstd:native:shape-payload#InternalAlignmentRelations:InternalShape:InternalAlignmentRelations.InternalShape.brp, fcstd:native:shape-payload#OpticalRelation:InternalShape:OpticalRelation.InternalShape.brp, fcstd:native:shape-payload#SplineWeightRelation:InternalShape:SplineWeightRelation.InternalShape.brp, fcstd:native:shape-payload#SymmetryRelation:InternalShape:SymmetryRelation.InternalShape.brp",
         "severity": "info"
       }
     ],
@@ -529,9 +529,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

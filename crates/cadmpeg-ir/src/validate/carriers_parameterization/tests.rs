@@ -580,3 +580,62 @@ fn carrier_reachability_preserves_orphan_arena_order() {
         assert_eq!(finding.message, format!("orphan {kind} carrier"));
     }
 }
+
+#[test]
+fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
+    use crate::geometry::analytic::LineCurve;
+    use crate::geometry::curve_payloads::SubsetCurveConstruction;
+    use crate::geometry::{Curve, ProceduralCurve, ProceduralCurveDefinition};
+    use crate::ids::ProceduralCurveId;
+    use crate::topology::ParameterInterval;
+
+    let subset_cube = |range: [f64; 2]| {
+        let mut ir = unit_cube().unwrap();
+        let root = CurveId::mint("test:model:curve#root").unwrap();
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            id: root.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                    .unwrap(),
+            )),
+            parameter_range: None,
+            source_object: None,
+        });
+        let edge = ir.model.edges[0].clone();
+        let curve = edge.curve().unwrap().clone();
+        let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
+        ir.model
+            .curves
+            .iter_mut()
+            .find(|item| item.id == curve)
+            .unwrap()
+            .geometry = CurveGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        };
+        ir.model
+            .add_procedural_curve(
+                &curve,
+                ProceduralCurve::new(
+                    construction,
+                    ProceduralCurveDefinition::Subset(
+                        SubsetCurveConstruction::try_new(root, [2.0, 3.0], true, None).unwrap(),
+                    ),
+                ),
+            )
+            .unwrap();
+        ir.model.edges[0].set_param_range(Some(ParameterInterval::new(range).unwrap()));
+        let edge = ir.model.edges[0].id.clone();
+        validate_neutral(&ir, Vec::new())
+            .unwrap()
+            .findings
+            .iter()
+            .any(|finding| {
+                finding.check == Check::ParameterDomain
+                    && finding.entity.as_deref() == Some(edge.as_str())
+            })
+    };
+    assert!(!subset_cube([0.0, 1.0]));
+    assert!(subset_cube([2.0, 3.0]));
+}

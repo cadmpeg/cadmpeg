@@ -134,7 +134,7 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             carrier_record_index: 166,
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
-            neutron_role_offset: 259,
+            neutron_role_offset: Some(259),
             placement: None,
         });
     }
@@ -193,133 +193,6 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
         finding.entity.as_deref() == Some(scope_id.as_str())
             && finding.message == "Fusion Design parameter scope has an invalid paired frame"
     }));
-}
-
-#[test]
-fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
-    use crate::records::{
-        decal::DesignRecordHeader,
-        feature::{
-            extrude::{
-                DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
-                DesignExtrudeStart,
-            },
-            scope::{DesignExtrudeScope, DesignFeatureKind, DesignParameterScope},
-        },
-        identity::ReferenceRun,
-    };
-
-    let stream = "f3d:Design/BulkStream.dat";
-    let scope_id = format!("{stream}:design-parameter-scope#0");
-    let mut scope = DesignParameterScope::empty(&scope_id, DesignFeatureKind::Extrude, 3970);
-    scope.class_tag = "397".to_owned().try_into().unwrap();
-    scope.paired_class_tag = "262".to_owned().try_into().unwrap();
-    scope
-        .try_edit(|draft| {
-            draft.frame_length = 473;
-            draft.paired_byte_offset = 473;
-            draft.reference_count_offset = 282;
-            draft.reference_members = ReferenceRun::from_columns(
-                vec![11, 22, 33, 44, 55, 66, 77, 88],
-                vec![287, 298, 309, 320, 331, 342, 353, 364],
-                "reference_members",
-            )
-            .unwrap();
-            draft.kind_offset = 382;
-            draft.feature_ordinal_offset = 395;
-            draft.payload = DesignScopePayload::Extrude(Some(DesignExtrudeScope {
-                extrude_prologue: Some(DesignExtrudePrologue::LegacyShifted {
-                    operation_prefix_marker_offset: None,
-                    operation: DesignExtrudeOperation::Cut,
-                    operation_offset: 27,
-                    direction_face_extend_values: [3, 2],
-                    side_extent_discriminators: [1, 1],
-                    side_extent_discriminator_offsets: [126, 139],
-                    extent: Some(DesignExtrudeExtent::SymmetricDistance),
-                    direction_face_extend_offsets: [31, 35],
-                    direction_reversed: false,
-                    direction_reversed_offset: 39,
-                    solid_operation: true,
-                    solid_operation_offset: 40,
-                    start: DesignExtrudeStart::OffsetProfilePlane,
-                    start_offset: 41,
-                }),
-                ..DesignExtrudeScope::default()
-            }));
-        })
-        .unwrap();
-    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    {
-        let mut native = f3d_native_mut(&mut ir);
-        for record_index in [11, 22, 33, 44, 55, 66, 77, 88, 3970] {
-            native.design_record_headers.push(DesignRecordHeader {
-                id: format!("{stream}:design-record-header#{record_index}"),
-                record_index,
-                class_tag: "397".to_owned().try_into().unwrap(),
-                byte_offset: Some(0),
-            });
-        }
-        native.design_parameter_scopes.push(scope.clone());
-    }
-    let has_invalid_frame = |ir: &cadmpeg_ir::CadIr| {
-        crate::test_support::with_decode_context(|ctx| {
-            crate::validate::validate_native(ctx, ir).expect("validate the native namespace")
-        })
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref() == Some(scope_id.as_str())
-                && finding.message == "Fusion Design parameter scope has an invalid paired frame"
-        })
-    };
-    assert!(!has_invalid_frame(&ir));
-
-    let mutations: &[fn(&mut DesignParameterScope)] = &[
-        |scope| scope.class_tag = "338".to_owned().try_into().unwrap(),
-        |scope| scope.paired_class_tag = "261".to_owned().try_into().unwrap(),
-        |scope| {
-            if let Some(DesignExtrudePrologue::LegacyShifted {
-                side_extent_discriminators,
-                ..
-            }) = scope.extrude_prologue_mut()
-            {
-                *side_extent_discriminators = [1, 0];
-            }
-        },
-        |scope| {
-            if let Some(DesignExtrudePrologue::LegacyShifted {
-                direction_face_extend_values,
-                ..
-            }) = scope.extrude_prologue_mut()
-            {
-                *direction_face_extend_values = [3, 1];
-            }
-        },
-        |scope| {
-            if let Some(DesignExtrudePrologue::LegacyShifted {
-                side_extent_discriminator_offsets,
-                ..
-            }) = scope.extrude_prologue_mut()
-            {
-                *side_extent_discriminator_offsets = [116, 129];
-            }
-        },
-        |scope| {
-            if let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
-                scope.extrude_prologue_mut()
-            {
-                *extent = Some(DesignExtrudeExtent::TwoSidedDistance);
-            }
-        },
-    ];
-    for (index, mutate) in mutations.iter().enumerate() {
-        let mut invalid = scope.clone();
-        mutate(&mut invalid);
-        f3d_native_mut(&mut ir).design_parameter_scopes[0] = invalid;
-        assert!(
-            has_invalid_frame(&ir),
-            "accepted invalid frame mutation {index}"
-        );
-    }
 }
 
 #[test]
@@ -588,9 +461,9 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             *slot = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
-                operation_offset: 0,
+                operation_offset: Some(0),
                 keep_tools: false,
-                keep_tools_offset: 0,
+                keep_tools_offset: Some(0),
                 target_record_index: if empty_legacy_tool {
                     operand_record_index + 1
                 } else {
@@ -789,7 +662,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     };
     {
         let mut native = f3d_native_mut(&mut ir);
-        native.design_parameter_scopes.push(scope);
+        native.design_parameter_scopes.push(scope.clone());
         native.design_construction_operand_groups.extend([
             group(100, 0, 101, 1_000, DesignOperandRole::BODIES_A),
             group(200, 2, 201, 2_000, DesignOperandRole::ROLE_0X5),
@@ -848,7 +721,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
     f3d_native_mut(&mut ir).design_construction_operand_groups[1].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
-            DesignOperandRole::ROLE_0X21,
+            DesignOperandRole::PROFILE,
         );
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
@@ -858,13 +731,14 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
 
     {
         let mut native = f3d_native_mut(&mut ir);
-        native.design_parameter_scopes[0]
-            .try_edit(|draft| {
-                draft.payload = crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
-                    .try_into()
-                    .unwrap();
-            })
-            .unwrap();
+        let mut trim = scope.clone();
+        trim.try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
+                .try_into()
+                .unwrap();
+        })
+        .unwrap();
+        native.design_parameter_scopes[0] = trim;
         native.design_construction_operand_groups[1].operand_role =
             crate::records::topology::construction::DesignConstructionOperandRole::Other(
                 DesignOperandRole::ROLE_0X21,
@@ -885,6 +759,53 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     })
     .iter()
     .any(invalid_frame));
+}
+
+#[test]
+fn pipe_result_operations_keep_path_and_body_groups_separate() {
+    use crate::records::feature::extrude::DesignExtrudeOperation as Operation;
+    use crate::records::topology::extrude_selection::DesignOperandRole as Role;
+    let path = (Role::ROLE_0X5, 1);
+    let body = (Role::BODIES_A, 1);
+    let alternate_body = (Role::BODIES_B, 1);
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::Join,
+        &[alternate_body, path]
+    ));
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::Cut,
+        &[alternate_body, path]
+    ));
+    assert!(!super::pipe_operand_roles_are_valid(
+        Operation::Join,
+        &[body, alternate_body, path]
+    ));
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::NewBody,
+        &[path]
+    ));
+    assert!(super::pipe_operand_roles_are_valid(
+        Operation::Join,
+        &[body, path]
+    ));
+    for operation in [Operation::Join, Operation::Cut, Operation::Intersect] {
+        assert!(super::pipe_operand_roles_are_valid(
+            operation,
+            &[body, path]
+        ));
+        for groups in [
+            &[path][..],
+            &[body][..],
+            &[body, path, path][..],
+            &[body, (Role::ROLE_0X5, 0)][..],
+        ] {
+            assert!(!super::pipe_operand_roles_are_valid(operation, groups));
+        }
+    }
+    assert!(!super::pipe_operand_roles_are_valid(
+        Operation::NewBody,
+        &[body, path]
+    ));
 }
 
 #[test]
@@ -913,15 +834,14 @@ fn validation_checks_pipe_path_group_roles() {
         let value = Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 0,
-                section_shape:
-                    crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: 0,
-                filled: true,
-                filled_offset: 0,
+                operation_offset: Some(0),
+                is_hollow: false,
+                is_hollow_offset: Some(0),
+                opaque_post_operation: [1, 1].into(),
+                opaque_post_operation_offset: Some(0),
                 values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
                 record_indexes: [11, 12, 13, 14],
-                value_offsets: [0; 4],
+                value_offsets: Some([0; 4]),
             },
         ));
         scope
@@ -1516,19 +1436,19 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                     extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                         reference: None,
                         operation: DesignExtrudeOperation::NewBody,
-                        operation_offset: 128,
+                        operation_offset: Some(128),
                         direction_face_extend_values: [1, 2],
                         side_extent_discriminators: [1, 0],
-                        side_extent_discriminator_offsets: [177, 190],
+                        side_extent_discriminator_offsets: Some([177, 190]),
                         first_side_target_ordinal: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
-                        direction_face_extend_offsets: [132, 136],
+                        direction_face_extend_offsets: Some([132, 136]),
                         direction_reversed: false,
-                        direction_reversed_offset: 140,
+                        direction_reversed_offset: Some(140),
                         solid_operation: true,
-                        solid_operation_offset: 141,
+                        solid_operation_offset: Some(141),
                         start: DesignExtrudeStart::ProfilePlane,
-                        start_offset: 142,
+                        start_offset: Some(142),
                     }),
                     extrude_profile: Some(profile),
                     ..crate::records::feature::scope::DesignExtrudeScope::default()
@@ -1944,3 +1864,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
 }
 
 mod face_recipe_lengths;
+
+mod rigid_alignment;
+
+mod symmetric_extent_frame;

@@ -444,7 +444,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
-            designation_offset: 0,
+            designation_offset: Some(0),
             designation: cadmpeg_core::text::NonBlankString::new("M4x0.7").unwrap(),
             nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "4.0".to_owned(),
@@ -787,39 +787,39 @@ fn hole_face_case() -> (
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         *slot = Some(DesignHoleConstruction {
             point_record_index: 55,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([0.0; 3]),
-            position_offset: 0,
+            position_offset: Some(0),
             direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-            direction_offset: 0,
+            direction_offset: Some(0),
             point_parameters: crate::test_support::reals([0.0; 2]),
-            point_parameter_offsets: [0, 0],
+            point_parameter_offsets: Some([0, 0]),
             reference_type: 0,
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
             tangent_point_data: None,
-            input_records: vec![crate::records::identity::Located {
+            input_records: vec![crate::records::identity::Sourced {
                 value: 55,
-                offset: 0,
+                offset: Some(0),
             }],
             face_selection: Some(DesignHoleFaceSelection {
                 record_index: 100,
-                byte_offset: 0,
+                byte_offset: Some(0),
                 class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned())
                     .unwrap(),
                 asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
                     .to_owned()
                     .try_into()
                     .unwrap(),
-                asset_id_offset: 0,
+                asset_id_offset: Some(0),
                 context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
                     .to_owned()
                     .try_into()
                     .unwrap(),
-                context_id_offset: 0,
+                context_id_offset: Some(0),
                 identity_record_index: 103,
-                identity_record_offset: 0,
+                identity_record_offset: Some(0),
                 primary_identity: 18044,
-                primary_identity_offset: 0,
+                primary_identity_offset: Some(0),
                 secondary: None,
                 historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
                     history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
@@ -832,7 +832,7 @@ fn hole_face_case() -> (
                     face_slot: 30,
                 }],
                 next_record_index: 104,
-                next_byte_offset: 0,
+                next_byte_offset: Some(0),
             }),
         });
     }
@@ -888,6 +888,7 @@ fn hole_face_case() -> (
         faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
         vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edge_geometry: Vec::new(),
         native_ref: None,
     }];
     let state = |state_id, next_ref| {

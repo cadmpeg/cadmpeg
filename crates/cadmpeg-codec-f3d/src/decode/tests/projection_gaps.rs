@@ -34,6 +34,28 @@ fn design_projection_gaps(
 }
 
 #[test]
+fn fixture_text_style_gaps_have_a_distinct_loss_count() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    for case in crate::test_support::sketch_text::text_fixture_records() {
+        let mut native = F3dNative::default();
+        native.sketch_texts.push(case.decode());
+        let gaps = design_projection_gaps(&ir, &native);
+        assert_eq!(
+            gaps.unprojected_sketch_text_styles,
+            usize::from(!case.neutral_state),
+            "{}",
+            case.label
+        );
+        assert_eq!(
+            gaps.unprojected_sketch_texts,
+            usize::from(case.neutral_state),
+            "{}",
+            case.label
+        );
+    }
+}
+
+#[test]
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
@@ -302,7 +324,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                 .unwrap(),
             byte_offset: Some(0),
-            coordinate_offset: 0,
+            coordinate_offset: Some(0),
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },
@@ -328,6 +350,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         primary_id: std::num::NonZeroU64::new(1).unwrap(),
         secondary_id: 2,
         geometry: None,
+        planar_z_noise: None,
     });
     native.lost_edge_references.push(
         LostEdgeReference::new(
@@ -456,7 +479,9 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unprojected_sketch_curves: 1,
             unprojected_sketch_surfaces: 0,
             unprojected_sketch_texts: 0,
+            unprojected_sketch_text_styles: 0,
             unprojected_sketch_relations: 0,
+            unprojected_sketch_pattern_states: 0,
             unprojected_dimensions: 0,
             profile_selections: 2,
             path_selections: 1,
@@ -1042,4 +1067,30 @@ fn material_bindings_do_not_restate_display_colors() {
     assert_eq!(ir.model.faces[0].color, None);
     assert_eq!(ir.model.appearances[0].base_color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);
+}
+
+#[test]
+fn fixture_pattern_states_have_a_distinct_native_retention_loss_count() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    for case in crate::test_support::sketch_relations::relation_fixture_records() {
+        let Some(neutral_state) = case.pattern_neutral_state else {
+            continue;
+        };
+        let mut native = F3dNative::default();
+        native.sketch_relations.push(case.decode());
+        let gaps = design_projection_gaps(&ir, &native);
+        let unsupported = !neutral_state;
+        assert_eq!(
+            gaps.unprojected_sketch_pattern_states,
+            usize::from(unsupported),
+            "{}",
+            case.label
+        );
+        assert_eq!(
+            gaps.unprojected_sketch_relations,
+            usize::from(!unsupported),
+            "{}",
+            case.label
+        );
+    }
 }

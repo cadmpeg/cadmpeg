@@ -277,7 +277,7 @@ fn tracking_source(first: bool, second: bool) -> super::DesignConstructionTracki
         carrier_class_tag: "362".to_owned().try_into().unwrap(),
         primary_identity: 268,
         primary_identity_offset: 70,
-        selector: -1,
+        selector: 1,
         selector_offset: 90,
         kind: 3,
         kind_offset: 94,
@@ -690,12 +690,21 @@ fn trailing_transform_scanner_checks_real_frames_and_document_keeps_only_content
         "record_index",
         "byte_offset",
         "transform_offset",
-        "following_record_index",
         "following_byte_offset",
     ] {
         let mut invalid = wire.clone();
         invalid[field] = (invalid[field].as_u64().unwrap() + 1).into();
         assert!(admit(invalid).is_err(), "{field}");
+    }
+    for index in [0, 6, 7] {
+        let mut invalid = wire.clone();
+        invalid["following_record_index"] = index.into();
+        assert!(admit(invalid).is_err());
+    }
+    for index in [9, 10, 4000] {
+        let mut independent = wire.clone();
+        independent["following_record_index"] = index.into();
+        assert_eq!(admit(independent).unwrap().following_record_index(), index);
     }
     let document_wire = serde_json::to_value(&source).unwrap();
     let document: DesignConstructionOperandTransform =
@@ -971,4 +980,32 @@ fn identity_source_wrapper_stride_is_checked_without_fabricating_document_locati
     assert!(document.following_byte_offset().is_none());
     assert!(document.clone().into_draft().is_err());
     assert_eq!(serde_json::to_value(document).unwrap(), wire);
+}
+
+#[test]
+fn tracking_fragment_domain_rejects_nonpositive_and_out_of_range_ordinals() {
+    let base = serde_json::to_value(
+        DesignConstructionTrackingPath::try_new(tracking_source(false, false)).unwrap(),
+    )
+    .unwrap();
+    for (selector, kind) in [(1, 1), (1, 3), (3, 3), (i32::MAX, u32::MAX)] {
+        let mut wire = base.clone();
+        wire["selector"] = json!(selector);
+        wire["kind"] = json!(kind);
+        let value: DesignConstructionTrackingPath = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    }
+    for (selector, kind) in [(-1, 3), (0, 3), (4, 3), (1, 0), (i32::MIN, u32::MAX)] {
+        let mut wire = base.clone();
+        wire["selector"] = json!(selector);
+        wire["kind"] = json!(kind);
+        let error = serde_json::from_value::<DesignConstructionTrackingPath>(wire).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains(if kind == 0 { "kind" } else { "selector" }));
+        let mut draft = tracking_source(false, false);
+        draft.selector = selector;
+        draft.kind = kind;
+        assert!(DesignConstructionTrackingPath::try_new(draft).is_err());
+    }
 }

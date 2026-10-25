@@ -235,19 +235,19 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: 1028,
+                operation_offset: Some(1028),
                 direction_face_extend_values: [1, 2],
                 side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [1077, 1090],
+                side_extent_discriminator_offsets: Some([1077, 1090]),
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [1032, 1036],
+                direction_face_extend_offsets: Some([1032, 1036]),
                 direction_reversed: false,
-                direction_reversed_offset: 1040,
+                direction_reversed_offset: Some(1040),
                 solid_operation: true,
-                solid_operation_offset: 1041,
+                solid_operation_offset: Some(1041),
                 start: DesignExtrudeStart::FromFace,
-                start_offset: 1042,
+                start_offset: Some(1042),
             });
     }
     let mut start_face = parse_construction_operand_group(
@@ -281,19 +281,19 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: 1028,
+                operation_offset: Some(1028),
                 direction_face_extend_values: [1, 2],
                 side_extent_discriminators: [2, 0],
-                side_extent_discriminator_offsets: [1077, 1090],
+                side_extent_discriminator_offsets: Some([1077, 1090]),
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::OneSidedToFace,
-                direction_face_extend_offsets: [1032, 1036],
+                direction_face_extend_offsets: Some([1032, 1036]),
                 direction_reversed: false,
-                direction_reversed_offset: 1040,
+                direction_reversed_offset: Some(1040),
                 solid_operation: true,
-                solid_operation_offset: 1041,
+                solid_operation_offset: Some(1041),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 1042,
+                start_offset: Some(1042),
             });
     }
     let mut to_face_bytes = bytes.clone();
@@ -1467,7 +1467,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.payload = crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
                 DesignSurfaceStitchOperation {
                     gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
-                    gap_tolerance_offset: 40,
+                    gap_tolerance_offset: Some(40),
                     tolerance_record_index: 300,
                     settings_record_index: 301,
                 },

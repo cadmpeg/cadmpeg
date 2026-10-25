@@ -38,7 +38,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     );
     assert_eq!(
         construction.transform_offset,
-        425 + u64_from_index(scope_279::TRANSFORM)
+        Some(425 + u64_from_index(scope_279::TRANSFORM))
     );
 
     scope.paired_class_tag =

@@ -2,7 +2,7 @@
 //! Transfer of `FCStd` construction history into neutral design entities.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::text::NonBlankString;
@@ -60,7 +60,7 @@ mod spreadsheet_admission;
 pub(crate) use projection_failures::UnformedProjection;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
-/// Endpoint-index candidates that profile chaining may examine in one
+/// Endpoint relations that profile chaining may examine in one
 /// sketch. A sketch whose chaining passes it keeps no profiles and reports
 /// `sketch.profile-matching-bounded`; later sketches start a new count.
 const MAX_PROFILE_ENDPOINT_CANDIDATES: usize = 1 << 24;
@@ -79,10 +79,16 @@ macro_rules! required {
     };
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct DesignObjects<'a> {
+    pub(crate) objects: &'a [ObjectRecord],
+    pub(crate) extensions: &'a [crate::native::ExtensionRecord],
+}
+
 pub(crate) fn transfer(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     ir: &mut CadIr,
-    objects: &[ObjectRecord],
+    graph: DesignObjects<'_>,
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     program_version: Option<&str>,
@@ -98,6 +104,20 @@ pub(crate) fn transfer(
 > {
     let phase = ctx.parameter_phase(engine_failures);
     let ctx = &phase;
+    let DesignObjects {
+        objects,
+        extensions,
+    } = graph;
+    let attachment_owners = extensions
+        .iter()
+        .filter(|extension| {
+            matches!(
+                extension.type_name.as_str(),
+                "Part::AttachExtension" | "Part::AttachExtensionPython"
+            )
+        })
+        .map(|extension| extension.owner.as_str())
+        .collect::<HashSet<_>>();
     let mut losses = Vec::new();
     let mut unformed = Vec::new();
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
@@ -109,6 +129,7 @@ pub(crate) fn transfer(
             owned.push(property);
         }
     }
+    let expression_objects = ExpressionObjects::new(objects, &properties_by_owner);
     let mut feature_ids = HashMap::new();
     for object in objects.iter().filter(|object| projects_feature(object)) {
         feature_ids.insert(object.id().as_str(), feature_id(object)?);
@@ -136,8 +157,12 @@ pub(crate) fn transfer(
             .map_err(CodecError::malformed)?;
         sketch_ids.insert(object.id().as_str(), id);
     }
-    let (feature_ordinals, mut cycle_affected) =
-        feature_ordinals(objects, &properties_by_owner, &parent_by_member)?;
+    let (feature_ordinals, mut cycle_affected) = feature_ordinals(
+        objects,
+        &properties_by_owner,
+        &parent_by_member,
+        &attachment_owners,
+    )?;
     let mut feature_owners = HashMap::new();
     let owner_bytes = objects
         .len()
@@ -280,26 +305,28 @@ pub(crate) fn transfer(
         } else {
             let mut dependency_objects = Vec::new();
             if !is_body(&object.type_name) {
-                for dependency in &object.dependencies {
-                    dependency_objects.push((dependency.as_str(), true));
-                }
+                dependency_objects.extend(object.dependencies.iter().map(String::as_str));
+                dependency_objects.extend(
+                    owned
+                        .iter()
+                        .copied()
+                        .filter(|property| dependency_link(object, property, &attachment_owners))
+                        .flat_map(PropertyRecord::links)
+                        .filter_map(|link| link.as_ref()?.object()),
+                );
             }
-            for dependency in owned
-                .iter()
-                .flat_map(|property| property.links())
-                .filter_map(|link| link.as_ref()?.object())
-            {
-                dependency_objects.push((dependency, false));
-            }
+            dependency_objects.extend(expression_dependency_objects(
+                object,
+                &owned,
+                &expression_objects,
+            ));
             let mut seen_dependencies = BTreeSet::new();
             let mut dependencies = Vec::new();
-            for (dependency, _declared) in dependency_objects {
-                if seen_dependencies.contains(dependency) {
-                    continue;
-                }
-                seen_dependencies.insert(dependency);
-                if let Some(feature) = feature_ids.get(dependency) {
-                    dependencies.push(feature.clone());
+            for dependency in dependency_objects {
+                if seen_dependencies.insert(dependency) {
+                    if let Some(feature) = feature_ids.get(dependency) {
+                        dependencies.push(feature.clone());
+                    }
                 }
             }
             for dependency in semantic_dependencies {
@@ -499,16 +526,14 @@ fn feature_ordinals<'a>(
     objects: &'a [ObjectRecord],
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
+    attachment_owners: &HashSet<&str>,
 ) -> Result<(HashMap<&'a str, u64>, BTreeSet<String>), CodecError> {
     let mut design_objects = Vec::new();
     design_objects.extend(objects.iter().filter(|object| projects_feature(object)));
-    let mut object_by_id = HashMap::new();
-    let mut object_by_name = HashMap::new();
+    let expression_objects = ExpressionObjects::new(objects, properties_by_owner);
     let mut object_by_feature = HashMap::new();
 
     for object in &design_objects {
-        object_by_id.insert(object.id().as_str(), *object);
-        object_by_name.insert(object.name().as_str(), *object);
         object_by_feature.insert(feature_id(object)?, object.id().as_str());
     }
     let unresolved_cycle = || {
@@ -535,9 +560,9 @@ fn feature_ordinals<'a>(
             properties_by_owner,
             parent_by_member,
             &object_by_feature,
-            &object_by_id,
-            &object_by_name,
+            &expression_objects,
             &position_by_id,
+            attachment_owners,
         );
         waiting.push(dependencies.len());
         for dependency in dependencies {
@@ -597,18 +622,14 @@ fn feature_ordinals<'a>(
 }
 
 /// Positions of the design objects that must be emitted before `object`.
-///
-/// They are its parent body, its declared dependencies (bodies excepted), the
-/// owners its expressions name other than itself, and, for an object that is
-/// not a body, its link targets that are profile-like or earlier in source order.
 fn design_object_dependencies(
     object: &ObjectRecord,
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     parent_by_member: &HashMap<&str, FeatureId>,
     object_by_feature: &HashMap<FeatureId, &str>,
-    object_by_id: &HashMap<&str, &ObjectRecord>,
-    object_by_name: &HashMap<&str, &ObjectRecord>,
+    expression_objects: &ExpressionObjects<'_>,
     position_by_id: &HashMap<&str, usize>,
+    attachment_owners: &HashSet<&str>,
 ) -> BTreeSet<usize> {
     let id = object.id().as_str();
     let properties = properties_by_owner.get(id).map_or(&[][..], Vec::as_slice);
@@ -624,47 +645,163 @@ fn design_object_dependencies(
             dependencies.extend(position_by_id.get(dependency.as_str()).copied());
         }
     }
-    for dependency in properties
-        .iter()
-        .flat_map(|property| property.values())
-        .filter_map(|value| value.attributes.get("expression"))
-        .flat_map(|expression| expression_identifiers(expression))
-        .filter_map(|(_, identifier)| identifier.split_once('.').map(|(owner, _)| owner))
-        .filter_map(|owner| object_by_name.get(owner))
-        .filter(|dependency| dependency.id() != object.id())
-    {
-        dependencies.extend(position_by_id.get(dependency.id().as_str()).copied());
+    for dependency in expression_dependency_objects(object, properties, expression_objects) {
+        dependencies.extend(position_by_id.get(dependency).copied());
     }
     if is_body(&object.type_name) {
         return dependencies;
     }
-    for property in properties {
+    for property in properties
+        .iter()
+        .copied()
+        .filter(|property| dependency_link(object, property, attachment_owners))
+    {
         for target in property
             .links()
             .iter()
             .filter_map(|link| link.as_ref()?.object())
         {
-            let Some(dependency) = object_by_id.get(target) else {
-                continue;
-            };
-            if matches!(
-                property.name.as_str(),
-                "Base"
-                    | "BaseFeature"
-                    | "Originals"
-                    | "Path"
-                    | "Profile"
-                    | "Sketch"
-                    | "Sections"
-                    | "Source"
-                    | "Spine"
-            ) || dependency.order < object.order
-            {
-                dependencies.extend(position_by_id.get(target).copied());
-            }
+            dependencies.extend(position_by_id.get(target).copied());
         }
     }
     dependencies
+}
+
+struct ExpressionObjects<'a> {
+    names: HashMap<&'a str, &'a ObjectRecord>,
+    labels: HashMap<String, Option<&'a ObjectRecord>>,
+}
+
+impl<'a> ExpressionObjects<'a> {
+    fn new(
+        objects: &'a [ObjectRecord],
+        properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    ) -> Self {
+        let names = objects
+            .iter()
+            .map(|object| (object.name().as_str(), object))
+            .collect();
+        let mut labels = HashMap::new();
+        for object in objects {
+            let Some(properties) = properties_by_owner.get(object.id().as_str()) else {
+                continue;
+            };
+            let Some(label) = property(properties, "Label")
+                .filter(|property| property.type_name == "App::PropertyString")
+                .and_then(|property| property.values().iter().find(|value| value.tag == "String"))
+                .and_then(|value| value.attributes.get("value"))
+            else {
+                continue;
+            };
+            labels
+                .entry(label.clone())
+                .and_modify(|object| *object = None)
+                .or_insert(Some(object));
+        }
+        Self { names, labels }
+    }
+}
+
+fn expression_dependency_objects<'a>(
+    object: &ObjectRecord,
+    properties: &[&PropertyRecord],
+    objects: &ExpressionObjects<'a>,
+) -> BTreeSet<&'a str> {
+    properties
+        .iter()
+        .filter(|property| property.type_name == "App::PropertyExpressionEngine")
+        .flat_map(|property| property.values())
+        .filter(|value| value.tag == "Expression")
+        .filter_map(|value| value.attributes.get("expression"))
+        .flat_map(|expression| expression_object_tokens(expression))
+        .filter_map(|(owner, label)| {
+            if label {
+                objects.labels.get(owner).copied().flatten()
+            } else {
+                objects.names.get(owner).copied()
+            }
+        })
+        .filter(|dependency| dependency.id() != object.id())
+        .map(|dependency| dependency.id().as_str())
+        .collect()
+}
+
+fn expression_object_tokens(expression: &str) -> Vec<(&str, bool)> {
+    let bytes = expression.as_bytes();
+    let mut cursor = 0;
+    let mut owners = Vec::new();
+    while cursor < bytes.len() {
+        if matches!(bytes[cursor], b'\'' | b'"') {
+            let quote = bytes[cursor];
+            cursor += 1;
+            while cursor < bytes.len() {
+                if bytes[cursor] == b'\\' {
+                    cursor += 1;
+                    if cursor < bytes.len() {
+                        cursor += 1;
+                    }
+                } else if bytes[cursor] == quote {
+                    cursor += 1;
+                    break;
+                } else {
+                    cursor += 1;
+                }
+            }
+            continue;
+        }
+        if bytes[cursor..].starts_with(b"<<") {
+            let start = cursor + 2;
+            let Some(end) = expression[start..].find(">>").map(|offset| start + offset) else {
+                break;
+            };
+            cursor = end + 2;
+            if bytes.get(cursor) == Some(&b'.') && (start == 2 || bytes[start - 3] != b'#') {
+                owners.push((&expression[start..end], true));
+            }
+            continue;
+        }
+        if bytes[cursor].is_ascii_alphabetic() || bytes[cursor] == b'_' {
+            let start = cursor;
+            cursor += 1;
+            while cursor < bytes.len()
+                && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_')
+            {
+                cursor += 1;
+            }
+            if bytes.get(cursor) == Some(&b'.')
+                && (start == 0 || !matches!(bytes[start - 1], b'#' | b'.'))
+            {
+                owners.push((&expression[start..cursor], false));
+            }
+            continue;
+        }
+        cursor += 1;
+    }
+    owners
+}
+
+fn dependency_link(
+    object: &ObjectRecord,
+    property: &PropertyRecord,
+    attachment_owners: &HashSet<&str>,
+) -> bool {
+    if object.type_name == "PartDesign::SubShapeBinder"
+        && matches!(property.name.as_str(), "Context" | "_CopiedLink")
+    {
+        return false;
+    }
+    if property.name == "BaseAttachment" && attachment_owners.contains(object.id().as_str()) {
+        return false;
+    }
+    property.family == crate::native::PropertyFamily::Link
+        && !matches!(
+            property.type_name.as_str(),
+            "App::PropertyLinkHidden"
+                | "App::PropertyLinkListHidden"
+                | "App::PropertyLinkSubHidden"
+                | "App::PropertyLinkSubListHidden"
+                | "App::PropertyXLinkSubHidden"
+        )
 }
 
 /// Apply an operation's shape-refinement and boolean-tolerance controls.
@@ -756,6 +893,63 @@ fn unique_named_property<'a>(properties: &[&'a PropertyRecord], name: &str) -> N
     }
 }
 
+/// The value a spreadsheet cell states by itself: a `'`-quoted string, or a
+/// number with an optional length or angle unit, written directly or as the
+/// whole `=` expression. A cell computed from other cells or functions has no
+/// stated value.
+const MILLIMETRES_PER_NANOMETRE: f64 = 1.0e-6;
+const MILLIMETRES_PER_MICROMETRE: f64 = 1.0e-3;
+
+fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
+    let (expression, text) = match content.strip_prefix('=') {
+        Some(text) => (true, text),
+        None => (false, content),
+    };
+    if !expression {
+        if let Some(text) = text.strip_prefix('\'') {
+            return Some(ParameterValue::String(text.to_owned()));
+        }
+    }
+    let text = text.trim();
+    let number_end = text
+        .find(|character: char| !(character.is_ascii_digit() || "+-.eE".contains(character)))
+        .unwrap_or(text.len());
+    let number = text[..number_end]
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())?;
+    let unit = text[number_end..].trim();
+    // Millimetres per length unit and radians per angle unit.
+    let length = match unit {
+        "nm" => Some(MILLIMETRES_PER_NANOMETRE),
+        "um" | "µm" => Some(MILLIMETRES_PER_MICROMETRE),
+        "mm" => Some(1.0),
+        "cm" => Some(10.0),
+        "dm" => Some(100.0),
+        "m" => Some(1000.0),
+        "km" => Some(1.0e6),
+        "in" | "\"" => Some(25.4),
+        "ft" | "'" => Some(304.8),
+        "thou" | "mil" => Some(0.0254),
+        "yd" => Some(914.4),
+        _ => None,
+    };
+    let angle = match unit {
+        "deg" | "°" => Some(std::f64::consts::PI / 180.0),
+        "rad" => Some(1.0),
+        _ => None,
+    };
+    if unit.is_empty() {
+        cadmpeg_ir::scalar::FiniteReal::new(number).map(ParameterValue::Real)
+    } else if let Some(scale) = length {
+        Length::new(number * scale).map(ParameterValue::Length)
+    } else if let Some(scale) = angle {
+        cadmpeg_ir::scalar::Angle::new(number * scale).map(ParameterValue::Angle)
+    } else {
+        None
+    }
+}
+
 fn append_spreadsheet(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     parameters: &mut Vec<DesignParameter>,
@@ -830,23 +1024,17 @@ fn append_spreadsheet_owned(
             .map(String::as_str)
             .unwrap_or_default();
         let name = source.attributes.get("alias").unwrap_or(actual_address);
-        let value = if content.starts_with('=') {
-            None
+        let value = spreadsheet_cell_value(content);
+        // Content without a leading `=` is a literal and names nothing.
+        let expression = if content.starts_with('=') {
+            content.into()
         } else {
-            Some(
-                content
-                    .parse::<f64>()
-                    .ok()
-                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-                    .map_or_else(
-                        || ParameterValue::String(content.to_owned()),
-                        ParameterValue::Real,
-                    ),
+            cadmpeg_ir::features::Expression::literal(
+                value
+                    .as_ref()
+                    .unwrap_or(&ParameterValue::String(content.to_owned())),
             )
         };
-        let expression = value
-            .as_ref()
-            .map_or_else(|| content.into(), cadmpeg_ir::features::Expression::literal);
         parameters.push(DesignParameter {
             id: actual_id,
             owner: Some(feature_id(object)?),
@@ -1315,7 +1503,7 @@ fn validate_sketch_carrier(
 fn external_geometry_metadata(
     node: roxmltree::Node<'_, '_>,
     ordinal: usize,
-) -> Result<(Option<String>, bool), CodecError> {
+) -> Result<(Option<String>, Option<usize>, bool), CodecError> {
     let mut extensions = node
         .children()
         .filter(|child| child.has_tag_name("GeoExtensions"))
@@ -1343,6 +1531,35 @@ fn external_geometry_metadata(
         .or(geometry_ref)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
+
+    let parse_index = |value: &str| {
+        let index = value.parse::<i64>().map_err(|_| {
+            CodecError::malformed(format_args!(
+                "sketch ExternalGeo Geometry record {ordinal} has invalid reference index"
+            ))
+        })?;
+        match index {
+            -1 => Ok(None),
+            _ => usize::try_from(index).map(Some).map_err(|_| {
+                CodecError::malformed(format_args!(
+                "sketch ExternalGeo Geometry record {ordinal} has invalid reference index {index}"
+            ))
+            }),
+        }
+    };
+    let extension_index = extension
+        .and_then(|extension| extension.attribute("RefIndex"))
+        .map(parse_index)
+        .transpose()?;
+    let geometry_index = node.attribute("refIndex").map(parse_index).transpose()?;
+    if let (Some(extension_index), Some(geometry_index)) = (extension_index, geometry_index) {
+        if extension_index != geometry_index {
+            return Err(CodecError::malformed(format_args!(
+                "sketch ExternalGeo Geometry record {ordinal} has conflicting RefIndex and refIndex values"
+            )));
+        }
+    }
+    let reference_index = extension_index.or(geometry_index).flatten();
 
     let extension_flags = extension
         .and_then(|extension| extension.attribute("Flags"))
@@ -1372,7 +1589,11 @@ fn external_geometry_metadata(
         }
     }
     let flags = extension_flags.or(geometry_flags).unwrap_or_default();
-    Ok((reference, flags & EXTERNAL_GEOMETRY_MISSING_FLAG != 0))
+    Ok((
+        reference,
+        reference_index,
+        flags & EXTERNAL_GEOMETRY_MISSING_FLAG != 0,
+    ))
 }
 
 fn validate_external_geo_prefix(
@@ -1400,8 +1621,8 @@ fn validate_external_geo_prefix(
                 index + 1
             )));
         }
-        let (reference, _) = external_geometry_metadata(node, index + 1)?;
-        if reference.is_some() {
+        let (reference, reference_index, _) = external_geometry_metadata(node, index + 1)?;
+        if reference.is_some() || reference_index.is_some() {
             return Err(CodecError::malformed(format_args!(
                 "{owner} reserved ExternalGeo record {} has an external reference",
                 index + 1
@@ -1411,30 +1632,99 @@ fn validate_external_geo_prefix(
     Ok(())
 }
 
-fn external_link_key(reference: &crate::native::LinkTarget) -> Option<String> {
-    let object = reference.object()?;
-    let subelement = reference.subelements().first()?;
-    Some(format!("{}.{subelement}", crate::native::id_key(object)))
+fn external_link_key(reference: &crate::native::LinkTarget) -> Result<Option<String>, CodecError> {
+    let Some(object) = reference.object() else {
+        return Ok(None);
+    };
+    let [subelement] = reference.subelements() else {
+        return Err(CodecError::malformed(format_args!(
+            "sketch ExternalGeometry link to {object} requires exactly one subelement"
+        )));
+    };
+    Ok(Some(format!(
+        "{}.{subelement}",
+        crate::native::id_key(object)
+    )))
+}
+
+struct ExternalLinkIndices {
+    current: HashMap<String, usize>,
+    legacy: HashMap<String, Option<usize>>,
+}
+
+impl ExternalLinkIndices {
+    fn get(&self, key: &str) -> Option<usize> {
+        self.current
+            .get(key)
+            .copied()
+            .or_else(|| self.legacy.get(key).copied().flatten())
+    }
 }
 
 fn external_link_indices(
     references: Option<&PropertyRecord>,
-) -> Result<HashMap<String, usize>, CodecError> {
-    let mut indices = HashMap::new();
+) -> Result<ExternalLinkIndices, CodecError> {
+    let mut current = HashMap::new();
+    let mut legacy = HashMap::new();
     if let Some(references) = references {
+        let values = references
+            .values()
+            .iter()
+            .filter(|value| value.tag == "Link")
+            .collect::<Vec<_>>();
         for (index, reference) in references.links().iter().enumerate() {
-            let Some(key) = reference.as_ref().and_then(external_link_key) else {
+            let Some(reference) = reference else {
                 continue;
             };
-            if indices.contains_key(&key) {
+            let Some(live_key) = external_link_key(reference)? else {
+                continue;
+            };
+            let prefix = reference
+                .object()
+                .map(crate::native::id_key)
+                .unwrap_or_default();
+            let value = values.get(index);
+            let shadow = value.and_then(|value| {
+                value
+                    .attributes
+                    .get("shadowed")
+                    .or_else(|| value.attributes.get("shadow"))
+            });
+            let selector = shadow.map_or(reference.subelements()[0].as_str(), String::as_str);
+            let mapped = match selector.rsplit_once('.') {
+                Some((path, _))
+                    if path
+                        .rsplit('.')
+                        .next()
+                        .is_some_and(|segment| segment.starts_with(';')) =>
+                {
+                    path
+                }
+                _ => selector,
+            };
+            let current_key = format!("{prefix}.{mapped}");
+            if current.insert(current_key.clone(), index).is_some() {
                 return Err(CodecError::malformed(format_args!(
-                    "sketch ExternalGeometry links contain duplicate key {key}"
+                    "sketch ExternalGeometry links contain duplicate current key {current_key}"
                 )));
             }
-            indices.insert(key, index);
+            let mut aliases = vec![live_key];
+            if let Some(old) = value.and_then(|value| value.attributes.get("sub")) {
+                aliases.push(format!("{prefix}.{old}"));
+            }
+            for alias in aliases {
+                legacy
+                    .entry(alias)
+                    .and_modify(|previous| {
+                        if *previous != Some(index) {
+                            *previous = None;
+                        }
+                    })
+                    .or_insert(Some(index));
+            }
         }
     }
-    Ok(indices)
+    Ok(ExternalLinkIndices { current, legacy })
 }
 
 fn sketch_attributes(carrier: Option<roxmltree::Node<'_, '_>>) -> BTreeMap<String, String> {
@@ -3872,7 +4162,7 @@ fn sketch_geometry(
     }
 }
 
-/// Chain the sketch's profile entities by their shared endpoints.
+/// Derive chains from the sketch's active coincident endpoint constraints.
 ///
 /// `None` means endpoint matching exhausted `work`; no profile is chained then.
 fn build_profiles(
@@ -3891,7 +4181,6 @@ fn build_profiles(
         .collect::<BTreeSet<_>>();
     let mut unused = profile_entities.clone();
     let explicit_relations = explicit_endpoint_relations(&profile_entities, entities, constraints);
-    let index = EndpointIndex::new(&profile_entities, entities);
     let mut ambiguous = BTreeSet::new();
     for &entity in &unused {
         for start in [true, false] {
@@ -3899,8 +4188,6 @@ fn build_profiles(
                 EndpointLocus { entity, start },
                 &unused,
                 &explicit_relations,
-                entities,
-                &index,
                 work,
             )?;
             if matches.len() > 1 {
@@ -3923,7 +4210,7 @@ fn build_profiles(
             profiles.push(chain.into());
             continue;
         }
-        if endpoints(&entities[first]).is_none() {
+        if !has_profile_endpoints(&entities[first]) {
             profiles.push(chain.into());
             continue;
         }
@@ -3936,8 +4223,7 @@ fn build_profiles(
             start: false,
         };
         loop {
-            let mut candidates =
-                endpoint_candidates(tail, &unused, &explicit_relations, entities, &index, work)?;
+            let mut candidates = endpoint_candidates(tail, &unused, &explicit_relations, work)?;
             candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
             let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
                 break;
@@ -3967,8 +4253,7 @@ fn build_profiles(
             tail = next_tail;
         }
         loop {
-            let mut candidates =
-                endpoint_candidates(head, &unused, &explicit_relations, entities, &index, work)?;
+            let mut candidates = endpoint_candidates(head, &unused, &explicit_relations, work)?;
             candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
             let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
                 break;
@@ -4008,141 +4293,23 @@ struct EndpointLocus {
     start: bool,
 }
 
-struct IndexedEndpoint {
-    locus: EndpointLocus,
-    point: Point2,
-}
-
-/// Profile endpoints by scale bucket.
-struct EndpointIndex {
-    by_scale: BTreeMap<u64, EndpointBucket>,
-}
-
-/// The endpoints of one scale bucket, by grid cell.
-#[derive(Default)]
-struct EndpointBucket {
-    cells: HashMap<(i64, i64), Vec<IndexedEndpoint>>,
-    /// Endpoints with no finite cell. Every query of the bucket examines them.
-    unplaced: Vec<IndexedEndpoint>,
-}
-
-impl EndpointIndex {
-    fn new(profile_entities: &BTreeSet<usize>, entities: &[SketchEntity]) -> Self {
-        let mut by_scale = BTreeMap::<u64, EndpointBucket>::new();
-        for &index in profile_entities {
-            if let Some((start, end)) = endpoints(&entities[index]) {
-                for (at_start, point) in [(true, start), (false, end)] {
-                    let scale = endpoint_scale_bucket(point);
-                    let bucket = by_scale.entry(scale).or_default();
-                    let endpoint = IndexedEndpoint {
-                        locus: EndpointLocus {
-                            entity: index,
-                            start: at_start,
-                        },
-                        point,
-                    };
-                    match endpoint_cell(scale, point) {
-                        Some(cell) => bucket.cells.entry(cell).or_default().push(endpoint),
-                        None => bucket.unplaced.push(endpoint),
-                    }
-                }
-            }
-        }
-        Self { by_scale }
-    }
-}
-
-fn endpoint_scale_bucket(point: Point2) -> u64 {
-    point.u.abs().max(point.v.abs()).max(1.0).to_bits() >> 52
-}
-
-/// Grid cell of `point` in scale bucket `bucket`.
-///
-/// The cell side is `2^(bucket - 1066)`, twice the widest tolerance that any
-/// query from a neighbouring bucket applies to this bucket. An endpoint that
-/// can match a query therefore lies in one of the nine cells around the query.
-fn endpoint_cell(bucket: u64, point: Point2) -> Option<(i64, i64)> {
-    let side = f64::from_bits(bucket.checked_sub(43)? << 52);
-    let coordinate =
-        |value: f64| cadmpeg_core::convert::truncate_f64_to_i64((value / side).floor());
-    Some((coordinate(point.u)?, coordinate(point.v)?))
-}
-
-/// Coordinate and explicit endpoint matches of `endpoint` among `available`.
-///
-/// Every index candidate examined charges `work`; `None` means it is exhausted.
 fn endpoint_candidates(
     endpoint: EndpointLocus,
     available: &BTreeSet<usize>,
     explicit_relations: &BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
-    entities: &[SketchEntity],
-    index: &EndpointIndex,
     work: &WorkBudget,
 ) -> Option<Vec<EndpointLocus>> {
-    // Active explicit coincident loci override coordinates. Coordinate matching below is the
-    // decoder-owned CADIR boundary, not a producer tolerance.
-    if let Some(explicit) = explicit_relations.get(&endpoint) {
-        let mut matches = Vec::new();
-        matches.extend(
-            explicit
-                .iter()
-                .copied()
-                .filter(|candidate| available.contains(&candidate.entity)),
-        );
-        return Some(matches);
-    }
-    let Some(point) = endpoint_point(endpoint, entities) else {
-        return Some(Vec::new());
-    };
     let mut matches = Vec::new();
-    let scale = endpoint_scale_bucket(point);
-    for bucket_number in (scale - 1)..=(scale + 1) {
-        let Some(bucket) = index.by_scale.get(&bucket_number) else {
-            continue;
-        };
-        let bucket_scale = f64::from_bits((bucket_number.max(scale) + 1) << 52).min(f64::MAX);
-        let tolerance = SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * bucket_scale;
-        let mut examine = |candidates: &[IndexedEndpoint]| {
-            for candidate in candidates {
-                if !work.charge() {
-                    return false;
-                }
-                if candidate.point.u >= point.u - tolerance
-                    && candidate.point.u <= point.u + tolerance
-                    && candidate.locus.entity != endpoint.entity
-                    && available.contains(&candidate.locus.entity)
-                    && !explicit_relations.contains_key(&candidate.locus)
-                    && endpoints_match_by_roundoff(point, candidate.point)
-                {
-                    matches.push(candidate.locus);
-                }
+    if let Some(explicit) = explicit_relations.get(&endpoint) {
+        for candidate in explicit {
+            if !work.charge() {
+                return None;
             }
-            true
-        };
-        if let Some((cell_u, cell_v)) = endpoint_cell(bucket_number, point) {
-            for offset_u in [-1, 0, 1] {
-                for offset_v in [-1, 0, 1] {
-                    let cell = cell_u
-                        .checked_add(offset_u)
-                        .zip(cell_v.checked_add(offset_v))
-                        .and_then(|cell| bucket.cells.get(&cell));
-                    if !cell.is_none_or(|cell| examine(cell.as_slice())) {
-                        return None;
-                    }
-                }
+            if candidate.entity != endpoint.entity && available.contains(&candidate.entity) {
+                matches.push(*candidate);
             }
-        } else {
-            for cell in bucket.cells.values() {
-                if !examine(cell.as_slice()) {
-                    return None;
-                }
-            }
-        }
-        if !examine(bucket.unplaced.as_slice()) {
-            return None;
         }
     }
-    matches.sort_unstable_by(Ord::cmp);
     Some(matches)
 }
 
@@ -4178,7 +4345,10 @@ fn explicit_endpoint_relations(
                 }),
                 _ => None,
             })
-            .filter(|locus| profile_entities.contains(&locus.entity))
+            .filter(|locus| {
+                profile_entities.contains(&locus.entity)
+                    && has_profile_endpoints(&entities[locus.entity])
+            })
             .collect::<BTreeSet<_>>();
         for first in endpoints.iter().copied() {
             for candidate in endpoints
@@ -4194,64 +4364,22 @@ fn explicit_endpoint_relations(
     relations
 }
 
-fn endpoint_point(endpoint: EndpointLocus, entities: &[SketchEntity]) -> Option<Point2> {
-    endpoints(&entities[endpoint.entity])
-        .map(|points| if endpoint.start { points.0 } else { points.1 })
-}
-
-fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
-    match *entity.geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some((start.get(), end.get())),
-        SketchGeometryDefinition::Arc {
-            center,
-            radius,
-            start_angle,
-            end_angle,
-        } => Some((
-            Point2::new(
-                center.u + radius.get() * start_angle.get().cos(),
-                center.v + radius.get() * start_angle.get().sin(),
-            ),
-            Point2::new(
-                center.u + radius.get() * end_angle.get().cos(),
-                center.v + radius.get() * end_angle.get().sin(),
-            ),
-        )),
-        SketchGeometryDefinition::Ellipse {
-            center,
-            major_angle,
-            radii,
-            bounds: Some([start, end]),
-        } => {
-            let major = Point2::new(major_angle.get().cos(), major_angle.get().sin());
-            let minor = Point2::new(-major.v, major.u);
-            let point = |parameter: f64| {
-                let (along_major, along_minor) = (parameter.cos(), parameter.sin());
-                Point2::new(
-                    center.u
-                        + radii.major().get() * along_major * major.u
-                        + radii.minor().get() * along_minor * minor.u,
-                    center.v
-                        + radii.major().get() * along_major * major.v
-                        + radii.minor().get() * along_minor * minor.v,
-                )
-            };
-            Some((point(start.get()), point(end.get())))
+fn has_profile_endpoints(entity: &SketchEntity) -> bool {
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { .. }
+        | SketchGeometryDefinition::Arc { .. }
+        | SketchGeometryDefinition::Ellipse {
+            bounds: Some(_), ..
         }
-        _ => None,
+        | SketchGeometryDefinition::Hyperbola {
+            bounds: Some(_), ..
+        }
+        | SketchGeometryDefinition::Parabola {
+            bounds: Some(_), ..
+        } => true,
+        SketchGeometryDefinition::Nurbs { curve } => !curve.periodic(),
+        _ => false,
     }
-}
-
-const SKETCH_ENDPOINT_ROUNDING_ULPS: f64 = 64.0;
-
-fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
-    let scale =
-        a.u.abs()
-            .max(a.v.abs())
-            .max(b.u.abs())
-            .max(b.v.abs())
-            .max(1.0);
-    (a.u - b.u).hypot(a.v - b.v) <= SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * scale
 }
 
 fn profile_ref(
@@ -5326,6 +5454,128 @@ fn extrusion_shape(
             allow_multi_profile_faces,
         },
     )))
+}
+
+/// Resolve native face and edge selections whose every operand names indexed
+/// subelements (`Face6`, `Edge3`) of a linked object's stored `Shape`. A
+/// selection with any operand that does not name exactly one transferred
+/// face or edge stays native.
+pub(crate) fn resolve_subelement_selections(
+    ir: &mut cadmpeg_ir::CadIr,
+    properties: &[PropertyRecord],
+    occurrences: &[crate::topology_transfer::TopologyOccurrence],
+) {
+    let resolve = |native: &str, indexed_name: &str| -> Option<Vec<String>> {
+        let selection = properties.iter().find(|property| property.id == native)?;
+        let mut ids = Vec::new();
+        for link in selection.links() {
+            let link = link.as_ref()?;
+            let object = link.object()?;
+            if link.document().is_some() || link.subelements().is_empty() {
+                return None;
+            }
+            let shape = properties
+                .iter()
+                .find(|property| property.owner == object && property.name == "Shape")?;
+            for subelement in link.subelements() {
+                // A mapped name ends with its indexed name after the last `.`.
+                let indexed = subelement.rsplit('.').next()?;
+                let index = indexed.strip_prefix(indexed_name)?.parse::<usize>().ok()?;
+                // An edge or vertex is listed once per use; its identity is shared.
+                let matches = occurrences
+                    .iter()
+                    .filter(|occurrence| {
+                        occurrence.property == shape.id
+                            && occurrence.indexed_name == indexed_name
+                            && occurrence.source_index == index
+                    })
+                    .map(|occurrence| occurrence.topology_id.as_str())
+                    .collect::<BTreeSet<_>>();
+                let [id] = matches.into_iter().collect::<Vec<_>>()[..] else {
+                    return None;
+                };
+                ids.push(id.to_owned());
+            }
+        }
+        (!ids.is_empty()).then_some(ids)
+    };
+    let face_ids = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| face.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let edge_ids = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let faces = |selection: &mut cadmpeg_ir::features::FaceSelection| {
+        let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
+            return;
+        };
+        let Some(faces) = resolve(native, "Face")
+            .filter(|ids| ids.iter().all(|id| face_ids.contains(id)))
+            .and_then(|ids| {
+                ids.into_iter()
+                    .map(|id| cadmpeg_ir::ids::FaceId::mint(id).ok())
+                    .collect::<Option<Vec<_>>>()
+            })
+        else {
+            return;
+        };
+        *selection = cadmpeg_ir::features::FaceSelection::Resolved {
+            faces,
+            native: native.clone(),
+        };
+    };
+    let edges = |selection: &mut EdgeSelection| {
+        let EdgeSelection::Native(native) = selection else {
+            return;
+        };
+        let Some(edges) = resolve(native, "Edge")
+            .filter(|ids| ids.iter().all(|id| edge_ids.contains(id)))
+            .and_then(|ids| {
+                ids.into_iter()
+                    .map(|id| cadmpeg_ir::ids::EdgeId::mint(id).ok())
+                    .collect::<Option<Vec<_>>>()
+            })
+        else {
+            return;
+        };
+        *selection = EdgeSelection::Resolved {
+            edges,
+            native: native.clone(),
+        };
+    };
+    for feature in &mut ir.model.features {
+        feature.evaluation.edit(|definition, _| {
+            let operation = match definition {
+                FeatureDefinition::PostProcess { operation, .. }
+                | FeatureDefinition::Operation(operation) => operation,
+            };
+            match operation {
+                FeatureOperation::Shell { removed_faces, .. } => faces(removed_faces),
+                FeatureOperation::Draft {
+                    faces: selection, ..
+                } => faces(selection),
+                FeatureOperation::Fillet { groups, .. } => {
+                    *groups = groups.clone().map(|mut group| {
+                        edges(&mut group.edges);
+                        group
+                    });
+                }
+                FeatureOperation::Chamfer { groups, .. } => {
+                    *groups = groups.clone().map(|mut group| {
+                        edges(&mut group.edges);
+                        group
+                    });
+                }
+                _ => {}
+            }
+        });
+    }
 }
 
 fn dress_up_edge_selection(
@@ -6881,8 +7131,19 @@ fn hole_definition(
             }
         }))
     };
-    let direction = axis_reference(ctx, properties, "Profile", objects, properties_by_owner)?
-        .map(|(_, direction)| cadmpeg_ir::features::FeatureDirection3::from(direction));
+    // A hole drills against its profile's normal, into the support; `Reversed`
+    // drills along the normal.
+    let reversed = required!(bool_selector(ctx, properties, "Reversed", false)?);
+    let direction = axis_reference(ctx, properties, "Profile", objects, properties_by_owner)?.map(
+        |(_, direction)| {
+            let normal = cadmpeg_ir::features::FeatureDirection3::from(direction);
+            if reversed {
+                normal
+            } else {
+                normal.reversed()
+            }
+        },
+    );
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: Some(planar_profile),
         profile_filter: Some(profile_filter),
@@ -8393,6 +8654,49 @@ fn is_fillet(kind: &str) -> bool {
 fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
+/// Mark the bodies a document keeps only as intermediate shapes as not
+/// displayed: a feature's tool shape (any shape property other than `Shape`)
+/// and the shape of every member of a `PartDesign::Body`. A body shows its
+/// `Tip` result through its own `Shape`. Stored GUI visibility, applied later, wins.
+pub(crate) fn hide_intermediate_bodies(
+    ir: &mut cadmpeg_ir::CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+) {
+    let mut members = std::collections::HashSet::new();
+    for object in objects.iter().filter(|object| is_body(&object.type_name)) {
+        let owned = properties
+            .iter()
+            .filter(|property| property.owner == *object.id())
+            .collect::<Vec<_>>();
+        if let Some(group) = body_membership_property(&owned) {
+            members.extend(
+                group
+                    .links()
+                    .iter()
+                    .filter_map(|link| link.as_ref()?.object())
+                    .map(str::to_owned),
+            );
+        }
+    }
+    let hidden = payloads.iter().filter_map(|payload| {
+        let property = properties
+            .iter()
+            .find(|property| property.id == payload.property)?;
+        (property.name != "Shape" || members.contains(&property.owner))
+            .then_some(payload.id.as_str())
+    });
+    let hidden = crate::gui::select_shape_bodies(ir, hidden)
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    for body in &mut ir.model.bodies {
+        if hidden.contains(&body.id) {
+            body.visible = Some(false);
+        }
+    }
+}
+
 fn is_body(kind: &str) -> bool {
     kind == "PartDesign::Body"
 }
@@ -8521,8 +8825,6 @@ fn census_impl(
 
 #[cfg(test)]
 mod profile_tests {
-    use std::collections::BTreeSet;
-
     use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::scalar::Length;
@@ -8532,7 +8834,7 @@ mod profile_tests {
     };
     use cadmpeg_ir::spreadsheets::{CellAddress, SpreadsheetRange};
 
-    use super::{cell_address, endpoints_match_by_roundoff, merged_range, offset_cell_address};
+    use super::{cell_address, merged_range, offset_cell_address};
 
     fn range_contains_address(range: &SpreadsheetRange, address: &str) -> bool {
         CellAddress::parse(address).is_some_and(|address| range.contains(address))
@@ -8590,7 +8892,7 @@ mod profile_tests {
     }
 
     #[test]
-    fn curved_segments_chain_by_their_evaluated_endpoints() {
+    fn unconstrained_curves_keep_separate_profiles() {
         let entities = [
             entity(
                 "test:test:entity#line",
@@ -8620,8 +8922,8 @@ mod profile_tests {
             ),
         ];
         let profiles = build_profiles(&entities, &[]);
-        assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 3);
+        assert_eq!(profiles.len(), 3);
+        assert!(profiles.iter().all(|profile| profile.len() == 1));
     }
 
     #[test]
@@ -8808,7 +9110,7 @@ mod profile_tests {
     }
 
     #[test]
-    fn profile_junction_uses_the_cadir_roundoff_boundary() {
+    fn unconstrained_equal_and_nearby_endpoints_do_not_join() {
         let entities = |gap| {
             [
                 entity(
@@ -8830,15 +9132,11 @@ mod profile_tests {
             ]
         };
 
-        let inside = entities(32.0 * f64::EPSILON);
-        let inside_profiles = build_profiles(&inside, &[]);
-        assert_eq!(inside_profiles.len(), 1);
-        assert_eq!(inside_profiles[0].len(), 2);
-
-        let outside = entities(128.0 * f64::EPSILON);
-        let outside_profiles = build_profiles(&outside, &[]);
-        assert_eq!(outside_profiles.len(), 2);
-        assert!(outside_profiles.iter().all(|profile| profile.len() == 1));
+        for gap in [0.0, 32.0 * f64::EPSILON, 128.0 * f64::EPSILON] {
+            let profiles = build_profiles(&entities(gap), &[]);
+            assert_eq!(profiles.len(), 2);
+            assert!(profiles.iter().all(|profile| profile.len() == 1));
+        }
     }
 
     #[test]
@@ -8901,16 +9199,6 @@ mod profile_tests {
     }
 
     #[test]
-    fn endpoint_roundoff_uses_a_bounded_scale() {
-        let exact = Point2::new(1.0, 0.0);
-        let inside = Point2::new(1.0 + 32.0 * f64::EPSILON, 0.0);
-        let outside = Point2::new(1.0 + 128.0 * f64::EPSILON, 0.0);
-
-        assert!(endpoints_match_by_roundoff(exact, inside));
-        assert!(!endpoints_match_by_roundoff(exact, outside));
-    }
-
-    #[test]
     fn ambiguous_profile_junctions_remain_separate() {
         let entities = (0..3)
             .map(|ordinal| {
@@ -8938,166 +9226,87 @@ mod profile_tests {
         )
     }
 
-    /// Arc whose start overflows to `(f64::MAX, inf)`, which has no grid cell.
-    fn overflowing_arc(id: &str) -> SketchEntity {
-        entity(
-            id,
-            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-                center: Point2::new(f64::MAX, f64::MAX),
-                radius: Length::new(2_f64.powi(1000)).unwrap(),
-                start_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
-                end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::PI).unwrap(),
-            })
+    fn coincidence(entities: &[SketchEntity], index: usize, start: bool) -> SketchConstraint {
+        SketchConstraint {
+            id: SketchConstraintId::mint(format!("test:test:constraint#{index}")).unwrap(),
+            sketch: entities[0].sketch.clone(),
+            definition: SketchConstraintDefinitionInput::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::End(entities[index].id().clone()),
+                    if start {
+                        SketchLocus::Start(entities[index + 1].id().clone())
+                    } else {
+                        SketchLocus::End(entities[index + 1].id().clone())
+                    },
+                ],
+            }
+            .try_into()
             .unwrap(),
-        )
-    }
-
-    /// Coordinate matches of `endpoint` found by testing every profile
-    /// endpoint in the neighbouring scale buckets.
-    fn scanned_candidates(
-        endpoint: super::EndpointLocus,
-        available: &BTreeSet<usize>,
-        entities: &[SketchEntity],
-    ) -> Vec<(usize, bool)> {
-        let Some(point) = super::endpoint_point(endpoint, entities) else {
-            return Vec::new();
-        };
-        let scale = super::endpoint_scale_bucket(point);
-        let mut matches = Vec::new();
-        for (index, candidate) in entities.iter().enumerate() {
-            let Some((start, end)) = super::endpoints(candidate) else {
-                continue;
-            };
-            for (at_start, candidate_point) in [(true, start), (false, end)] {
-                let bucket = super::endpoint_scale_bucket(candidate_point);
-                if bucket + 1 < scale || bucket > scale + 1 {
-                    continue;
-                }
-                let bucket_scale = f64::from_bits((bucket.max(scale) + 1) << 52).min(f64::MAX);
-                let tolerance = super::SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * bucket_scale;
-                if !candidate.construction
-                    && candidate_point.u >= point.u - tolerance
-                    && candidate_point.u <= point.u + tolerance
-                    && index != endpoint.entity
-                    && available.contains(&index)
-                    && endpoints_match_by_roundoff(point, candidate_point)
-                {
-                    matches.push((index, at_start));
-                }
-            }
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
         }
-        matches.sort_unstable();
-        matches
     }
 
     #[test]
-    fn endpoint_grid_finds_what_a_scan_of_every_endpoint_finds() {
-        // Anchors sit on cell and scale-bucket boundaries; jitter of up to 128
-        // ulps straddles both and the 64-ulp round-off boundary.
-        const ANCHORS: [f64; 7] = [0.0, 1.0, -2.0, 4.0, 1024.0, 1_099_511_627_776.0, 8.0e307];
-        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
-        let mut random = move || {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            state
-        };
-        let mut coordinate = || {
-            let bits = random();
-            let anchor = ANCHORS[usize::try_from(bits % 7).unwrap()];
-            let steps = f64::from(u32::try_from((bits >> 8) % 257).unwrap()) - 128.0;
-            anchor + steps * f64::EPSILON * anchor.abs().max(1.0)
-        };
-        let mut matched = 0;
-        for case in 0..6 {
-            let mut entities = (0..300)
-                .map(|ordinal| {
-                    line(
-                        &format!("test:test:entity#{case}-{ordinal}"),
-                        Point2::new(coordinate(), coordinate()),
-                        Point2::new(coordinate(), coordinate()),
-                    )
-                })
-                .collect::<Vec<_>>();
-            entities.push(overflowing_arc("test:test:entity#arc"));
-            entities.push(line(
-                "test:test:entity#to-arc",
-                Point2::new(f64::MAX, 0.0),
-                Point2::new(0.0, 0.0),
-            ));
-            let profile_entities = (0..entities.len()).collect::<BTreeSet<_>>();
-            let available = profile_entities
-                .iter()
-                .copied()
-                .filter(|&index| index % 5 != case)
-                .collect::<BTreeSet<_>>();
-            let index = super::EndpointIndex::new(&profile_entities, &entities);
-            let work = WorkBudget::new(super::MAX_PROFILE_ENDPOINT_CANDIDATES);
-            for entity in 0..entities.len() {
-                for start in [true, false] {
-                    let endpoint = super::EndpointLocus { entity, start };
-                    let found = super::endpoint_candidates(
-                        endpoint,
-                        &available,
-                        &std::collections::BTreeMap::new(),
-                        &entities,
-                        &index,
-                        &work,
-                    )
-                    .expect("within the work limit")
-                    .into_iter()
-                    .map(|locus| (locus.entity, locus.start))
-                    .collect::<Vec<_>>();
-                    let expected = scanned_candidates(endpoint, &available, &entities);
-                    assert_eq!(
-                        found, expected,
-                        "case {case}, entity {entity}, start {start}"
-                    );
-                    matched += found.len();
-                }
-            }
-        }
-        assert!(matched > 1000, "only {matched} matches exercised");
-    }
-
-    #[test]
-    fn endpoints_without_a_grid_cell_still_chain() {
+    fn explicit_endpoint_chain_reverses_the_matching_end() {
         let entities = [
             line(
-                "test:test:entity#to-arc",
+                "test:test:entity#a",
                 Point2::new(0.0, 0.0),
-                Point2::new(f64::MAX, 0.0),
+                Point2::new(1.0, 0.0),
             ),
-            overflowing_arc("test:test:entity#arc"),
+            line(
+                "test:test:entity#b",
+                Point2::new(2.0, 0.0),
+                Point2::new(1.0, 0.0),
+            ),
         ];
-        let profiles = build_profiles(&entities, &[]);
+        let profiles = build_profiles(&entities, &[coincidence(&entities, 0, false)]);
         assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 2);
+        assert!(!profiles[0][0].reversed);
+        assert!(profiles[0][1].reversed);
     }
 
     #[test]
-    fn profile_chaining_is_linear_when_endpoints_share_a_coordinate() {
-        // Every endpoint has u = 0, so a window over u holds the whole sketch
-        // and pairwise matching would examine about 2^32 candidates.
-        const LINES: u32 = 1 << 15;
-        let base = f64::from(1_u32 << 20);
-        let entities = (0..LINES)
+    fn inactive_endpoint_constraint_does_not_join() {
+        let entities = [
+            line(
+                "test:test:entity#a",
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            ),
+            line(
+                "test:test:entity#b",
+                Point2::new(1.0, 0.0),
+                Point2::new(2.0, 0.0),
+            ),
+        ];
+        let mut constraint = coincidence(&entities, 0, true);
+        constraint.active = Some(false);
+        assert_eq!(build_profiles(&entities, &[constraint]).len(), 2);
+    }
+
+    #[test]
+    fn coincident_coordinate_population_does_not_require_pairwise_matching() {
+        let entities = (0..1024)
             .map(|ordinal| {
                 line(
                     &format!("test:test:entity#{ordinal}"),
-                    Point2::new(0.0, base + f64::from(ordinal)),
-                    Point2::new(0.0, base + f64::from(ordinal) + 1.0),
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
                 )
             })
             .collect::<Vec<_>>();
-        let work = WorkBudget::new(1 << 20);
-        let profiles = super::build_profiles(&entities, &[], &work).expect("linear work");
-        assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), entities.len());
-        assert!(profiles[0]
-            .iter()
-            .zip(&entities)
-            .all(|(entity_use, entity)| entity_use.entity == *entity.id() && !entity_use.reversed));
+        let profiles = super::build_profiles(&entities, &[], &WorkBudget::new(0)).unwrap();
+        assert_eq!(profiles.len(), entities.len());
     }
 
     #[test]
@@ -9111,8 +9320,11 @@ mod profile_tests {
                 )
             })
             .collect::<Vec<_>>();
-        assert!(super::build_profiles(&entities, &[], &WorkBudget::new(2)).is_none());
-        assert_eq!(build_profiles(&entities, &[]).len(), 1);
+        let constraints = (0..3)
+            .map(|index| coincidence(&entities, index, true))
+            .collect::<Vec<_>>();
+        assert!(super::build_profiles(&entities, &constraints, &WorkBudget::new(2)).is_none());
+        assert_eq!(build_profiles(&entities, &constraints).len(), 1);
     }
 }
 

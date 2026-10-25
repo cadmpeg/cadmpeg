@@ -13,7 +13,7 @@
     {
       "name": "ExternalPrototype.brp",
       "payload_len": 1080,
-      "payload_sha256": "6d02865a0a056c692e4f7d88536968ff33986e34eb213784a5097cf7dea82c75"
+      "payload_sha256": "92cbfa14d2488861fac224e9f1aa8497438662ccda1b16c56e4719d35bb2c047"
     }
   ],
   "report": {
@@ -151,7 +151,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.entries`",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.entries`: fcstd:native:entry#ExternalPrototype.Shape.brp",
         "severity": "info"
       },
       {
@@ -161,7 +161,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExternalPrototype:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -289,9 +289,6 @@
               }
             },
             "unknowns": {
-              "disposition": "dropped"
-            },
-            "unreadable_entries": {
               "disposition": "dropped"
             }
           }

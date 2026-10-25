@@ -245,7 +245,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 40 native record(s) from `iges.cards`",
+        "message": "the iges write omits 40 native record(s) from `iges.cards`: iges:physical:card#1, iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#13, iges:physical:card#14, iges:physical:card#15, iges:physical:card#16, iges:physical:card#17, iges:physical:card#18, iges:physical:card#19, iges:physical:card#2, iges:physical:card#20, iges:physical:card#21, iges:physical:card#22, iges:physical:card#23, iges:physical:card#24, iges:physical:card#25, iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#29, iges:physical:card#3, iges:physical:card#30, iges:physical:card#31, iges:physical:card#32, iges:physical:card#33, iges:physical:card#34, iges:physical:card#35, iges:physical:card#36, iges:physical:card#37, iges:physical:card#38, iges:physical:card#39, iges:physical:card#4, iges:physical:card#40, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9",
         "severity": "info"
       },
       {
@@ -255,7 +255,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.directions`",
+        "message": "the iges write omits 1 native record(s) from `iges.directions`: iges:native:direction#D3",
         "severity": "info"
       },
       {
@@ -265,7 +265,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 12 native record(s) from `iges.display_attributes`",
+        "message": "the iges write omits 12 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "info"
       },
       {
@@ -275,7 +275,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 12 native record(s) from `iges.entities`",
+        "message": "the iges write omits 12 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#23, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -285,7 +285,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`",
+        "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
         "severity": "info"
       }
     ],

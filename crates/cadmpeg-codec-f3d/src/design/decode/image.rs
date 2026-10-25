@@ -57,17 +57,43 @@ pub(super) fn embedded_image_asset(
     ))
 }
 
-/// Decode image scopes in their owning streams, ordered by native identity.
-pub(super) fn decode_scoped_images<T>(
-    scan: &ContainerScan,
+/// One located image record of a scope.
+pub(super) struct ImageRecord {
+    /// The image's native identity.
+    pub(super) id: String,
+    /// The stream offset of the indexed record whose primary-index frame is
+    /// the image's extent.
+    pub(super) start: usize,
+    /// The extent's end in a stream with no primary index.
+    pub(super) end: usize,
+}
+
+/// The stream bytes of a range, read through the stream's source view.
+pub(super) type ImageRead<'s, 'r> = dyn Fn(std::ops::Range<usize>) -> Option<&'s [u8]> + 'r;
+
+/// Decode image records of scopes in their owning streams, ordered by native
+/// identity. Each image is parsed inside its record scope: `locate` finds its record,
+/// and `parse` reads its grammar through the read it is given. A scope with
+/// no complete image rolls back and leaves no capture. The image's source
+/// offsets are `record_layout` pointers in `pointers`.
+pub(super) fn decode_scoped_image_records<'s, T>(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'s>,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     kind: &crate::records::feature::scope::DesignFeatureKind,
-    mut parse: impl FnMut(
+    pointers: &mut crate::design::decode::sketch::SourcePointers,
+    locate: impl Fn(
         &[u8],
         &str,
         &crate::records::feature::scope::DesignParameterScope,
+    ) -> Option<ImageRecord>,
+    parse: impl Fn(
+        &[u8],
+        &str,
+        &crate::records::feature::scope::DesignParameterScope,
+        &ImageRead<'s, '_>,
     ) -> Result<Option<T>, CodecError>,
-    id: impl Fn(&T) -> &str,
+    source_offsets: impl Fn(&T) -> Vec<(&'static str, Option<u64>)>,
 ) -> Result<Vec<T>, CodecError> {
     let mut images = Vec::new();
     for entry in scan
@@ -75,20 +101,72 @@ pub(super) fn decode_scoped_images<T>(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let bytes = source.window();
         let stream = crate::ids::native_scope(&entry.name);
+        let mut frame_ends = std::collections::BTreeMap::new();
+        if let Some(meta) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        {
+            for frame in crate::metastream::primary_record_frames(&meta, bytes.len())? {
+                frame_ends.insert(frame.start, frame.end);
+            }
+        }
+        let child = |range: std::ops::Range<usize>| {
+            source
+                .start()
+                .checked_add(range.start)
+                .zip(source.start().checked_add(range.end))
+                .and_then(|(start, end)| source.child(start, end))
+        };
+        let read = |range: std::ops::Range<usize>| {
+            let view = child(range)?;
+            view.read_slice(view.start()..view.end())
+        };
         for scope in scopes.iter().filter(|scope| {
             scope.kind().as_str() == kind.as_str()
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         }) {
-            if let Some(image) = parse(bytes, &entry.name, scope)? {
-                images.push(image);
+            let Some(record) = locate(bytes, &entry.name, scope) else {
+                continue;
+            };
+            // An indexed record's extent is its primary-index frame.
+            let end = frame_ends.get(&record.start).copied().unwrap_or(record.end);
+            let Some(extent) = child(record.start..end) else {
+                continue;
+            };
+            if pointers.contains_key(&record.id)
+                || images.iter().any(|(id, _): &(String, T)| *id == record.id)
+            {
+                continue;
             }
+            let mut skipped = false;
+            let parsed = ctx.record(&record.id, extent, || {
+                match parse(bytes, &entry.name, scope, &read)? {
+                    Some(image) => Ok(image),
+                    None => {
+                        skipped = true;
+                        Err(CodecError::malformed("no complete scoped image"))
+                    }
+                }
+            });
+            let image = match parsed {
+                Ok(image) => image,
+                Err(_) if skipped => continue,
+                Err(error) => return Err(error),
+            };
+            let fields = crate::design::decode::parameters::source_layout::pointer_fields(
+                ctx,
+                source_offsets(&image),
+            )?;
+            pointers.insert(record.id.clone(), fields);
+            images.push((record.id, image));
         }
     }
-    images.sort_by(|a, b| id(a).cmp(id(b)));
-    images.dedup_by(|a, b| id(a) == id(b));
-    Ok(images)
+    images.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(images.into_iter().map(|(_, image)| image).collect())
 }
 
 #[cfg(test)]
@@ -98,7 +176,7 @@ mod tests {
     use zip::CompressionMethod;
 
     use crate::test_support::manifest_test::write_synthetic_manifests;
-    use crate::test_support::zip_test::with_scan;
+    use crate::test_support::zip_test::{with_context_scan, with_scan};
 
     #[test]
     fn embedded_image_asset_reads_unique_entry() {
@@ -142,7 +220,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         let stream = crate::ids::native_scope(ENTRY);
         let scope: crate::records::feature::scope::DesignParameterScope =
-            serde_json::from_value(serde_json::json!({
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
                 "id": format!("{stream}:scope#1"),
                 "byte_offset": 0,
                 "class_tag": "300",
@@ -172,16 +250,25 @@ mod tests {
                 },
                 "paired_class_tag": "261",
                 "paired_byte_offset": 200
-            }))
-            .unwrap();
+            }));
         let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
-        with_scan(&archive, |scan| {
-            let images = super::decode_scoped_images(
+        with_context_scan(&archive, |ctx, scan| {
+            let mut pointers = crate::design::decode::sketch::SourcePointers::new();
+            let images = super::decode_scoped_image_records(
+                ctx,
                 scan,
                 std::slice::from_ref(&scope),
                 &kind,
-                |_, _, _| Ok(Some(17_u32)),
-                |_| "image",
+                &mut pointers,
+                |_, _, _| {
+                    Some(super::ImageRecord {
+                        id: "image".to_owned(),
+                        start: 0,
+                        end: 5,
+                    })
+                },
+                |_, _, _, _| Ok(Some(17_u32)),
+                |_| Vec::new(),
             )
             .unwrap();
             assert_eq!(images, [17]);

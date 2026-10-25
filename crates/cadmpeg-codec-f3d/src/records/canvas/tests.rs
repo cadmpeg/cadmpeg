@@ -171,9 +171,10 @@ fn canvas_content_edits_are_independent_of_source_payloads() {
         assert_eq!(serde_json::to_value(&image).unwrap(), wire);
         assert!(image.scope_byte_offset().is_none());
         assert!(image.geometry.byte_offset.is_none());
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        image.retain_source(&mut fidelity);
-        assert!(fidelity.metadata.is_empty());
+        assert!(image
+            .source_offsets()
+            .iter()
+            .all(|(_, offset)| offset.is_none()));
     }
     for field in [
         "scope_reference_offset",
@@ -252,12 +253,9 @@ fn source_canvas_admission_checks_actual_scope_envelopes_and_overflow() {
         )
         .unwrap();
         assert_eq!(image.scope_byte_offset(), Some(402));
-        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-        image.retain_source(&mut fidelity);
-        assert_eq!(
-            fidelity.metadata[&format!("{}.geometry_byte_offset", image.id)],
-            "100"
-        );
+        let offsets: std::collections::BTreeMap<_, _> =
+            image.source_offsets().into_iter().collect();
+        assert_eq!(offsets["geometry_byte_offset"], Some(100));
         let restored: super::DesignCanvasImage =
             serde_json::from_value(serde_json::to_value(&image).unwrap()).unwrap();
         assert!(restored.scope_byte_offset().is_none());
@@ -333,119 +331,101 @@ fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
 }
 
 #[test]
-fn canvas_bounds_preserve_segment_order_and_derive_extents() {
-    use cadmpeg_ir::math::Point2;
-    for (segments, mirroring) in [
-        (
-            [
-                [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
-                [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
-            ],
-            (true, true),
-        ),
-        (
-            [
-                [Point2::new(3.0, -1.0), Point2::new(3.0, 4.0)],
-                [Point2::new(-2.0, -1.0), Point2::new(-2.0, 4.0)],
-            ],
-            (true, false),
-        ),
+fn canvas_placement_preserves_ordered_corners_in_model_space() {
+    use crate::records::canvas::DesignCanvasBounds;
+    use cadmpeg_ir::features::FeatureUnitPlaneFrame;
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    const EPS_CORNER: f64 = 1.0e-10;
+    let plane = FeatureUnitPlaneFrame::new(
+        Point3::new(10.0, 20.0, 30.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    )
+    .unwrap();
+    for (e, f) in [
+        ((5.0, 0.0), (0.0, 2.0)),
+        ((-5.0, 0.0), (0.0, 2.0)),
+        ((5.0, 0.0), (0.0, -2.0)),
+        ((-5.0, 0.0), (0.0, -2.0)),
+        ((0.0, 5.0), (-2.0, 0.0)),
+        ((0.0, -5.0), (2.0, 0.0)),
+        ((3.0, 4.0), (-8.0, 6.0)),
+        ((-3.0, -4.0), (-8.0, 6.0)),
     ] {
-        let bounds =
-            crate::records::canvas::DesignCanvasBounds::try_from(segments).expect("Canvas bounds");
-        assert_eq!(bounds.segments(), segments);
-        assert_eq!(bounds.mirroring(), mirroring);
-        assert_eq!(
-            bounds.extents(),
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, 4.0)]
-        );
-    }
-    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let segments = [
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [Point2::new(-2.0, 4.0), Point2::new(invalid, 4.0)],
-        ];
-        assert!(crate::records::canvas::DesignCanvasBounds::try_from(segments).is_err());
+        let a = Point2::new(3.0, -1.0);
+        let b = Point2::new(a.u + e.0, a.v + e.1);
+        let c = Point2::new(a.u + f.0, a.v + f.1);
+        let d = Point2::new(b.u + f.0, b.v + f.1);
+        let segments = [[a, b], [c, d]];
+        let native = DesignCanvasBounds::try_from(segments).unwrap();
+        assert_eq!(native.segments(), segments);
+        let (frame, bounds) = native.image_placement(plane).unwrap();
+        let [minimum, maximum] = bounds.corners().map(cadmpeg_ir::units::FinitePoint2::get);
+        assert_eq!(minimum, Point2::new(0.0, 0.0));
+        for (uv, expected) in [
+            ((0.0, 0.0), a),
+            ((maximum.u, 0.0), b),
+            ((0.0, maximum.v), c),
+            ((maximum.u, maximum.v), d),
+        ] {
+            let actual = frame
+                .origin()
+                .get()
+                .translated(*frame.u_axis().as_raw(), uv.0)
+                .translated(*frame.v_axis().as_raw(), uv.1);
+            let expected = Point3::new(10.0, 20.0 + 10.0 * expected.u, 30.0 + 10.0 * expected.v);
+            assert!(
+                actual.distance(expected) < EPS_CORNER,
+                "{actual:?} != {expected:?}"
+            );
+        }
     }
 }
 
 #[test]
-fn canvas_bounds_decode_u_and_v_mirroring_from_endpoint_order() {
+fn canvas_bounds_reject_nonrectangles_and_nonfinite_coordinates() {
     use crate::records::canvas::DesignCanvasBounds;
     use cadmpeg_ir::math::Point2;
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
+    for segments in [
+        [
+            [Point2::new(0.0, 0.0), Point2::new(0.0, 0.0)],
+            [Point2::new(0.0, 1.0), Point2::new(0.0, 1.0)],
+        ],
+        [
+            [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            [Point2::new(0.5, 1.0), Point2::new(1.5, 1.0)],
+        ],
+        [
+            [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            [Point2::new(0.0, 1.0), Point2::new(2.0, 1.0)],
+        ],
+    ] {
+        assert!(DesignCanvasBounds::try_from(segments).is_err());
+    }
+    for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(DesignCanvasBounds::try_from([
+            [Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            [Point2::new(0.0, 1.0), Point2::new(invalid, 1.0)],
         ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        Some((false, false))
-    );
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
-            [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
-        ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        Some((true, false))
-    );
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(-2.0, 4.0), Point2::new(3.0, 4.0)],
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-        ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        Some((false, true))
-    );
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(3.0, 4.0), Point2::new(-2.0, 4.0)],
-            [Point2::new(3.0, -1.0), Point2::new(-2.0, -1.0)],
-        ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        Some((true, true))
-    );
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(-2.0, 4.0), Point2::new(-2.0, -1.0)],
-            [Point2::new(3.0, 4.0), Point2::new(3.0, -1.0)],
-        ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        Some((false, true))
-    );
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(3.0, -1.0), Point2::new(3.0, 4.0)],
-            [Point2::new(-2.0, -1.0), Point2::new(-2.0, 4.0)],
-        ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        Some((true, false))
-    );
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [
-                Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), 4.0),
-                Point2::new(f64::from_bits(3.0f64.to_bits() + 4), 4.0),
-            ],
-        ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        Some((false, false))
-    );
-    assert_eq!(
-        DesignCanvasBounds::try_from([
-            [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
-            [Point2::new(-2.0, 4.0), Point2::new(2.0, 4.0)],
-        ])
-        .ok()
-        .map(DesignCanvasBounds::mirroring),
-        None
-    );
+        .is_err());
+    }
+}
+
+#[test]
+fn canvas_bounds_admit_coordinate_roundoff_and_reject_overflow() {
+    use crate::records::canvas::DesignCanvasBounds;
+    use cadmpeg_ir::math::Point2;
+    assert!(DesignCanvasBounds::try_from([
+        [Point2::new(-2.0, -1.0), Point2::new(3.0, -1.0)],
+        [
+            Point2::new(f64::from_bits((-2.0f64).to_bits() + 4), 4.0),
+            Point2::new(f64::from_bits(3.0f64.to_bits() + 4), 4.0)
+        ],
+    ])
+    .is_ok());
+    assert!(DesignCanvasBounds::try_from([
+        [Point2::new(-f64::MAX, 0.0), Point2::new(f64::MAX, 0.0)],
+        [Point2::new(-f64::MAX, 1.0), Point2::new(f64::MAX, 1.0)],
+    ])
+    .is_err());
 }

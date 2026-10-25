@@ -4,7 +4,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use super::{copy_string, reserve};
+use super::{copy_string, reserve, reserve_working};
 use crate::decode::budget::DecodeBudget;
 use crate::decode::{u64_from_index, ByteRange, SpaceId, View};
 use crate::CodecError;
@@ -133,6 +133,23 @@ impl Streams {
             .chain(&self.derived)
             .find(|stream| stream.space == space)
             .ok_or_else(|| CodecError::malformed("source stream has no registered provenance"))
+    }
+
+    pub(super) fn require_end(&self, view: View<'_>) -> Result<(), CodecError> {
+        let stream = self.get(view.space())?;
+        validate_extent(
+            stream,
+            ByteRange {
+                start: u64_from_index(view.start()),
+                end: u64_from_index(view.end()),
+            },
+        )?;
+        if u64_from_index(view.end()) != stream.byte_len {
+            return Err(CodecError::malformed(
+                "source window does not reach its registered stream end",
+            ));
+        }
+        Ok(())
     }
 
     pub(super) fn name(&self, space: SpaceId) -> Result<&str, CodecError> {
@@ -339,7 +356,7 @@ impl Streams {
             },
         };
         let mut pending = Vec::new();
-        reserve(budget, &mut pending, 1)?;
+        reserve_working(budget, &mut pending, 1)?;
         pending.push(initial);
         let mut seen: Vec<Extent> = Vec::new();
         let mut reached = false;
@@ -365,10 +382,10 @@ impl Streams {
             }) {
                 continue;
             }
-            reserve(budget, &mut seen, 1)?;
+            reserve_working(budget, &mut seen, 1)?;
             seen.push(current);
             let mut push = |space, range| -> Result<(), CodecError> {
-                reserve(budget, &mut pending, 1)?;
+                reserve_working(budget, &mut pending, 1)?;
                 pending.push(Extent { space, range });
                 Ok(())
             };

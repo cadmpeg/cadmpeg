@@ -253,7 +253,6 @@ pub(crate) fn attempt<'a>(
                             object_sources: None,
                             properties: &[],
                             payloads: &[],
-                            element_maps: &[],
                             topology_occurrences: &[],
                             requires_alpha_conversion: false,
                         },

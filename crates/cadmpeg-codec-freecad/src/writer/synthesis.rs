@@ -12,9 +12,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Write};
 use xml::Object;
 
-pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> {
+pub(super) fn write(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    schema: &str,
+) -> Result<ExportBody, CodecError> {
     let native_only = !ir.scope.model;
-    let projected = super::native_geometry::project(ir)?;
+    let projected = super::native_geometry::project(ctx, ir)?;
     let (ir, mut losses) = projected.as_ref().map_or_else(
         || (ir, Vec::new()),
         |(projected, losses)| (projected, losses.clone()),
@@ -569,6 +573,7 @@ pub(super) fn write(ir: &CadIr, schema: &str) -> Result<ExportBody, CodecError> 
         &mut native_dispositions,
     )?;
     let dictionaries = super::native::maps(
+        ctx,
         ir,
         &mut objects,
         &names,

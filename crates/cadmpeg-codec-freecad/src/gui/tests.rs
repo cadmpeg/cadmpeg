@@ -1992,3 +1992,5 @@ use recovery_assertions::{
 
 mod metadata_recovery;
 mod shape_payloads;
+
+mod topology_appearance;

@@ -6,7 +6,7 @@ use crate::records::feature::primitives::DesignCylinderPrimitive;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn cylinder(transform: Option<[[f64; 4]; 4]>) -> DesignParameterScope {
@@ -19,16 +19,16 @@ fn cylinder(transform: Option<[[f64; 4]; 4]>) -> DesignParameterScope {
         *slot = Some(DesignCylinderPrimitive {
             height: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
             height_record_index: 41,
-            height_offset: 0,
+            height_offset: Some(0),
             diameter: cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
             diameter_record_index: 42,
-            diameter_offset: 0,
-            transform: transform.map(|rows| Located {
+            diameter_offset: Some(0),
+            transform: transform.map(|rows| Sourced {
                 value: rows.try_into().unwrap(),
-                offset: 72,
+                offset: Some(72),
             }),
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 22,
+            operation_offset: Some(22),
         });
     }
     scope

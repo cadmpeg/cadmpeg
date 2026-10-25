@@ -543,3 +543,54 @@ fn diff_report_writes_result_to_file() {
     assert_eq!(value["different"], false);
     assert!(value["diff"].is_object());
 }
+
+#[cfg(feature = "step")]
+#[test]
+fn a_decode_sidecar_passed_as_the_model_is_named() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let step = dir.path().join("cube.step");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-o",
+            step.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let cadir = dir.path().join("cube.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "dump",
+            step.to_str().unwrap(),
+            "-o",
+            cadir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let sidecar = dir.path().join("cube.cadir.fidelity.json");
+    assert!(sidecar.exists(), "dump writes the decode sidecar");
+    let message = format!(
+        "{} is a decode sidecar; pass the CADIR document beside it",
+        sidecar.display()
+    );
+    for args in [
+        vec!["check", sidecar.to_str().unwrap()],
+        vec!["dump", sidecar.to_str().unwrap()],
+        vec!["diff", sidecar.to_str().unwrap(), cadir.to_str().unwrap()],
+    ] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&args)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(message.as_str()));
+    }
+}
