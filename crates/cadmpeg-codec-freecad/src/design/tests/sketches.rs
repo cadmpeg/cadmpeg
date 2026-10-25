@@ -872,9 +872,14 @@ fn symmetry_uses_the_third_operand_kind_and_position() {
             "root",
         ),
         (
+            "circle center",
+            r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="5" ThirdPos="3""#,
+            "center",
+        ),
+        (
             "line midpoint",
             r#"First="0" FirstPos="1" Second="2" SecondPos="1" Third="1" ThirdPos="3""#,
-            "midpoint",
+            "native",
         ),
         (
             "point entity",
@@ -929,7 +934,7 @@ fn symmetry_uses_the_third_operand_kind_and_position() {
         assert_eq!(model.sketch_constraints.len(), 1, "{name}");
         let definition = model.sketch_constraints[0].definition.kind();
         match expected {
-            "root" | "midpoint" | "point" => {
+            "root" | "center" | "point" => {
                 let Constraint::PointSymmetric {
                     first,
                     second,
@@ -956,7 +961,7 @@ fn symmetry_uses_the_third_operand_kind_and_position() {
                             .id()
                             .clone(),
                     ),
-                    "midpoint" => SketchLocus::Center(model.sketch_entities[1].id().clone()),
+                    "center" => SketchLocus::Center(model.sketch_entities[5].id().clone()),
                     _ => SketchLocus::Entity(model.sketch_entities[4].id().clone()),
                 };
                 assert_eq!(*center, expected_center, "{name}");

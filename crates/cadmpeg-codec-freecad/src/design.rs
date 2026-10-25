@@ -2699,6 +2699,28 @@ fn symmetry_constraint(
         {
             None
         }
+        // A line segment's mid position and a closed curve's endpoints are
+        // not neutral loci.
+        SketchLocus::Center(_)
+            if !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+                    | SketchGeometryDefinition::Arc { .. }
+                    | SketchGeometryDefinition::Ellipse { .. }
+                    | SketchGeometryDefinition::ExternalReference { .. }
+                    | SketchGeometryDefinition::Native { .. }
+            ) =>
+        {
+            None
+        }
+        SketchLocus::Start(_) | SketchLocus::End(_)
+            if matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { .. }
+            ) =>
+        {
+            None
+        }
         _ => Some(SketchConstraintDefinitionInput::PointSymmetric {
             first,
             second,
