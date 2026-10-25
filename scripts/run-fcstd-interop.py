@@ -61,15 +61,16 @@ def main():
     run([*command, ROOT / "tools/validate_fcstd_interop.py"], "validate-write")
     report = json.loads((work / "write-report.json").read_text())
     files = report["files"]
-    if report["failures"] or len(files) != 8 or not all(
+    if report["failures"] or len(files) != 9 or not all(
         row["document_opened"] and row["semantic_equivalence_accepted"]
         and row["native_resave_accepted"] and row["appearance_compared"]
         for row in files
     ):
         raise RuntimeError("native write equivalence failed; see write-report.json")
-    for name in ("restoration_two_boxes", "parametric_box", "filleted_box"):
+    for name in ("restoration_two_boxes", "parametric_box", "filleted_box", "spline_domains"):
         source = reference / f"{name}.FCStd"
         rewritten = output / f"{name}.FCStd"
+        run([args.cadmpeg.resolve(), "check", source], f"check-{name}")
         run([args.cadmpeg.resolve(), "measure", source, "--json", "--report",
              work / f"{name}.measure.json", "--force"], f"measure-{name}")
         run([args.cadmpeg.resolve(), "diff", source, rewritten, "--geometry", "--report",

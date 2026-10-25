@@ -47,6 +47,25 @@ obj.Shape = box.makeFillet(1, box.Edges)
 assert len(obj.Shape.Faces) == 26 and obj.Shape.isValid()
 save(document, "filleted_box")
 
+document = App.newDocument("SplineDomains")
+curve = Part.BSplineCurve()
+curve.buildFromPolesMultsKnots(
+    [App.Vector(0, 0, 0), App.Vector(1, 1, 0), App.Vector(2, 1, 0), App.Vector(3, 0, 0)],
+    [4, 4], [0.0148237927501468, 0.0149673171868357], False, 3,
+)
+obj = document.addObject("Part::Feature", "SplineEdge")
+obj.Shape = curve.toShape(0.014823792750147, 0.014967317186836)
+pcurve = Part.Geom2d.BSplineCurve2d()
+pcurve.buildFromPolesMultsKnots(
+    [App.Base.Vector2d(0, 0), App.Base.Vector2d(2, 0),
+     App.Base.Vector2d(2, 2), App.Base.Vector2d(0, 2)],
+    [1, 1, 1, 1, 1], [0, 0.25, 0.5, 0.75, 1], True, 3,
+)
+obj = document.addObject("Part::Feature", "PeriodicFace")
+obj.Shape = Part.Face(Part.Wire([pcurve.toShape(Part.Plane(), 0.5, 1.5)]))
+assert obj.Shape.isValid()
+save(document, "spline_domains")
+
 
 def triangle(document, name):
     obj = document.addObject("Mesh::Feature", name)
