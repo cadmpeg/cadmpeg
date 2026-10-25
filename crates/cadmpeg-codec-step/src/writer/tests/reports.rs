@@ -174,6 +174,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -275,6 +276,7 @@ fn writer_reports_root_occurrence_scale() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Scaled part".into()),
@@ -436,6 +438,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Child part".into()),
@@ -996,12 +999,12 @@ fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
         .expect("decode sheet pcurve")
         .into_parts()
         .0;
-    // A circle under an unequal scale is neither a circle nor a similarity
-    // replica of one.
+    // A parabola under an unequal scale is not a similarity replica of one,
+    // and unlike a conic it has no exact spline export.
     ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Transformed(
         cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
-            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(
-                cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
+            Box::new(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Parabola(
+                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
                     cadmpeg_ir::math::Point2::new(0.0, 0.0),
                     cadmpeg_ir::math::Point2::new(1.0, 0.0),
                     cadmpeg_ir::math::Point2::new(0.0, 1.0),

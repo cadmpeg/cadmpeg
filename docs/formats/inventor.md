@@ -226,7 +226,7 @@ tolerance u16
 terminal_value i16
 ```
 
-The payload ends after `terminal_value`. The first six fields are the content header of section 12; later segment major versions extend it as that section states. PmDc references store a one-based record index in bits 0 through 30. Bit 31 is retained as a qualifier and does not change the index arithmetic. Every non-null parameter, expression, or unit reference resolves within the same PmDc segment.
+The payload ends after `terminal_value`. The first six fields are the content header of section 12; later segment major versions extend it as that section states. PmDc references store a one-based record index in bits 0 through 30. Bit 31 is retained as a qualifier and does not change the index arithmetic. Every non-null parameter, expression, or unit reference resolves within the same PmDc segment. Surface-body references use the address spaces in section 13.4.
 
 A numeric expression record starts with `header_value:u32`, `header_id:u16`, and `unit_reference:u32`. Type `047aa7f8d2118f09c0005a9a2378d04f` continues with `value:f64`, `value_type:u16`, and a current-version `value_state:u32`. Type `057aa7f8d2118f09c0005a9a2378d04f` continues with one parameter reference. Types `0c7aa7f8d2118f09c0005a9a2378d04f` and `0d7aa7f8d2118f09c0005a9a2378d04f` continue with one child expression reference and encode unary minus and an explicit parenthesized group. A group's value is its child's value, and its text is the child's text in parentheses. Type `037aa7f8d2118f09c0005a9a2378d04f` encodes a function call. After the unit reference it stores a type-2 reference list of argument expressions and `function:u32`. Functions 1, 2, and 3 are the cosine, sine, and tangent of their one angle argument, written `cos(…)`, `sin(…)`, and `tan(…)`. Types `067aa7f8`, `077aa7f8`, `087aa7f8`, `097aa7f8`, `0a7aa7f8`, and `0b7aa7f8` with the same remaining 12 identifier bytes continue with two ordered child expression references and encode addition, subtraction, multiplication, division, modulo, and power respectively.
 
@@ -452,7 +452,7 @@ entity_id u32
 entity_type u32
 ```
 
-The body reference selects a PmDc kernel-body record of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link.
+The body reference selects a kernel-body record in the link's segment, of type `5c5945f6d5113313100060a6bba647b5`. The entity identifier selects one entity of that body. `selection_source` equals the content-header source index of the selection record that references the link. A PmBRep kernel-entity link uses the same payload grammar. Its body reference selects the active part kernel carrier. Its entity identifier is the nonnegative ASM body key of the selected body when a surface-body wrapper references the link. The kernel entity type is retained; its numeric value does not select the body.
 
 A PmDc kernel-body record uses the record envelope and footer of the active part kernel carrier (§5). Its footer selected key is the record's own qualified reference. Its kernel bytes hold ASM profile bodies. A profile body contains wires or planar faces. The kernel-entity link of a profile selection selects the body whose ASM body key equals the link's entity identifier. Each wire or face boundary loop of that body is a profile boundary ring. Face loops store their edges through the ordered coedge references. Model-space lengths in these bodies use internal centimetres.
 
@@ -607,6 +607,17 @@ Slot | Record type
 9 | `ae70680ed14a1e86d76248b03c2a96e1` object collection
 
 The slot-3 enumeration selects the tool reference. Value 2 selects the work plane in slot 5. Value 3 selects the surface-body wrapper in slot 8. The unused tool reference is null. The work-plane frame follows the grammar and units in section 13.
+
+### 13.4 Stored-body base features
+
+Feature-label class `2d11a90cd0118b83000819b00524dc09` identifies a stored-body base feature. Its property vector has three slots. Slots 0 and 1 select surface-body wrappers of type `474d8790d011f8d10008cabc0663dc09`; slot 2 is null. Slot 0 is the stored source body. Its body reference is null or a qualified reference to a kernel-entity link in the same PmDc segment. The link selects a stored kernel-body record in that segment. Its entity identifier selects the unique body with that nonnegative ASM body key in the stored carrier. Slot 1 is the result-body identity. Its body reference is a non-null unqualified external reference. The two wrappers have distinct record identities. Their kernel-entity links have state 0 and `selection_source` equal to the referencing wrapper's `source_index`.
+
+An unqualified surface-body reference is a one-based index in its PmDc metadata section 10. A qualified surface-body reference is a one-based record index in its own segment. The packed word 0 is null. A qualified reference with index 0 does not select a body.
+
+Metadata section 7 has a segment-pair form with 32-byte entries: `segment_id:bytes[16]`, `revision_id:bytes[16]`. Its discriminator is its entry count. Section 8 contains 20-byte revision entries: `revision_id:bytes[16]`, `segment_pair_index:u16`, `reference_count:u16`. The segment-pair index is zero-based into section 7. The revision identifier identifies the referenced revision; it need not equal the segment pair's revision identifier. Section 10 contains 8-byte external entries: `revision_index:u32`, `key_extension:u16`, `header_id:u16`. The revision index is zero-based into section 8. Each section's payload length equals its entry count times its entry width. A revision entry's reference count equals the number of section-10 entries that select it.
+
+The zero-extension external form has `key_extension = 0` and selects the unique kernel-entity link whose `header_value` is 0 and whose `header_id` equals the external entry's header identifier, in the unique segment whose identifier equals the selected section-7 segment identifier. The current-model Base result form selects a kernel-entity link in the document model root's named PmBRep segment. The link's qualified body reference and the carrier footer's selected key select the same active carrier record. The link's entity identifier joins the unique body with that ASM body key in this carrier. A body key is scoped to its carrier. A result identity can survive later changes to that body; it does not state that the current body is the Base source shape. A result whose body is absent from the current model has no current-body join.
+
 
 ## 14. Document kind
 

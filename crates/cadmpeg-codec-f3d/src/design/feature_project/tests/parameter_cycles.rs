@@ -215,6 +215,6 @@ fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edg
         .unwrap();
     assert_eq!(
         skip.message,
-        "1 Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
+        "1 Design parameter owner scope(s) keep their unique ordinal slots and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
     );
 }

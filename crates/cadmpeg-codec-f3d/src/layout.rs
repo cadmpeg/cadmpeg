@@ -2764,6 +2764,8 @@ pub(crate) mod coil_compact_scope_discriminators {
     pub(crate) const OPERATION: usize = 20;
     /// Offset of `clockwise` (`u8`). Spec §3.1.
     pub(crate) const CLOCKWISE: usize = 24;
+    /// Offset of `left_hand` (`u8`). Spec §3.1.
+    pub(crate) const LEFT_HAND: usize = 25;
     /// Offset of `structural_constant` (`u32`, little-endian). Spec §3.1.
     pub(crate) const STRUCTURAL_CONSTANT: usize = 26;
     /// Offset of `extent` (`u32`, little-endian). Spec §3.1.
@@ -5969,4 +5971,28 @@ pub(crate) mod assembly_as_built_scope_owner_run {
     pub(crate) const ADDITIONAL_OWNER_COUNT: usize = 43;
     /// Offset of `additional_owner_references` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const ADDITIONAL_OWNER_REFERENCES: usize = 47;
+}
+
+/// Byte offsets for the `sketch_owner_collection_legacy_list_prefix` record.
+///
+/// Spec §3.1. Record length 6 B.
+pub(crate) mod sketch_owner_collection_legacy_list_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 6;
+}
+
+/// Byte offsets for the `sketch_owner_reference` record.
+///
+/// Spec §3.1. Record length 11 B.
+pub(crate) mod sketch_owner_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 11;
+}
+
+/// Byte offsets for the `sketch_owner_typed_reference` record.
+///
+/// Spec §3.1. Record length 51 B.
+pub(crate) mod sketch_owner_typed_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 51;
 }
