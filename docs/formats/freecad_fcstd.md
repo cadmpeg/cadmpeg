@@ -27,8 +27,9 @@ unusable is refused with the source's own dialect and the catalog, never silentl
 schema 4.
 
 Source-less construction declares application objects, runtime types, ordered dependencies,
-recursive typed property values, and named side entries. It materializes the same native graph
-used by decoded documents before encoding. This permits general extension-object retention and
+recursive typed property values, and named side entries. New object declarations carry
+`Touched="1"` so ordinary native recomputation executes their construction. It materializes the
+same native graph used by decoded documents before encoding. This permits general extension-object retention and
 parametric core objects without requiring a source archive; unsupported semantics must be supplied
 as named records or rejected, never silently approximated.
 

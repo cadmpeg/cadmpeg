@@ -306,7 +306,7 @@ impl FcstdDocumentBuilder {
             crate::writer::escape_xml(&object.type_name, &mut xml, true);
             xml.push_str("\" name=\"");
             crate::writer::escape_xml(&object.name, &mut xml, true);
-            let object_id = format!("\" id=\"{}\"/>\n", index + 1);
+            let object_id = format!("\" id=\"{}\" Touched=\"1\"/>\n", index + 1);
             xml.push_str(&object_id);
         }
         xml.push_str("  </Objects>\n");

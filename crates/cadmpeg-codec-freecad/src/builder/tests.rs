@@ -53,6 +53,20 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
     crate::builder::test_support::attach_part_fixture(&mut builder, b"extension payload");
     let mut ir = builder.build().expect("build source-less graph");
     assert!(crate::test_support::validate_native(&ir).is_empty());
+    let constructed_objects = ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("constructed objects");
+    assert!(
+        constructed_objects.iter().all(|object| object
+            .attributes
+            .get("Touched")
+            .map(String::as_str)
+            == Some("1")),
+        "new objects require ordinary native recomputation"
+    );
     crate::mutation::replace_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())
         .expect("replace side entry");
 
@@ -75,6 +89,12 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
     assert_eq!(objects.len(), 2);
     assert_eq!(objects[0].name(), "Box");
     assert_eq!(objects[0].type_name, "Part::Box");
+    assert!(
+        objects
+            .iter()
+            .all(|object| object.attributes.get("Touched").map(String::as_str) == Some("1")),
+        "pending execution must survive the preserving write"
+    );
     assert_eq!(objects[1].dependencies, vec![objects[0].id().clone()]);
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
