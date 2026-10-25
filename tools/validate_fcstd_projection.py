@@ -96,8 +96,8 @@ def check_step():
 def check_source_less():
     document = App.openDocument(str(WORK / "source_less.FCStd"))
     try:
-        if document.recompute(None, True) < 0:
-            raise ValueError("source-less recompute failed")
+        if document.recompute() <= 0:
+            raise ValueError("source-less object was not scheduled for recomputation")
         box = document.getObject("Box")
         if box is None or not box.isValid() or "Invalid" in box.State:
             raise ValueError("source-less box failed")
