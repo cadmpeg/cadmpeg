@@ -373,8 +373,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
                             cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),
                         );
                     }
-                    let evaluated = if length_scalars.contains(scalar.id.as_str())
-                        && !scalar_is_untyped_real
+                    let exact = scalar.archive_class;
+                    let evaluated = if exact == Some(crate::records::ArchiveParameterClass::Length)
+                        || (length_scalars.contains(scalar.id.as_str()) && !scalar_is_untyped_real)
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Length(
                             cadmpeg_ir::scalar::Length::new(scalar.value.get() * 1000.0)
@@ -384,7 +385,8 @@ pub(crate) fn bind_parameter_scalars<'a>(
                                     )
                                 })?,
                         ))
-                    } else if angle_scalars.contains(scalar.id.as_str()) && !scalar_is_untyped_real
+                    } else if exact == Some(crate::records::ArchiveParameterClass::Angle)
+                        || (angle_scalars.contains(scalar.id.as_str()) && !scalar_is_untyped_real)
                     {
                         Some(cadmpeg_ir::features::ParameterValue::Angle(
                             cadmpeg_ir::scalar::Angle::from_assigned_real(scalar.value),

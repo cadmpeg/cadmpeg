@@ -80,6 +80,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Display,
                 operands: Vec::new(),
+                archive_class: None,
             })
             .collect();
         lane.names = (0..12)

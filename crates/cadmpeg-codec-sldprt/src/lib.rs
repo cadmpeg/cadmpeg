@@ -104,6 +104,7 @@ mod annotations;
 mod appearance;
 mod archive;
 mod brep;
+mod carchive;
 mod classification;
 mod container;
 mod decode;

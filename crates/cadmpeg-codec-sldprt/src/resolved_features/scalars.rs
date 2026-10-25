@@ -55,6 +55,7 @@ pub(crate) fn named_scalars(
             value,
             role: scalar_role(payload, trailer_offset),
             operands: scalar_operands(payload, trailer_offset, parent),
+            archive_class: None,
         });
     }
     Ok(scalars)

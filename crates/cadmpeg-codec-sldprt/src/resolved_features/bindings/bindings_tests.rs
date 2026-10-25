@@ -108,6 +108,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         value: cadmpeg_ir::scalar::FiniteReal::new(0.001).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands: Vec::new(),
+        archive_class: None,
     };
     let mut lane = FeatureInputLane {
         id: "lane".into(),
@@ -865,6 +866,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
         operands: Vec::new(),
+        archive_class: None,
     };
     let entity = |id: &str, offset| {
         let marker_id: String = id.into();

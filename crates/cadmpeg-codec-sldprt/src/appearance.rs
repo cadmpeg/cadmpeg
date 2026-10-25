@@ -139,8 +139,12 @@ fn inline_definitions(
         return Ok(Vec::new());
     };
     let mut definitions = Vec::new();
-    for (relative, marker) in bytes.windows(inline_visual::MARKER_VALUE.len()).enumerate() {
-        if marker != inline_visual::MARKER_VALUE {
+    for relative in 0..bytes.len() {
+        let Some(tag) = View::u16_le_at(bytes, relative) else {
+            break;
+        };
+        let index = tag & 0x00ff;
+        if tag & 0xff00 != 0x8000 || index == 0 || index == 0xff {
             continue;
         }
         let offset = start + relative;

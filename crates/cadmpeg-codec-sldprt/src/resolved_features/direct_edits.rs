@@ -513,6 +513,7 @@ mod tests {
                 value: cadmpeg_ir::scalar::FiniteReal::new(0.005).expect("finite test scalar"),
                 role: FeatureInputScalarRole::Driving,
                 operands: Vec::new(),
+                archive_class: None,
             }],
             relation_bindings: Vec::new(),
             relation_instances: Vec::new(),
