@@ -39,6 +39,47 @@ fn resolved(face: &str) -> FaceSelection {
 }
 
 #[test]
+fn resolved_face_operations_require_current_or_emitted_historical_membership() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation};
+    let id = FeatureId::mint("f3d:model:feature#face-edit").unwrap();
+    let topology = input(&id, 2);
+    for topologies in [vec![], vec![topology.clone()]] {
+        let mut features = [Feature {
+            id: id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            native_ref: None,
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::DeleteFace {
+                    faces: resolved("f3d:brep:entity#2"),
+                    heal: true,
+                },
+            )),
+        }];
+        let mut losses = Vec::new();
+        super::admit_feature_input_faces(&mut features, &topologies, &[], &mut losses).unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::DeleteFace { faces, .. }) =
+            features[0].evaluation.definition()
+        else {
+            panic!("face edit")
+        };
+        if topologies.is_empty() {
+            assert!(matches!(faces, FaceSelection::Native(_)));
+            assert_eq!(losses.len(), 1);
+        } else {
+            assert_eq!(faces, &historical(&topology, 2));
+            assert!(losses.is_empty());
+        }
+    }
+}
+
+#[test]
 fn historical_faces_require_one_emitted_feature_state_and_every_selected_member() {
     let feature = FeatureId::mint("f3d:model:feature#input").unwrap();
     let topology = input(&feature, 2);

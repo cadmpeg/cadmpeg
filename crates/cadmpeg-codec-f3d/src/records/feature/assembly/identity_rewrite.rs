@@ -6,11 +6,12 @@ use super::{
     DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands,
     DesignAssemblyLegacySelection, DesignAssemblyLimitKind, DesignAssemblyLimits,
     DesignAssemblyOperandFrame, DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,
-    DesignAssemblyOperandQualifier, DesignAssemblySolvedFrame, DesignJointFrameSense,
-    DesignQualifiedAssemblyOperand,
+    DesignAssemblyOperandQualifier, DesignAssemblyOwnerRun, DesignAssemblySolvedFrame,
+    DesignJointFrameSense, DesignQualifiedAssemblyOperand,
 };
 
-rewrite_native_record!(DesignAssemblyAlignment, []; {angle, offset, owners, form, frame_sense, additional_members}; native assembly_fields);
+rewrite_native_record!(DesignAssemblyAlignment, []; {angle, offset, owners, form, frame_sense, additional_owner_run, additional_members}; native assembly_fields);
+rewrite_native_record!(DesignAssemblyOwnerRun, []; {count, references});
 rewrite_native_scalar!(DesignJointFrameSense);
 rewrite_native_enum!(DesignAssemblyAlignmentForm, []; {
     DatumEnvelope {joint_origin_scope_record_index},

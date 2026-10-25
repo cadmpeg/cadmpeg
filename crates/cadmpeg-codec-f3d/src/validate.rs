@@ -1876,6 +1876,61 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     }
 }
 
+fn placement_ordered_references_hold(
+    scope: &records::feature::scope::DesignParameterScope,
+    alignment: &records::feature::assembly::DesignAssemblyAlignment,
+    owners: &[(u32, u32)],
+) -> bool {
+    use crate::layout::assembly_as_built_scope_owner_run as layout;
+    let Some(count) = design::assembly::as_built_additional_owner_count(scope.frame_length())
+    else {
+        return false;
+    };
+    let Some(run) = &alignment.additional_owner_run else {
+        return false;
+    };
+    let table = scope.reference_members();
+    usize::try_from(run.count.value) == Ok(count)
+        && run.count.offset == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT)
+        && run.references.len() == count
+        && owners.len() == 4 + count
+        && owners
+            .iter()
+            .enumerate()
+            .all(|(ordinal, (local, _))| usize::try_from(*local) == Ok(ordinal))
+        && alignment.owners.len() == 4
+        && alignment
+            .owners
+            .iter()
+            .zip(owners)
+            .all(|(reference, (_, index))| reference.value == *index)
+        && table.len() == 9 + count
+        && (count != 0
+            || table
+                .values_in(5..9)
+                .is_some_and(|values| values.eq(alignment.owners.iter().map(|owner| &owner.value))))
+        && run
+            .references
+            .iter()
+            .zip(owners.iter().skip(4))
+            .enumerate()
+            .all(|(ordinal, (reference, (_, index)))| {
+                reference.value == *index
+                    && reference.offset
+                        == scope.byte_offset()
+                            + u64_from_index(layout::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal)
+                    && table.values().any(|value| value == index)
+            })
+        && (0..table.len())
+            .filter(|&start| {
+                table.values_in(start..start + 4).is_some_and(|values| {
+                    values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                })
+            })
+            .count()
+            == 1
+}
+
 /// Validate feature parameter scopes and their paired feature-operation frames.
 /// The links resolve into design-intent records, so a document without them
 /// has nothing to check.
@@ -2692,6 +2747,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         })
                         .count()
                         == 1
+                } else if design::assembly::placement_ordered_as_built_scope(
+                    scope.frame_length(),
+                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                ) {
+                    let mut owners = native
+                        .design_parameter_owners
+                        .iter()
+                        .filter(|owner| {
+                            design_stream(owner.id()) == native_stream
+                                && owner.scope_record_index() == scope.record_index
+                        })
+                        .map(|owner| (owner.local_ordinal(), owner.record_index()))
+                        .collect::<Vec<_>>();
+                    owners.sort_unstable();
+                    placement_ordered_references_hold(scope, alignment, &owners)
                 } else {
                     scope
                         .reference_members()
@@ -2703,6 +2773,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let additional_members_link =
                     rigid_group_members_link(scope, alignment, rigid_as_built);
                 operand_frames_link
+                    && (alignment.additional_owner_run.is_none()
+                        || design::assembly::placement_ordered_as_built_scope(
+                            scope.frame_length(),
+                            scope.kind()
+                                == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+                        ))
                     && solved_frame_link
                     && operand_qualifiers_link
                     && additional_members_link
@@ -4798,7 +4874,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::Thread) => {
                     group.role() == DesignOperandRole::ROLE_0X10
                         && group.extrude_role().is_none()
-                        && scope.thread_construction().is_some_and(|construction| {
+                        && scope.thread_construction().is_none_or(|construction| {
                             construction
                                 .face_group_record_indices
                                 .contains(&group.record_index)
@@ -5548,7 +5624,8 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
             };
             let invalid_face_groups_hide_extent_conflict =
                 class_296_two_faces_layout && face_operand_group_count == 0;
-            if !invalid_face_groups_hide_extent_conflict
+            if ctx.holds_design_intent()
+                && !invalid_face_groups_hide_extent_conflict
                 && (!extent_matches_operands
                     || !start_matches_operands
                     || face_operand_group_count != expected_face_group_count
@@ -7369,7 +7446,7 @@ fn validate_face_operands<'a>(
                             Some(design::DesignFeatureFamily::Thread) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
-                                        && scope.thread_construction().is_some_and(|construction| {
+                                        && scope.thread_construction().is_none_or(|construction| {
                                             construction
                                                 .face_group_record_indices
                                                 .contains(&group.record_index)

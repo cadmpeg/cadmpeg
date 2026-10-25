@@ -74,38 +74,38 @@ pub(crate) mod protein_header {
 
 /// Byte offsets for the `meta_segment_pair` record.
 ///
-/// Spec §13.3. Record length 32 B.
+/// Spec §13.4. Record length 32 B.
 pub(crate) mod meta_segment_pair {
-    /// Record length in bytes. Spec §13.3.
+    /// Record length in bytes. Spec §13.4.
     pub(crate) const LEN: usize = 32;
-    /// Offset of `segment_id` (`bytes[16]`). Spec §13.3.
+    /// Offset of `segment_id` (`bytes[16]`). Spec §13.4.
     #[cfg(test)]
     pub(crate) const SEGMENT_ID: usize = 0;
 }
 
 /// Byte offsets for the `meta_external_revision` record.
 ///
-/// Spec §13.3. Record length 20 B.
+/// Spec §13.4. Record length 20 B.
 pub(crate) mod meta_external_revision {
-    /// Record length in bytes. Spec §13.3.
+    /// Record length in bytes. Spec §13.4.
     pub(crate) const LEN: usize = 20;
-    /// Offset of `segment_pair_index` (`u16`, little-endian). Spec §13.3.
+    /// Offset of `segment_pair_index` (`u16`, little-endian). Spec §13.4.
     pub(crate) const SEGMENT_PAIR_INDEX: usize = 16;
-    /// Offset of `reference_count` (`u16`, little-endian). Spec §13.3.
+    /// Offset of `reference_count` (`u16`, little-endian). Spec §13.4.
     #[cfg(test)]
     pub(crate) const REFERENCE_COUNT: usize = 18;
 }
 
 /// Byte offsets for the `meta_external_reference` record.
 ///
-/// Spec §13.3. Record length 8 B.
+/// Spec §13.4. Record length 8 B.
 pub(crate) mod meta_external_reference {
-    /// Record length in bytes. Spec §13.3.
+    /// Record length in bytes. Spec §13.4.
     pub(crate) const LEN: usize = 8;
-    /// Offset of `revision_index` (`u32`, little-endian). Spec §13.3.
+    /// Offset of `revision_index` (`u32`, little-endian). Spec §13.4.
     #[cfg(test)]
     pub(crate) const REVISION_INDEX: usize = 0;
-    /// Offset of `key_extension` (`u16`, little-endian). Spec §13.3.
+    /// Offset of `key_extension` (`u16`, little-endian). Spec §13.4.
     #[cfg(test)]
     pub(crate) const KEY_EXTENSION: usize = 4;
 }

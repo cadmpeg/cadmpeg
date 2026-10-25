@@ -226,7 +226,7 @@ tolerance u16
 terminal_value i16
 ```
 
-The payload ends after `terminal_value`. The first six fields are the content header of section 12; later segment major versions extend it as that section states. PmDc references store a one-based record index in bits 0 through 30. Bit 31 is retained as a qualifier and does not change the index arithmetic. Every non-null parameter, expression, or unit reference resolves within the same PmDc segment. Surface-body references use the address spaces in section 13.3.
+The payload ends after `terminal_value`. The first six fields are the content header of section 12; later segment major versions extend it as that section states. PmDc references store a one-based record index in bits 0 through 30. Bit 31 is retained as a qualifier and does not change the index arithmetic. Every non-null parameter, expression, or unit reference resolves within the same PmDc segment. Surface-body references use the address spaces in section 13.4.
 
 A numeric expression record starts with `header_value:u32`, `header_id:u16`, and `unit_reference:u32`. Type `047aa7f8d2118f09c0005a9a2378d04f` continues with `value:f64`, `value_type:u16`, and a current-version `value_state:u32`. Type `057aa7f8d2118f09c0005a9a2378d04f` continues with one parameter reference. Types `0c7aa7f8d2118f09c0005a9a2378d04f` and `0d7aa7f8d2118f09c0005a9a2378d04f` continue with one child expression reference and encode unary minus and an explicit parenthesized group. A group's value is its child's value, and its text is the child's text in parentheses. Type `037aa7f8d2118f09c0005a9a2378d04f` encodes a function call. After the unit reference it stores a type-2 reference list of argument expressions and `function:u32`. Functions 1, 2, and 3 are the cosine, sine, and tangent of their one angle argument, written `cos(…)`, `sin(…)`, and `tan(…)`. Types `067aa7f8`, `077aa7f8`, `087aa7f8`, `097aa7f8`, `0a7aa7f8`, and `0b7aa7f8` with the same remaining 12 identifier bytes continue with two ordered child expression references and encode addition, subtraction, multiplication, division, modulo, and power respectively.
 
@@ -374,6 +374,8 @@ Feature property records use the same 22-byte content header. The following enum
 - `2788f278c54dd7be4313b3986039b52e`: fillet form;
 - `7339fdce7a4e4011bee343897908ba92`: auxiliary feature enumeration.
 
+Types `1990e1b8d311467bc000e39545df724f` and `1790e1b8d311467bc000e39545df724f` use the same enumeration grammar. Their type values are 3 and 4 respectively. Both use the versioned content header of section 12, including its stamps.
+
 Type `3200aa7dd2112b836000f3a89dccefb0` stores the chamfer form. It adds the same `type_value:i16` and `value:u16` fields, followed by a zero u32 terminal value.
 
 The part-operation, extent, hole-form, fillet-form, and chamfer-form records use type values 5, 11, 3, 2, and 2 respectively.
@@ -385,6 +387,8 @@ Type `f1b2bc24d01121dd0008d0bc0663dc09` stores a face collection. After the cont
 Type `ccb59f50d1114f6b0008a1ba32a3dc09` stores a face item. After the content header it stores a type-2 `u32` index-reference list. An empty list selects no face and ends the record without a trailer. A nonempty list is followed by `terminal_value:i32 = -1`, then the record ends. The index values are native topology selectors, not one-based PmDc record references.
 
 Type `7a25f2efd11105af000847b00524dc09` stores a selection list. After the content header it stores one type-2 reference list and ends. Each non-null member selects a record in the same PmDc segment.
+
+Type `9f8f2a40d21120e66000aaabc8433cb0` stores a Boolean with an empty name. It starts with the versioned content header of section 12, including its stamps. The header is followed by `name_count:u32 = 0`, `name_value:u32 = 0`, and `value:u8`. The value is 0 or 1 and ends the record.
 
 Type `dfd51dbbd1116e72000817bd0663dc09` adds a counted UTF-16LE name and three u32 values: the name value, nominal value, and model value. Type `474d8790d011f8d10008cabc0663dc09` adds one body reference. Type `3b2477a4d1118f96000826bd0663dc09` adds an entity-link reference and one u8 value. Type `2c9256724d4d6d709427fd964d84df16` adds transform, point, and value references.
 
@@ -550,7 +554,25 @@ Sweep property slots are:
 | 10 | Sweep scaling enumeration |
 | 15 | Result object collection |
 
-### 13.3 Stored-body base features
+### 13.3 Split property references
+
+Feature-label class `baa87183d311347bc000e39545df724f` identifies a split feature. For each non-null property reference, the zero-based slot determines the record type:
+
+Slot | Record type
+--- | ---
+0 | `1990e1b8d311467bc000e39545df724f` enumeration
+1 | `284d8790d011f8d10008cabc0663dc09` Boolean
+3 | `1790e1b8d311467bc000e39545df724f` enumeration
+4 | `91739422d11107cf000835bd0663dc09` boundary patch
+5 | `42df52ced011d0d20008ccbc0663dc09` work plane
+6 | `9f8f2a40d21120e66000aaabc8433cb0` Boolean
+7 | `83aadad54f4375dacd1003b260a8a422` body selector
+8 | `474d8790d011f8d10008cabc0663dc09` surface-body wrapper
+9 | `ae70680ed14a1e86d76248b03c2a96e1` object collection
+
+The slot-3 enumeration selects the tool reference. Value 2 selects the work plane in slot 5. Value 3 selects the surface-body wrapper in slot 8. The unused tool reference is null. The work-plane frame follows the grammar and units in section 13.
+
+### 13.4 Stored-body base features
 
 Feature-label class `2d11a90cd0118b83000819b00524dc09` identifies a stored-body base feature. Its property vector has three slots. Slots 0 and 1 select surface-body wrappers of type `474d8790d011f8d10008cabc0663dc09`; slot 2 is null. Slot 0 is the stored source body. Its body reference is null or a qualified reference to a kernel-entity link in the same PmDc segment. The link selects a stored kernel-body record in that segment. Its entity identifier selects the unique body with that nonnegative ASM body key in the stored carrier. Slot 1 is the result-body identity. Its body reference is a non-null unqualified external reference. The two wrappers have distinct record identities. Their kernel-entity links have state 0 and `selection_source` equal to the referencing wrapper's `source_index`.
 
@@ -559,6 +581,7 @@ An unqualified surface-body reference is a one-based index in its PmDc metadata 
 Metadata section 7 has a segment-pair form with 32-byte entries: `segment_id:bytes[16]`, `revision_id:bytes[16]`. Its discriminator is its entry count. Section 8 contains 20-byte revision entries: `revision_id:bytes[16]`, `segment_pair_index:u16`, `reference_count:u16`. The segment-pair index is zero-based into section 7. The revision identifier identifies the referenced revision; it need not equal the segment pair's revision identifier. Section 10 contains 8-byte external entries: `revision_index:u32`, `key_extension:u16`, `header_id:u16`. The revision index is zero-based into section 8. Each section's payload length equals its entry count times its entry width. A revision entry's reference count equals the number of section-10 entries that select it.
 
 The zero-extension external form has `key_extension = 0` and selects the unique kernel-entity link whose `header_value` is 0 and whose `header_id` equals the external entry's header identifier, in the unique segment whose identifier equals the selected section-7 segment identifier. The current-model Base result form selects a kernel-entity link in the document model root's named PmBRep segment. The link's qualified body reference and the carrier footer's selected key select the same active carrier record. The link's entity identifier joins the unique body with that ASM body key in this carrier. A body key is scoped to its carrier. A result identity can survive later changes to that body; it does not state that the current body is the Base source shape. A result whose body is absent from the current model has no current-body join.
+
 
 ## 14. Document kind
 

@@ -986,16 +986,20 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .is_none());
 }
 
-/// The 378-byte `As-built` form stores the 399-byte form's count and locator
-/// references, its locators are wide operand-path locators, and its owners
-/// are the three offsets followed by the angle.
+/// The placement-ordered `As-built` form stores a u32 additional-owner count at
+/// offset 43 and that many owner references after it, then the locator count
+/// and two locator references; its locators are wide operand-path locators.
+/// Its owners are the three offsets, the angle, and the additional owners. The
+/// 378-byte form has no additional owners, the 422-byte form two, and the 444-byte
+/// form three.
 #[test]
 fn as_built_378_alignment_reads_wide_locators() {
     use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     use compact_wide::{push_header, push_wide_operand_path};
     let scope_record_index = 10_u32;
-    let scope_of = |kind| {
+    let scope_of = |kind, count: u32| {
+        let frame_length = 378 + 22 * u64::from(count);
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#0",
             kind,
@@ -1004,8 +1008,17 @@ fn as_built_378_alignment_reads_wide_locators() {
         scope.class_tag = DesignClassTag::try_from("328".to_owned()).unwrap();
         scope
             .try_edit(|draft| {
-                draft.frame_length = 378;
-                draft.reference_members = ReferenceRun::unlocated(vec![50, 51, 52, 53]);
+                draft.frame_length = frame_length;
+                draft.reference_members = ReferenceRun::unlocated(
+                    (if count == 0 {
+                        [80, 81, 82, 83, 84, 50, 51, 52, 53]
+                    } else {
+                        [80, 50, 51, 52, 53, 81, 82, 83, 84]
+                    })
+                    .into_iter()
+                    .chain(54..54 + count)
+                    .collect::<Vec<_>>(),
+                );
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
@@ -1032,40 +1045,51 @@ fn as_built_378_alignment_reads_wide_locators() {
         })
         .unwrap()
     };
-    // `OffsetX`, `OffsetY`, `OffsetZ`, then `AngleZ`.
-    let owners = [
-        owner(50, 0, 1.0, 501),
-        owner(51, 1, 2.0, 502),
-        owner(52, 2, 3.0, 503),
-        owner(53, 3, 0.25, 504),
-    ];
-
-    let mut bytes = vec![0_u8; 378];
-    bytes[..4].copy_from_slice(&3_u32.to_le_bytes());
-    bytes[4..7].copy_from_slice(b"328");
-    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
-    bytes[47..51].copy_from_slice(&2_u32.to_le_bytes());
-    for (at, locator_record_index) in [(51, 64_u32), (62, 67_u32)] {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&locator_record_index.to_le_bytes());
-    }
-    push_header(&mut bytes, b"264", scope_record_index);
-    bytes.resize(378 + 30, 0);
-    push_wide_operand_path(
-        &mut bytes,
-        64,
-        scope_record_index,
-        "11111111-1111-1111-1111-111111111111",
-    );
-    let second = bytes.len();
-    push_wide_operand_path(
-        &mut bytes,
-        67,
-        scope_record_index,
-        "66666666-6666-6666-6666-666666666666",
-    );
-    bytes[second + 57..second + 61].copy_from_slice(&901_u32.to_le_bytes());
-    push_header(&mut bytes, b"300", 71);
+    let owners_of = |count: u32| {
+        [(1.0, 501), (2.0, 502), (3.0, 503), (0.25, 504)]
+            .into_iter()
+            .chain((0..count).map(|ordinal| (-0.5 + f64::from(ordinal), 505 + u64::from(ordinal))))
+            .zip(0_u32..)
+            .map(|((value, at), ordinal)| owner(50 + ordinal, ordinal, value, at))
+            .collect::<Vec<_>>()
+    };
+    let bytes_of = |count: u32| {
+        let extra = 11 * usize::try_from(count).unwrap();
+        let frame_length = 378 + 2 * extra;
+        let mut bytes = vec![0_u8; frame_length];
+        bytes[..4].copy_from_slice(&3_u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"328");
+        bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+        bytes[43..47].copy_from_slice(&count.to_le_bytes());
+        for ordinal in 0..count {
+            let at = 47 + 11 * usize::try_from(ordinal).unwrap();
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&(54 + ordinal).to_le_bytes());
+        }
+        bytes[47 + extra..51 + extra].copy_from_slice(&2_u32.to_le_bytes());
+        for (at, locator_record_index) in [(51 + extra, 64_u32), (62 + extra, 67_u32)] {
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&locator_record_index.to_le_bytes());
+        }
+        push_header(&mut bytes, b"264", scope_record_index);
+        bytes.resize(frame_length + 30, 0);
+        push_wide_operand_path(
+            &mut bytes,
+            64,
+            scope_record_index,
+            "11111111-1111-1111-1111-111111111111",
+        );
+        let second = bytes.len();
+        push_wide_operand_path(
+            &mut bytes,
+            67,
+            scope_record_index,
+            "66666666-6666-6666-6666-666666666666",
+        );
+        bytes[second + 57..second + 61].copy_from_slice(&901_u32.to_le_bytes());
+        push_header(&mut bytes, b"300", 71);
+        bytes
+    };
 
     let locator = "2E3AC990-483D-4A55-8662-C064B976A957";
     let types = std::collections::HashMap::from([
@@ -1074,44 +1098,81 @@ fn as_built_378_alignment_reads_wide_locators() {
         (67, (locator, 5)),
         (68, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
     ]);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let alignment = exact_assembly_alignment_with_types(
-        &bytes,
-        &records,
-        &scope_of(DesignFeatureKind::AsBuilt),
-        &owners,
-        &types,
-    )
-    .unwrap()
-    .expect("378-byte As-built alignment");
-    assert_eq!(alignment.angle(), 0.25);
-    assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
-    let frames = alignment.operand_frames().expect("wide locator frames");
-    assert!(
-        frames
+    for count in [0, 2, 3] {
+        let bytes = bytes_of(count);
+        let owners = owners_of(count);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let read = |bytes: &[u8], kind| {
+            exact_assembly_alignment_with_types(
+                bytes,
+                &records,
+                &scope_of(kind, count),
+                &owners,
+                &types,
+            )
+            .unwrap()
+        };
+        let alignment = read(&bytes, DesignFeatureKind::AsBuilt)
+            .unwrap_or_else(|| panic!("As-built alignment with {count} additional owners"));
+        assert_eq!(alignment.angle(), 0.25);
+        assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
+        assert_eq!(alignment.owners.len(), 4);
+        let serialized = serde_json::to_value(&alignment).unwrap();
+        let restored: crate::records::feature::assembly::DesignAssemblyAlignment =
+            serde_json::from_value(serialized).unwrap();
+        assert_eq!(restored, alignment);
+        let frames = alignment.operand_frames().expect("wide locator frames");
+        assert!(frames
             .iter()
             .all(|frame| frame.transform.rows()
-                == cadmpeg_ir::transform::Transform::identity().rows())
-    );
-    let paths = alignment.operand_path_refs().expect("both operand paths");
-    assert_eq!(
-        paths.map(|path| path.occurrence_guids()[0].value.as_str().to_owned()),
-        [
-            "11111111-1111-1111-1111-111111111111".to_owned(),
-            "66666666-6666-6666-6666-666666666666".to_owned()
-        ]
-    );
+                == cadmpeg_ir::transform::Transform::identity().rows()));
+        let paths = alignment.operand_path_refs().expect("both operand paths");
+        assert_eq!(
+            paths.map(|path| path.occurrence_guids()[0].value.as_str().to_owned()),
+            [
+                "11111111-1111-1111-1111-111111111111".to_owned(),
+                "66666666-6666-6666-6666-666666666666".to_owned()
+            ]
+        );
 
-    // An `Assemble` scope of the same length has no wide locators.
-    let assemble = exact_assembly_alignment_with_types(
-        &bytes,
-        &records,
-        &scope_of(DesignFeatureKind::Assemble),
-        &owners,
-        &types,
-    )
-    .unwrap();
-    assert!(assemble.is_none_or(|alignment| alignment.operand_path_refs().is_none()));
+        // An `Assemble` scope of the same length has no wide locators.
+        let assemble = read(&bytes, DesignFeatureKind::Assemble);
+        assert!(assemble.is_none_or(|alignment| alignment.operand_path_refs().is_none()));
+
+        // A stored count other than the frame's has no alignment.
+        let mut miscounted = bytes.clone();
+        miscounted[43..47].copy_from_slice(&(count + 1).to_le_bytes());
+        assert!(read(&miscounted, DesignFeatureKind::AsBuilt).is_none());
+
+        if count != 0 {
+            let mut wrong_owner = bytes.clone();
+            wrong_owner[48..52].copy_from_slice(&99_u32.to_le_bytes());
+            assert!(read(&wrong_owner, DesignFeatureKind::AsBuilt).is_none());
+        } else {
+            for references in [
+                vec![50, 51, 52, 53],
+                vec![80, 50, 51, 52, 53, 81, 82, 83, 84],
+            ] {
+                let mut wrong_table = scope_of(DesignFeatureKind::AsBuilt, count);
+                wrong_table
+                    .try_edit(|draft| {
+                        draft.reference_members = ReferenceRun::unlocated(references);
+                        draft.layout_fixture_references();
+                        draft.layout_fixture_tail();
+                    })
+                    .unwrap();
+                assert!(exact_assembly_alignment_with_types(
+                    &bytes,
+                    &records,
+                    &wrong_table,
+                    &owners,
+                    &types
+                )
+                .unwrap()
+                .is_none());
+            }
+        }
+    }
 }
 
 #[test]

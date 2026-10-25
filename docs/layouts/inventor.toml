@@ -340,6 +340,38 @@ source = "spec"
 anchor = "value:u16"
 
 [[record]]
+name = "pm_dc_split_boolean_body"
+kind = "byte"
+section = "13"
+anchor = "stores a Boolean with an empty name"
+size = 9
+note = "Offsets are relative to the body after the versioned PmDc content header and its stamps."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/split.rs"
+
+[[record.field]]
+name = "name_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "name_count:u32 = 0"
+value = 0
+
+[[record.field]]
+name = "name_value"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "name_value:u32 = 0"
+value = 0
+
+[[record.field]]
+name = "value"
+offset = 8
+type = "bool8"
+source = "spec"
+anchor = "value:u8"
+
+[[record]]
 name = "pm_dc_chamfer_enumeration"
 kind = "byte"
 section = "13"
@@ -1456,7 +1488,7 @@ anchor = "option_reference u32"
 [[record]]
 name = "meta_segment_pair"
 kind = "byte"
-section = "13.3"
+section = "13.4"
 anchor = "32-byte entries"
 size = 32
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/base.rs"
@@ -1478,7 +1510,7 @@ anchor = "revision_id:bytes[16]"
 [[record]]
 name = "meta_external_revision"
 kind = "byte"
-section = "13.3"
+section = "13.4"
 anchor = "20-byte revision entries"
 size = 20
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/base.rs"
@@ -1507,7 +1539,7 @@ anchor = "reference_count:u16"
 [[record]]
 name = "meta_external_reference"
 kind = "byte"
-section = "13.3"
+section = "13.4"
 anchor = "8-byte external entries"
 size = 8
 parsed_by = "crates/cadmpeg-codec-inventor/src/feature/base.rs"

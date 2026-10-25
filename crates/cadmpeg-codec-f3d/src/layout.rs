@@ -1264,7 +1264,7 @@ pub(crate) mod assembly_variable_reference_operand_path_locator {
 /// Spec §Assembly operands. Record length 26 B.
 ///
 /// ```text
-/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
+/// Offsets are relative to the count. The run starts at scope offset 47 in the 378- and 399-byte As-built forms, offset 69 in the 422-byte As-built form, offset 80 in the 444-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
 /// ```
 pub(crate) mod assembly_operand_path_locator_reference_run {
     /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
@@ -5913,4 +5913,60 @@ pub(crate) mod sketch_ordinal_collection_prefix {
     pub(crate) const LEN: usize = 20;
     /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
     pub(crate) const ZERO_RUN: usize = 11;
+}
+
+/// Byte offsets for the `assembly_as_built_scope_378` record.
+///
+/// Spec §Assembly operands. Record length 378 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. K = 0.
+/// ```
+pub(crate) mod assembly_as_built_scope_378 {
+    /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 51;
+    /// Offset of `second_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 62;
+}
+
+/// Byte offsets for the `assembly_as_built_scope_422` record.
+///
+/// Spec §Assembly operands. Record length 422 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. K = 2.
+/// ```
+pub(crate) mod assembly_as_built_scope_422 {
+    /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 73;
+    /// Offset of `second_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 84;
+}
+
+/// Byte offsets for the `assembly_as_built_scope_444` record.
+///
+/// Spec §Assembly operands. Record length 444 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. K = 3.
+/// ```
+pub(crate) mod assembly_as_built_scope_444 {
+    /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 84;
+    /// Offset of `second_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 95;
+}
+
+/// Byte offsets for the `assembly_as_built_scope_owner_run` record.
+///
+/// Spec §Assembly operands.
+///
+/// ```text
+/// This size-less byte record gives the common count and owner-run start in the 378-, 422-, and 444-byte As-built scopes. Offsets are relative to the primary indexed header. The count K controls the number of eleven-byte marked references; K = 0 stores no owner reference.
+/// ```
+pub(crate) mod assembly_as_built_scope_owner_run {
+    /// Offset of `additional_owner_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const ADDITIONAL_OWNER_COUNT: usize = 43;
+    /// Offset of `additional_owner_references` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const ADDITIONAL_OWNER_REFERENCES: usize = 47;
 }

@@ -132,6 +132,21 @@ Offsets hold in segment major versions 15 through 22. Later versions extend the 
 | 22 | 2 | `type_value` | `i16` | little | spec | type_value:i16 |
 | 24 | 2 | `value` | `u16` | little | spec | value:u16 |
 
+## `pm_dc_split_boolean_body`
+
+Spec §13 · layout: byte offsets · size: 9 B
+
+Offsets are relative to the body after the versioned PmDc content header and its stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/split.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `name_count` | `u32` | little | spec | name_count:u32 = 0 · value `0` |
+| 4 | 4 | `name_value` | `u32` | little | spec | name_value:u32 = 0 · value `0` |
+| 8 | 1 | `value` | `bool8` | little | spec | value:u8 |
+
 ## `pm_dc_chamfer_enumeration`
 
 Spec §13 · layout: byte offsets · size: 30 B
@@ -455,7 +470,7 @@ Parsed by:
 
 ## `meta_segment_pair`
 
-Spec §13.3 · layout: byte offsets · size: 32 B
+Spec §13.4 · layout: byte offsets · size: 32 B
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/base.rs`
@@ -467,7 +482,7 @@ Parsed by:
 
 ## `meta_external_revision`
 
-Spec §13.3 · layout: byte offsets · size: 20 B
+Spec §13.4 · layout: byte offsets · size: 20 B
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/base.rs`
@@ -480,7 +495,7 @@ Parsed by:
 
 ## `meta_external_reference`
 
-Spec §13.3 · layout: byte offsets · size: 8 B
+Spec §13.4 · layout: byte offsets · size: 8 B
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/base.rs`

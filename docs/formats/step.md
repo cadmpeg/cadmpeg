@@ -1735,7 +1735,18 @@ the deterministic projection for reproducible output, while layer membership,
 view identity, visibility, and all other consumers treat the sequence as a
 set of assigned items.
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
-`SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,
+`SHAPE_DEFINITION_REPRESENTATION`.
+CADIR decision: a body absent from every product definition's body list belongs
+to the model in model coordinates. Its shape items occur once in a body
+representation linked to the root product's shape representation by
+`SHAPE_REPRESENTATION_RELATIONSHIP`, without an occurrence transformation.
+Solid items without body placements use
+`ADVANCED_BREP_SHAPE_REPRESENTATION`; other items use `SHAPE_REPRESENTATION`
+and retain their body placements. Claimed bodies retain their product ownership
+and occurrence structure. One local root product owns the unclaimed bodies;
+a sole product definition is the root when the occurrence list is empty.
+Without a unique local root, a separate model product owns these bodies.
+Every body-producing representation,
 including `ADVANCED_BREP_REPRESENTATION` and
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`, uses the same
 source-root-to-body map. An `ADVANCED_BREP_REPRESENTATION` is typed when its
