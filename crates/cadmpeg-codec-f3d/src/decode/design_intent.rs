@@ -571,7 +571,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut losses,
             F3dLossCode::ParameterOrderBudgetExceeded,
             format_args!(
-                "{} Design parameter owner scope(s) keep their source ordinals and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK ({}).",
+                "{} Design parameter owner scope(s) keep their unique ordinal slots and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK ({}).",
                 projected.unordered_parameter_scopes,
                 crate::design::feature_project::PARAMETER_ORDER_WORK,
             ),
