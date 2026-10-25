@@ -1442,8 +1442,10 @@ resource-exceeding records remain named native carriers.
 
 Constraint transfer distinguishes whole entities from endpoint and center loci. Two-locus distance
 constraints remain locus-to-locus measurements rather than being reduced to a duplicate entity
-list, three-operand symmetry retains both loci plus its axis entity, and point-on-object retains the
-point locus separately from its supporting entity. Refraction retains its two curve loci,
+list, and point-on-object retains the point locus separately from its supporting entity.
+The third operand of a symmetry relation is either a whole line, which is the mirror axis, or a
+vertex, which is the center of point symmetry. A vertex is a start, end, or mid position, a point
+entity, or the root point. Refraction retains its two curve loci,
 interface entity, and dimensionless index ratio. Spline weights remain dimensionless parameters,
 and internal-alignment helpers retain their conic or spline family plus control-point or knot index.
 Group relations retain their ordered handle and member loci. Text relations additionally decode
