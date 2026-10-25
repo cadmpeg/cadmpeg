@@ -38,7 +38,7 @@ pub(in crate::feature) fn project(
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     if references(
         source,
-        family.output_slot(),
+        family.output_slot(source),
         PmDcFeatureReferenceFamily::ObjectCollection,
         index,
     )?
@@ -53,7 +53,7 @@ pub(in crate::feature) fn project(
         FeatureFamily::Loft => loft(source, label, index)?,
         _ => return None,
     };
-    let (id, result) = match feature_result(ctx, source, family.output_slot(), index)? {
+    let (id, result) = match feature_result(ctx, source, family.output_slot(source), index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
     };
