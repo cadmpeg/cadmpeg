@@ -28,7 +28,7 @@ use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
-mod point_tail;
+pub(crate) mod point_tail;
 
 use point_tail::PointPairedAssociation;
 
@@ -319,6 +319,7 @@ pub(crate) struct PmDcSketchPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "point_tail::SketchEntityWire")]
 pub(crate) struct PmDcSketchEntityPayload {
     save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
@@ -374,6 +375,20 @@ pub(crate) enum PmDcSketchEntityKind {
         instances: PmDcReferenceList,
         member: PmDcReference,
     },
+}
+
+impl PmDcSketchEntityKind {
+    pub(crate) fn record_type_id(&self) -> [u8; 16] {
+        match self {
+            Self::Point { .. } => POINT_TYPE,
+            Self::Line { .. } => LINE_TYPE,
+            Self::Circle { .. } => CIRCLE_TYPE,
+            Self::Ellipse { .. } => ELLIPSE_TYPE,
+            Self::Polygon { .. } => POLYGON_TYPE,
+            Self::BlockInstance { .. } => BLOCK_INSTANCE_TYPE,
+            Self::BlockMember { .. } => BLOCK_MEMBER_TYPE,
+        }
+    }
 }
 
 cadmpeg_core::named_optional_field!(deserialize_point_links, PmDcReferenceList, "links");

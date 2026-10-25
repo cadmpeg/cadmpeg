@@ -55,6 +55,8 @@ pub(crate) enum InventorLossCode {
     /// Sketch curves carry entity flags whose construction meaning is
     /// unresolved.
     SketchConstructionUnresolved,
+    /// A sketch-point paired association has no neutral relation semantics.
+    SketchPairedAssociationUnprojected,
     /// Profile-body records do not decode, so the profiles that select them
     /// stay native.
     FeatureProfileBodyUndecoded,
@@ -141,6 +143,7 @@ impl InventorLossCode {
         Self::FeatureRecordMalformed,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
+        Self::SketchPairedAssociationUnprojected,
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
@@ -194,6 +197,7 @@ impl InventorLossCode {
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
+            Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::FeatureProfileBodyUndecoded => "feature.profile-body-undecoded",
             Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
@@ -269,6 +273,7 @@ impl InventorLossCode {
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
+            | Self::SketchPairedAssociationUnprojected
             | Self::FeatureStateUnresolved
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
@@ -343,6 +348,7 @@ mod tests {
                 "feature.record-malformed",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
+                "sketch.paired-association-unprojected",
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",

@@ -280,3 +280,53 @@ fn paired_point_scalars_are_not_limited_to_unit_parameters() {
     };
     assert_eq!(paired.scalars.map(FiniteReal::get), [-2.0, 5.0]);
 }
+
+#[test]
+fn point_entity_deserialization_checks_versioned_tail_forms() {
+    use crate::sketch::PmDcSketchEntityPayload;
+
+    let (bytes, _) = paired_point(25);
+    let point = parse(&bytes, |_, source| {
+        parse_entity(SketchEntityTag::Point, source, 25).expect("paired point")
+    });
+    let paired = serde_json::to_value(&point).expect("point wire");
+    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    for version in [19, 22, 23, 25, 28, 31] {
+        for state in [0, 1, 2, 3] {
+            for links in [false, true] {
+                let mut wire = paired.clone();
+                wire["save_version_major"] = version.into();
+                let kind = wire["kind"].as_object_mut().expect("point kind");
+                kind.remove("paired");
+                kind.insert("state".into(), state.into());
+                kind.insert("associations".into(), list.clone());
+                if links {
+                    kind.insert("links".into(), list.clone());
+                }
+                let valid = links == (version >= 25) && (state != 2 || version < 25);
+                assert_eq!(
+                    serde_json::from_value::<PmDcSketchEntityPayload>(wire).is_ok(),
+                    valid,
+                    "version {version}, state {state}, links {links}"
+                );
+            }
+        }
+        let mut wire = paired.clone();
+        wire["save_version_major"] = version.into();
+        assert_eq!(
+            serde_json::from_value::<PmDcSketchEntityPayload>(wire).is_ok(),
+            version >= 25
+        );
+        let mut absent = point.clone();
+        absent.save_version_major = version;
+        let PmDcSketchEntityKind::Point { tail, .. } = &mut absent.kind else {
+            panic!("point kind")
+        };
+        *tail = PointTail::Absent;
+        let wire = serde_json::to_value(&absent).expect("absent point wire");
+        assert_eq!(
+            serde_json::from_value::<PmDcSketchEntityPayload>(wire).expect("absent point"),
+            absent
+        );
+    }
+}

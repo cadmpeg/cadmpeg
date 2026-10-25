@@ -6,6 +6,7 @@ use cadmpeg_ir::sketches::SketchGeometryDefinition;
 #[test]
 fn a_paired_point_tail_keeps_a_closed_profile() {
     let (mut inventory, _) = closed_square_inventory();
+    assert!(super::super::point_tail::paired_association_loss(&inventory).is_none());
     let mut bytes = content_at(3, 25, &[-1, 2500]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -31,6 +32,14 @@ fn a_paired_point_tail_keeps_a_closed_profile() {
         parse_entity(SketchEntityTag::Point, source, 25).expect("paired point")
     });
     inventory.entities[0] = located(point, POINT_TYPE, 3);
+    let loss = super::super::point_tail::paired_association_loss(&inventory)
+        .expect("unprojected paired association loss");
+    assert_eq!(loss.code.namespace(), "inventor");
+    assert_eq!(
+        loss.code.local_code(),
+        "sketch.paired-association-unprojected"
+    );
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
