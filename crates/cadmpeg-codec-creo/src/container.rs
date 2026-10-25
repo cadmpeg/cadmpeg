@@ -2390,25 +2390,9 @@ fn positional_replay_definitions(
 fn feature_operations(
     sections: &[ScannedSection<'_>],
 ) -> Result<Vec<FeatureOperation>, CodecError> {
-    let records = collect_section_records_result(
-        sections.iter().filter(|section| {
-            section.section.name() == "MdlStatus" || section.section.name() == "DEPDB_DATA"
-        }),
-        |bytes| Ok(feature::operations::operations(bytes)),
-        |record, base| {
-            record.offset += base;
-            record.state_offset += base;
-        },
-        |record| record.offset,
-    )?;
-    let mut by_feature = BTreeMap::new();
-    for record in records {
-        by_feature.insert(record.feature_id, record);
-    }
-    let mut current = Vec::new();
-    current.extend(by_feature.into_values());
-    current.as_mut_slice().sort_by_key(|left| left.offset);
-    Ok(current)
+    Ok(feature::operations::project_states(
+        feature_operation_states(sections)?,
+    ))
 }
 
 fn feature_reference_names(sections: &[ScannedSection<'_>]) -> Vec<FeatureReferenceName> {

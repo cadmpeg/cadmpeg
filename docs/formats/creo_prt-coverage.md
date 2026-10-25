@@ -826,3 +826,9 @@ that gate.
 
 The current public score remains L1. Capabilities above L1 are extras
 until every cumulative gate through their level passes for a closed envelope.
+
+Same-ID operation candidates project only when the family, recipe, root schema
+class, and parent identifier agree. Disagreement retains the native candidates
+and reports `creo/feature.state-selection-unresolved`. Coverage and source
+metadata record `unresolved_feature_state_selection_count`. A consensus does
+not mark a repeated native candidate as current.

@@ -493,19 +493,19 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(scan.features.operation_states[5].kind.as_str(), "Hole");
     assert!(scan.features.operation_states[0].display_state_conflict);
     assert!(scan.features.operation_states[5].display_state_conflict);
-    assert_eq!(scan.features.operations.len(), 6);
-    assert_eq!(scan.features.operations[0].feature_id, 40);
-    assert_eq!(scan.features.operations[0].kind.as_str(), "Native Feature");
-    assert!(!scan.features.operations[0].display_name_stored());
-    assert!(scan.features.operations[0].display_state_conflict);
-    assert_eq!(scan.features.operations[0].stored_name_prefix(), None);
-    assert_eq!(scan.features.operations[1].feature_id, 41);
-    assert_eq!(scan.features.operations[1].kind.as_str(), "Round");
-    assert_eq!(scan.features.operations[2].kind.as_str(), "Future Feature");
-    assert_eq!(scan.features.operations[3].kind.as_str(), "Datum Plane");
-    assert_eq!(scan.features.operations[4].kind.as_str(), "Draft");
-    assert_eq!(scan.features.operations[5].kind.as_str(), "Surface");
-    assert_eq!(scan.features.operations[5].stored_name_prefix(), Some(b'y'));
+    assert_eq!(scan.features.operations.len(), 5);
+    assert!(scan
+        .features
+        .operations
+        .iter()
+        .all(|operation| operation.feature_id != 40));
+    assert_eq!(scan.features.operations[0].feature_id, 41);
+    assert_eq!(scan.features.operations[0].kind.as_str(), "Round");
+    assert_eq!(scan.features.operations[1].kind.as_str(), "Future Feature");
+    assert_eq!(scan.features.operations[2].kind.as_str(), "Datum Plane");
+    assert_eq!(scan.features.operations[3].kind.as_str(), "Draft");
+    assert_eq!(scan.features.operations[4].kind.as_str(), "Surface");
+    assert_eq!(scan.features.operations[4].stored_name_prefix(), Some(b'y'));
 
     let result = EditableDecodeResult::from(
         CreoCodec
@@ -541,32 +541,32 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         feature_40[1].fields().unwrap()["display_state_conflict"],
         true
     );
-    assert_eq!(result.ir().model.features.len(), 6);
     assert_eq!(
-        result.ir().model.features[0].id.as_str(),
-        "creo:model:feature#40"
+        result
+            .ir()
+            .source
+            .as_ref()
+            .expect("source metadata")
+            .attributes["unresolved_feature_state_selection_count"],
+        "1"
     );
-    assert_eq!(result.ir().model.features[0].ordinal, 0);
-    assert_eq!(
-        result.ir().model.features[1].id.as_str(),
-        "creo:model:feature#41"
+    assert_eq!(result.ir().model.features.len(), 5);
+    assert!(result
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.id.as_str() != "creo:model:feature#40"));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code
+                == crate::loss::CreoLossCode::FeatureStateSelectionUnresolved.kind())
     );
-    assert_eq!(result.ir().model.features[1].ordinal, 1);
     assert!(matches!(
         result.ir().model.features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })
-            if kind.as_str() == "Native Feature"
-    ));
-    assert_annotation(
-        &result.source_fidelity().annotations,
-        "creo:model:feature#40",
-        "creo:MdlStatus",
-        cadmpeg_core::decode::u64_from_index(scan.features.operations[0].offset),
-        "feature_operation_state_consensus",
-        Exactness::Derived,
-    );
-    assert!(matches!(
-        result.ir().model.features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Fillet {
             groups,
         }) if matches!(groups.as_slice(), [group]
@@ -590,10 +590,30 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         &result.source_fidelity().annotations,
         "creo:model:feature#41",
         "creo:MdlStatus",
-        cadmpeg_core::decode::u64_from_index(scan.features.operations[1].offset),
+        cadmpeg_core::decode::u64_from_index(scan.features.operations[0].offset),
         "feature_operation_name",
         Exactness::ByteExact,
     );
+}
+
+#[test]
+fn disagreeing_operation_states_do_not_fall_back_to_schema_operations() {
+    let data = build_prt(
+        "c",
+        &[
+            ("MdlStatus", b"\xe3Extrude id 4\0\xe3Hole id 4\0".to_vec()),
+            ("AllFeatur", allfeatur_row(4, [0xeb, 0x04], 913, &[])),
+        ],
+    );
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    assert!(result
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.id.as_str() != "creo:model:feature#4"));
 }
 
 #[test]

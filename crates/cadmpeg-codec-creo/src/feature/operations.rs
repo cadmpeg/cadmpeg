@@ -208,6 +208,7 @@ pub(crate) enum RecipeState {
 
 impl RecipeState {
     /// Resolved recipe available to geometry consumers.
+    #[cfg(test)]
     pub(super) fn resolved(self) -> Option<FeatureRecipe> {
         match self {
             Self::Resolved(recipe) => Some(recipe),
@@ -538,11 +539,6 @@ fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTre
     conflicting
 }
 
-fn agreeing_value<T: Clone + Eq>(mut values: impl Iterator<Item = T>) -> Option<T> {
-    let first = values.next()?;
-    values.all(|value| value == first).then_some(first)
-}
-
 /// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
 /// procedural-recipe record from one feature-state namespace, in byte order.
 pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
@@ -710,114 +706,36 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
 
 /// Decode one unambiguous or consensus operation projection per feature identifier.
 pub(crate) fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
-    let bindings = recipe_bindings(payload);
-    let conflicting_features = conflicting_recipe_features(&bindings);
+    project_states(operation_states(payload))
+}
+
+pub(crate) fn project_states(states: Vec<FeatureOperationState>) -> Vec<FeatureOperation> {
     let mut by_feature = BTreeMap::<u32, Vec<FeatureOperationState>>::new();
-    for operation in operation_states(payload) {
-        match by_feature.entry(operation.feature_id) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                let states = vec![operation];
-                entry.insert(states);
-            }
-            std::collections::btree_map::Entry::Occupied(mut entry) => {
-                let states = entry.get_mut();
-                states.push(operation);
-            }
-        }
+    for state in states {
+        by_feature.entry(state.feature_id).or_default().push(state);
     }
-    let mut current = Vec::new();
+    let mut projections = Vec::new();
     for states in by_feature.into_values() {
-        let display_count = states
-            .iter()
-            .filter(|state| state.display_name_stored())
-            .count();
-        let projection = match display_count {
-            0 => states
-                .into_iter()
-                .next()
-                .map(FeatureOperationState::project),
-            1 => states
-                .into_iter()
-                .find(FeatureOperationState::display_name_stored)
-                .map(FeatureOperationState::project),
-            _ => {
-                let first = states.iter().find(|state| state.display_name_stored());
-                let last_index = states
-                    .iter()
-                    .rposition(FeatureOperationState::display_name_stored);
-                if let (Some(first), Some(last_index)) = (first, last_index) {
-                    let first_offset = first.offset;
-                    let first_state_offset = first.state_offset;
-                    let same_kind = states
-                        .iter()
-                        .filter(|state| state.display_name_stored())
-                        .all(|state| state.kind == first.kind);
-                    let agreed_recipe = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(|state| state.recipe.resolved()),
-                    )
-                    .flatten();
-                    let recipe = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(|state| RecipeResolution::from(state.recipe)),
-                    )
-                    .unwrap_or(RecipeResolution::Conflicting);
-                    let schema = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(FeatureOperationState::root_schema_class),
-                    )
-                    .flatten();
-                    let parent = agreeing_value(
-                        states
-                            .iter()
-                            .filter(|state| state.display_name_stored())
-                            .map(FeatureOperationState::parent_feature_id),
-                    )
-                    .flatten();
-                    states.into_iter().nth(last_index).map(|state| {
-                        let mut projection = state.project();
-                        projection.offset = first_offset;
-                        projection.state_offset = first_state_offset;
-                        projection.display_state_conflict = true;
-                        if !same_kind {
-                            projection.kind = agreed_recipe
-                                .map_or(OperationKind::Native, OperationKind::from_recipe);
-                        }
-                        projection.name = OperationName::Derived;
-                        projection.recipe = recipe;
-                        projection.depdb = match (schema, parent) {
-                            (Some(schema), Some(parent)) => Some(DepdbPrefix { schema, parent }),
-                            _ => None,
-                        };
-                        projection
-                    })
-                } else {
-                    None
-                }
-            }
+        let Some(first) = states.first() else {
+            continue;
         };
-        if let Some(projection) = projection {
-            current.push(projection);
-        }
-    }
-    for operation in &mut current {
-        if !conflicting_features.contains(&operation.feature_id) {
+        if !states.iter().all(|state| {
+            state.kind == first.kind && state.recipe == first.recipe && state.depdb == first.depdb
+        }) {
             continue;
         }
-        operation.recipe = RecipeResolution::Conflicting;
-        operation.depdb = None;
-        if !operation.display_name_stored() {
-            operation.kind = OperationKind::Native;
+        let repeated = states.len() > 1;
+        if let Some(state) = states.into_iter().next() {
+            let mut projection = state.project();
+            if repeated {
+                projection.name = OperationName::Derived;
+                projection.display_state_conflict = true;
+            }
+            projections.push(projection);
         }
     }
-    current.as_mut_slice().sort_by_key(|left| left.offset);
-    current
+    projections.sort_by_key(|state| state.offset);
+    projections
 }
 
 #[cfg(test)]

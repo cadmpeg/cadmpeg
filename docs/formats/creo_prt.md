@@ -3401,9 +3401,10 @@ family name. Multiple operation names with the same feature identifier are
 ordered stored-state candidates. No candidate is the current state without a
 state selector. State ordinals are local to one feature identifier and increase
 in byte order from zero. Each candidate retains the prefix-inclusive name
-bytes, the `id`/`ID` spelling, and the offset of the optional prefix. The
-neutral projection retains only operation fields on which all candidates
-agree. A recipe-only state has no stored operation name.
+bytes, the `id`/`ID` spelling, and the offset of the optional prefix. Same-ID
+candidates define a common operation only when their operation family, recipe,
+root schema class, and parent identifier agree. Agreement does not identify a
+current native candidate. A recipe-only state has no stored operation name.
 
 `MdlRefInfo` feature-reference entries encode
 `f7 0x71 <own-ref-id> <reference-type> <feature-id> <name> 00 <own-ref-id> <own-ref-id>`.
