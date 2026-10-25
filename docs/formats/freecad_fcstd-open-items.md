@@ -23,9 +23,11 @@ listed in [the coverage document](freecad_fcstd-coverage.md).
 shape, and property-owned payloads restore with their dependencies across the
 supported document schemas?
 
-**Known.** `freecad_fcstd.md` §1 "The synthesis catalog is"
-requires `Document.xml` first and preservation of named entries. The writer then
-sorts the other entries by name. A native-authored two-box document can lose one
+**Known.** `freecad_fcstd.md` §1 "The primary write envelope is"
+defines the ZIP archive and its `Document.xml` member. The current writer
+implementation (`crates/cadmpeg-codec-freecad/src/writer.rs`, `write_seekable`)
+emits `Document.xml` first, then sorts the other named entries by name. A
+native-authored two-box document can lose one
 saved shape on native reopen after this sort, although the XML and uncompressed
 side entries survive. A document with two `Part::Feature` boxes declared as
 `ZFirst`, then `ASecond`, reopens with `ZFirst.Shape` null after an FCStd rewrite.
