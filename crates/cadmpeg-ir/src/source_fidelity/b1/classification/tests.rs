@@ -425,3 +425,154 @@ fn reusable_index_keeps_borrowed_owner_facts_across_streams() {
         ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
     );
 }
+
+#[test]
+fn stream_defaults_require_the_exact_source_format_and_stream_name() {
+    const STREAM_CLASSES: StreamClasses = StreamClasses::new(crate::CodecFormat::Step, &["design"]);
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
+    let mut ir = CadIr::decoded(crate::SourceMeta::unclassified(
+        crate::CodecFormat::Step,
+        BTreeMap::new(),
+    ));
+    {
+        let index =
+            ClassificationIndex::new_with_stream_classes(&ctx, &ir, &FixtureOwners, STREAM_CLASSES)
+                .unwrap();
+        for (stream, expected) in [
+            ("design", ArenaClasses::from([ArenaClass::Design])),
+            (
+                "design-extra",
+                ArenaClasses::from([ArenaClass::Model, ArenaClass::Design]),
+            ),
+        ] {
+            let partition =
+                super::super::partition_stream(&ctx, stream, 12, &BTreeMap::new(), &[], &[], &[])
+                    .unwrap();
+            let actual = index
+                .classify_partition(&ctx, &SourceFidelity::default(), stream, &partition)
+                .unwrap();
+            assert_eq!(actual[0].range(), 0..12);
+            assert_eq!(actual[0].classes(), expected);
+        }
+    }
+    ir.source = Some(crate::SourceMeta::unclassified(
+        crate::CodecFormat::Rhino,
+        BTreeMap::new(),
+    ));
+    assert!(ClassificationIndex::new_with_stream_classes(
+        &ctx,
+        &ir,
+        &FixtureOwners,
+        STREAM_CLASSES
+    )
+    .is_err());
+    ir.source = None;
+    assert!(ClassificationIndex::new_with_stream_classes(
+        &ctx,
+        &ir,
+        &FixtureOwners,
+        STREAM_CLASSES
+    )
+    .is_err());
+}
+
+#[test]
+fn stream_defaults_never_replace_actual_owner_or_unknown_link_classes() {
+    const STREAM_CLASSES: StreamClasses = StreamClasses::new(crate::CodecFormat::Step, &["file"]);
+    for (ids, unknown, expected) in [
+        (
+            vec![NATIVE_MODEL],
+            false,
+            ArenaClasses::from([ArenaClass::Model]),
+        ),
+        (
+            vec![NATIVE_DESIGN],
+            false,
+            ArenaClasses::from([ArenaClass::Design]),
+        ),
+        (
+            vec![NATIVE_MODEL, NATIVE_DESIGN],
+            false,
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Design]),
+        ),
+        (
+            vec![NATIVE_DESIGN],
+            true,
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Design]),
+        ),
+    ] {
+        let mut ir = document();
+        ir.source = Some(crate::SourceMeta::unclassified(
+            crate::CodecFormat::Step,
+            BTreeMap::new(),
+        ));
+        let mut fidelity = SourceFidelity::default();
+        for id in ids {
+            layout(&mut fidelity, id, 0, 12);
+        }
+        if unknown {
+            let id = UnknownId::mint("test:source:unknown#policy").unwrap();
+            ir.native.namespace_mut("test").arenas_mut().insert(
+                "unknowns".into(),
+                vec![NativeRecord::from(&NativeUnknownRecord {
+                    id: id.clone(),
+                    links: vec![Identity::new(NATIVE_MODEL).unwrap()],
+                })],
+            );
+            fidelity
+                .insert_retained_record(
+                    id,
+                    RetainedSourceRecord::from_bytes(
+                        "file",
+                        4,
+                        RetainedBytes::Digest {
+                            byte_len: 2,
+                            sha256: crate::hash::digest::Sha256Digest::digest(b"ab"),
+                        },
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        let arena = DecodeArena::new();
+        let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
+        let partition = super::super::partition_stream(
+            &ctx,
+            "file",
+            12,
+            fidelity.record_layout(),
+            &[0..4, 6..12],
+            &[],
+            &[],
+        )
+        .unwrap();
+        let index =
+            ClassificationIndex::new_with_stream_classes(&ctx, &ir, &FixtureOwners, STREAM_CLASSES)
+                .unwrap();
+        let spans = index
+            .classify_partition(&ctx, &fidelity, "file", &partition)
+            .unwrap();
+        assert_eq!(spans[0].range(), 4..6);
+        assert_eq!(spans[0].classes(), expected);
+    }
+}
+
+#[test]
+fn stream_class_tables_reject_empty_and_duplicate_stream_names() {
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
+    let ir = CadIr::decoded(crate::SourceMeta::unclassified(
+        crate::CodecFormat::Step,
+        BTreeMap::new(),
+    ));
+    for names in [&[""][..], &["design", "design"][..]] {
+        assert!(ClassificationIndex::new_with_stream_classes(
+            &ctx,
+            &ir,
+            &FixtureOwners,
+            StreamClasses::new(crate::CodecFormat::Step, names)
+        )
+        .is_err());
+    }
+}

@@ -620,3 +620,59 @@ fn a_given_up_part_is_named_only_by_its_record_unreadable_loss() {
         .check_b1_closure(&ctx, &index, "step", &partitions, &losses)
         .unwrap();
 }
+
+#[test]
+fn stream_default_policy_is_the_same_for_finalization_and_closure() {
+    use super::super::classification::StreamClasses;
+    const STREAM_CLASSES: StreamClasses = StreamClasses::new(crate::CodecFormat::Step, &["file"]);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &DecodePolicy::service()).unwrap();
+    let ir = CadIr::decoded(crate::SourceMeta::unclassified(
+        crate::CodecFormat::Step,
+        BTreeMap::new(),
+    ));
+    let index = ClassificationIndex::new_with_stream_classes(
+        &ctx,
+        &ir,
+        &super::super::provenance::NoNativeOwners,
+        STREAM_CLASSES,
+    )
+    .unwrap();
+    let mut fidelity = SourceFidelity::default();
+    let partitions =
+        [
+            super::super::partition_stream(
+                &ctx,
+                "file",
+                3,
+                fidelity.record_layout(),
+                &[],
+                &[],
+                &[],
+            )
+            .unwrap(),
+        ];
+    let mut losses = Vec::new();
+    fidelity
+        .finalize_b1(&ctx, &index, "step", &partitions, &mut losses)
+        .unwrap();
+    assert_eq!(
+        fidelity.unrepresented(),
+        ArenaClasses::from([ArenaClass::Design])
+    );
+    assert_eq!(fidelity.b1_spans()["file"].spans()[0].range(), 0..3);
+    assert_eq!(
+        fidelity.b1_spans()["file"].spans()[0].classes(),
+        ArenaClasses::from([ArenaClass::Design])
+    );
+    assert_eq!(losses.len(), 1);
+    assert!(DecodeLossCode::SourceBytesUndecoded.is_code_of(&losses[0]));
+    fidelity
+        .check_b1_closure(&ctx, &index, "step", &partitions, &losses)
+        .unwrap();
+    let conservative = ClassificationIndex::new(&ctx, &ir).unwrap();
+    assert!(fidelity
+        .check_b1_closure(&ctx, &conservative, "step", &partitions, &losses)
+        .is_err());
+}

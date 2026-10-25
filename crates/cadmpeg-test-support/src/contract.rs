@@ -219,6 +219,7 @@ mod identity;
 
 pub mod iges;
 pub mod parts;
+pub mod stream_classes;
 pub mod zip;
 
 #[cfg(test)]

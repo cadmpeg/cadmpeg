@@ -15,6 +15,9 @@ use crate::{CadIr, SourceFidelity};
 use super::provenance::NativeOwnerResolver;
 use super::{normalize, StreamPartition};
 
+mod stream_classes;
+pub use stream_classes::StreamClasses;
+
 const CLASSIFY: &str = "classify unconsumed source spans";
 const MODEL: u8 = 1;
 const DESIGN: u8 = 2;
@@ -118,6 +121,7 @@ struct Extent {
 pub struct ClassificationIndex<'ir> {
     classes: Vec<ClassFact<'ir>>,
     natives: Vec<NativeFact<'ir>>,
+    stream_classes: Option<StreamClasses>,
 }
 
 impl<'ir> ClassificationIndex<'ir> {
@@ -135,15 +139,32 @@ impl<'ir> ClassificationIndex<'ir> {
     ) -> Result<Self, CodecError> {
         let classes = class_facts(ctx, ir)?;
         let natives = native_facts(ctx, ir, &classes, resolver)?;
-        Ok(Self { classes, natives })
+        Ok(Self {
+            classes,
+            natives,
+            stream_classes: None,
+        })
+    }
+
+    /// Index typed owners with the format's declared stream defaults.
+    /// Design-only entries require the all-golden proof of §3.1.
+    pub fn new_with_stream_classes(
+        ctx: &DecodeContext<'_>,
+        ir: &'ir CadIr,
+        resolver: &dyn NativeOwnerResolver,
+        stream_classes: StreamClasses,
+    ) -> Result<Self, CodecError> {
+        stream_classes.validate(ctx, ir)?;
+        let mut index = Self::new_with_owner_resolver(ctx, ir, resolver)?;
+        index.stream_classes = Some(stream_classes);
+        Ok(index)
     }
 
     /// Classify a partition from this document's indexed typed owners.
     ///
     /// A span's owner is the shortest record extent that contains it; equal
     /// extents and crossing extents of equal length union their classes.
-    /// Empty owner classes use both classes;
-    /// design-only stream defaults need a separate proof over all goldens.
+    /// Empty owner classes use the declared stream default, or both classes.
     /// Forced B1 intervals, fidelity mutation and losses are separate steps.
     pub fn classify_partition(
         &self,
@@ -230,7 +251,12 @@ impl<'ir> ClassificationIndex<'ir> {
             }
             output.push(ClassifiedSpan {
                 range: span.clone(),
-                mask: if mask == 0 { MODEL | DESIGN } else { mask },
+                mask: if mask == 0 {
+                    self.stream_classes
+                        .map_or(MODEL | DESIGN, |classes| classes.mask(stream))
+                } else {
+                    mask
+                },
             });
         }
         Ok(output)
