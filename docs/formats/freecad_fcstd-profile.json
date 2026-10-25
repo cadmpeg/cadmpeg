@@ -1,7 +1,7 @@
 {
-  "profile_version": 4,
+  "profile_version": 5,
   "format": "fcstd",
-  "manifest_sha256": "0cde951941d86e3630d97d0300e6c89442cbc1061ed09c04a2af4821e92ade3f",
+  "manifest_sha256": "52de6c4bd9180c2edc730800bfbeb2023f09d017f61295c926256afa9d7ce09a",
   "manifest_verified": true,
   "envelope": {
     "container": "ZIP-packaged FCStd",
@@ -24,6 +24,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -93,6 +98,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -164,6 +174,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": true,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -238,6 +253,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": true,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -311,6 +331,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": true,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -384,6 +409,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -455,6 +485,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -527,6 +562,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 33,
         "appearances": 12,
@@ -602,6 +642,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -676,6 +721,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -749,6 +799,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -822,6 +877,11 @@
       "semantic_round_trip": true,
       "typed_edit_round_trip": true,
       "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": true,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 0,
         "appearances": 0,
@@ -881,6 +941,85 @@
         "tessellations": 0,
         "vertices": 8,
         "view_presentations": 0
+      }
+    },
+    {
+      "filename": "uniform_appearance.FCStd",
+      "sha256": "b6840ea50a0b17df9385d99fbaa4895164ca0739219d876ab2f3ac8ec186cf48",
+      "canonical_cadir_sha256": "67aa9c42b9551d18a695f01a254c5875fb200c408c163a1680bb53283de39556",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "write_deterministic": true,
+      "semantic_round_trip": true,
+      "typed_edit_round_trip": true,
+      "side_entries_preserved": true,
+      "appearance_ownership_and_precedence": true,
+      "design_census_matches_projection": true,
+      "design_property_edit_round_trip": false,
+      "native_semantic_equivalence_verified": false,
+      "native_recomputed_design_verified": false,
+      "entity_counts": {
+        "appearance_bindings": 21,
+        "appearances": 5,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 1,
+        "coedges": 24,
+        "configurations": 0,
+        "curves": 12,
+        "drawings": 0,
+        "edges": 12,
+        "faces": 6,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 1,
+        "loops": 6,
+        "native.fcstd.applications": 1,
+        "native.fcstd.attachments": 1,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 6,
+        "native.fcstd.gui_documents": 1,
+        "native.fcstd.gui_properties": 21,
+        "native.fcstd.gui_view_providers": 1,
+        "native.fcstd.logical_ledger": 106,
+        "native.fcstd.objects": 1,
+        "native.fcstd.physical_ledger": 43,
+        "native.fcstd.properties": 27,
+        "native.fcstd.shape_payloads": 1,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 24,
+        "pmi": 0,
+        "points": 8,
+        "presentation_documents": 1,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 1,
+        "semantic_annotations": 0,
+        "shells": 1,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 6,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 8,
+        "view_presentations": 1
       }
     }
   ],
@@ -1272,6 +1411,12 @@
       "tessellations",
       "vertices",
       "view_presentations"
+    ],
+    "appearance_targets": [
+      "body",
+      "edge",
+      "face",
+      "vertex"
     ]
   },
   "source_less_write": {
@@ -1284,7 +1429,8 @@
       "Length": "12.5",
       "Width": "7"
     },
-    "unsupported_target_rejected": true
+    "unsupported_target_rejected": true,
+    "independent_native_acceptance": false
   },
   "gates": [
     {
@@ -1342,7 +1488,7 @@
         {
           "id": "application_geometry",
           "passed": true,
-          "observed": "tessellations=1, points=460",
+          "observed": "tessellations=1, points=468",
           "required": "mesh tessellation and point data"
         }
       ]
@@ -1372,7 +1518,7 @@
         {
           "id": "design_records",
           "passed": true,
-          "observed": "features=70, sketches=13, constraints=41, parameters=46",
+          "observed": "features=71, sketches=13, constraints=41, parameters=46",
           "required": "nonempty feature, sketch, constraint, and parameter graphs"
         },
         {
@@ -1388,17 +1534,35 @@
       "passed": true,
       "assertions": [
         {
-          "id": "appearance_coverage",
+          "id": "appearance_ownership_and_precedence",
           "passed": true,
-          "observed": "33",
-          "required": "object and subshape appearance bindings"
+          "observed": "targets={\"body\", \"edge\", \"face\", \"vertex\"}, all bindings checked=true",
+          "required": "body, face, edge, and vertex targets with valid source ownership, assets, and override precedence"
         }
       ]
     },
     {
       "level": "L6",
-      "passed": true,
+      "passed": false,
       "assertions": [
+        {
+          "id": "persisted_projection_census",
+          "passed": true,
+          "observed": "13 of 13 fixture censuses agree with every projected design feature",
+          "required": "native object, feature identity, semantic family, and post-process state match every projected feature"
+        },
+        {
+          "id": "independent_recomputed_design",
+          "passed": false,
+          "observed": "0 fixtures have SHA-bound native recompute comparisons and projected owner/type matches",
+          "required": "every design fixture matches the independent original after native recomputation and save/reopen; every projected owner and runtime type matches the native census"
+        },
+        {
+          "id": "design_parameter_edit",
+          "passed": true,
+          "observed": "4",
+          "required": "a typed design parameter edit changes projected operation semantics after a write and decode"
+        },
         {
           "id": "complete_constraint_matrix",
           "passed": true,
@@ -1421,7 +1585,7 @@
     },
     {
       "level": "L7",
-      "passed": true,
+      "passed": false,
       "assertions": [
         {
           "id": "product_structure_matrix",
@@ -1439,12 +1603,12 @@
     },
     {
       "level": "L8",
-      "passed": true,
+      "passed": false,
       "assertions": [
         {
           "id": "presentation_variants",
           "passed": true,
-          "observed": "documents={\"gui\", \"headless\"}, appearances=33, constructs={\"drawing_asset\", \"gui_state:Camera\", \"gui_state:Expand\", \"thumbnail\", \"tree_state\", \"view_property:AngularDeflection\", \"view_property:BoundingBox\", \"view_property:Deviation\", \"view_property:DisplayMode\", \"view_property:DrawStyle\", \"view_property:Lighting\", \"view_property:LineColor\", \"view_property:LineColorArray\", \"view_property:LineMaterial\", \"view_property:LineWidth\", \"view_property:OnTopWhenSelected\", \"view_property:PointColor\", \"view_property:PointColorArray\", \"view_property:PointMaterial\", \"view_property:PointSize\", \"view_property:Proxy\", \"view_property:Selectable\", \"view_property:SelectionStyle\", \"view_property:ShapeAppearance\", \"view_property:ShowInTree\", \"view_property:ShowPlacement\", \"view_property:TransformOrigin\", \"view_property:Transparency\", \"view_property:Visibility\"}",
+          "observed": "documents={\"gui\", \"headless\"}, appearances=54, constructs={\"drawing_asset\", \"gui_state:Camera\", \"gui_state:Expand\", \"thumbnail\", \"tree_state\", \"view_property:AngularDeflection\", \"view_property:BoundingBox\", \"view_property:Deviation\", \"view_property:DisplayMode\", \"view_property:DrawStyle\", \"view_property:Lighting\", \"view_property:LineColor\", \"view_property:LineColorArray\", \"view_property:LineMaterial\", \"view_property:LineWidth\", \"view_property:OnTopWhenSelected\", \"view_property:PointColor\", \"view_property:PointColorArray\", \"view_property:PointMaterial\", \"view_property:PointSize\", \"view_property:Proxy\", \"view_property:Selectable\", \"view_property:SelectionStyle\", \"view_property:ShapeAppearance\", \"view_property:ShowInTree\", \"view_property:ShowPlacement\", \"view_property:TransformOrigin\", \"view_property:Transparency\", \"view_property:Visibility\"}",
           "required": "documents={\"gui\", \"headless\"}, constructs={\"drawing_asset\", \"gui_state:Camera\", \"thumbnail\", \"tree_state\", \"view_property:DisplayMode\", \"view_property:SelectionStyle\", \"view_property:Visibility\"}, appearances"
         },
         {
@@ -1463,19 +1627,31 @@
     },
     {
       "level": "L9",
-      "passed": true,
+      "passed": false,
       "assertions": [
         {
-          "id": "semantic_native_round_trip",
+          "id": "independent_native_geometry",
+          "passed": false,
+          "observed": "0 of 13 native comparisons verified by original and output digests",
+          "required": "every written fixture matches its independently opened native original before and after recompute/save/reopen"
+        },
+        {
+          "id": "cadir_semantic_round_trip",
           "passed": true,
-          "observed": "12 of 12 fixtures deterministic, semantically equivalent, and editable",
+          "observed": "13 of 13 fixtures deterministic, semantically equivalent, and editable",
           "required": "every primary-envelope fixture writes deterministically, round-trips semantically, and accepts a typed edit"
         },
         {
           "id": "unsupported_record_survival",
           "passed": true,
-          "observed": "12 of 12 fixture entry sets preserved",
+          "observed": "13 of 13 fixture entry sets preserved",
           "required": "every named logical entry retains identity and digest"
+        },
+        {
+          "id": "independent_source_less_acceptance",
+          "passed": false,
+          "observed": "false",
+          "required": "SHA-bound native recompute of the generated Part::Box retains dimensions 12.5 by 7 by 3 mm, one solid, six faces, and volume 262.5 cubic mm"
         },
         {
           "id": "source_less_and_target_selection",
@@ -1486,5 +1662,5 @@
       ]
     }
   ],
-  "highest_passing_gate": "L9"
+  "highest_passing_gate": "L5"
 }

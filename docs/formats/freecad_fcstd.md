@@ -1806,3 +1806,26 @@ two-distance, and distance-angle dimensions plus the persisted reference-side re
 linear dimensions must be finite and positive, and their angle must lie strictly between zero and
 180 degrees. An absent selection or invalid dimensional law remains an attributable native
 operation rather than an unresolved neutral dress-up feature.
+
+## 12. Semantic validation
+
+A restored object graph, a saved geometry cache, and a recomputed design are separate semantic
+states. A successful document open does not imply that each property-owned payload restored.
+Geometry equivalence preserves each owning object's shape nullness, shape validity, solid, shell,
+face, wire, edge, and vertex counts, volume, area, length, bounds, and placement. Mesh equivalence
+preserves ordered vertices and facets together with the owning placement. Point equivalence
+preserves ordered coordinates and the persisted transform. Object identities, runtime types,
+dependencies, and declarative parameter values remain independent of these cached results.
+
+A native recompute returns the number of recomputed objects; zero does not denote an error.
+Recompute success also requires the participating objects to have no invalid or error state.
+A parameter edit changes the declarative value independently of the saved geometry cache. Full
+recomputation evaluates the edited design before a comparison of its resulting geometry. An
+unchanged cached-result comparison precedes recomputation so reconstruction does not hide a lost
+payload.
+
+Appearance ownership associates each view-provider binding with the exact-shape property of its
+source object. Whole-body appearance, per-face overrides, per-edge line styles, and per-vertex
+point styles have distinct targets. Each target resolves in its own topology arena; a declared
+override also retains its precedence over the whole-object appearance. An appearance asset's
+presence alone does not establish that target or precedence association.
