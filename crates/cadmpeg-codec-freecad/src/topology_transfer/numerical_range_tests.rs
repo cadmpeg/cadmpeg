@@ -78,7 +78,7 @@ fn an_occt_endpoint_a_whole_period_off_a_circle_subset_start_maps_to_local_zero(
         .unwrap();
     let below_period = 1.0 - std::f64::consts::TAU - 4.0 * f64::EPSILON;
     let range = [below_period, 2.0].map(|value| FiniteReal::new(value).unwrap());
-    let local = occt_subset_local_range(&ir, &subset, range)
+    let local = occt_subset_local_range(&ir, &mut ArenaPositions::default(), &subset, range)
         .unwrap()
         .map(FiniteReal::get);
     assert_eq!(local, [0.0, 1.0]);
