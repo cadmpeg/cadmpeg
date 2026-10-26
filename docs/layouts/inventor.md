@@ -697,3 +697,26 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `value` | `u32` | little | spec | base bend scalar control contains `value:u32` |
+
+## `pm_dc_sheet_metal_style_operand_prefix`
+
+Spec §13.4 · layout: byte offsets · size: 90 B
+
+Prefix of the segment-major-29 sheet-metal style record; the record continues after this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 30 | `prefix` | `bytes[30]` | little | spec | prefix bytes[30] |
+| 30 | 4 | `thickness` | `u32` | little | spec | thickness u32 |
+| 34 | 4 | `bend_radius` | `u32` | little | spec | bend_radius u32 |
+| 38 | 4 | `bend_relief_form` | `u32` | little | spec | bend_relief_form u32 |
+| 42 | 4 | `bend_relief_width` | `u32` | little | spec | bend_relief_width u32 |
+| 46 | 4 | `bend_relief_depth` | `u32` | little | spec | bend_relief_depth u32 |
+| 50 | 4 | `corner_relief_form` | `u32` | little | spec | corner_relief_form u32 |
+| 54 | 4 | `corner_relief_size` | `u32` | little | spec | corner_relief_size u32 |
+| 58 | 4 | `seam_gap` | `u32` | little | spec | seam_gap u32 |
+| 62 | 4 | `minimum_remnant` | `u32` | little | spec | minimum_remnant u32 |
+| 66 | 4 | `option` | `u32` | little | spec | option u32 |
+| 70 | 12 | `values` | `u32[3]` | little | spec | values u32[3] |
+| 82 | 4 | `transition_form` | `u32` | little | spec | transition_form u32 |
+| 86 | 4 | `transition_radius` | `u32` | little | spec | transition_radius u32 |

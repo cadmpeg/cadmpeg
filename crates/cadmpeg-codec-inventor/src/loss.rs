@@ -71,10 +71,10 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
-    /// Attached plates have no neutral sheet-metal attached-plate kind.
-    FeatureSheetMetalAttachedPlateKindMissing,
-    /// Separate bend history records have no neutral sheet-metal bend kind.
-    FeatureSheetMetalBendKindMissing,
+    /// Attachment type-9 modes, Boolean controls, and states have no construction map.
+    FeatureSheetMetalAttachmentControlsNative,
+    /// Separate bends retain unresolved attachment and scalar controls.
+    FeatureSheetMetalBendControlsNative,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Parameter records have a unit or expression graph that is not closed.
@@ -154,8 +154,8 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureShellDefinitionPartial,
-        Self::FeatureSheetMetalAttachedPlateKindMissing,
-        Self::FeatureSheetMetalBendKindMissing,
+        Self::FeatureSheetMetalAttachmentControlsNative,
+        Self::FeatureSheetMetalBendControlsNative,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
@@ -210,10 +210,10 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
-            Self::FeatureSheetMetalAttachedPlateKindMissing => {
-                "feature.sheet-metal-attached-plate-kind-missing"
+            Self::FeatureSheetMetalAttachmentControlsNative => {
+                "feature.sheet-metal-attachment-controls-native"
             }
-            Self::FeatureSheetMetalBendKindMissing => "feature.sheet-metal-bend-kind-missing",
+            Self::FeatureSheetMetalBendControlsNative => "feature.sheet-metal-bend-controls-native",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
@@ -281,8 +281,8 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureShellDefinitionPartial
-            | Self::FeatureSheetMetalAttachedPlateKindMissing
-            | Self::FeatureSheetMetalBendKindMissing
+            | Self::FeatureSheetMetalAttachmentControlsNative
+            | Self::FeatureSheetMetalBendControlsNative
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchPairedAssociationUnprojected
@@ -367,8 +367,8 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.shell-definition-partial",
-                "feature.sheet-metal-attached-plate-kind-missing",
-                "feature.sheet-metal-bend-kind-missing",
+                "feature.sheet-metal-attachment-controls-native",
+                "feature.sheet-metal-bend-controls-native",
                 "feature.state-unresolved",
                 "parameter.graph-open",
                 "parameter.expression-bounded",

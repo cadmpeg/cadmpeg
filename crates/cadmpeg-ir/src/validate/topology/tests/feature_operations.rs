@@ -157,3 +157,117 @@ fn many_datum_plane_cycles_are_each_reported_once_in_linear_time() {
     let expected: Vec<_> = (0..CYCLES).map(|cycle| id(cycle, 0)).collect();
     assert_eq!(reported, expected);
 }
+
+#[test]
+fn attached_plate_and_bend_validate_profiles_edges_and_history() {
+    use crate::features::{
+        BooleanOp, EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef,
+        SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
+        SheetMetalTransitionForm,
+    };
+    use crate::scalar::{NonNegativeLength, PositiveLength};
+    let relief = SheetMetalRelief {
+        form: SheetMetalReliefForm::StyleDefault,
+        width: PositiveLength::new(1.0).unwrap(),
+        depth: PositiveLength::new(2.0).unwrap(),
+        minimum_remnant: NonNegativeLength::new(0.0).unwrap(),
+        seam_gap: NonNegativeLength::new(0.0).unwrap(),
+    };
+    let transition = SheetMetalTransition {
+        form: SheetMetalTransitionForm::StyleDefault,
+        radius: NonNegativeLength::new(0.0).unwrap(),
+    };
+    let plate_id = FeatureId::mint("test:model:feature#plate").unwrap();
+    let plate = FeatureOperation::SheetMetalAttachedPlate {
+        profile: PlanarProfileRef::Sketch(
+            crate::sketches::SketchId::mint("test:model:sketch#missing").unwrap(),
+        ),
+        thickness: PositiveLength::new(1.0).unwrap(),
+        side: SheetMetalThicknessSide::Forward,
+        op: BooleanOp::Join,
+        attachment: EdgeSelection::Edges(vec![
+            crate::ids::EdgeId::mint("test:model:edge#missing").unwrap()
+        ]),
+        inside_radius: PositiveLength::new(1.0).unwrap(),
+        relief: relief.clone(),
+        transition: transition.clone(),
+    };
+    let bend = FeatureOperation::SheetMetalBend {
+        plate: plate_id.clone(),
+        attachment: EdgeSelection::All,
+        inside_radius: PositiveLength::new(1.0).unwrap(),
+        relief,
+        transition,
+    };
+    let mut ir = crate::CadIr::empty();
+    ir.model.features.push(feature(
+        plate_id.as_str(),
+        0,
+        FeatureDefinition::Operation(plate),
+    ));
+    ir.model.features.push(feature(
+        "test:model:feature#bend",
+        1,
+        FeatureDefinition::Operation(bend),
+    ));
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    for missing in ["test:model:sketch#missing", "test:model:edge#missing"] {
+        assert!(findings.iter().any(|finding| finding.check
+            == crate::report::check::Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(plate_id.as_str())
+            && finding.message.contains(missing)));
+    }
+    assert!(findings.iter().any(|finding| finding.entity.as_deref()
+        == Some("test:model:feature#bend")
+        && finding.message.contains("dependencies")));
+    ir.model.features[1].dependencies = vec![plate_id.clone()].try_into().unwrap();
+    assert!(!feature_reference_findings(&ir)
+        .iter()
+        .any(|finding| finding.entity.as_deref() == Some("test:model:feature#bend")));
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        *definition = FeatureDefinition::Operation(FeatureOperation::StoredGeometry {});
+    });
+    assert!(feature_reference_findings(&ir)
+        .iter()
+        .any(
+            |finding| finding.entity.as_deref() == Some("test:model:feature#bend")
+                && finding.message.contains("attached plate")
+        ));
+    ir.model.features.remove(0);
+    assert!(feature_reference_findings(&ir)
+        .iter()
+        .any(|finding| finding.message.contains("missing attached plate")));
+}
+
+#[test]
+fn an_attached_plate_requires_a_join_operation() {
+    use crate::features::*;
+    use crate::scalar::{NonNegativeLength, PositiveLength};
+    let mut ir = crate::CadIr::empty();
+    ir.model.features.push(feature(
+        "test:model:feature#plate",
+        0,
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
+            profile: PlanarProfileRef::Native("test:profile".into()),
+            thickness: PositiveLength::new(1.0).unwrap(),
+            side: SheetMetalThicknessSide::Forward,
+            op: BooleanOp::Cut,
+            attachment: EdgeSelection::All,
+            inside_radius: PositiveLength::new(1.0).unwrap(),
+            relief: SheetMetalRelief {
+                form: SheetMetalReliefForm::StyleDefault,
+                width: PositiveLength::new(1.0).unwrap(),
+                depth: PositiveLength::new(1.0).unwrap(),
+                minimum_remnant: NonNegativeLength::new(0.0).unwrap(),
+                seam_gap: NonNegativeLength::new(0.0).unwrap(),
+            },
+            transition: SheetMetalTransition {
+                form: SheetMetalTransitionForm::StyleDefault,
+                radius: NonNegativeLength::new(0.0).unwrap(),
+            },
+        }),
+    ));
+    assert!(feature_reference_findings(&ir)
+        .iter()
+        .any(|finding| finding.message == "attached plate operation must be join"));
+}

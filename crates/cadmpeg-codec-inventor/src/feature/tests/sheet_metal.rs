@@ -231,7 +231,7 @@ fn each_bend_attachment_slot_keeps_the_plate_native() {
 }
 
 #[test]
-fn missing_kind_losses_count_native_attached_plates_and_separate_bends() {
+fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");

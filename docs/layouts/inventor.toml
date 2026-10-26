@@ -2088,3 +2088,110 @@ offset = 0
 type = "u32"
 source = "spec"
 anchor = "base bend scalar control contains `value:u32`"
+
+
+[[record]]
+name = "pm_dc_sheet_metal_style_operand_prefix"
+kind = "byte"
+section = "13.4"
+anchor = "its operand prefix contains"
+size = 90
+note = "Prefix of the segment-major-29 sheet-metal style record; the record continues after this prefix."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[30]"
+source = "spec"
+anchor = "prefix bytes[30]"
+
+[[record.field]]
+name = "thickness"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "thickness u32"
+
+[[record.field]]
+name = "bend_radius"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "bend_radius u32"
+
+[[record.field]]
+name = "bend_relief_form"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "bend_relief_form u32"
+
+[[record.field]]
+name = "bend_relief_width"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "bend_relief_width u32"
+
+[[record.field]]
+name = "bend_relief_depth"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "bend_relief_depth u32"
+
+[[record.field]]
+name = "corner_relief_form"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "corner_relief_form u32"
+
+[[record.field]]
+name = "corner_relief_size"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "corner_relief_size u32"
+
+[[record.field]]
+name = "seam_gap"
+offset = 58
+type = "u32"
+source = "spec"
+anchor = "seam_gap u32"
+
+[[record.field]]
+name = "minimum_remnant"
+offset = 62
+type = "u32"
+source = "spec"
+anchor = "minimum_remnant u32"
+
+[[record.field]]
+name = "option"
+offset = 66
+type = "u32"
+source = "spec"
+anchor = "option u32"
+
+[[record.field]]
+name = "values"
+offset = 70
+type = "u32[3]"
+source = "spec"
+anchor = "values u32[3]"
+
+[[record.field]]
+name = "transition_form"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "transition_form u32"
+
+[[record.field]]
+name = "transition_radius"
+offset = 86
+type = "u32"
+source = "spec"
+anchor = "transition_radius u32"

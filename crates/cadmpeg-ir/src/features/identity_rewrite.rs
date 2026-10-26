@@ -99,3 +99,8 @@ rewrite_scalar!(WrapMode);
 rewrite_scalar!(super::SweepCircularRegion);
 
 rewrite_scalar!(FilledSurfaceBoundaryCondition);
+
+rewrite_scalar!(super::SheetMetalReliefForm);
+rewrite_scalar!(super::SheetMetalTransitionForm);
+rewrite_record!(super::SheetMetalRelief, []; {form, width, depth, minimum_remnant, seam_gap});
+rewrite_record!(super::SheetMetalTransition, []; {form, radius});

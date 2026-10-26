@@ -234,6 +234,8 @@ rewrite_enum!(FeatureOperation, []; {
     Binder { sources, construction },
     Rib { construction, op },
     SheetMetalBaseFlange { profile, thickness, side },
+    SheetMetalAttachedPlate { profile, thickness, side, op, attachment, inside_radius, relief, transition },
+    SheetMetalBend { plate, attachment, inside_radius, relief, transition },
     SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
     SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },

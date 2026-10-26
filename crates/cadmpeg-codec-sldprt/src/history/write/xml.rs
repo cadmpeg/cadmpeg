@@ -52,7 +52,9 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
             | FeatureOperation::Coil { .. }
             | FeatureOperation::Sphere { .. }
             | FeatureOperation::Torus { .. }
-            | FeatureOperation::SheetMetalBaseFlange { .. },
+            | FeatureOperation::SheetMetalBaseFlange { .. }
+            | FeatureOperation::SheetMetalAttachedPlate { .. }
+            | FeatureOperation::SheetMetalBend { .. },
         ) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::DerivedGeometry { .. }) => "Feature",
         FeatureDefinition::Operation(FeatureOperation::ImportedGeometry { .. }) => "Feature",
