@@ -425,6 +425,7 @@ fn occurrence_key_preserves_authored_roles() {
         id: "f3d:xref:reference#1".into(),
         ordinal,
         occurrence_ordinal: 0,
+        placement_source: None,
         from: "root.f3d".to_owned().try_into().unwrap(),
         relative_path: "part.f3d".to_owned().try_into().unwrap(),
         neutron_role: role.to_owned().try_into().unwrap(),
@@ -451,6 +452,7 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
         occurrence_ordinal: 0,
+        placement_source: None,
         from: "root.f3d".to_owned().try_into().unwrap(),
         relative_path: format!("part-{ordinal}.f3d").try_into().unwrap(),
         neutron_role: "same-role".to_owned().try_into().unwrap(),
@@ -632,4 +634,37 @@ fn parameter_document(
         .set_arena(ctx, "design_parameters", &native)
         .unwrap();
     (model, records)
+}
+
+#[test]
+fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
+    let mut fields = serde_json::json!({
+        "placement_source": {
+            "stream": "f3d:Design/BulkStream.dat",
+            "carrier_record_index": 71,
+            "owner": { "target": 19, "type_guid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" }
+        }
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::rescope_native_reference_fields(
+            ctx,
+            "xref_references",
+            &mut fields,
+            "part/occurrence-2",
+        )
+        .unwrap();
+    });
+    assert_eq!(
+        fields["placement_source"]["stream"],
+        "f3d:xref/part/occurrence-2/Design/BulkStream.dat"
+    );
+    assert_eq!(fields["placement_source"]["carrier_record_index"], 71);
+    assert_eq!(fields["placement_source"]["owner"]["target"], 19);
+    assert_eq!(
+        fields["placement_source"]["owner"]["type_guid"],
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    );
 }

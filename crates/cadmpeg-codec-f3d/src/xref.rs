@@ -21,14 +21,16 @@ use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, Proto
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
-    is_guid_prefix, is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict, lp_utf16_bounded,
-    lp_utf16_bounded_view, take_owned_reference, take_reference,
+    is_guid_relaxed, lp_ascii_filtered_view, lp_ascii_strict, lp_utf16_bounded,
+    lp_utf16_bounded_view, take_owned_reference, take_reference, Reference,
 };
 use crate::container::ContainerScan;
+use crate::design::decode::components::ROOT_INSTANCE_NAME;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
+use crate::layout::root_instance_prefix as root_instance;
 use crate::records::{
     feature::{assembly_features::DesignComponentInsertConstruction, scope::DesignParameterScope},
-    xref::{XrefDesign, XrefReference},
+    xref::{XrefDesign, XrefLocalOwner, XrefPlacementSource, XrefReference},
 };
 
 /// Top-level container entry holding the external-reference table.
@@ -48,10 +50,8 @@ pub(crate) struct XrefTable {
     pub(crate) designs: Vec<XrefDesign>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
     pub(crate) references: Vec<XrefReference>,
-    /// Source reference ordinals whose role-named placement records were
-    /// admitted by the type table but did not close under the generation's
-    /// placement grammar and had no other valid placement carrier.
-    pub(crate) placement_failures: Vec<u32>,
+    /// Type-admitted placements that do not close under their generation grammar.
+    pub(crate) placement_failures: Vec<OccurrencePlacementFailure>,
     /// `(XREF ordinal, placement-record count)` pairs whose structured
     /// placements were superseded by scope-bound Component Insert carriers.
     pub(crate) placement_overrides: Vec<PlacementOverride>,
@@ -181,6 +181,7 @@ impl ReferenceJson {
             id,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
+            placement_source: None,
             from,
             relative_path,
             neutron_role,
@@ -472,14 +473,18 @@ pub(crate) fn project_occurrences(
     Ok(occurrences)
 }
 
-/// Return the one container reference whose occurrence role and placement
-/// match a `Component Insert` construction.
+/// Return the occurrence bound to a construction carrier in its Design stream.
 pub(crate) fn component_insert_reference<'a>(
     references: &'a [XrefReference],
+    stream: &str,
     construction: &DesignComponentInsertConstruction,
 ) -> Option<&'a XrefReference> {
     let mut matches = references.iter().filter(|reference| {
         reference.neutron_role.as_str() == construction.neutron_role
+            && reference.placement_source.as_ref().is_some_and(|source| {
+                source.stream == stream
+                    && source.carrier_record_index == u64::from(construction.carrier_record_index)
+            })
             && reference
                 .transform
                 .map(crate::records::xref::XrefPlacementTransform::rows)
@@ -499,7 +504,9 @@ pub(crate) fn bind_component_insert_features(
         let Some(construction) = scope.component_insert_construction() else {
             continue;
         };
-        let Some(reference) = component_insert_reference(&table.references, construction) else {
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let Some(reference) = component_insert_reference(&table.references, stream, construction)
+        else {
             continue;
         };
         let Some(feature) = features
@@ -568,7 +575,10 @@ fn bind_occurrences(
         streams.push((placements, failures, crate::ids::native_scope(&entry.name)));
     }
     let mut expanded = Vec::new();
-    let mut placement_failures = Vec::new();
+    let placement_failures = streams
+        .iter()
+        .flat_map(|(_, failures, _)| failures.iter().cloned())
+        .collect();
     let mut placement_overrides = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
@@ -593,35 +603,17 @@ fn bind_occurrences(
             let selected =
                 occurrence_transforms_with_precedence(direct, placements, &reference.neutron_role);
 
-            occurrences.extend(selected);
+            occurrences.extend(
+                selected
+                    .into_iter()
+                    .map(|placement| (placement, stream.clone())),
+            );
         }
         if occurrences.is_empty() {
-            if streams.iter().any(|(_, failures, stream)| {
-                !scopes
-                    .iter()
-                    .filter_map(|scope| {
-                        let construction_stream = crate::ids::native_stream(&scope.id)?;
-                        let construction = scope.component_insert_construction()?;
-                        Some((construction_stream, construction))
-                    })
-                    .any(|(construction_stream, construction)| {
-                        construction_stream == stream
-                            && construction.neutron_role == reference.neutron_role.as_str()
-                    })
-                    && failures.iter().any(|failure| {
-                        failure
-                            .link_names
-                            .iter()
-                            .any(|name| name == reference.neutron_role.as_str())
-                    })
-            }) {
-                placement_failures.push(reference.ordinal);
-            }
-
             expanded.push(reference.clone());
             continue;
         }
-        for (occurrence_ordinal, transform) in occurrences.into_iter().enumerate() {
+        for (occurrence_ordinal, (placement, stream)) in occurrences.into_iter().enumerate() {
             let occurrence_id = format!(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                 reference.ordinal
@@ -629,7 +621,13 @@ fn bind_occurrences(
             expanded.push(XrefReference {
                 id: occurrence_id,
                 occurrence_ordinal: ordinal_at(occurrence_ordinal)?,
-                transform: transform
+                placement_source: Some(XrefPlacementSource {
+                    stream,
+                    carrier_record_index: placement.carrier_record_index,
+                    owner: placement.owner,
+                }),
+                transform: placement
+                    .transform
                     .map(crate::records::xref::XrefPlacementTransform::try_from)
                     .transpose()
                     .map_err(CodecError::NotImplemented)?,
@@ -651,7 +649,7 @@ fn select_component_insert_transforms<'a, I>(
     constructions: I,
     stream: &str,
     role: &str,
-) -> Vec<[[f64; 4]; 4]>
+) -> Vec<(u64, [[f64; 4]; 4])>
 where
     I: IntoIterator<Item = (&'a str, &'a DesignComponentInsertConstruction)>,
 {
@@ -660,39 +658,67 @@ where
         .filter(|(construction_stream, construction)| {
             *construction_stream == stream && construction.neutron_role == role
         })
-        .map(|(_, construction)| construction.transform().rows())
+        .map(|(_, construction)| {
+            (
+                u64::from(construction.carrier_record_index),
+                construction.transform().rows(),
+            )
+        })
         .collect::<Vec<_>>()
 }
 
-/// Use scope-bound carriers when present. Placement records are the fallback
-/// for a stream with no exact carrier for this role.
+/// Apply a scope transform once to its carrier and keep the other placements.
 fn occurrence_transforms_with_precedence(
-    direct: Vec<[[f64; 4]; 4]>,
+    direct: Vec<(u64, [[f64; 4]; 4])>,
     placements: &[OccurrencePlacement],
     role: &str,
-) -> Vec<Option<[[f64; 4]; 4]>> {
-    if direct.is_empty() {
-        occurrence_transforms(placements, role)
-    } else {
-        direct.into_iter().map(Some).collect::<Vec<_>>()
+) -> Vec<OccurrencePlacement> {
+    let mut selected = Vec::new();
+    let mut overridden = HashSet::new();
+    for placement in placements
+        .iter()
+        .filter(|placement| placement.link_names.iter().any(|name| name == role))
+    {
+        let mut placement = placement.clone();
+        if let Some((carrier, transform)) = direct
+            .iter()
+            .find(|(carrier, _)| *carrier == placement.carrier_record_index)
+        {
+            if !overridden.insert(*carrier) {
+                continue;
+            }
+            placement.transform = Some(*transform);
+        }
+        selected.push(placement);
     }
+    for (carrier_record_index, transform) in direct {
+        if overridden.insert(carrier_record_index) {
+            selected.push(OccurrencePlacement {
+                carrier_record_index,
+                owner: None,
+                link_names: vec![role.to_owned()],
+                transform: Some(transform),
+            });
+        }
+    }
+    selected
 }
 
-/// Count structured placements that are discarded when a scope-bound carrier
-/// supplies at least one transform for the same role.
+/// Count placements whose carrier also has a scope-bound transform.
 fn superseded_placement_count(
-    direct: &[[[f64; 4]; 4]],
+    direct: &[(u64, [[f64; 4]; 4])],
     placements: &[OccurrencePlacement],
     role: &str,
 ) -> usize {
-    if direct.is_empty() {
-        0
-    } else {
-        placements
-            .iter()
-            .filter(|placement| placement.link_names.iter().any(|name| name == role))
-            .count()
-    }
+    placements
+        .iter()
+        .filter(|placement| {
+            placement.link_names.iter().any(|name| name == role)
+                && direct
+                    .iter()
+                    .any(|(carrier, _)| *carrier == placement.carrier_record_index)
+        })
+        .count()
 }
 
 /// Return the `BulkStream` offsets whose type-table identity is the stable
@@ -747,6 +773,7 @@ struct IndexedRecord {
 
 /// The transforms of every placement whose target path carries `role`, in
 /// record order. One occurrence-placement record is one occurrence.
+#[cfg(test)]
 fn occurrence_transforms(
     placements: &[OccurrencePlacement],
     role: &str,
@@ -794,6 +821,8 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
 /// "**Placement.**").
 #[derive(Debug, Clone, PartialEq)]
 struct OccurrencePlacement {
+    carrier_record_index: u64,
+    owner: Option<XrefLocalOwner>,
     /// Cross-document link names carried by the path elements, in path order.
     /// The role-bearing element is not necessarily the first.
     link_names: Vec<String>,
@@ -802,9 +831,10 @@ struct OccurrencePlacement {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct OccurrencePlacementFailure {
+pub(crate) struct OccurrencePlacementFailure {
+    pub(crate) carrier_record_index: Option<u64>,
     /// Link names recovered from the valid target-path prefix.
-    link_names: Vec<String>,
+    pub(crate) link_names: Vec<String>,
 }
 
 /// Parse every indexed record that closes exactly under the occurrence-placement
@@ -849,15 +879,23 @@ fn occurrence_placements_with_failures(
         let Some(body) = bytes.get(record.offset..record.end) else {
             continue;
         };
+        if lp_ascii_strict(body, root_instance::INSTANCE_NAME_LENGTH, 0..=256)
+            .is_some_and(|(name, _)| name.as_bytes() == ROOT_INSTANCE_NAME)
+            || occurrence_path_elements(body).is_some_and(|(names, _, _)| names.is_empty())
+        {
+            continue;
+        }
         if let Some(placement) = occurrence_placement(body, serializer_magic)? {
             placements.push(placement);
-        } else if let Some((link_names, _)) = occurrence_path(body) {
-            failures.push(OccurrencePlacementFailure { link_names });
-        } else if let Some(link_name) = legacy_occurrence_role(body) {
-            let link_name = link_name.to_string();
-            let link_names = [link_name].into_iter().collect::<Vec<_>>();
-
-            failures.push(OccurrencePlacementFailure { link_names });
+        } else {
+            let link_names = occurrence_path(body)
+                .map(|(names, _)| names)
+                .or_else(|| legacy_occurrence_role(body).map(|role| vec![role.to_string()]))
+                .unwrap_or_default();
+            failures.push(OccurrencePlacementFailure {
+                carrier_record_index: View::u64_le_at(body, 7),
+                link_names,
+            });
         }
     }
     Ok((placements, failures))
@@ -869,10 +907,15 @@ fn occurrence_placement(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Result<Option<OccurrencePlacement>, CodecError> {
+    let Some(carrier_record_index) = View::u64_le_at(body, 7) else {
+        return Ok(None);
+    };
     if let Some((role, transform)) = legacy_occurrence_placement(body) {
         let role = role.to_string();
         let link_names = [role].into_iter().collect::<Vec<_>>();
         return Ok(Some(OccurrencePlacement {
+            carrier_record_index,
+            owner: None,
             link_names,
             transform,
         }));
@@ -892,6 +935,8 @@ fn occurrence_placement(
     };
     let link_names = vec![link_name.to_string()];
     Ok(Some(OccurrencePlacement {
+        carrier_record_index: u64::from(record_index),
+        owner: None,
         link_names,
         transform: None,
     }))
@@ -904,6 +949,8 @@ fn repeated_target_occurrence_placement(
 ) -> Result<Option<OccurrencePlacement>, CodecError> {
     Ok(
         repeated_target_occurrence_placement_details(body)?.map(|details| OccurrencePlacement {
+            carrier_record_index: details.carrier_record_index,
+            owner: Some(details.owner),
             link_names: details.link_names,
             transform: details.transform.map(|(_, matrix)| matrix),
         }),
@@ -911,6 +958,8 @@ fn repeated_target_occurrence_placement(
 }
 
 struct RepeatedTargetPlacementDetails {
+    carrier_record_index: u64,
+    owner: XrefLocalOwner,
     link_names: Vec<String>,
     role: String,
     role_offset: usize,
@@ -929,9 +978,8 @@ macro_rules! xref_some {
 fn repeated_target_occurrence_placement_details(
     body: &[u8],
 ) -> Result<Option<RepeatedTargetPlacementDetails>, CodecError> {
-    const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
-    let (link_names, mut at) = xref_some!(occurrence_path(body));
-    if !matches!(xref_some!(View::u32_le_at(body, at)), 1..=6) {
+    let (link_names, path_target, mut at) = xref_some!(occurrence_target_path(body));
+    if xref_some!(View::u32_le_at(body, at)) == 0 {
         return Ok(None);
     }
     at += 4;
@@ -942,35 +990,16 @@ fn repeated_target_occurrence_placement_details(
         }
         at = next;
     }
-    if xref_some!(body.get(at..at + METADATA_MARKER.len())) != METADATA_MARKER {
+    if body.get(at) == Some(&0) {
+        at += 1;
+    }
+    let repeated_start = at;
+    let repeated = xref_some!(take_owned_reference(body, &mut at));
+    if !same_external_target(&path_target, &repeated) {
         return Ok(None);
     }
-    at += METADATA_MARKER.len();
-
-    let (component_guid, next) = xref_some!(lp_utf16_bounded(body, at, 36..=36));
-    if !is_guid_relaxed(&component_guid) {
-        return Ok(None);
-    }
-    at = next;
-    if body.get(at) != Some(&0) {
-        return Ok(None);
-    }
-    at += 1;
-    let (type_guid, next) = xref_some!(lp_ascii_strict(body, at, 36..=36));
-    if !is_guid_relaxed(type_guid) {
-        return Ok(None);
-    }
-    at = next;
-    let role_offset = at;
-    let (role, next) = xref_some!(lp_utf16_bounded(body, at, 36..=256));
-    if !is_guid_prefix(&role) {
-        return Ok(None);
-    }
-    at = next;
-    if body.get(at) != Some(&0) {
-        return Ok(None);
-    }
-    at += 1;
+    let role = xref_some!(repeated.link_name()).to_owned();
+    let role_offset = xref_some!(reference_role_offset(body, repeated_start));
     let transform = match *xref_some!(body.get(at)) {
         1 => {
             at += 1;
@@ -989,8 +1018,8 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 4;
-    let (final_role, next) = xref_some!(lp_utf16_bounded(body, at, 36..=256));
-    if !final_role.eq_ignore_ascii_case(&role) {
+    let (final_role, next) = xref_some!(lp_utf16_bounded(body, at, 0..=256));
+    if final_role != role {
         return Ok(None);
     }
     at = next;
@@ -998,16 +1027,73 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let reference = take_owned_reference(body, &mut at);
-    xref_some!(reference);
+    let (target, type_guid) =
+        xref_some!(xref_some!(take_owned_reference(body, &mut at)).into_local());
     Ok(
         (at == body.len()).then_some(RepeatedTargetPlacementDetails {
+            carrier_record_index: xref_some!(View::u64_le_at(body, 7)),
+            owner: XrefLocalOwner { target, type_guid },
             link_names,
             transform,
             role,
-            role_offset: role_offset + 4,
+            role_offset,
         }),
     )
+}
+
+fn same_external_target(
+    left: &Reference<String, String>,
+    right: &Reference<String, String>,
+) -> bool {
+    match (left, right) {
+        (
+            Reference::CrossDocument {
+                target: a,
+                segment: sa,
+                asset_guid: aa,
+                target_type_guid: ta,
+                link_name: ra,
+                version: va,
+                ..
+            },
+            Reference::CrossDocument {
+                target: b,
+                segment: sb,
+                asset_guid: ab,
+                target_type_guid: tb,
+                link_name: rb,
+                version: vb,
+                ..
+            },
+        ) => {
+            a == b
+                && sa == sb
+                && aa.eq_ignore_ascii_case(ab)
+                && ta.eq_ignore_ascii_case(tb)
+                && ra == rb
+                && match (va, vb) {
+                    (None, None) => true,
+                    (Some((ka, ua)), Some((kb, ub))) => ka.eq_ignore_ascii_case(kb) && ua == ub,
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
+}
+
+fn reference_role_offset(body: &[u8], start: usize) -> Option<usize> {
+    let mut at = start.checked_add(9)?;
+    if View::u32_le_at(body, at) == Some(36) {
+        at = lp_ascii_strict(body, at, 36..=36)?.1;
+    }
+    at = at.checked_add(5)?;
+    at = lp_utf16_bounded_view(body, at, 0..=64)?.1.checked_add(1)?;
+    if let Some((guid, end)) = lp_ascii_strict(body, at, 36..=36) {
+        if crate::bytes::is_guid_hyphenated(guid) {
+            at = end;
+        }
+    }
+    at.checked_add(4)
 }
 
 /// Bind a repeated-target occurrence carrier to a Component Insert scope
@@ -1295,6 +1381,8 @@ fn modern_occurrence_placement(
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
             return Some(OccurrencePlacement {
+                carrier_record_index: View::u64_le_at(body, 7)?,
+                owner: None,
                 link_names,
 
                 transform,
@@ -1510,14 +1598,20 @@ fn take_legacy_occurrence_reference<'a>(
 
 /// Parse the target-path prefix shared by every occurrence-placement form.
 fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, usize)> {
-    // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
-    // LP-ASCII record name.
-    let class_tag = lp_ascii_strict(body, 0, 3..=3);
-    let (_, after_tag) = class_tag?;
+    occurrence_target_path(body).map(|(names, _, end)| (names, end))
+}
+
+type OccurrenceTargetPath = (Vec<String>, Reference<String, String>, usize);
+
+fn occurrence_target_path(body: &[u8]) -> Option<OccurrenceTargetPath> {
+    let (names, target, at) = occurrence_path_elements(body)?;
+    (body.get(at) == Some(&0)).then_some((names, target, at + 1))
+}
+
+fn occurrence_path_elements(body: &[u8]) -> Option<OccurrenceTargetPath> {
+    let (_, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
     let mut at = after_tag.checked_add(8)?;
-    let name = lp_ascii_strict(body, at, 0..=256);
-    let (_, after_name) = name?;
-    at = after_name;
+    at = lp_ascii_strict(body, at, 0..=256)?.1;
     if body.get(at) != Some(&1) {
         return None;
     }
@@ -1528,26 +1622,17 @@ fn occurrence_path(body: &[u8]) -> Option<(Vec<String>, usize)> {
     }
     at += 4;
     let mut link_names = Vec::new();
+    let mut target = None;
     for _ in 0..count {
-        let element = take_owned_reference(body, &mut at);
-        let element = element?;
+        let element = take_owned_reference(body, &mut at)?;
         if let Some(link_name) = element.link_name() {
-            let name = {
-                {
-                    link_name.to_owned()
-                }
-            };
-            {}
-            link_names.push(name);
+            link_names.push(link_name.to_owned());
         }
+        target = Some(element);
         View::u32_le_at(body, at)?;
         at += 4;
     }
-    if body.get(at) != Some(&0) {
-        return None;
-    }
-    at += 1;
-    Some((link_names, at))
+    Some((link_names, target?, at))
 }
 
 /// Consume the three reference runs that close a placement, returning `Some`

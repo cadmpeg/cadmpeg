@@ -5,6 +5,13 @@ use super::identity::DesignAffineTransform;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, XrefPlacementTransform, "transform");
+cadmpeg_core::named_optional_field!(deserialize_type_guid, String, "type_guid");
+cadmpeg_core::named_optional_field!(deserialize_owner, XrefLocalOwner, "owner");
+cadmpeg_core::named_optional_field!(
+    deserialize_placement_source,
+    XrefPlacementSource,
+    "placement_source"
+);
 const EPS_XREF_PLACEMENT_RIGID_E8: f64 = 1.0e-8;
 
 fn valid_xref_placement_transform(transform: &[[f64; 4]; 4]) -> bool {
@@ -127,6 +134,29 @@ pub(crate) struct XrefDesign {
     pub(crate) version_urn: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct XrefLocalOwner {
+    pub(crate) target: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_type_guid"
+    )]
+    pub(crate) type_guid: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct XrefPlacementSource {
+    pub(crate) stream: String,
+    pub(crate) carrier_record_index: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner"
+    )]
+    pub(crate) owner: Option<XrefLocalOwner>,
+}
+
 /// One outgoing XREF placement of the top-level `RedirectionsStream.dat` table
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -139,13 +169,19 @@ pub(crate) struct XrefReference {
     /// container reference's occurrence role.
     #[serde(default)]
     pub(crate) occurrence_ordinal: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_placement_source"
+    )]
+    pub(crate) placement_source: Option<XrefPlacementSource>,
     /// The referencing document's own file name.
     pub(crate) from: RequiredXrefText,
     /// The target design entry's `target_file_name`.
     pub(crate) relative_path: RequiredXrefText,
-    /// Occurrence-role GUID joining this reference to the Design-segment
+    /// Occurrence role joining this reference to the Design-segment
     /// `DcXRefPCIFeature` record and the ACT GUID pool.
-    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
+    /// A role can be a GUID, a GUID with a URN suffix, or a version URN.
     pub(crate) neutron_role: RequiredXrefText,
     /// The independent `neutronData` property value. It is retained exactly
     /// and is never inferred from or aliased to `neutron_role`.

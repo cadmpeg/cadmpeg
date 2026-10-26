@@ -30,8 +30,8 @@ pub(crate) struct DesignComponentInsertConstruction {
     /// Eight-byte occurrence identity carried by the scope prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) occurrence_identity: Option<u64>,
-    /// Occurrence-role GUID joining the carrier to the external-reference table.
-    /// The role also accepts a GUID prefix followed by an underscore and URN, beyond relaxed GUID text.
+    /// Occurrence role joining the carrier to the external-reference table.
+    /// A role can be a GUID, a GUID with a URN suffix, or a version URN.
     pub(crate) neutron_role: String,
     /// Byte offset of the occurrence-role string payload.
     pub(crate) neutron_role_offset: u64,

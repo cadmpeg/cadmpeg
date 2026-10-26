@@ -11,6 +11,7 @@ fn placement_table() -> crate::xref::XrefTable {
             id: "f3d:xref:reference#4-occurrence-0".into(),
             ordinal: 4,
             occurrence_ordinal: 0,
+            placement_source: None,
             from: "root.f3d".to_owned().try_into().unwrap(),
             relative_path: "part.f3d".to_owned().try_into().unwrap(),
             neutron_role: "role-guid".to_owned().try_into().unwrap(),

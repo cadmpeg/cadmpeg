@@ -3782,7 +3782,7 @@ fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
 }
 
 /// Report typed occurrence placements whose role path was readable but whose
-/// generation-specific payload did not close and had no valid carrier.
+/// generation-specific payload did not close.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
     if table.placement_metadata_missing && !table.references.is_empty() {
         push_loss_vec(
@@ -3791,28 +3791,32 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
             format_args!("external-reference placements were not inferred from Design streams without a paired MetaStream type table and record index"),
         );
     }
-    for ordinal in &table.placement_failures {
-        let Some(reference) = table
+    for failure in &table.placement_failures {
+        let target = table
             .references
             .iter()
-            .find(|reference| reference.ordinal == *ordinal)
-        else {
-            continue;
-        };
+            .find(|reference| {
+                failure
+                    .link_names
+                    .iter()
+                    .any(|role| role == reference.neutron_role.as_str())
+            })
+            .map_or("an unresolved target", |reference| {
+                reference.relative_path.as_str()
+            });
         push_loss_vec(
             &mut report.losses,
             F3dLossCode::XrefPlacementUndecoded,
             format_args!(
-                "external occurrence {} for role {} has a typed placement record that did not \
-                 decode under its generation grammar; no valid placement carrier was available",
-                reference.relative_path, reference.neutron_role
+                "external occurrence {} has typed placement carrier {:?} for roles {:?} that did not close under its generation grammar",
+                target, failure.carrier_record_index, failure.link_names
             ),
         );
     }
 }
 
 /// Report structured placements that were ignored because a scope-bound
-/// Component Insert carrier supplied the occurrence transform for the role.
+/// Component Insert construction supplied the transform for the same carrier.
 fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
     for override_ in &table.placement_overrides {
         let ordinal = override_.ordinal;
