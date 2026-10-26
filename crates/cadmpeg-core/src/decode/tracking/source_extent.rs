@@ -6,12 +6,21 @@ use crate::decode::{u64_from_index, ByteRange, DecodeContext, PartCapture, View}
 use crate::CodecError;
 
 impl SessionHandle<'_> {
-    fn working_part_extent(self, extent: View<'_>) -> Result<PartCapture, CodecError> {
+    fn working_part_extent(
+        self,
+        extent: View<'_>,
+        activate: bool,
+    ) -> Result<PartCapture, CodecError> {
         self.session(|session| {
             if session.sealed {
                 return Err(CodecError::malformed(
                     "record captures have already been extracted",
                 ));
+            }
+            if activate {
+                // This is the same real session activation as retained captures;
+                // only the transient copied names below use working storage.
+                session.activate()?;
             }
             if !session.activated {
                 return Err(CodecError::malformed(
@@ -86,6 +95,22 @@ impl SessionHandle<'_> {
 }
 
 impl DecodeContext<'_> {
+    /// Validate a framing extent with temporary working names, activating the
+    /// same actual source tracking session when it is cold.
+    ///
+    /// The first activation retains only the real shared tracking infrastructure.
+    /// Repeated extent/owner names are working storage. No source bytes, semantic
+    /// reads, record captures, stream registration or fresh account are invented.
+    /// Unlike `working_part_extent`, this explicitly permits cold activation.
+    ///
+    /// # Errors
+    /// Preserves the retained capture's foreign/detached, sealed, source-bound,
+    /// provenance, caller-account allocation and first-refusal checks.
+    pub fn framing_part_extent(&self, extent: View<'_>) -> Result<PartCapture, CodecError> {
+        self.require_source(extent)?;
+        self.budget.working_part_extent(extent, true)
+    }
+
     /// Capture an actual part extent using transient working allocations.
     ///
     /// Uses the same canonical stream/domain and actual enclosing record proof
@@ -98,7 +123,7 @@ impl DecodeContext<'_> {
     /// invalid source extents, working allocation failure and prior refusal.
     pub fn working_part_extent(&self, extent: View<'_>) -> Result<PartCapture, CodecError> {
         self.require_source(extent)?;
-        self.budget.working_part_extent(extent)
+        self.budget.working_part_extent(extent, false)
     }
 }
 

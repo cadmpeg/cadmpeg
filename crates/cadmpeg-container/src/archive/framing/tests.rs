@@ -267,14 +267,124 @@ fn framing_rejects_foreign_sources_and_uses_the_original_retained_budget() {
     assert!(snapshot.framing_views(&foreign).is_err());
     let detached = ArchiveSnapshot::new(&ctx, View::over_retained(&bytes)).unwrap();
     assert!(detached.framing_views(&ctx).is_err());
+    // #214 working-storage rule: admit the genuine source infrastructure before
+    // filling retained output, then borrowed framing scratch must still work.
+    ctx.framing_part_extent(root).unwrap();
     ctx.retain_bytes(
         ctx.retained_bytes_available(),
         "exhaust retained framing storage",
     )
     .unwrap();
+    let views = snapshot.framing_views(&ctx).unwrap();
+    assert_eq!(
+        ranges(&views),
+        BTreeSet::from([
+            (0, 4),
+            (6, 8),
+            (18, 22),
+            (26, 30),
+            (35, 39),
+            (43, 45),
+            (55, 69),
+            (77, 81),
+            (82, 104),
+        ])
+    );
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    assert!(ctx.resource_refusal().is_none());
+    drop(views);
+    assert_eq!(ctx.retained_bytes_available(), 0);
     assert!(matches!(
-        snapshot.framing_views(&ctx),
+        ctx.retain_bytes(1, "real retained output"),
         Err(CodecError::ResourceLimit(_))
     ));
-    assert!(ctx.finish_session().is_err());
+    let first = ctx.resource_refusal().unwrap();
+    assert!(
+        matches!(snapshot.framing_views(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == first)
+    );
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == first)
+    );
+}
+
+#[test]
+fn framing_working_vectors_preserve_full_retained_output_while_live_and_after_drop() {
+    let zip = zip_fixture::archive(&[RawEntry::stored("e", b"data")]);
+    let mut bytes = b"pre".to_vec();
+    bytes.extend_from_slice(&zip);
+    let end = bytes.len();
+    bytes.extend_from_slice(b"tail");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let source = root.child(3, end).unwrap();
+    let snapshot = ArchiveSnapshot::new(&ctx, source).unwrap();
+    ctx.framing_part_extent(source).unwrap();
+    ctx.retain_bytes(ctx.retained_bytes_available(), "actual held output")
+        .unwrap();
+    let views = snapshot.framing_views(&ctx).unwrap();
+    let expected = [
+        (0, 4),
+        (6, 8),
+        (18, 22),
+        (26, 30),
+        (35, 39),
+        (43, 45),
+        (55, 69),
+        (77, 81),
+        (82, 104),
+    ]
+    .map(|(start, end)| (3 + start, 3 + end));
+    assert_eq!(ranges(&views), BTreeSet::from(expected));
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    assert!(ctx.resource_refusal().is_none());
+    for view in &views {
+        assert_eq!(
+            view.window().as_ptr(),
+            root.child(view.start(), view.end())
+                .unwrap()
+                .window()
+                .as_ptr()
+        );
+    }
+    drop(views);
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    assert!(ctx.resource_refusal().is_none());
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn framing_working_storage_preserves_the_actual_caller_first_refusal() {
+    use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceFailure};
+    let bytes = zip_fixture::archive(&[RawEntry::stored("e", b"data")]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let snapshot = ArchiveSnapshot::new(&ctx, root).unwrap();
+    ctx.framing_part_extent(root).unwrap();
+    ctx.retain_bytes(ctx.retained_bytes_available(), "actual held output")
+        .unwrap();
+    let CodecError::ResourceLimit(first) = ctx.retain_bytes(1, "real retained output").unwrap_err()
+    else {
+        panic!("actual retained ceiling")
+    };
+    assert_eq!(first.scope, LimitScope::Session);
+    assert_eq!(first.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(first.reason, ResourceFailure::BudgetExceeded);
+    assert_eq!(first.limit, 4096);
+    assert_eq!(first.used, 4096);
+    assert_eq!(first.additional, 1);
+    assert_eq!(first.operation, "real retained output");
+    assert!(
+        matches!(snapshot.framing_views(&ctx), Err(CodecError::ResourceLimit(actual)) if actual == first)
+    );
+    assert_eq!(ctx.resource_refusal(), Some(first));
+    drop(snapshot);
+    assert_eq!(ctx.retained_bytes_available(), 0);
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == first)
+    );
 }

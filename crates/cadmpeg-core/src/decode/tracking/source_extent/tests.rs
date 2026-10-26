@@ -138,3 +138,95 @@ fn named_alias_inside_an_actual_ancestor_record_uses_only_working_provenance_scr
     assert_eq!(captures[0].reads()["file"], [0..11]);
     assert!(ctx.take_record_captures().is_err());
 }
+
+#[test]
+fn framing_extent_activates_the_actual_source_once_with_only_working_names() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abcdef", &arena, &DecodePolicy::service()).unwrap();
+    assert!(ctx.working_part_extent(root).is_err());
+    let cold_available = ctx.retained_bytes_available();
+    let child = root.child(1, 4).unwrap();
+    let first = ctx.framing_part_extent(child).unwrap();
+    assert_eq!(first.stream(), "file");
+    assert_eq!(first.offset(), 1);
+    assert_eq!(first.byte_len(), 3);
+    assert_eq!(first.record_id(), None);
+    let activated_available = ctx.retained_bytes_available();
+    assert!(
+        activated_available < cold_available,
+        "actual source tracking infrastructure is admitted once"
+    );
+    let second = ctx.framing_part_extent(child).unwrap();
+    assert_eq!(second.stream(), "file");
+    assert_eq!(second.offset(), 1);
+    assert_eq!(second.byte_len(), 3);
+    assert_eq!(ctx.retained_bytes_available(), activated_available);
+    drop(first);
+    drop(second);
+    assert_eq!(ctx.retained_bytes_available(), activated_available);
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
+fn framing_extent_preserves_the_actual_owner_and_first_caller_refusal() {
+    use crate::decode::{LimitScope, ResourceDimension, ResourceFailure};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4096;
+    let (ctx, root) = DecodeContext::from_root_bytes(b"abcdef", &arena, &policy).unwrap();
+    let mut first = None;
+    let result: Result<(), CodecError> = ctx.record("actual-source-owner", root, || {
+        ctx.retain_bytes(ctx.retained_bytes_available(), "actual held output")?;
+        let capture = ctx.framing_part_extent(root.child(1, 4).unwrap())?;
+        assert_eq!(capture.stream(), "file");
+        assert_eq!(capture.offset(), 1);
+        assert_eq!(capture.byte_len(), 3);
+        assert_eq!(capture.record_id(), Some("actual-source-owner"));
+        assert_eq!(ctx.retained_bytes_available(), 0);
+        drop(capture);
+        assert_eq!(ctx.retained_bytes_available(), 0);
+        let error = ctx.retain_bytes(1, "real retained output").unwrap_err();
+        let CodecError::ResourceLimit(refusal) = error else { panic!("actual retained ceiling") };
+        assert_eq!(refusal.scope, LimitScope::Session);
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.reason, ResourceFailure::BudgetExceeded);
+        assert_eq!(refusal.limit, 4096);
+        assert_eq!(refusal.used, 4096);
+        assert_eq!(refusal.additional, 1);
+        assert_eq!(refusal.operation, "real retained output");
+        assert!(matches!(ctx.framing_part_extent(root), Err(CodecError::ResourceLimit(actual)) if actual == refusal));
+        first = Some(refusal);
+        Err(CodecError::ResourceLimit(refusal))
+    });
+    let refusal = first.unwrap();
+    assert!(matches!(result, Err(CodecError::ResourceLimit(actual)) if actual == refusal));
+    assert_eq!(ctx.resource_refusal(), Some(refusal));
+    assert!(
+        matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+    );
+}
+
+#[test]
+fn framing_extent_never_activates_foreign_sources_or_reopens_extracted_tracking() {
+    let arena = DecodeArena::new();
+    let foreign_arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"abcdef", &arena, &DecodePolicy::service()).unwrap();
+    let (_, foreign) =
+        DecodeContext::from_root_bytes(b"abcdef", &foreign_arena, &DecodePolicy::service())
+            .unwrap();
+    let available = ctx.retained_bytes_available();
+    assert!(ctx.framing_part_extent(foreign).is_err());
+    assert!(ctx
+        .framing_part_extent(View::over_retained(b"abcdef"))
+        .is_err());
+    assert_eq!(ctx.retained_bytes_available(), available);
+    assert!(ctx.working_part_extent(root).is_err());
+    assert!(ctx.resource_refusal().is_none());
+    ctx.framing_part_extent(root).unwrap();
+    assert!(ctx.take_record_captures().unwrap().is_empty());
+    assert!(ctx.framing_part_extent(root).is_err());
+    assert!(ctx.working_part_extent(root).is_err());
+}

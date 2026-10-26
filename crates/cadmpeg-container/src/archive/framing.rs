@@ -10,6 +10,8 @@ const STORAGE: &str = "ZIP framing view storage";
 
 impl<'a> ArchiveSnapshot<'a> {
     /// Returns the exact source views occupied by ZIP framing fields.
+    /// Ordering and borrowed-view descriptors are temporary working storage,
+    /// not retained source bytes or output.
     ///
     /// Names, methods, CRCs, comments, payloads and ordinary extra-field data
     /// are not framing. ZIP64 scalar fields and fixed footer prefixes follow
@@ -19,16 +21,13 @@ impl<'a> ArchiveSnapshot<'a> {
     ///
     /// # Errors
     /// Refuses foreign or detached source views, invalid structural boundaries,
-    /// and the caller's retained-storage or allocation limits.
+    /// and the caller's first refusal or working allocation failure. The real
+    /// tracking infrastructure is admitted once on this caller's account.
     pub fn framing_views(&self, ctx: &DecodeContext<'a>) -> Result<Vec<View<'a>>, CodecError> {
-        ctx.capture_part_extent(self.root)?;
-        let order_bytes = self
-            .entries
-            .len()
-            .checked_mul(size_of::<usize>())
-            .ok_or_else(|| CodecError::malformed("ZIP framing ordering size overflows"))?;
-        ctx.retain_bytes(u64_from_index(order_bytes), STORAGE)?;
-        let mut order = ctx.alloc_filled(self.entries.len(), 0_usize, STORAGE)?;
+        ctx.framing_part_extent(self.root)?;
+        let mut order = Vec::new();
+        ctx.reserve_working(&mut order, self.entries.len(), STORAGE)?;
+        order.resize(self.entries.len(), 0_usize);
         for (index, value) in order.iter_mut().enumerate() {
             *value = index;
         }
@@ -40,11 +39,9 @@ impl<'a> ArchiveSnapshot<'a> {
                 .ok_or_else(|| CodecError::malformed("ZIP framing view count overflows"))?;
             Ok(())
         })?;
-        let bytes = count
-            .checked_mul(size_of::<View<'_>>())
-            .ok_or_else(|| CodecError::malformed("ZIP framing view storage overflows"))?;
-        ctx.retain_bytes(u64_from_index(bytes), STORAGE)?;
-        let mut views = ctx.alloc_filled(count, self.root, STORAGE)?;
+        let mut views = Vec::new();
+        ctx.reserve_working(&mut views, count, STORAGE)?;
+        views.resize(count, self.root);
         let mut at = 0;
         walk(self, &order, &mut |view| {
             let output = views
