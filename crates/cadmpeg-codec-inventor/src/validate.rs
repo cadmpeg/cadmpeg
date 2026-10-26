@@ -64,6 +64,7 @@ const ARENAS: &[&str] = &[
     "pm_app_default_styles",
     "pm_app_rendering_styles",
     "pm_dc_expressions",
+    "pm_dc_feature_dimensions",
     "pm_dc_feature_labels",
     "pm_dc_feature_properties",
     "pm_dc_feature_terminators",
@@ -963,6 +964,31 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 link,
             )
         }));
+    unique(
+        findings,
+        data.pm_dc_feature_dimensions.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
+        "Inventor PmDc feature dimension",
+    );
+    for dimension in &data.pm_dc_feature_dimensions {
+        let token = dimension.identity.segment_token.as_str();
+        if raw.get(&(token, dimension.identity.record_ordinal))
+            != Some(&dimension.identity.type_id.as_str())
+            || dimension.identity.type_id.as_str()
+                != crate::pmdc::type_id_string(crate::feature::revolve::DIMENSION_TYPE)
+            || !resolves(token, dimension.parameter.index())
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor feature dimension record or reference does not resolve".into(),
+                Some(dimension.id()),
+            ));
+        }
+    }
     for property in &data.pm_dc_feature_properties {
         let mut references = vec![
             property.header.next.index(),
@@ -1290,7 +1316,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 record.type_id.as_str(),
             )
         }));
-    let thicken_properties =
+    let feature_properties =
         cadmpeg_core::decode::unique_index(data.pm_dc_feature_properties.iter().map(|property| {
             (
                 (
@@ -1300,7 +1326,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 property,
             )
         }));
-    let thicken_parameters =
+    let feature_parameters =
         cadmpeg_core::decode::unique_index(data.pm_dc_parameters.iter().map(|parameter| {
             (
                 (
@@ -1310,12 +1336,22 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 parameter,
             )
         }));
-    let thicken_values = cadmpeg_core::decode::unique_index(
+    let parameter_values = cadmpeg_core::decode::unique_index(
         ir.model
             .parameters
             .iter()
             .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter))),
     );
+    let revolve_dimensions =
+        cadmpeg_core::decode::unique_index(data.pm_dc_feature_dimensions.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record,
+            )
+        }));
     for feature in &ir.model.features {
         if is_flat_pattern_feature(feature)
             && feature
@@ -1406,7 +1442,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                         .references()
                         .get(slot)?
                         .record_ordinal()?;
-                    thicken_properties.get(&(token, ordinal))?.as_ref().copied()
+                    feature_properties.get(&(token, ordinal))?.as_ref().copied()
                 },
                 |slot| {
                     let ordinal = raw_feature
@@ -1414,9 +1450,9 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                         .references()
                         .get(slot)?
                         .record_ordinal()?;
-                    let parameter = thicken_parameters.get(&(token, ordinal))?.as_ref()?;
+                    let parameter = feature_parameters.get(&(token, ordinal))?.as_ref()?;
                     let native = parameter.id();
-                    let value = thicken_values
+                    let value = parameter_values
                         .get(native.as_str())?
                         .as_ref()?
                         .value
@@ -1434,6 +1470,51 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral thicken operands do not match their PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Revolve { construction, op },
+        ) = definition
+        {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::revolve::operands(
+                raw_feature,
+                |slot| {
+                    let ordinal = raw_feature
+                        .properties
+                        .references()
+                        .get(slot)?
+                        .record_ordinal()?;
+                    feature_properties.get(&(token, ordinal))?.as_ref().copied()
+                },
+                |slot| {
+                    let ordinal = raw_feature
+                        .properties
+                        .references()
+                        .get(slot)?
+                        .record_ordinal()?;
+                    let raw = feature_parameters.get(&(token, ordinal))?.as_ref()?;
+                    let native = raw.id();
+                    match parameter_values
+                        .get(native.as_str())?
+                        .as_ref()?
+                        .value
+                        .as_ref()?
+                    {
+                        cadmpeg_ir::features::ParameterValue::Angle(angle) => Some(*angle),
+                        _ => None,
+                    }
+                },
+                |ordinal| revolve_dimensions.get(&(token, ordinal))?.as_ref().copied(),
+            );
+            if !expected.is_ok_and(|expected| {
+                crate::feature::revolve::matches(&expected, construction, *op)
+            }) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral revolve operands do not match their PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }
@@ -1927,6 +2008,7 @@ struct NativeData {
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
+    pm_dc_feature_dimensions: Vec<crate::feature::revolve::Dimension>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
@@ -1999,6 +2081,8 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_dc_feature_terminators")?,
             pm_dc_feature_properties: namespace
                 .arena_as_for_decode(ctx, "pm_dc_feature_properties")?,
+            pm_dc_feature_dimensions: namespace
+                .arena_as_for_decode(ctx, "pm_dc_feature_dimensions")?,
             pm_dc_feature_labels: namespace.arena_as_for_decode(ctx, "pm_dc_feature_labels")?,
             pm_dc_entity_style_links: namespace
                 .arena_as_for_decode(ctx, "pm_dc_entity_style_links")?,

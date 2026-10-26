@@ -210,6 +210,7 @@ fn empty_data() -> super::NativeData {
         pm_dc_pattern_features: Vec::new(),
         pm_dc_feature_terminators: Vec::new(),
         pm_dc_feature_properties: Vec::new(),
+        pm_dc_feature_dimensions: Vec::new(),
         pm_dc_feature_labels: Vec::new(),
         pm_dc_entity_style_links: Vec::new(),
         pm_dc_kernel_entity_links: Vec::new(),

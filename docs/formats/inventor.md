@@ -521,9 +521,32 @@ An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for i
 
 In chamfer forms 1 and 2, slot 1 selects the support-face collection. Slot 2 is a length parameter; slot 3 is a second length parameter; slot 10 is an angle parameter in radians. Form 1 uses the slot-2 distance and slot-10 angle. The distance is positive and the angle is strictly between zero and pi. Form 2 uses the two positive lengths in slots 2 and 3. Equal values in those two slots define equal setbacks on both support sides, independent of side order. The native oriented selection consists of the feature record, its slot-0 edge collection, its slot-1 support-face collection, and its slot-5 direction reversal.
 
-A revolve uses slot 0 for its part operation, slot 1 for its boundary patch, slot 2 for its axis, slot 3 for its extent, slot 4 for its angle parameter, slot 7 for its feature dimensions, and slot 17 for the result object collection. The feature label's sole participant identifies the owning planar sketch, and the boundary patch selects its profile as for an extrusion. Extent value 3 is a full revolution; the angle parameter does not apply to it.
+A revolve has 20 property slots. A one-sided closed-profile solid revolve has these slot roles and control values:
+
+| Slot | Property or value |
+| --- | --- |
+| 0 | Part operation, with values 1 through 4 as for an extrusion |
+| 1 | Boundary patch |
+| 2 | Work axis |
+| 3 | Extent enumeration |
+| 4 | Angular parameter, in radians |
+| 5 | Enumeration `c26aa0c728412312abf0728f9d598bc9`, with type value 3 |
+| 6, 8, 13, 14, 15, 18, 19 | Null references |
+| 7 | Feature-dimension list with one dimension of the slot-4 parameter |
+| 9 | Auxiliary enumeration with type value 4 and value 0 |
+| 10 | Boolean true |
+| 11 | Null or repeated slot-1 reference |
+| 12 | Boolean false |
+| 16 | Boolean control of type `284d8790d011f8d10008cabc0663dc09`, with value 0 or 1 |
+| 17 | Result object collection |
+
+The feature label's sole participant identifies the owning planar sketch. The boundary patch selects its profile as for an extrusion. Slot 1 selects the stored profile when slot 11 is null. A non-null slot 11 repeats the same boundary-patch record, including every member of a multi-member patch. It supplies no additional profile selection. Extent value 1 is a fixed angular travel given by slot 4. With slot-5 value 0, the travel is positive rotation about the work-axis span. The angle is greater than zero. Extent value 3 is a full revolution. Its stored slot-4 angle is inactive. The slot-5 enumeration uses the versioned content header, followed by `type_value:i16` and `value:u16`, and ends there. A full revolution has slot-5 value 0 or 1. Both values specify a full turn.
+
+Type `b1377779d2116794a00049803603c8c9` is a feature parameter dimension. It starts with `header_value:u32`, `header_id:u16`, and a type-2 annotation list. The annotation list prefix contains `marker:u32 = 0x30000002` and `item_count:u32`. A nonzero count adds two u32 metadata words and annotation data bytes. A zero count has no metadata or data. The annotation data fills the record up to the nine-byte terminal tail. Its tail contains five annotation bytes and a parameter reference. The terminal parameter reference identifies the parameter that the dimension annotates. The dimension header has no content-header stamps or flags extension.
 
 Type `896cf08ed1113c0460007cb801f31bb0` is a work axis. After the content header it stores `entity_flags:u32` and two u32 values; segment major versions above 21 add one u32 value. A type-2 reference list follows, then an optional u32 `0x203`, two f64 triples, and `state:u8`. The first triple is a point on the axis and the second is the span from that point to the other end of the axis segment, both in internal centimetres. The axis direction is the span direction. Origin work axes span from −1 to 1 along their direction.
+
+The revolve work-axis form has zero entity flags, zero u32 values, an empty reference list, no `0x203` marker, state 0 or 1, and a nonzero span.
 
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 7, 8, 9, 16, 17, 21, and 24 identify its center-point selection, transform, extent, direction, Boolean, placement, and result object collection. Slots 26 and 27 optionally select Boolean properties. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The bore diameter is positive. A counterbore or spotface has a cylindrical entry recess with the slot-3 diameter and slot-4 depth. The recess diameter exceeds the bore diameter, and its depth is positive. For a drilled hole, counterbore, or spotface, the slot-6 drill-point angle defines the bottom: zero gives a flat bottom; a nonzero value is an included angle strictly between zero and pi. A countersink uses the slot-3 entry diameter and slot-5 included angle. The entry diameter exceeds the bore diameter, and the included angle is strictly between zero and pi.
 

@@ -2201,3 +2201,87 @@ type = "array"
 source = "spec"
 anchor = "Family `INV_NMX_SWEEPGENERATED_TAG` then stores"
 note = "Family-selected integer tokens."
+
+[[record]]
+name = "pm_dc_feature_dimension_prefix"
+kind = "byte"
+section = "13"
+anchor = "Type `b1377779d2116794a00049803603c8c9` is a feature parameter dimension"
+size = 6
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/revolve.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value:u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id:u16"
+
+[[record]]
+name = "pm_dc_feature_dimension_tail"
+kind = "byte"
+section = "13"
+anchor = "Its tail contains five annotation bytes and a parameter reference"
+size = 9
+note = "The tail ends the record after the annotation list data."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/revolve.rs"
+
+[[record.field]]
+name = "annotation"
+offset = 0
+type = "bytes[5]"
+endianness = "n/a"
+source = "spec"
+anchor = "five annotation bytes"
+
+[[record.field]]
+name = "parameter"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "parameter reference"
+
+[[record]]
+name = "pm_dc_feature_dimension_list_prefix"
+kind = "byte"
+section = "13"
+anchor = "The annotation list prefix contains"
+size = 8
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/revolve.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "marker:u32 = 0x30000002"
+value = 0x30000002
+
+[[record.field]]
+name = "item_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "item_count:u32"
+
+[[record]]
+name = "pm_dc_feature_dimension_list_metadata"
+kind = "byte"
+section = "13"
+anchor = "A nonzero count adds two u32 metadata words"
+size = 8
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/revolve.rs"
+
+[[record.field]]
+name = "values"
+offset = 0
+type = "u32[2]"
+source = "spec"
+anchor = "two u32 metadata words"

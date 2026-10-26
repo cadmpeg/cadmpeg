@@ -495,6 +495,11 @@ fn decode_container<'a>(
         "pm_dc_feature_properties",
         &feature_inventory.properties,
     )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_feature_dimensions",
+        &feature_inventory.dimensions,
+    )?;
     namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
     namespace.set_arena(
         ctx,
@@ -784,6 +789,7 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(unresolved.revolve_losses);
         losses.extend(crate::feature::loft_sweep::retained_control_losses(
             ir.model
                 .features
@@ -1285,6 +1291,7 @@ struct UnresolvedDesign {
     feature_states: usize,
     profile_bodies: usize,
     sketch_construction: usize,
+    revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Projects the design inventories into the document's design arenas.
@@ -1357,6 +1364,7 @@ fn project_design(
         feature_states: features.unresolved_states,
         profile_bodies: profile_bodies.undecoded,
         sketch_construction: sketches.unresolved_construction,
+        revolve_losses: features.revolve_losses,
     })
 }
 
