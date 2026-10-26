@@ -83,6 +83,51 @@ fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
             && finding.message == "Fusion Design parameter scope has an invalid paired frame"
     }));
 
+    f3d_native_mut(&mut ir)
+        .xref_references
+        .push(crate::records::xref::XrefReference {
+            id: "f3d:xref:reference#0".into(),
+            ordinal: 0,
+            occurrence_ordinal: 0,
+            placement_source: Some(crate::records::xref::XrefPlacementSource {
+                stream: stream.into(),
+                carrier_record_index: 166,
+                owner: None,
+            }),
+            from: "root.f3d".to_owned().try_into().unwrap(),
+            relative_path: "part.f3d".to_owned().try_into().unwrap(),
+            neutron_role: "cccccccc-dddd-eeee-ffff-000000000000"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            neutron_data: String::new(),
+            transform: Some(
+                cadmpeg_ir::transform::Transform::identity()
+                    .rows()
+                    .try_into()
+                    .unwrap(),
+            ),
+        });
+    for (carrier, rejected) in [(166, false), (168, true)] {
+        f3d_native_mut(&mut ir).xref_references[0]
+            .placement_source
+            .as_mut()
+            .unwrap()
+            .carrier_record_index = carrier;
+        let findings = crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native(ctx, &ir).unwrap()
+        });
+        assert_eq!(
+            findings.iter().any(|finding| {
+                finding.entity.as_deref() == Some(scope_id.as_str())
+                    && finding.message
+                        == "Fusion Design parameter scope has an invalid paired frame"
+            }),
+            rejected
+        );
+    }
+    f3d_native_mut(&mut ir).xref_references.clear();
+
     f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag =
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
     let findings = crate::test_support::with_decode_context(|ctx| {
@@ -92,4 +137,23 @@ fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
         finding.entity.as_deref() == Some(scope_id.as_str())
             && finding.message == "Fusion Design parameter scope has an invalid paired frame"
     }));
+}
+
+#[test]
+fn component_insert_roles_accept_qualified_strings_within_the_utf16_bound() {
+    let guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    for role in [
+        guid.to_owned(),
+        format!("{guid}_urn:example:component"),
+        "urn:example:component".to_owned(),
+    ] {
+        assert!(super::super::valid_component_insert_role(&role));
+    }
+    for role in [
+        String::new(),
+        "invalid".to_owned(),
+        format!("urn:{}", "x".repeat(253)),
+    ] {
+        assert!(!super::super::valid_component_insert_role(&role));
+    }
 }

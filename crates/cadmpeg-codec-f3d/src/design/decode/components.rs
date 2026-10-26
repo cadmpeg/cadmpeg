@@ -355,7 +355,7 @@ fn exact_component_occurrence(
 }
 
 /// Instance name of the occurrence-placement record that places the root component.
-const ROOT_INSTANCE_NAME: &[u8] = b"rootInstance";
+pub(crate) const ROOT_INSTANCE_NAME: &[u8] = b"rootInstance";
 
 /// Naming space of one local component definition.
 #[derive(Debug, Clone, PartialEq)]

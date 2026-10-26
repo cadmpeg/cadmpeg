@@ -191,7 +191,7 @@ pub(crate) enum F3dLossCode {
     MeshAttributeNotTransferred,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
-    /// A typed occurrence placement named a role but failed its payload grammar.
+    /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,

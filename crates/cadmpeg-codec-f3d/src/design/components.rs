@@ -926,14 +926,15 @@ impl ComponentInserts {
             let Some(construction) = scope.component_insert_construction() else {
                 continue;
             };
-            let reference = crate::xref::component_insert_reference(references, construction);
+            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            let reference =
+                crate::xref::component_insert_reference(references, stream, construction);
             let Some(authored) = &authored else {
                 if reference.is_none() {
                     inserts.unordered += 1;
                 }
                 continue;
             };
-            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             if !authored.contains_key(&(stream, scope.record_index)) {
                 continue;
             }
@@ -1951,6 +1952,11 @@ mod tests {
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
+            placement_source: Some(crate::records::xref::XrefPlacementSource {
+                stream: STREAM.into(),
+                carrier_record_index: 52,
+                owner: None,
+            }),
             from: "root.f3d".to_owned().try_into().unwrap(),
             relative_path: "part.f3d".to_owned().try_into().unwrap(),
             neutron_role: "resolved-role".to_owned().try_into().unwrap(),

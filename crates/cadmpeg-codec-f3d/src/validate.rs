@@ -95,6 +95,17 @@ fn rigid_alignment_scalars_hold(
         || (alignment.angle() == 0.0 && alignment.offset() == [0.0; 3])
 }
 
+fn valid_component_insert_role(role: &str) -> bool {
+    role.encode_utf16().count() <= 256
+        && (crate::bytes::is_guid_relaxed(role)
+            || role.starts_with("urn:")
+            || (crate::bytes::is_guid_prefix(role)
+                && role.as_bytes().get(36) == Some(&b'_')
+                && role
+                    .get(37..)
+                    .is_some_and(|suffix| suffix.starts_with("urn:"))))
+}
+
 /// A rigid group whose operands were read keeps one member after its first
 /// two for each locator its frame stores, each taking the locator reference
 /// that follows the previous one, with the frame its wide locator carries. A
@@ -2846,13 +2857,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     }
                     _ => false,
                 };
-                let role_valid = crate::bytes::is_guid_relaxed(&construction.neutron_role)
-                    || (crate::bytes::is_guid_prefix(&construction.neutron_role)
-                        && construction.neutron_role.as_bytes().get(36) == Some(&b'_')
-                        && construction
-                            .neutron_role
-                            .get(37..)
-                            .is_some_and(|suffix| suffix.starts_with("urn:")));
+                let role_valid = valid_component_insert_role(&construction.neutron_role);
                 scope
                     .reference_members()
                     .values()
@@ -2867,13 +2872,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             .is_none_or(|offset| offset < relation.byte_offset)
                     })
                     && (native.xref_references.is_empty()
-                        || native.xref_references.iter().any(|reference| {
-                            reference.neutron_role.as_str() == construction.neutron_role
-                                && reference
-                                    .transform
-                                    .map(records::xref::XrefPlacementTransform::rows)
-                                    == Some((*construction.transform()).into())
-                        }))
+                        || crate::xref::component_insert_reference(
+                            &native.xref_references,
+                            native_stream,
+                            construction,
+                        )
+                        .is_some())
             }
         };
         let copy_paste_component_link = match scope.copy_paste_component_operation() {
