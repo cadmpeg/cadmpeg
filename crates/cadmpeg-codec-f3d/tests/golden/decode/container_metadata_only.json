@@ -217,7 +217,7 @@
           "strict_floor": "warning"
         },
         "severity": "blocking",
-        "message": "ASM BREP geometry was not transferred: the selected stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh` is not a decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). 1 BREP stream(s) were located, but no surfaces, curves, or points were produced."
+        "message": "The selected model BREP stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh` decoded successfully; the selected model has no surfaces, faces, or points."
       },
       {
         "code": {
@@ -228,7 +228,7 @@
           "strict_floor": "warning"
         },
         "severity": "blocking",
-        "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for the selected stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh`."
+        "message": "The selected model BREP stream `FusionAssetName[Active]/Breps.BlobParts/Body1.smbh` decoded successfully; no B-rep topology was transferred."
       },
       {
         "code": {

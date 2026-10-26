@@ -406,17 +406,22 @@ pub(crate) fn docstruct(
     Ok(Some(Docstruct { doc_type, subtype }))
 }
 
-/// A valid assembly document: declared `assembly-design`, at least one
-/// outgoing XREF, and no B-rep streams. Its model is the placement of its
-/// XREF targets.
+/// An outgoing XREF document with explicitly empty model-body maps is an
+/// assembly. Without that map state, require the document-type declaration
+/// and absence of BREP streams.
 pub(crate) fn is_assembly(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: Option<&XrefTable>,
+    model_body_maps_empty: bool,
 ) -> Result<bool, CodecError> {
-    if crate::container::design_breps(scan).next().is_some()
-        || table.is_none_or(|table| table.references.is_empty())
-    {
+    if table.is_none_or(|table| table.references.is_empty()) {
+        return Ok(false);
+    }
+    if model_body_maps_empty {
+        return Ok(true);
+    }
+    if crate::container::design_breps(scan).next().is_some() {
         return Ok(false);
     }
     Ok(docstruct(ctx, scan)?.is_some_and(|docstruct| docstruct.doc_type == "assembly-design"))

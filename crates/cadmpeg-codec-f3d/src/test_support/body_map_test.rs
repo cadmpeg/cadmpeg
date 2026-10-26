@@ -97,3 +97,66 @@ pub(crate) fn f3d_with_breps_and_design(
     zip.write_all(meta).unwrap();
     zip.finish().unwrap().into_inner()
 }
+
+/// An empty modern model map and a named, zero-pair snapshot map.
+pub(crate) fn f3d_with_empty_model_maps(snapshot: &[u8], targets: &[(&str, &str)]) -> Vec<u8> {
+    let mut bulk = Vec::new();
+    bulk.extend_from_slice(&3_u32.to_le_bytes());
+    bulk.extend_from_slice(b"256");
+    bulk.extend_from_slice(&10_u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
+    bulk.extend_from_slice(&0_u32.to_le_bytes());
+    bulk.extend_from_slice(&12_u64.to_le_bytes());
+    bulk.extend_from_slice(&0_u32.to_le_bytes());
+    lp_utf16(&mut bulk, "");
+    let snapshot_offset = u64::try_from(bulk.len()).unwrap();
+    bulk.extend_from_slice(&3_u32.to_le_bytes());
+    bulk.extend_from_slice(b"257");
+    bulk.extend_from_slice(&20_u64.to_le_bytes());
+    bulk.extend_from_slice(&[0; 6]);
+    bulk.extend(super::local_reference(21));
+    bulk.extend_from_slice(&0_u32.to_le_bytes());
+    bulk.extend(super::local_reference(22));
+    bulk.push(0);
+    lp_utf16(&mut bulk, "BREP.snapshot.smb");
+    let meta = design_metastream_with_records(
+        &[
+            (
+                BODY_MAP_CARRIER_TYPE_GUID,
+                BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                BODY_MAP_CARRIER_TYPE_VERSION,
+                DESIGN_MODULE_BODY,
+                &[10],
+            ),
+            (
+                "40DCC3F41D-E94F-B3B1-3E95-9B6ABE572C",
+                BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                0,
+                DESIGN_MODULE_BODY,
+                &[20],
+            ),
+            (
+                "E55D0457-898F-4A8E-B1A5-C85BDBA8794F",
+                "",
+                0,
+                DESIGN_MODULE_BODY,
+                &[21],
+            ),
+            (
+                crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+                "",
+                0,
+                DESIGN_MODULE_BODY,
+                &[22],
+            ),
+        ],
+        &[(10, 0), (20, snapshot_offset)],
+    );
+    let bytes = f3d_with_breps_and_design(&[("BREP.snapshot.smb", snapshot)], &bulk, &meta);
+    let mut zip = zip::ZipWriter::new_append(Cursor::new(bytes)).unwrap();
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    zip.start_file("RedirectionsStream.dat", stored).unwrap();
+    zip.write_all(super::assembly_test::redirections_json("root.f3d", targets).as_bytes())
+        .unwrap();
+    zip.finish().unwrap().into_inner()
+}

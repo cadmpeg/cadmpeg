@@ -1443,6 +1443,62 @@ mod tests {
     }
 
     #[test]
+    fn empty_final_body_set_places_local_and_nested_groups_but_pending_bodies_defer() {
+        let (carriers, components) = nested_fixture();
+        let empty = BTreeSet::new();
+        for bodies in [Some(&empty), None] {
+            let projection = super::project_local_components(&super::LocalComponentSources {
+                scopes: &[],
+                occurrences: &carriers,
+                components: &components,
+                body_bindings: &[],
+                bodies,
+                root_ordinal_start: 0,
+                limits: cadmpeg_core::decode::ResourceLimits::default(),
+            })
+            .unwrap();
+            if bodies.is_some() {
+                assert!(projection.losses.is_empty(), "{:?}", projection.losses);
+                assert_eq!(projection.definitions.len(), 3);
+                assert!(projection
+                    .definitions
+                    .iter()
+                    .all(|definition| definition.bodies.is_empty()));
+                assert_eq!(projection.occurrences.len(), 4);
+                let parent =
+                    crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
+                for child in &carriers[1..] {
+                    let id =
+                        crate::ids::nested_component_occurrence_id(&parent, &child.occurrence_guid);
+                    let occurrence = projection
+                        .occurrences
+                        .iter()
+                        .find(|occurrence| occurrence.id == id)
+                        .unwrap();
+                    assert_eq!(
+                        occurrence.parent,
+                        OccurrenceParent::Occurrence {
+                            occurrence: parent.clone()
+                        }
+                    );
+                }
+            } else {
+                assert!(projection.occurrences.is_empty());
+                assert!(projection.definitions.is_empty());
+                assert!(projection
+                    .losses
+                    .iter()
+                    .all(|loss| loss.code
+                        == crate::loss::F3dLossCode::LocalOccurrenceUnplaced.kind()));
+                assert!(projection
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains("body ownership is not known")));
+            }
+        }
+    }
+
+    #[test]
     fn nested_instances_compose_local_frames_and_repeat_shared_prototypes() {
         const TOLERANCE: f64 = 1e-12;
         let (mut carriers, components) = nested_fixture();
