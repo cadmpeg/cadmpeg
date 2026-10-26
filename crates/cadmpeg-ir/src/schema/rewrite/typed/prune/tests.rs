@@ -83,6 +83,47 @@ fn option_reference_is_required_and_never_cleared_to_none() {
 }
 
 #[test]
+fn missing_expression_operand_and_bound_dimension_drop_the_owner_without_rewriting_values() {
+    use crate::features::{Dimension, Expression, ExpressionToken, ParameterId};
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"test", &arena, &DecodePolicy::service()).expect("context");
+    let missing = ParameterId::try_from("test:native:record#gone").expect("parameter ID");
+    let expression = Expression {
+        tokens: vec![
+            ExpressionToken::Text("2 * ".into()),
+            ExpressionToken::Parameter(missing.clone()),
+            ExpressionToken::Text(" + 1 mm".into()),
+        ],
+    };
+    let mut formulas = vec![expression.clone(), Expression::text("5 mm")];
+    let original = formulas.clone();
+    assert_eq!(
+        formulas
+            .prune_reference_lists(&ctx, &deleted())
+            .expect("formula dependency"),
+        ReferencePruneEffect::DropRequired
+    );
+    assert_eq!(formulas, original);
+    let mut bound: Dimension<crate::scalar::Length> = Dimension::Parameter(missing);
+    let original = bound.clone();
+    assert_eq!(
+        bound
+            .prune_reference_lists(&ctx, &deleted())
+            .expect("dimension dependency"),
+        ReferencePruneEffect::DropRequired
+    );
+    assert_eq!(bound, original);
+    let mut literal = Dimension::Literal(crate::scalar::Length::new(5.0).expect("length"));
+    assert_eq!(
+        literal
+            .prune_reference_lists(&ctx, &deleted())
+            .expect("literal dimension"),
+        ReferencePruneEffect::Unchanged
+    );
+}
+
+#[test]
 fn object_fields_remain_required_inside_or_outside_a_vec() {
     let arena = DecodeArena::new();
     let (ctx, _) =
