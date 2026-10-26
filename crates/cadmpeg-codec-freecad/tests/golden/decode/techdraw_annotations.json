@@ -2758,7 +2758,10 @@
               }
             ]
           },
-          "runtime_type": "TechDraw::DrawViewDimension"
+          "runtime_type": "TechDraw::DrawViewDimension",
+          "text": [
+            "%.2w"
+          ]
         },
         {
           "id": "fcstd:model:semantic-annotation#Note:content",

@@ -189,11 +189,7 @@ pub(crate) fn transfer_neutral(
             order: u32::try_from(order).map_err(|_| {
                 CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
             })?,
-            text: if schema.text.is_some_and(|carrier| carrier.has_format_spec) {
-                Vec::new()
-            } else {
-                record.text.clone()
-            },
+            text: record.text.clone(),
             references: cadmpeg_core::text::named_entries(&record.object, references)?,
             value: None,
             format: match schema.text {
