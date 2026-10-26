@@ -34,16 +34,96 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         ("analysis.dat", b"finite-element-results"),
     ]);
     let result = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("application census");
     let namespace = result.ir().native.namespace("fcstd").expect("native");
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
         .expect("applications");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let root = ctx.name_stream(root, "file").unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let document_view = archive.open(&ctx, "Document.xml").unwrap();
+    let document_capture = ctx.capture_part_extent(document_view).unwrap();
+    let document_bytes = document_view.window();
+    assert_eq!(document_bytes, document.as_bytes());
+    let original_xml = roxmltree::Document::parse(document).unwrap();
+    let object_data = original_xml
+        .root_element()
+        .children()
+        .find(|node| node.has_tag_name("ObjectData"))
+        .unwrap();
+    let declarations = original_xml
+        .root_element()
+        .children()
+        .find(|node| node.has_tag_name("Objects"))
+        .unwrap();
     let xml_bytes = |record: &serde_json::Value| {
-        let start = usize::try_from(record["byte_start"].as_u64().unwrap()).unwrap();
-        let end = usize::try_from(record["byte_end"].as_u64().unwrap()).unwrap();
-        &document.as_bytes()[start..end]
+        let object_id = record["object"].as_str().unwrap();
+        let object = object_data
+            .children()
+            .find(|node| {
+                node.has_tag_name("Object")
+                    && crate::native::native_id("object", node.attribute("name").unwrap())
+                        == object_id
+            })
+            .unwrap();
+        let (id, source) = if let Some(property_id) = record["property"].as_str() {
+            let properties = object
+                .children()
+                .find(|node| node.has_tag_name("Properties"))
+                .unwrap();
+            let property = properties
+                .children()
+                .find(|node| {
+                    node.has_tag_name("Property")
+                        && crate::native::native_child_id(
+                            "property",
+                            object_id,
+                            node.attribute("name").unwrap(),
+                        ) == property_id
+                })
+                .unwrap();
+            (property_id, property)
+        } else {
+            (object_id, object)
+        };
+        let expected = source.range();
+        let home = if record["property"].is_string() {
+            source.range()
+        } else {
+            declarations
+                .children()
+                .find(|node| {
+                    node.has_tag_name("Object")
+                        && crate::native::native_id("object", node.attribute("name").unwrap())
+                            == object_id
+                })
+                .unwrap()
+                .range()
+        };
+        let layout = &result.source_fidelity().record_layout()[id];
+        assert_eq!(layout.stream(), document_capture.stream());
+        assert_eq!(
+            layout.offset(),
+            document_capture.offset() + u64::try_from(home.start).unwrap()
+        );
+        assert_eq!(layout.byte_len(), u64::try_from(home.len()).unwrap());
+        assert_eq!(
+            layout.pointers()["byte_start"],
+            u64::try_from(expected.start).unwrap()
+        );
+        assert_eq!(
+            layout.pointers()["byte_end"],
+            u64::try_from(expected.end).unwrap()
+        );
+        &document_bytes[expected]
     };
     assert_eq!(records.len(), 5);
     let by_domain = records
@@ -63,24 +143,51 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert_eq!(by_domain["Unqualified"]["type_name"], "LocalType");
     let report = &by_domain["Fem"]["property_records"][0];
     assert_eq!(report["object"], by_domain["Fem"]["object"]);
-    assert!(report["byte_start"].as_u64().unwrap() < report["byte_end"].as_u64().unwrap());
+    let report_layout =
+        &result.source_fidelity().record_layout()[report["property"].as_str().unwrap()];
+    assert_ne!(report_layout.byte_len(), 0);
     assert_eq!(
-        report["byte_len"],
+        report_layout.payloads()["raw_xml"].as_ref(),
+        xml_bytes(report)
+    );
+    assert_eq!(
+        report_layout.byte_len(),
         cadmpeg_core::decode::u64_from_index(xml_bytes(report).len())
     );
     assert_eq!(
-        report["sha256"],
-        cadmpeg_ir::hash::sha256_hex(xml_bytes(report))
+        xml_bytes(report),
+        &document.as_bytes()[usize::try_from(report_layout.offset()).unwrap()
+            ..usize::try_from(report_layout.offset() + report_layout.byte_len()).unwrap()]
     );
+    for key in ["data", "byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(report.get(key).is_none());
+    }
     assert_eq!(report["payloads"].as_array().unwrap().len(), 1);
     let payload = &report["payloads"][0];
     assert_eq!(payload["name"], "analysis.dat");
-    assert_eq!(payload["byte_len"], b"finite-element-results".len());
-    assert!(payload.get("data").is_none());
+    let payload_bytes = crate::test_support::source_fidelity::entry_bytes(
+        result.source_fidelity(),
+        payload["entry"].as_str().unwrap(),
+    );
+    assert_eq!(payload_bytes, b"finite-element-results");
+    let entry_id = crate::native::native_id("entry", "analysis.dat");
+    assert_eq!(payload["entry"], entry_id);
+    let payload_view = archive.open(&ctx, "analysis.dat").unwrap();
+    let payload_capture = ctx.capture_part_extent(payload_view).unwrap();
+    let payload_layout = &result.source_fidelity().record_layout()[&entry_id];
+    assert_eq!(payload_layout.stream(), payload_capture.stream());
+    assert_eq!(payload_layout.offset(), payload_capture.offset());
+    assert_eq!(payload_layout.byte_len(), payload_capture.byte_len());
+    assert_eq!(payload_bytes, payload_view.window());
+    assert_eq!(payload_bytes.len(), b"finite-element-results".len());
     assert_eq!(
-        payload["sha256"],
+        cadmpeg_ir::hash::sha256_hex(&payload_bytes),
         cadmpeg_ir::hash::sha256_hex(b"finite-element-results")
     );
+    assert!(payload.get("data").is_none());
+    for key in ["byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(payload.get(key).is_none());
+    }
     let python = &by_domain["Path"]["property_records"][0];
     assert_eq!(python["inert"], true);
     assert!(String::from_utf8_lossy(xml_bytes(python)).contains("serialized-but-inert"));
@@ -90,15 +197,34 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|property| property.get("data").is_none()));
-        record["byte_start"].as_u64().unwrap() < record["byte_end"].as_u64().unwrap()
-            && record["byte_len"] == cadmpeg_core::decode::u64_from_index(xml_bytes(record).len())
-            && record["sha256"] == cadmpeg_ir::hash::sha256_hex(xml_bytes(record))
+            .all(
+                |property| ["data", "byte_start", "byte_end", "byte_len", "sha256"]
+                    .iter()
+                    .all(|key| property.get(*key).is_none())
+            ));
+        assert!(
+            record.get("byte_start").is_none()
+                && record.get("byte_end").is_none()
+                && record.get("byte_len").is_none()
+                && record.get("sha256").is_none()
+        );
+        let bytes = xml_bytes(record);
+        let layout = &result.source_fidelity().record_layout()[record["object"].as_str().unwrap()];
+        assert_eq!(layout.payloads()["raw_xml"].as_ref(), bytes);
+        let start = usize::try_from(layout.pointers()["byte_start"]).unwrap();
+        let end = usize::try_from(layout.pointers()["byte_end"]).unwrap();
+        assert!(start < end);
+        assert_eq!(bytes.len(), end - start);
+        assert_eq!(
+            cadmpeg_ir::hash::sha256_hex(bytes),
+            cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[start..end])
+        );
+        true
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 
-    let mut altered = records;
+    let mut altered = records.clone();
     let payload = &mut altered
         .iter_mut()
         .find(|record| record["domain"] == "Fem")
@@ -116,13 +242,46 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             &altered,
         )
         .unwrap();
-    assert!(crate::test_support::validate_native(&edited)
-        .iter()
-        .any(|finding| {
-            finding
-                .message
-                .contains("application preservation records do not match authoritative bytes")
-        }));
+    let findings = crate::test_support::validate_native(&edited);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::PayloadIntegrity
+    );
+    assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert_eq!(
+        findings[0].message,
+        "FCStd application records do not match their typed objects and evidence"
+    );
+
+    let mut misplaced = records;
+    let payload = &mut misplaced
+        .iter_mut()
+        .find(|record| record["domain"] == "Fem")
+        .unwrap()["property_records"][0]["payloads"][0];
+    payload["entry"] = crate::native::native_id("entry", "Document.xml").into();
+    payload["name"] = "Document.xml".into();
+    let mut cross_owned = result.ir().clone();
+    cross_owned
+        .native
+        .namespace_mut("fcstd")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "applications",
+            &misplaced,
+        )
+        .unwrap();
+    let findings = crate::test_support::validate_native(&cross_owned);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::PayloadIntegrity
+    );
+    assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert_eq!(
+        findings[0].message,
+        "FCStd application records do not match their typed objects and evidence"
+    );
 }
 
 #[test]
