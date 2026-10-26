@@ -238,14 +238,38 @@ fn a_source_without_a_recorded_dialect_remains_an_unresolvable_target() {
     let source = ir.source.take().expect("source metadata");
     let format = source.format().to_owned();
     ir.source=Some(serde_json::from_value(serde_json::json!({"identity":{"classification":"unclassified","format":format},"attributes":source.attributes})).unwrap());
-    let error =
-        plan(&ir, Some(&fidelity), TargetRequest::Inherit).expect_err("unrecorded source target");
-    let CodecError::UnsupportedTarget(refusal) = error else {
-        panic!("target refusal expected: {error}")
-    };
+    // #217 §5 UnsupportedTarget: an unrecorded Inherit selects the catalog
+    // default and names the displaced source; it is not a target refusal.
+    let output = plan(&ir, Some(&fidelity), TargetRequest::Inherit)
+        .expect("unrecorded source selects the declared catalog default");
+    assert_eq!(target(&output), "fcstd:schema-4");
+    assert!(matches!(
+        output.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    let displacement = crate::loss::FreecadLossCode::SourceDialectDisplaced.note(
+        "the unrecorded same-format source dialect was displaced by target dialect fcstd:schema-4; the source dialect identity is not preserved",
+    );
     assert_eq!(
-        serde_json::to_value(refusal).unwrap()["refusal"]["kind"],
-        "unrecorded_source"
+        output
+            .report()
+            .losses
+            .iter()
+            .filter(|note| note.code == displacement.code)
+            .collect::<Vec<_>>(),
+        vec![&displacement],
+        "one complete canonical unrecorded-source displacement note"
+    );
+    let emitted = decode(&bytes(output));
+    assert_eq!(
+        emitted
+            .report()
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "fcstd:schema-4"
     );
     let explicit = plan(&ir, None, TargetRequest::Explicit("fcstd:schema-4"))
         .expect("explicit target resolves missing declaration");
