@@ -803,18 +803,10 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
-        let (attached_plates, bends) =
-            crate::feature::sheet_metal::native_kind_counts(&feature_inventory, &ir.model.features);
-        if attached_plates != 0 {
-            losses.push(InventorLossCode::FeatureSheetMetalAttachmentControlsNative.note(format!(
-                "Retained {attached_plates} attached plate(s) as native history features: the operands, controls, style defaults, or attachment selections do not close the neutral construction."
-            )));
-        }
-        if bends != 0 {
-            losses.push(InventorLossCode::FeatureSheetMetalBendControlsNative.note(format!(
-                "Retained {bends} separate bend record(s) as native history features: the attached plate or repeated bend operands do not close the neutral construction."
-            )));
-        }
+        losses.extend(crate::feature::sheet_metal::native_kind_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
         losses.extend(crate::feature::sheet_metal::retained_control_losses(
             ir.model.features.iter(),
         ));

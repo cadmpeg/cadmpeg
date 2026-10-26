@@ -679,6 +679,26 @@ const ATTACHMENT_STATE_REFERENCES: [[u8; 16]; 7] = [
     super::BOOLEAN_TYPE,
 ];
 
+pub(crate) fn native_kind_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::loss::InventorLossCode;
+    let (attached_plates, bends) = native_kind_counts(inventory, features);
+    let mut losses = Vec::new();
+    if attached_plates != 0 {
+        losses.push(InventorLossCode::FeatureSheetMetalAttachmentControlsNative.note(format!(
+            "Retained {attached_plates} attached plate(s) as native history features: the operands, controls, style defaults, or attachment selections do not close the neutral construction."
+        )));
+    }
+    if bends != 0 {
+        losses.push(InventorLossCode::FeatureSheetMetalBendControlsNative.note(format!(
+            "Retained {bends} separate bend record(s) as native history features: the attached plate or repeated bend operands do not close the neutral construction."
+        )));
+    }
+    losses
+}
+
 pub(crate) fn native_kind_counts(
     inventory: &super::FeatureInventory,
     features: &[cadmpeg_ir::features::Feature],

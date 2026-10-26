@@ -276,6 +276,18 @@ fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
         crate::feature::sheet_metal::native_kind_counts(&inventory, &features),
         (1, 1)
     );
+    let codes: Vec<_> = crate::feature::sheet_metal::native_kind_losses(&inventory, &features)
+        .iter()
+        .map(|loss| loss.code.local_code().to_owned())
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            "feature.sheet-metal-attachment-controls-native",
+            "feature.sheet-metal-bend-controls-native"
+        ]
+    );
+    assert!(crate::feature::sheet_metal::native_kind_losses(&inventory, &[]).is_empty());
     assert_eq!(
         crate::feature::sheet_metal::native_kind_counts(&inventory, &[]),
         (0, 0)
