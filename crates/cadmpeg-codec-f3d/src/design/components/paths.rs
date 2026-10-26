@@ -14,10 +14,22 @@ pub(crate) struct LocalOccurrencePaths {
 }
 
 impl LocalOccurrencePaths {
-    pub(crate) fn new(native: &[DesignComponentOccurrence], occurrences: &[Occurrence]) -> Self {
+    pub(crate) fn new(
+        native: &[DesignComponentOccurrence],
+        external: &[crate::records::xref::XrefReference],
+        occurrences: &[Occurrence],
+    ) -> Self {
         let carriers = native
             .iter()
             .map(|carrier| (carrier.id.as_str(), carrier))
+            .collect::<BTreeMap<_, _>>();
+        let external = external
+            .iter()
+            .filter_map(|reference| {
+                let source = reference.placement_source.as_ref()?;
+                let guid = source.occurrence_guid.as_ref()?;
+                Some((reference.id.as_str(), (source.stream.as_str(), guid)))
+            })
             .collect::<BTreeMap<_, _>>();
         let instances = occurrences
             .iter()
@@ -29,13 +41,25 @@ impl LocalOccurrencePaths {
             let mut current = leaf;
             let mut stream = None;
             for _ in 0..=occurrences.len() {
-                if let Some(carrier) = current
-                    .native_ref
-                    .as_deref()
-                    .and_then(|id| carriers.get(id))
-                {
-                    stream = crate::ids::native_stream(&carrier.id);
-                    keys.push(carrier.occurrence_guid.as_str().to_ascii_lowercase());
+                let identity = current.native_ref.as_deref().and_then(|id| {
+                    carriers
+                        .get(id)
+                        .and_then(|carrier| {
+                            crate::ids::native_stream(&carrier.id)
+                                .map(|stream| (stream, carrier.occurrence_guid.as_str()))
+                        })
+                        .or_else(|| {
+                            external
+                                .get(id)
+                                .map(|(stream, guid)| (*stream, guid.as_str()))
+                        })
+                });
+                if let Some((source_stream, key)) = identity {
+                    if stream.is_some_and(|stream| stream != source_stream) {
+                        break;
+                    }
+                    stream = Some(source_stream);
+                    keys.push(key.to_ascii_lowercase());
                 }
                 let OccurrenceParent::Occurrence { occurrence: parent } = &current.parent else {
                     break;
@@ -76,9 +100,11 @@ impl LocalOccurrencePaths {
     }
 
     pub(crate) fn ambiguous(&self, stream: &str, keys: &[String]) -> bool {
-        self.paths
-            .get(&(stream.to_owned(), keys.to_vec()))
-            .is_some_and(Option::is_none)
+        (1..=keys.len()).any(|count| {
+            self.paths
+                .get(&(stream.to_owned(), keys[..count].to_vec()))
+                .is_some_and(Option::is_none)
+        })
     }
 
     pub(crate) fn resolve_id(&self, stream: &str, id: &OccurrenceId) -> Option<OccurrenceId> {
@@ -89,8 +115,8 @@ impl LocalOccurrencePaths {
 
     pub(crate) fn resolve(&self, stream: &str, keys: &[String]) -> Option<(OccurrenceId, usize)> {
         for count in (1..=keys.len()).rev() {
-            if let Some(Some(id)) = self.paths.get(&(stream.to_owned(), keys[..count].to_vec())) {
-                return Some((id.clone(), count));
+            if let Some(id) = self.paths.get(&(stream.to_owned(), keys[..count].to_vec())) {
+                return id.clone().map(|id| (id, count));
             }
         }
         None
@@ -211,5 +237,74 @@ mod tests {
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ));
+    }
+    #[test]
+    fn external_occurrence_keys_select_repeated_targets_in_their_source_stream() {
+        let key_a = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let key_b = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+        let sources = [
+            ("f3d:Design/BulkStream.dat", key_a),
+            ("f3d:Design/BulkStream.dat", key_b),
+            ("f3d:OtherDesign/BulkStream.dat", key_a),
+        ];
+        let table = crate::xref::XrefTable {
+            references: sources
+                .iter()
+                .enumerate()
+                .map(|(index, (stream, key))| {
+                    serde_json::from_value(serde_json::json!({
+                        "id":format!("f3d:xref:reference#{index}"), "ordinal":index,
+                        "from":"root.f3d", "relative_path":"part.f3d",
+                        "neutron_role":"same-role", "neutron_data":"",
+                        "placement_source": {
+                            "stream":stream, "carrier_record_index":100 + index,
+                            "occurrence_guid":key.to_ascii_uppercase()
+                        }
+                    }))
+                    .unwrap()
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let occurrences = table.references.iter().map(|reference| {
+            serde_json::from_value::<Occurrence>(serde_json::json!({
+                "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
+                "prototype": {"scope":"unresolved"}, "parent": {"kind":"root"},
+                "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
+                "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
+            })).unwrap()
+        }).collect::<Vec<_>>();
+        let paths = LocalOccurrencePaths::new(&[], &table.references, &occurrences);
+        for ((stream, key), occurrence) in sources.iter().zip(&occurrences) {
+            assert_eq!(
+                paths.resolve(stream, &[(*key).to_owned()]),
+                Some((occurrence.id.clone(), 1))
+            );
+        }
+        assert!(paths
+            .resolve("f3d:OtherDesign/BulkStream.dat", &[key_b.to_owned()])
+            .is_none());
+        assert!(paths
+            .resolve("f3d:Design/BulkStream.dat", &["same-role".to_owned()])
+            .is_none());
+        let mut nested = occurrences.clone();
+        nested[1].parent = OccurrenceParent::Occurrence {
+            occurrence: nested[2].id.clone(),
+        };
+        let nested_paths = LocalOccurrencePaths::new(&[], &table.references, &nested);
+        assert_eq!(
+            nested_paths.resolve(sources[1].0, &[key_b.to_owned()]),
+            Some((nested[1].id.clone(), 1))
+        );
+        assert!(nested_paths
+            .resolve(sources[2].0, &[key_b.to_owned()])
+            .is_none());
+        let encoded = serde_json::to_value(&table.references[0]).unwrap();
+        let retained: crate::records::xref::XrefReference =
+            serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(retained, table.references[0]);
+        let mut invalid = encoded;
+        invalid["placement_source"]["occurrence_guid"] = serde_json::json!("part.f3d");
+        assert!(serde_json::from_value::<crate::records::xref::XrefReference>(invalid).is_err());
     }
 }

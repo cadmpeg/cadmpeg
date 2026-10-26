@@ -12,6 +12,11 @@ cadmpeg_core::named_optional_field!(
     XrefPlacementSource,
     "placement_source"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_guid,
+    super::mesh::DesignRelaxedGuidText,
+    "occurrence_guid"
+);
 const EPS_XREF_PLACEMENT_RIGID_E8: f64 = 1.0e-8;
 
 fn valid_xref_placement_transform(transform: &[[f64; 4]; 4]) -> bool {
@@ -147,6 +152,12 @@ pub(crate) struct XrefLocalOwner {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct XrefPlacementSource {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_guid"
+    )]
+    pub(crate) occurrence_guid: Option<super::mesh::DesignRelaxedGuidText>,
     pub(crate) stream: String,
     pub(crate) carrier_record_index: u64,
     #[serde(

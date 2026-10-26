@@ -90,6 +90,7 @@ fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
             ordinal: 0,
             occurrence_ordinal: 0,
             placement_source: Some(crate::records::xref::XrefPlacementSource {
+                occurrence_guid: None,
                 stream: stream.into(),
                 carrier_record_index: 166,
                 owner: None,

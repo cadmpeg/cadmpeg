@@ -1243,12 +1243,6 @@ fn project_qualified_operands(
                 }
                 let lookup_guid = root_guid.as_str().to_ascii_lowercase();
                 let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
-                if occurrence.is_none()
-                    && !path.admitted_by_type()
-                    && !matches!(path.class_tag().as_str(), "330" | "386")
-                {
-                    return None;
-                }
                 let object = root_guid.as_str().to_ascii_lowercase();
                 let subelement_guids = &path.occurrence_guids()[1..];
 
@@ -1268,7 +1262,11 @@ fn project_qualified_operands(
                         keys[consumed..].to_vec(),
                     ));
                 }
-                if occurrence.is_some() && paths.ambiguous(stream, &keys[..1]) {
+                if paths.ambiguous(stream, &keys)
+                    || occurrence.is_none()
+                        && !path.admitted_by_type()
+                        && !matches!(path.class_tag().as_str(), "330" | "386")
+                {
                     return None;
                 }
                 Some(match occurrence {
@@ -1685,6 +1683,99 @@ mod tests {
         assert_eq!(projection.joints.len(), 1);
         assert!(projection.losses.is_empty());
 
+        let mut reference: crate::records::xref::XrefReference =
+            serde_json::from_value(serde_json::json!({
+                "id":"f3d:xref:reference#0", "ordinal":0,
+                "from":"root.f3d", "relative_path":"part.f3d",
+                "neutron_role":"shared-role", "neutron_data":"",
+                "placement_source": {
+                    "stream":"f3d:Design/BulkStream.dat", "carrier_record_index":100,
+                    "occurrence_guid":"11111111-1111-1111-1111-11111111111a"
+                }
+            }))
+            .unwrap();
+        let mut table = crate::xref::XrefTable {
+            references: vec![reference.clone()],
+            ..Default::default()
+        };
+        let instances = |references: &[crate::records::xref::XrefReference]| {
+            references.iter().map(|reference| {
+                serde_json::from_value::<cadmpeg_ir::products::Occurrence>(serde_json::json!({
+                    "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
+                    "prototype": {"scope":"unresolved"}, "parent": {"kind":"root"},
+                    "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
+                    "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
+                })).unwrap()
+            }).collect::<Vec<_>>()
+        };
+        let occurrences = instances(&table.references);
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &table.references,
+            &occurrences,
+        );
+        let typed_path = path(11, true).unwrap();
+        let legacy_path = DesignAssemblyOperandPath::try_new(
+            typed_path.link().clone(),
+            11,
+            "294".to_owned().try_into().unwrap(),
+            typed_path.byte_offset(),
+            typed_path.occurrence_guids().to_vec(),
+            typed_path.identity_guids().to_vec(),
+        )
+        .unwrap();
+        let legacy = DesignAssemblyOperandQualifier::OccurrencePath { path: legacy_path };
+        let bound_operands = super::project_qualified_operands(
+            [&legacy, &legacy],
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &[],
+            &inserts,
+            &bindings,
+        )
+        .unwrap();
+        assert!(bound_operands.iter().all(|operand| {
+            matches!(&operand.container,
+                cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                if occurrence == &occurrences[0].id)
+        }));
+        let bound = super::project_assembly_joints_with_paths(
+            &scopes(true, false),
+            &[],
+            &inserts,
+            &[],
+            &bindings,
+        );
+        assert_eq!(bound.joints.len(), 1);
+        assert!(bound.losses.is_empty());
+        assert!(bound.joints[0].connectors().all(|connector| {
+            matches!(&connector.operand.container,
+                cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                if occurrence == &occurrences[0].id)
+        }));
+        reference.id = "f3d:xref:reference#1".to_owned();
+        reference.ordinal = 1;
+        table.references.push(reference);
+        let occurrences = instances(&table.references);
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &table.references,
+            &occurrences,
+        );
+        let refused = super::project_assembly_joints_with_paths(
+            &scopes(true, false),
+            &[],
+            &inserts,
+            &[],
+            &bindings,
+        );
+        assert!(refused.joints.is_empty());
+        assert_eq!(refused.losses.len(), 1);
+        assert_eq!(
+            refused.losses[0].code,
+            crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
+        );
+
         let external = path(11, true).unwrap();
         let root = DesignAssemblyOperandPath::try_new_typed(
             external.link().clone(),
@@ -1717,7 +1808,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
             &[],
             &inserts,
-            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[]),
+            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[]),
         )
         .unwrap();
         assert!(matches!(

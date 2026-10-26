@@ -1285,6 +1285,7 @@ mod tests {
                 ordinal: 0,
                 occurrence_ordinal: 0,
                 placement_source: Some(crate::records::xref::XrefPlacementSource {
+                    occurrence_guid: None,
                     stream: STREAM.to_owned(),
                     carrier_record_index: 500,
                     owner: Some(crate::records::xref::XrefLocalOwner {
@@ -1336,15 +1337,29 @@ mod tests {
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             };
             let local = super::project_local_components(&sources).unwrap();
-            let projection = crate::xref::project_occurrences(
-                &external_owner_table(COMPONENT_ROOT),
-                &sources,
-                &local.occurrences,
-            )
-            .unwrap();
+            let mut table = external_owner_table(COMPONENT_ROOT);
+            let external_key = "00000000-0000-4000-8000-000000000009";
+            table.references[0]
+                .placement_source
+                .as_mut()
+                .unwrap()
+                .occurrence_guid = Some(external_key.to_owned().try_into().unwrap());
+            let projection =
+                crate::xref::project_occurrences(&table, &sources, &local.occurrences).unwrap();
             assert!(local.losses.is_empty());
             assert!(projection.losses.is_empty());
             assert_eq!(projection.occurrences.len(), count);
+            let mut combined = local.occurrences.clone();
+            combined.extend(projection.occurrences.iter().cloned());
+            let bindings = super::paths::LocalOccurrencePaths::new(
+                &carriers[..count],
+                &table.references,
+                &combined,
+            );
+            assert_eq!(
+                bindings.ambiguous(STREAM, &[external_key.to_owned()]),
+                count == 2
+            );
             let mut paths = BTreeSet::new();
             for (index, carrier) in carriers[..count].iter().enumerate() {
                 let parent = crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid);
@@ -1359,6 +1374,16 @@ mod tests {
                     })
                     .unwrap();
                 assert!(paths.insert(child.id.clone()));
+                assert_eq!(
+                    bindings.resolve(
+                        STREAM,
+                        &[
+                            carrier.occurrence_guid.as_str().to_owned(),
+                            external_key.to_owned(),
+                        ]
+                    ),
+                    Some((child.id.clone(), 2))
+                );
                 assert_eq!(
                     child.id,
                     crate::ids::nested_xref_occurrence_id(&parent, 0, 0)
@@ -1718,7 +1743,8 @@ mod tests {
                 .count(),
             1
         );
-        let paths = super::paths::LocalOccurrencePaths::new(&carriers, &projection.occurrences);
+        let paths =
+            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences);
         assert!(paths
             .resolve(STREAM, &[carriers[1].occurrence_guid.as_str().to_owned()])
             .is_none());
@@ -1859,7 +1885,8 @@ mod tests {
         assert!(projection.losses.is_empty());
         assert_eq!(projection.occurrences.len(), 4);
         let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
-        let paths = super::paths::LocalOccurrencePaths::new(&carriers, &projection.occurrences);
+        let paths =
+            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences);
         let key = vec![carriers[0].occurrence_guid.as_str().to_owned()];
         let first = paths.resolve(STREAM, &key).unwrap().0;
         let second = paths.resolve(OTHER_STREAM, &key).unwrap().0;
@@ -2128,7 +2155,7 @@ mod tests {
             std::slice::from_mut(&mut feature),
             std::slice::from_ref(&scope),
         );
-        let paths = super::paths::LocalOccurrencePaths::new(&[], &operation_occurrences);
+        let paths = super::paths::LocalOccurrencePaths::new(&[], &[], &operation_occurrences);
         assert!(
             super::paths::bind_feature_paths(std::slice::from_mut(&mut feature), &paths).is_empty()
         );
@@ -2191,6 +2218,7 @@ mod tests {
             ordinal: 0,
             occurrence_ordinal: 0,
             placement_source: Some(crate::records::xref::XrefPlacementSource {
+                occurrence_guid: None,
                 stream: STREAM.into(),
                 carrier_record_index: 52,
                 owner: None,

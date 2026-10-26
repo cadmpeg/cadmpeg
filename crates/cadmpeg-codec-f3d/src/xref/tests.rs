@@ -544,6 +544,13 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
     assert_eq!(placements.len(), 6);
+    assert!(placements.iter().all(|placement| {
+        placement
+            .occurrence_guid
+            .as_ref()
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+            == Some("bbbbbbbb-cccc-dddd-eeee-ffffffffffff")
+    }));
     assert_eq!(
         super::occurrence_transforms(&placements, role),
         vec![None, None, None, Some(matrix), Some(matrix), Some(matrix)]
@@ -830,6 +837,12 @@ fn grouped_identity_carriers_decode_as_identity_placements() {
     assert_eq!(
         placements,
         vec![OccurrencePlacement {
+            occurrence_guid: Some(
+                "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                    .to_owned()
+                    .try_into()
+                    .unwrap()
+            ),
             carrier_record_index: 10,
             owner: Some(crate::records::xref::XrefLocalOwner {
                 target: 4,
@@ -1274,6 +1287,12 @@ fn exact_component_insert_carriers_precede_structured_placements() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let structured = OccurrencePlacement {
+        occurrence_guid: Some(
+            "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+        ),
         carrier_record_index: 23,
         owner: Some(crate::records::xref::XrefLocalOwner {
             target: 8,
@@ -1302,6 +1321,7 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     assert_eq!(selected[0].transform, Some(direct));
     assert_eq!(selected[0].carrier_record_index, 23);
     assert_eq!(selected[0].owner, structured.owner);
+    assert_eq!(selected[0].occurrence_guid, structured.occurrence_guid);
     assert_eq!(selected[1], other);
     assert_eq!(
         super::superseded_placement_count(&[(23, direct)], &[structured, other], "role"),
@@ -1379,6 +1399,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
     .references
     .remove(0);
     reference.placement_source = Some(crate::records::xref::XrefPlacementSource {
+        occurrence_guid: None,
         stream: "stream".into(),
         carrier_record_index: 2,
         owner: None,

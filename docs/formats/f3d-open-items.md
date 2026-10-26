@@ -346,6 +346,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The zero-count path selects the current document root. Its identity GUIDs remain native.
 
+### DR-102. First repeated-target placement metadata UUID
+
+**Question.** Which native identity does the first metadata UUID of a repeated-target placement name?
+
+**Known.** The placement stores two ordered LP-UTF16 UUIDs after its positive stored word. The second UUID is the occurrence key used by assembly operand paths in the source Design stream.
+
+**Need.** An explicit join from the first UUID to its native identity and containing namespace.
+
+**Conflict.** The second UUID's occurrence binding does not establish an identity domain for the first UUID.
+
+**Note.** UUID equality alone does not identify a namespace.
+
 ### DR-82. Other joint freedom codes and the limit flags
 
 **Question.** Which degrees of freedom do freedom codes other than `1`, `2`, and `8` name, and what do the two joint-record limit flag bytes select, and does the 444-byte `As-built` form's `SlideRest` owner hold the joint-record rest value?

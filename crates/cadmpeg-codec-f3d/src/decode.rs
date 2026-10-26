@@ -2863,6 +2863,9 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_joint_motions,
             &crate::design::components::paths::LocalOccurrencePaths::new(
                 &prereqs.design_component_occurrences,
+                prereqs
+                    .xref_table()
+                    .map_or(&[], |table| table.references.as_slice()),
                 &self.ir.model.occurrences,
             ),
         );

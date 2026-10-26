@@ -773,6 +773,7 @@ fn bind_occurrences(
                 occurrence_ordinal: ordinal_at(occurrence_ordinal)?,
                 placement_source: Some(XrefPlacementSource {
                     stream,
+                    occurrence_guid: placement.occurrence_guid,
                     carrier_record_index: placement.carrier_record_index,
                     owner: placement.owner,
                 }),
@@ -844,6 +845,7 @@ fn occurrence_transforms_with_precedence(
     for (carrier_record_index, transform) in direct {
         if overridden.insert(carrier_record_index) {
             selected.push(OccurrencePlacement {
+                occurrence_guid: None,
                 carrier_record_index,
                 owner: None,
                 link_names: vec![role.to_owned()],
@@ -971,6 +973,7 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
 /// "**Placement.**").
 #[derive(Debug, Clone, PartialEq)]
 struct OccurrencePlacement {
+    occurrence_guid: Option<crate::records::mesh::DesignRelaxedGuidText>,
     carrier_record_index: u64,
     owner: Option<XrefLocalOwner>,
     /// Cross-document link names carried by the path elements, in path order.
@@ -1064,6 +1067,7 @@ fn occurrence_placement(
         let role = role.to_string();
         let link_names = [role].into_iter().collect::<Vec<_>>();
         return Ok(Some(OccurrencePlacement {
+            occurrence_guid: None,
             carrier_record_index,
             owner: None,
             link_names,
@@ -1085,6 +1089,7 @@ fn occurrence_placement(
     };
     let link_names = vec![link_name.to_string()];
     Ok(Some(OccurrencePlacement {
+        occurrence_guid: None,
         carrier_record_index: u64::from(record_index),
         owner: None,
         link_names,
@@ -1100,6 +1105,7 @@ fn repeated_target_occurrence_placement(
     Ok(
         repeated_target_occurrence_placement_details(body)?.map(|details| OccurrencePlacement {
             carrier_record_index: details.carrier_record_index,
+            occurrence_guid: Some(details.occurrence_guid),
             owner: Some(details.owner),
             link_names: details.link_names,
             transform: details.transform.map(|(_, matrix)| matrix),
@@ -1108,6 +1114,7 @@ fn repeated_target_occurrence_placement(
 }
 
 struct RepeatedTargetPlacementDetails {
+    occurrence_guid: crate::records::mesh::DesignRelaxedGuidText,
     carrier_record_index: u64,
     owner: XrefLocalOwner,
     link_names: Vec<String>,
@@ -1133,13 +1140,13 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 4;
-    for _ in 0..2 {
-        let (guid, next) = xref_some!(lp_utf16_bounded(body, at, 36..=36));
-        if !is_guid_relaxed(&guid) {
-            return Ok(None);
-        }
-        at = next;
+    let (metadata_guid, next) = xref_some!(lp_utf16_bounded(body, at, 36..=36));
+    if !is_guid_relaxed(&metadata_guid) {
+        return Ok(None);
     }
+    let (occurrence_guid, next) = xref_some!(lp_utf16_bounded(body, next, 36..=36));
+    let occurrence_guid = xref_some!(occurrence_guid.try_into().ok());
+    at = next;
     if body.get(at) == Some(&0) {
         at += 1;
     }
@@ -1181,6 +1188,7 @@ fn repeated_target_occurrence_placement_details(
         xref_some!(xref_some!(take_owned_reference(body, &mut at)).into_local());
     Ok(
         (at == body.len()).then_some(RepeatedTargetPlacementDetails {
+            occurrence_guid,
             carrier_record_index: xref_some!(View::u64_le_at(body, 7)),
             owner: XrefLocalOwner { target, type_guid },
             link_names,
@@ -1531,6 +1539,7 @@ fn modern_occurrence_placement(
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
             return Some(OccurrencePlacement {
+                occurrence_guid: None,
                 carrier_record_index: View::u64_le_at(body, 7)?,
                 owner: None,
                 link_names,

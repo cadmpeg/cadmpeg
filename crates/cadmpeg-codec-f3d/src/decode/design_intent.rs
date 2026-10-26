@@ -962,6 +962,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     }
     let occurrence_paths = crate::design::components::paths::LocalOccurrencePaths::new(
         &prereqs.design_component_occurrences,
+        prereqs
+            .xref_table()
+            .map_or(&[], |table| table.references.as_slice()),
         products.occurrences,
     );
     crate::design::components::project_derived_instance_features(
