@@ -110,3 +110,36 @@ fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 3);
 }
+
+#[test]
+fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
+    let wire = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
+    let archive = crate::test_support::zip_test::f3d_with_smbh(&wire);
+    let decoded = cadmpeg_ir::codec::Codec::decode(
+        &crate::F3dCodec,
+        &mut std::io::Cursor::new(archive),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+    )
+    .unwrap();
+    assert!(!decoded.ir().model.bodies.is_empty());
+    for model_body_maps_empty in [true, false] {
+        let path = super::super::FinalizePath::Bodyless(super::super::DeferredBodylessInputs {
+            model_body_maps_empty,
+            non_root_act: 0,
+            has_appearance: false,
+            mesh_projection: super::super::MeshProjection {
+                count: 0,
+                tessellations_by_scope: std::collections::HashMap::new(),
+            },
+        });
+        let bodies = path.component_bodies(&decoded.ir().model.bodies, false);
+        if model_body_maps_empty {
+            assert!(bodies.unwrap().is_empty());
+        } else {
+            assert!(bodies.is_none());
+        }
+        assert!(path
+            .component_bodies(&decoded.ir().model.bodies, true)
+            .is_none());
+    }
+}

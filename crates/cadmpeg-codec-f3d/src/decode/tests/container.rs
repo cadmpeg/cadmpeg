@@ -450,3 +450,68 @@ fn malformed_text_brep_returns_an_entry_named_error() {
         .to_string()
         .contains(&format!("text BREP entry {entry} failed to parse:")));
 }
+
+#[test]
+fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
+    let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
+    let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps(&snapshot, &[]);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let selection = crate::design::decode::body::design_model_selection(scan).unwrap();
+        assert!(selection.explicitly_empty);
+        assert!(selection.blob_names.is_empty());
+    });
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().model.curves.is_empty());
+    let geometry = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::GeometryNotTransferred.kind())
+        .unwrap();
+    assert!(geometry
+        .message
+        .contains("No physical model BREP was selected"));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("not a decodable BinaryFile")
+            && loss.code != F3dLossCode::MissingGeometryStream.kind()));
+}
+
+#[test]
+fn model_brep_reports_distinguish_failed_and_successful_empty_decodes() {
+    use crate::test_support::smbh_header_test::smbh_header_prefix;
+    use crate::test_support::tokens_test::{push_u8_string, t_end, t_ident};
+
+    let mut empty = smbh_header_prefix();
+    t_ident(&mut empty, "asmheader");
+    push_u8_string(&mut empty, "231.6.3.65535");
+    t_end(&mut empty);
+    t_ident(&mut empty, "delta_state");
+    empty.extend_from_slice(&[0; 16]);
+    for (stream, expected) in [
+        (b"invalid header".to_vec(), "not a decodable BinaryFile"),
+        (empty, "decoded successfully"),
+    ] {
+        let archive = crate::test_support::zip_test::f3d_with_smbh(&stream);
+        let decoded = F3dCodec
+            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .unwrap();
+        let losses = &decoded.report().losses;
+        let geometry = losses
+            .iter()
+            .find(|loss| loss.code == F3dLossCode::GeometryNotTransferred.kind())
+            .unwrap();
+        assert!(geometry.message.contains(expected), "{}", geometry.message);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::TopologyNotTransferred.kind()));
+        assert!(losses
+            .iter()
+            .all(|loss| loss.code != F3dLossCode::MissingGeometryStream.kind()));
+    }
+}

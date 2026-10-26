@@ -2344,6 +2344,7 @@ struct DecodeSessionState {
 }
 
 struct DeferredBodylessInputs {
+    model_body_maps_empty: bool,
     non_root_act: usize,
     has_appearance: bool,
     mesh_projection: MeshProjection,
@@ -2357,7 +2358,10 @@ struct GeometrySessionPath {
 
 enum SessionPath {
     Geometry(Box<GeometrySessionPath>),
-    Bodyless(MeshProjection),
+    Bodyless {
+        mesh_projection: MeshProjection,
+        model_body_maps_empty: bool,
+    },
 }
 
 /// Phase-2 outcome as product projection and finalization see it.
@@ -2375,6 +2379,22 @@ enum DesignState {
 enum FinalizePath {
     Geometry(GeometryIndex),
     Bodyless(DeferredBodylessInputs),
+}
+
+impl FinalizePath {
+    fn component_bodies(
+        &self,
+        bodies: &[cadmpeg_ir::topology::Body],
+        has_pending_body_source: bool,
+    ) -> Option<std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>> {
+        match self {
+            Self::Geometry(_) => Some(bodies.iter().map(|body| body.id.clone()).collect()),
+            Self::Bodyless(inputs) if inputs.model_body_maps_empty && !has_pending_body_source => {
+                Some(std::collections::BTreeSet::new())
+            }
+            Self::Bodyless(_) => None,
+        }
+    }
 }
 
 /// Private decode accumulator for one `.f3d` document.
@@ -2479,6 +2499,7 @@ impl<'a> F3dDecodeSession<'a> {
         ctx: &'a DecodeContext<'a>,
         scan: &'a ContainerScan<'a>,
         session_state: DecodeSessionState,
+        brep_outcome: &ModelBrepOutcome,
     ) -> Result<(Self, SessionPath), CodecError> {
         let DecodeSessionState {
             admitted_entities,
@@ -2493,7 +2514,7 @@ impl<'a> F3dDecodeSession<'a> {
         let mut report = crate::report::build_decode_report(
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), false),
-            container_losses(scan),
+            container_losses(scan, brep_outcome),
         )?;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         Ok((
@@ -2508,7 +2529,10 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
             },
-            SessionPath::Bodyless(mesh_projection),
+            SessionPath::Bodyless {
+                mesh_projection,
+                model_body_maps_empty: matches!(brep_outcome, ModelBrepOutcome::NoPhysicalModel),
+            },
         ))
     }
 
@@ -2627,11 +2651,13 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Result<prereqs::ProductPrereqs, CodecError> {
         let design_body_bindings = match path {
             SessionPath::Geometry(_) => std::mem::take(&mut self.native.design_body_bindings),
-            SessionPath::Bodyless(_) => crate::design::decode::body::decode_design_body_bindings(
-                self.scan,
-                None,
-                &self.native.body_native_keys,
-            )?,
+            SessionPath::Bodyless { .. } => {
+                crate::design::decode::body::decode_design_body_bindings(
+                    self.scan,
+                    None,
+                    &self.native.body_native_keys,
+                )?
+            }
         };
         prereqs::decode(self.ctx, self.scan, design_body_bindings)
     }
@@ -2745,7 +2771,10 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 FinalizePath::Geometry(index)
             }
-            SessionPath::Bodyless(mesh_projection) => {
+            SessionPath::Bodyless {
+                mesh_projection,
+                model_body_maps_empty,
+            } => {
                 let decoded_materials = materials::decode(self.ctx, scan)?;
                 report_untyped_material_distances(
                     &mut self.report,
@@ -2761,6 +2790,7 @@ impl<'a> F3dDecodeSession<'a> {
                     self.ir.model.occurrences = crate::xref::project_occurrences(table)?;
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
+                    model_body_maps_empty,
                     non_root_act: non_root_act_component_links,
                     has_appearance: decoded_materials.has_topology_assignments,
                     mesh_projection,
@@ -2777,14 +2807,12 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(crate::design::decode::components::revised_definitions_loss(
                 &local_components,
             ));
-        let bodies = self
-            .ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<std::collections::BTreeSet<_>>();
-        let bodies_final = matches!(finalize_path, FinalizePath::Geometry(_));
+        let bodies = finalize_path.component_bodies(
+            &self.ir.model.bodies,
+            !prereqs.design_body_members.is_empty()
+                || !prereqs.design_body_bindings.is_empty()
+                || container::text_brep_names(scan).next().is_some(),
+        );
         let root_ordinal_start = self
             .ir
             .model
@@ -2803,7 +2831,7 @@ impl<'a> F3dDecodeSession<'a> {
                 occurrences: &prereqs.design_component_occurrences,
                 components: &local_components,
                 body_bindings: &prereqs.design_body_bindings,
-                bodies: bodies_final.then_some(&bodies),
+                bodies: bodies.as_ref(),
                 root_ordinal_start,
                 limits: self.ctx.policy().limits,
             },
@@ -2930,12 +2958,26 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.admitted_entities,
                     "admit F3D entities",
                 )?;
+                let assembly = match &xref {
+                    Ok(Some(table)) => apply_assembly_classification(
+                        self.ctx,
+                        &mut self.report,
+                        scan,
+                        table,
+                        inputs.model_body_maps_empty,
+                    )?,
+                    Ok(None) | Err(_) => false,
+                };
                 if mesh_projection.count > 0 {
                     apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
-                } else {
+                } else if !assembly {
                     apply_bodyless_design_classification(
                         &mut self.report,
-                        container::design_breps(scan).count(),
+                        if inputs.model_body_maps_empty {
+                            0
+                        } else {
+                            container::design_breps(scan).count()
+                        },
                         container::text_brep_names(scan).count(),
                         self.native.design_body_bindings.len()
                             + self.native.design_body_members.len(),
@@ -2947,7 +2989,6 @@ impl<'a> F3dDecodeSession<'a> {
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
                 match xref {
                     Ok(Some(table)) => {
-                        apply_assembly_classification(self.ctx, &mut self.report, scan, &table)?;
                         self.native.xref_designs = table.designs;
                         self.native.xref_references = table.references;
                     }
@@ -3089,10 +3130,12 @@ fn decode_scanned_document<'a>(
         let mut report = crate::report::build_decode_report(
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-            container_losses(scan),
+            container_losses(scan, &ModelBrepOutcome::NotAttempted),
         )?;
         match crate::xref::decode(ctx, scan) {
-            Ok(Some(table)) => apply_assembly_classification(ctx, &mut report, scan, &table)?,
+            Ok(Some(table)) => {
+                apply_assembly_classification(ctx, &mut report, scan, &table, false)?;
+            }
             Ok(None) => {}
             Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
                 return Err(error)
@@ -3115,10 +3158,15 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    let model_blob_names = crate::design::decode::body::design_model_blob_names(scan)?;
+    let model_selection = crate::design::decode::body::design_model_selection(scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(scan, None, &[])?;
-    let model_breps = model_brep_candidates(scan, &model_blob_names)?;
+    let model_breps = model_brep_candidates(scan, &model_selection.blob_names)?;
+    let mut brep_outcome = if model_selection.explicitly_empty {
+        ModelBrepOutcome::NoPhysicalModel
+    } else {
+        ModelBrepOutcome::NotAttempted
+    };
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
@@ -3140,9 +3188,25 @@ fn decode_scanned_document<'a>(
             );
         }
         for &candidate in &model_breps {
+            // A stream that fails to frame is reported even when another
+            // selected stream decoded with no geometry.
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
+                brep_outcome = ModelBrepOutcome::Failed {
+                    stream: candidate.name.clone(),
+                };
                 continue;
             };
+            if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
+                brep_outcome = ModelBrepOutcome::Empty {
+                    stream: candidate.name.clone(),
+                };
+            }
+            if part.asm.surfaces.is_empty()
+                && part.asm.points.is_empty()
+                && part.asm.faces.is_empty()
+            {
+                continue;
+            }
             let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
             if let Some(keys) = selected_body_keys.get(blob_name) {
                 part.retain_body_keys(ctx, keys)?;
@@ -3243,7 +3307,7 @@ fn decode_scanned_document<'a>(
         );
     }
 
-    // No decodable SAB stream: use container metadata through the shared session.
+    // Keep the selected physical carrier outcome through metadata projection.
     let (session, path) = F3dDecodeSession::from_metadata(
         ctx,
         scan,
@@ -3251,6 +3315,7 @@ fn decode_scanned_document<'a>(
             admitted_entities,
             report_scope,
         },
+        &brep_outcome,
     )?;
     session.into_result(path)
 }
@@ -3905,9 +3970,10 @@ fn apply_assembly_classification(
     report: &mut DecodeBody,
     scan: &ContainerScan,
     table: &crate::xref::XrefTable,
-) -> Result<(), CodecError> {
-    if !crate::xref::is_assembly(ctx, scan, Some(table))? {
-        return Ok(());
+    model_body_maps_empty: bool,
+) -> Result<bool, CodecError> {
+    if !crate::xref::is_assembly(ctx, scan, Some(table), model_body_maps_empty)? {
+        return Ok(false);
     }
     report.losses.retain(|loss| {
         !(loss.severity >= Severity::Error
@@ -3943,7 +4009,7 @@ fn apply_assembly_classification(
             )),
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 struct XrefPropertyNote<'a>(&'a crate::records::xref::XrefReference);
@@ -4349,8 +4415,7 @@ fn trailing_offset(id: &str) -> u64 {
 
 /// Frame and decode one Design-selected or explicit fallback BREP SAB stream.
 ///
-/// The function returns `None` for an invalid header or a framed stream with no
-/// geometry. The caller then builds the container-metadata IR.
+/// Return `None` when the header or record framing cannot be read.
 fn try_decode_brep(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -4385,20 +4450,14 @@ fn try_decode_brep(
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(
+    brep::decode(
         ctx,
         &records,
         bytes,
         &brep_entry.name,
         crate::ids::ID_FORMAT,
-    )?;
-    if decoded.asm.surfaces.is_empty()
-        && decoded.asm.points.is_empty()
-        && decoded.asm.faces.is_empty()
-    {
-        return Ok(None);
-    }
-    Ok(Some(decoded))
+    )
+    .map(Some)
 }
 
 /// Assemble the IR document from the decoded B-rep graph.
@@ -4749,16 +4808,36 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
     })
 }
 
-/// Build geometry and topology loss notes from the container state.
-///
-/// The report names the BREP carrier state. A failed binary decode gets a
-/// decode-failure note. Each remaining state gets its own loss description.
-fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+enum ModelBrepOutcome {
+    NotAttempted,
+    NoPhysicalModel,
+    Failed { stream: String },
+    Empty { stream: String },
+}
+
+/// Report the selected model carrier and its decode outcome.
+fn container_losses(
+    scan: &ContainerScan,
+    outcome: &ModelBrepOutcome,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_count = container::text_brep_names(scan).count();
 
-    let (geometry, topology) = match (brep_count, selected) {
+    let (geometry, topology) = match outcome {
+        ModelBrepOutcome::NoPhysicalModel => (
+            "No physical model BREP was selected: the modern model-body maps are explicitly empty. Snapshot streams contain no selected physical model bodies.".to_owned(),
+            "No physical B-rep topology was selected by the empty model-body maps.".to_owned(),
+        ),
+        ModelBrepOutcome::Empty { stream } => (
+            format!("The selected model BREP stream `{stream}` decoded successfully; the selected model has no surfaces, faces, or points."),
+            format!("The selected model BREP stream `{stream}` decoded successfully; no B-rep topology was transferred."),
+        ),
+        ModelBrepOutcome::Failed { stream } => (
+            format!("ASM BREP geometry was not transferred: the selected stream `{stream}` is not a decodable BinaryFile4/BinaryFile8 SAB (or its framing failed)."),
+            format!("B-rep topology was not built for the selected stream `{stream}`."),
+        ),
+        ModelBrepOutcome::NotAttempted => match (brep_count, selected) {
         // The text carrier is present but its decode produced no geometry.
         (0, _) if text_count != 0 => {
             let text_names = join_text_brep_names(scan);
@@ -4779,13 +4858,8 @@ fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossN
                 .to_string(),
         ),
         (_, Some(brep)) => (
-            format!("ASM BREP geometry was not transferred: the selected stream `{}` is not a \
-                             decodable BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP \
-                             stream(s) were located, but no surfaces, curves, or points were produced.",
-            brep.name),
-            format!("B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
-             built for the selected stream `{}`.",
-            brep.name),
+            format!("ASM BREP geometry was not transferred: the container stream `{}` was not decoded.", brep.name),
+            format!("B-rep topology was not built for the container stream `{}`.", brep.name),
         ),
         (_, None) => (
             format!(
@@ -4797,6 +4871,7 @@ fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossN
              no BREP stream was selected."
                 .to_string(),
         ),
+        },
     };
 
     let mut losses = vec![
@@ -4810,7 +4885,7 @@ fn container_losses(scan: &ContainerScan) -> Vec<cadmpeg_ir::report::loss::LossN
 
     // An absent carrier and an unselectable carrier produce different findings.
     // Full decode rejects an ambiguous selection before it builds this report.
-    if selected.is_none() {
+    if selected.is_none() && matches!(outcome, ModelBrepOutcome::NotAttempted) {
         losses.push(F3dLossCode::MissingGeometryStream.note(
             if brep_count == 0 && text_count != 0 {
                 format!(
