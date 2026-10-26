@@ -213,6 +213,22 @@ pub(crate) fn neutral_xref_occurrence_id(
     )
 }
 
+/// External occurrence identified by its complete containing instance path.
+pub(crate) fn nested_xref_occurrence_id(
+    parent: &cadmpeg_ir::ids::OccurrenceId,
+    reference_ordinal: u32,
+    occurrence_ordinal: u32,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::ids::Identity::from(parent.clone()).key().colon(
+            cadmpeg_ir::identity_key!("xref")
+                .dash(reference_ordinal)
+                .dash(occurrence_ordinal),
+        ),
+    )
+}
+
 /// Neutral local component definition projected from its stable Design GUID.
 pub(crate) fn neutral_component_id(
     guid: &crate::records::mesh::DesignRelaxedGuidText,

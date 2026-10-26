@@ -964,6 +964,35 @@ impl ComponentInserts {
         inserts
     }
 
+    /// Resolve native external placements to unique expanded instance paths.
+    pub(crate) fn bind_external_paths(
+        &mut self,
+        references: &[crate::records::xref::XrefReference],
+        projected: &[Occurrence],
+    ) {
+        self.occurrences.retain(|scope, id| {
+            let stream = crate::ids::native_stream(scope).unwrap_or(crate::ids::DEFAULT_STREAM);
+            let Some(reference) = references.iter().find(|reference| {
+                reference
+                    .placement_source
+                    .as_ref()
+                    .is_some_and(|source| source.stream == stream)
+                    && *id
+                        == crate::ids::neutral_xref_occurrence_id(
+                            reference.ordinal,
+                            reference.occurrence_ordinal,
+                        )
+            }) else {
+                return true;
+            };
+            let Some(occurrence) = crate::xref::unique_occurrence(reference, projected) else {
+                return false;
+            };
+            *id = occurrence.id.clone();
+            true
+        });
+    }
+
     /// The occurrence that places the top-level insert `scope`.
     pub(crate) fn occurrence(&self, scope: &str) -> Option<&OccurrenceId> {
         self.occurrences.get(scope)
@@ -1245,6 +1274,159 @@ mod tests {
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap()
+    }
+
+    fn external_owner_table(owner: u64) -> crate::xref::XrefTable {
+        let mut matrix = super::IDENTITY;
+        matrix[0][3] = 2.0;
+        crate::xref::XrefTable {
+            references: vec![crate::records::xref::XrefReference {
+                id: "f3d:xref:reference#0".to_owned(),
+                ordinal: 0,
+                occurrence_ordinal: 0,
+                placement_source: Some(crate::records::xref::XrefPlacementSource {
+                    stream: STREAM.to_owned(),
+                    carrier_record_index: 500,
+                    owner: Some(crate::records::xref::XrefLocalOwner {
+                        target: owner,
+                        type_guid: None,
+                    }),
+                }),
+                from: "root.f3d".to_owned().try_into().unwrap(),
+                relative_path: "part.f3d".to_owned().try_into().unwrap(),
+                neutron_role: "external-role".to_owned().try_into().unwrap(),
+                neutron_data: String::new(),
+                transform: Some(matrix.try_into().unwrap()),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn external_owner_repeats_local_children_under_each_containing_instance() {
+        let components = two_component_stream(Some(276));
+        let mut first = super::IDENTITY;
+        first[0] = [0.0, -1.0, 0.0, 3.0];
+        first[1] = [1.0, 0.0, 0.0, 4.0];
+        let mut second = super::IDENTITY;
+        second[0][3] = 8.0;
+        let carriers = [
+            carrier(
+                100,
+                "00000000-0000-4000-8000-000000000001",
+                placed(1, first),
+                DOCUMENT_ROOT,
+            ),
+            carrier(
+                200,
+                "00000000-0000-4000-8000-000000000002",
+                placed(2, second),
+                DOCUMENT_ROOT,
+            ),
+        ];
+        let bodies = BTreeSet::new();
+        for count in [1, 2] {
+            let mut sources = super::LocalComponentSources {
+                scopes: &[],
+                occurrences: &carriers[..count],
+                components: &components,
+                body_bindings: &[],
+                bodies: Some(&bodies),
+                root_ordinal_start: 1,
+                limits: cadmpeg_core::decode::ResourceLimits::default(),
+            };
+            let local = super::project_local_components(&sources).unwrap();
+            let projection = crate::xref::project_occurrences(
+                &external_owner_table(COMPONENT_ROOT),
+                &sources,
+                &local.occurrences,
+            )
+            .unwrap();
+            assert!(local.losses.is_empty());
+            assert!(projection.losses.is_empty());
+            assert_eq!(projection.occurrences.len(), count);
+            let mut paths = BTreeSet::new();
+            for (index, carrier) in carriers[..count].iter().enumerate() {
+                let parent = crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid);
+                let child = projection
+                    .occurrences
+                    .iter()
+                    .find(|child| {
+                        child.parent
+                            == OccurrenceParent::Occurrence {
+                                occurrence: parent.clone(),
+                            }
+                    })
+                    .unwrap();
+                assert!(paths.insert(child.id.clone()));
+                assert_eq!(
+                    child.id,
+                    crate::ids::nested_xref_occurrence_id(&parent, 0, 0)
+                );
+                assert_eq!(child.transform.rows()[0][3], 20.0);
+                let parent = local
+                    .occurrences
+                    .iter()
+                    .find(|occurrence| occurrence.id == parent)
+                    .unwrap();
+                let world = parent.transform.compose(child.transform).unwrap().rows();
+                assert_eq!(
+                    [world[0][3], world[1][3]],
+                    if index == 0 {
+                        [30.0, 60.0]
+                    } else {
+                        [100.0, 0.0]
+                    }
+                );
+            }
+            if count == 2 {
+                sources.limits.max_entities =
+                    cadmpeg_core::decode::u64_from_index(local.occurrences.len()) + 1;
+                assert!(matches!(
+                    crate::xref::project_occurrences(&external_owner_table(COMPONENT_ROOT), &sources, &local.occurrences),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.operation == "expand F3D external occurrences"
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn external_root_owner_stays_root_and_unresolved_owners_report_a_loss() {
+        let components = two_component_stream(Some(276));
+        let bodies = BTreeSet::new();
+        let sources = super::LocalComponentSources {
+            scopes: &[],
+            occurrences: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&bodies),
+            root_ordinal_start: 1,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        for (owner, stream, unresolved) in [
+            (DOCUMENT_ROOT, STREAM, false),
+            (999, STREAM, true),
+            (COMPONENT_ROOT, STREAM, true),
+            (DOCUMENT_ROOT, "f3d:OtherDesign/BulkStream.dat", true),
+        ] {
+            let mut table = external_owner_table(owner);
+            table.references[0]
+                .placement_source
+                .as_mut()
+                .unwrap()
+                .stream = stream.to_owned();
+            let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
+            assert_eq!(projection.occurrences.len(), 1);
+            assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
+            assert_eq!(projection.occurrences[0].transform.rows()[0][3], 20.0);
+            assert_eq!(projection.losses.len(), usize::from(unresolved));
+            if unresolved {
+                assert_eq!(
+                    projection.losses[0].code,
+                    crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
+                );
+            }
+        }
     }
 
     #[test]
@@ -2023,6 +2205,91 @@ mod tests {
 
     fn loss_codes(inserts: &super::ComponentInserts) -> Vec<cadmpeg_ir::report::loss::LossKind> {
         inserts.losses().into_iter().map(|loss| loss.code).collect()
+    }
+
+    #[test]
+    fn external_component_features_and_joint_operands_use_unique_instance_paths() {
+        let scope = component_insert_scope(50, "resolved-role");
+        let scopes = [scope.clone()];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+        let table = crate::xref::XrefTable {
+            references: vec![resolved_role_reference()],
+            ..Default::default()
+        };
+        let components = BTreeMap::new();
+        let bodies = BTreeSet::new();
+        let sources = super::LocalComponentSources {
+            scopes: &[],
+            occurrences: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&bodies),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        let base = crate::xref::project_occurrences(&table, &sources, &[])
+            .unwrap()
+            .occurrences
+            .remove(0);
+        let mut foreign = table.references[0].clone();
+        foreign.id = "f3d:xref/foreign/xref:reference#0-occurrence-0".to_owned();
+        foreign.placement_source.as_mut().unwrap().stream =
+            "f3d:OtherDesign/BulkStream.dat".to_owned();
+        let references = [foreign, table.references[0].clone()];
+        let mut projected = Vec::new();
+        for count in 1..=2 {
+            let mut occurrence = base.clone();
+            let parent =
+                cadmpeg_ir::ids::OccurrenceId::mint(format!("f3d:model:occurrence#group-{count}"))
+                    .unwrap();
+            occurrence.id = crate::ids::nested_xref_occurrence_id(&parent, 0, 0);
+            occurrence.parent = OccurrenceParent::Occurrence { occurrence: parent };
+            projected.push(occurrence);
+            let mut inserts = super::ComponentInserts::decide(&scopes, &timelines, &references);
+            inserts.bind_external_paths(&references, &projected);
+            let mut feature = Feature {
+                id: FeatureId::mint("f3d:model:feature#external").unwrap(),
+                ordinal: 0,
+                name: None,
+                suppressed: None,
+                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: "ComponentInsert".into(),
+                        parameters: BTreeMap::new(),
+                    }),
+                ),
+                native_ref: Some(scope.id.clone()),
+            };
+            let losses = crate::xref::bind_component_insert_features(
+                std::slice::from_mut(&mut feature),
+                &scopes,
+                &table,
+                &projected,
+            );
+            if count == 1 {
+                assert_eq!(inserts.occurrence(&scope.id), Some(&projected[0].id));
+                assert!(losses.is_empty());
+                assert!(
+                    matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence }) if occurrence == &projected[0].id)
+                );
+            } else {
+                assert!(inserts.occurrence(&scope.id).is_none());
+                assert!(matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Native { .. })
+                ));
+                assert_eq!(losses.len(), 1);
+                assert_eq!(
+                    losses[0].code,
+                    crate::loss::F3dLossCode::FeatureOccurrencePathUnresolved.kind()
+                );
+            }
+        }
     }
 
     #[test]

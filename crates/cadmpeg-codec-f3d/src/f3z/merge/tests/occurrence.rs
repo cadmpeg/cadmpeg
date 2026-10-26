@@ -668,3 +668,173 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     );
 }
+
+#[test]
+fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() {
+    use crate::test_support::assembly_test::{
+        f3d_without_brep_with_xref_placement, f3z_archive, XREF_ROLE,
+    };
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{
+        ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference,
+    };
+
+    let mut child_matrix = Transform::identity().rows();
+    child_matrix[1][3] = 0.5;
+    let member = f3d_without_brep_with_xref_placement(
+        "assembly-design",
+        "member.f3d",
+        "leaf.f3d",
+        XREF_ROLE,
+        child_matrix,
+    );
+    let leaf = f3d_with_smbh(&synthetic_geometry_smbh());
+    let archive = f3z_archive(
+        "member.f3d",
+        &[("member.f3d", &member), ("leaf.f3d", &leaf)],
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, bytes) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, bytes).unwrap();
+    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let reference = XrefReference {
+        id: "f3d:xref:reference#0".to_owned(),
+        ordinal: 0,
+        occurrence_ordinal: 0,
+        placement_source: None,
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: "member.f3d".to_owned().try_into().unwrap(),
+        neutron_role: "outer-role".to_owned().try_into().unwrap(),
+        neutron_data: String::new(),
+        transform: None,
+    };
+    let table = crate::xref::XrefTable {
+        references: vec![reference],
+        ..Default::default()
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut children = Vec::new();
+    for index in 0..2 {
+        let parent = OccurrenceId::mint(format!("f3d:model:occurrence#group-{index}")).unwrap();
+        let transform = if index == 0 {
+            Transform::affine([
+                [0.0, -1.0, 0.0, 30.0],
+                [1.0, 0.0, 0.0, 40.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap()
+        } else {
+            Transform::affine([
+                [1.0, 0.0, 0.0, 80.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap()
+        };
+        let group = Occurrence {
+            id: parent.clone(),
+            prototype: PrototypeReference::Unresolved {},
+            parent: OccurrenceParent::Root {},
+            ordinal: index,
+            transform,
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        };
+        let mut child = group.clone();
+        child.id = crate::ids::nested_xref_occurrence_id(&parent, 0, 0);
+        children.push(child.id.clone());
+        child.parent = OccurrenceParent::Occurrence { occurrence: parent };
+        child.prototype = PrototypeReference::External {
+            document: ExternalDocument::path("member.f3d"),
+            object: None,
+        };
+        child.transform = Transform::affine([
+            [1.0, 0.0, 0.0, 20.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        child.native_ref = Some(table.references[0].id.clone());
+        ir.model.occurrences.extend([group, child]);
+    }
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::at(
+            cadmpeg_core::decode::DecodeDepth::Full,
+            false,
+        ));
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let merged = crate::f3z::merge::MergeSession {
+        ctx: &ctx,
+        scan: &scan,
+        archive: &archive,
+        stack: vec!["root.f3d".to_owned()],
+    }
+    .merge(&mut ir, &mut report, &mut fidelity, &table)
+    .unwrap();
+    assert_eq!(merged, 4);
+    assert_eq!(ir.model.bodies.len(), 2);
+    let translations = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| {
+            let rows = body.transform.unwrap().rows();
+            [rows[0][3], rows[1][3]]
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(translations, [[25.0, 60.0], [100.0, 5.0]]);
+    assert_ne!(ir.model.bodies[0].id, ir.model.bodies[1].id);
+    for child in children {
+        let imported = ir
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| {
+                occurrence.parent
+                    == OccurrenceParent::Occurrence {
+                        occurrence: child.clone(),
+                    }
+            })
+            .unwrap();
+        assert_eq!(imported.transform.rows()[1][3], 5.0);
+    }
+    assert_eq!(ir.model.occurrences[1].transform.rows()[0][3], 20.0);
+    assert_eq!(ir.model.occurrences[3].transform.rows()[0][3], 20.0);
+}
+
+#[test]
+fn imported_definition_bodies_keep_their_definition_frame() {
+    let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+    let body = model.bodies[0].id.clone();
+    model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:component#owned").unwrap(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            bodies: vec![body],
+            source_name: None,
+            label: None,
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::new(),
+            sketches: Vec::new(),
+            native_ref: None,
+        });
+    let original = model.bodies[0].transform;
+    let transform = Transform::affine([
+        [1.0, 0.0, 0.0, 20.0],
+        [0.0, 1.0, 0.0, 30.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    crate::f3z::merge::apply_occurrence_transform(&mut model, transform).unwrap();
+    assert_eq!(model.bodies[0].transform, original);
+}

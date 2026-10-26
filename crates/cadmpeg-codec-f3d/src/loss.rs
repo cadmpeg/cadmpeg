@@ -197,6 +197,8 @@ pub(crate) enum F3dLossCode {
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
     XrefPlacementSuperseded,
+    /// An external occurrence owner has no unique local component instance.
+    XrefOwnerUnresolved,
     /// Inserted-design occurrences that store the identity and are placed by
     /// their joints; the joint-solved pose is not computed.
     JointPlacedOccurrenceUnsolved,
@@ -365,6 +367,7 @@ impl F3dLossCode {
         Self::XrefPlacementUndecoded,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
+        Self::XrefOwnerUnresolved,
         Self::JointPlacedOccurrenceUnsolved,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
@@ -498,6 +501,7 @@ impl F3dLossCode {
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
+            Self::XrefOwnerUnresolved => "xref.owner-unresolved",
             Self::JointPlacedOccurrenceUnsolved => "assembly.joint-placed-occurrence-unsolved",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
@@ -641,6 +645,7 @@ impl F3dLossCode {
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
+            | Self::XrefOwnerUnresolved
             | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
             | Self::FaceSurfaceReferenceDangling
@@ -745,7 +750,8 @@ impl F3dLossCode {
             | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
-            Self::LocalOccurrenceOwnerUnbound
+            Self::XrefOwnerUnresolved
+            | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
             | Self::LocalOccurrenceUnplaced
@@ -926,6 +932,7 @@ mod tests {
                 "xref.placement-undecoded",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
+                "xref.owner-unresolved",
                 "assembly.joint-placed-occurrence-unsolved",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
