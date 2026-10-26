@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
-use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
+use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
@@ -13,7 +13,9 @@ use cadmpeg_ir::geometry::{
     HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
-use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId, ShellId};
+use cadmpeg_ir::ids::{
+    AppearanceBindingId, AppearanceId, OccurrenceId, ProductDefinitionId, ShellId,
+};
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
     PmiQuantity, PmiTarget,
@@ -5526,19 +5528,22 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let mut bindings_by_appearance = HashMap::<&AppearanceId, Vec<&AppearanceBinding>>::new();
+        for binding in &self.ir.model.appearance_bindings {
+            bindings_by_appearance
+                .entry(&binding.appearance)
+                .or_default()
+                .push(binding);
+        }
         let lossy_appearances = self
             .ir
             .model
             .appearances
             .iter()
             .filter(|appearance| {
-                let bindings = self
-                    .ir
-                    .model
-                    .appearance_bindings
-                    .iter()
-                    .filter(|binding| binding.appearance == appearance.id)
-                    .collect::<Vec<_>>();
+                let bindings = bindings_by_appearance
+                    .get(&appearance.id)
+                    .map_or(&[][..], Vec::as_slice);
                 let alpha_unwritable = appearance.base_color.is_some_and(|color| {
                     color.a() != 1.0
                         && bindings.iter().any(|binding| match &binding.target {
