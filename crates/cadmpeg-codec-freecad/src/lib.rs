@@ -1077,6 +1077,11 @@ impl CodecBackend for FcstdCodec {
                 &shape_payloads,
                 &ir.model.bodies,
             )?;
+            product::localize_definition_bodies(
+                &product_definitions,
+                &occurrences,
+                &mut ir.model.bodies,
+            );
             ir.model.product_definitions = product_definitions;
             ir.model.occurrences = occurrences;
             application_geometry::mesh_placement::project(

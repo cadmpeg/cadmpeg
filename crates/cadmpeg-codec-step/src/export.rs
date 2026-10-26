@@ -1398,6 +1398,21 @@ impl<'a> Builder<'a> {
             1 => root_products.pop_first(),
             _ => None,
         };
+        // A rigid root placement of a local product needs a parent product to carry it.
+        let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
+            matches!(occurrence.parent, OccurrenceParent::Root {})
+                && occurrence_products.contains_key(&occurrence.id)
+                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| transform.is_proper_rigid())
+        };
+        let assembly_root = occurrences.iter().any(|occurrence| {
+            placed_root(occurrence)
+                && occurrence
+                    .effective_transform()
+                    .is_ok_and(|transform| !is_identity(&transform.rows()))
+        });
         let product_names = distinct_names(
             &products
                 .iter()
@@ -1407,7 +1422,10 @@ impl<'a> Builder<'a> {
                         .as_deref()
                         .or(product.source_name.as_deref())
                         .or(product.part_number.as_deref())
-                        .or_else(|| (root_product == Some(&product.id)).then_some(self.model_name));
+                        .or_else(|| {
+                            (!assembly_root && root_product == Some(&product.id))
+                                .then_some(self.model_name)
+                        });
                     (product.id.as_str(), name)
                 })
                 .collect::<Vec<_>>(),
@@ -1431,13 +1449,18 @@ impl<'a> Builder<'a> {
             );
         }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
+        let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
-            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                continue;
-            };
-            let Some(parent_product) = occurrence_products.get(parent) else {
-                continue;
+            let parent_product = match &occurrence.parent {
+                OccurrenceParent::Occurrence { occurrence: parent } => {
+                    let Some(parent_product) = occurrence_products.get(parent) else {
+                        continue;
+                    };
+                    Some(parent_product)
+                }
+                OccurrenceParent::Root {} if assembly_root && placed_root(occurrence) => None,
+                OccurrenceParent::Root {} => continue,
             };
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 continue;
@@ -1468,10 +1491,13 @@ impl<'a> Builder<'a> {
                 *frame.axis(),
                 *frame.reference(),
             );
-            representation_placements
-                .entry(parent_product.clone())
-                .or_default()
-                .push(to);
+            match parent_product {
+                Some(parent_product) => representation_placements
+                    .entry(parent_product.clone())
+                    .or_default()
+                    .push(to),
+                None => assembly_root_placements.push(to),
+            }
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
@@ -1539,49 +1565,82 @@ impl<'a> Builder<'a> {
             representations.insert(product.id.clone(), representation);
         }
 
-        let root_representation = root_product
-            .or_else(|| (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id))
-            .and_then(|product| representations.get(product))
-            .copied();
+        let assembly_root = assembly_root.then(|| {
+            self.emit_assembly_root(
+                context,
+                product_context,
+                definition_context,
+                assembly_root_placements,
+            )
+        });
+        let root_representation = assembly_root
+            .map(|(_, representation)| representation)
+            .or_else(|| {
+                root_product
+                    .or_else(|| {
+                        (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id)
+                    })
+                    .and_then(|product| representations.get(product))
+                    .copied()
+            });
         self.emit_unclaimed_body_representation(context, root_representation);
 
         for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
-            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                let transform = match occurrence.effective_transform() {
-                    Ok(transform) => transform,
-                    Err(error) => {
+            let parent = match (&occurrence.parent, assembly_root) {
+                (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
+                    let Some(parent_occurrence) = graph.occurrence(parent) else {
                         self.loss(
-                            StepLossCode::AssemblyGraphInvalid,
-                            format!("occurrence '{}': {error}", occurrence.id),
+                            StepLossCode::OccurrenceUnresolvedParent,
+                            format!("occurrence '{}' has an unresolved parent", occurrence.id),
                         );
-                        return;
-                    }
-                };
-                if !is_identity(&transform.rows())
-                    || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
-                {
-                    self.loss(
-                        StepLossCode::RootOccurrencePlacementNotRepresentable,
-                        format!(
-                            "root occurrence '{}' has a placement or scale that is not representable",
-                            occurrence.id
-                        ),
-                    );
+                        continue;
+                    };
+                    let Some(parent_product) = occurrence_products.get(&parent_occurrence.id)
+                    else {
+                        self.missing_parent_products
+                            .insert(occurrence.id.as_str().to_owned());
+                        continue;
+                    };
+                    let Some(parent) = definitions
+                        .get(parent_product)
+                        .copied()
+                        .zip(representations.get(parent_product).copied())
+                    else {
+                        continue;
+                    };
+                    parent
                 }
-                continue;
+                (OccurrenceParent::Root {}, Some(assembly_root)) if placed_root(occurrence) => {
+                    assembly_root
+                }
+                (OccurrenceParent::Root {}, _) => {
+                    let transform = match occurrence.effective_transform() {
+                        Ok(transform) => transform,
+                        Err(error) => {
+                            self.loss(
+                                StepLossCode::AssemblyGraphInvalid,
+                                format!("occurrence '{}': {error}", occurrence.id),
+                            );
+                            return;
+                        }
+                    };
+                    if occurrence_products.contains_key(&occurrence.id)
+                        && (!is_identity(&transform.rows())
+                            || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get)
+                                != [1.0; 3])
+                    {
+                        self.loss(
+                            StepLossCode::RootOccurrencePlacementNotRepresentable,
+                            format!(
+                                "root occurrence '{}' has a placement or scale that is not representable",
+                                occurrence.id
+                            ),
+                        );
+                    }
+                    continue;
+                }
             };
-            let Some(parent_occurrence) = graph.occurrence(parent) else {
-                self.loss(
-                    StepLossCode::OccurrenceUnresolvedParent,
-                    format!("occurrence '{}' has an unresolved parent", occurrence.id),
-                );
-                continue;
-            };
-            let Some(parent_product) = occurrence_products.get(&parent_occurrence.id) else {
-                self.missing_parent_products
-                    .insert(occurrence.id.as_str().to_owned());
-                continue;
-            };
+            let (parent_definition, parent_representation) = parent;
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 self.loss(
                     StepLossCode::OccurrenceNoLocalProduct,
@@ -1592,17 +1651,9 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             };
-            let Some((
-                &parent_definition,
-                &child_definition,
-                &parent_representation,
-                &child_representation,
-            )) = definitions
-                .get(parent_product)
-                .zip(definitions.get(child_product))
-                .zip(representations.get(parent_product))
+            let Some((&child_definition, &child_representation)) = definitions
+                .get(child_product)
                 .zip(representations.get(child_product))
-                .map(|(((a, b), c), d)| (a, b, c, d))
             else {
                 continue;
             };
@@ -1655,6 +1706,47 @@ impl<'a> Builder<'a> {
                 &format!("{relationship},{usage_shape}"),
             );
         }
+    }
+
+    /// Emits the model product that places the root occurrences. Returns its
+    /// product definition and shape representation.
+    fn emit_assembly_root(
+        &mut self,
+        context: Ref,
+        product_context: Ref,
+        definition_context: Ref,
+        placements: Vec<Ref>,
+    ) -> (Ref, Ref) {
+        let name = string(self.model_name);
+        let product = self
+            .emitter
+            .emit("PRODUCT", &format!("{name},{name},'',({product_context})"));
+        let formation = self
+            .emitter
+            .emit("PRODUCT_DEFINITION_FORMATION", &format!("'','',{product}"));
+        let definition = self.emitter.emit(
+            "PRODUCT_DEFINITION",
+            &format!("{name},'',{formation},{definition_context}"),
+        );
+        let shape = self
+            .emitter
+            .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
+        let mut items = vec![geometry::placement(
+            &mut self.emitter,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        )];
+        items.extend(placements);
+        let representation = self.emitter.emit(
+            "SHAPE_REPRESENTATION",
+            &format!("{name},{},{context}", refs(&items)),
+        );
+        self.emitter.emit(
+            "SHAPE_DEFINITION_REPRESENTATION",
+            &format!("{shape},{representation}"),
+        );
+        (definition, representation)
     }
 
     fn emit_unclaimed_body_representation(&mut self, context: Ref, root: Option<Ref>) {
