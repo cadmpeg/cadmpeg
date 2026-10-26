@@ -961,6 +961,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             property.header.context.index(),
         ];
         match &property.kind {
+            PmDcFeaturePropertyKind::SheetMetal { definition } => {
+                references.extend(
+                    definition
+                        .references()
+                        .iter()
+                        .map(|reference| reference.index()),
+                );
+            }
             PmDcFeaturePropertyKind::References { items, .. } => {
                 references.extend(items.references().iter().map(|reference| reference.index()));
             }
@@ -1043,6 +1051,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc face selection has an invalid record type, list, or member".into(),
+                Some(property.id()),
+            ));
+        }
+        if !crate::feature::sheet_metal::valid_references(property, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sheet-metal property has an invalid record or operand type".into(),
                 Some(property.id()),
             ));
         }

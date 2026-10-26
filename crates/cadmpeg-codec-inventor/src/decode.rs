@@ -758,6 +758,18 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        let (attached_plates, bends) =
+            crate::feature::sheet_metal::native_kind_counts(&feature_inventory, &ir.model.features);
+        if attached_plates != 0 {
+            losses.push(InventorLossCode::FeatureSheetMetalAttachedPlateKindMissing.note(format!(
+                "Retained {attached_plates} attached plate(s) as native history features; the IR has no SheetMetalAttachedPlate kind. Attachment controls and selections remain native."
+            )));
+        }
+        if bends != 0 {
+            losses.push(InventorLossCode::FeatureSheetMetalBendKindMissing.note(format!(
+                "Retained {bends} separate bend record(s) as native history features; the IR has no SheetMetalBend kind. Bend controls and selections remain native."
+            )));
+        }
         let partial_threads = ir
             .model
             .features

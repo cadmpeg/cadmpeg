@@ -608,6 +608,130 @@ Slot | Record type
 
 The slot-3 enumeration selects the tool reference. Value 2 selects the work plane in slot 5. Value 3 selects the surface-body wrapper in slot 8. The unused tool reference is null. The work-plane frame follows the grammar and units in section 13.
 
+### 13.4 Attached plates and bend properties
+
+The 17-property attached-plate form has these slots:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Plate profile selection |
+| 1 | Face-sketch normal direction |
+| 2 | Thickness-side control |
+| 3 | Thickness length parameter |
+| 4 | Attachment control `92596ba9d311efa86000b3a99dccefb0` |
+| 5, 6 | Null |
+| 7 | Edge collection |
+| 8 | Feature dimensions |
+| 9 | Corner control `83ce7786a946cde11ebd99b4fe02afb2` |
+| 10 | Bend relief `64880596d3119a76600081a99dccefb0` |
+| 11 | Transition `e9345026d5114c081000e596c28b7ab5` |
+| 12 | Attachment selection list `ce2d9b29ad43d8802f132c9a40c9ba90` |
+| 13 | Plate scalar control `051772e5a74f641a01386e8f3cc02218` |
+| 14 | Null |
+| 15 | Result object collection |
+| 16 | Part operation; value 3 joins the existing body |
+
+The attachment selection list contains a type-2 reference list after the versioned content header and stamps. Each member selects a selection wrapper of type `799c7cfa5a4ef5b2597b6494fc798db5`. A wrapper contains the versioned content header and stamps followed by `edges:u32`, then ends. `edges` references an edge collection. Its edge-item indexes name edge-selector source indexes as defined in section 13. This path selects edges on the input sheet. It does not name the new plate's profile edges. The plate and bend edge collection can be empty while the attachment selection list is nonempty.
+
+Feature-label class `f258f74cd3114f24600047a99dccefb0` identifies a bend. Its 11-property form has these slots:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Edge collection shared with plate slot 7 |
+| 1 | Inside-radius length parameter |
+| 2 | Thickness length parameter shared with plate slot 3 |
+| 3 | Attachment control shared with plate slot 4 |
+| 4 | Bend relief shared with plate slot 10 |
+| 5 | Null |
+| 6 | Feature dimensions |
+| 7 | Transition shared with plate slot 11 |
+| 8 | Bend scalar control `3441b690d511d8026000a28d4aa6fbb0` |
+| 9 | Result object collection shared with plate slot 15 |
+| 10 | Boolean control |
+
+The bend radius in slot 1 repeats the radius reference of the attachment control. The flange record owns ordered plate, bend, and corner children. Each child is a separate generic feature with its own source index, label owner, state, and history position. Sharing an attachment control identifies the plate and bend pair. The bend is not a property sub-record of the plate. The plate and bend refer to a common result-body wrapper; result identity alone does not select a history revision. Neither the attachment control nor the bend's property vector contains an angle parameter.
+
+Feature-label classes `7f588068b74378a0559515946f7a1c12`, `852f6bb0d411db6f60004daa9dccefb0`, and `aaf21093d344209a04cc799656cd7e09` identify a corner, a hem, and a flat-pattern definition respectively. The seven-property corner form uses slots 0 through 6 for corner control, null, feature dimensions, attachment selection list, plate profile selection, null, and result object collection. The corner shares the plate's corner control, attachment selection list, profile selection, and result collection.
+
+The ten-property hem form uses slots 0 through 9 for plate-profile selection, direction, thickness parameter, control `e5b810b3d411a37a600050aa9dccefb0`, edge collection, bend relief, body selector `83aadad54f4375dacd1003b260a8a422`, feature dimensions, transition, and bend scalar control. The hem is a separate labeled generic feature.
+
+All property layouts below start after the versioned content header and stamps. All named references use the packed PmDc record-reference grammar of section 12. Length parameters use internal centimetres. Their formula graph preserves the distinction between a literal value and a reference to a sheet-metal style parameter.
+
+Attachment control fields are:
+
+```text
+control u32
+thickness u32
+first_mode u32
+directions u32[2]
+radius u32
+second_mode u32
+relief_width u32
+minimum_remnant u32
+first_option u32
+states u8[3]
+second_option u32
+```
+
+`control`, `first_option`, and `second_option` reference Boolean properties. `thickness`, `radius`, `relief_width`, and `minimum_remnant` reference length parameters. `directions` reference two direction records. `first_mode` and `second_mode` reference enumeration type `7267cc3bd31104a96000b3a99dccefb0`. The extended attachment form adds one terminal `extension:u32` reference to type `93596ba9d311efa86000b3a99dccefb0`. The record ends after `second_option` or `extension`.
+
+Type `93596ba9d311efa86000b3a99dccefb0` is an attachment-state record. It uses the state content header without stamps, followed by these fields:
+
+```text
+state i32
+thickness u32
+radius u32
+attachment u32
+relief_width u32
+minimum_remnant u32
+options u32[2]
+```
+
+`attachment` references the attachment control or a hem control of type `e5b810b3d411a37a600050aa9dccefb0`. The remaining references repeat its length-parameter and Boolean operands. The record ends after `options`.
+
+Bend relief fields are:
+
+```text
+control u32
+width u32
+depth u32
+form u32
+minimum_remnant u32
+seam_gap u32
+```
+
+`control` references a Boolean. `width`, `depth`, `minimum_remnant`, and `seam_gap` reference length parameters. `form` references enumeration type `720c3e2bd311976060007aa99dccefb0`. The width and minimum-remnant references repeat those of the attachment control. The record ends after `seam_gap`.
+
+Transition fields are:
+
+```text
+form u32
+control u32
+radius u32
+```
+
+`form` references enumeration type `07a66130d4118895600053aa9dccefb0`, `control` references a Boolean, and `radius` references a transition-radius length parameter. The record ends after `radius`.
+
+Corner control fields are:
+
+```text
+control u32
+gap u32
+size u32
+relief_form u32
+corner_form u32
+secondary_form u32
+jacobi_radius u32
+value u32
+option u32
+```
+
+`control` and `option` reference Booleans. `gap`, `size`, and `jacobi_radius` reference length parameters. `relief_form` and `secondary_form` reference type `720c3e2bd311976060007aa99dccefb0`; `corner_form` references type `e0a8d8afd3117d5a0008928f8b1f0f69`. `value` is a raw u32 word. The record ends after `option`.
+
+Types `7267cc3bd31104a96000b3a99dccefb0`, `720c3e2bd311976060007aa99dccefb0`, `e0a8d8afd3117d5a0008928f8b1f0f69`, and `07a66130d4118895600053aa9dccefb0` contain the versioned content header and stamps, followed by `type_value:i16` and `value:u16`, then end. Their type values are 9, 304 or 501, 8, and 4 respectively. An enumeration value is a scalar, not a record reference.
+
+The plate scalar control contains `value:u32` after its versioned content header and stamps. The base bend scalar control contains `value:u32` after that header and stamps. The extended bend scalar control contains `value:u32` and `state:u8`. Each record ends after its last stated field.
+
 ## 14. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.

@@ -41,6 +41,7 @@ mod edge_selection;
 mod history;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
+pub(crate) mod sheet_metal;
 mod split;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
@@ -186,6 +187,9 @@ pub(crate) struct PmDcFeaturePropertyPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcFeaturePropertyKind {
+    SheetMetal {
+        definition: sheet_metal::SheetMetalProperty,
+    },
     Enumeration {
         family: PmDcFeatureEnumFamily,
         type_value: i16,
@@ -323,6 +327,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     EdgeCollection,
     FaceCollection,
     LoftSections,
+    SheetMetalAttachmentSelections,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -894,7 +899,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         FACE_ITEM_TYPE => Some(parse_face_item),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         WORK_AXIS_TYPE => Some(parse_work_axis),
-        _ => split::property_parser(type_id),
+        _ => sheet_metal::property_parser(type_id).or_else(|| split::property_parser(type_id)),
     }
 }
 

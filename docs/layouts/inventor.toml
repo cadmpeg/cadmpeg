@@ -1681,3 +1681,410 @@ type = "u16"
 source = "spec"
 anchor = "and `value:u16`, then the record ends"
 note = "0 selects thickness along the face-sketch normal."
+
+[[record]]
+name = "pm_dc_sheet_metal_attachment_fields"
+kind = "byte"
+section = "13.4"
+anchor = "Attachment control fields are:"
+size = 47
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "thickness"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "first_mode"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "directions"
+offset = 12
+type = "u32[2]"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "radius"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "second_mode"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "relief_width"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "minimum_remnant"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "first_option"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "states"
+offset = 40
+type = "u8[3]"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record.field]]
+name = "second_option"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "Attachment control fields are:"
+
+[[record]]
+name = "pm_dc_sheet_metal_attachment_extension"
+kind = "byte"
+section = "13.4"
+anchor = "adds one terminal `extension:u32`"
+size = 4
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "extension"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "adds one terminal `extension:u32`"
+
+[[record]]
+name = "pm_dc_sheet_metal_relief_fields"
+kind = "byte"
+section = "13.4"
+anchor = "Bend relief fields are:"
+size = 24
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "control u32"
+
+[[record.field]]
+name = "width"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "width u32"
+
+[[record.field]]
+name = "depth"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "depth u32"
+
+[[record.field]]
+name = "form"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "form u32"
+
+[[record.field]]
+name = "minimum_remnant"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "minimum_remnant u32"
+
+[[record.field]]
+name = "seam_gap"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "seam_gap u32"
+
+[[record]]
+name = "pm_dc_sheet_metal_transition_fields"
+kind = "byte"
+section = "13.4"
+anchor = "Transition fields are:"
+size = 12
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "form"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "form u32"
+
+[[record.field]]
+name = "control"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "control u32"
+
+[[record.field]]
+name = "radius"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "radius u32"
+
+[[record]]
+name = "pm_dc_sheet_metal_corner_fields"
+kind = "byte"
+section = "13.4"
+anchor = "Corner control fields are:"
+size = 36
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "gap"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "size"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "relief_form"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "corner_form"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "secondary_form"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "jacobi_radius"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "value"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record.field]]
+name = "option"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "Corner control fields are:"
+
+[[record]]
+name = "pm_dc_sheet_metal_selection_wrapper"
+kind = "byte"
+section = "13.4"
+anchor = "followed by `edges:u32`"
+size = 4
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "edges"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "followed by `edges:u32`"
+
+[[record]]
+name = "pm_dc_sheet_metal_plate_control"
+kind = "byte"
+section = "13.4"
+anchor = "plate scalar control contains `value:u32`"
+size = 4
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "plate scalar control contains `value:u32`"
+
+[[record]]
+name = "pm_dc_sheet_metal_bend_control"
+kind = "byte"
+section = "13.4"
+anchor = "extended bend scalar control contains `value:u32` and `state:u8`"
+size = 5
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps, or at the terminal extension."
+
+[[record.field]]
+name = "value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "extended bend scalar control contains `value:u32` and `state:u8`"
+
+[[record.field]]
+name = "state"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "extended bend scalar control contains `value:u32` and `state:u8`"
+
+[[record]]
+name = "pm_dc_sheet_metal_attachment_state_fields"
+kind = "byte"
+section = "13.4"
+anchor = "is an attachment-state record"
+size = 32
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the state content header without stamps."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "state i32"
+
+[[record.field]]
+name = "thickness"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "thickness u32"
+
+[[record.field]]
+name = "radius"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "radius u32"
+
+[[record.field]]
+name = "attachment"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "attachment u32"
+
+[[record.field]]
+name = "relief_width"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "relief_width u32"
+
+[[record.field]]
+name = "minimum_remnant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "minimum_remnant u32"
+
+[[record.field]]
+name = "options"
+offset = 24
+type = "u32[2]"
+source = "spec"
+anchor = "options u32[2]"
+
+[[record]]
+name = "pm_dc_sheet_metal_enum_fields"
+kind = "byte"
+section = "13.4"
+anchor = "Their type values are 9, 304 or 501, 8, and 4 respectively"
+size = 4
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps."
+
+[[record.field]]
+name = "type_value"
+offset = 0
+type = "i16"
+source = "spec"
+anchor = "followed by `type_value:i16` and `value:u16`"
+
+[[record.field]]
+name = "value"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "followed by `type_value:i16` and `value:u16`"
+
+[[record]]
+name = "pm_dc_sheet_metal_bend_control_base"
+kind = "byte"
+section = "13.4"
+anchor = "base bend scalar control contains `value:u32`"
+size = 4
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs"
+note = "Offsets start after the versioned content header and stamps."
+
+[[record.field]]
+name = "value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "base bend scalar control contains `value:u32`"
