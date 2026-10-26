@@ -41,6 +41,7 @@ mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
 pub(crate) mod revolve;
+pub(crate) mod sheet_metal;
 mod split;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
@@ -150,14 +151,16 @@ const FEATURE_LABEL_TYPE: [u8; 16] = [
     0x2b, 0xa4, 0x48, 0x2b, 0xd2, 0x11, 0x58, 0x64, 0x60, 0x00, 0x74, 0xb7, 0x9b, 0x49, 0xeb, 0xb0,
 ];
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct FeatureInventory {
-    edge_names: HashMap<(String, u32), Option<edge_selection::EdgeName>>,
+    edge_inputs: edge_selection::EdgeInventory,
     record_types: HashMap<cadmpeg_ir::ids::IdentityKey, HashMap<u32, Option<String>>>,
     pub(crate) features: Vec<PmDcFeature>,
     pub(crate) pattern_features: Vec<PmDcPatternFeature>,
     pub(crate) terminators: Vec<PmDcFeatureTerminator>,
     pub(crate) properties: Vec<PmDcFeatureProperty>,
+    pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
+    pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
     pub(crate) dimensions: Vec<revolve::Dimension>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
@@ -170,6 +173,7 @@ pub(crate) struct FeatureInventory {
 pub(crate) struct FeatureProjection {
     pub(crate) features: Vec<Feature>,
     pub(crate) result_topologies: Vec<FeatureResultTopology>,
+    pub(crate) input_topologies: Vec<cadmpeg_ir::features::FeatureInputTopology>,
     pub(crate) unresolved_features: usize,
     pub(crate) unresolved_states: usize,
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -188,6 +192,9 @@ pub(crate) struct PmDcFeaturePropertyPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcFeaturePropertyKind {
+    SheetMetal {
+        definition: sheet_metal::SheetMetalProperty,
+    },
     Enumeration {
         family: PmDcFeatureEnumFamily,
         type_value: i16,
@@ -326,6 +333,7 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     EdgeCollection,
     FaceCollection,
     LoftSections,
+    SheetMetalAttachmentSelections,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -567,7 +575,7 @@ pub(crate) fn inventory(
     document: &RseInventory<'_>,
 ) -> Result<FeatureInventory, CodecError> {
     let mut inventory = FeatureInventory {
-        edge_names: edge_selection::inventory(ctx, document)?,
+        edge_inputs: edge_selection::inventory(ctx, document)?,
         record_types: HashMap::new(),
         features: Vec::new(),
         pattern_features: Vec::new(),
@@ -579,6 +587,7 @@ pub(crate) fn inventory(
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
         issues: Vec::new(),
+        ..Default::default()
     };
     for segment in &document.segments {
         if !matches!(segment.kind, SegmentKind::PmDc | SegmentKind::PmBRep) {
@@ -609,6 +618,32 @@ pub(crate) fn inventory(
                 continue;
             }
             let parsed = match record.type_id {
+                sheet_metal::style::TYPE if sheet_metal::style::prefix_len(version).is_some() => {
+                    sheet_metal::style::parse(ctx, record.payload, version).and_then(|style| {
+                        push_record(
+                            ctx,
+                            &mut inventory.sheet_metal_styles,
+                            style,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor sheet-metal style",
+                        )
+                    })
+                }
+                sheet_metal::flange::TYPE => {
+                    sheet_metal::flange::parse(ctx, record.payload, version).and_then(|flange| {
+                        push_record(
+                            ctx,
+                            &mut inventory.sheet_metal_flanges,
+                            flange,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor sheet-metal flange",
+                        )
+                    })
+                }
                 revolve::DIMENSION_TYPE => {
                     revolve::parse_dimension(ctx, record.payload).and_then(|dimension| {
                         push_record(
@@ -916,7 +951,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         WORK_AXIS_TYPE => Some(parse_work_axis),
         revolve::CONTROL_TYPE => Some(parse_auxiliary_enum),
-        _ => split::property_parser(type_id),
+        _ => sheet_metal::property_parser(type_id).or_else(|| split::property_parser(type_id)),
     }
 }
 
@@ -1661,6 +1696,7 @@ pub(crate) enum FeatureFamily {
     Chamfer,
     Hole,
     Plate,
+    Bend,
     Thicken,
     Shell,
     Sweep,
@@ -1678,6 +1714,7 @@ impl FeatureFamily {
             Self::Chamfer => &[CHAMFER_CLASS_ID],
             Self::Hole => &[HOLE_CLASS_ID],
             Self::Plate => &[PLATE_CLASS_ID],
+            Self::Bend => &[sheet_metal::BEND_CLASS],
             Self::Thicken => &[THICKEN_CLASS_ID],
             Self::Shell => &[SHELL_CLASS_ID],
             Self::Sweep => &[loft_sweep::slots::SWEEP_CLASS],
@@ -1700,6 +1737,7 @@ impl FeatureFamily {
                 15
             }
             Self::Plate => 6,
+            Self::Bend => 9,
             Self::Thicken => 15,
             Self::Shell => 9,
             Self::Sweep => 15,
@@ -1716,6 +1754,7 @@ impl FeatureFamily {
             Self::Chamfer,
             Self::Hole,
             Self::Plate,
+            Self::Bend,
             Self::Thicken,
             Self::Shell,
             Self::Sweep,
@@ -1738,7 +1777,13 @@ impl FeatureFamily {
                 FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
             ) | (
                 Self::Plate,
-                FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. })
+                FeatureDefinition::Operation(
+                    FeatureOperation::SheetMetalBaseFlange { .. }
+                        | FeatureOperation::SheetMetalAttachedPlate { .. }
+                )
+            ) | (
+                Self::Bend,
+                FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { .. })
             ) | (
                 Self::Fillet,
                 FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
@@ -1771,8 +1816,12 @@ impl FeatureFamily {
         match definition {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => Some(Self::Base),
             FeatureDefinition::Operation(FeatureOperation::Extrude { .. }) => Some(Self::Extrusion),
-            FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. }) => {
-                Some(Self::Plate)
+            FeatureDefinition::Operation(
+                FeatureOperation::SheetMetalBaseFlange { .. }
+                | FeatureOperation::SheetMetalAttachedPlate { .. },
+            ) => Some(Self::Plate),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { .. }) => {
+                Some(Self::Bend)
             }
             FeatureDefinition::Operation(FeatureOperation::Fillet { .. }) => Some(Self::Fillet),
             FeatureDefinition::Operation(FeatureOperation::Chamfer { .. }) => Some(Self::Chamfer),
@@ -1852,6 +1901,7 @@ pub(crate) fn project(
         return Ok(FeatureProjection {
             features: Vec::new(),
             result_topologies: Vec::new(),
+            input_topologies: Vec::new(),
             unresolved_features: total,
             unresolved_states: 0,
             revolve_losses: Vec::new(),
@@ -2049,7 +2099,10 @@ pub(crate) fn project(
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
-                FeatureFamily::Plate => project_plate(ctx, feature, label, &index),
+                FeatureFamily::Plate => project_plate(ctx, feature, label, &index).or_else(|| {
+                    sheet_metal::projection::project_plate(ctx, feature, label, &index, inventory)
+                }),
+                FeatureFamily::Bend => None,
                 FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
                 FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
                 FeatureFamily::Sweep | FeatureFamily::Loft => {
@@ -2162,6 +2215,8 @@ pub(crate) fn project(
         }
         keep
     });
+    neutral -= sheet_metal::projection::reject_unresolved_inputs(ctx, &mut projected, inventory)?;
+    neutral += sheet_metal::projection::project_bends(ctx, &mut projected, &index, inventory)?;
     projected.sort_unstable_by_key(|item| item.feature.ordinal);
     let mut features = Vec::new();
     let mut result_topologies = Vec::new();
@@ -2172,6 +2227,7 @@ pub(crate) fn project(
         }
     }
     edge_selection::bind_generated(&mut features, &mut result_topologies)?;
+    let input_topologies = sheet_metal::inputs::project(ctx, &mut features, inventory)?;
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {
@@ -2191,6 +2247,7 @@ pub(crate) fn project(
         revolve_losses,
         features,
         result_topologies,
+        input_topologies,
         added_profiles: index.profiles.into_added_profiles(),
     })
 }
@@ -2396,6 +2453,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Chamfer => NativeFeatureKind::Chamfer,
             FeatureFamily::Hole => NativeFeatureKind::Other("Hole".into()),
             FeatureFamily::Plate => NativeFeatureKind::Other("Plate".into()),
+            FeatureFamily::Bend => NativeFeatureKind::Other("SheetMetalBend".into()),
             FeatureFamily::Thicken => NativeFeatureKind::Other("Thicken".into()),
             FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
             FeatureFamily::Sweep => NativeFeatureKind::Other("Sweep".into()),
@@ -2813,7 +2871,7 @@ fn plate_sketches<'a>(
             )
         })
         .collect::<HashSet<_>>();
-    let mut plates = HashMap::new();
+    let mut plates = sheet_metal::projection::profiles(inventory, &sketches);
     for label in &inventory.labels {
         let token = label.identity.segment_token.as_str();
         let [first, second] = label.participants.references() else {
@@ -2852,25 +2910,7 @@ fn project_plate(
     }) {
         return None;
     }
-    let token = source.identity.segment_token.as_str();
-    let selection = slot_property(source, 0, index)?;
-    let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &selection.kind else {
-        return None;
-    };
-    let link = entity_link.index().checked_sub(1)?;
-    let sketch_ordinal = *index
-        .plate_sketches
-        .get(&(token, source.identity.record_ordinal))?;
-    let sketch = index
-        .sketches
-        .get(&(token, sketch_ordinal))
-        .and_then(Option::as_ref)?;
-    let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
-    let neutral_sketch = index.sketches_by_id.get(sketch_id.as_str())?;
-    let profile = index
-        .profiles
-        .regions(token, sketch_ordinal, neutral_sketch, &[link])?;
-    let (_, normal, _) = neutral_sketch.resolved_placement()?;
+    let (profile, normal) = plate_profile(source, index)?;
     let direction_record = resolve_direction(source, 1, index)?;
     let stored = Vector3::new(
         direction_record.direction[0].get(),
@@ -2912,6 +2952,35 @@ fn project_plate(
         native_ref: Some(source.id()),
     };
     Some(Ok((feature, result)))
+}
+
+fn plate_profile(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+) -> Option<(
+    cadmpeg_ir::features::PlanarProfileRef,
+    cadmpeg_ir::features::FiniteVector3,
+)> {
+    let token = source.identity.segment_token.as_str();
+    let selection = slot_property(source, 0, index)?;
+    let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &selection.kind else {
+        return None;
+    };
+    let link = entity_link.index().checked_sub(1)?;
+    let sketch_ordinal = *index
+        .plate_sketches
+        .get(&(token, source.identity.record_ordinal))?;
+    let sketch = index
+        .sketches
+        .get(&(token, sketch_ordinal))
+        .and_then(Option::as_ref)?;
+    let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
+    let neutral_sketch = index.sketches_by_id.get(sketch_id.as_str())?;
+    let profile = index
+        .profiles
+        .regions(token, sketch_ordinal, neutral_sketch, &[link])?;
+    let (_, normal, _) = neutral_sketch.resolved_placement()?;
+    Some((profile, normal))
 }
 
 fn plate_side(
@@ -4067,7 +4136,7 @@ mod tests {
     #[test]
     fn feature_projection_reports_an_unlabelled_feature() {
         let inventory = super::FeatureInventory {
-            edge_names: std::collections::HashMap::new(),
+            edge_inputs: crate::feature::edge_selection::EdgeInventory::default(),
             record_types: std::collections::HashMap::new(),
             features: vec![test_feature(0, 0, &[])],
             pattern_features: Vec::new(),
@@ -4079,6 +4148,7 @@ mod tests {
             kernel_entity_links: Vec::new(),
             work_planes: Vec::new(),
             issues: Vec::new(),
+            ..Default::default()
         };
         let design = crate::design::DesignInventory {
             parameters: Vec::new(),

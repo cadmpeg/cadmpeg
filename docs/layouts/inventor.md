@@ -612,6 +612,234 @@ Parsed by:
 | 0 | 2 | `type_value` | `i16` | little | spec | Enumeration type; 2 for the plate thickness side. |
 | 2 | 2 | `value` | `u16` | little | spec | 0 selects thickness along the face-sketch normal. |
 
+## `pm_dc_sheet_metal_attachment_fields`
+
+Spec §13.5 · layout: byte offsets · size: 47 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `control` | `u32` | little | spec | Attachment control fields are: |
+| 4 | 4 | `thickness` | `u32` | little | spec | Attachment control fields are: |
+| 8 | 4 | `first_mode` | `u32` | little | spec | Attachment control fields are: |
+| 12 | 8 | `directions` | `u32[2]` | little | spec | Attachment control fields are: |
+| 20 | 4 | `radius` | `u32` | little | spec | Attachment control fields are: |
+| 24 | 4 | `second_mode` | `u32` | little | spec | Attachment control fields are: |
+| 28 | 4 | `relief_width` | `u32` | little | spec | Attachment control fields are: |
+| 32 | 4 | `minimum_remnant` | `u32` | little | spec | Attachment control fields are: |
+| 36 | 4 | `first_option` | `u32` | little | spec | Attachment control fields are: |
+| 40 | 3 | `states` | `u8[3]` | little | spec | Attachment control fields are: |
+| 43 | 4 | `second_option` | `u32` | little | spec | Attachment control fields are: |
+
+## `pm_dc_sheet_metal_attachment_extension`
+
+Spec §13.5 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `extension` | `u32` | little | spec | adds one terminal `extension:u32` |
+
+## `pm_dc_sheet_metal_relief_fields`
+
+Spec §13.5 · layout: byte offsets · size: 24 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `control` | `u32` | little | spec | control u32 |
+| 4 | 4 | `width` | `u32` | little | spec | width u32 |
+| 8 | 4 | `depth` | `u32` | little | spec | depth u32 |
+| 12 | 4 | `form` | `u32` | little | spec | form u32 |
+| 16 | 4 | `minimum_remnant` | `u32` | little | spec | minimum_remnant u32 |
+| 20 | 4 | `seam_gap` | `u32` | little | spec | seam_gap u32 |
+
+## `pm_dc_sheet_metal_transition_fields`
+
+Spec §13.5 · layout: byte offsets · size: 12 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `form` | `u32` | little | spec | form u32 |
+| 4 | 4 | `control` | `u32` | little | spec | control u32 |
+| 8 | 4 | `radius` | `u32` | little | spec | radius u32 |
+
+## `pm_dc_sheet_metal_corner_fields`
+
+Spec §13.5 · layout: byte offsets · size: 36 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `control` | `u32` | little | spec | Corner control fields are: |
+| 4 | 4 | `gap` | `u32` | little | spec | Corner control fields are: |
+| 8 | 4 | `size` | `u32` | little | spec | Corner control fields are: |
+| 12 | 4 | `relief_form` | `u32` | little | spec | Corner control fields are: |
+| 16 | 4 | `corner_form` | `u32` | little | spec | Corner control fields are: |
+| 20 | 4 | `secondary_form` | `u32` | little | spec | Corner control fields are: |
+| 24 | 4 | `jacobi_radius` | `u32` | little | spec | Corner control fields are: |
+| 28 | 4 | `value` | `u32` | little | spec | Corner control fields are: |
+| 32 | 4 | `option` | `u32` | little | spec | Corner control fields are: |
+
+## `pm_dc_sheet_metal_selection_wrapper`
+
+Spec §13.5 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `edges` | `u32` | little | spec | followed by `edges:u32` |
+
+## `pm_dc_sheet_metal_plate_control`
+
+Spec §13.5 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `value` | `u32` | little | spec | plate scalar control contains `value:u32` |
+
+## `pm_dc_sheet_metal_bend_control`
+
+Spec §13.5 · layout: byte offsets · size: 5 B
+
+Offsets start after the versioned content header and stamps, or at the terminal extension.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `value` | `u32` | little | spec | extended bend scalar control contains `value:u32` and `state:u8` |
+| 4 | 1 | `state` | `u8` | little | spec | extended bend scalar control contains `value:u32` and `state:u8` |
+
+## `pm_dc_sheet_metal_attachment_state_fields`
+
+Spec §13.5 · layout: byte offsets · size: 32 B
+
+Offsets start after the state content header without stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | state i32 |
+| 4 | 4 | `thickness` | `u32` | little | spec | thickness u32 |
+| 8 | 4 | `radius` | `u32` | little | spec | radius u32 |
+| 12 | 4 | `attachment` | `u32` | little | spec | attachment u32 |
+| 16 | 4 | `relief_width` | `u32` | little | spec | relief_width u32 |
+| 20 | 4 | `minimum_remnant` | `u32` | little | spec | minimum_remnant u32 |
+| 24 | 8 | `options` | `u32[2]` | little | spec | options u32[2] |
+
+## `pm_dc_sheet_metal_enum_fields`
+
+Spec §13.5 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `type_value` | `i16` | little | spec | followed by `type_value:i16` and `value:u16` |
+| 2 | 2 | `value` | `u16` | little | spec | followed by `type_value:i16` and `value:u16` |
+
+## `pm_dc_sheet_metal_bend_control_base`
+
+Spec §13.5 · layout: byte offsets · size: 4 B
+
+Offsets start after the versioned content header and stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `value` | `u32` | little | spec | base bend scalar control contains `value:u32` |
+
+## `pm_dc_sheet_metal_style_operand_prefix`
+
+Spec §13.5 · layout: byte offsets · size: 90 B
+
+Prefix of the segment-major-29 and segment-major-31 sheet-metal style record; the record continues after this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal/style.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 30 | `prefix` | `bytes[30]` | little | spec | prefix bytes[30] |
+| 30 | 4 | `thickness` | `u32` | little | spec | thickness u32 |
+| 34 | 4 | `bend_radius` | `u32` | little | spec | bend_radius u32 |
+| 38 | 4 | `bend_relief_form` | `u32` | little | spec | bend_relief_form u32 |
+| 42 | 4 | `bend_relief_width` | `u32` | little | spec | bend_relief_width u32 |
+| 46 | 4 | `bend_relief_depth` | `u32` | little | spec | bend_relief_depth u32 |
+| 50 | 4 | `corner_relief_form` | `u32` | little | spec | corner_relief_form u32 |
+| 54 | 4 | `corner_relief_size` | `u32` | little | spec | corner_relief_size u32 |
+| 58 | 4 | `seam_gap` | `u32` | little | spec | seam_gap u32 |
+| 62 | 4 | `minimum_remnant` | `u32` | little | spec | minimum_remnant u32 |
+| 66 | 4 | `option` | `u32` | little | spec | option u32 |
+| 70 | 12 | `values` | `u32[3]` | little | spec | values u32[3] |
+| 82 | 4 | `transition_form` | `u32` | little | spec | transition_form u32 |
+| 86 | 4 | `transition_radius` | `u32` | little | spec | transition_radius u32 |
+
+## `pm_dc_sheet_metal_style_operand_prefix_legacy`
+
+Spec §13.5 · layout: byte offsets · size: 86 B
+
+Prefix of the segment-major-20 and segment-major-23 sheet-metal style record; the record continues after this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal/style.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 26 | `prefix` | `bytes[26]` | little | spec | prefix bytes[26] |
+| 26 | 4 | `thickness` | `u32` | little | spec | thickness u32 |
+| 30 | 4 | `bend_radius` | `u32` | little | spec | bend_radius u32 |
+| 34 | 4 | `bend_relief_form` | `u32` | little | spec | bend_relief_form u32 |
+| 38 | 4 | `bend_relief_width` | `u32` | little | spec | bend_relief_width u32 |
+| 42 | 4 | `bend_relief_depth` | `u32` | little | spec | bend_relief_depth u32 |
+| 46 | 4 | `corner_relief_form` | `u32` | little | spec | corner_relief_form u32 |
+| 50 | 4 | `corner_relief_size` | `u32` | little | spec | corner_relief_size u32 |
+| 54 | 4 | `seam_gap` | `u32` | little | spec | seam_gap u32 |
+| 58 | 4 | `minimum_remnant` | `u32` | little | spec | minimum_remnant u32 |
+| 62 | 4 | `option` | `u32` | little | spec | option u32 |
+| 66 | 12 | `values` | `u32[3]` | little | spec | values u32[3] |
+| 78 | 4 | `transition_form` | `u32` | little | spec | transition_form u32 |
+| 82 | 4 | `transition_radius` | `u32` | little | spec | transition_radius u32 |
+
 ## `pm_dc_loft_property_slots`
 
 Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated

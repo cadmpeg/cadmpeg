@@ -501,6 +501,20 @@ fn decode_container<'a>(
         &feature_inventory.dimensions,
     )?;
     namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
+    if !feature_inventory.sheet_metal_styles.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_sheet_metal_styles",
+            &feature_inventory.sheet_metal_styles,
+        )?;
+    }
+    if !feature_inventory.sheet_metal_flanges.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_sheet_metal_flanges",
+            &feature_inventory.sheet_metal_flanges,
+        )?;
+    }
     namespace.set_arena(
         ctx,
         "pm_dc_entity_style_links",
@@ -789,6 +803,13 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(crate::feature::sheet_metal::native_kind_losses(
+            &feature_inventory,
+            &ir.model.features,
+        ));
+        losses.extend(crate::feature::sheet_metal::retained_control_losses(
+            ir.model.features.iter(),
+        ));
         losses.extend(unresolved.revolve_losses);
         losses.extend(crate::feature::loft_sweep::retained_control_losses(
             ir.model
@@ -1258,7 +1279,24 @@ fn decode_container<'a>(
             kernel_stats.unknown_surface_faces(),
         ),
     ];
-    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries.into_iter().collect();
+    let sheet_metal_coverage = [
+        (
+            crate::coverage::PM_DC_SHEET_METAL_STYLES,
+            feature_inventory.sheet_metal_styles.len(),
+        ),
+        (
+            crate::coverage::PM_DC_SHEET_METAL_FLANGES,
+            feature_inventory.sheet_metal_flanges.len(),
+        ),
+    ];
+    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+        .into_iter()
+        .chain(
+            sheet_metal_coverage
+                .into_iter()
+                .filter(|(_, count)| *count != 0),
+        )
+        .collect();
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -1337,6 +1375,7 @@ fn project_design(
     }
     ir.model.features = features.features;
     ir.model.feature_result_topologies = features.result_topologies;
+    ir.model.feature_input_topologies = features.input_topologies;
     // Flat-pattern models follow every projected document feature.
     let first_model_ordinal = ir
         .model

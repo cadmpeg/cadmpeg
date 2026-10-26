@@ -128,6 +128,30 @@ pub(crate) mod kernel_entity_link {
     pub(crate) const ENTITY_ID: usize = 15;
 }
 
+/// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix` record.
+///
+/// Spec §13.5. Record length 90 B.
+///
+/// ```text
+/// Prefix of the segment-major-29 and segment-major-31 sheet-metal style record; the record continues after this prefix.
+/// ```
+pub(crate) mod pm_dc_sheet_metal_style_operand_prefix {
+    /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.
+    pub(crate) const THICKNESS: usize = 30;
+}
+
+/// Byte offsets for the `pm_dc_sheet_metal_style_operand_prefix_legacy` record.
+///
+/// Spec §13.5. Record length 86 B.
+///
+/// ```text
+/// Prefix of the segment-major-20 and segment-major-23 sheet-metal style record; the record continues after this prefix.
+/// ```
+pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_legacy {
+    /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.
+    pub(crate) const THICKNESS: usize = 26;
+}
+
 /// Byte offsets for the `pm_dc_feature_dimension_tail` record.
 ///
 /// Spec §13. Record length 9 B.

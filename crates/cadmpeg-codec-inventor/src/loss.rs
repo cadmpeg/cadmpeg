@@ -71,6 +71,14 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
+    /// Attachment type-9 modes, Boolean controls, and states have no construction map.
+    FeatureSheetMetalAttachmentControlsNative,
+    /// Separate bends retain unresolved attachment and scalar controls.
+    FeatureSheetMetalBendControlsNative,
+    /// Projected attached plates retain construction controls in native records.
+    FeatureSheetMetalAttachmentControlsRetained,
+    /// Projected bends retain construction controls in native records.
+    FeatureSheetMetalBendControlsRetained,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// Revolve extents retain unresolved angular termination operands.
@@ -162,6 +170,10 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureShellDefinitionPartial,
+        Self::FeatureSheetMetalAttachmentControlsNative,
+        Self::FeatureSheetMetalBendControlsNative,
+        Self::FeatureSheetMetalAttachmentControlsRetained,
+        Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
@@ -222,6 +234,16 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
+            Self::FeatureSheetMetalAttachmentControlsNative => {
+                "feature.sheet-metal-attachment-controls-native"
+            }
+            Self::FeatureSheetMetalBendControlsNative => "feature.sheet-metal-bend-controls-native",
+            Self::FeatureSheetMetalAttachmentControlsRetained => {
+                "feature.sheet-metal-attachment-controls-retained"
+            }
+            Self::FeatureSheetMetalBendControlsRetained => {
+                "feature.sheet-metal-bend-controls-retained"
+            }
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
@@ -295,6 +317,10 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureShellDefinitionPartial
+            | Self::FeatureSheetMetalAttachmentControlsNative
+            | Self::FeatureSheetMetalBendControlsNative
+            | Self::FeatureSheetMetalAttachmentControlsRetained
+            | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
@@ -385,6 +411,10 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.shell-definition-partial",
+                "feature.sheet-metal-attachment-controls-native",
+                "feature.sheet-metal-bend-controls-native",
+                "feature.sheet-metal-attachment-controls-retained",
+                "feature.sheet-metal-bend-controls-retained",
                 "feature.revolve-operands-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",

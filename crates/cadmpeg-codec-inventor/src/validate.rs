@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod base;
+mod sheet_metal;
 
 use cadmpeg_asm::brep::records::{BodyNativeKey, FaceNativeKey};
 use cadmpeg_core::decode::DecodeContext;
@@ -117,6 +118,8 @@ const ARENAS: &[&str] = &[
     "wire_topologies",
 ];
 
+const OPTIONAL_ARENAS: &[&str] = &["pm_dc_sheet_metal_styles", "pm_dc_sheet_metal_flanges"];
+
 pub(crate) fn validate_native(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -130,13 +133,18 @@ pub(crate) fn validate_native(
         .map(String::as_str)
         .collect::<HashSet<_>>();
     let expected_arenas = ARENAS.iter().copied().collect::<HashSet<_>>();
-    if actual_arenas != expected_arenas {
+    let allowed_arenas = ARENAS
+        .iter()
+        .chain(OPTIONAL_ARENAS)
+        .copied()
+        .collect::<HashSet<_>>();
+    if !expected_arenas.is_subset(&actual_arenas) || !actual_arenas.is_subset(&allowed_arenas) {
         let mut missing = expected_arenas
             .difference(&actual_arenas)
             .copied()
             .collect::<Vec<_>>();
         let mut unexpected = actual_arenas
-            .difference(&expected_arenas)
+            .difference(&allowed_arenas)
             .copied()
             .collect::<Vec<_>>();
         missing.sort_unstable_by(Ord::cmp);
@@ -815,6 +823,8 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
 }
 
 fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
+    sheet_metal::records(data, findings);
+    sheet_metal::definitions(ir, data, findings);
     let raw = data
         .records
         .iter()
@@ -995,6 +1005,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             property.header.context.index(),
         ];
         match &property.kind {
+            PmDcFeaturePropertyKind::SheetMetal { definition } => {
+                references.extend(
+                    definition
+                        .references()
+                        .iter()
+                        .map(|reference| reference.index()),
+                );
+            }
             PmDcFeaturePropertyKind::References { items, .. } => {
                 references.extend(items.references().iter().map(|reference| reference.index()));
             }
@@ -1081,6 +1099,16 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc face selection has an invalid record type, list, or member".into(),
+                Some(property.id()),
+            ));
+        }
+        if !crate::feature::sheet_metal::valid_references(property, |ordinal| {
+            raw.get(&(property.identity.segment_token.as_str(), ordinal))
+                .copied()
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sheet-metal property has an invalid record or operand type".into(),
                 Some(property.id()),
             ));
         }
@@ -2008,6 +2036,8 @@ struct NativeData {
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
+    pm_dc_sheet_metal_styles: Vec<crate::feature::sheet_metal::style::Style>,
+    pm_dc_sheet_metal_flanges: Vec<crate::feature::sheet_metal::flange::Flange>,
     pm_dc_feature_dimensions: Vec<crate::feature::revolve::Dimension>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
@@ -2081,6 +2111,10 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_dc_feature_terminators")?,
             pm_dc_feature_properties: namespace
                 .arena_as_for_decode(ctx, "pm_dc_feature_properties")?,
+            pm_dc_sheet_metal_styles: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sheet_metal_styles")?,
+            pm_dc_sheet_metal_flanges: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sheet_metal_flanges")?,
             pm_dc_feature_dimensions: namespace
                 .arena_as_for_decode(ctx, "pm_dc_feature_dimensions")?,
             pm_dc_feature_labels: namespace.arena_as_for_decode(ctx, "pm_dc_feature_labels")?,

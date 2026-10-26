@@ -453,6 +453,22 @@ fn scale_feature_operation(
         FeatureOperation::SheetMetalBaseFlange { thickness, .. } => {
             scale_positive_length(thickness, scale)?;
         }
+        FeatureOperation::SheetMetalAttachedPlate {
+            thickness,
+            inside_radius,
+            relief,
+            transition,
+            ..
+        } => {
+            scale_positive_length(thickness, scale)?;
+            scale_attached_sheet_metal(inside_radius, relief, transition, scale)?;
+        }
+        FeatureOperation::SheetMetalBend {
+            inside_radius,
+            relief,
+            transition,
+            ..
+        } => scale_attached_sheet_metal(inside_radius, relief, transition, scale)?,
         FeatureOperation::SheetMetalEdgeFlange {
             height,
             width,
@@ -1254,6 +1270,20 @@ pub(in crate::decode) fn scale_sketch_geometry(
             ))
             }
         })
+}
+
+fn scale_attached_sheet_metal(
+    radius: &mut cadmpeg_ir::scalar::PositiveLength,
+    relief: &mut cadmpeg_ir::features::SheetMetalRelief,
+    transition: &mut cadmpeg_ir::features::SheetMetalTransition,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
+    scale_positive_length(radius, scale)?;
+    scale_positive_length(&mut relief.width, scale)?;
+    scale_positive_length(&mut relief.depth, scale)?;
+    scale_nonnegative_length(&mut relief.minimum_remnant, scale)?;
+    scale_nonnegative_length(&mut relief.seam_gap, scale)?;
+    scale_nonnegative_length(&mut transition.radius, scale)
 }
 
 #[cfg(test)]
@@ -2530,5 +2560,55 @@ mod tests {
             FeatureDefinition::Operation(FeatureOperation::Polyline { chain })
                 if chain.points()[0].get().x == 2.0 && chain.points()[1].get().x == 4.0
         ));
+    }
+    #[test]
+    fn attached_sheet_metal_scales_every_length_operand() {
+        use cadmpeg_ir::{
+            features::{
+                EdgeSelection, FeatureId, SheetMetalRelief, SheetMetalReliefForm,
+                SheetMetalTransition, SheetMetalTransitionForm,
+            },
+            scalar::{NonNegativeLength, PositiveLength},
+        };
+        let mut definition = FeatureDefinition::Operation(FeatureOperation::SheetMetalBend {
+            plate: FeatureId::mint("test:model:feature#plate").expect("identity"),
+            attachment: EdgeSelection::All,
+            inside_radius: PositiveLength::new(1.0).expect("radius"),
+            relief: SheetMetalRelief {
+                form: SheetMetalReliefForm::StyleDefault,
+                width: PositiveLength::new(2.0).expect("width"),
+                depth: PositiveLength::new(3.0).expect("depth"),
+                minimum_remnant: NonNegativeLength::new(4.0).expect("remnant"),
+                seam_gap: NonNegativeLength::new(5.0).expect("gap"),
+            },
+            transition: SheetMetalTransition {
+                form: SheetMetalTransitionForm::StyleDefault,
+                radius: NonNegativeLength::new(6.0).expect("transition"),
+            },
+        });
+        crate::decode::with_service_context(|ctx| {
+            scale_feature_definition(ctx, &mut definition, positive(2.0))
+        })
+        .expect("scale");
+        let FeatureDefinition::Operation(FeatureOperation::SheetMetalBend {
+            inside_radius,
+            relief,
+            transition,
+            ..
+        }) = definition
+        else {
+            panic!("bend");
+        };
+        assert_eq!(
+            [
+                inside_radius.get(),
+                relief.width.get(),
+                relief.depth.get(),
+                relief.minimum_remnant.get(),
+                relief.seam_gap.get(),
+                transition.radius.get()
+            ],
+            [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+        );
     }
 }

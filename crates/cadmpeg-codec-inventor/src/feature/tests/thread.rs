@@ -245,7 +245,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
     };
     let expected_face = properties[0].id();
     let inventory = FeatureInventory {
-        edge_names: std::collections::HashMap::new(),
+        edge_inputs: crate::feature::edge_selection::EdgeInventory::default(),
         record_types: std::collections::HashMap::new(),
         features: vec![source],
         pattern_features: Vec::new(),
@@ -257,6 +257,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
         issues: Vec::new(),
+        ..Default::default()
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;

@@ -229,3 +229,72 @@ fn each_bend_attachment_slot_keeps_the_plate_native() {
         assert!(crate::feature::project_plate(&ctx, &source, &label, &index).is_none());
     }
 }
+
+#[test]
+fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let mut inventory = crate::feature::FeatureInventory {
+        edge_inputs: crate::feature::edge_selection::EdgeInventory::default(),
+        record_types: std::collections::HashMap::default(),
+        features: vec![
+            test_feature(100, 17, &[(4, 7)]),
+            test_feature(200, 11, &[]),
+            test_feature(300, 17, &[]),
+        ],
+        pattern_features: vec![],
+        terminators: vec![],
+        properties: vec![],
+        labels: vec![
+            test_label(100, 1, crate::feature::PLATE_CLASS_ID, &[]),
+            test_label(
+                200,
+                2,
+                crate::feature::ClassId::try_from("f258f74cd3114f24600047a99dccefb0".to_owned())
+                    .expect("bend class"),
+                &[],
+            ),
+            test_label(300, 3, crate::feature::PLATE_CLASS_ID, &[]),
+        ],
+        entity_style_links: vec![],
+        kernel_entity_links: vec![],
+        work_planes: vec![],
+        issues: vec![],
+        ..Default::default()
+    };
+    let features: Vec<_> = inventory
+        .features
+        .iter()
+        .zip(&inventory.labels)
+        .map(|(feature, label)| {
+            crate::feature::native_feature(&ctx, &feature.identity, Some(label), feature.id())
+                .expect("native history feature")
+        })
+        .collect();
+    assert_eq!(
+        crate::feature::sheet_metal::native_kind_counts(&inventory, &features),
+        (1, 1)
+    );
+    let codes: Vec<_> = crate::feature::sheet_metal::native_kind_losses(&inventory, &features)
+        .iter()
+        .map(|loss| loss.code.local_code().to_owned())
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            "feature.sheet-metal-attachment-controls-native",
+            "feature.sheet-metal-bend-controls-native"
+        ]
+    );
+    assert!(crate::feature::sheet_metal::native_kind_losses(&inventory, &[]).is_empty());
+    assert_eq!(
+        crate::feature::sheet_metal::native_kind_counts(&inventory, &[]),
+        (0, 0)
+    );
+    inventory.labels.push(inventory.labels[0].clone());
+    assert_eq!(
+        crate::feature::sheet_metal::native_kind_counts(&inventory, &features),
+        (0, 1)
+    );
+}

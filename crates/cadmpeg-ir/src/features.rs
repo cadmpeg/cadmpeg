@@ -3195,6 +3195,38 @@ pub enum FeatureOperation {
         /// Distribution of thickness relative to the profile plane.
         side: SheetMetalThicknessSide,
     },
+    /// Planar sheet-metal plate attached to edges of an existing sheet.
+    SheetMetalAttachedPlate {
+        /// Closed profile in the attached plate's sketch plane.
+        profile: PlanarProfileRef,
+        /// Finished sheet thickness.
+        thickness: PositiveLength,
+        /// Distribution of thickness relative to the profile plane.
+        side: SheetMetalThicknessSide,
+        /// Boolean combination with the existing sheet.
+        op: BooleanOp,
+        /// Selected edges of the existing sheet.
+        attachment: EdgeSelection,
+        /// Inside radius at the attachment.
+        inside_radius: PositiveLength,
+        /// Relief form and evaluated length operands.
+        relief: SheetMetalRelief,
+        /// Transition form and evaluated radius.
+        transition: SheetMetalTransition,
+    },
+    /// Bend associated with a separate attached-plate history feature.
+    SheetMetalBend {
+        /// Attached plate that supplies the planar profile and thickness.
+        plate: FeatureId,
+        /// Selected edges of the existing sheet.
+        attachment: EdgeSelection,
+        /// Inside bend radius.
+        inside_radius: PositiveLength,
+        /// Relief form and evaluated length operands.
+        relief: SheetMetalRelief,
+        /// Transition form and evaluated radius.
+        transition: SheetMetalTransition,
+    },
     /// Sheet-metal wall grown from selected edges of an existing sheet body.
     SheetMetalEdgeFlange {
         /// Edges the flange is grown from.
@@ -3977,6 +4009,8 @@ impl FeatureOperation {
                 | UnresolvedFamily::BoundarySurface
                 | UnresolvedFamily::Draft => None,
             },
+            Self::SheetMetalAttachedPlate { .. } => Some("sheet metal attached plate"),
+            Self::SheetMetalBend { .. } => Some("sheet metal bend"),
             Self::Block { .. } => Some("block"),
             Self::Sphere { .. } => Some("sphere"),
             Self::ExtractBody { .. } => Some("extract body"),
@@ -5778,6 +5812,52 @@ pub enum ThickenSide {
     Reverse,
     /// Split the thickness equally across both sides.
     Both,
+}
+
+/// Relief form selected by the document's sheet-metal rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SheetMetalReliefForm {
+    /// Use the active document rule's bend-relief form.
+    StyleDefault,
+}
+
+/// Bend-relief operands with lengths in millimetres.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SheetMetalRelief {
+    /// Construction form.
+    pub form: SheetMetalReliefForm,
+    /// Evaluated relief width.
+    pub width: PositiveLength,
+    /// Evaluated relief depth.
+    pub depth: PositiveLength,
+    /// Minimum material remnant.
+    pub minimum_remnant: crate::scalar::NonNegativeLength,
+    /// Gap between adjacent sheet edges.
+    pub seam_gap: crate::scalar::NonNegativeLength,
+}
+
+/// Transition form selected by the document's sheet-metal rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SheetMetalTransitionForm {
+    /// Use the active document rule's transition form.
+    StyleDefault,
+}
+
+/// Sheet-metal transition operands with lengths in millimetres.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SheetMetalTransition {
+    /// Construction form.
+    pub form: SheetMetalTransitionForm,
+    /// Evaluated transition radius.
+    pub radius: crate::scalar::NonNegativeLength,
 }
 
 /// Face pair a sheet-metal flange height is measured from.
