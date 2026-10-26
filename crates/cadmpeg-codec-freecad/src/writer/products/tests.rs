@@ -36,7 +36,17 @@ fn nested_membership_accumulates_siblings_in_neutral_order() {
     ]);
     let mut objects = Vec::new();
     let mut losses = Vec::new();
-    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).expect("products");
+    crate::test_support::with_service_context(&[], |ctx| {
+        write(
+            ctx,
+            &ir,
+            &mut objects,
+            &mut names,
+            &HashMap::new(),
+            &mut losses,
+        )
+    })
+    .expect("products");
     let group = &objects
         .iter()
         .find(|object| object.name == "Parent")
@@ -72,7 +82,17 @@ fn container_occurrence_reuses_its_definition_object() {
     ]);
     let mut objects = Vec::new();
     let mut losses = Vec::new();
-    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).expect("products");
+    crate::test_support::with_service_context(&[], |ctx| {
+        write(
+            ctx,
+            &ir,
+            &mut objects,
+            &mut names,
+            &HashMap::new(),
+            &mut losses,
+        )
+    })
+    .expect("products");
     assert_eq!(objects.len(), 1);
     assert_eq!(objects[0].kind, "App::Part");
     assert!(!objects[0].properties.contains_key("LinkedObject"));
@@ -91,7 +111,17 @@ fn unresolved_external_prototype_is_a_persisted_link_state() {
     let mut names = HashMap::from([(instance.id.as_str().to_owned(), "Missing".to_owned())]);
     let mut objects = Vec::new();
     let mut losses = Vec::new();
-    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).expect("products");
+    crate::test_support::with_service_context(&[], |ctx| {
+        write(
+            ctx,
+            &ir,
+            &mut objects,
+            &mut names,
+            &HashMap::new(),
+            &mut losses,
+        )
+    })
+    .expect("products");
     let document =
         roxmltree::Document::parse(&objects[0].properties["LinkedObject"]).expect("link XML");
     let link = document
@@ -117,7 +147,17 @@ fn nested_link_group_children_decode_with_their_instance_parent() {
     let mut names = crate::writer::names::prepare(&ir, &[], &[]);
     let mut objects = Vec::new();
     let mut losses = Vec::new();
-    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).expect("product graph");
+    crate::test_support::with_service_context(&[], |ctx| {
+        write(
+            ctx,
+            &ir,
+            &mut objects,
+            &mut names,
+            &HashMap::new(),
+            &mut losses,
+        )
+    })
+    .expect("product graph");
     let document = xml::document(&objects, &BTreeMap::new(), "4");
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     archive
@@ -179,7 +219,17 @@ fn missing_occurrence_pose_omits_only_that_object_with_named_loss() {
     let mut objects = Vec::new();
     let mut names = HashMap::from([(definition.id.as_str().to_owned(), "Prototype".to_owned())]);
     let mut losses = Vec::new();
-    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).unwrap();
+    crate::test_support::with_service_context(&[], |ctx| {
+        write(
+            ctx,
+            &ir,
+            &mut objects,
+            &mut names,
+            &HashMap::new(),
+            &mut losses,
+        )
+    })
+    .unwrap();
     assert!(!names.contains_key(unknown.id.as_str()));
     assert!(!names.contains_key(joint_id.as_str()));
     let known_name = names.get(known.id.as_str()).expect("known sibling object");
@@ -262,7 +312,17 @@ fn unknown_ancestor_omits_descendants_and_dependent_joint_without_composing_loca
         (leaf.id.as_str().to_owned(), "Leaf".to_owned()),
     ]);
     let mut losses = Vec::new();
-    write(&ir, &mut objects, &mut names, &HashMap::new(), &mut losses).unwrap();
+    crate::test_support::with_service_context(&[], |ctx| {
+        write(
+            ctx,
+            &ir,
+            &mut objects,
+            &mut names,
+            &HashMap::new(),
+            &mut losses,
+        )
+    })
+    .unwrap();
     let omitted = losses
         .iter()
         .filter(|loss| loss.code.local_code() == "occurrence.not-transferred")

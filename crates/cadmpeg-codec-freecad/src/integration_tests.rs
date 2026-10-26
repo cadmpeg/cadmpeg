@@ -9,6 +9,7 @@ mod mandatory_document_parts;
 mod measured_geometry;
 mod metadata_recovery;
 mod object_declaration_parts;
+mod product_native_order;
 mod ring_traversal;
 mod source_b1;
 mod source_ledgers;

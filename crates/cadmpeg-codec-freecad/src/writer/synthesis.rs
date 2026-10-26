@@ -379,7 +379,7 @@ pub(super) fn write(
     super::parameters::prepare(ir, &mut objects, &mut names)?;
     design::spreadsheets(ir, &mut objects, &mut names)?;
     super::parameters::write(ir, &mut objects, &names, &mut losses)?;
-    super::products::write(ir, &mut objects, &mut names, &body_names, &mut losses)?;
+    super::products::write(ctx, ir, &mut objects, &mut names, &body_names, &mut losses)?;
     // Product and feature labels are independent neutral fields even when
     // FreeCAD stores both on the same object. Preserve the product label in a
     // dynamic property while the visible object Label follows the feature.

@@ -401,7 +401,65 @@ fn link_state(
     Ok(())
 }
 
+fn order_siblings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    objects: &mut [Object],
+    names: &HashMap<String, String>,
+) -> Result<(), CodecError> {
+    let mut siblings = Vec::new();
+    let mut slots = Vec::new();
+    ctx.reserve_working(
+        &mut siblings,
+        ir.model.occurrences.len(),
+        "FreeCAD occurrence sibling order keys",
+    )?;
+    ctx.reserve_working(
+        &mut slots,
+        ir.model.occurrences.len(),
+        "FreeCAD occurrence sibling order permutation",
+    )?;
+    for (position, object) in objects.iter().enumerate() {
+        let owner = ir
+            .model
+            .occurrences
+            .iter()
+            .enumerate()
+            .filter(|(_, occurrence)| names.get(occurrence.id.as_str()) == Some(&object.name))
+            .min_by_key(|(index, occurrence)| (occurrence.ordinal, *index));
+        if let Some((index, occurrence)) = owner {
+            let parent = match &occurrence.parent {
+                OccurrenceParent::Root {} => None,
+                OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str()),
+            };
+            siblings.push((parent, occurrence.ordinal, index, position));
+        }
+    }
+    // Keep each sibling set in its existing output slots while matching
+    // authored order (#238 §5.5); native Group lists already carry that order.
+    siblings.sort_unstable_by_key(|(parent, _, _, position)| (*parent, *position));
+    for (source, (_, _, _, position)) in siblings.iter_mut().enumerate() {
+        slots.push((*position, source));
+        *position = source;
+    }
+    siblings.sort_unstable_by_key(|(parent, ordinal, index, _)| (*parent, *ordinal, *index));
+    for (destination, (_, _, _, source)) in siblings.into_iter().enumerate() {
+        slots[source].1 = destination;
+    }
+    for index in 0..slots.len() {
+        while slots[index].1 != index {
+            let destination = slots[index].1;
+            objects.swap(slots[index].0, slots[destination].0);
+            let displaced = slots[destination].1;
+            slots[destination].1 = slots[index].1;
+            slots[index].1 = displaced;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn write(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     objects: &mut Vec<Object>,
     names: &mut HashMap<String, String>,
@@ -535,6 +593,7 @@ pub(super) fn write(
         object.set("Group", group(&members));
     }
     joints::write(ir, objects, names, losses)?;
+    order_siblings(ctx, ir, objects, names)?;
     metadata::preserve(ir, objects, names)
 }
 
