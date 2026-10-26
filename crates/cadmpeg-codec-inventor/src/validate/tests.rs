@@ -192,6 +192,7 @@ fn empty_data() -> super::NativeData {
         pm_graphics_style_collections: Vec::new(),
         pm_graphics_primary_color_styles: Vec::new(),
         face_native_keys: Vec::new(),
+        body_native_keys: Vec::new(),
         presentation_record_issues: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),
@@ -432,6 +433,69 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
         findings[0].message,
         "Inventor thread annotation does not match its PmDc face selection"
     );
+    Ok(())
+}
+
+#[test]
+fn fillet_continuity_is_nullable_and_rejects_a_resolved_non_boolean() {
+    let boolean_type = crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE);
+    for (index, admitted) in [(0, true), (1, true), (2, false), (3, true)] {
+        let kind = PmDcFeaturePropertyKind::FilletEdgeSet {
+            edges: PmDcReference::new(0, false).expect("null"),
+            radius: PmDcReference::new(0, false).expect("null"),
+            selection: PmDcReference::new(0, false).expect("null"),
+            continuity: PmDcReference::new(index, false).expect("reference"),
+            option: None,
+        };
+        let types = |ordinal| match ordinal {
+            0 => Some(boolean_type.as_str()),
+            1 => Some("00000000000000000000000000000000"),
+            _ => None,
+        };
+        assert_eq!(
+            super::fillet_continuity_type_error(&kind, types).is_none(),
+            admitted
+        );
+    }
+}
+
+#[test]
+fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestResult {
+    for class in [
+        "05daba90d111386100080bbd0663dc09",
+        "e0ef542fd111340900084eba32a3dc09",
+        "808b00afd41140881000fca5bba647b5",
+    ] {
+        let mut data = thread_data()?;
+        let mut label = serde_json::to_value(&data.pm_dc_feature_labels[0])?;
+        label["class_id"] = serde_json::json!(class);
+        data.pm_dc_feature_labels[0] = serde_json::from_value(label)?;
+        for (reference, invalid) in [(0, false), (1, true)] {
+            let source = &data.pm_dc_features[0];
+            let mut payload = (**source).clone();
+            payload.properties = PmDcReferenceList::new(
+                2,
+                Some(PmDcListMetadata::U32([1, 0])),
+                vec![PmDcReference::from_packed(reference)],
+            )
+            .ok_or("invalid slot fixture")?;
+            data.pm_dc_features[0] = crate::record_identity::Located::new(
+                payload,
+                source.identity.type_id.clone(),
+                source.identity.segment_token.clone(),
+                source.identity.record_ordinal,
+            );
+            let mut findings = Vec::new();
+            super::validate_features(&cadmpeg_ir::CadIr::empty(), &data, &mut findings);
+            assert_eq!(findings.len(), usize::from(invalid));
+            if invalid {
+                assert_eq!(
+                    findings[0].message,
+                    "Inventor loft or sweep property slot has an invalid record type"
+                );
+            }
+        }
+    }
     Ok(())
 }
 

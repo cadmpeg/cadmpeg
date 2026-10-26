@@ -508,6 +508,96 @@ Spec §13 · layout: byte offsets · size: 22 B
 | 14 | 4 | `qualifier` | `u32` | little | spec | The fixed selector prefix after the content header contains |
 | 18 | 4 | `naming_form` | `u32` | little | spec | The fixed selector prefix after the content header contains |
 
+## `meta_segment_pair`
+
+Spec §13.4 · layout: byte offsets · size: 32 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `segment_id` | `bytes[16]` | little | spec | segment_id:bytes[16] |
+| 16 | 16 | `revision_id` | `bytes[16]` | little | spec | revision_id:bytes[16] |
+
+## `meta_external_revision`
+
+Spec §13.4 · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `revision_id` | `bytes[16]` | little | spec | revision_id:bytes[16] |
+| 16 | 2 | `segment_pair_index` | `u16` | little | spec | segment_pair_index:u16 |
+| 18 | 2 | `reference_count` | `u16` | little | spec | reference_count:u16 |
+
+## `meta_external_reference`
+
+Spec §13.4 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `revision_index` | `u32` | little | spec | revision_index:u32 |
+| 4 | 2 | `key_extension` | `u16` | little | spec | key_extension:u16 |
+| 6 | 2 | `header_id` | `u16` | little | spec | header_id:u16 |
+
+## `kernel_entity_link`
+
+Spec §13 · layout: byte offsets · size: 23 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `selection_source` | `u32` | little | spec | selection_source u32 |
+| 10 | 1 | `state` | `u8` | little | spec | state u8 |
+| 11 | 4 | `body_reference` | `u32` | little | spec | body_reference u32 |
+| 15 | 4 | `entity_id` | `u32` | little | spec | entity_id u32 |
+| 19 | 4 | `entity_type` | `u32` | little | spec | entity_type u32 |
+
+## `pm_dc_spline_curve_prefix`
+
+Spec §12 · layout: byte offsets · size: 28 B
+
+Offsets are relative to each spline curve, after the spline record's variable lists.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spline.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `form` | `u32` | little | spec | form u32 · value `1` |
+| 4 | 4 | `degree` | `u32` | little | spec | degree u32 |
+| 8 | 8 | `tolerance` | `f64` | little | spec | tolerance f64 |
+| 16 | 4 | `knot_count` | `u32` | little | spec | knot_count u32 |
+| 20 | 4 | `knot_value` | `u32` | little | spec | knot_value u32 |
+| 24 | 4 | `scalar_width` | `u32` | little | spec | scalar_width u32 · value `8` |
+
+## `pm_dc_spline_curve_tail`
+
+Spec §12 · layout: byte offsets · size: 44 B
+
+Offsets are relative to the byte after the counted pole array.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/sketch/spline.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `pole_tolerance` | `f64` | little | spec | pole_tolerance f64 |
+| 8 | 8 | `values` | `u32[2]` | little | spec | values u32[2] |
+| 16 | 16 | `interval` | `f64[2]` | little | spec | interval f64[2] |
+| 32 | 8 | `terminal_value` | `f64` | little | spec | terminal_value f64 |
+| 40 | 4 | `scalar_width` | `u32` | little | spec | scalar_width u32 · value `8` |
+
 ## `pm_dc_plate_side_fields`
 
 Spec §13 · layout: byte offsets · size: 4 B
@@ -524,7 +614,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_attachment_fields`
 
-Spec §13.4 · layout: byte offsets · size: 47 B
+Spec §13.5 · layout: byte offsets · size: 47 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -547,7 +637,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_attachment_extension`
 
-Spec §13.4 · layout: byte offsets · size: 4 B
+Spec §13.5 · layout: byte offsets · size: 4 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -560,7 +650,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_relief_fields`
 
-Spec §13.4 · layout: byte offsets · size: 24 B
+Spec §13.5 · layout: byte offsets · size: 24 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -578,7 +668,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_transition_fields`
 
-Spec §13.4 · layout: byte offsets · size: 12 B
+Spec §13.5 · layout: byte offsets · size: 12 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -593,7 +683,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_corner_fields`
 
-Spec §13.4 · layout: byte offsets · size: 36 B
+Spec §13.5 · layout: byte offsets · size: 36 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -614,7 +704,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_selection_wrapper`
 
-Spec §13.4 · layout: byte offsets · size: 4 B
+Spec §13.5 · layout: byte offsets · size: 4 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -627,7 +717,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_plate_control`
 
-Spec §13.4 · layout: byte offsets · size: 4 B
+Spec §13.5 · layout: byte offsets · size: 4 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -640,7 +730,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_bend_control`
 
-Spec §13.4 · layout: byte offsets · size: 5 B
+Spec §13.5 · layout: byte offsets · size: 5 B
 
 Offsets start after the versioned content header and stamps, or at the terminal extension.
 
@@ -654,7 +744,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_attachment_state_fields`
 
-Spec §13.4 · layout: byte offsets · size: 32 B
+Spec §13.5 · layout: byte offsets · size: 32 B
 
 Offsets start after the state content header without stamps.
 
@@ -673,7 +763,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_enum_fields`
 
-Spec §13.4 · layout: byte offsets · size: 4 B
+Spec §13.5 · layout: byte offsets · size: 4 B
 
 Offsets start after the versioned content header and stamps.
 
@@ -687,7 +777,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_bend_control_base`
 
-Spec §13.4 · layout: byte offsets · size: 4 B
+Spec §13.5 · layout: byte offsets · size: 4 B
 
 Offsets start after the versioned content header and stamps.
 
@@ -700,7 +790,7 @@ Parsed by:
 
 ## `pm_dc_sheet_metal_style_operand_prefix`
 
-Spec §13.4 · layout: byte offsets · size: 90 B
+Spec §13.5 · layout: byte offsets · size: 90 B
 
 Prefix of the segment-major-29 sheet-metal style record; the record continues after this prefix.
 
@@ -720,3 +810,87 @@ Prefix of the segment-major-29 sheet-metal style record; the record continues af
 | 70 | 12 | `values` | `u32[3]` | little | spec | values u32[3] |
 | 82 | 4 | `transition_form` | `u32` | little | spec | transition_form u32 |
 | 86 | 4 | `transition_radius` | `u32` | little | spec | transition_radius u32 |
+
+## `pm_dc_loft_property_slots`
+
+Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Non-null property references select the stated record types. Slot numbers are property-list indices, not byte offsets.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `slot_0` | `u32` | little | spec | Ordered section list. |
+| 1 | `slot_1` | `u32` | little | spec | Part operation. |
+| 2 | `slot_2` | `u32` | little | spec | Boolean construction control. |
+| 3 | `slot_6` | `u32` | little | spec | Surface-loft result body wrapper. |
+| 4 | `slot_7` | `u32` | little | spec | Auxiliary loft-selection list. |
+| 5 | `slot_9` | `u32` | little | spec | Boolean construction control. |
+| 6 | `slot_10` | `u32` | little | spec | Loft construction enumeration. |
+| 7 | `slot_13` | `u32` | little | spec | Solid-loft result object collection. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 0 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 1 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 2 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 6 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 7 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 9 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 10 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 13 selects the record types in the specification.
+
+## `pm_dc_sweep_property_slots`
+
+Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Non-null property references select the stated record types. Slot numbers are property-list indices, not byte offsets.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `slot_0` | `u32` | little | spec | Boundary patch. |
+| 1 | `slot_1` | `u32` | little | spec | Path selection. |
+| 2 | `slot_2` | `u32` | little | spec | Part operation. |
+| 3 | `slot_3` | `u32` | little | spec | Angular parameter. |
+| 4 | `slot_4` | `u32` | little | spec | Extent enumeration. |
+| 5 | `slot_7` | `u32` | little | spec | Feature dimensions. |
+| 6 | `slot_8` | `u32` | little | spec | Sweep construction enumeration. |
+| 7 | `slot_9` | `u32` | little | spec | Sweep orientation enumeration. |
+| 8 | `slot_10` | `u32` | little | spec | Sweep scaling enumeration. |
+| 9 | `slot_15` | `u32` | little | spec | Result object collection. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 0 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 1 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 2 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 3 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 4 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 7 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 8 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 9 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 10 selects the record types in the specification.
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs` — Slot 15 selects the record types in the specification.
+
+## `pm_dc_generated_face_attribute`
+
+Spec §13.2 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Ordered ASM typed attribute values.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/loft_sweep/projection/evidence.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `common_fields` | `array` | little | spec | Five common attribute fields. |
+| 1 | `family` | `text` | little | spec | a family string |
+| 2 | `version_schema_state` | `array` | little | spec | Three integer tokens: 1, 44, 1. |
+| 3 | `generator` | `token_stream` | little | spec | `generator` is the generating feature's content-header source index |
+| 4 | `sentinel` | `token_stream` | little | spec | `generator`, and −1 |
+| 5 | `family_payload` | `array` | little | spec | Family-selected integer tokens. |

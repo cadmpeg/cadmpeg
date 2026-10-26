@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Native loft section and sweep control records.
+//! Loft section references and sweep controls.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -11,6 +11,46 @@ use super::{
 use crate::pmdc::{
     content_header, type_id_string, Cursor, PmDcListMetadata, PmDcReference, PmDcReferenceList,
 };
+
+pub(super) mod projection;
+pub(crate) mod slots;
+
+pub(crate) fn retained_control_losses<'a>(
+    definitions: impl IntoIterator<Item = &'a cadmpeg_ir::features::FeatureDefinition>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
+    use slots::Family;
+
+    let mut sweeps = 0_usize;
+    let mut lofts = 0_usize;
+    for definition in definitions {
+        if let FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Other(kind),
+            ..
+        }) = definition
+        {
+            if kind == Family::Sweep.native_name() {
+                sweeps += 1;
+            } else if kind == Family::SolidLoft.native_name()
+                || kind == Family::SurfaceLoft.native_name()
+            {
+                lofts += 1;
+            }
+        }
+    }
+    let mut losses = Vec::new();
+    if sweeps != 0 {
+        losses.push(crate::loss::InventorLossCode::FeatureSweepControlsUnresolved.note(format!(
+            "Retained {sweeps} native Inventor sweep feature(s): the operands, controls, or complete per-feature result topology do not close the neutral sweep construction."
+        )));
+    }
+    if lofts != 0 {
+        losses.push(crate::loss::InventorLossCode::FeatureLoftControlsUnresolved.note(format!(
+            "Retained {lofts} native Inventor loft feature(s): the section conditions, operands, controls, or complete per-feature result topology do not close the neutral loft construction."
+        )));
+    }
+    losses
+}
 
 pub(super) const SECTION_LIST_TYPE: [u8; 16] = [
     0x50, 0x9e, 0x2f, 0x31, 0xd1, 0x11, 0x03, 0x44, 0x00, 0x08, 0x81, 0xba, 0x32, 0xa3, 0xdc, 0x09,

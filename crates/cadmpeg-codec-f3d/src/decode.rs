@@ -2885,6 +2885,13 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 if let DesignState::Projected(design) = design {
                     design.store(&mut self.native);
+                    crate::design::decode::sketch_owners::attach(
+                        ctx,
+                        scan,
+                        &self.native,
+                        &mut self.ir.model,
+                        &mut self.report.losses,
+                    )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 index
@@ -2901,6 +2908,13 @@ impl<'a> F3dDecodeSession<'a> {
                 let projected = match design {
                     DesignState::Projected(design) => {
                         design.store(&mut self.native);
+                        crate::design::decode::sketch_owners::attach(
+                            ctx,
+                            scan,
+                            &self.native,
+                            &mut self.ir.model,
+                            &mut self.report.losses,
+                        )?;
                         true
                     }
                     DesignState::Absent => false,

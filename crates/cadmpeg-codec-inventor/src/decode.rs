@@ -76,18 +76,6 @@ fn decode_container<'a>(
     } else {
         ctx.depth()
     };
-    let unresolved = if delivered == DecodeDepth::Full {
-        project_design(
-            ctx,
-            &mut ir,
-            &container.rse,
-            &design_inventory,
-            &sketch_inventory,
-            &feature_inventory,
-        )?
-    } else {
-        UnresolvedDesign::default()
-    };
     let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -561,6 +549,16 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
+    let body_keys = if delivered == DecodeDepth::Full
+        && feature_inventory.labels.iter().any(|label| {
+            crate::feature::FeatureFamily::Base
+                .class_ids()
+                .contains(&label.class_id())
+        }) {
+        kernel_brep.body_native_keys.clone()
+    } else {
+        Vec::new()
+    };
     let face_keys = kernel_brep
         .face_native_keys
         .iter()
@@ -574,6 +572,34 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
+    let mut unresolved = if delivered == DecodeDepth::Full {
+        project_design(
+            ctx,
+            &mut ir,
+            &container.rse,
+            &design_inventory,
+            &sketch_inventory,
+            &feature_inventory,
+        )?
+    } else {
+        UnresolvedDesign::default()
+    };
+    if !body_keys.is_empty() {
+        let transferred = crate::feature::base::project(
+            ctx,
+            &container.rse,
+            &feature_inventory,
+            &design_inventory,
+            &body_keys,
+            &mut ir.model,
+        )?;
+        unresolved.features = unresolved
+            .features
+            .checked_sub(transferred)
+            .ok_or_else(|| {
+                CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
+            })?;
+    }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -770,6 +796,12 @@ fn decode_container<'a>(
                 "Retained {bends} separate bend record(s) as native history features: attachment controls, bend scalar control, and slot-10 Boolean have no proven construction or document-rule default map."
             )));
         }
+        losses.extend(crate::feature::loft_sweep::retained_control_losses(
+            ir.model
+                .features
+                .iter()
+                .map(|feature| feature.evaluation.definition()),
+        ));
         let partial_threads = ir
             .model
             .features
@@ -1296,6 +1328,7 @@ fn project_design(
             sketches: &ir.model.sketches,
             entities: &ir.model.sketch_entities,
             profile_bodies: &profile_bodies.bodies,
+            result_model: Some(&ir.model),
         },
     )?;
     let mut added_profiles = features.added_profiles;
@@ -1356,6 +1389,7 @@ fn project_root_product(
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
     Ok(ProductDefinition {
+        sketches: Vec::default(),
         id: ProductDefinitionId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
             cadmpeg_ir::identity_key!("root"),

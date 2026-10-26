@@ -213,6 +213,7 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
+            sketches: Vec::default(),
             id: "cadir:model:product#group"
                 .try_into()
                 .expect("valid identity"),

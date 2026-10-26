@@ -75,6 +75,10 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalAttachmentControlsNative,
     /// Separate bends retain unresolved attachment and scalar controls.
     FeatureSheetMetalBendControlsNative,
+    /// Sweep construction controls have no exact neutral interpretation.
+    FeatureSweepControlsUnresolved,
+    /// Loft construction controls and section conditions have no exact neutral interpretation.
+    FeatureLoftControlsUnresolved,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Parameter records have a unit or expression graph that is not closed.
@@ -156,6 +160,8 @@ impl InventorLossCode {
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
+        Self::FeatureSweepControlsUnresolved,
+        Self::FeatureLoftControlsUnresolved,
         Self::FeatureStateUnresolved,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
@@ -214,6 +220,8 @@ impl InventorLossCode {
                 "feature.sheet-metal-attachment-controls-native"
             }
             Self::FeatureSheetMetalBendControlsNative => "feature.sheet-metal-bend-controls-native",
+            Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
+            Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
@@ -283,6 +291,8 @@ impl InventorLossCode {
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
+            | Self::FeatureSweepControlsUnresolved
+            | Self::FeatureLoftControlsUnresolved
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchPairedAssociationUnprojected
@@ -369,6 +379,8 @@ mod tests {
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
+                "feature.sweep-controls-unresolved",
+                "feature.loft-controls-unresolved",
                 "feature.state-unresolved",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
