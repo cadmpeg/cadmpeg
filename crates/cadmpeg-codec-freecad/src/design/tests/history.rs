@@ -865,11 +865,26 @@ fn preserves_forward_declared_feature_dependencies() {
         .find(|feature| feature.name.as_deref() == Some("Second"))
         .expect("second feature");
 
-    assert_eq!(
-        first.dependencies.as_slice(),
-        std::slice::from_ref(&second.id)
-    );
+    assert!(first.dependencies.is_empty());
+    assert!(second.dependencies.is_empty());
     assert!(second.ordinal < first.ordinal);
+    let objects = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("native objects");
+    assert_eq!(objects.len(), 2);
+    assert_eq!(objects[0].name().as_str(), "First");
+    assert_eq!(objects[1].name().as_str(), "Second");
+    assert_eq!(first.native_ref.as_deref(), Some(objects[0].id().as_str()));
+    assert_eq!(second.native_ref.as_deref(), Some(objects[1].id().as_str()));
+    assert_eq!(
+        objects[0].dependencies.as_slice(),
+        std::slice::from_ref(objects[1].id())
+    );
+    assert!(objects[1].dependencies.is_empty());
     assert_valid_document(result.ir());
 }
 
