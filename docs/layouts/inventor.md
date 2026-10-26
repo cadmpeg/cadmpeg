@@ -792,7 +792,10 @@ Parsed by:
 
 Spec §13.5 · layout: byte offsets · size: 90 B
 
-Prefix of the segment-major-29 sheet-metal style record; the record continues after this prefix.
+Prefix of the segment-major-29 and segment-major-31 sheet-metal style record; the record continues after this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal/style.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -810,6 +813,32 @@ Prefix of the segment-major-29 sheet-metal style record; the record continues af
 | 70 | 12 | `values` | `u32[3]` | little | spec | values u32[3] |
 | 82 | 4 | `transition_form` | `u32` | little | spec | transition_form u32 |
 | 86 | 4 | `transition_radius` | `u32` | little | spec | transition_radius u32 |
+
+## `pm_dc_sheet_metal_style_operand_prefix_legacy`
+
+Spec §13.5 · layout: byte offsets · size: 86 B
+
+Prefix of the segment-major-20 and segment-major-23 sheet-metal style record; the record continues after this prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal/style.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 26 | `prefix` | `bytes[26]` | little | spec | prefix bytes[26] |
+| 26 | 4 | `thickness` | `u32` | little | spec | thickness u32 |
+| 30 | 4 | `bend_radius` | `u32` | little | spec | bend_radius u32 |
+| 34 | 4 | `bend_relief_form` | `u32` | little | spec | bend_relief_form u32 |
+| 38 | 4 | `bend_relief_width` | `u32` | little | spec | bend_relief_width u32 |
+| 42 | 4 | `bend_relief_depth` | `u32` | little | spec | bend_relief_depth u32 |
+| 46 | 4 | `corner_relief_form` | `u32` | little | spec | corner_relief_form u32 |
+| 50 | 4 | `corner_relief_size` | `u32` | little | spec | corner_relief_size u32 |
+| 54 | 4 | `seam_gap` | `u32` | little | spec | seam_gap u32 |
+| 58 | 4 | `minimum_remnant` | `u32` | little | spec | minimum_remnant u32 |
+| 62 | 4 | `option` | `u32` | little | spec | option u32 |
+| 66 | 12 | `values` | `u32[3]` | little | spec | values u32[3] |
+| 78 | 4 | `transition_form` | `u32` | little | spec | transition_form u32 |
+| 82 | 4 | `transition_radius` | `u32` | little | spec | transition_radius u32 |
 
 ## `pm_dc_loft_property_slots`
 

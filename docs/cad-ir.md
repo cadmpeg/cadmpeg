@@ -236,6 +236,8 @@ A configuration feature evaluation is `suppressed` or `active`. A suppressed eva
 
 A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`).
 
+An attached plate and its dependent bend can share one historical attachment selection. The shared selection identifies the bend's input topology. The plate precedes the bend. Each feature has its own input topology row, with equal body, face, edge, and vertex membership, equal edge geometry, and equal native references. Each selected edge has start, end, interior, and tangent geometry. Other historical selections identify their owning feature's input topology.
+
 Loft guidance is a guide-path list or one centerline path. An empty guide-path list means unguided. Guide paths and a centerline cannot coexist.
 
 A sketch native operand has a nonempty native kind and an optional field. A present field has a nonempty name and an optional role. A role exists only within its field.

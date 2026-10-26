@@ -19,6 +19,49 @@ pub(crate) struct SelectedPath {
 }
 
 impl ProfileIndex<'_> {
+    pub(in crate::feature) fn whole_sketch(
+        &self,
+        token: &str,
+        ordinal: u32,
+        sketch: &Sketch,
+    ) -> Option<PlanarProfileRef> {
+        if self.incomplete_sketches.contains(&(token, ordinal)) {
+            return None;
+        }
+        SketchFrame::new(sketch)?;
+        let [profile] = sketch.profiles.as_slice() else {
+            return None;
+        };
+        let curves = profile
+            .iter()
+            .map(|use_| {
+                let entity = *self.by_id.get(use_.entity.as_str())?;
+                (entity.sketch == sketch.id && !entity.construction).then_some(entity)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let count = self
+            .by_id
+            .values()
+            .filter(|entity| {
+                entity.sketch == sketch.id
+                    && !entity.construction
+                    && !matches!(
+                        entity.geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                    )
+            })
+            .count();
+        if count != curves.len() {
+            return None;
+        }
+        super::chain(&curves)?;
+        PlanarProfileRef::sketch_regions(
+            sketch.id.clone(),
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, Vec::new()).ok()?],
+        )
+        .ok()
+    }
+
     fn wire(&self, token: &str, ordinal: u32) -> Option<(&PmDcKernelEntityLink, &ProfileWire)> {
         let link = *self.kernel_links.get(&(token, ordinal))?;
         let body = self

@@ -14,6 +14,12 @@ use crate::pmdc::{
     content_header, reference_list, state_content_header, type_id_string, Cursor, PmDcReference,
 };
 
+pub(crate) mod flange;
+pub(super) mod inputs;
+pub(crate) mod operands;
+pub(crate) mod projection;
+pub(crate) mod style;
+
 const ATTACHMENT_TYPE: [u8; 16] = [
     0x92, 0x59, 0x6b, 0xa9, 0xd3, 0x11, 0xef, 0xa8, 0x60, 0x00, 0xb3, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
 ];
@@ -728,9 +734,35 @@ pub(crate) fn native_kind_counts(
     (plates, bends)
 }
 
+pub(super) const BEND_CLASS: super::ClassId = super::ClassId(NativeBytes::new(BEND_CLASS_ID));
+pub(super) const CORNER_CLASS: super::ClassId = super::ClassId(NativeBytes::new([
+    0x7f, 0x58, 0x80, 0x68, 0xb7, 0x43, 0x78, 0xa0, 0x55, 0x95, 0x15, 0x94, 0x6f, 0x7a, 0x1c, 0x12,
+]));
+
 const BEND_CLASS_ID: [u8; 16] = [
     0xf2, 0x58, 0xf7, 0x4c, 0xd3, 0x11, 0x4f, 0x24, 0x60, 0x00, 0x47, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
 ];
 
 #[cfg(test)]
 mod tests;
+
+pub(crate) fn retained_control_losses<'a>(
+    features: impl IntoIterator<Item = &'a cadmpeg_ir::features::Feature>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::loss::InventorLossCode;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    features.into_iter().filter_map(|feature| {
+        let (code, controls) = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. }) => (
+                InventorLossCode::FeatureSheetMetalAttachmentControlsRetained,
+                "plate slot-0 construction wire, plate slot-1 direction, attachment control, type-9 first and second modes, direction references, first and second options, state bytes, optional extension state, plate scalar, relief Boolean, and transition Boolean",
+            ),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { .. }) => (
+                InventorLossCode::FeatureSheetMetalBendControlsRetained,
+                "plate slot-0 construction wire, plate slot-1 direction, attachment control, type-9 first and second modes, direction references, first and second options, state bytes, optional extension state, bend scalar and state, slot-10 Boolean, relief Boolean, and transition Boolean",
+            ),
+            _ => return None,
+        };
+        Some(code.note(format!("Projected {} with {controls} retained in its native records.", feature.id)))
+    }).collect()
+}

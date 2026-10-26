@@ -148,7 +148,7 @@ fn fixture() -> Fixture {
         ],
     );
     let inventory = owner::FeatureInventory {
-        edge_names: std::collections::HashMap::new(),
+        edge_inputs: crate::feature::edge_selection::EdgeInventory::default(),
         record_types: [(
             segment(),
             [
@@ -171,6 +171,7 @@ fn fixture() -> Fixture {
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
         issues: Vec::new(),
+        ..Default::default()
     };
     Fixture {
         source,

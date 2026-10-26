@@ -236,7 +236,7 @@ fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let mut inventory = crate::feature::FeatureInventory {
-        edge_names: std::collections::HashMap::default(),
+        edge_inputs: crate::feature::edge_selection::EdgeInventory::default(),
         record_types: std::collections::HashMap::default(),
         features: vec![
             test_feature(100, 17, &[(4, 7)]),
@@ -261,6 +261,7 @@ fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
         kernel_entity_links: vec![],
         work_planes: vec![],
         issues: vec![],
+        ..Default::default()
     };
     let features: Vec<_> = inventory
         .features

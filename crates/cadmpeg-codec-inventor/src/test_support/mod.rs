@@ -5,3 +5,5 @@
 pub(crate) mod rse_compression;
 pub(crate) mod test_fixtures;
 pub(crate) mod truncation;
+
+pub(crate) mod sheet_metal;

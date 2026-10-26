@@ -75,6 +75,10 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalAttachmentControlsNative,
     /// Separate bends retain unresolved attachment and scalar controls.
     FeatureSheetMetalBendControlsNative,
+    /// Projected attached plates retain construction controls in native records.
+    FeatureSheetMetalAttachmentControlsRetained,
+    /// Projected bends retain construction controls in native records.
+    FeatureSheetMetalBendControlsRetained,
     /// Sweep construction controls have no exact neutral interpretation.
     FeatureSweepControlsUnresolved,
     /// Loft construction controls and section conditions have no exact neutral interpretation.
@@ -160,6 +164,8 @@ impl InventorLossCode {
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
+        Self::FeatureSheetMetalAttachmentControlsRetained,
+        Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSweepControlsUnresolved,
         Self::FeatureLoftControlsUnresolved,
         Self::FeatureStateUnresolved,
@@ -220,6 +226,12 @@ impl InventorLossCode {
                 "feature.sheet-metal-attachment-controls-native"
             }
             Self::FeatureSheetMetalBendControlsNative => "feature.sheet-metal-bend-controls-native",
+            Self::FeatureSheetMetalAttachmentControlsRetained => {
+                "feature.sheet-metal-attachment-controls-retained"
+            }
+            Self::FeatureSheetMetalBendControlsRetained => {
+                "feature.sheet-metal-bend-controls-retained"
+            }
             Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
             Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
@@ -291,6 +303,8 @@ impl InventorLossCode {
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
+            | Self::FeatureSheetMetalAttachmentControlsRetained
+            | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSweepControlsUnresolved
             | Self::FeatureLoftControlsUnresolved
             | Self::FeatureProfileBodyUndecoded
@@ -379,6 +393,8 @@ mod tests {
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
+                "feature.sheet-metal-attachment-controls-retained",
+                "feature.sheet-metal-bend-controls-retained",
                 "feature.sweep-controls-unresolved",
                 "feature.loft-controls-unresolved",
                 "feature.state-unresolved",

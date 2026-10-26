@@ -4019,9 +4019,11 @@ fn check_feature_references(
                 _ => None,
             };
             if let Some((state, selected)) = historical {
+                let owner = sheet_metal::shared_attachment_owner(ir, feature, selection)
+                    .unwrap_or(&feature.id);
                 check_historical_members(
                     findings,
-                    &feature.id,
+                    owner,
                     (
                         state,
                         selected.iter().map(crate::ids::HistoricalEdgeId::as_str),

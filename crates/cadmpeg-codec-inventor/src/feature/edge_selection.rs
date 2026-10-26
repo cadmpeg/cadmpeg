@@ -16,6 +16,13 @@ use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use std::collections::{HashMap, HashSet};
 
 mod archive;
+pub(in crate::feature) mod geometry;
+
+#[derive(Debug, Default)]
+pub(super) struct EdgeInventory {
+    pub(super) names: HashMap<(String, u32), Option<EdgeName>>,
+    pub(super) geometry: HashMap<(String, u32), geometry::EdgeGeometry>,
+}
 
 const SELECTOR_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d53);
 
@@ -138,10 +145,16 @@ fn generated(record: &Record) -> Option<(i64, EdgeName)> {
     ))
 }
 
+fn is_edge(record: &Record) -> bool {
+    matches!(record.head(), "edge" | "tedge")
+        || (record.name == "End-of-ASM-History-Section"
+            && matches!(record.tokens.first(), Some(Token::Ident(name)) if name == "edge"))
+}
+
 fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<EdgeName>> {
     let edges: HashSet<_> = records
         .iter()
-        .filter(|record| matches!(record.head(), "edge" | "tedge"))
+        .filter(|record| is_edge(record))
         .filter_map(|record| i64::try_from(record.index).ok())
         .collect();
     let mut matches: HashMap<(u32, u32), HashSet<i64>> = HashMap::new();
@@ -176,11 +189,12 @@ fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<Edge
 pub(super) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
-) -> Result<HashMap<(String, u32), Option<EdgeName>>, CodecError> {
+) -> Result<EdgeInventory, CodecError> {
     if ctx.container_only() || ctx.depth() != cadmpeg_core::decode::DecodeDepth::Full {
-        return Ok(HashMap::new());
+        return Ok(EdgeInventory::default());
     }
     let mut selectors = Vec::new();
+    let mut sample_geometry = false;
     let mut tokens = HashSet::new();
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
@@ -200,6 +214,8 @@ pub(super) fn inventory(
             continue;
         };
         for record in &table.records {
+            sample_geometry |= record.type_id == super::sheet_metal::flange::TYPE
+                && super::sheet_metal::style::prefix_len(version).is_some();
             if record.type_id != SELECTOR_TYPE {
                 continue;
             }
@@ -209,23 +225,35 @@ pub(super) fn inventory(
         }
     }
     let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
-        return Ok(HashMap::new());
+        return Ok(EdgeInventory::default());
     };
     if selectors.is_empty() || tokens.len() != 1 || carrier.schema != 44 {
-        return Ok(HashMap::new());
+        return Ok(EdgeInventory::default());
     }
     let records = match archive::records(ctx, carrier) {
         Ok(records) => records,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(HashMap::new()),
+        Err(_) => return Ok(EdgeInventory::default()),
     };
     let Some(token) = tokens.into_iter().next() else {
-        return Ok(HashMap::new());
+        return Ok(EdgeInventory::default());
     };
-    Ok(names(&records, &selectors)
-        .into_iter()
-        .map(|(source, name)| ((token.clone(), source), name))
-        .collect())
+    let names = names(&records, &selectors);
+    let geometry = if sample_geometry {
+        geometry::selected(&records, &selectors, &names)
+            .into_iter()
+            .map(|(source, geometry)| ((token.clone(), source), geometry))
+            .collect()
+    } else {
+        HashMap::new()
+    };
+    Ok(EdgeInventory {
+        names: names
+            .into_iter()
+            .map(|(source, name)| ((token.clone(), source), name))
+            .collect(),
+        geometry,
+    })
 }
 
 fn sketch_entity(
@@ -333,7 +361,8 @@ pub(super) fn generated_names(
         )
     }));
     inventory
-        .edge_names
+        .edge_inputs
+        .names
         .iter()
         .filter_map(|((token, source), name)| {
             let name = name.as_ref()?;
@@ -428,6 +457,12 @@ pub(super) fn bind_generated(
                     retain_producers(&mut group.edges, ordinal, &producers);
                 }
             }
+            FeatureDefinition::Operation(
+                FeatureOperation::SheetMetalAttachedPlate { attachment, .. }
+                | FeatureOperation::SheetMetalBend { attachment, .. },
+            ) => {
+                retain_producers(attachment, ordinal, &producers);
+            }
             _ => {}
         });
         let selections: Vec<_> = match feature.evaluation.definition() {
@@ -437,6 +472,10 @@ pub(super) fn bind_generated(
             FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
                 groups.iter().map(|group| &group.edges).collect()
             }
+            FeatureDefinition::Operation(
+                FeatureOperation::SheetMetalAttachedPlate { attachment, .. }
+                | FeatureOperation::SheetMetalBend { attachment, .. },
+            ) => vec![attachment],
             _ => Vec::new(),
         };
         for selection in selections {

@@ -366,3 +366,22 @@ fn base_flange_result_carries_the_selected_generated_edge() {
         [features[0].id.clone()]
     );
 }
+
+#[test]
+fn history_section_wrapper_retains_the_first_edge_revision_identity() {
+    let mut records = records();
+    records[0].name = "End-of-ASM-History-Section".into();
+    let mut tokens = vec![Token::Ident("edge".into())];
+    tokens.extend(records[0].tokens.iter().cloned());
+    records[0].tokens = tokens.into();
+    assert!(names(
+        &records,
+        &[Selector {
+            source: 150,
+            generator: 115,
+            key: 7
+        }]
+    )
+    .get(&150)
+    .is_some_and(Option::is_some));
+}

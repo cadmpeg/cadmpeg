@@ -491,7 +491,7 @@ Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumerati
 
 A single closed periodic polynomial spline is a whole profile ring when its named wire has one edge, the edge's spline degree and full knot vector equal those of the named sketch spline, its ordered poles map to the sketch poles in the sketch plane within the kernel linear tolerance, its parameter interval is the full knot domain, and both edge vertices equal the spline seam within that tolerance. The carrier and sketch curve have no rational weights. This join uses the edge's naming attribute and the consumed sketch's curve-type entity-style link.
 
-Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively. Feature-label class identifier `b54dd6f6d311c4966000f2b21d6eefb0` identifies a sheet-metal corner round. Its feature record uses the constant-radius edge-fillet slots and rounds the selected edges. Type `08dcddc3d311d0976000a7a99dccefb0` is a sheet-metal flange record. After the content header it stores `state:i32`, a type-2 reference list, and a u32 value. The list names the plate, bend, and corner feature records that form the flange, in that order. Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face record with the same layout; its list names one plate feature record. The face label's participants are the face's planar sketch and that plate.
+Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively. Feature-label class identifier `b54dd6f6d311c4966000f2b21d6eefb0` identifies a sheet-metal corner round. Its feature record uses the constant-radius edge-fillet slots and rounds the selected edges. Type `08dcddc3d311d0976000a7a99dccefb0` is a sheet-metal flange record. After the content header it stores `state:i32`, a type-2 reference list, and a u32 value. The list names the plate, bend, and corner feature records that form the flange, in that order. Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face record with the same layout; its list names one plate feature record. The face label's participants are the face's planar sketch and that plate. The flange label's participants are its planar sketch, plate, bend, and corner, in that order. The flange and face state headers have no content-header stamps.
 
 A feature label with class identifier `c65f5855d311730c60003aa99dccefb0` labels a sheet-metal plate. A plate uses property slots 0 through 3 for its profile selection, direction, thickness-side control, and thickness parameter, slot 7 for an edge collection, and slot 8 for its feature dimensions. Type `473f20fcd11101cf000835bd0663dc09` is the plate profile selection and has the profile-selection layout. The direction is the normal of the face sketch. A Boolean thickness-side control selects thickness along this normal when false and against it when true. Type `69b9505efb4bbaa925c3dfa870817810` is a thickness-side enumeration. Its versioned content header, including stamps, is followed by `type_value:i16` and `value:u16`, then the record ends. Type value 2 and value 0 select thickness along the normal.
 
@@ -515,7 +515,7 @@ The fixed selector prefix after the content header contains `state:i32`, `enable
 
 In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body.
 
-A generated name on that same owning edge identifies the edge in the generating feature's result. Family `INV_NMX_GEN_TAG` stores 1, 44, 1, `feature_source_index`, −1, `associative_id`, 0, and `role`. Edge roles are 2, 10, and 18. Family `INV_NMX_SWEEPGENERATED_TAG` stores the same first seven integers followed by `role` and seven zero integers. Edge roles 10 and 18 are distinct names. `feature_source_index` equals the generator value in the selector. The associative identifier names an entity-style link in the sketch consumed by that feature. Role 18 uses a point link; roles 2 and 10 use a curve link. The family, associative identifier, qualifier, and role together form a feature-local persistent name. The name is scoped to the generating feature's result. The construction-history record framing and entity-revision namespace follow [asm.md §3.2](asm.md#32-delta_state-records).
+A generated name on that same owning edge identifies the edge in the generating feature's result. Family `INV_NMX_GEN_TAG` stores 1, 44, 1, `feature_source_index`, −1, `associative_id`, 0, and `role`. Edge roles are 2, 10, and 18. Family `INV_NMX_SWEEPGENERATED_TAG` stores the same first seven integers followed by `role` and seven zero integers. Edge roles 10 and 18 are distinct names. `feature_source_index` equals the generator value in the selector. The associative identifier names an entity-style link in the sketch consumed by that feature. Role 18 uses a point link; roles 2 and 10 use a curve link. The family, associative identifier, qualifier, and role together form a feature-local persistent name. The name is scoped to the generating feature's result. The matching attribute selects the stored owning edge revision. Its start and end vertex references select the stored point revisions; its curve reference and parameter endpoints select its carrier interval. A straight carrier uses its stored origin and direction, with the edge sense applied to the parameters. The midpoint of the interval supplies an interior point, and the signed carrier direction supplies its unit tangent. These references identify geometry at the selected history input independently of the active body's edge records. The construction-history record framing and entity-revision namespace follow [asm.md §3.2](asm.md#32-delta_state-records).
 
 An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
 
@@ -671,7 +671,7 @@ The 17-property attached-plate form has these slots:
 | Slot | Operand |
 | ---: | --- |
 | 0 | Plate profile selection |
-| 1 | Face-sketch normal direction |
+| 1 | Direction reference |
 | 2 | Thickness-side control |
 | 3 | Thickness length parameter |
 | 4 | Attachment control `92596ba9d311efa86000b3a99dccefb0` |
@@ -704,6 +704,8 @@ Feature-label class `f258f74cd3114f24600047a99dccefb0` identifies a bend. Its 11
 | 8 | Bend scalar control `3441b690d511d8026000a28d4aa6fbb0` |
 | 9 | Result object collection shared with plate slot 15 |
 | 10 | Boolean control |
+
+Type `08dcddc3d311d0976000a7a99dccefb0` stores the flange parent. It contains the state content header without stamps, `state:i32`, a type-2 reference list, and `value:u32`, then ends. The reference list selects the plate, bend, and corner generic-feature records in that order. The parent's feature label has four ordered participants: the consumed planar sketch, that plate, that bend, and that corner. The consumed sketch defines the plate's planar profile. The attached-plate slot-0 kernel selection stores its construction wire; that wire is not the closed boundary of the consumed sketch.
 
 The bend radius in slot 1 repeats the radius reference of the attachment control. The flange record owns ordered plate, bend, and corner children. Each child is a separate generic feature with its own source index, label owner, state, and history position. Sharing an attachment control identifies the plate and bend pair. The bend is not a property sub-record of the plate. The plate and bend refer to a common result-body wrapper; result identity alone does not select a history revision. Neither the attachment control nor the bend's property vector contains an angle parameter.
 
@@ -786,7 +788,7 @@ option u32
 
 Types `7267cc3bd31104a96000b3a99dccefb0`, `720c3e2bd311976060007aa99dccefb0`, `e0a8d8afd3117d5a0008928f8b1f0f69`, and `07a66130d4118895600053aa9dccefb0` contain the versioned content header and stamps, followed by `type_value:i16` and `value:u16`, then end. Their type values are 9, 304 or 501, 8, and 4 respectively. An enumeration value is a scalar, not a record reference.
 
-The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major version 29, its operand prefix contains:
+The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major versions 29 and 31, its operand prefix contains:
 
 ```text
 prefix bytes[30]
@@ -804,6 +806,8 @@ values u32[3]
 transition_form u32
 transition_radius u32
 ```
+
+For PmDc segment major versions 20 and 23, the same operand sequence has `prefix bytes[26]` in place of `prefix bytes[30]`. The operand prefix ends after `transition_radius`; the record continues with a suffix.
 
 The length operands reference the parameters `Thickness`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `SeamGap`, `MinimumRemnant`, and `TransitionRadius`. The relief-form references select type `720c3e2bd311976060007aa99dccefb0`. The transition-form reference selects type `07a66130d4118895600053aa9dccefb0`. The option references a Boolean. Enumeration identity includes both `type_value` and `value`; equal values in distinct types do not identify equal forms. A length formula that consists of a parameter-reference expression to the style operand uses that style parameter. A literal expression is an explicit length operand, including when its evaluated value equals the style parameter.
 

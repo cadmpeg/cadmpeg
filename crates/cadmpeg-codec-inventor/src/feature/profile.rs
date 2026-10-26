@@ -347,6 +347,7 @@ pub(super) struct ProfileIndex<'a> {
     /// id; `None` when the id names more than one curve.
     curves: HashMap<(&'a str, u32, i64), Option<String>>,
     by_id: HashMap<&'a str, &'a SketchEntity>,
+    incomplete_sketches: std::collections::HashSet<(&'a str, u32)>,
     /// Loops that resolved selections append to sketch profile tables.
     added: RefCell<HashMap<String, Vec<Vec<SketchEntityUse>>>>,
 }
@@ -429,8 +430,34 @@ impl<'a> ProfileIndex<'a> {
                 _ => {}
             }
         }
+        let neutral_ids = entities
+            .iter()
+            .map(SketchEntity::id)
+            .collect::<std::collections::HashSet<_>>();
+        let incomplete_sketches = raw_entities
+            .iter()
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    PmDcSketchEntityKind::Line { .. }
+                        | PmDcSketchEntityKind::Circle { .. }
+                        | PmDcSketchEntityKind::Ellipse { .. }
+                        | PmDcSketchEntityKind::Spline { .. }
+                )
+            })
+            .filter(|entity| {
+                crate::sketch::entity_id(entity).is_none_or(|id| !neutral_ids.contains(&id))
+            })
+            .filter_map(|entity| {
+                Some((
+                    entity.identity.segment_token.as_str(),
+                    entity.sketch.record_ordinal()?,
+                ))
+            })
+            .collect();
         Self {
             bodies: body_index,
+            incomplete_sketches,
             kernel_links: kernel_links
                 .iter()
                 .map(|link| {
