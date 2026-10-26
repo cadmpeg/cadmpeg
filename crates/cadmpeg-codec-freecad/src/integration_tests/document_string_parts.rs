@@ -37,7 +37,7 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
         .iter()
         .find(|attribute| attribute.name == "Bad")
         .unwrap();
-    assert_eq!(alias.values, [AttributeValue::String("bad".into())]);
+    assert_eq!(alias.values, [Some(AttributeValue::String("bad".into()))]);
     let attribute = output
         .model()
         .attributes
@@ -46,7 +46,10 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
         .unwrap();
     assert_eq!(attribute.name, "Good");
     assert_eq!(attribute.target, AttributeTarget::Document);
-    assert_eq!(attribute.values, [AttributeValue::String("A&B".into())]);
+    assert_eq!(
+        attribute.values,
+        [Some(AttributeValue::String("A&B".into()))]
+    );
     let good_id = crate::native::native_child_id(
         "property",
         &crate::native::native_id("document", "0"),
@@ -83,7 +86,7 @@ fn property_native_and_neutral_values_exist_before_later_graph_recovery() {
         .iter()
         .find(|attribute| attribute.name == "Other")
         .unwrap();
-    assert_eq!(other_attribute.values, [AttributeValue::Integer(17)]);
+    assert_eq!(other_attribute.values, [Some(AttributeValue::Integer(17))]);
     assert_eq!(
         other_attribute.native_ref.as_deref(),
         Some(other.id.as_str())
@@ -178,13 +181,16 @@ fn public_decode_keeps_the_good_property_attribute_and_unrelated_integer_once() 
         .filter(|attribute| attribute.name == "Good")
         .collect::<Vec<_>>();
     assert_eq!(good.len(), 1);
-    assert_eq!(good[0].values, [AttributeValue::String("A&B".into())]);
+    assert_eq!(good[0].values, [Some(AttributeValue::String("A&B".into()))]);
     let alias = attributes
         .iter()
         .filter(|attribute| attribute.name == "Bad")
         .collect::<Vec<_>>();
     assert_eq!(alias.len(), 1);
-    assert_eq!(alias[0].values, [AttributeValue::String("bad".into())]);
+    assert_eq!(
+        alias[0].values,
+        [Some(AttributeValue::String("bad".into()))]
+    );
     assert_eq!(
         attributes
             .iter()
@@ -353,7 +359,7 @@ fn retained_extra_bytes_change_native_values_and_have_exact_source_reads() {
         assert_eq!(property.values()[0].attributes["extra"], extra);
         assert_eq!(
             decoded.ir().model.attributes[0].values,
-            [AttributeValue::String("A&B".into())]
+            [Some(AttributeValue::String("A&B".into()))]
         );
         let layout = &decoded.source_fidelity().record_layout()[property.id.as_str()];
         let reads = &layout.reads()[layout.stream()];
@@ -471,7 +477,10 @@ fn recognized_dynamic_flags_keep_their_values_inside_the_actual_property_scope()
         .find(|attribute| attribute.name == "Flags")
         .unwrap();
     assert_eq!(attribute.native_ref.as_deref(), Some(property.id.as_str()));
-    assert_eq!(attribute.values, [AttributeValue::String("kept".into())]);
+    assert_eq!(
+        attribute.values,
+        [Some(AttributeValue::String("kept".into()))]
+    );
 }
 
 #[test]

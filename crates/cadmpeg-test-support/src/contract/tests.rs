@@ -370,7 +370,7 @@ fn geometry_projection_removes_only_attributes_owned_by_design_entities() {
                 .expect("valid authored test fixture"),
             target,
             name: "value".into(),
-            values: vec![AttributeValue::Integer(1)],
+            values: vec![Some(AttributeValue::Integer(1))],
         });
     }
     let mut geometry = full.clone();
@@ -384,10 +384,10 @@ fn geometry_projection_removes_only_attributes_owned_by_design_entities() {
         2
     );
     assert_eq!(projected, neutral_view(&geometry, &[ArenaClass::Design]));
-    geometry.model.attributes[0].values = vec![AttributeValue::Integer(2)];
+    geometry.model.attributes[0].values = vec![Some(AttributeValue::Integer(2))];
     assert_ne!(projected, neutral_view(&geometry, &[ArenaClass::Design]));
-    geometry.model.attributes[0].values = vec![AttributeValue::Integer(1)];
-    geometry.model.attributes[1].values = vec![AttributeValue::Integer(2)];
+    geometry.model.attributes[0].values = vec![Some(AttributeValue::Integer(1))];
+    geometry.model.attributes[1].values = vec![Some(AttributeValue::Integer(2))];
     assert_ne!(projected, neutral_view(&geometry, &[ArenaClass::Design]));
     let mut metadata_edit = full.clone();
     metadata_edit

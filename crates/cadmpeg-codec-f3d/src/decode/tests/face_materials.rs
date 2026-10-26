@@ -29,8 +29,8 @@ fn model() -> cadmpeg_ir::CadIr {
             target: AttributeTarget::Face(ir.model.faces[index].id.clone()),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(guid.into())),
             ],
             native_ref: None,
         });

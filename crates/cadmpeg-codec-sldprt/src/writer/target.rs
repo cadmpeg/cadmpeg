@@ -37,6 +37,21 @@ pub(crate) fn plan(
             super::synthesis::SynthesisCause::SourceUnrepresented { classes },
         );
     }
+    if input
+        .ir
+        .model
+        .attributes
+        .iter()
+        .any(super::accounting::requires_attribute_omission)
+    {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "the current attributes require omission from scalar SLDPRT fields".into(),
+            },
+        );
+    }
     if super::synthesis::parameters::has_conflict(input.ir) {
         return super::synthesis::plan(
             input,

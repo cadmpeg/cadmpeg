@@ -500,6 +500,7 @@ fn attach_records(
         annotations,
     )?;
     attach_part_attributes(
+        ctx,
         ir,
         model.om.part_attributes.iter().map(|attribute| {
             (
@@ -521,6 +522,7 @@ fn attach_records(
         &model.parasolid.attribute_field_names,
     );
     attach_parasolid_topology_string_attributes(
+        ctx,
         ir,
         &ParasolidStringAttributeSources {
             string_uses: &model.parasolid.entity_51_string_uses,
@@ -530,6 +532,7 @@ fn attach_records(
         annotations,
     )?;
     attach_parasolid_topology_numeric_attributes(
+        ctx,
         ir,
         &ParasolidNumericAttributeSources {
             numeric_uses: &model.parasolid.entity_51_numeric_uses,
@@ -540,6 +543,7 @@ fn attach_records(
         annotations,
     )?;
     attach_parasolid_topology_structured_attributes(
+        ctx,
         ir,
         &ParasolidStructuredAttributeSources {
             structured_uses: &model.parasolid.entity_51_structured_uses,
@@ -603,6 +607,7 @@ fn attach_records(
 }
 
 fn attach_part_attributes<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     attributes: impl IntoIterator<Item = (&'a str, &'a str, &'a str, u64)>,
     annotations: &mut AnnotationBuilder,
@@ -636,13 +641,14 @@ fn attach_part_attributes<'a>(
             .derived(id.as_str(), "values")
             .map_err(cadmpeg_core::CodecError::from)?;
 
-        ir.model.attributes.push(SourceAttribute {
-            native_ref: None,
+        ir.model.attributes.push(SourceAttribute::new(
+            ctx,
             id,
-            target: AttributeTarget::Document,
-            name: attribute_title.to_string(),
-            values: vec![AttributeValue::String(attribute_value.to_string())],
-        });
+            None,
+            AttributeTarget::Document,
+            attribute_title.to_string(),
+            vec![AttributeValue::String(attribute_value.to_string())],
+        )?);
     }
     Ok(())
 }
@@ -5273,6 +5279,7 @@ struct ParasolidStringAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_string_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStringAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
@@ -5334,7 +5341,7 @@ fn attach_parasolid_topology_string_attributes(
                 string_use.position.reference_ordinal(),
             );
             let values = vec![AttributeValue::String(string.value.as_str().to_owned())];
-            push_topology_attribute(ir, context, id, name, values);
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -5708,19 +5715,23 @@ fn mapped_vector_attribute_values<T, const N: usize>(
 }
 
 fn push_topology_attribute(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     context: &ParasolidTopologyAttributeContext<'_>,
     id: AttributeId,
     name: String,
     values: Vec<AttributeValue>,
-) {
-    ir.model.attributes.push(SourceAttribute {
-        native_ref: None,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ir.model.attributes.push(SourceAttribute::new(
+        ctx,
         id,
-        target: context.target.clone(),
+        None,
+        context.target.clone(),
         name,
         values,
-    });
+    )?);
+
+    Ok(())
 }
 
 /// The key half of an entity reference, which is what an id suffix names.
@@ -5733,6 +5744,7 @@ fn entity_suffix_key(entity: &str) -> Option<cadmpeg_ir::ids::IdentityKey> {
 }
 
 fn attach_parasolid_topology_numeric_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
@@ -5824,7 +5836,7 @@ fn attach_parasolid_topology_numeric_attributes(
                 lane,
                 numeric_use.position.reference_ordinal(),
             );
-            push_topology_attribute(ir, context, id, name, values);
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -5842,6 +5854,7 @@ struct ParasolidStructuredAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_structured_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStructuredAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
@@ -5978,7 +5991,7 @@ fn attach_parasolid_topology_structured_attributes(
                 family,
                 structured_use.position.reference_ordinal(),
             );
-            push_topology_attribute(ir, context, id, name, values);
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model

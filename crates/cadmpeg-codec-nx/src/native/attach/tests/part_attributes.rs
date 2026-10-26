@@ -10,6 +10,7 @@ fn part_attribute_attachment_preserves_value() {
         let mut annotations = AnnotationBuilder::new();
         let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         super::super::attach_part_attributes(
+            &cadmpeg_test_support::service_decode_context(),
             &mut ir,
             std::iter::once(("nx:part:attribute#0", "Title", "Value", 0)),
             &mut annotations,
@@ -24,8 +25,8 @@ fn part_attribute_attachment_preserves_value() {
     assert_eq!(attribute.name.as_str(), "Title");
     assert_eq!(
         attribute.values.as_slice(),
-        [cadmpeg_ir::attributes::AttributeValue::String(
+        [Some(cadmpeg_ir::attributes::AttributeValue::String(
             "Value".into()
-        )]
+        ))]
     );
 }

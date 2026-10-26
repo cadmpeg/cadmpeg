@@ -581,3 +581,5 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
 }
 
 mod sketch_native_linkage;
+
+mod nullable_attributes;

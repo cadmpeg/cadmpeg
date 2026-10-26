@@ -10,7 +10,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
-pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
+pub(super) fn project(
+    attribute_context: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
     if ir.scope.model {
         return Ok(None);
     }
@@ -113,7 +116,12 @@ pub(super) fn project(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Code
         losses.extend(graph.losses);
     }
     super::body_styles::apply(&mut projected, &payloads, &typed_properties)?;
-    crate::attributes::transfer(&mut projected, &objects, &typed_properties)?;
+    crate::attributes::transfer(
+        attribute_context,
+        &mut projected,
+        &objects,
+        &typed_properties,
+    )?;
     ctx.finish_session()?;
     Ok(Some((projected, losses)))
 }

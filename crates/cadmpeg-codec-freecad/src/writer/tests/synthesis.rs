@@ -130,7 +130,9 @@ fn forbidden_xml_label_characters_reduce_and_report_instead_of_refusing() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     ir.model.features[0].name = Some("Label\0\u{1f}\t\nwith literal &#xFFFD;".into());
-    let body = super::super::synthesis::write(&ir, "4").unwrap();
+    let body =
+        super::super::synthesis::write(&cadmpeg_test_support::service_decode_context(), &ir, "4")
+            .unwrap();
     assert_eq!(
         body.coverage
             .disposition(cadmpeg_ir::schema::EntityKind::Feature),

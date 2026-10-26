@@ -226,8 +226,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             suffix_index(attribute.id.as_str())
         }
 
-        fn reference_index(value: &AttributeValue) -> i64 {
-            let AttributeValue::Reference(value) = value else {
+        fn reference_index(value: &Option<AttributeValue>) -> i64 {
+            let Some(AttributeValue::Reference(value)) = value else {
                 panic!("generated attribute link is not a reference");
             };
             suffix_index(value)
@@ -250,7 +250,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         for attribute in attributes {
             assert!(attribute.values.len() >= 5);
             assert_eq!(reference_index(&attribute.values[0]), -1);
-            assert_eq!(attribute.values[1], AttributeValue::Integer(-1));
+            assert_eq!(attribute.values[1], Some(AttributeValue::Integer(-1)));
             assert_eq!(
                 reference_index(&attribute.values[4]),
                 target_index(&attribute.target)

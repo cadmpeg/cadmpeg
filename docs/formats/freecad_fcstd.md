@@ -164,6 +164,13 @@ has no other element children, and each direct `Sub` is a leaf. Other carrier na
 `sub` and `count` carriers are invalid. A property type outside this registry retains its XML but
 does not infer link targets from nested tag names.
 
+An empty local `value` is a readable empty object name. With one or more
+subelement names it is a link with no object and those ordered subelement
+names. With no subelement it is an empty local link slot. A local link-list
+retains an empty slot between its neighboring values. An external `XLink`
+retains the exact `file` text; an empty `name` is an absent external object.
+Neither empty form denotes an unreadable value slot.
+
 ## 4. Identity and retention
 
 Every document object has a stable identity composed from the document identity and its persisted
@@ -955,7 +962,7 @@ The application registry also uses these GUI property forms. `App::PropertyFont`
 `String`; `App::PropertyStringList` contains `StringList` with a count and ordered `String`
 elements; `App::PropertyIntegerList` contains `IntegerList` with a count and ordered `I` elements;
 `App::PropertyIntegerSet` contains `IntegerSet` with a count and sorted, unique `I` elements;
-`App::PropertyMap` contains `Map` with a count and key-sorted `Item` key/value pairs;
+`App::PropertyMap` contains `Map` with a count and ordered `Item` key/value pairs; repeated keys remain separate entries in source order;
 `App::PropertyMatrix` contains `PropertyMatrix` with attributes `a11` through `a44`;
 `App::PropertyVectorDistance`, `App::PropertyPosition`, and `App::PropertyDirection` contain
 `PropertyVector`; `App::PropertyPrecision` and every registered quantity subtype contain `Float`;
@@ -1002,7 +1009,16 @@ or descendant file attributes are malformed. A `PropertyFileIncluded` value is a
 exactly one of `file` or `data`: `file` names a side entry, while `data` carries the basename of the
 inline binary payload between the root tags. An empty selected name is valid and both attributes or nested
 elements are malformed. A Python-object
-value is one inert `Python` value with its serialized attributes; decoding never executes it. A
+value is one inert `Python` value with its serialized attributes; decoding never executes it.
+In JSON mode it has `encoded="yes"`, `json="yes"`, and a `value` containing
+standard padded base64 of UTF-8 JSON text. The JSON values are null, boolean,
+text, signed 64-bit integers, unsigned 64-bit integers above the signed range,
+finite floating-point values, ordered arrays, and objects with text keys.
+Integer tokens outside both integer ranges have no decoded JSON value; an
+integer is not rounded to floating point. Python values without decoded JSON,
+including module or class proxies and pickles, remain inert values without a
+neutral attribute. A decoded JSON tree is one typed JSON attribute value.
+A
 `PropertyExpressionEngine` value is one `ExpressionEngine` root whose `count` equals the ordered
 `Expression` children; each child has `path` and `expression` attributes and may have `comment`.
 An expression root may also carry the producer's cross-link records. `PropertyPath` uses `Path`

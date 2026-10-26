@@ -330,16 +330,17 @@ pub(crate) fn project(
                 ctx.charge_entities(1, "rhino_object_names")?;
                 let key = IdentityKey::try_new(format!("{source_order}-{target_order}"))
                     .map_err(CodecError::malformed)?;
-                ir.model.attributes.push(SourceAttribute {
-                    native_ref: None,
-                    id: AttributeId::compose(
+                ir.model.attributes.push(SourceAttribute::new(
+                    ctx,
+                    AttributeId::compose(
                         &cadmpeg_ir::identity_namespace!("rhino", "model", "object-name"),
                         key,
                     ),
+                    None,
                     target,
-                    name: "name".to_owned(),
-                    values: vec![AttributeValue::String(object.identity.name.clone())],
-                });
+                    "name".to_owned(),
+                    vec![AttributeValue::String(object.identity.name.clone())],
+                )?);
             }
         }
     }

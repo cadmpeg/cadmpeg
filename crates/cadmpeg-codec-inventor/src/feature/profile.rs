@@ -254,14 +254,14 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
 }
 
 /// The naming-type and associative-id integers of an edge naming attribute.
-fn edge_name(values: &[AttributeValue]) -> Option<EdgeName> {
+fn edge_name(values: &[Option<AttributeValue>]) -> Option<EdgeName> {
     let [_, _, _, _, _, rest @ ..] = values else {
         return None;
     };
     let integers = rest
         .iter()
         .map(|value| match value {
-            AttributeValue::Integer(value) => Some(*value),
+            Some(AttributeValue::Integer(value)) => Some(*value),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

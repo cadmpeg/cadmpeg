@@ -773,3 +773,5 @@ mod document_vector_parts;
 mod document_value_parts;
 
 mod source_native_missing_values;
+
+mod nullable_attributes;

@@ -186,9 +186,9 @@ fn design_operand_and_sheet_ownership_is_independent_of_delivery_depth() {
             .iter()
             .any(|attribute| attribute.name == "UserNote"
                 && attribute.values
-                    == vec![cadmpeg_ir::attributes::AttributeValue::String(
+                    == vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
                         "keep this extra".into()
-                    )]));
+                    ))]));
         for decoded in [&full, &geometry] {
             let properties = decoded
                 .ir()
@@ -235,7 +235,9 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
             .unwrap();
         assert_eq!(
             attribute.values,
-            vec![cadmpeg_ir::attributes::AttributeValue::float(expected).unwrap()]
+            vec![Some(
+                cadmpeg_ir::attributes::AttributeValue::float(expected).unwrap()
+            )]
         );
     }
 }

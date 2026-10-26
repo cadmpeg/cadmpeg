@@ -782,6 +782,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -873,6 +874,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -947,8 +949,15 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT)
-            .expect("finite attribute values"),
+        emit_attributes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut brep,
+            &records,
+            &by_index,
+            &reach,
+            FORMAT
+        )
+        .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
     assert!(brep.attributes.iter().any(|attribute| attribute.target
@@ -1032,6 +1041,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     };
 
     let emitted = emit_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &mut brep,
         &records,
         &by_index,
@@ -1050,16 +1060,16 @@ fn lump_named_attributes_bind_to_their_owning_body() {
             target: AttributeTarget::Body(body_id),
             name: "name_attrib-gen-attrib".into(),
             values: vec![
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Integer(-1),
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Reference("f3d:brep:entity#2".into()),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(3),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(1),
-                AttributeValue::String("MBRD_ST_SHEETMETAL_LUMP".into()),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Integer(-1)),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Reference("f3d:brep:entity#2".into())),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::Integer(3)),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::String("MBRD_ST_SHEETMETAL_LUMP".into()))
             ],
         }]
     );
@@ -1438,8 +1448,13 @@ fn a_non_finite_attribute_double_is_refused() {
         offset: 0,
         len: 0,
     };
-    let error = source_attribute(&record, AttributeTarget::Document, FORMAT)
-        .expect_err("a NaN attribute double is refused");
+    let error = source_attribute(
+        &cadmpeg_test_support::service_decode_context(),
+        &record,
+        AttributeTarget::Document,
+        FORMAT,
+    )
+    .expect_err("a NaN attribute double is refused");
     assert_eq!(
         error.to_string(),
         "malformed container: attribute record 1 (real-st-attrib) holds a non-finite number"

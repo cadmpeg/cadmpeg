@@ -22,7 +22,11 @@ const NAMING_TYPE: u32 = 38;
 const SKETCH_ORDINAL: u32 = 2;
 const BODY_ORDINAL: u32 = 30;
 
-fn naming_values(naming_type: i64, associative_id: i64, topology: i64) -> Vec<AttributeValue> {
+fn naming_values(
+    naming_type: i64,
+    associative_id: i64,
+    topology: i64,
+) -> Vec<Option<AttributeValue>> {
     let mut values = vec![
         AttributeValue::Reference("sat:brep:entity#-1".into()),
         AttributeValue::Integer(-1),
@@ -31,7 +35,7 @@ fn naming_values(naming_type: i64, associative_id: i64, topology: i64) -> Vec<At
         AttributeValue::Reference("sat:brep:entity#9".into()),
     ];
     values.extend([naming_type, 0, associative_id, 0, topology].map(AttributeValue::Integer));
-    values
+    values.into_iter().map(Some).collect()
 }
 
 #[test]

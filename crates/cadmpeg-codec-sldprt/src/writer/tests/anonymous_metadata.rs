@@ -58,7 +58,7 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
                 .iter_mut()
                 .find(|attribute| attribute.name == "bounding_envelope")
                 .unwrap();
-            let AttributeValue::Vector(values) = &mut bbox.values[0] else {
+            let Some(AttributeValue::Vector(values)) = &mut bbox.values[0] else {
                 panic!("bbox")
             };
             values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
@@ -84,7 +84,7 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
             .iter()
             .find(|attribute| attribute.name == "bounding_envelope")
             .unwrap();
-        let AttributeValue::Vector(values) = &bbox.values[0] else {
+        let Some(AttributeValue::Vector(values)) = &bbox.values[0] else {
             panic!("bbox")
         };
         assert_eq!(values[3].get(), 41.0);

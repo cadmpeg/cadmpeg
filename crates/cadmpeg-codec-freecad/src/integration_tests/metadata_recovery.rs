@@ -366,7 +366,9 @@ fn large_property_population_preserves_the_complete_checked_model() {
                 .unwrap(),
                 target: cadmpeg_ir::attributes::AttributeTarget::Document,
                 name,
-                values: vec![cadmpeg_ir::attributes::AttributeValue::String(String::new())],
+                values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    String::new(),
+                ))],
             });
     }
     expected

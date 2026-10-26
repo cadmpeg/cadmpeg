@@ -73,15 +73,16 @@ pub(super) fn project(
                             &cadmpeg_ir::identity_namespace!("nx", "document", "attribute"),
                             cadmpeg_ir::identity_key!("jt-string-").then(attributes.len()),
                         );
-                        attributes.push(SourceAttribute {
-                            native_ref: Some(record.id().to_owned()),
-                            id: attribute_id,
-                            target: AttributeTarget::Source {
+                        attributes.push(SourceAttribute::new(
+                            ctx,
+                            attribute_id,
+                            Some(record.id().to_owned()),
+                            AttributeTarget::Source {
                                 source_id: record.id().to_owned(),
                             },
-                            name: "JT string property".into(),
-                            values: vec![AttributeValue::String(value.to_owned())],
-                        });
+                            "JT string property".into(),
+                            vec![AttributeValue::String(value.to_owned())],
+                        )?);
                     } else {
                         losses.push(NxLossCode::NeutralRecordUnprojected.note(format!(
                             "JT property atom {} has no decoded string value.",

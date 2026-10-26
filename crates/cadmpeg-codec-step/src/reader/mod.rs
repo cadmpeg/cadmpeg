@@ -381,7 +381,7 @@ fn decode_exchange_mode(
     session.charge_pending_ir_entities("step_geometry_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
     session.charge_pending_ir_entities("step_dependency_decode")?;
-    let mut dependencies = dependencies::decode(exchange, &mut session.ir)?;
+    let mut dependencies = dependencies::decode(ctx, exchange, &mut session.ir)?;
     session.charge_pending_ir_entities("step_carrier_index")?;
     session.charge_pending_ir_entities("step_topology_decode")?;
 
@@ -401,20 +401,22 @@ fn decode_exchange_mode(
     geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index);
     session.charge_pending_ir_entities("step_geometric_set_association")?;
     geometry::associate_free_geometric_set_members(
+        ctx,
         exchange,
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+    )?;
     session.charge_pending_ir_entities("step_representation_association")?;
     geometry::associate_free_representation_members(
+        ctx,
         exchange,
         &mut session.ir,
         &carrier_index,
         &owned_carriers,
         &mut geometry.losses,
-    );
+    )?;
     session.charge_pending_ir_entities("step_presentation_carrier_association")?;
     geometry::associate_free_presentation_carriers(
         exchange,

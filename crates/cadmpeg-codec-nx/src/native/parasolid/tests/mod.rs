@@ -793,9 +793,9 @@ fn topology_retains_entity_attribute_list_references() {
     );
     assert_eq!(
         result.ir().model.attributes[0].values,
-        [cadmpeg_ir::attributes::AttributeValue::String(
+        [Some(cadmpeg_ir::attributes::AttributeValue::String(
             "deadbeef".into()
-        )]
+        ))]
     );
 }
 

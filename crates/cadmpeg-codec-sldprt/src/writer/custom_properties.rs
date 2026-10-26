@@ -13,7 +13,10 @@ use crate::records::{Feature, FeatureHistory};
 pub(super) fn represents(attribute: &SourceAttribute) -> bool {
     attribute.target == AttributeTarget::Document
         && !attribute.name.trim().is_empty()
-        && matches!(attribute.values.as_slice(), [AttributeValue::String(_)])
+        && matches!(
+            attribute.values.as_slice(),
+            [Some(AttributeValue::String(_))]
+        )
         && (attribute
             .id
             .as_str()
@@ -70,7 +73,7 @@ pub(super) fn synchronize(ir: &CadIr, native: &mut Option<SldprtNative>) -> Resu
         ordinal = ordinal.checked_add(1).ok_or_else(|| {
             CodecError::NotImplemented("SLDPRT custom-property ordinal exceeds u32".into())
         })?;
-        let [AttributeValue::String(value)] = attribute.values.as_slice() else {
+        let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
             return Err(CodecError::malformed(
                 "custom property requires one string value",
             ));

@@ -35,7 +35,8 @@ fn current_vector_fields_retain_exact_source_reads_without_crediting_opaque_extr
         .find(|attribute| attribute.native_ref.as_deref() == Some(native.id.as_str()))
         .expect("the current decoded vector attribute");
     assert_eq!(projected.name, "ExtraVector");
-    let [cadmpeg_ir::attributes::AttributeValue::Vector(coordinates)] = projected.values.as_slice()
+    let [Some(cadmpeg_ir::attributes::AttributeValue::Vector(coordinates))] =
+        projected.values.as_slice()
     else {
         panic!("finite vector: {projected:?}")
     };

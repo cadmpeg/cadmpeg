@@ -38,6 +38,7 @@ pub(crate) fn plan(
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let (bytes, outcome) = super::write(&ctx, input.ir, version, &session)?;
     let mut losses = outcome.losses;
+    super::tables::document::uncarried_attribute_losses(input.ir, &mut losses);
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
             .ir

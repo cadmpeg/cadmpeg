@@ -103,7 +103,7 @@ fn decoded_iproperties_keep_exact_native_values_and_each_neutral_attribute_owns_
                 ));
                 assert_eq!(
                     attribute.values,
-                    [AttributeValue::String("Équipement".into())]
+                    [Some(AttributeValue::String("Équipement".into()))]
                 );
             }
             "CustomCount" => {
@@ -112,7 +112,7 @@ fn decoded_iproperties_keep_exact_native_values_and_each_neutral_attribute_owns_
                     property.value_kind,
                     PropertyValueKind::Signed { type_code: 3 }
                 ));
-                assert_eq!(attribute.values, [AttributeValue::Integer(-17)]);
+                assert_eq!(attribute.values, [Some(AttributeValue::Integer(-17))]);
             }
             name => panic!("unexpected projected property {name}"),
         }
@@ -137,7 +137,9 @@ fn source_free_native_property_admission_does_not_depend_on_the_neutral_attribut
         cadmpeg_core::decode::DecodeDepth::Full,
     );
     let findings = InventorCodec.validate_native(&ctx, &ir).unwrap();
-    ir.model.attributes[0].values = vec![AttributeValue::String("Edited current attribute".into())];
+    ir.model.attributes[0].values = vec![Some(AttributeValue::String(
+        "Edited current attribute".into(),
+    ))];
     assert_eq!(InventorCodec.validate_native(&ctx, &ir).unwrap(), findings);
     assert_eq!(ir.native, before);
     let attribute_id = ir.model.attributes[0].id.to_string();

@@ -63,10 +63,13 @@ fn assert_parameter_and_pmi(
             if text.as_deref() == Some("25.000 mm") && semantics.as_slice() == std::slice::from_ref(id))
     }));
     for (name, value) in [
-        ("basic", AttributeValue::Boolean(true)),
-        ("inspection", AttributeValue::Boolean(false)),
-        ("precision", AttributeValue::Integer(3)),
-        ("reference_only", AttributeValue::Boolean(reference_only)),
+        ("basic", Some(AttributeValue::Boolean(true))),
+        ("inspection", Some(AttributeValue::Boolean(false))),
+        ("precision", Some(AttributeValue::Integer(3))),
+        (
+            "reference_only",
+            Some(AttributeValue::Boolean(reference_only)),
+        ),
     ] {
         assert!(decoded.ir().model.attributes.iter().any(|attribute| {
             matches!(&attribute.target, AttributeTarget::Pmi(target) if target == id)

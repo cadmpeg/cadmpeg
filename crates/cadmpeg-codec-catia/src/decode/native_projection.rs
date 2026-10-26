@@ -113,20 +113,21 @@ pub(super) fn project(
             if let Some(value) = value {
                 ir.model
                     .attributes
-                    .push(cadmpeg_ir::attributes::SourceAttribute {
-                        native_ref: Some(block.id.clone()),
-                        id: cadmpeg_ir::ids::AttributeId::compose(
+                    .push(cadmpeg_ir::attributes::SourceAttribute::new(
+                        ctx,
+                        cadmpeg_ir::ids::AttributeId::compose(
                             &cadmpeg_ir::identity_namespace!("catia", "document", "attribute"),
                             cadmpeg_ir::identity_key!("value-")
                                 .then(block_ordinal)
                                 .dash(field_ordinal),
                         ),
-                        target: cadmpeg_ir::attributes::AttributeTarget::Source {
+                        Some(block.id.clone()),
+                        cadmpeg_ir::attributes::AttributeTarget::Source {
                             source_id: block.id.clone(),
                         },
-                        name: format!("value.{field_ordinal}"),
-                        values: vec![value],
-                    });
+                        format!("value.{field_ordinal}"),
+                        vec![value],
+                    )?);
             }
         }
     }

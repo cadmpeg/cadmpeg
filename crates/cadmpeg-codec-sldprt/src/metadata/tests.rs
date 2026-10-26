@@ -76,7 +76,7 @@ fn semantic_writer_preserves_transformed_reference_enclosure_prefix() {
             .iter_mut()
             .find(|attribute| attribute.name == "transformed_reference_enclosure")
             .unwrap();
-        let AttributeValue::Vector(center) = &mut transformed.values[0] else {
+        let Some(AttributeValue::Vector(center)) = &mut transformed.values[0] else {
             panic!("transformed plane center");
         };
         center[0] = cadmpeg_ir::scalar::FiniteReal::new(25.0).unwrap();
@@ -205,7 +205,7 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "bounding_envelope")
         .expect("envelope");
-    let AttributeValue::Vector(values) = &envelope.values[0] else {
+    let Some(AttributeValue::Vector(values)) = &envelope.values[0] else {
         panic!("vector")
     };
     assert_eq!(
@@ -219,10 +219,10 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "default_reference_plane")
         .expect("reference plane");
-    let AttributeValue::Vector(origin) = &plane.values[0] else {
+    let Some(AttributeValue::Vector(origin)) = &plane.values[0] else {
         panic!("origin")
     };
-    let AttributeValue::Vector(frame) = &plane.values[1] else {
+    let Some(AttributeValue::Vector(frame)) = &plane.values[1] else {
         panic!("frame")
     };
     assert_eq!(
@@ -241,10 +241,10 @@ fn decode_extracts_document_envelope() {
     assert_eq!(
         transformed.values,
         vec![
-            AttributeValue::vector([10.0, 20.0, 30.0]).unwrap(),
-            AttributeValue::vector([100.0, 200.0, 300.0]).unwrap(),
-            AttributeValue::vector([-100.0, -200.0, -300.0]).unwrap(),
-            AttributeValue::float(500.0).unwrap(),
+            Some(AttributeValue::vector([10.0, 20.0, 30.0]).unwrap()),
+            Some(AttributeValue::vector([100.0, 200.0, 300.0]).unwrap()),
+            Some(AttributeValue::vector([-100.0, -200.0, -300.0]).unwrap()),
+            Some(AttributeValue::float(500.0).unwrap()),
         ]
     );
     let part = result
@@ -256,7 +256,10 @@ fn decode_extracts_document_envelope() {
         .unwrap();
     assert_eq!(
         part.values,
-        vec![AttributeValue::Integer(42), AttributeValue::Integer(2026)]
+        vec![
+            Some(AttributeValue::Integer(42)),
+            Some(AttributeValue::Integer(2026))
+        ]
     );
     let configuration = result
         .ir()
@@ -265,7 +268,7 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "configuration_manager")
         .unwrap();
-    assert_eq!(configuration.values[1], AttributeValue::Integer(3));
+    assert_eq!(configuration.values[1], Some(AttributeValue::Integer(3)));
     let units = result
         .ir()
         .model
@@ -273,7 +276,7 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "source_linear_unit_code")
         .unwrap();
-    assert_eq!(units.values, vec![AttributeValue::Integer(0)]);
+    assert_eq!(units.values, vec![Some(AttributeValue::Integer(0))]);
     let unit_name = result
         .ir()
         .model
@@ -281,7 +284,10 @@ fn decode_extracts_document_envelope() {
         .iter()
         .find(|attribute| attribute.name == "source_linear_unit_name")
         .unwrap();
-    assert_eq!(unit_name.values, vec![AttributeValue::String("IN".into())]);
+    assert_eq!(
+        unit_name.values,
+        vec![Some(AttributeValue::String("IN".into()))]
+    );
 }
 
 /// The metadata attributes a single `SWObjects` block holding `payload` yields.
@@ -357,7 +363,9 @@ fn unit_name_replacement_decodes_replacement_character() {
     .expect("replacement unit name");
     assert_eq!(
         attributes[0].values,
-        vec![cadmpeg_ir::attributes::AttributeValue::String("�".into())]
+        vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+            "�".into()
+        ))]
     );
 }
 
@@ -460,7 +468,7 @@ fn enclosure_metadata_edit_preserves_config_owner_and_opaque_prologue() {
             .iter_mut()
             .find(|a| a.name == "transformed_reference_enclosure")
             .unwrap();
-        let AttributeValue::Vector(center) = &mut attribute.values[0] else {
+        let Some(AttributeValue::Vector(center)) = &mut attribute.values[0] else {
             panic!("center");
         };
         center[0] = cadmpeg_ir::scalar::FiniteReal::new(25.).unwrap();

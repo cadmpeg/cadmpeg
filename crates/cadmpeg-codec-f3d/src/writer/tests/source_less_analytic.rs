@@ -1010,7 +1010,7 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_loss() {
                 .unwrap(),
             target,
             name: "name".into(),
-            values: vec![AttributeValue::String("exact carrier".into())],
+            values: vec![Some(AttributeValue::String("exact carrier".into()))],
         }]
     };
     source_less

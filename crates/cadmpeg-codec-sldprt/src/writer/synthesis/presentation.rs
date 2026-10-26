@@ -14,6 +14,9 @@ use crate::loss::SldprtLossCode;
 pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
     let mut attributes = Vec::new();
     for attribute in std::mem::take(&mut ir.model.attributes) {
+        if super::super::accounting::requires_attribute_omission(&attribute) {
+            continue;
+        }
         if matches!(&attribute.target, AttributeTarget::Pmi(id) if ir.model.pmi.iter().any(|annotation| &annotation.id == id))
         {
             if crate::pmi::write::attribute_supported(&attribute) {

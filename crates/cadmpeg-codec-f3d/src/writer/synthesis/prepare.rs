@@ -316,7 +316,42 @@ pub(super) fn dispositions(
     report!(WriterProceduralReduced; procedural_surfaces, procedural_curves);
     report!(WriterAuxiliaryOmitted; drawings,
         semantic_annotations, presentation_documents, view_presentations,
-        attributes, presentation_layers);
+        presentation_layers);
+    if original.model.attributes.iter().any(|attribute| {
+        attribute.values.iter().any(|value| {
+            use cadmpeg_ir::attributes::AttributeValue;
+            match value {
+                None
+                | Some(
+                    AttributeValue::Map(_)
+                    | AttributeValue::Expression(_)
+                    | AttributeValue::SubReference { .. }
+                    | AttributeValue::ExternalReference { .. }
+                    | AttributeValue::EmptyReference
+                    | AttributeValue::Json(_),
+                ) => true,
+                Some(
+                    AttributeValue::Integer(_)
+                    | AttributeValue::Float(_)
+                    | AttributeValue::String(_)
+                    | AttributeValue::Boolean(_)
+                    | AttributeValue::Reference(_)
+                    | AttributeValue::Vector(_),
+                ) => false,
+            }
+        })
+    }) {
+        coverage.attributes = Dropped;
+        for attribute in &original.model.attributes {
+            losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+                "model.attributes: 1 record(s) are not encoded: {}{}",
+                attribute.id,
+                MissingAttributePositions(&attribute.values)
+            )));
+        }
+    } else {
+        report!(WriterAuxiliaryOmitted; attributes);
+    }
     // A field reduction is still partial handling when the record count is
     // unchanged. Identity reminting also takes this conservative disposition.
     macro_rules! changed {
@@ -351,4 +386,23 @@ pub(super) fn dispositions(
     // a local, taxonomy-bearing loss at the appropriate severity.
     debug_assert!(!matches!(coverage.bodies, Omitted));
     coverage
+}
+
+struct MissingAttributePositions<'a>(&'a [Option<cadmpeg_ir::attributes::AttributeValue>]);
+
+impl std::fmt::Display for MissingAttributePositions<'_> {
+    fn fmt(&self, output: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.0.iter().any(Option::is_none) {
+            return Ok(());
+        }
+        output.write_str("; unavailable value positions [")?;
+        let mut separator = "";
+        for (index, value) in self.0.iter().enumerate() {
+            if value.is_none() {
+                write!(output, "{separator}{index}")?;
+                separator = ", ";
+            }
+        }
+        output.write_str("]")
+    }
 }

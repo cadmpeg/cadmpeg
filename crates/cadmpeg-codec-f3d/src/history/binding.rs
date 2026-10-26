@@ -829,7 +829,14 @@ fn container_rows(
             format: crate::ids::ID_FORMAT,
         },
     )?;
-    emit_attributes(&mut out, &records, &by_index, &reach, crate::ids::ID_FORMAT)?;
+    emit_attributes(
+        ctx,
+        &mut out,
+        &records,
+        &by_index,
+        &reach,
+        crate::ids::ID_FORMAT,
+    )?;
     Ok(super::historical_topology(&out)?.filter(IndexedTopology::ordered))
 }
 

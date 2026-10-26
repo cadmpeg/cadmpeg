@@ -72,7 +72,7 @@ pub(super) fn object_name<'a>(ir: &'a CadIr, target: &AppearanceTarget) -> Optio
             return None;
         }
         match attribute.values.as_slice() {
-            [AttributeValue::String(name)] => Some(name.as_str()),
+            [Some(AttributeValue::String(name))] => Some(name.as_str()),
             _ => None,
         }
     })

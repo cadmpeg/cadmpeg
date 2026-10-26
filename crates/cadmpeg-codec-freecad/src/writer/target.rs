@@ -69,14 +69,20 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    let allocation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let allocation_policy = cadmpeg_core::decode::DecodePolicy {
+        limits: input.limits.clone(),
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let allocation_context = DecodeContext::for_encode(&allocation_arena, &allocation_policy);
     let mut reason = None;
     if let Some(fidelity) = input
         .fidelity
         .filter(|_| resolved.source_preservation_eligible() && input.can_reuse_source())
     {
         if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
-            let patch =
-                admit_unedited(input.ir, resolution.fidelity()).and_then(|()| finish(&resolution));
+            let patch = admit_unedited(&allocation_context, input.ir, resolution.fidelity())
+                .and_then(|()| finish(&resolution));
             match patch {
                 Ok(body) => return Ok(body),
                 Err(error @ CodecError::UnsupportedContent(_)) => reason = Some(error.to_string()),
@@ -100,7 +106,7 @@ pub(crate) fn plan(
         );
         "4"
     };
-    let mut body = super::synthesis::write(input.ir, schema)?;
+    let mut body = super::synthesis::write(&allocation_context, input.ir, schema)?;
     if let Some(message) = resolved.displacement_message() {
         body.losses
             .push(crate::loss::FreecadLossCode::SourceDialectDisplaced.note(message));
@@ -141,7 +147,11 @@ pub(crate) fn document_local_sha256(
 /// Decline the retained-layout optimization after an uncarried edit.
 ///
 /// Such an edit is authored by the synthesized path instead.
-fn admit_unedited(ir: &CadIr, fidelity: &cadmpeg_ir::SourceFidelity) -> Result<(), CodecError> {
+fn admit_unedited(
+    attribute_context: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> Result<(), CodecError> {
     if let Some(namespace) = ir.native.namespace("fcstd") {
         if namespace
             .arena_as::<crate::native::ObjectRecord>("objects")?
@@ -177,7 +187,7 @@ fn admit_unedited(ir: &CadIr, fidelity: &cadmpeg_ir::SourceFidelity) -> Result<(
             "current uncarried typed records require FCStd graph regeneration".into(),
         ));
     }
-    projection::agrees(&ctx, ir).map_err(|error| match error {
+    projection::agrees(attribute_context, &ctx, ir).map_err(|error| match error {
         CodecError::Malformed(_) | CodecError::Truncated { .. } => CodecError::UnsupportedContent(
             format!("current typed projection is unavailable: {error}"),
         ),

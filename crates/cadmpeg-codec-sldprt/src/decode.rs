@@ -2611,6 +2611,7 @@ fn build_geometry_ir(
         form_padding,
     );
     let projected_pmi = crate::pmi::apply_to_parameters(
+        ctx,
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
@@ -2803,7 +2804,7 @@ fn build_geometry_ir(
         sketch_lanes,
     );
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
-    let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
+    let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
     attributes.extend(custom_properties);
     ir.model.attributes = attributes;
     ir.model.attributes.extend(projected_pmi.attributes);
@@ -3272,11 +3273,11 @@ fn build_geometry_ir(
             }
             let mesh = display_face.mesh;
             let mut tessellation = mesh
-                .into_tessellation(
-                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                .into_tessellation(cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(
+                    |error| {
                         CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                    })?,
-                )
+                    },
+                )?)
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
                 })?;
@@ -3834,7 +3835,7 @@ fn build_metadata_ir(
         retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Design);
     }
     let mut model_attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
-    let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
+    let custom_properties = crate::history::project::custom_property_attributes(ctx, &histories)?;
     model_attributes.extend(custom_properties);
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;

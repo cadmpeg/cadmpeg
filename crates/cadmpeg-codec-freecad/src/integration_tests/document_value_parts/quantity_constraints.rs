@@ -78,7 +78,10 @@ fn quantity_constraint_source_values_and_bounds_reach_their_actual_homes_with_ex
             .find(|attribute| attribute.name == "Constrained")
             .unwrap();
         // Neither unit nor constraint bounds manufacture a different selected value.
-        assert_eq!(neutral.values, [AttributeValue::float(expected).unwrap()]);
+        assert_eq!(
+            neutral.values,
+            [Some(AttributeValue::float(expected).unwrap())]
+        );
         assert_eq!(neutral.native_ref.as_deref(), Some(held.id.as_str()));
         let start = member.offset() + u64::try_from(xml.find(&child).unwrap()).unwrap();
         let part = stage
@@ -176,7 +179,10 @@ fn invalid_quantity_constraint_value_keeps_header_and_peer_with_one_original_chi
             .iter()
             .find(|attribute| attribute.name == "Peer")
             .unwrap();
-        assert_eq!(peer.values, [AttributeValue::String("independent".into())]);
+        assert_eq!(
+            peer.values,
+            [Some(AttributeValue::String("independent".into()))]
+        );
         assert!(!decoded
             .ir()
             .model

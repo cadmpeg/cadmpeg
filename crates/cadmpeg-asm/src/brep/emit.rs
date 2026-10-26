@@ -5234,6 +5234,7 @@ pub fn emit_containers(
 /// timestamp projections. Returns the set of emitted attribute record indices.
 /// An attribute holding a NaN or infinite number refuses the stream.
 pub fn emit_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record, std::collections::hash_map::RandomState>,
@@ -5299,6 +5300,7 @@ pub fn emit_attributes(
         };
         if let Some(target) = target {
             collect_attributes(
+                ctx,
                 record,
                 &target,
                 by_index,
@@ -5322,7 +5324,7 @@ pub fn emit_attributes(
         {
             emitted_attributes.insert(index);
             out.attributes
-                .push(source_attribute(record, target, format)?);
+                .push(source_attribute(ctx, record, target, format)?);
         }
     }
     Ok(emitted_attributes)

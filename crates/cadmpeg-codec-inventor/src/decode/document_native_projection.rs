@@ -24,7 +24,7 @@ pub(super) fn project(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let before = ir.model.entity_count();
-    project_properties(ir, properties, losses)?;
+    project_properties(ctx, ir, properties, losses)?;
     for reference in ufrx.embedded_references() {
         if reference.path.is_empty() {
             losses.push(InventorLossCode::NeutralRecordUnprojected.note(format!(
@@ -130,11 +130,7 @@ pub(super) fn project(
                 .filter_map(|record| record.native_ref.as_deref()),
         )
         .collect::<std::collections::BTreeSet<_>>();
-    if let Some(namespace) = ir
-        .native
-        .namespace("inventor")
-        .filter(|_| ir.scope.design)
-    {
+    if let Some(namespace) = ir.native.namespace("inventor").filter(|_| ir.scope.design) {
         for arena in [
             "pm_dc_parameters",
             "pm_dc_features",
@@ -173,7 +169,7 @@ pub(super) fn project_source_properties(
     };
     let before = ir.model.entity_count();
     for property in namespace.arena_iter_as_for_decode::<PropertyRecord>(ctx, "properties") {
-        project_properties(ir, std::slice::from_ref(&property?), losses)?;
+        project_properties(ctx, ir, std::slice::from_ref(&property?), losses)?;
     }
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
@@ -183,6 +179,7 @@ pub(super) fn project_source_properties(
 }
 
 fn project_properties(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
@@ -226,14 +223,15 @@ fn project_properties(
             _ => None,
         };
         if let Some(value) = typed {
-            ir.model.attributes.push(SourceAttribute {
-                native_ref: Some(property.id.clone()),
-                id: AttributeId::mint(format!("{}:attribute", property.id))
+            ir.model.attributes.push(SourceAttribute::new(
+                ctx,
+                AttributeId::mint(format!("{}:attribute", property.id))
                     .map_err(CodecError::malformed)?,
-                target: AttributeTarget::Document,
-                name: name.clone(),
-                values: vec![value],
-            });
+                Some(property.id.clone()),
+                AttributeTarget::Document,
+                name.clone(),
+                vec![value],
+            )?);
         } else {
             losses.push(InventorLossCode::NeutralRecordUnprojected.note(format!(
                 "Property {} cannot be projected from its decoded scalar kind.",

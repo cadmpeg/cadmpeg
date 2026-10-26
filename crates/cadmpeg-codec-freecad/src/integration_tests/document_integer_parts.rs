@@ -46,7 +46,7 @@ fn integer_values_and_extra_fields_are_born_from_exact_nonzero_source_ranges() {
         let [attribute] = output.model().attributes.as_slice() else {
             panic!("one staged attribute")
         };
-        assert_eq!(attribute.values, [AttributeValue::Integer(expected)]);
+        assert_eq!(attribute.values, [Some(AttributeValue::Integer(expected))]);
         assert_eq!(attribute.native_ref.as_deref(), Some(kept.id.as_str()));
         let captures = ctx.take_record_captures().unwrap();
         let capture = captures
@@ -213,7 +213,7 @@ fn integer_text_and_unrecognized_dynamic_flags_keep_the_unchanged_generic_produc
                 .find(|attribute| attribute.name == "Count")
                 .unwrap()
                 .values,
-            [AttributeValue::Integer(7)]
+            [Some(AttributeValue::Integer(7))]
         );
     }
 }

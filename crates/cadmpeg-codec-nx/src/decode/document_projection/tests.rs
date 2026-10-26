@@ -50,9 +50,9 @@ fn native_document_projections_keep_authored_fields_and_use_inward_links() {
     );
     assert_eq!(
         ir.model.attributes[0].values,
-        [cadmpeg_ir::attributes::AttributeValue::String(
+        [Some(cadmpeg_ir::attributes::AttributeValue::String(
             "authored label".to_owned()
-        )]
+        ))]
     );
     assert_eq!(ir.model.appearances.len(), 1);
     assert_eq!(

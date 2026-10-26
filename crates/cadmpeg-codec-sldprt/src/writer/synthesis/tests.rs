@@ -524,7 +524,7 @@ fn unheld_neutral_model_keeps_supported_typed_native_document_metadata() {
             .expect("metadata id"),
         target: AttributeTarget::Document,
         name: "source_linear_unit_code".into(),
-        values: vec![AttributeValue::Integer(0)],
+        values: vec![Some(AttributeValue::Integer(0))],
     };
     let mut ir = CadIr::empty();
     ir.set_scope(cadmpeg_ir::document::ContentScope::container())
@@ -557,5 +557,5 @@ fn unheld_neutral_model_keeps_supported_typed_native_document_metadata() {
         .iter()
         .flat_map(|record| &record.attributes)
         .any(|attribute| attribute.name == "source_linear_unit_code"
-            && attribute.values == [AttributeValue::Integer(0)]));
+            && attribute.values == [Some(AttributeValue::Integer(0))]));
 }

@@ -136,6 +136,26 @@ fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> bool {
     }
 }
 
+struct AttributeOmission<'a>(&'a cadmpeg_ir::attributes::SourceAttribute);
+
+impl std::fmt::Display for AttributeOmission<'_> {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.write_str("1 source attribute record(s) were not written to STEP")?;
+        if self.0.values.iter().any(Option::is_none) {
+            out.write_str("; None positions (zero-based) [")?;
+            let mut separator = "";
+            for (position, value) in self.0.values.iter().enumerate() {
+                if value.is_none() {
+                    write!(out, "{separator}{position}")?;
+                    separator = ", ";
+                }
+            }
+            out.write_str("]")?;
+        }
+        write!(out, ": {}", self.0.id)
+    }
+}
+
 fn step_triangle_index(index: u32) -> u64 {
     u64::from(index) + 1
 }
@@ -1840,7 +1860,8 @@ impl<'a> Builder<'a> {
             if closed {
                 self.split_non_manifold_edges(&region.shells);
             }
-            let Some((outer, mut shells_closed)) = self.emit_shell(outer_id.as_str(), closed, false)
+            let Some((outer, mut shells_closed)) =
+                self.emit_shell(outer_id.as_str(), closed, false)
             else {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
@@ -1855,7 +1876,9 @@ impl<'a> Builder<'a> {
             // the CADIR face use.
             let void_reversed = closed;
             for sid in void_ids {
-                if let Some((void, void_closed)) = self.emit_shell(sid.as_str(), closed, void_reversed) {
+                if let Some((void, void_closed)) =
+                    self.emit_shell(sid.as_str(), closed, void_reversed)
+                {
                     shells_closed &= void_closed;
                     voids.push(void);
                 } else {
@@ -3408,8 +3431,8 @@ impl<'a> Builder<'a> {
                     geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
                 self.fitted_helix_surfaces.insert(id.to_owned());
                 (reference, false)
-            } else if let Some(solved) =
-                solved.filter(|solved| geometry::surface_is_supported(solved) && !unwritable_cone(solved))
+            } else if let Some(solved) = solved
+                .filter(|solved| geometry::surface_is_supported(solved) && !unwritable_cone(solved))
             {
                 // The basis is taken before the record is emitted, so the
                 // census cannot miss a record the writer put in the file.
@@ -5471,14 +5494,9 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.attributes.is_empty() {
-            self.loss(
-                StepLossCode::SourceAttributeNotWritten,
-                format!(
-                    "{} source attribute record(s) were not written to STEP",
-                    self.ir.model.attributes.len()
-                ),
-            );
+        for index in 0..self.ir.model.attributes.len() {
+            let message = format!("{}", AttributeOmission(&self.ir.model.attributes[index]));
+            self.loss(StepLossCode::SourceAttributeNotWritten, message);
         }
         let reduced_surfaces: BTreeSet<_> = self
             .procedural_surfaces

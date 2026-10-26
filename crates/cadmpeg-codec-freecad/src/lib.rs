@@ -1355,6 +1355,7 @@ impl CodecBackend for FcstdCodec {
                 .transpose()?
                 .unwrap_or_default();
             transfer_losses.extend(attributes::transfer_with_document_properties(
+                ctx,
                 &mut ir,
                 &objects,
                 &properties,

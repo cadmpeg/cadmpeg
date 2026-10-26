@@ -5,7 +5,64 @@ use super::{
     color, crc_chunk, integer, records, short_chunk, utf16, wire_index, CadIr, CodecError,
     LossNote, Map, RhinoLossCode, Value,
 };
-use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+struct MissingPositions<'a>(&'a [Option<AttributeValue>]);
+
+impl std::fmt::Display for MissingPositions<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[")?;
+        let mut separator = "";
+        for (position, value) in self.0.iter().enumerate() {
+            if value.is_none() {
+                write!(f, "{separator}{position}")?;
+                separator = ", ";
+            }
+        }
+        f.write_str("]")
+    }
+}
+
+fn unreadable_attribute_loss(attribute: &SourceAttribute) -> Option<LossNote> {
+    attribute.values.iter().any(Option::is_none).then(|| {
+        RhinoLossCode::WriterAttributesOmitted.note(format!(
+            "attribute {} is omitted because its scalar target cannot hold None positions {}",
+            attribute.id,
+            MissingPositions(&attribute.values)
+        ))
+    })
+}
+
+pub(in crate::writer) fn uncarried_attribute_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    for attribute in &ir.model.attributes {
+        let document_carrier = attribute.native_ref.as_deref().is_some_and(|id| {
+            ["revisions", "document_notes", "applications"]
+                .into_iter()
+                .any(|arena| records(ir, arena).iter().any(|record| record.id() == id))
+        });
+        if document_carrier {
+            continue;
+        }
+        if let Some(loss) = unreadable_attribute_loss(attribute) {
+            losses.push(loss);
+        } else if attribute.values.iter().flatten().any(|value| {
+            matches!(
+                value,
+                AttributeValue::Map(_)
+                    | AttributeValue::Expression(_)
+                    | AttributeValue::SubReference { .. }
+                    | AttributeValue::ExternalReference { .. }
+                    | AttributeValue::EmptyReference
+                    | AttributeValue::Json(_)
+            )
+        }) {
+            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                "attribute {} has no exact Rhino attribute carrier for its structured value",
+                attribute.id
+            )));
+        }
+    }
+}
 
 fn current_fields(
     ir: &CadIr,
@@ -53,13 +110,13 @@ fn current_fields(
             )));
         }
         let value = match attribute.values.as_slice() {
-            [AttributeValue::String(value)] => Value::String(value.clone()),
-            [AttributeValue::Boolean(value)] => Value::Bool(*value),
-            [AttributeValue::Integer(value)] => (*value).into(),
-            [AttributeValue::Float(value)] => {
+            [Some(AttributeValue::String(value))] => Value::String(value.clone()),
+            [Some(AttributeValue::Boolean(value))] => Value::Bool(*value),
+            [Some(AttributeValue::Integer(value))] => (*value).into(),
+            [Some(AttributeValue::Float(value))] => {
                 serde_json::to_value(value).map_err(CodecError::malformed)?
             }
-            [AttributeValue::Vector(values)] => {
+            [Some(AttributeValue::Vector(values))] => {
                 serde_json::to_value(values).map_err(CodecError::malformed)?
             }
             _ => {
@@ -181,6 +238,21 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
     };
     for arena in ["revisions", "document_notes", "applications"] {
         for record in records(ir, arena) {
+            let mut unreadable = false;
+            for attribute in ir
+                .model
+                .attributes
+                .iter()
+                .filter(|attribute| attribute.native_ref.as_deref() == Some(record.id()))
+            {
+                if let Some(loss) = unreadable_attribute_loss(attribute) {
+                    output.losses.push(loss);
+                    unreadable = true;
+                }
+            }
+            if unreadable {
+                continue;
+            }
             let encoded =
                 current_fields(ir, arena, record).and_then(|fields| property(arena, &fields));
             match encoded {

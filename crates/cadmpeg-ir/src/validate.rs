@@ -22,6 +22,7 @@ use cadmpeg_core::CodecError;
 /// Narrow admissibility predicates as documented `Check` subsets.
 pub mod admit;
 mod annotations_native;
+mod attributes;
 mod carriers_parameterization;
 mod design_caches;
 mod design_dimensions;
@@ -136,6 +137,7 @@ fn validate_model_with_index<'ir>(
     check_identity_and_order(ids, &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
+    attributes::check_values(ctx, ir, ids, &mut findings)?;
     reciprocity::check(&ir.model, &mut findings);
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);

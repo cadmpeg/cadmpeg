@@ -79,13 +79,14 @@ pub(super) fn project(
                     key,
                 );
                 ctx.charge_entities(1, "Rhino document attributes")?;
-                ir.model.attributes.push(SourceAttribute {
-                    native_ref: Some(native_id.clone()),
+                ir.model.attributes.push(SourceAttribute::new(
+                    ctx,
                     id,
-                    target: AttributeTarget::Document,
-                    name: format!("rhino.{arena}.{field}"),
+                    Some(native_id.clone()),
+                    AttributeTarget::Document,
+                    format!("rhino.{arena}.{field}"),
                     values,
-                });
+                )?);
             }
         }
     }

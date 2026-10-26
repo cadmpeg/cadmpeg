@@ -91,9 +91,9 @@ pub(super) fn project(
             .filter(|attribute| attribute.name == "name" && assigned.contains(&attribute.target))
             .collect();
         if !current.is_empty()
-            && current
-                .iter()
-                .all(|attribute| attribute.values == [AttributeValue::String(label.to_owned())])
+            && current.iter().all(|attribute| {
+                attribute.values == [Some(AttributeValue::String(label.to_owned()))]
+            })
         {
             continue;
         }

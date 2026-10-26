@@ -272,8 +272,8 @@ fn generic(
     fields: &Fields<'_>,
     targets: &Targets,
 ) -> Result<Entity, String> {
-    let (name, values) = if let Some(name) = fields.name("") {
-        (name.to_owned(), fields.values("")?)
+    let (name, slots) = if let Some(name) = fields.name("") {
+        (name.to_owned(), fields.ordered_values("")?)
     } else {
         let Some(AttributeValue::String(name)) = fields.one("name")? else {
             return Err("generic attribute has no current name".into());
@@ -306,15 +306,14 @@ fn generic(
                 values.push(value);
             }
         }
-        (name, values)
+        (name, super::fields::OrderedValues::Native(values))
     };
     if name.trim().is_empty() {
         return Err("generic attribute has no current name".into());
     }
-    let mut pairs = values
-        .iter()
-        .map(|value| typed_value(value, targets))
-        .collect::<Result<Vec<_>, _>>()?;
+    let has_holes = slots.iter().any(|slot| slot.is_none());
+    let mut pairs = Vec::new();
+    let mut source_no_values = false;
     if let Some(schema) = record
         .field("values")
         .and_then(|values| values.as_array().cloned())
@@ -332,31 +331,39 @@ fn generic(
             })
             .collect();
         if !omitted.is_empty() {
-            if schema.len().checked_sub(omitted.len()) != Some(pairs.len()) {
+            if schema.len().checked_sub(omitted.len()) != Some(slots.len()) {
                 return Err(
                     "generic values no longer fit their typed no-value schema slots".into(),
                 );
             }
-            let mut current = pairs.into_iter();
-            pairs = schema
-                .iter()
-                .enumerate()
-                .map(|(index, slot)| {
-                    if omitted.contains(&index) {
-                        let kind = slot
-                            .get("data_type")
-                            .and_then(Value::as_i64)
-                            .filter(|kind| matches!(kind, 0 | 5))
-                            .ok_or("omitted generic slot does not have a no-value type")?;
-                        Ok((kind, String::new()))
-                    } else {
-                        current.next().ok_or("generic current value slot is absent")
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            source_no_values = true;
+            let mut current = slots.iter();
+            for (index, slot) in schema.iter().enumerate() {
+                if omitted.contains(&index) {
+                    let kind = slot
+                        .get("data_type")
+                        .and_then(Value::as_i64)
+                        .filter(|kind| matches!(kind, 0 | 5))
+                        .ok_or("generic no-value schema slot has a data-bearing type")?;
+                    pairs.push((kind, String::new()));
+                } else if let Some(value) = current
+                    .next()
+                    .ok_or("generic current value slot is absent")?
+                {
+                    pairs.push(typed_value(value, targets)?);
+                }
+            }
+        }
+    }
+    if !source_no_values {
+        for value in slots.iter().flatten() {
+            pairs.push(typed_value(value, targets)?);
         }
     }
     if pairs.is_empty() {
+        if has_holes {
+            return Err("no value remains after dropping unreadable positions".into());
+        }
         pairs.push((0, String::new()));
     }
     let mut parameters = vec![

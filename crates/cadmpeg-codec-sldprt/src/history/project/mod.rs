@@ -994,6 +994,7 @@ impl fmt::Display for EncodedNativeKey<'_> {
 
 /// Project Keywords custom-property records into document-owned attributes.
 pub(crate) fn custom_property_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &[FeatureHistory],
 ) -> Result<Vec<SourceAttribute>, CodecError> {
     let mut attributes = Vec::new();
@@ -1017,13 +1018,14 @@ pub(crate) fn custom_property_attributes(
             if let Some(text) = &feature.text {
                 values.push(AttributeValue::String(text.clone()));
             }
-            attributes.push(SourceAttribute {
-                native_ref: None,
+            attributes.push(SourceAttribute::new(
+                ctx,
                 id,
-                target: AttributeTarget::Document,
+                None,
+                AttributeTarget::Document,
                 name,
                 values,
-            });
+            )?);
         }
     }
     Ok(attributes)

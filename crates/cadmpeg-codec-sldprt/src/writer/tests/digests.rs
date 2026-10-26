@@ -91,10 +91,10 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
         target: AttributeTarget::Document,
         name: "transformed_reference_enclosure".into(),
         values: vec![
-            AttributeValue::vector([0., 0., 0.]).unwrap(),
-            AttributeValue::vector([100., 100., 100.]).unwrap(),
-            AttributeValue::vector([-100., -100., -100.]).unwrap(),
-            AttributeValue::float(200.).unwrap(),
+            Some(AttributeValue::vector([0., 0., 0.]).unwrap()),
+            Some(AttributeValue::vector([100., 100., 100.]).unwrap()),
+            Some(AttributeValue::vector([-100., -100., -100.]).unwrap()),
+            Some(AttributeValue::float(200.).unwrap()),
         ],
     });
     assert!(matches!(

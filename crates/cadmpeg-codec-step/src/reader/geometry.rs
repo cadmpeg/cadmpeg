@@ -74,40 +74,47 @@ named_carrier!(Surface, Surface);
 named_carrier!(Point, Point);
 
 fn attach_geometry_source<T: NamedCarrier>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     carrier: &mut T,
     id: u64,
     name: Option<&str>,
     attributes: &mut Vec<cadmpeg_ir::attributes::SourceAttribute>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let target = carrier.name_target();
     let source = carrier.association_mut();
     if source.is_none() {
         *source = Some(super::step_source_association(id));
-        retain_geometry_name(attributes, target, id, name);
+        retain_geometry_name(ctx, attributes, target, id, name)?;
     }
+
+    Ok(())
 }
 
 fn retain_geometry_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     attributes: &mut Vec<cadmpeg_ir::attributes::SourceAttribute>,
     target: cadmpeg_ir::attributes::AttributeTarget,
     source: u64,
     name: Option<&str>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Some(name) = name.filter(|name| !name.is_empty()) else {
-        return;
+        return Ok(());
     };
-    attributes.push(cadmpeg_ir::attributes::SourceAttribute {
-        native_ref: None,
-        id: cadmpeg_ir::ids::AttributeId::from(ids::data(
+    attributes.push(cadmpeg_ir::attributes::SourceAttribute::new(
+        ctx,
+        cadmpeg_ir::ids::AttributeId::from(ids::data(
             kind!("geometry-name"),
             IdentityKey::from(source).dash(attributes.len()),
         )),
+        None,
         target,
-        name: "name".to_owned(),
-        values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+        "name".to_owned(),
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
             name.to_owned(),
         )],
-    });
+    )?);
+
+    Ok(())
 }
 
 pub(super) struct GeometryData {
@@ -698,7 +705,7 @@ pub(super) fn decode(
             _ => {}
         }
     }
-    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses);
+    decode_tessellated_curve_sets(ctx, exchange, &unit_scales, ir, &mut typed, &mut losses)?;
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records().values() {
         if record
@@ -787,6 +794,7 @@ pub(super) fn decode(
         };
         let source_name = apll_point_names.remove(&id);
         retain_geometry_name(
+            ctx,
             &mut ir.model.attributes,
             cadmpeg_ir::attributes::AttributeTarget::Point(PointId::from(ids::data(
                 kind!("point"),
@@ -794,7 +802,7 @@ pub(super) fn decode(
             ))),
             id,
             source_name.as_ref().and_then(|name| name.as_deref()),
-        );
+        )?;
         ir.model.points.push(Point::new(
             PointId::from(ids::data(kind!("point"), id)),
             position,
@@ -2448,12 +2456,13 @@ pub(super) fn decode(
 }
 
 fn decode_tessellated_curve_sets(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     unit_scales: &UnitScales,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (&id, record) in exchange.records() {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
@@ -2523,11 +2532,12 @@ fn decode_tessellated_curve_sets(
             };
             let curve_id = CurveId::from(ids::data(kind!("curve"), curve_key));
             retain_geometry_name(
+                ctx,
                 &mut ir.model.attributes,
                 cadmpeg_ir::attributes::AttributeTarget::Curve(curve_id.clone()),
                 id,
                 source_name.as_deref(),
-            );
+            )?;
             ir.model.curves.push(Curve {
                 native_ref: None,
                 parameter_range: None,
@@ -2540,6 +2550,8 @@ fn decode_tessellated_curve_sets(
             typed.insert(source_id);
         }
     }
+
+    Ok(())
 }
 
 fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -2594,12 +2606,13 @@ fn face_surface_reference(record: &RawRecord) -> Option<u64> {
 }
 
 pub(super) fn associate_free_geometric_set_members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for set in exchange.records().values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
@@ -2628,36 +2641,41 @@ pub(super) fn associate_free_geometric_set_members(
                     continue;
                 }
                 attach_geometry_source(
+                    ctx,
                     &mut ir.model.curves[index.0],
                     member,
                     name.as_deref(),
                     &mut ir.model.attributes,
-                );
+                )?;
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
                 attach_geometry_source(
+                    ctx,
                     &mut ir.model.points[index.0],
                     member,
                     name.as_deref(),
                     &mut ir.model.attributes,
-                );
+                )?;
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if owned.surfaces.contains(index) {
                     continue;
                 }
                 attach_geometry_source(
+                    ctx,
                     &mut ir.model.surfaces[index.0],
                     member,
                     name.as_deref(),
                     &mut ir.model.attributes,
-                );
+                )?;
             }
         }
     }
+
+    Ok(())
 }
 
 /// Associate carriers that are listed directly by a STEP representation but
@@ -2666,12 +2684,13 @@ pub(super) fn associate_free_geometric_set_members(
 /// reachability check would misclassify a valid standalone carrier as an
 /// orphan.
 pub(super) fn associate_free_representation_members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for representation in exchange.records().values().filter(|record| {
         record
             .partials
@@ -2700,35 +2719,40 @@ pub(super) fn associate_free_representation_members(
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
                     attach_geometry_source(
+                        ctx,
                         &mut ir.model.curves[index.0],
                         member,
                         source_name.as_deref(),
                         &mut ir.model.attributes,
-                    );
+                    )?;
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
                     attach_geometry_source(
+                        ctx,
                         &mut ir.model.points[index.0],
                         member,
                         source_name.as_deref(),
                         &mut ir.model.attributes,
-                    );
+                    )?;
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
                     attach_geometry_source(
+                        ctx,
                         &mut ir.model.surfaces[index.0],
                         member,
                         source_name.as_deref(),
                         &mut ir.model.attributes,
-                    );
+                    )?;
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 /// Associate geometry that is owned by presentation records rather than by a
@@ -2746,7 +2770,15 @@ pub(super) fn associate_free_presentation_carriers(
     for (style_id, target) in exchange.records().iter().filter_map(|(style_id, record)| {
         super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
-        associate_presentation_carrier(exchange, ir, index, owned, (target, style_id), losses);
+        associate_presentation_carrier(
+            ctx,
+            exchange,
+            ir,
+            index,
+            owned,
+            (target, style_id),
+            losses,
+        )?;
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
         for parameter in plane
@@ -2758,13 +2790,14 @@ pub(super) fn associate_free_presentation_carriers(
                 let target = target?;
                 if index.surfaces.contains_key(&target) {
                     associate_presentation_carrier(
+                        ctx,
                         exchange,
                         ir,
                         index,
                         owned,
                         (target, plane_id),
                         losses,
-                    );
+                    )?;
                 }
             }
         }
@@ -2773,13 +2806,14 @@ pub(super) fn associate_free_presentation_carriers(
 }
 
 fn associate_presentation_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     (target, source_id): (u64, u64),
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let name = exchange
         .records()
         .get(&target)
@@ -2798,33 +2832,38 @@ fn associate_presentation_carrier(
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
             attach_geometry_source(
+                ctx,
                 &mut ir.model.curves[index.0],
                 source_id,
                 name.as_deref(),
                 &mut ir.model.attributes,
-            );
+            )?;
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
             attach_geometry_source(
+                ctx,
                 &mut ir.model.points[index.0],
                 source_id,
                 name.as_deref(),
                 &mut ir.model.attributes,
-            );
+            )?;
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
             attach_geometry_source(
+                ctx,
                 &mut ir.model.surfaces[index.0],
                 source_id,
                 name.as_deref(),
                 &mut ir.model.attributes,
-            );
+            )?;
         }
     }
+
+    Ok(())
 }
 
 fn representation_items(record: &RawRecord) -> Option<impl Iterator<Item = u64> + '_> {

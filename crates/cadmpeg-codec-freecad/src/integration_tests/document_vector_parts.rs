@@ -60,7 +60,7 @@ fn vector_native_and_neutral_values_come_from_exact_fields_in_a_nonzero_archive_
         };
         assert_eq!(
             attribute.values,
-            [AttributeValue::vector([x, -2.0, 3.0]).unwrap()]
+            [Some(AttributeValue::vector([x, -2.0, 3.0]).unwrap())]
         );
         assert_eq!(attribute.native_ref.as_deref(), Some(kept.id.as_str()));
         let captures = ctx.take_record_captures().unwrap();
@@ -261,7 +261,7 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
                     .find(|attribute| attribute.name == "Vector")
                     .unwrap()
                     .values,
-                [AttributeValue::vector([1.0, 2.0, 3.0]).unwrap()]
+                [Some(AttributeValue::vector([1.0, 2.0, 3.0]).unwrap())]
             );
         } else {
             assert!(!decoded

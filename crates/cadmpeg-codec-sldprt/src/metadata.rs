@@ -22,6 +22,7 @@ pub(crate) fn attributes(
     let mut out = Vec::new();
     for section in scan.sections() {
         scan_vectors(
+            ctx,
             section,
             &VectorScan {
                 token: b"moBBoxCenterData_c",
@@ -34,6 +35,7 @@ pub(crate) fn attributes(
             annotations,
         )?;
         scan_vectors(
+            ctx,
             section,
             &VectorScan {
                 token: b"moDefaultRefPlnData_c",
@@ -45,9 +47,9 @@ pub(crate) fn attributes(
             &mut out,
             annotations,
         )?;
-        scan_part(section, &mut out, annotations)?;
-        scan_configuration_manager(section, &mut out, annotations)?;
-        scan_transformed_reference_plane(section, &mut out, annotations)?;
+        scan_part(ctx, section, &mut out, annotations)?;
+        scan_configuration_manager(ctx, section, &mut out, annotations)?;
+        scan_transformed_reference_plane(ctx, section, &mut out, annotations)?;
         scan_units_xml(ctx, section, &mut out, annotations)?;
         scan_length_user_units(ctx, section, &mut out, annotations)?;
     }
@@ -55,6 +57,7 @@ pub(crate) fn attributes(
 }
 
 fn scan_transformed_reference_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
@@ -76,6 +79,7 @@ fn scan_transformed_reference_plane(
             continue;
         };
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("transformed_reference_enclosure"),
@@ -163,6 +167,7 @@ fn scan_length_user_units(
             "retain SLDPRT linear unit name",
         )?;
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("source_linear_unit_name"),
@@ -202,6 +207,7 @@ fn scan_units_xml(
             continue;
         };
         out.push(attribute(
+            ctx,
             section,
             node.range().start,
             &cadmpeg_ir::identity_component!("source_linear_unit_code"),
@@ -223,6 +229,7 @@ struct VectorScan<'a> {
 }
 
 fn scan_vectors(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     section: Section<'_>,
     scan: &VectorScan<'_>,
     out: &mut Vec<SourceAttribute>,
@@ -261,6 +268,7 @@ fn scan_vectors(
             continue;
         };
         out.push(attribute(
+            ctx,
             section,
             offset,
             name,
@@ -273,6 +281,7 @@ fn scan_vectors(
 }
 
 fn scan_part(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
@@ -292,6 +301,7 @@ fn scan_part(
             continue;
         };
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("part_record"),
@@ -307,6 +317,7 @@ fn scan_part(
 }
 
 fn scan_configuration_manager(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
@@ -330,6 +341,7 @@ fn scan_configuration_manager(
             continue;
         };
         out.push(attribute(
+            ctx,
             section,
             offset,
             &cadmpeg_ir::identity_component!("configuration_manager"),
@@ -352,6 +364,7 @@ fn millimetres(values: &[f64]) -> Option<AttributeValue> {
 }
 
 fn attribute(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     section: Section<'_>,
     offset: usize,
     name: &cadmpeg_ir::ids::IdentityComponent,
@@ -375,13 +388,14 @@ fn attribute(
         std::str::from_utf8(token).unwrap_or(name.as_str()),
         Exactness::ByteExact,
     )?;
-    Ok(SourceAttribute {
-        native_ref: None,
+    Ok(SourceAttribute::new(
+        ctx,
         id,
-        target: AttributeTarget::Document,
-        name: name.as_str().into(),
+        None,
+        AttributeTarget::Document,
+        name.as_str().into(),
         values,
-    })
+    )?)
 }
 
 #[cfg(test)]

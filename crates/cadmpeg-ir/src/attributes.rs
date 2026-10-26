@@ -8,6 +8,38 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId, VertexId};
 use crate::scalar::FiniteReal;
 
+/// One ordered map entry. Repeated keys remain separate entries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AttributeMapEntry {
+    /// Source key.
+    pub key: String,
+    /// Source value.
+    pub value: String,
+}
+
+/// An expression carried by an attribute rather than by a parameter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AttributeExpression {
+    /// Source property path.
+    pub path: String,
+    /// Text and resolved parameter tokens.
+    pub expression: crate::features::Expression,
+    /// Source comment, when present.
+    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(required, schema_with = "nullable_string_schema")
+    )]
+    pub comment: Option<String>,
+}
+
+mod json;
+pub use json::AttributeJson;
+
 /// An entity which owns a source attribute.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -75,8 +107,9 @@ pub enum AttributeTarget {
 /// One ordered typed value from a source attribute record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(!try_from))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, try_from = "AttributeValueWire")]
 pub enum AttributeValue {
     /// A signed integer value.
     Integer(i64),
@@ -87,9 +120,46 @@ pub enum AttributeValue {
     /// A boolean value.
     Boolean(bool),
     /// A string-encoded reference to another entity, opaque to this crate.
-    Reference(String),
+    Reference(
+        #[serde(deserialize_with = "deserialize_local_object_reference")]
+        #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
+        String,
+    ),
     /// A fixed- or variable-length numeric vector value.
     Vector(#[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))] Vec<FiniteReal>),
+    /// Ordered source map entries, including repeated keys.
+    Map(Vec<AttributeMapEntry>),
+    /// A property expression not consumed by a held parameter.
+    Expression(AttributeExpression),
+    /// A local object link with source subelement names.
+    SubReference {
+        /// Native object identity, absent when the source states no object.
+        #[cfg_attr(
+            feature = "schema",
+            schemars(required, schema_with = "nullable_string_schema", length(min = 1))
+        )]
+        object: Option<String>,
+        /// Ordered subelement names.
+        #[cfg_attr(feature = "schema", schemars(length(min = 1)))]
+        subelements: Vec<String>,
+    },
+    /// A link into another document.
+    ExternalReference {
+        /// Source document name or path.
+        document: String,
+        /// External object name, absent when the source states no object.
+        #[cfg_attr(
+            feature = "schema",
+            schemars(required, schema_with = "nullable_string_schema", length(min = 1))
+        )]
+        object: Option<String>,
+        /// Ordered subelement names.
+        subelements: Vec<String>,
+    },
+    /// A readable local link slot with no object and no subelement name.
+    EmptyReference,
+    /// A closed, typed JSON tree.
+    Json(AttributeJson),
 }
 
 impl AttributeValue {
@@ -129,11 +199,36 @@ pub struct SourceAttribute {
     pub name: String,
     /// Ordered typed values carried by this attribute; length and types are
     /// source-defined and vary per attribute name.
-    pub values: Vec<AttributeValue>,
+    pub values: Vec<Option<AttributeValue>>,
+}
+
+impl SourceAttribute {
+    /// Construct an attribute whose value slots were all read.
+    pub fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: AttributeId,
+        native_ref: Option<String>,
+        target: AttributeTarget,
+        name: String,
+        values: Vec<AttributeValue>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut slots = Vec::new();
+        ctx.reserve_working(&mut slots, values.len(), "attribute value slots")?;
+        slots.extend(values.into_iter().map(Some));
+        Ok(Self {
+            id,
+            native_ref,
+            target,
+            name,
+            values: slots,
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    mod named_values;
+    mod nullable_values;
     use super::AttributeTarget;
 
     #[test]
@@ -145,5 +240,26 @@ mod tests {
 }
 
 mod identity_rewrite;
+mod value_rewrite;
+mod wire;
+use wire::AttributeValueWire;
 
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+
+fn deserialize_local_object_reference<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<String, D::Error> {
+    let value = String::deserialize(d)?;
+    if value.is_empty() {
+        Err(serde::de::Error::custom(
+            "an absent local object uses empty_reference",
+        ))
+    } else {
+        Ok(value)
+    }
+}
+
+#[cfg(feature = "schema")]
+fn nullable_string_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    <Option<String> as schemars::JsonSchema>::json_schema(generator)
+}

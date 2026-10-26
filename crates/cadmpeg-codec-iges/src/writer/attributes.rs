@@ -200,6 +200,16 @@ fn typed_value(value: &AttributeValue, targets: &Targets) -> Result<(i64, String
         AttributeValue::Vector(_) => {
             return Err("a numeric vector has no exact Generic Data scalar type".into());
         }
+        AttributeValue::Map(_)
+        | AttributeValue::Expression(_)
+        | AttributeValue::SubReference { .. }
+        | AttributeValue::ExternalReference { .. }
+        | AttributeValue::EmptyReference
+        | AttributeValue::Json(_) => {
+            return Err(
+                "a structured attribute value has no exact Generic Data scalar type".into(),
+            );
+        }
     })
 }
 
@@ -322,6 +332,43 @@ fn omitted(losses: &mut Vec<LossNote>, id: &str, reason: impl std::fmt::Display)
     );
 }
 
+struct MissingPositions<'a>(&'a [Option<AttributeValue>]);
+
+impl std::fmt::Display for MissingPositions<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("[")?;
+        let mut separator = "";
+        for (position, value) in self.0.iter().enumerate() {
+            if value.is_none() {
+                write!(f, "{separator}{position}")?;
+                separator = ", ";
+            }
+        }
+        f.write_str("]")
+    }
+}
+
+fn scalar_attribute_target(attribute: &SourceAttribute, ir: &CadIr) -> bool {
+    let Some(native_ref) = attribute.native_ref.as_deref() else {
+        return false;
+    };
+    let Some(namespace) = ir.native.namespace("iges") else {
+        return false;
+    };
+    namespace.arenas().iter().any(|(arena, records)| {
+        records.iter().any(|record| {
+            record.id() == native_ref
+                && match arena.as_str() {
+                    "properties" => {
+                        record.field("form").and_then(|value| value.as_i64()) != Some(27)
+                    }
+                    "attribute_table_definitions" | "attribute_table_instances" => true,
+                    _ => false,
+                }
+        })
+    })
+}
+
 pub(super) fn append(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
@@ -334,6 +381,24 @@ pub(super) fn append(
         preserved: BTreeSet::new(),
         losses: Vec::new(),
     };
+    for attribute in &ir.model.attributes {
+        if attribute.values.iter().any(Option::is_none) {
+            let positions = MissingPositions(&attribute.values);
+            if scalar_attribute_target(attribute, ir) {
+                omitted(
+                    &mut result.losses,
+                    attribute.id.as_str(),
+                    format_args!("its scalar target cannot hold None positions {positions}"),
+                );
+            } else {
+                omitted(
+                    &mut result.losses,
+                    attribute.id.as_str(),
+                    format_args!("None positions {positions} are dropped from its ordered values"),
+                );
+            }
+        }
+    }
     labels::apply(ir, entities, &targets, &mut result);
     let namespace = ir.native.namespace("iges");
     let mut attributes = LinkedAttributes::new();
@@ -428,7 +493,10 @@ pub(super) fn append(
         }
     }
     for attribute in &ir.model.attributes {
-        if result.preserved.contains(attribute.id.as_str()) {
+        if result.preserved.contains(attribute.id.as_str())
+            || (attribute.values.iter().any(Option::is_none)
+                && scalar_attribute_target(attribute, ir))
+        {
             continue;
         }
         let owners = target_id(ir, &attribute.target)
@@ -446,6 +514,7 @@ pub(super) fn append(
         let values = attribute
             .values
             .iter()
+            .flatten()
             .map(|value| typed_value(value, &targets))
             .collect::<Result<Vec<_>, _>>();
         let emitted = values.and_then(|mut values| {
@@ -453,6 +522,9 @@ pub(super) fn append(
                 return Err("Generic Data needs a nonempty name".into());
             }
             if values.is_empty() {
+                if attribute.values.iter().any(Option::is_none) {
+                    return Err("no value remains after dropping unreadable positions".into());
+                }
                 values.push((0, String::new()));
             }
             let mut parameters = vec![

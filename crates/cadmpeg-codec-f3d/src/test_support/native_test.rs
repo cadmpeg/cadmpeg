@@ -24,9 +24,9 @@ pub(crate) fn timestamp_attribute(
         target,
         name: "ATTRIB_CUSTOM-attrib".into(),
         values: vec![
-            AttributeValue::String("Timestamp_attrib_def".into()),
-            AttributeValue::Integer(1),
-            AttributeValue::Float(value),
+            Some(AttributeValue::String("Timestamp_attrib_def".into())),
+            Some(AttributeValue::Integer(1)),
+            Some(AttributeValue::Float(value)),
         ],
     }
 }
@@ -47,7 +47,7 @@ pub(crate) fn edit_timestamp_attribute(
     );
     let previous = crate::brep::creation_timestamp_value(attribute).unwrap();
     let mut values = attribute.values.iter_mut().filter_map(|field| match field {
-        AttributeValue::Float(current) if *current == previous => Some(current),
+        Some(AttributeValue::Float(current)) if *current == previous => Some(current),
         _ => None,
     });
     let current = values.next().expect("canonical timestamp value");

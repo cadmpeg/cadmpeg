@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Current inward document attributes preserve independent native values.
 
-use super::{properties, property};
+use super::{properties, property, uncarried_attribute_losses};
+use crate::loss::RhinoLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::attributes::AttributeValue;
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::codec::write::NativeDisposition;
 use cadmpeg_ir::{CadIr, NativeRecord};
 use serde_json::{json, Map, Value};
@@ -132,9 +133,11 @@ fn current_document_edits_and_explicit_empty_text_override_only_their_actual_rol
     let before = serde_json::to_value(&ir.native).expect("source snapshot");
     for attribute in &mut ir.model.attributes {
         attribute.values = match attribute.name.as_str() {
-            "rhino.revisions.revision_count" => vec![AttributeValue::Integer(9)],
-            "rhino.applications.name" => vec![AttributeValue::String("Current application".into())],
-            "rhino.document_notes.text" => vec![AttributeValue::String(String::new())],
+            "rhino.revisions.revision_count" => vec![Some(AttributeValue::Integer(9))],
+            "rhino.applications.name" => {
+                vec![Some(AttributeValue::String("Current application".into()))]
+            }
+            "rhino.document_notes.text" => vec![Some(AttributeValue::String(String::new()))],
             _ => continue,
         };
     }
@@ -179,7 +182,7 @@ fn partial_current_attribute_groups_keep_other_current_typed_native_values() {
     ir.model
         .attributes
         .retain(|attribute| attribute.name == "rhino.revisions.created_by");
-    ir.model.attributes[0].values = vec![AttributeValue::String("Current author".into())];
+    ir.model.attributes[0].values = vec![Some(AttributeValue::String("Current author".into()))];
     let exported = properties(&ir).expect("partial current override");
     assert!(exported.losses.is_empty(), "{:?}", exported.losses);
     assert_eq!(exported.regenerated.len(), 1);
@@ -223,7 +226,7 @@ fn duplicate_or_unrecognized_linked_document_roles_are_named_and_not_selected() 
             other.id = "test:model:attribute#duplicate-application-name"
                 .try_into()
                 .expect("duplicate attribute identity");
-            other.values = vec![AttributeValue::String("Conflicting name".into())];
+            other.values = vec![Some(AttributeValue::String("Conflicting name".into()))];
             ir.model.attributes.push(other);
         } else {
             ir.model.attributes[index].name = "rhino.applications.unrecognized".into();
@@ -257,7 +260,7 @@ fn wrong_current_boolean_type_is_not_defaulted_to_a_false_value() {
         .iter_mut()
         .find(|attribute| attribute.name == "rhino.document_notes.html")
         .expect("html role");
-    attribute.values = vec![AttributeValue::String("false".into())];
+    attribute.values = vec![Some(AttributeValue::String("false".into()))];
     let exported = properties(&ir).expect("report incompatible html type");
     assert_eq!(exported.records.len(), 2);
     assert!(exported
@@ -274,4 +277,107 @@ fn wrong_current_boolean_type_is_not_defaulted_to_a_false_value() {
         dispositions.record_disposition("rhino", "document_notes", &source_id),
         NativeDisposition::Dropped
     );
+}
+
+#[test]
+fn unreadable_scalar_attribute_omits_its_carrier_without_native_replay() {
+    let mut ir = source();
+    let source_id = native(&ir, "document_notes").id().to_owned();
+    let attribute = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| attribute.name == "rhino.document_notes.html")
+        .unwrap();
+    let id = attribute.id.clone();
+    attribute.values = vec![Some(AttributeValue::Boolean(false)), None];
+    let before = ir.clone();
+    let output = properties(&ir).unwrap();
+    assert_eq!(ir, before);
+    assert_eq!(output.records.len(), 2);
+    assert!(!output.written.contains(&source_id));
+    assert!(!output.regenerated.contains(&source_id));
+    assert_eq!(output.losses.len(), 1);
+    assert_eq!(
+        output.losses[0].code,
+        RhinoLossCode::WriterAttributesOmitted.note("").code
+    );
+    assert!(output.losses[0].message.contains(id.as_str()));
+    assert!(output.losses[0].message.contains("None positions [1]"));
+    assert_eq!(
+        native(&ir, "document_notes").field("html"),
+        Some(Value::Bool(true))
+    );
+}
+
+#[test]
+fn structured_scalar_value_is_named_and_never_stringified() {
+    let mut ir = source();
+    let source_id = native(&ir, "document_notes").id().to_owned();
+    let attribute = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| attribute.name == "rhino.document_notes.text")
+        .unwrap();
+    let id = attribute.id.clone();
+    attribute.values = vec![Some(AttributeValue::Json(
+        cadmpeg_ir::attributes::AttributeJson::Null,
+    ))];
+    let before = ir.clone();
+    let output = properties(&ir).unwrap();
+    assert_eq!(ir, before);
+    assert_eq!(output.records.len(), 2);
+    assert!(!output.written.contains(&source_id));
+    assert!(!output.regenerated.contains(&source_id));
+    assert_eq!(output.losses.len(), 1);
+    assert_eq!(
+        output.losses[0].code,
+        RhinoLossCode::WriterAttributesOmitted.note("").code
+    );
+    assert!(output.losses[0].message.contains(id.as_str()));
+    assert_eq!(
+        native(&ir, "document_notes").field("text"),
+        Some(json!("Source notes"))
+    );
+}
+
+#[test]
+fn uncarried_holes_and_structured_values_have_named_attribute_losses() {
+    let mut ir = CadIr::empty();
+    let hole = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#hole").unwrap();
+    let structured = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#structured").unwrap();
+    ir.model
+        .attributes
+        .push(cadmpeg_ir::attributes::SourceAttribute {
+            id: hole.clone(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "source".into(),
+            values: vec![None, Some(AttributeValue::Integer(5)), None],
+        });
+    ir.model
+        .attributes
+        .push(cadmpeg_ir::attributes::SourceAttribute {
+            id: structured.clone(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "source".into(),
+            values: vec![Some(AttributeValue::EmptyReference)],
+        });
+    let before = ir.clone();
+    let mut losses = Vec::new();
+    uncarried_attribute_losses(&ir, &mut losses);
+    assert_eq!(ir, before);
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code == RhinoLossCode::WriterAttributesOmitted.note("").code));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(hole.as_str())
+            && loss.message.contains("None positions [0, 2]")));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(structured.as_str())));
 }

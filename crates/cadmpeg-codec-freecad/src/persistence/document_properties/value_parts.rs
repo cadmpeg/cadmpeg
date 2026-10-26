@@ -35,7 +35,7 @@ pub(super) fn decode<'source>(
         let mut complete = property.clone();
         complete.body = Some(body.clone());
         if owner == crate::native::native_id("document", "0") {
-        if let Some(attribute) = crate::attributes::document_property(&complete)? {
+        if let Some(attribute) = crate::attributes::document_property(ctx, &complete)? {
             value_stage.insert_model(ctx, attribute)?;
         } else if (complete.type_name == "App::PropertyIntegerConstraint"
             || !matches!(complete.name.as_str(), "Shape" | "Placement"))

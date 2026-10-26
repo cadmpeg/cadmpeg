@@ -13,6 +13,43 @@ pub(super) struct Fields<'a> {
     native: Option<Value>,
 }
 
+pub(super) enum OrderedValues<'a> {
+    Current(&'a [Option<AttributeValue>]),
+    Native(Vec<AttributeValue>),
+}
+
+impl OrderedValues<'_> {
+    pub(super) fn len(&self) -> usize {
+        match self {
+            Self::Current(values) => values.len(),
+            Self::Native(values) => values.len(),
+        }
+    }
+
+    pub(super) fn iter(&self) -> OrderedValuesIter<'_> {
+        match self {
+            Self::Current(values) => OrderedValuesIter::Current(values.iter()),
+            Self::Native(values) => OrderedValuesIter::Native(values.iter()),
+        }
+    }
+}
+
+pub(super) enum OrderedValuesIter<'a> {
+    Current(std::slice::Iter<'a, Option<AttributeValue>>),
+    Native(std::slice::Iter<'a, AttributeValue>),
+}
+
+impl<'a> Iterator for OrderedValuesIter<'a> {
+    type Item = Option<&'a AttributeValue>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Current(values) => values.next().map(Option::as_ref),
+            Self::Native(values) => values.next().map(Some),
+        }
+    }
+}
+
 impl Fields<'_> {
     pub(super) fn has_native_values(&self) -> bool {
         self.native.is_some()
@@ -34,7 +71,14 @@ impl Fields<'_> {
     }
     pub(super) fn values(&self, field: &str) -> Result<Vec<AttributeValue>, String> {
         if let Some(attribute) = self.values.get(field) {
-            return Ok(attribute.values.clone());
+            if attribute.values.iter().any(Option::is_none) {
+                return Err(format!(
+                    "attribute {} has unreadable None positions {} in a scalar target",
+                    attribute.id,
+                    super::MissingPositions(&attribute.values)
+                ));
+            }
+            return Ok(attribute.values.iter().flatten().cloned().collect());
         }
         let Some(value) = self.native_value(field) else {
             return Ok(Vec::new());
@@ -75,6 +119,12 @@ impl Fields<'_> {
             return Err("native field has no scalar semantic value".into());
         };
         Ok(vec![value])
+    }
+    pub(super) fn ordered_values(&self, field: &str) -> Result<OrderedValues<'_>, String> {
+        if let Some(attribute) = self.values.get(field) {
+            return Ok(OrderedValues::Current(&attribute.values));
+        }
+        Ok(OrderedValues::Native(self.values(field)?))
     }
     pub(super) fn one(&self, field: &str) -> Result<Option<AttributeValue>, String> {
         let mut values = self.values(field)?;

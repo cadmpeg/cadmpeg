@@ -60,7 +60,7 @@ fn document() -> (CadIr, ParameterId) {
         id: AttributeId::mint("test:attribute:pmi#precision").unwrap(),
         target: AttributeTarget::Pmi(pmi),
         name: "precision".into(),
-        values: vec![AttributeValue::Integer(9)],
+        values: vec![Some(AttributeValue::Integer(9))],
     });
     (ir, parameter)
 }

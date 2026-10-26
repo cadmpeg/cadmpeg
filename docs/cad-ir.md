@@ -297,6 +297,40 @@ selected value is the channel element at `selector`.
 
 An unknown product record has an ID and related entity IDs. Source offset, byte length, digest, and retained source bytes belong to the matching `SourceFidelity.retained_records` entry. Source-only records may omit a product record. Retained sidecar bytes use standard RFC 4648 base64 with padding and no line breaks. Native byte strings that are product values and tessellation byte channels remain product data.
 
+### Source attribute values
+
+`SourceAttribute.values` is an ordered array of nullable typed values. A present
+value has adjacent `kind` and `value` fields. A slot without a decoded value is
+JSON `null`; the source producer uses that state only for a given-up value
+part, at its original position. The other positions retain their order.
+`Some(value)` has the same wire form as `value`. An empty array contains no
+value slots. It is distinct from a missing slot and from an absent attribute.
+
+The scalar kinds are `integer` (`i64`), `float` (finite binary64), `string`,
+`boolean`, `reference` (one local object identity), and `vector` (finite
+binary64 components). `map` holds an ordered array of `{key, value}` text pairs;
+repeated keys remain separate entries. `expression` holds `path`, a typed
+`Expression`, and nullable `comment`. Parameter tokens refer to parameters;
+text tokens, paths, comments, and map text are not identity references.
+
+`sub_reference` holds nullable `object` and an ordered, nonempty `subelements`
+array. Its present object is a local native object identity. `external_reference`
+holds `document`, nullable `object`, and ordered `subelements`; its document
+and object are external authored names. A null object means a readable empty
+object name. An empty string does not represent an absent object.
+`empty_reference` is a unit kind without a `value` field. It is a readable
+local link with no object and no subelement. It is distinct from a null slot.
+
+`json` holds an `AttributeJson` tree. Every tree node also uses adjacent `kind`
+and `value` fields: `null` is a unit kind, `boolean` holds a boolean, `integer`
+holds `i64`, `unsigned` holds an integer from 9223372036854775808 through
+18446744073709551615, `float` holds finite binary64, `string` holds text,
+`array` holds ordered nodes, and `object` holds a map from text keys to nodes.
+Object keys are serialized in sorted order. JSON keys and strings are literal
+content, including text that resembles a CADIR identity. A JSON null is
+`{"kind":"json","value":{"kind":"null"}}`; it is not an absent value slot.
+Unknown node kinds and fields are invalid.
+
 ## Validation
 
 Validation uses reference lookup and in-IR arithmetic. It checks:

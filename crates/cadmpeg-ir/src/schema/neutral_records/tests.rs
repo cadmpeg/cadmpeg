@@ -20,7 +20,7 @@ fn model() -> Model {
         native_ref: Some("test:native:property#first".to_owned()),
         target: AttributeTarget::Document,
         name: "name".to_owned(),
-        values: vec![AttributeValue::String("value".to_owned())],
+        values: vec![Some(AttributeValue::String("value".to_owned()))],
     });
     model
 }
@@ -45,7 +45,7 @@ fn full_typed_values_and_links_in_each_populated_arena_must_match() {
     current.points[0].set_position(FinitePoint3::new(Point3::new(1.0, 2.0, 4.0)).unwrap());
     assert!(!agrees(&expected, &current));
     let mut current = expected.clone();
-    current.attributes[0].values = vec![AttributeValue::String("changed".to_owned())];
+    current.attributes[0].values = vec![Some(AttributeValue::String("changed".to_owned()))];
     assert!(!agrees(&expected, &current));
     let mut current = expected.clone();
     current.attributes[0].native_ref = None;
@@ -380,7 +380,7 @@ fn actual_native_reference_groups_cover_registered_arenas_and_compare_complete_v
         .unwrap()
         .agrees_with_index(&ctx, &source_index, members)
         .unwrap());
-    current.attributes[0].values = vec![AttributeValue::String("changed".to_owned())];
+    current.attributes[0].values = vec![Some(AttributeValue::String("changed".to_owned()))];
     assert!(!ModelRecordIndex::new(&ctx, &current)
         .unwrap()
         .agrees_with_index(&ctx, &source_index, members)

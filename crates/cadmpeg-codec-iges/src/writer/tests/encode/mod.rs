@@ -80,7 +80,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
         );
         assert!(round_trip.ir().model.attributes.iter().any(|attribute| {
             attribute.name == "name"
-                && attribute.values == [cadmpeg_ir::attributes::AttributeValue::String("COMPOSIT".to_owned())]
+                && attribute.values == [Some(cadmpeg_ir::attributes::AttributeValue::String("COMPOSIT".to_owned()))]
                 && matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if round_trip.ir().model.curves.iter().any(|curve| curve.id == *id))
         }));
         let validation =

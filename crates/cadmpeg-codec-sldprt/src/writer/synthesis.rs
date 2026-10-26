@@ -65,7 +65,13 @@ pub(super) fn plan(
         );
     }
     projected.source = None;
-    prepare_native(&mut projected, &mut losses)?;
+    let slot_arena = DecodeArena::new();
+    let slot_policy = DecodePolicy {
+        limits: input.limits.clone(),
+        ..DecodePolicy::default()
+    };
+    let slot_context = DecodeContext::for_encode(&slot_arena, &slot_policy);
+    prepare_native(&slot_context, &mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
     reduce_fields(&mut projected, &mut losses);
@@ -360,7 +366,11 @@ pub(super) fn plan(
     })
 }
 
-fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
+fn prepare_native(
+    slot_context: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let native = ir
@@ -396,11 +406,18 @@ fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Code
         });
     }
     if !ir.scope.model {
-        let pmi = crate::pmi::apply_to_parameters(&mut Vec::new(), &[], &native.pmi_dimensions)?;
+        let pmi = crate::pmi::apply_to_parameters(
+            slot_context,
+            &mut Vec::new(),
+            &[],
+            &native.pmi_dimensions,
+        )?;
         ir.model.pmi = pmi.annotations;
         losses.extend(pmi.losses);
-        let mut attributes =
-            crate::history::project::custom_property_attributes(&native.feature_histories)?;
+        let mut attributes = crate::history::project::custom_property_attributes(
+            slot_context,
+            &native.feature_histories,
+        )?;
         for metadata in &native.document_metadata {
             for attribute in &metadata.attributes {
                 if let Some(existing) = attributes

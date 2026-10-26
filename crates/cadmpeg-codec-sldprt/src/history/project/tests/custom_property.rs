@@ -30,8 +30,11 @@ fn custom_properties_are_document_attributes_not_model_features() {
     )
     .unwrap()
     .is_empty());
-    let attributes = custom_property_attributes(std::slice::from_ref(&history))
-        .expect("custom-property projection");
+    let attributes = custom_property_attributes(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&history),
+    )
+    .expect("custom-property projection");
     assert_eq!(attributes.len(), 1);
     assert_eq!(
         attributes[0].id.as_str(),
@@ -40,7 +43,7 @@ fn custom_properties_are_document_attributes_not_model_features() {
     assert_eq!(attributes[0].name, "PartNumber");
     assert_eq!(
         attributes[0].values,
-        vec![AttributeValue::String("A-123".into())]
+        vec![Some(AttributeValue::String("A-123".into()))]
     );
 
     let mut native = Some(crate::native::SldprtNative {

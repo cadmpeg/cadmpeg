@@ -72,9 +72,9 @@ fn document_string_attribute_is_preserved_outside_sldprt_namespace() {
             id: "test:model:attribute#other".try_into().unwrap(),
             target: cadmpeg_ir::attributes::AttributeTarget::Document {},
             name: "other".into(),
-            values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+            values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
                 "value".into(),
-            )],
+            ))],
         });
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -97,9 +97,9 @@ fn document_string_attribute_is_preserved_outside_sldprt_namespace() {
         .any(|attribute| attribute.name == "other"
             && attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
             && attribute.values
-                == vec![cadmpeg_ir::attributes::AttributeValue::String(
+                == vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
                     "value".into()
-                )]));
+                ))]));
 }
 
 #[test]
@@ -112,9 +112,9 @@ fn unsupported_face_attribute_has_counted_export_loss() {
             id: "test:model:attribute#other".try_into().unwrap(),
             target: cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone()),
             name: "other".into(),
-            values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+            values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
                 "value".into(),
-            )],
+            ))],
         });
     assert_loss(
         &ir,

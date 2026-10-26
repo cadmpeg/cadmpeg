@@ -288,7 +288,7 @@ pub(crate) fn patch_payload(
                         attribute.target == AttributeTarget::Pmi(id.clone())
                             && attribute.name == name
                     })
-                    .and_then(|attribute| attribute.values.first())
+                    .and_then(|attribute| attribute.values.first().and_then(Option::as_ref))
             };
             let precision = match attribute("precision") {
                 Some(AttributeValue::Integer(value)) => *value,
@@ -398,6 +398,7 @@ pub(crate) struct ProjectedDimensions {
 }
 
 pub(crate) fn apply_to_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut Vec<cadmpeg_ir::features::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
@@ -588,14 +589,15 @@ pub(crate) fn apply_to_parameters(
                 AttributeValue::Boolean(record.reference_only),
             ),
         ] {
-            result.attributes.push(SourceAttribute {
-                native_ref: None,
-                id: AttributeId::mint(format!("sldprt:model:attribute#pmi:{}:{name}", record.guid))
+            result.attributes.push(SourceAttribute::new(
+                ctx,
+                AttributeId::mint(format!("sldprt:model:attribute#pmi:{}:{name}", record.guid))
                     .map_err(CodecError::malformed)?,
-                target: AttributeTarget::Pmi(id.clone()),
-                name: name.to_owned(),
-                values: vec![value],
-            });
+                None,
+                AttributeTarget::Pmi(id.clone()),
+                name.to_owned(),
+                vec![value],
+            )?);
         }
     }
     Ok(result)

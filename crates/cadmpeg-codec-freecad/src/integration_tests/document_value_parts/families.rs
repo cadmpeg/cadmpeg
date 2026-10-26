@@ -99,7 +99,7 @@ fn selected_families_keep_exact_native_neutral_and_read_values_in_real_child_sco
             .iter()
             .find(|attribute| attribute.name == "Input")
             .unwrap();
-        assert_eq!(attribute.values, [expected]);
+        assert_eq!(attribute.values, [Some(expected)]);
         assert_eq!(attribute.native_ref.as_deref(), Some(held.id.as_str()));
         let value_parts = output
             .fidelity()
@@ -205,7 +205,10 @@ fn failed_selected_scalar_children_keep_headers_and_have_one_exact_source_home()
             .iter()
             .find(|attribute| attribute.name == "Peer")
             .unwrap();
-        assert_eq!(peer.values, [AttributeValue::String("independent".into())]);
+        assert_eq!(
+            peer.values,
+            [Some(AttributeValue::String("independent".into()))]
+        );
         let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
         let [unknown] = unknowns.as_slice() else {
             panic!("one failed selected value")

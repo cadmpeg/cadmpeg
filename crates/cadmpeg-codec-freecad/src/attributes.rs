@@ -309,21 +309,29 @@ pub(crate) fn semantic_text(property: &PropertyRecord) -> Option<String> {
     let values = values(property)?;
     let values = values
         .into_iter()
-        .map(|value| match value {
-            AttributeValue::String(value) | AttributeValue::Reference(value) => {
-                serde_json::Value::String(value)
-            }
-            AttributeValue::Integer(value) => serde_json::Value::from(value),
-            AttributeValue::Float(value) => serde_json::Value::from(value.get()),
-            AttributeValue::Boolean(value) => serde_json::Value::Bool(value),
-            AttributeValue::Vector(values) => serde_json::Value::Array(
-                values
-                    .into_iter()
-                    .map(|value| serde_json::Value::from(value.get()))
-                    .collect(),
-            ),
+        .map(|value| {
+            Some(match value {
+                AttributeValue::String(value) | AttributeValue::Reference(value) => {
+                    serde_json::Value::String(value)
+                }
+                AttributeValue::Integer(value) => serde_json::Value::from(value),
+                AttributeValue::Float(value) => serde_json::Value::from(value.get()),
+                AttributeValue::Boolean(value) => serde_json::Value::Bool(value),
+                AttributeValue::Vector(values) => serde_json::Value::Array(
+                    values
+                        .into_iter()
+                        .map(|value| serde_json::Value::from(value.get()))
+                        .collect(),
+                ),
+                AttributeValue::Map(_)
+                | AttributeValue::Expression(_)
+                | AttributeValue::SubReference { .. }
+                | AttributeValue::ExternalReference { .. }
+                | AttributeValue::EmptyReference
+                | AttributeValue::Json(_) => return None,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     if let [value] = values.as_slice() {
         return Some(match value {
             serde_json::Value::String(value) => value.clone(),
@@ -334,6 +342,7 @@ pub(crate) fn semantic_text(property: &PropertyRecord) -> Option<String> {
 }
 
 pub(crate) fn document_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Option<SourceAttribute>, CodecError> {
     if matches!(property.name.as_str(), "Shape" | "Placement")
@@ -344,41 +353,45 @@ pub(crate) fn document_property(
     let Some(values) = values(property) else {
         return Ok(None);
     };
-    Ok(Some(SourceAttribute {
-        native_ref: Some(property.id.clone()),
-        id: AttributeId::mint(crate::native::model_id(
+    Ok(Some(SourceAttribute::new(
+        ctx,
+        AttributeId::mint(crate::native::model_id(
             "attribute",
             &property.id,
             "property",
         ))
         .map_err(CodecError::malformed)?,
-        target: AttributeTarget::Document,
-        name: property.name.clone(),
+        Some(property.id.clone()),
+        AttributeTarget::Document,
+        property.name.clone(),
         values,
-    }))
+    )?))
 }
 
 pub(crate) fn transfer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<LossNote>, CodecError> {
-    transfer_impl(ir, objects, properties, None)
+    transfer_impl(ctx, ir, objects, properties, None)
 }
 
 pub(crate) fn transfer_with_document_properties(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     strings: Option<&crate::persistence::document_properties::RootProperties>,
 ) -> Result<Vec<LossNote>, CodecError> {
     if strings.is_none() {
-        return transfer(ir, objects, properties);
+        return transfer(ctx, ir, objects, properties);
     }
-    transfer_impl(ir, objects, properties, strings)
+    transfer_impl(ctx, ir, objects, properties, strings)
 }
 
 fn transfer_impl(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
@@ -405,18 +418,19 @@ fn transfer_impl(
             continue;
         }
         if let Some(values) = values(property) {
-            attributes.push(SourceAttribute {
-                native_ref: Some(property.id.clone()),
-                id: AttributeId::mint(crate::native::model_id(
+            attributes.push(SourceAttribute::new(
+                ctx,
+                AttributeId::mint(crate::native::model_id(
                     "attribute",
                     &property.id,
                     "property",
                 ))
                 .map_err(CodecError::malformed)?,
-                target: target(ir, &property.owner),
-                name: property.name.clone(),
+                Some(property.id.clone()),
+                target(ir, &property.owner),
+                property.name.clone(),
                 values,
-            });
+            )?);
         } else {
             losses.push(FreecadLossCode::AttributePropertyUnprojected.note(format!("property {} ({}) has no neutral attribute encoding; its admitted typed native values remain held",property.id,property.type_name)));
         }

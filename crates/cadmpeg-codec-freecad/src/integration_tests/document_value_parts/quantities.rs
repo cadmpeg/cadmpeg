@@ -67,7 +67,10 @@ fn quantity_scalar_changes_flow_to_native_and_neutral_values_with_exact_original
                 .iter()
                 .find(|attribute| attribute.name == "Scaled")
                 .unwrap();
-            assert_eq!(neutral.values, [AttributeValue::float(expected).unwrap()]);
+            assert_eq!(
+                neutral.values,
+                [Some(AttributeValue::float(expected).unwrap())]
+            );
             assert_eq!(neutral.native_ref.as_deref(), Some(held.id.as_str()));
             let part = stage
                 .fidelity()
@@ -153,7 +156,10 @@ fn malformed_quantity_values_keep_headers_and_peers_with_one_exact_child_home() 
                 .iter()
                 .find(|attribute| attribute.name == "Peer")
                 .unwrap();
-            assert_eq!(peer.values, [AttributeValue::String("independent".into())]);
+            assert_eq!(
+                peer.values,
+                [Some(AttributeValue::String("independent".into()))]
+            );
             assert!(!decoded
                 .ir()
                 .model

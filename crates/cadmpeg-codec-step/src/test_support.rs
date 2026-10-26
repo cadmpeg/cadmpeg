@@ -49,7 +49,7 @@ pub(crate) fn geometry_name<'a>(
             return None;
         }
         match attribute.values.as_slice() {
-            [cadmpeg_ir::attributes::AttributeValue::String(value)] => Some(value.as_str()),
+            [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] => Some(value.as_str()),
             _ => None,
         }
     })

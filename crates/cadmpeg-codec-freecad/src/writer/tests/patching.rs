@@ -158,7 +158,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
                 && attribute.name == "Label"
         })
         .expect("canonical document Label");
-    let [cadmpeg_ir::attributes::AttributeValue::String(expected_label)] =
+    let [Some(cadmpeg_ir::attributes::AttributeValue::String(expected_label))] =
         canonical_label.values.as_slice()
     else {
         panic!("the authored fixture has one canonical string Label")
@@ -449,13 +449,13 @@ fn canonical_document_label_edits_regenerate_the_native_property() {
         .expect("canonical document Label");
     assert_ne!(
         canonical_label.values,
-        vec![cadmpeg_ir::attributes::AttributeValue::String(
+        vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
             "edited & verified".into()
-        )]
+        ))]
     );
-    canonical_label.values = vec![cadmpeg_ir::attributes::AttributeValue::String(
+    canonical_label.values = vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
         "edited & verified".into(),
-    )];
+    ))];
     let mut encoded = Vec::new();
     let report = FcstdCodec
         .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
@@ -501,9 +501,9 @@ fn canonical_document_label_edits_regenerate_the_native_property() {
         .expect("decoded canonical Label");
     assert_eq!(
         canonical_label.values,
-        vec![cadmpeg_ir::attributes::AttributeValue::String(
+        vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
             "edited & verified".into()
-        )]
+        ))]
     );
     assert_eq!(
         round_trip.ir().model.bodies.len(),

@@ -46,7 +46,7 @@ pub(super) fn apply(
         if attribute.name == "name" && explicit_labels.contains(id) {
             continue;
         }
-        let [AttributeValue::String(value)] = attribute.values.as_slice() else {
+        let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
             continue;
         };
         let Some(indices) = targets.get(id) else {

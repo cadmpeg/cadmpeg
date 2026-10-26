@@ -14,6 +14,7 @@ use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
 pub(super) fn decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<StageOutcome<()>, CodecError> {
@@ -121,18 +122,19 @@ pub(super) fn decode(
             if !source.is_empty() {
                 ir.model
                     .attributes
-                    .push(cadmpeg_ir::attributes::SourceAttribute {
-                        native_ref: None,
-                        id: cadmpeg_ir::ids::AttributeId::from(crate::ids::data(
+                    .push(cadmpeg_ir::attributes::SourceAttribute::new(
+                        ctx,
+                        cadmpeg_ir::ids::AttributeId::from(crate::ids::data(
                             crate::ids::kind!("document-reference-source"),
                             id,
                         )),
-                        target: cadmpeg_ir::attributes::AttributeTarget::Document,
-                        name: format!("DOCUMENT_REFERENCE #{id} source"),
-                        values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+                        None,
+                        cadmpeg_ir::attributes::AttributeTarget::Document,
+                        format!("DOCUMENT_REFERENCE #{id} source"),
+                        vec![cadmpeg_ir::attributes::AttributeValue::String(
                             source.clone(),
                         )],
-                    });
+                    )?);
             }
             notes.insert(document_note(identifier, name, &source));
             typed.insert(id);

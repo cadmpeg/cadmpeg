@@ -40,7 +40,10 @@ fn freecad_bad_direct_property_has_one_home_and_keeps_the_real_neutral_peer() {
         .collect::<Vec<_>>();
     assert_eq!(peers.len(), 1);
     assert_eq!(peers[0].target, AttributeTarget::Document);
-    assert_eq!(peers[0].values, [AttributeValue::String("A&B".into())]);
+    assert_eq!(
+        peers[0].values,
+        [Some(AttributeValue::String("A&B".into()))]
+    );
     let native_id = peers[0].native_ref.as_deref().expect("actual native peer");
     assert!(
         decoded.ir().native.namespace("fcstd").unwrap().arenas()["properties"]

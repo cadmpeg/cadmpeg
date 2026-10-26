@@ -249,11 +249,34 @@ fn native_values(
         return Ok(None);
     }
     let content = value_content(property.id, values, names)?;
-    let mut attributes = vec![
-        ("name", property.name.to_owned()),
-        ("type", property.type_name.to_owned()),
-    ];
-    if let Some(status) = property.status {
+    Ok(Some(property_header(
+        property.name,
+        property.type_name,
+        property.status,
+        dynamic,
+        &content,
+    )))
+}
+
+pub(super) fn native_property(property: &PropertyRecord, name: &str, content: &str) -> String {
+    property_header(
+        name,
+        &property.type_name,
+        property.status,
+        property.dynamic.as_ref(),
+        content,
+    )
+}
+
+fn property_header(
+    name: &str,
+    type_name: &str,
+    status: Option<u64>,
+    dynamic: Option<&DynamicPropertyMeta>,
+    content: &str,
+) -> String {
+    let mut attributes = vec![("name", name.to_owned()), ("type", type_name.to_owned())];
+    if let Some(status) = status {
         attributes.push(("status", status.to_string()));
     }
     if let Some(dynamic) = dynamic {
@@ -282,7 +305,7 @@ fn native_values(
     result.push('>');
     result.push_str(&content);
     result.push_str("</Property>");
-    Ok(Some(result))
+    result
 }
 
 fn value_content(

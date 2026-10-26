@@ -128,9 +128,9 @@ fn document_note_is_preserved_but_does_not_make_fcstd_geometry_nonempty() {
         assert_eq!(notes.len(), 1);
         assert_eq!(
             notes[0].values,
-            [cadmpeg_ir::attributes::AttributeValue::String(
+            [Some(cadmpeg_ir::attributes::AttributeValue::String(
                 "metadata stays".into()
-            )]
+            ))]
         );
         let refused = dir.path().join(format!("{case}-refused.FCStd"));
         let report = dir.path().join(format!("{case}-refused.json"));

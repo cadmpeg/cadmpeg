@@ -126,7 +126,7 @@
             "namespace": "step",
             "scope": "namespaced"
           },
-          "message": "1 source attribute record(s) were not written to STEP",
+          "message": "1 source attribute record(s) were not written to STEP: step:data:geometry-name#49-0",
           "severity": "info"
         },
         {
@@ -291,7 +291,7 @@
             "namespace": "step",
             "scope": "namespaced"
           },
-          "message": "1 source attribute record(s) were not written to STEP",
+          "message": "1 source attribute record(s) were not written to STEP: step:data:geometry-name#49-0",
           "severity": "info"
         },
         {
@@ -456,7 +456,7 @@
             "namespace": "step",
             "scope": "namespaced"
           },
-          "message": "1 source attribute record(s) were not written to STEP",
+          "message": "1 source attribute record(s) were not written to STEP: step:data:geometry-name#49-0",
           "severity": "info"
         },
         {

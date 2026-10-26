@@ -147,10 +147,10 @@ pub(crate) fn attribute_supported(attribute: &cadmpeg_ir::attributes::SourceAttr
     }
     matches!(
         (attribute.name.as_str(), attribute.values.as_slice()),
-        ("precision", [AttributeValue::Integer(_)])
+        ("precision", [Some(AttributeValue::Integer(_))])
             | (
                 "basic" | "inspection" | "reference_only",
-                [AttributeValue::Boolean(_)]
+                [Some(AttributeValue::Boolean(_))]
             )
     )
 }
@@ -351,7 +351,7 @@ fn apply_neutral_metadata(ir: &CadIr, id: &cadmpeg_ir::ids::PmiId, record: &mut 
             .find(|attribute| {
                 attribute.target == AttributeTarget::Pmi(id.clone()) && attribute.name == name
             })
-            .and_then(|attribute| attribute.values.first())
+            .and_then(|attribute| attribute.values.first().and_then(Option::as_ref))
     };
     record.precision = match attribute("precision") {
         Some(AttributeValue::Integer(value)) => *value,

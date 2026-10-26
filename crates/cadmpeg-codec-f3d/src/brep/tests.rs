@@ -39,7 +39,7 @@ fn generic_tag_attribute(
         id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
         target,
         name: "ATTRIB_CUSTOM-attrib".into(),
-        values: [
+        values: ([
             AttributeValue::String("generic_tag_attrib_def".into()),
             AttributeValue::Integer(versions.0),
             AttributeValue::Integer(versions.1),
@@ -49,6 +49,9 @@ fn generic_tag_attribute(
         ]
         .into_iter()
         .chain(groups)
+        .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
         .collect(),
     }
 }
@@ -556,7 +559,9 @@ fn source_curve_keys_retain_distinct_qualifiers_in_every_payload_form() {
             }
         }
         for values in forms {
-            let payload = super::sketch_link_payload(&values).expect("source-curve key");
+            let payload =
+                super::sketch_link_payload(&values.into_iter().map(Some).collect::<Vec<_>>())
+                    .expect("source-curve key");
             assert_eq!((payload.sketch_curve_id, payload.ref_b), (149, qualifier));
         }
     }

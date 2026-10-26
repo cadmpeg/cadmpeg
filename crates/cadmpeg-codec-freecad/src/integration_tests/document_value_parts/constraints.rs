@@ -86,7 +86,7 @@ fn constraint_bounds_and_scalars_keep_exact_native_facts_and_child_source_reads(
                 .iter()
                 .find(|attribute| attribute.name == "Constrained")
                 .unwrap();
-            assert_eq!(attribute.values, [expected.clone()]);
+            assert_eq!(attribute.values, [Some(expected.clone())]);
             assert_eq!(attribute.native_ref.as_deref(), Some(held.id.as_str()));
             let part = stage
                 .fidelity()
@@ -191,7 +191,10 @@ fn malformed_constraint_values_keep_header_and_peer_with_exact_one_home_and_no_f
             .iter()
             .find(|attribute| attribute.name == "Peer")
             .unwrap();
-        assert_eq!(peer.values, [AttributeValue::String("independent".into())]);
+        assert_eq!(
+            peer.values,
+            [Some(AttributeValue::String("independent".into()))]
+        );
         assert!(!decoded
             .ir()
             .model

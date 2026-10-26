@@ -113,7 +113,10 @@ fn matching_name_and_directory_label_keep_one_neutral_value_and_both_native_fact
         .filter(|attribute| attribute.name == "name")
         .collect();
     assert_eq!(names.len(), 1);
-    assert_eq!(names[0].values, [AttributeValue::String("SAME".into())]);
+    assert_eq!(
+        names[0].values,
+        [Some(AttributeValue::String("SAME".into()))]
+    );
     let namespace = ir.native.namespace("iges").expect("native namespace");
     assert_eq!(
         crate::test_support::native_bytes(

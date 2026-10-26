@@ -30,7 +30,7 @@ fn property_values_have_one_neutral_home_and_native_records_keep_typed_values() 
         .attributes
         .iter()
         .any(|attribute| attribute.name == "NAME"
-            && attribute.values == vec![AttributeValue::String("VAL".into())]));
+            && attribute.values == vec![Some(AttributeValue::String("VAL".into()))]));
     let record = &ir
         .native
         .namespace("iges")
@@ -70,7 +70,10 @@ fn property_owner_targets_the_projected_point_instead_of_the_native_property() {
         property.target,
         AttributeTarget::Point(ir.model.points[0].id.clone())
     );
-    assert_eq!(property.values, vec![AttributeValue::String("P1".into())]);
+    assert_eq!(
+        property.values,
+        vec![Some(AttributeValue::String("P1".into()))]
+    );
     let product_property = &ir
         .native
         .namespace("iges")
@@ -113,10 +116,10 @@ fn table_defaults_and_rows_keep_typed_native_values_after_projection() {
     let ir = result.ir();
     assert!(ir.model.attributes.iter().any(|attribute| attribute.name
         == "iges.attribute_table.default.attributes.0.values.0"
-        && attribute.values == vec![AttributeValue::String("VAL".into())]));
+        && attribute.values == vec![Some(AttributeValue::String("VAL".into()))]));
     assert!(ir.model.attributes.iter().any(|attribute| attribute.name
         == "iges.attribute_table.value.rows.0.0"
-        && attribute.values == vec![AttributeValue::String("ITEM".into())]));
+        && attribute.values == vec![Some(AttributeValue::String("ITEM".into()))]));
     let namespace = ir
         .native
         .namespace("iges")
@@ -169,7 +172,7 @@ fn directory_carrier_label_has_one_editable_neutral_name() {
         name.target,
         AttributeTarget::Point(ir.model.points[0].id.clone())
     );
-    assert_eq!(name.values, [AttributeValue::String("HELLO".into())]);
+    assert_eq!(name.values, [Some(AttributeValue::String("HELLO".into()))]);
     let native = &ir
         .native
         .namespace("iges")
@@ -203,7 +206,7 @@ fn full_name_property_and_distinct_directory_label_remain_distinct_facts() {
             .attributes
             .iter()
             .any(|attribute| attribute.name == name
-                && attribute.values == [AttributeValue::String(value.into())]));
+                && attribute.values == [Some(AttributeValue::String(value.into()))]));
     }
     let native = &ir
         .native
@@ -306,19 +309,19 @@ fn absent_attribute_cells_keep_native_slots_and_neutral_column_positions() {
         std::collections::BTreeMap::from([
             (
                 "iges.attribute_table.value.rows.0.0",
-                vec![AttributeValue::Integer(1)]
+                vec![Some(AttributeValue::Integer(1))]
             ),
             (
                 "iges.attribute_table.value.rows.0.2",
-                vec![AttributeValue::Integer(3)]
+                vec![Some(AttributeValue::Integer(3))]
             ),
             (
                 "iges.attribute_table.value.rows.1.0",
-                vec![AttributeValue::Integer(4)]
+                vec![Some(AttributeValue::Integer(4))]
             ),
             (
                 "iges.attribute_table.value.rows.1.2",
-                vec![AttributeValue::Integer(6)]
+                vec![Some(AttributeValue::Integer(6))]
             ),
         ])
     );

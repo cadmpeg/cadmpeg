@@ -273,9 +273,13 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     }];
     let record = dimension("Linear", 0.034);
 
-    let projected =
-        super::apply_to_parameters(&mut parameters, &[feature], std::slice::from_ref(&record))
-            .unwrap();
+    let projected = super::apply_to_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+        &[feature],
+        std::slice::from_ref(&record),
+    )
+    .unwrap();
 
     let parameter = &parameters[0];
     assert_eq!(parameter.expression.literal_text().as_deref(), Some("12mm"));
@@ -301,7 +305,13 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
     second.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    super::apply_to_parameters(&mut parameters, &[feature], &[first, second]).unwrap();
+    super::apply_to_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+        &[feature],
+        &[first, second],
+    )
+    .unwrap();
 
     assert!(parameters.is_empty());
 }
@@ -316,7 +326,13 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
     let mut parameters = Vec::new();
 
     let canonical_id = super::annotation_id(&canonical).unwrap();
-    super::apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]).unwrap();
+    super::apply_to_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+        &[feature],
+        &[canonical, alias],
+    )
+    .unwrap();
 
     let [parameter] = parameters.as_slice() else {
         panic!("one PMI-backed parameter");
@@ -795,11 +811,11 @@ fn decode_extracts_pmi_semantic_dimension() {
                 continue;
             }
             attribute.values = vec![match attribute.name.as_str() {
-                "precision" => cadmpeg_ir::attributes::AttributeValue::Integer(4),
+                "precision" => Some(cadmpeg_ir::attributes::AttributeValue::Integer(4)),
                 "basic" | "reference_only" => {
-                    cadmpeg_ir::attributes::AttributeValue::Boolean(false)
+                    Some(cadmpeg_ir::attributes::AttributeValue::Boolean(false))
                 }
-                "inspection" => cadmpeg_ir::attributes::AttributeValue::Boolean(true),
+                "inspection" => Some(cadmpeg_ir::attributes::AttributeValue::Boolean(true)),
                 _ => continue,
             }];
         }
@@ -1280,9 +1296,13 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
         pmi: None,
         native_ref: Some("other-dimension".into()),
     }];
-    let error =
-        super::apply_to_parameters(&mut parameters, &[feature], &[dimension("Linear", 0.034)])
-            .unwrap_err();
+    let error = super::apply_to_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut parameters,
+        &[feature],
+        &[dimension("Linear", 0.034)],
+    )
+    .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert_eq!(parameters.len(), 1);
 }

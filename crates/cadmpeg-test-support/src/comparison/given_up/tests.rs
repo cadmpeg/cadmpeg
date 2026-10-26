@@ -87,7 +87,7 @@ fn decode(bytes: &[u8]) -> (CadIr, SourceFidelity, DecodeReport) {
                     native_ref: None,
                     target,
                     name: "required user".into(),
-                    values: vec![AttributeValue::Integer(17)],
+                    values: vec![Some(AttributeValue::Integer(17))],
                 },
             )
             .unwrap();

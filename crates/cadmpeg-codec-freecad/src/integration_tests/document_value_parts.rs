@@ -68,7 +68,7 @@ fn malformed_value_keeps_its_property_header_and_exact_child_home_with_a_readabl
             .iter()
             .find(|attribute| attribute.name == "Good")
             .unwrap();
-        assert_eq!(good_attribute.values, [AttributeValue::Integer(17)]);
+        assert_eq!(good_attribute.values, [Some(AttributeValue::Integer(17))]);
         assert_eq!(
             good_attribute.native_ref.as_deref(),
             Some(good_property.id.as_str())
@@ -201,7 +201,7 @@ fn failed_value_reads_rollback_but_header_and_changed_peer_reads_survive_nonzero
                 .find(|attribute| attribute.name == "Good")
                 .unwrap()
                 .values,
-            [AttributeValue::Integer(expected)]
+            [Some(AttributeValue::Integer(expected))]
         );
         let captures = ctx.take_record_captures().unwrap();
         let bad_capture = captures

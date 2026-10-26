@@ -897,8 +897,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
             target: AttributeTarget::Face(face.try_into().expect("valid identity")),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
         });
     }
@@ -972,9 +972,11 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .windows(2)
         .all(|pair| pair[0].id < pair[1].id));
 
-    ir.model.attributes[0].values.push(AttributeValue::String(
-        "cccccccc-1111-2222-3333-dddddddddddd".into(),
-    ));
+    ir.model.attributes[0]
+        .values
+        .push(Some(AttributeValue::String(
+            "cccccccc-1111-2222-3333-dddddddddddd".into(),
+        )));
     let error = crate::decode::resolve_face_appearance_bindings(
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
@@ -1013,8 +1015,8 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             target: AttributeTarget::Face(face),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
         });
         ir.model.appearances.push(Appearance {
@@ -1179,7 +1181,7 @@ fn decode_transfers_generated_custom_attribute() {
             attribute.values.iter().any(|value| {
                 matches!(
                     value,
-                    cadmpeg_ir::attributes::AttributeValue::String(text)
+                    Some(cadmpeg_ir::attributes::AttributeValue::String(text))
                         if text == "generic_tag_attrib_def"
                 )
             })
@@ -1192,7 +1194,7 @@ fn decode_transfers_generated_custom_attribute() {
     ));
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "322"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "322"
     )));
     assert_eq!(f3d_native(result.ir()).persistent_design_links.len(), 2);
     assert_eq!(
@@ -1218,7 +1220,7 @@ fn decode_transfers_generated_custom_attribute() {
     );
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "900"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "900"
     )));
     assert_eq!(f3d_native(result.ir()).creation_timestamps.len(), 1);
     assert_eq!(

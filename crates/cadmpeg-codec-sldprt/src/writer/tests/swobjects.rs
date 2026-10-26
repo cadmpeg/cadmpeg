@@ -1052,8 +1052,8 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
         target: AttributeTarget::Document,
         name: "default_reference_plane".into(),
         values: vec![
-            AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap(),
-            AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap(),
+            Some(AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap()),
+            Some(AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap()),
         ],
     };
     assert!(crate::writer::MetadataRecord::project(&attribute, 0.001, |_| Ok(())).is_ok());
@@ -1082,7 +1082,7 @@ fn patched_retained_metadata(
         id: cadmpeg_ir::ids::AttributeId::mint(&id).unwrap(),
         target: AttributeTarget::Document,
         name: name.into(),
-        values,
+        values: (values).into_iter().map(Some).collect(),
     });
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     crate::annotations::note(

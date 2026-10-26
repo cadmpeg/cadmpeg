@@ -276,17 +276,18 @@ fn project_fields(
                 key,
             );
             ctx.charge_entities(1, "iges_neutral_attributes")?;
-            ir.model.attributes.push(SourceAttribute {
-                native_ref: Some(native_ref.to_owned()),
+            ir.model.attributes.push(SourceAttribute::new(
+                ctx,
                 id,
-                target: target.clone(),
-                name: if field.is_empty() {
+                Some(native_ref.to_owned()),
+                target.clone(),
+                if field.is_empty() {
                     name.to_owned()
                 } else {
                     format!("{name}.{field}")
                 },
-                values: value.clone(),
-            });
+                value.clone(),
+            )?);
         }
     }
     Ok(())

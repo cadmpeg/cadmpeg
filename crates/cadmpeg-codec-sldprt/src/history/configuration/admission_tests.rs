@@ -66,7 +66,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
                     ir.model.surfaces[0].id.clone(),
                 ),
                 name: name.into(),
-                values: vec![value],
+                values: vec![Some(value)],
             });
     }
     ir.model
@@ -1000,7 +1000,7 @@ fn run_parameter_overlay(
                     .unwrap(),
                     target: cadmpeg_ir::attributes::AttributeTarget::Pmi(annotation.id.clone()),
                     name: name.into(),
-                    values: vec![value],
+                    values: vec![Some(value)],
                 });
         }
     }

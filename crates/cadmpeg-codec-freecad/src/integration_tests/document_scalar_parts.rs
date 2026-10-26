@@ -84,7 +84,7 @@ fn bool_and_float_native_and_neutral_values_flow_from_exact_original_attribute_r
         let [attribute] = output.model().attributes.as_slice() else {
             panic!("one live scalar attribute")
         };
-        assert_eq!(attribute.values, [expected]);
+        assert_eq!(attribute.values, [Some(expected)]);
         assert_eq!(attribute.native_ref.as_deref(), Some(kept.id.as_str()));
         let captures = ctx.take_record_captures().unwrap();
         let capture = captures
