@@ -1122,8 +1122,39 @@ fn retains_spreadsheet_cycles_in_canonical_tokens_and_native_records() {
             .iter()
             .filter(|loss| loss.code.local_code() == "feature.cyclic-history")
             .count(),
-        1
+        0
     );
+    let checked = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the retained spreadsheet cycle");
+    let cycles = checked
+        .findings
+        .iter()
+        .filter(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::ReferentialIntegrity
+                && finding
+                    .message
+                    .starts_with("parameter expression dependency cycle is retained")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(cycles.len(), 1);
+    assert_eq!(cycles[0].severity, cadmpeg_ir::report::Severity::Warning);
+    let parameter_ids = parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        cycles[0]
+            .entity
+            .iter()
+            .chain(cycles[0].related.iter())
+            .map(String::as_str)
+            .collect::<std::collections::BTreeSet<_>>(),
+        parameter_ids
+    );
+    assert!(cycles[0]
+        .entity
+        .as_deref()
+        .is_some_and(|id| parameter_ids.contains(id)));
     let properties = result
         .ir()
         .native
