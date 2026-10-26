@@ -318,10 +318,25 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         .arena_as::<serde_json::Value>("applications")
         .unwrap();
     assert!(records[0].get("data").is_none());
-    assert_eq!(records[0]["byte_start"], 0);
-    assert_eq!(records[0]["byte_end"], 0);
-    assert_eq!(records[0]["byte_len"], 0);
-    assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
+    assert_eq!(
+        records,
+        [serde_json::json!({
+            "id": "fcstd:native:application#Absent",
+            "object": "fcstd:native:object#Absent",
+            "type_name": "Vendor::Feature",
+            "domain": "Vendor",
+            "properties": [],
+            "dependencies": [],
+            "side_entries": [],
+            "inert_payload": false,
+            "order": 0,
+            "property_records": []
+        })]
+    );
+    for key in ["byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(records[0].get(key).is_none());
+    }
+    assert!(source_fidelity.record_layout().is_empty());
     assert!(super::matches_native(
         &cadmpeg_test_support::service_decode_context(),
         &namespace,
