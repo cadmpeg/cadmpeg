@@ -953,11 +953,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
     );
     if let Some(table) = prereqs.xref_table() {
-        crate::xref::bind_component_insert_features(
+        losses.extend(crate::xref::bind_component_insert_features(
             &mut model.features,
             &design.design_parameter_scopes,
             table,
-        );
+            products.occurrences,
+        ));
     }
     let occurrence_paths = crate::design::components::paths::LocalOccurrencePaths::new(
         &prereqs.design_component_occurrences,

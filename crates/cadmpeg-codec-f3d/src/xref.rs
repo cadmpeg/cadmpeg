@@ -439,10 +439,134 @@ pub(crate) fn design_for<'a>(
         .find(|design| design.target_file_name == reference.relative_path)
 }
 
-/// Project each external-reference placement as one root product occurrence.
+/// External product structure projected into local component instance paths.
+pub(crate) struct ExternalOccurrenceProjection {
+    pub(crate) occurrences: Vec<Occurrence>,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// Repeat external placements below each instance of their local owner.
 pub(crate) fn project_occurrences(
     table: &XrefTable,
-) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
+    sources: &crate::design::components::LocalComponentSources<'_>,
+    local: &[Occurrence],
+) -> Result<ExternalOccurrenceProjection, CodecError> {
+    use crate::loss::F3dLossCode;
+    use std::collections::BTreeMap;
+
+    let carriers = sources
+        .occurrences
+        .iter()
+        .map(|carrier| (carrier.id.as_str(), carrier))
+        .collect::<BTreeMap<_, _>>();
+    let mut instances = BTreeMap::<(&str, u64), Vec<_>>::new();
+    let mut ordinals = BTreeMap::new();
+    for occurrence in local {
+        if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
+            let next = u64::from(occurrence.ordinal) + 1;
+            let ordinal = ordinals.entry(parent).or_insert(0);
+            *ordinal = (*ordinal).max(next);
+        }
+        let Some(carrier) = occurrence
+            .native_ref
+            .as_deref()
+            .and_then(|id| carriers.get(id))
+        else {
+            continue;
+        };
+        let Some(stream) = crate::ids::native_stream(&carrier.id) else {
+            continue;
+        };
+        let Some(definition) = sources
+            .components
+            .get(stream)
+            .and_then(|components| components.roots.get(&carrier.component_record_index))
+        else {
+            continue;
+        };
+        instances
+            .entry((stream, definition.root_entity))
+            .or_default()
+            .push(&occurrence.id);
+    }
+    let mut projection = ExternalOccurrenceProjection {
+        occurrences: Vec::new(),
+        losses: Vec::new(),
+    };
+    for (reference, occurrence) in table.references.iter().zip(root_occurrences(table)?) {
+        let owner = reference
+            .placement_source
+            .as_ref()
+            .and_then(|source| source.owner.as_ref().map(|owner| (source, owner)));
+        let Some((source, owner)) = owner else {
+            projection.occurrences.push(occurrence);
+            continue;
+        };
+        let components = sources.components.get(&source.stream);
+        let root = components.and_then(|components| {
+            components
+                .root_component
+                .and_then(|record| components.roots.get(&record))
+        });
+        if root.is_some_and(|root| root.root_entity == owner.target) {
+            projection.occurrences.push(occurrence);
+            continue;
+        }
+        let unique = components.is_some_and(|components| {
+            components
+                .roots
+                .values()
+                .filter(|definition| definition.root_entity == owner.target)
+                .count()
+                == 1
+        });
+        let parents = instances
+            .get(&(source.stream.as_str(), owner.target))
+            .filter(|_| unique);
+        let Some(parents) = parents else {
+            projection.losses.push(F3dLossCode::XrefOwnerUnresolved.note(format!(
+                "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; placement remains at the document root",
+                source.carrier_record_index, source.stream, owner.target
+            )));
+            projection.occurrences.push(occurrence);
+            continue;
+        };
+        for parent in parents {
+            let used = cadmpeg_core::decode::u64_from_index(local.len())
+                + cadmpeg_core::decode::u64_from_index(projection.occurrences.len());
+            if used >= sources.limits.max_entities {
+                return Err(cadmpeg_core::decode::ResourceLimit {
+                    dimension: cadmpeg_core::decode::ResourceDimension::Entities,
+                    reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+                    limit: sources.limits.max_entities,
+                    used,
+                    additional: 1,
+                    operation: "expand F3D external occurrences",
+                }
+                .into());
+            }
+            let mut child = occurrence.clone();
+            child.id = crate::ids::nested_xref_occurrence_id(
+                parent,
+                reference.ordinal,
+                reference.occurrence_ordinal,
+            );
+            child.parent = OccurrenceParent::Occurrence {
+                occurrence: (*parent).clone(),
+            };
+            let ordinal = ordinals.entry(parent).or_insert(0);
+            child.ordinal = u32::try_from(*ordinal).map_err(|_| {
+                CodecError::malformed("external occurrence sibling ordinal exceeds u32::MAX")
+            })?;
+            *ordinal += 1;
+            projection.occurrences.push(child);
+        }
+    }
+    Ok(projection)
+}
+
+/// Construct document-frame placements before local owner expansion.
+fn root_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     let mut occurrences = Vec::new();
     for (ordinal, reference) in table.references.iter().enumerate() {
         let path = reference.relative_path.as_str().to_owned();
@@ -499,12 +623,27 @@ pub(crate) fn component_insert_reference<'a>(
     matches.next().is_none().then_some(reference)
 }
 
+/// Return the unique projected instance of one native external placement.
+pub(crate) fn unique_occurrence<'a>(
+    reference: &XrefReference,
+    occurrences: &'a [Occurrence],
+) -> Option<&'a Occurrence> {
+    let mut matches = occurrences.iter().filter(|occurrence| {
+        matches!(occurrence.prototype, PrototypeReference::External { .. })
+            && occurrence.native_ref.as_deref() == Some(reference.id.as_str())
+    });
+    let occurrence = matches.next()?;
+    matches.next().is_none().then_some(occurrence)
+}
+
 /// Resolve exact `Component Insert` history scopes to their placed occurrences.
 pub(crate) fn bind_component_insert_features(
     features: &mut [Feature],
     scopes: &[DesignParameterScope],
     table: &XrefTable,
-) {
+    occurrences: &[Occurrence],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let mut losses = Vec::new();
     for scope in scopes {
         let Some(construction) = scope.component_insert_construction() else {
             continue;
@@ -524,18 +663,24 @@ pub(crate) fn bind_component_insert_features(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ) {
+            let Some(occurrence) = unique_occurrence(reference, occurrences) else {
+                losses.push(
+                    crate::loss::F3dLossCode::FeatureOccurrencePathUnresolved.note(
+                        "an external component feature has no unique expanded occurrence path",
+                    ),
+                );
+                continue;
+            };
             feature
                 .evaluation
                 .set_definition(FeatureDefinition::Operation(
                     FeatureOperation::InsertComponent {
-                        occurrence: crate::ids::neutral_xref_occurrence_id(
-                            reference.ordinal,
-                            reference.occurrence_ordinal,
-                        ),
+                        occurrence: occurrence.id.clone(),
                     },
                 ));
         }
     }
+    losses
 }
 
 /// Expand container references through their occurrence records in the active

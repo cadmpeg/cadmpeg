@@ -2764,7 +2764,6 @@ impl<'a> F3dDecodeSession<'a> {
                     Ok(Some(table)) => {
                         report_xref_placement_failures(&mut self.report, table);
                         report_xref_placement_overrides(&mut self.report, table);
-                        self.ir.model.occurrences = crate::xref::project_occurrences(table)?;
                     }
                     Ok(None) => {}
                     Err(error) => report_xref_parse_loss(&mut self.report, error),
@@ -2787,7 +2786,6 @@ impl<'a> F3dDecodeSession<'a> {
                 if let Some(table) = prereqs.xref_table() {
                     report_xref_placement_failures(&mut self.report, table);
                     report_xref_placement_overrides(&mut self.report, table);
-                    self.ir.model.occurrences = crate::xref::project_occurrences(table)?;
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
                     model_body_maps_empty,
@@ -2813,39 +2811,40 @@ impl<'a> F3dDecodeSession<'a> {
                 || !prereqs.design_body_bindings.is_empty()
                 || container::text_brep_names(scan).next().is_some(),
         );
-        let root_ordinal_start = self
-            .ir
-            .model
-            .occurrences
-            .iter()
-            .filter(|occurrence| {
-                matches!(
-                    occurrence.parent,
-                    cadmpeg_ir::products::OccurrenceParent::Root {}
-                )
-            })
-            .count();
-        let local = crate::design::components::project_local_components(
-            &crate::design::components::LocalComponentSources {
-                scopes: &prereqs.design_parameter_scopes,
-                occurrences: &prereqs.design_component_occurrences,
-                components: &local_components,
-                body_bindings: &prereqs.design_body_bindings,
-                bodies: bodies.as_ref(),
-                root_ordinal_start,
-                limits: self.ctx.policy().limits,
-            },
-        )?;
+        let local_sources = crate::design::components::LocalComponentSources {
+            scopes: &prereqs.design_parameter_scopes,
+            occurrences: &prereqs.design_component_occurrences,
+            components: &local_components,
+            body_bindings: &prereqs.design_body_bindings,
+            bodies: bodies.as_ref(),
+            root_ordinal_start: prereqs
+                .xref_table()
+                .map_or(0, |table| table.references.len()),
+            limits: self.ctx.policy().limits,
+        };
+        let local = crate::design::components::project_local_components(&local_sources)?;
+        if let Some(table) = prereqs.xref_table() {
+            let external =
+                crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
+            self.ir.model.occurrences.extend(external.occurrences);
+            self.report.losses.extend(external.losses);
+        }
         self.ir.model.product_definitions.extend(local.definitions);
         self.ir.model.occurrences.extend(local.occurrences);
         self.report.losses.extend(local.losses);
-        let component_inserts = crate::design::components::ComponentInserts::decide(
+        let mut component_inserts = crate::design::components::ComponentInserts::decide(
             &prereqs.design_parameter_scopes,
             prereqs.feature_timelines().unwrap_or_default(),
             prereqs
                 .xref_table()
                 .map(|table| table.references.as_slice())
                 .unwrap_or_default(),
+        );
+        component_inserts.bind_external_paths(
+            prereqs
+                .xref_table()
+                .map_or(&[], |table| table.references.as_slice()),
+            &self.ir.model.occurrences,
         );
         let unresolved_component_inserts =
             component_inserts.unresolved_occurrences(self.ir.model.occurrences.len())?;

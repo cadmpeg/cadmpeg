@@ -213,7 +213,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         placement_metadata_missing: false,
     };
 
-    let occurrences = super::project_occurrences(&table).unwrap();
+    let occurrences = super::root_occurrences(&table).unwrap();
 
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
@@ -274,7 +274,7 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
     rows[0][3] = f64::MAX;
     table.references[0].transform = Some(rows.try_into().unwrap());
     assert!(matches!(
-        super::project_occurrences(&table),
+        super::root_occurrences(&table),
         Err(cadmpeg_core::CodecError::NotImplemented(message))
             if message.contains("finite affine transform")
     ));

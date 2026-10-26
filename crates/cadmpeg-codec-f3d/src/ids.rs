@@ -85,6 +85,14 @@ pub(crate) fn file_source_image_id() -> cadmpeg_ir::ids::UnknownId {
     )
 }
 
+/// The root product definition of a merged archive member.
+pub(crate) fn archive_product_definition_id() -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "archive", "product-definition"),
+        cadmpeg_ir::identity_key!("0"),
+    )
+}
+
 /// The neutral B-rep identity for one face slot.
 pub(crate) fn brep_face_id(
     index: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -210,6 +218,22 @@ pub(crate) fn neutral_xref_occurrence_id(
         cadmpeg_ir::identity_key!("xref")
             .dash(reference_ordinal)
             .dash(occurrence_ordinal),
+    )
+}
+
+/// External occurrence identified by its complete containing instance path.
+pub(crate) fn nested_xref_occurrence_id(
+    parent: &cadmpeg_ir::ids::OccurrenceId,
+    reference_ordinal: u32,
+    occurrence_ordinal: u32,
+) -> cadmpeg_ir::ids::OccurrenceId {
+    cadmpeg_ir::ids::OccurrenceId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
+        cadmpeg_ir::ids::Identity::from(parent.clone()).key().colon(
+            cadmpeg_ir::identity_key!("xref")
+                .dash(reference_ordinal)
+                .dash(occurrence_ordinal),
+        ),
     )
 }
 

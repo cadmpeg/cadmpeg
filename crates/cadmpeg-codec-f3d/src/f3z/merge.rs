@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Occurrence-scoped merge of decoded F3Z member graphs.
+//! Shared product definitions and instance trees for decoded F3Z members.
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -35,6 +35,7 @@ pub(super) fn merge_archive(
         scan,
         archive,
         stack,
+        members: std::collections::BTreeMap::new(),
     }
     .merge(ir, report, fidelity, &table)
 }
@@ -108,16 +109,69 @@ fn xref_table_from_ir(
     })
 }
 
+struct MemberPlacement<'a> {
+    reference: &'a XrefReference,
+    parent: cadmpeg_ir::ids::OccurrenceId,
+    scope: String,
+}
+
+fn member_placements<'a>(
+    model: &Model,
+    table: &'a XrefTable,
+    containing_scope: Option<&str>,
+) -> Vec<MemberPlacement<'a>> {
+    use cadmpeg_ir::products::PrototypeReference;
+
+    let mut placements = Vec::new();
+    for reference in &table.references {
+        for occurrence in model.occurrences.iter().filter(|occurrence| {
+            matches!(occurrence.prototype, PrototypeReference::External { .. })
+                && occurrence.native_ref.as_deref() == Some(reference.id.as_str())
+        }) {
+            let key = occurrence_key(reference);
+            let mut scope = containing_scope
+                .map_or_else(|| key.clone(), |parent| format!("{parent}/xref/{key}"));
+            let neutral = crate::ids::neutral_xref_occurrence_id(
+                reference.ordinal,
+                reference.occurrence_ordinal,
+            );
+            let expected = containing_scope
+                .and_then(|scope| rescope(neutral.as_str(), scope))
+                .unwrap_or_else(|| neutral.as_str().to_owned());
+            if occurrence.id.as_str() != expected {
+                scope = format!(
+                    "{scope}/instance-{}",
+                    EscapedOccurrenceComponent(occurrence.id.as_str())
+                );
+            }
+            placements.push(MemberPlacement {
+                reference,
+                parent: occurrence.id.clone(),
+                scope,
+            });
+        }
+    }
+    placements
+}
+
+#[derive(Clone)]
+struct MemberDefinition {
+    definition: cadmpeg_ir::ids::ProductDefinitionId,
+    scope: String,
+    occurrences: Vec<cadmpeg_ir::products::Occurrence>,
+    table: XrefTable,
+}
+
 /// State shared by recursive F3Z reference traversal.
 struct MergeSession<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
     scan: &'r ContainerScan<'a>,
     archive: &'r ArchiveSession<'a>,
     stack: Vec<String>,
+    members: std::collections::BTreeMap<String, MemberDefinition>,
 }
 
 impl MergeSession<'_, '_> {
-    /// Resolves outgoing references and merges each usable component graph.
     fn merge(
         &mut self,
         parent_ir: &mut cadmpeg_ir::CadIr,
@@ -125,21 +179,33 @@ impl MergeSession<'_, '_> {
         parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
         table: &XrefTable,
     ) -> Result<usize, CodecError> {
+        let placements = member_placements(&parent_ir.model, table, None);
+        self.merge_placements(parent_ir, parent_report, parent_fidelity, table, placements)
+    }
+
+    fn merge_placements(
+        &mut self,
+        parent_ir: &mut cadmpeg_ir::CadIr,
+        parent_report: &mut cadmpeg_ir::codec::DecodeBody,
+        parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
+        table: &XrefTable,
+        placements: Vec<MemberPlacement<'_>>,
+    ) -> Result<usize, CodecError> {
+        use cadmpeg_ir::products::PrototypeReference;
+
         let mut merged = 0usize;
-        for reference in &table.references {
-            let occurrence = occurrence_key(reference);
+        for placement in placements {
+            let reference = placement.reference;
+            let occurrence = placement.scope;
             let label = xref::design_for(table, reference)
                 .map_or(reference.relative_path.as_str(), |design| {
                     design.display_name.as_str()
                 });
-            let mut cycle = false;
-            for path in &self.stack {
-                if path == reference.relative_path.as_str() {
-                    cycle = true;
-                    break;
-                }
-            }
-            if cycle {
+            if self
+                .stack
+                .iter()
+                .any(|path| path == reference.relative_path.as_str())
+            {
                 super::push_loss(
                     &mut parent_report.losses,
                     F3dLossCode::XrefCycle,
@@ -150,105 +216,201 @@ impl MergeSession<'_, '_> {
                 );
                 continue;
             }
-            let Some(member) = self.archive.members.get(reference.relative_path.as_str()) else {
-                if self.scan.entry_view(&reference.relative_path).is_some() {
-                    super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+            let ctx = self.ctx;
+            let _depth = ctx.enter_nested("f3z member reference")?;
+            let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
+                self.ctx.charge_entities(
+                    cadmpeg_core::decode::u64_from_index(member.occurrences.len()),
+                    "F3Z repeated member occurrences",
+                )?;
+                member.clone()
+            } else {
+                let Some(member) = self.archive.members.get(reference.relative_path.as_str())
+                else {
+                    if self.scan.entry_view(&reference.relative_path).is_some() {
+                        super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
                         ));
-                } else {
-                    super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberMissing, format_args!(
+                    } else {
+                        super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberMissing, format_args!(
                             "xref {label}: member {} is not present in the archive; the occurrence was not resolved",
                             reference.relative_path
                         ));
-                }
-                continue;
-            };
-            let member_scan = match member {
-                ClassifiedMember::Scanned(member_scan) => member_scan,
-                ClassifiedMember::Unreadable(_) => continue,
-            };
-            let ctx = self.ctx;
-            let _depth = ctx.enter_nested("f3z member reference")?;
-            let component = match crate::decode::decode_archive_member(
-                self.ctx,
-                member_scan,
-                &self.archive.layers,
-            ) {
-                Ok(component) => component.into_decoded(),
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => {
-                    super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                    }
+                    continue;
+                };
+                let member_scan = match member {
+                    ClassifiedMember::Scanned(member_scan) => member_scan,
+                    ClassifiedMember::Unreadable(_) => continue,
+                };
+                let component = match crate::decode::decode_archive_member(
+                    self.ctx,
+                    member_scan,
+                    &self.archive.layers,
+                ) {
+                    Ok(component) => component.into_decoded(),
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error) => {
+                        super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
                         ));
-                    continue;
+                        continue;
+                    }
+                };
+                let mut child_table = xref_table_from_ir(self.ctx, &component.ir)?;
+                let cadmpeg_ir::codec::Decoded {
+                    ir: mut component_ir,
+                    body: mut component_report,
+                    source_fidelity: component_fidelity,
+                } = component;
+                scope_document_parameters(self.ctx, &mut component_ir.model)?;
+                let definition = define_member(self.ctx, &mut component_ir.model, label)?;
+                append_feature_history(&parent_ir.model, &mut component_ir.model)?;
+                let mut scope = OccurrenceScope {
+                    ctx: self.ctx,
+                    occurrence: &occurrence,
+                };
+                let occurrence_start = parent_ir.model.occurrences.len();
+                parent_ir
+                    .model
+                    .extend_rewritten(component_ir.model, &mut scope)?;
+                let member = MemberDefinition {
+                    definition: scope.rewrite(definition)?,
+                    scope: occurrence.clone(),
+                    occurrences: parent_ir
+                        .model
+                        .occurrences
+                        .drain(occurrence_start..)
+                        .collect(),
+                    table: {
+                        for reference in &mut child_table.references {
+                            reference.id =
+                                rescope(&reference.id, &occurrence).ok_or_else(|| {
+                                    CodecError::malformed("invalid F3Z reference identity")
+                                })?;
+                        }
+                        child_table
+                    },
+                };
+                extend_native(
+                    self.ctx,
+                    &mut parent_ir.native,
+                    component_ir.native,
+                    &occurrence,
+                )?;
+                parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
+                if component_report.transfer.geometry_transferred() {
+                    parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
+                        parent_report.transfer.depth(),
+                        true,
+                    );
                 }
+                for loss in &mut component_report.losses {
+                    loss.message = format!("xref {label}: {}", loss.message);
+                }
+                parent_report.losses.append(&mut component_report.losses);
+                self.members
+                    .insert(reference.relative_path.as_str().to_owned(), member.clone());
+                member
             };
-            let child_table = xref_table_from_ir(self.ctx, &component.ir)?;
-            let cadmpeg_ir::codec::Decoded {
-                ir: mut component_ir,
-                body: mut component_report,
-                source_fidelity: mut component_fidelity,
-            } = component;
-            scope_document_parameters(self.ctx, &mut component_ir.model)?;
-            self.stack.push(format!("{}", reference.relative_path));
-            let descendants = self.merge(
-                &mut component_ir,
-                &mut component_report,
-                &mut component_fidelity,
-                &child_table,
+            let mut instance = Model::default();
+            instance.occurrences = member.instantiate(self.ctx, &occurrence)?;
+            let child_placements = member_placements(&instance, &member.table, Some(&occurrence));
+            reparent_component_roots(&mut instance.occurrences, &placement.parent)?;
+            parent_ir.model.occurrences.extend(instance.occurrences);
+            let placing = parent_ir
+                .model
+                .occurrences
+                .iter_mut()
+                .find(|item| item.id == placement.parent)
+                .ok_or_else(|| CodecError::malformed("missing F3Z placing occurrence"))?;
+            placing.prototype = PrototypeReference::Local {
+                definition: member.definition,
+            };
+            self.stack.push(reference.relative_path.as_str().to_owned());
+            let descendants = self.merge_placements(
+                parent_ir,
+                parent_report,
+                parent_fidelity,
+                &member.table,
+                child_placements,
             )?;
             self.stack.pop();
-            if let Some(transform) = reference.transform {
-                apply_occurrence_transform(&mut component_ir.model, transform)?;
-            }
-            append_feature_history(&parent_ir.model, &mut component_ir.model)?;
-            let occurrence_start = parent_ir.model.occurrences.len();
-            let mut scope = OccurrenceScope {
-                ctx: self.ctx,
-                occurrence: &occurrence,
-            };
-            parent_ir
-                .model
-                .extend_rewritten(component_ir.model, &mut scope)?;
-            reparent_component_roots(
-                &mut parent_ir.model.occurrences[occurrence_start..],
-                &crate::ids::neutral_xref_occurrence_id(
-                    reference.ordinal,
-                    reference.occurrence_ordinal,
-                ),
-            )?;
-            extend_native(
-                self.ctx,
-                &mut parent_ir.native,
-                component_ir.native,
-                &occurrence,
-            )?;
-            parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
-            if component_report.transfer.geometry_transferred() {
-                parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
-                    parent_report.transfer.depth(),
-                    true,
-                );
-            }
-            for loss in &mut component_report.losses {
-                loss.message = format!("xref {label}: {}", loss.message);
-            }
-            parent_report.losses.append(&mut component_report.losses);
-            let placement = if reference.transform.is_some() {
-                "Design occurrence transform"
-            } else {
-                "identity placement"
-            };
             parent_report.notes.push(format!(
-                    "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested occurrence(s))",
-                    reference.relative_path
-                ));
+                "xref {label}: merged {} as occurrence {occurrence} (shared definition; {descendants} nested occurrence(s))",
+                reference.relative_path
+            ));
         }
         Ok(merged)
     }
+}
+
+impl MemberDefinition {
+    fn instantiate(
+        &self,
+        ctx: &DecodeContext<'_>,
+        scope: &str,
+    ) -> Result<Vec<cadmpeg_ir::products::Occurrence>, CodecError> {
+        let prefix = format!("f3d:xref/{}/", self.scope);
+        let ids = self
+            .occurrences
+            .iter()
+            .map(|occurrence| {
+                let tail = occurrence
+                    .id
+                    .as_str()
+                    .strip_prefix(&prefix)
+                    .ok_or_else(|| CodecError::malformed("invalid F3Z member occurrence scope"))?;
+                Ok((occurrence.id.as_str(), format!("f3d:xref/{scope}/{tail}")))
+            })
+            .collect::<Result<std::collections::BTreeMap<_, _>, CodecError>>()?;
+        self.occurrences
+            .iter()
+            .map(|occurrence| {
+                cadmpeg_ir::schema::rewrite::identities(ctx, occurrence.clone(), |id: &str| {
+                    Ok::<_, CodecError>(ids.get(id).cloned().unwrap_or_else(|| id.to_owned()))
+                })
+            })
+            .collect()
+    }
+}
+
+fn define_member(
+    ctx: &DecodeContext<'_>,
+    model: &mut Model,
+    label: &str,
+) -> Result<cadmpeg_ir::ids::ProductDefinitionId, CodecError> {
+    use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+
+    let owned = model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.bodies)
+        .collect::<std::collections::BTreeSet<_>>();
+    let bodies = model
+        .bodies
+        .iter()
+        .filter(|body| !owned.contains(&body.id))
+        .map(|body| body.id.clone())
+        .collect();
+    ctx.charge_entities(1, "F3Z member product definition")?;
+    let id = crate::ids::archive_product_definition_id();
+    model.product_definitions.push(ProductDefinition {
+        id: id.clone(),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: (!label.trim().is_empty()).then(|| label.to_owned()),
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies,
+        sketches: Vec::new(),
+        native_ref: None,
+    });
+    Ok(id)
 }
 
 /// Places every root-level occurrence from a merged member inside the
@@ -439,42 +601,6 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
         }
         Ok(())
     }
-}
-
-fn apply_occurrence_transform(
-    model: &mut Model,
-    transform: crate::records::xref::XrefPlacementTransform,
-) -> Result<(), CodecError> {
-    let source_rows = transform.rows();
-    let mut rows = [source_rows[0], source_rows[1], source_rows[2]];
-    for row in &mut rows {
-        row[3] *= 10.0;
-    }
-    let occurrence = cadmpeg_ir::transform::Transform::affine(rows).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "F3Z occurrence translation is not a finite affine transform"
-        ))
-    })?;
-
-    for body in &mut model.bodies {
-        body.transform = Some(match body.transform {
-            Some(local) => compose_transforms(occurrence, local)?,
-            None => occurrence,
-        });
-    }
-    Ok(())
-}
-
-/// Composes a component-local transform after its archive occurrence transform.
-fn compose_transforms(
-    outer: cadmpeg_ir::transform::Transform,
-    inner: cadmpeg_ir::transform::Transform,
-) -> Result<cadmpeg_ir::transform::Transform, CodecError> {
-    outer.compose(inner).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "F3Z occurrence composition is not a finite affine transform: {error}"
-        ))
-    })
 }
 
 fn rescope(text: &str, occurrence: &str) -> Option<String> {
@@ -769,35 +895,39 @@ mod tests {
     mod fidelity;
     mod occurrence;
 
-    use super::{apply_occurrence_transform, compose_transforms};
-    use cadmpeg_ir::document::Model;
+    use super::define_member;
 
     #[test]
-    fn occurrence_translation_overflow_is_rejected() {
-        let rows = [
-            [1.0, 0.0, 0.0, f64::MAX],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ];
-        let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
-        let source = crate::records::xref::XrefPlacementTransform::try_from(source.rows()).unwrap();
-        let error = apply_occurrence_transform(&mut Model::default(), source).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("F3Z occurrence translation is not a finite affine transform"));
-    }
-
-    #[test]
-    fn occurrence_composition_overflow_is_rejected() {
+    fn member_definition_keeps_a_finite_body_transform_without_preplacement() {
         let transform = cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, f64::MAX],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
         ])
         .unwrap();
-        let error = compose_transforms(transform, transform).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("F3Z occurrence composition is not a finite affine transform"));
+        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+        model.product_definitions.clear();
+        model.bodies[0].transform = Some(transform);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        define_member(&ctx, &mut model, "member").unwrap();
+        assert_eq!(model.bodies[0].transform, Some(transform));
+        assert_eq!(
+            model.product_definitions[0].bodies,
+            [model.bodies[0].id.clone()]
+        );
+    }
+
+    #[test]
+    fn member_definition_obeys_the_entity_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_entities = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut model = cadmpeg_ir::document::Model::default();
+        let error = define_member(&ctx, &mut model, "member").unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+        assert!(model.product_definitions.is_empty());
     }
 }

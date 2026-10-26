@@ -54,11 +54,12 @@ pub(crate) fn validate_assembly_projection(
                 )
             });
     };
-    let inserts = crate::design::components::ComponentInserts::decide(
+    let mut inserts = crate::design::components::ComponentInserts::decide(
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
         &native.xref_references,
     );
+    inserts.bind_external_paths(&native.xref_references, &target.model.occurrences);
     let projected = crate::design::assembly::project_assembly_joints_with_paths(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,

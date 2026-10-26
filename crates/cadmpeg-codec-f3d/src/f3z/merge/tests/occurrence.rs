@@ -16,8 +16,8 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::Native;
 
 use crate::f3z::merge::{
-    append_feature_history, compose_transforms, extend_native, occurrence_key,
-    reparent_component_roots, OccurrenceScope,
+    append_feature_history, extend_native, occurrence_key, reparent_component_roots,
+    OccurrenceScope,
 };
 use crate::records::xref::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
@@ -84,7 +84,7 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
 }
 
 #[test]
-fn occurrence_transform_composes_outside_existing_body_transform() {
+fn member_definition_preserves_the_body_transform_inside_each_placement() {
     let outer = Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, 30.0],
@@ -98,8 +98,19 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
     ])
     .expect("affine transform");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+    model.bodies[0].transform = Some(inner);
+    crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
     assert_eq!(
-        compose_transforms(outer, inner).unwrap().rows(),
+        model.product_definitions[0].bodies,
+        [model.bodies[0].id.clone()]
+    );
+    assert_eq!(
+        outer
+            .compose(model.bodies[0].transform.unwrap())
+            .unwrap()
+            .rows(),
         [
             [0.0, -1.0, 0.0, 20.0],
             [1.0, 0.0, 0.0, 35.0],
@@ -666,5 +677,292 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
     assert_eq!(
         fields["placement_source"]["owner"]["type_guid"],
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    );
+}
+
+#[test]
+fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() {
+    use crate::test_support::assembly_test::{
+        f3d_without_brep_with_xref_placement, f3z_archive, XREF_ROLE,
+    };
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{
+        ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference,
+    };
+
+    let mut child_matrix = Transform::identity().rows();
+    child_matrix[1][3] = 0.5;
+    let member = f3d_without_brep_with_xref_placement(
+        "assembly-design",
+        "member.f3d",
+        "leaf.f3d",
+        XREF_ROLE,
+        child_matrix,
+    );
+    let leaf = f3d_with_smbh(&synthetic_geometry_smbh());
+    let archive = f3z_archive(
+        "member.f3d",
+        &[("member.f3d", &member), ("leaf.f3d", &leaf)],
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, bytes) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, bytes).unwrap();
+    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let reference = XrefReference {
+        id: "f3d:xref:reference#0".to_owned(),
+        ordinal: 0,
+        occurrence_ordinal: 0,
+        placement_source: None,
+        from: "root.f3d".to_owned().try_into().unwrap(),
+        relative_path: "member.f3d".to_owned().try_into().unwrap(),
+        neutron_role: "outer-role".to_owned().try_into().unwrap(),
+        neutron_data: String::new(),
+        transform: None,
+    };
+    let table = crate::xref::XrefTable {
+        references: vec![reference],
+        ..Default::default()
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.bodies[0].transform = Some(
+        Transform::affine([
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 1.0, 0.0, 7.0],
+            [0.0, 0.0, 1.0, 11.0],
+        ])
+        .unwrap(),
+    );
+    let root_body = ir.model.bodies[0].clone();
+    let mut children = Vec::new();
+    for index in 0..2 {
+        let parent = OccurrenceId::mint(format!("f3d:model:occurrence#group-{index}")).unwrap();
+        let transform = if index == 0 {
+            Transform::affine([
+                [0.0, -1.0, 0.0, 30.0],
+                [1.0, 0.0, 0.0, 40.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap()
+        } else {
+            Transform::affine([
+                [1.0, 0.0, 0.0, 80.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap()
+        };
+        let group = Occurrence {
+            id: parent.clone(),
+            prototype: PrototypeReference::Unresolved {},
+            parent: OccurrenceParent::Root {},
+            ordinal: index,
+            transform,
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        };
+        let mut child = group.clone();
+        child.id = crate::ids::nested_xref_occurrence_id(&parent, 0, 0);
+        children.push(child.id.clone());
+        child.parent = OccurrenceParent::Occurrence { occurrence: parent };
+        child.prototype = PrototypeReference::External {
+            document: ExternalDocument::path("member.f3d"),
+            object: None,
+        };
+        child.transform = Transform::affine([
+            [1.0, 0.0, 0.0, 20.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        child.native_ref = Some(table.references[0].id.clone());
+        ir.model.occurrences.extend([group, child]);
+    }
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::at(
+            cadmpeg_core::decode::DecodeDepth::Full,
+            false,
+        ));
+    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+    let merged = crate::f3z::merge::MergeSession {
+        ctx: &ctx,
+        scan: &scan,
+        archive: &archive,
+        stack: vec!["root.f3d".to_owned()],
+        members: std::collections::BTreeMap::new(),
+    }
+    .merge(&mut ir, &mut report, &mut fidelity, &table)
+    .unwrap();
+    assert_eq!(merged, 4);
+    assert_eq!(ir.model.bodies.len(), 2);
+    assert_eq!(ir.model.bodies[0], root_body);
+    assert!(ir.model.bodies[1].transform.is_none());
+    assert_eq!(ir.model.product_definitions.len(), 2);
+    let leaf_definition = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| !definition.bodies.is_empty())
+        .unwrap();
+    assert_eq!(leaf_definition.bodies, [ir.model.bodies[1].id.clone()]);
+    let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences).unwrap();
+    let mut translations = Vec::new();
+    let mut member_definitions = Vec::new();
+    for child in children {
+        let imported = ir
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| {
+                occurrence.parent
+                    == OccurrenceParent::Occurrence {
+                        occurrence: child.clone(),
+                    }
+            })
+            .unwrap();
+        let placing = ir
+            .model
+            .occurrences
+            .iter()
+            .find(|item| item.id == child)
+            .unwrap();
+        let PrototypeReference::Local { definition } = &placing.prototype else {
+            panic!("member placement must resolve locally");
+        };
+        member_definitions.push(definition.clone());
+        assert_eq!(
+            imported.prototype,
+            PrototypeReference::Local {
+                definition: leaf_definition.id.clone(),
+            }
+        );
+        let world =
+            cadmpeg_test_support::assembly::resolved_transform(&graph, &imported.id).unwrap();
+        let body_world = world
+            .compose(
+                ir.model.bodies[1]
+                    .transform
+                    .unwrap_or_else(Transform::identity),
+            )
+            .unwrap();
+        let rows = body_world.rows();
+        translations.push([rows[0][3], rows[1][3]]);
+        assert_eq!(imported.transform.rows()[1][3], 5.0);
+    }
+    let references: Vec<XrefReference> = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as_for_decode(&ctx, "xref_references")
+        .unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].relative_path.as_str(), "leaf.f3d");
+    assert_eq!(references[0].neutron_role.as_str(), XREF_ROLE);
+    assert_eq!(references[0].transform.unwrap().rows(), child_matrix);
+    assert_eq!(translations, [[25.0, 60.0], [100.0, 5.0]]);
+    assert_eq!(member_definitions[0], member_definitions[1]);
+    assert_eq!(ir.model.occurrences[1].transform.rows()[0][3], 20.0);
+    assert_eq!(ir.model.occurrences[3].transform.rows()[0][3], 20.0);
+}
+
+#[test]
+fn imported_definition_bodies_keep_their_definition_frame() {
+    let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+    let body = model.bodies[0].id.clone();
+    model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:component#owned").unwrap(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            bodies: vec![body],
+            source_name: None,
+            label: None,
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::new(),
+            sketches: Vec::new(),
+            native_ref: None,
+        });
+    let original = model.bodies[0].transform;
+    let mut free_body = model.bodies[0].clone();
+    free_body.id = BodyId::mint("f3d:model:body#free").unwrap();
+    free_body.regions.clear();
+    free_body.transform = Some(
+        Transform::affine([
+            [1.0, 0.0, 0.0, 20.0],
+            [0.0, 1.0, 0.0, 30.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap(),
+    );
+    model.bodies.push(free_body.clone());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let definition = crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
+    assert_eq!(model.bodies[0].transform, original);
+    assert_eq!(model.bodies[1], free_body);
+    assert_eq!(model.product_definitions[1].id, definition);
+    assert_eq!(model.product_definitions[1].bodies, [free_body.id]);
+}
+
+#[test]
+fn shared_members_check_cycles_for_each_instance_path() {
+    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::products::PrototypeReference;
+    use std::io::Cursor;
+
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("first.f3d", "first-role"), ("second.f3d", "second-role")],
+    );
+    let first = f3d_without_brep(
+        "assembly-design",
+        "first.f3d",
+        &[("second.f3d", "child-role")],
+    );
+    let second = f3d_without_brep(
+        "assembly-design",
+        "second.f3d",
+        &[("first.f3d", "child-role")],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("first.f3d", &first),
+            ("second.f3d", &second),
+        ],
+    );
+    let decoded = crate::F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.product_definitions.len(), 2);
+    assert_eq!(decoded.ir().model.occurrences.len(), 6);
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .filter(|item| matches!(item.prototype, PrototypeReference::Local { .. }))
+            .count(),
+        4
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::F3dLossCode::XrefCycle.kind())
+            .count(),
+        2
     );
 }
