@@ -386,3 +386,189 @@ fn cut_short_and_impossible_64bit_fields_never_become_whole_window_extents() {
         });
     }
 }
+
+#[test]
+fn recompressed_zip64_members_keep_sentinels_descriptors_and_shifted_end_records() {
+    for mask in 0_u8..8 {
+        let sentinels = [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0];
+        for descriptor in [None, Some(false), Some(true)] {
+            let mut input = fixture(sentinels, descriptor);
+            input.bytes[12..14].copy_from_slice(&8_u16.to_le_bytes());
+            input.bytes[input.central + 10..input.central + 12]
+                .copy_from_slice(&8_u16.to_le_bytes());
+            if sentinels[0] || sentinels[1] {
+                put64(&mut input.bytes, input.payload - 8, 10);
+            } else {
+                put(&mut input.bytes, 22, 10);
+            }
+            if sentinels[1] {
+                put64(
+                    &mut input.bytes,
+                    input.extra + 4 + usize::from(sentinels[0]) * 8,
+                    10,
+                );
+            } else {
+                put(&mut input.bytes, input.central + 20, 10);
+            }
+            if let Some((start, signed, wide)) = input.descriptor {
+                let compressed = start + usize::from(signed) * 4 + 4;
+                if wide {
+                    put64(&mut input.bytes, compressed, 10);
+                } else {
+                    put(&mut input.bytes, compressed, 10);
+                }
+            }
+            put64(
+                &mut input.bytes,
+                input.end64 + 48,
+                u64::try_from(input.central + 5 - 4).unwrap(),
+            );
+            put64(
+                &mut input.bytes,
+                input.locator + 8,
+                u64::try_from(input.end64 + 5 - 4).unwrap(),
+            );
+            input
+                .bytes
+                .splice(input.payload..input.payload, [1, 5, 0, 250, 255]);
+            source(&input.bytes, |ctx, view| {
+                let mut frames = Vec::new();
+                let original = frame(ctx, view, &mut frames).unwrap();
+                assert_eq!(super::rebuild_member::plain(&original[0]), b"ABCDE");
+                let rebuilt =
+                    crate::framing::zip::rebuild_member(ctx, view, b"data", b"VWXYZ").unwrap();
+                assert_eq!(&rebuilt[..4], b"stub");
+                assert_eq!(&rebuilt[rebuilt.len() - 4..], b"tail");
+                source(&rebuilt, |ctx, view| {
+                    let mut parts = Vec::new();
+                    let entries = frame(ctx, view, &mut parts).unwrap();
+                    assert_eq!(entries[0].method(), 8);
+                    assert_eq!(super::rebuild_member::plain(&entries[0]), b"VWXYZ");
+                    let end = parts
+                        .iter()
+                        .find(|part| part.level().as_str() == "zip.zip64_end_record")
+                        .unwrap();
+                    assert_eq!(&end.view().window()[56..], b"EXTRA");
+                    assert_eq!(
+                        parts
+                            .iter()
+                            .filter(|part| part.level().as_str() == "zip.data_descriptor")
+                            .count(),
+                        usize::from(descriptor.is_some())
+                    );
+                });
+            });
+        }
+    }
+}
+
+#[test]
+fn resized_stored_zip64_members_preserve_sentinels_descriptor_forms_and_extensions() {
+    for mask in 0_u8..8 {
+        let sentinels = [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0];
+        for descriptor in [None, Some(false), Some(true)] {
+            let input = fixture(sentinels, descriptor);
+            source(&input.bytes, |ctx, view| {
+                let rebuilt =
+                    crate::framing::zip::resize_stored_member(ctx, view, b"data", b"AB").unwrap();
+                assert_eq!(rebuilt.len(), input.bytes.len() - 3);
+                assert_eq!(&rebuilt[..4], b"stub");
+                assert_eq!(&rebuilt[rebuilt.len() - 4..], b"tail");
+                source(&rebuilt, |ctx, view| {
+                    let mut parts = Vec::new();
+                    let entries = frame(ctx, view, &mut parts).unwrap();
+                    PartTable::load().unwrap().validate(ctx, &parts).unwrap();
+                    let [entry] = entries.as_slice() else {
+                        panic!("one retained member")
+                    };
+                    assert_eq!(entry.method(), 0);
+                    assert_eq!(entry.payload().window(), b"AB");
+                    assert_eq!(entry.uncompressed, 2);
+                    let local_expanded = b"stub".len() + 22;
+                    if sentinels[0] || sentinels[1] {
+                        assert_eq!(super::word(&rebuilt, local_expanded), u32::MAX);
+                        let expanded = input.payload - 16;
+                        assert_eq!(
+                            u64::from_le_bytes(rebuilt[expanded..expanded + 8].try_into().unwrap()),
+                            2,
+                        );
+                    } else {
+                        assert_eq!(super::word(&rebuilt, local_expanded), 2);
+                    }
+                    if let Some((start, signed, wide)) = input.descriptor {
+                        let expanded =
+                            start - 3 + usize::from(signed) * 4 + 4 + if wide { 8 } else { 4 };
+                        if wide {
+                            assert_eq!(
+                                u64::from_le_bytes(
+                                    rebuilt[expanded..expanded + 8].try_into().unwrap()
+                                ),
+                                2,
+                            );
+                        } else {
+                            assert_eq!(super::word(&rebuilt, expanded), 2);
+                        }
+                    }
+                    let central = input.central - 3;
+                    assert_eq!(
+                        super::word(&rebuilt, central + 20),
+                        if sentinels[1] { u32::MAX } else { 2 }
+                    );
+                    assert_eq!(
+                        super::word(&rebuilt, central + 24),
+                        if sentinels[0] { u32::MAX } else { 2 }
+                    );
+                    assert_eq!(
+                        super::word(&rebuilt, central + 42),
+                        if sentinels[2] { u32::MAX } else { 0 }
+                    );
+                    assert_eq!(super::word(&rebuilt, central + 16), crc32(b"AB"));
+                    let end = parts
+                        .iter()
+                        .find(|part| part.level().as_str() == "zip.zip64_end_record")
+                        .unwrap();
+                    assert_eq!(&end.view().window()[56..], b"EXTRA");
+                    assert_eq!(
+                        parts
+                            .iter()
+                            .filter(|part| part.level().as_str() == "zip.data_descriptor")
+                            .count(),
+                        usize::from(descriptor.is_some())
+                    );
+                    assert!(ctx.take_record_captures().unwrap().is_empty());
+                });
+            });
+        }
+    }
+}
+
+#[test]
+fn same_length_member_rebuild_preserves_noncanonical_local_zip64_expanded_size() {
+    let mut input = fixture([true, true, true], None);
+    put64(&mut input.bytes, input.payload - 16, 123);
+    source(&input.bytes, |ctx, view| {
+        let entries = frame(ctx, view, &mut Vec::new()).unwrap();
+        let entry = &entries[0];
+        assert_eq!(entry.uncompressed, 5);
+        let expected = rebuild(
+            ctx,
+            view,
+            &[Edit {
+                range: u64::try_from(entry.payload().start()).unwrap()
+                    ..u64::try_from(entry.payload().end()).unwrap(),
+                replacement: b"VWXYZ",
+            }],
+        )
+        .unwrap();
+        let rebuilt = crate::framing::zip::rebuild_member(ctx, view, b"data", b"VWXYZ").unwrap();
+        assert_eq!(rebuilt, expected);
+        assert_eq!(
+            u64::from_le_bytes(
+                rebuilt[input.payload - 16..input.payload - 8]
+                    .try_into()
+                    .unwrap()
+            ),
+            123
+        );
+    });
+}

@@ -348,3 +348,7 @@ mod zip64;
 mod signature;
 
 mod recovery;
+
+mod rebuild_member;
+
+mod stored_resize;

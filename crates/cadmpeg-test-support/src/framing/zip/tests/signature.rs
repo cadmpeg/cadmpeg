@@ -235,3 +235,22 @@ fn opaque_signature_markers_in_payload_are_not_additional_signature_records() {
         assert!(frame(ctx, view, &mut Vec::new()).is_err())
     });
 }
+
+#[test]
+fn stored_resizing_refuses_signature_invalidation_and_preserves_unchanged_signed_sources() {
+    for inside in [false, true] {
+        for wide in [false, true] {
+            let input = signed(inside, wide);
+            source(&input.bytes, |ctx, view| {
+                let error = crate::framing::zip::resize_stored_member(ctx, view, b"data", b"AB")
+                    .unwrap_err();
+                assert!(error.contains("invalidates the directory signature"));
+                assert_eq!(
+                    crate::framing::zip::resize_stored_member(ctx, view, b"data", b"ABCDE")
+                        .unwrap(),
+                    input.bytes
+                );
+            });
+        }
+    }
+}

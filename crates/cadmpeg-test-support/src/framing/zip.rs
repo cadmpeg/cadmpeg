@@ -12,10 +12,12 @@ use layout::add;
 mod layout;
 mod members;
 mod rebuild;
+mod rebuild_member;
 mod recovery;
 mod zip64;
 
 pub use rebuild::{rebuild, Edit};
+pub use rebuild_member::{rebuild_member, resize_stored_member};
 pub use recovery::{scan, LocalEntry, RecoveryReason, RecoveryStop, ZipScan};
 
 /// Actual source views and physical records for one central-directory member.

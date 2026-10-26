@@ -545,6 +545,7 @@ version = "0.6.5"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "flate2",
  "serde",
  "serde_json",
  "thiserror",
