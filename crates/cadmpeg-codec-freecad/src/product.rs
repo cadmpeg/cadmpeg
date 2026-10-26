@@ -223,6 +223,7 @@ pub(crate) fn transfer_neutral(
     // only as a link's prototype and are placed by those links.
     let mut placed_objects = HashSet::new();
     let mut occurrence_objects = HashSet::new();
+    let mut link_prototypes = HashSet::new();
     for record in records {
         if matches!(record.node, ProductNode::Occurrence(_)) {
             occurrence_objects.insert(record.object.as_str());
@@ -242,6 +243,7 @@ pub(crate) fn transfer_neutral(
         if record.external_document().is_none() {
             if let Some(prototype) = record.prototype() {
                 component_objects.push(prototype);
+                link_prototypes.insert(prototype);
             }
         }
         for target in [
@@ -291,6 +293,72 @@ pub(crate) fn transfer_neutral(
         if let Some(property) = selected_placement(owned)? {
             if let Some(placement) = placement_matrix(property)? {
                 placements_by_object.insert(owner, placement.transform());
+            }
+        }
+    }
+    let property_by_id = properties
+        .iter()
+        .map(|property| (property.id.as_str(), property))
+        .collect::<HashMap<_, _>>();
+    // An object's shape is its `Shape` property. Other payloads, such as a PartDesign
+    // feature's `AddSubShape`, are not bodies of its definition.
+    let mut body_owners = Vec::new();
+    for payload in payloads {
+        if let Some(property) = property_by_id
+            .get(payload.property.as_str())
+            .filter(|property| property.name == "Shape")
+        {
+            body_owners.push((
+                crate::native::model_id("body", &payload.id, ""),
+                property.owner.as_str(),
+            ));
+        }
+    }
+    let mut bodies_by_owner = HashMap::<&str, Vec<&Body>>::new();
+    for body in bodies {
+        if let Some((_, owner)) = body_owners
+            .iter()
+            .find(|(prefix, _)| body.id.as_str().starts_with(prefix.as_str()))
+        {
+            bodies_by_owner.entry(owner).or_default().push(body);
+        }
+    }
+    // FreeCAD restores the `Placement` of a `Shape` owner from the root location of its shape.
+    for (&owner, owned) in &bodies_by_owner {
+        let location = owned[0].transform.unwrap_or_default();
+        if location.is_proper_rigid()
+            && owned
+                .iter()
+                .all(|body| body.transform.unwrap_or_default() == location)
+        {
+            placements_by_object.insert(owner, location);
+        }
+    }
+    // A PartDesign body and a copy-on-change group show their children only through themselves.
+    let copy_on_change_groups = records
+        .iter()
+        .filter_map(ProductNodeRecord::copy_on_change_group)
+        .filter(|target| target.document().is_none())
+        .filter_map(|target| target.object())
+        .collect::<HashSet<_>>();
+    let mut listed_objects = HashSet::new();
+    for record in records
+        .iter()
+        .filter(|record| copy_on_change_groups.contains(record.object.as_str()))
+    {
+        listed_objects.extend(record.element_objects().iter().cloned());
+    }
+    for object in objects
+        .iter()
+        .filter(|object| object.type_name == "PartDesign::Body")
+    {
+        let owned = properties_by_owner
+            .get(object.id().as_str())
+            .map_or(&[][..], Vec::as_slice);
+        // An unreadable `Group` lists nothing.
+        if let Ok(Some(group)) = sole_named_property("product", owned, "Group") {
+            if let Ok(links) = link_list(group, "App::PropertyLinkList", "Group") {
+                listed_objects.extend(linked_object_names(links));
             }
         }
     }
@@ -485,16 +553,6 @@ pub(crate) fn transfer_neutral(
     for object in objects {
         object_by_id.insert(object.id().as_str(), object);
     }
-    let mut property_owner = HashMap::new();
-    for property in properties {
-        property_owner.insert(property.id.as_str(), property.owner.as_str());
-    }
-    let mut body_owners = Vec::new();
-    for payload in payloads {
-        if let Some(owner) = property_owner.get(payload.property.as_str()) {
-            body_owners.push((crate::native::model_id("body", &payload.id, ""), *owner));
-        }
-    }
     let mut definitions = Vec::new();
     for &object in &component_objects {
         let record = record_by_object.get(object).copied();
@@ -528,14 +586,10 @@ pub(crate) fn transfer_neutral(
             }
         }
         let part_number_carrier = if part_runtime { "Id" } else { "PartNumber" };
-        let mut definition_bodies = Vec::new();
-        for body in bodies.iter().filter(|body| {
-            body_owners
-                .iter()
-                .any(|(prefix, owner)| *owner == object && body.id.as_str().starts_with(prefix))
-        }) {
-            definition_bodies.push(body.id.clone());
-        }
+        let definition_bodies = bodies_by_owner
+            .get(object)
+            .map(|owned| owned.iter().map(|body| body.id.clone()).collect())
+            .unwrap_or_default();
         definitions.push(ProductDefinition {
             sketches: Vec::default(),
             id: definition_id(object)?,
@@ -549,6 +603,21 @@ pub(crate) fn transfer_neutral(
             bodies: definition_bodies,
             native_ref: Some((*object).to_owned()),
         });
+    }
+
+    // Definition bodies are in their object's frame, so a link prototype with bodies
+    // needs its own occurrence unless it is shown only through a listing object.
+    for prototype in link_prototypes {
+        let has_bodies = definitions.iter().any(|definition| {
+            definition.native_ref.as_deref() == Some(prototype) && !definition.bodies.is_empty()
+        });
+        if has_bodies
+            && !occurrence_objects.contains(prototype)
+            && !listed_objects.contains(prototype)
+            && placements_by_object.contains_key(prototype)
+        {
+            placed_objects.insert(prototype);
+        }
     }
 
     for object in component_objects
@@ -597,6 +666,36 @@ pub(crate) fn transfer_neutral(
             .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
     }
     Ok((definitions, occurrences))
+}
+
+/// Removes the shape payload's root location from the bodies of each product definition
+/// that an occurrence uses.
+///
+/// The occurrences carry the object's placement, which is that root location. A definition
+/// with no occurrence keeps the root location on its bodies.
+pub(crate) fn localize_definition_bodies(
+    definitions: &[ProductDefinition],
+    occurrences: &[Occurrence],
+    bodies: &mut [Body],
+) {
+    let used = occurrences
+        .iter()
+        .filter_map(|occurrence| match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition),
+            PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
+        })
+        .collect::<HashSet<_>>();
+    let localized = definitions
+        .iter()
+        .filter(|definition| used.contains(&definition.id))
+        .flat_map(|definition| definition.bodies.iter())
+        .collect::<HashSet<_>>();
+    for body in bodies
+        .iter_mut()
+        .filter(|body| localized.contains(&body.id))
+    {
+        body.transform = None;
+    }
 }
 
 fn linked_prototype_transform(

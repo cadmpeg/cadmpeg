@@ -599,14 +599,24 @@ becomes its own occurrence with a stable array index, scale, local transform, an
 resolved through its containing components exactly once. An assembly's members include its
 `Assembly::JointGroup` and its joint objects; those constrain the components and are neither
 components nor occurrences. A component gets its own occurrence when it is a product container, a
-container member, or an object a joint names directly; an object reached only as a link prototype
-is a definition placed by its links. Local prototypes resolve to component ids;
-cross-document links keep the document token and target object without attempting to open the
-document. Missing local targets, invalid array counts, non-finite transforms, and container cycles
-are validation errors; external targets remain intentionally unresolved. The native graph retains
-every direct container membership, while neutral admission requires each member to have at most one
-distinct parent container. Overlapping parent containers are refused instead of selecting by source
-order. Product record identities are unique by object identity; duplicate records are invalid.
+container member, or an object a joint names directly. A link prototype that has definition bodies
+and a placement, and that is not itself a link, also gets an occurrence at its own placement, unless
+it is in the `Group` of a `PartDesign::Body` or in the `ElementList` of the object that a link's
+`LinkCopyOnChangeGroup` names; such a prototype is a definition placed only by its links. An
+`App::LinkGroup` applies its placement to each object of its `ElementList`. The bodies of a
+definition come only from the `Shape` property of its object. Other shape payloads, such as
+`AddSubShape` and `InternalShape`, are not definition bodies. When `Shape` holds a non-null shape
+whose root location is a rigid transform, that transform is the restored `Placement` of the object
+and replaces the persisted `Placement` value. Otherwise the persisted `Placement` value applies. The
+bodies of a definition that an occurrence uses are in the frame of their object, and the occurrence
+carries its placement. The bodies of a definition that no occurrence uses keep their root location.
+Local prototypes resolve to component ids; cross-document links keep the document token and target
+object without attempting to open the document. Missing local targets, invalid array counts,
+non-finite transforms, and container cycles are validation errors; external targets remain
+intentionally unresolved. The native graph retains every direct container membership, while neutral
+admission requires each member to have at most one distinct parent container. Overlapping parent
+containers are refused instead of selecting by source order. Product record identities are unique by
+object identity; duplicate records are invalid.
 
 Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one
 direct `String` value with a required `value` attribute and no nested element. `Label` may carry the
@@ -672,7 +682,8 @@ rotation norms, and zero quaternions are malformed.
 For nested links, `prototype_transform` records the linked placement chain selected by
 `LinkTransform`; the evaluated occurrence is container × local × prototype, each exactly once.
 The chain resolves each local product target through its unique product record. A local target with
-no product record contributes its persisted `LinkPlacement` or `Placement` matrix directly.
+no product record contributes its persisted `LinkPlacement` matrix or its restored `Placement`
+matrix directly.
 Prototype cycles are invalid in both the native and neutral product graphs.
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain
