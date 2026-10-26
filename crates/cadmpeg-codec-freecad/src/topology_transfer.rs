@@ -17,13 +17,13 @@ use cadmpeg_ir::geometry::pcurve::{PcurveMetadata, PcurveNurbsPoles, WeightedPol
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     sampled::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex},
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::PositiveReal;
@@ -114,20 +114,25 @@ pub(crate) fn transfer(
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<TopologyOccurrence>, CodecError> {
     let mut occurrences = Vec::new();
+    let mut property_owners = HashMap::new();
+    for property in properties {
+        property_owners
+            .entry(property.id.as_str())
+            .or_insert(property.owner.as_str());
+    }
+    let mut positions = ArenaPositions::default();
     for payload in payloads {
         let Some(tables) = Tables::from_payload(payload) else {
             continue;
         };
-        let source_object = properties
-            .iter()
-            .find(|property| property.id == payload.property)
-            .map_or(payload.property.as_str(), |property| {
-                property.owner.as_str()
-            });
+        let source_object = property_owners
+            .get(payload.property.as_str())
+            .copied()
+            .unwrap_or(payload.property.as_str());
         let source_object = source_object.to_owned();
         let source_object = cadmpeg_core::text::NonBlankString::new(source_object)
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
-        let mut builder = match Builder::new(ctx, payload, tables, source_object) {
+        let mut builder = match Builder::new(ctx, payload, tables, source_object, &mut positions) {
             Ok(builder) => builder,
             Err(LocationIdentityError::Decode(error)) => return Err(error),
             Err(LocationIdentityError::Bounded) => {
@@ -224,7 +229,69 @@ impl PlacedEdge {
     }
 }
 
-struct Builder<'a, 'c, 'r> {
+/// Positions of curve, surface, and procedural curve arena entries by identity.
+#[derive(Default)]
+struct ArenaPositions {
+    curves: Positions<CurveId>,
+    surfaces: Positions<SurfaceId>,
+    procedural_curves: Positions<ProceduralCurveId>,
+}
+
+impl ArenaPositions {
+    fn curve<'i>(&mut self, ir: &'i CadIr, id: &CurveId) -> Option<&'i Curve> {
+        let index = self.curves.find(&ir.model.curves, id, |curve| &curve.id)?;
+        ir.model.curves.get(index)
+    }
+
+    fn surface<'i>(&mut self, ir: &'i CadIr, id: &SurfaceId) -> Option<&'i Surface> {
+        ir.model.surfaces.get(self.surface_index(ir, id)?)
+    }
+
+    fn surface_index(&mut self, ir: &CadIr, id: &SurfaceId) -> Option<usize> {
+        self.surfaces
+            .find(&ir.model.surfaces, id, |surface| &surface.id)
+    }
+
+    fn procedural_curve<'i>(
+        &mut self,
+        ir: &'i CadIr,
+        id: &ProceduralCurveId,
+    ) -> Option<&'i ProceduralCurve> {
+        let index = self
+            .procedural_curves
+            .find(&ir.model.procedural_curves, id, |curve| &curve.id)?;
+        ir.model.procedural_curves.get(index)
+    }
+}
+
+/// The first position of each identity in an append-only arena.
+struct Positions<I> {
+    indexed: usize,
+    first: HashMap<I, usize>,
+}
+
+impl<I> Default for Positions<I> {
+    fn default() -> Self {
+        Self {
+            indexed: 0,
+            first: HashMap::new(),
+        }
+    }
+}
+
+impl<I: Clone + Eq + std::hash::Hash> Positions<I> {
+    fn find<T>(&mut self, arena: &[T], id: &I, identity: impl Fn(&T) -> &I) -> Option<usize> {
+        debug_assert!(arena.len() >= self.indexed, "indexed arena shrank");
+        for (index, item) in arena.iter().enumerate().skip(self.indexed) {
+            self.first.entry(identity(item).clone()).or_insert(index);
+        }
+        self.indexed = arena.len();
+        self.first.get(id).copied()
+    }
+}
+
+struct Builder<'a, 'c, 'r, 'p> {
+    positions: &'p mut ArenaPositions,
     procedural_admission: Option<cadmpeg_ir::document::procedural::ProceduralAdmission>,
     ctx: &'c DecodeContext<'r>,
     payload: &'a ShapePayloadRecord,
@@ -244,17 +311,19 @@ struct Builder<'a, 'c, 'r> {
     losses: Vec<LossNote>,
 }
 
-impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
+impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
     fn new(
         ctx: &'c DecodeContext<'r>,
         payload: &'a ShapePayloadRecord,
         tables: Tables<'a>,
         source_object: cadmpeg_core::text::NonBlankString,
+        positions: &'p mut ArenaPositions,
     ) -> Result<Self, LocationIdentityError> {
         let mut locations = Locations::new(ctx, tables)?;
         admit_topology_locations(ctx, tables, &mut locations)?;
         let source_indices = source_topology_indices(ctx, tables, &mut locations)?;
         Ok(Self {
+            positions,
             ctx,
             procedural_admission: None,
             payload,
@@ -1169,13 +1238,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     format!("{source}"),
                 ))
                 .ok()?;
-                occt_subset_local_range(ir, &base, param_range?)
+                occt_subset_local_range(ir, self.positions, &base, param_range?)
             });
         let param_range = match subset_range {
             Some(range) => Some(range),
             None => curve
                 .as_ref()
-                .and_then(|curve| ir.model.curves.iter().find(|item| item.id == *curve))
+                .and_then(|curve| self.positions.curve(ir, curve))
                 .map_or(param_range, |curve| {
                     normalize_occt_curve_range(curve.geometry.solved()?, param_range)
                 }),
@@ -1413,14 +1482,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .map_err(CodecError::malformed)?;
         let cached_id = CurveId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?;
         if self.emitted_curves.insert(cached_id) {
-            let base = ir
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == base_id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("missing curve table entry {source}"))
-                })?;
+            let base = self.positions.curve(ir, &base_id).ok_or_else(|| {
+                CodecError::malformed(format_args!("missing curve table entry {source}"))
+            })?;
             let geometry = transform_curve(&base.geometry, transform)?;
             let source_object = base.source_object.clone();
             ir.model.curves.push(Curve {
@@ -1448,11 +1512,10 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         ))
         .map_err(CodecError::malformed)?;
         for _ in 0..trimmed_layers {
-            let wrapper = ir
-                .model
-                .surfaces
-                .iter_mut()
-                .find(|surface| surface.id == base_id)
+            let wrapper = self
+                .positions
+                .surface_index(ir, &base_id)
+                .map(|index| &mut ir.model.surfaces[index])
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!("missing trimmed surface {base_id}"))
                 })?;
@@ -1476,14 +1539,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             .map_err(CodecError::malformed)?;
         let cached_id = SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?;
         if self.emitted_surfaces.insert(cached_id) {
-            let base = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == base_id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("missing surface table entry {source}"))
-                })?;
+            let base = self.positions.surface(ir, &base_id).ok_or_else(|| {
+                CodecError::malformed(format_args!("missing surface table entry {source}"))
+            })?;
             let geometry = transform_surface(&base.geometry, transform)?;
             let source_object = base.source_object.clone();
             let has_procedural_construction = base.geometry.procedural_construction().is_some();
@@ -2504,32 +2562,23 @@ fn unique_fallback_polygon_representation(
 /// endpoint moves by whole periods into the subset.
 fn occt_subset_local_range(
     ir: &CadIr,
+    positions: &mut ArenaPositions,
     curve: &CurveId,
     range: [FiniteReal; 2],
 ) -> Option<[FiniteReal; 2]> {
-    let construction = ir
-        .model
-        .curves
-        .iter()
-        .find(|item| item.id == *curve)?
+    let construction = positions
+        .curve(ir, curve)?
         .geometry
         .procedural_construction()?;
-    let procedural = ir
-        .model
-        .procedural_curves
-        .iter()
-        .find(|procedural| procedural.id == *construction)?;
+    let procedural = positions.procedural_curve(ir, construction)?;
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) = procedural.definition()
     else {
         return None;
     };
     let [first, last] = subset.parameter_range().endpoints();
     let span = last - first;
-    let period = ir
-        .model
-        .curves
-        .iter()
-        .find(|item| item.id == *subset.source())
+    let period = positions
+        .curve(ir, subset.source())
         .and_then(|source| source.geometry.solved())
         .and_then(occt_curve_period);
     let local = |parameter: f64| {
