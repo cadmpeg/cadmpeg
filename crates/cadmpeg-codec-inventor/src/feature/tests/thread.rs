@@ -251,6 +251,7 @@ fn thread_projects_native_faces_without_size_or_result_bodies() -> TestResult {
         pattern_features: Vec::new(),
         terminators: Vec::new(),
         properties,
+        dimensions: Vec::new(),
         labels: vec![label],
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),

@@ -285,3 +285,38 @@ fn part_without_brep_keeps_blocking_losses() {
         .iter()
         .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
 }
+
+#[test]
+fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct() {
+    let snapshot = crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh();
+    let archive = crate::test_support::body_map_test::f3d_with_empty_model_maps(
+        &snapshot,
+        &[("part.f3d", XREF_ROLE)],
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(!decoded.report().geometry_transferred());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != crate::loss::F3dLossCode::BodylessDesignCarrier.kind()));
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::AssemblyComponentsExternal.kind()));
+    assert!(decoded.report().losses.iter().all(|loss| loss.code
+        != crate::loss::F3dLossCode::MissingGeometryStream.kind()
+        && !loss.message.contains("not a decodable BinaryFile")));
+    assert!(!decoded
+        .ir()
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .contains_key("docstruct_type"));
+}

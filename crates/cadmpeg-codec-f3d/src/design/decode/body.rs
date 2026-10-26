@@ -870,18 +870,24 @@ fn selected_body_map_records(
     }
 }
 
-/// Return the typed model-blob set selected independently in each Design
-/// stream. The modern `.smbh` map takes precedence over snapshot `.smb` maps.
-pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
+pub(crate) struct ModelBodySelection {
+    pub(crate) blob_names: Vec<String>,
+    pub(crate) explicitly_empty: bool,
+}
+
+/// Select model blobs independently in each Design stream.
+pub(crate) fn design_model_selection(
+    scan: &ContainerScan,
+) -> Result<ModelBodySelection, CodecError> {
     let mut model_names = Vec::new();
     let mut carrier_counts = HashMap::<String, usize>::new();
-    let mut saw_design_stream = false;
+    let mut saw_modern_map = false;
+    let mut selected_maps_empty = true;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        saw_design_stream = true;
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) =
             crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
@@ -889,6 +895,7 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
             continue;
         };
         let modern = body_map_records(bytes, &metadata)?;
+        saw_modern_map |= !modern.is_empty();
         let snapshots = snapshot_body_map_records(bytes, &metadata)?;
         for record in modern.iter().chain(&snapshots) {
             if !record.blob_name.is_empty() {
@@ -906,6 +913,9 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
         } else {
             &modern
         };
+        selected_maps_empty &= selected
+            .iter()
+            .all(|record| record.bindings.is_empty() && record.blob_name.is_empty());
         for record in selected
             .iter()
             .filter(|record| !record.blob_name.is_empty())
@@ -930,11 +940,14 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
             archive_counts.insert(name, 1);
         }
     }
-    if !saw_design_stream || carrier_counts.is_empty() {
+    if !saw_modern_map && carrier_counts.is_empty() {
         let mut names = Vec::new();
         names.extend(archive_counts.into_keys());
         names.sort();
-        return Ok(names);
+        return Ok(ModelBodySelection {
+            blob_names: names,
+            explicitly_empty: false,
+        });
     }
     if carrier_counts != archive_counts {
         return Err(CodecError::malformed(
@@ -943,7 +956,10 @@ pub(crate) fn design_model_blob_names(scan: &ContainerScan) -> Result<Vec<String
     }
     model_names.sort();
     model_names.dedup();
-    Ok(model_names)
+    Ok(ModelBodySelection {
+        blob_names: model_names,
+        explicitly_empty: saw_modern_map && selected_maps_empty,
+    })
 }
 
 fn parse_body_map_frame(
@@ -1750,6 +1766,28 @@ mod tests {
     }
 
     #[test]
+    fn empty_modern_map_without_any_brep_is_an_explicit_empty_selection() {
+        let bulk = body_map_bytes(10, 0, &[]);
+        let meta = crate::test_support::streams_test::design_metastream_with_records(
+            &[(
+                crate::design::body::BODY_MAP_CARRIER_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID,
+                crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
+                DESIGN_MODULE_BODY,
+                &[900],
+            )],
+            &[(900, 0)],
+        );
+        let archive =
+            crate::test_support::body_map_test::f3d_with_breps_and_design(&[], &bulk, &meta);
+        with_scan(&archive, |scan| {
+            let selection = super::design_model_selection(scan).unwrap();
+            assert!(selection.explicitly_empty);
+            assert!(selection.blob_names.is_empty());
+        });
+    }
+
+    #[test]
     fn body_map_header_prevents_a_high_word_count_alias() {
         let bytes = body_map_bytes(10, 2, &[(10, (1u64 << 32) + 77), (20, 30)]);
         let bindings =
@@ -1831,7 +1869,7 @@ mod tests {
                     .unwrap()
                     .visible
             );
-            let names = super::design_model_blob_names(scan).unwrap();
+            let names = super::design_model_selection(scan).unwrap().blob_names;
             assert_eq!(names, ["BREP.synthetic.smbh"]);
             let bindings = super::decode_design_body_bindings(scan, None, &[]).unwrap();
             assert_eq!(bindings.len(), 1);

@@ -926,14 +926,15 @@ impl ComponentInserts {
             let Some(construction) = scope.component_insert_construction() else {
                 continue;
             };
-            let reference = crate::xref::component_insert_reference(references, construction);
+            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+            let reference =
+                crate::xref::component_insert_reference(references, stream, construction);
             let Some(authored) = &authored else {
                 if reference.is_none() {
                     inserts.unordered += 1;
                 }
                 continue;
             };
-            let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
             if !authored.contains_key(&(stream, scope.record_index)) {
                 continue;
             }
@@ -1439,6 +1440,62 @@ mod tests {
             ],
             components,
         )
+    }
+
+    #[test]
+    fn empty_final_body_set_places_local_and_nested_groups_but_pending_bodies_defer() {
+        let (carriers, components) = nested_fixture();
+        let empty = BTreeSet::new();
+        for bodies in [Some(&empty), None] {
+            let projection = super::project_local_components(&super::LocalComponentSources {
+                scopes: &[],
+                occurrences: &carriers,
+                components: &components,
+                body_bindings: &[],
+                bodies,
+                root_ordinal_start: 0,
+                limits: cadmpeg_core::decode::ResourceLimits::default(),
+            })
+            .unwrap();
+            if bodies.is_some() {
+                assert!(projection.losses.is_empty(), "{:?}", projection.losses);
+                assert_eq!(projection.definitions.len(), 3);
+                assert!(projection
+                    .definitions
+                    .iter()
+                    .all(|definition| definition.bodies.is_empty()));
+                assert_eq!(projection.occurrences.len(), 4);
+                let parent =
+                    crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
+                for child in &carriers[1..] {
+                    let id =
+                        crate::ids::nested_component_occurrence_id(&parent, &child.occurrence_guid);
+                    let occurrence = projection
+                        .occurrences
+                        .iter()
+                        .find(|occurrence| occurrence.id == id)
+                        .unwrap();
+                    assert_eq!(
+                        occurrence.parent,
+                        OccurrenceParent::Occurrence {
+                            occurrence: parent.clone()
+                        }
+                    );
+                }
+            } else {
+                assert!(projection.occurrences.is_empty());
+                assert!(projection.definitions.is_empty());
+                assert!(projection
+                    .losses
+                    .iter()
+                    .all(|loss| loss.code
+                        == crate::loss::F3dLossCode::LocalOccurrenceUnplaced.kind()));
+                assert!(projection
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains("body ownership is not known")));
+            }
+        }
     }
 
     #[test]
@@ -1951,6 +2008,11 @@ mod tests {
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
+            placement_source: Some(crate::records::xref::XrefPlacementSource {
+                stream: STREAM.into(),
+                carrier_record_index: 52,
+                owner: None,
+            }),
             from: "root.f3d".to_owned().try_into().unwrap(),
             relative_path: "part.f3d".to_owned().try_into().unwrap(),
             neutron_role: "resolved-role".to_owned().try_into().unwrap(),

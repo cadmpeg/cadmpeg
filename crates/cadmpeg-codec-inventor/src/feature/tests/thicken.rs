@@ -165,6 +165,7 @@ fn fixture() -> Fixture {
         features: Vec::new(),
         pattern_features: Vec::new(),
         terminators: Vec::new(),
+        dimensions: Vec::new(),
         properties: Vec::new(),
         labels: Vec::new(),
         entity_style_links: Vec::new(),

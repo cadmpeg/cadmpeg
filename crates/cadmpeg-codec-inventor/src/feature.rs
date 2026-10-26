@@ -3,10 +3,7 @@
 use cadmpeg_core::decode::unique_index;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
-use cadmpeg_ir::features::{
-    AngularTermination, PlanarProfileRef, ProfileRef, RevolutionAxis, RevolveConstruction,
-    RevolveExtent,
-};
+use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, RevolveConstruction};
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -43,6 +40,7 @@ mod history;
 mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod profile;
+pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
 mod split;
 
@@ -163,6 +161,7 @@ pub(crate) struct FeatureInventory {
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
+    pub(crate) dimensions: Vec<revolve::Dimension>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
     pub(crate) entity_style_links: Vec<PmDcEntityStyleLink>,
     pub(crate) kernel_entity_links: Vec<PmDcKernelEntityLink>,
@@ -177,6 +176,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) input_topologies: Vec<cadmpeg_ir::features::FeatureInputTopology>,
     pub(crate) unresolved_features: usize,
     pub(crate) unresolved_states: usize,
+    pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
     /// profile tables, by sketch id, in table order.
     pub(crate) added_profiles: HashMap<String, Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>>,
@@ -581,6 +581,7 @@ pub(crate) fn inventory(
         pattern_features: Vec::new(),
         terminators: Vec::new(),
         properties: Vec::new(),
+        dimensions: Vec::new(),
         labels: Vec::new(),
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
@@ -640,6 +641,19 @@ pub(crate) fn inventory(
                             segment.pair.token.key(),
                             record.ordinal,
                             "admit Inventor sheet-metal flange",
+                        )
+                    })
+                }
+                revolve::DIMENSION_TYPE => {
+                    revolve::parse_dimension(ctx, record.payload).and_then(|dimension| {
+                        push_record(
+                            ctx,
+                            &mut inventory.dimensions,
+                            dimension,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor feature dimension",
                         )
                     })
                 }
@@ -936,6 +950,7 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         FACE_ITEM_TYPE => Some(parse_face_item),
         TERMINATION_FLAG_TYPE => Some(parse_termination_flag),
         WORK_AXIS_TYPE => Some(parse_work_axis),
+        revolve::CONTROL_TYPE => Some(parse_auxiliary_enum),
         _ => sheet_metal::property_parser(type_id).or_else(|| split::property_parser(type_id)),
     }
 }
@@ -1826,6 +1841,7 @@ impl FeatureFamily {
 struct ProjectionIndex<'a> {
     result_model: Option<&'a cadmpeg_ir::document::Model>,
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
+    dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
     sketch_entities: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketchEntity>>,
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
     parameters: HashMap<(&'a str, u32), Option<&'a crate::design::PmDcParameter>>,
@@ -1888,6 +1904,7 @@ pub(crate) fn project(
             input_topologies: Vec::new(),
             unresolved_features: total,
             unresolved_states: 0,
+            revolve_losses: Vec::new(),
             added_profiles: HashMap::new(),
         });
     }
@@ -1981,6 +1998,15 @@ pub(crate) fn project(
         } else {
             HashMap::new()
         },
+        dimensions: unique_index(inventory.dimensions.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record,
+            )
+        })),
         properties: unique_properties,
         parameters: unique_parameters,
         parameter_values: unique_index(
@@ -2060,6 +2086,7 @@ pub(crate) fn project(
         })
     };
     let mut projected = Vec::new();
+    let mut revolve_losses = Vec::new();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let label = label_of(feature.identity.record_ordinal);
@@ -2081,7 +2108,9 @@ pub(crate) fn project(
                 FeatureFamily::Sweep | FeatureFamily::Loft => {
                     loft_sweep::projection::project(ctx, feature, label, &index, family)
                 }
-                FeatureFamily::Revolve => project_revolve(ctx, feature, label, &index),
+                FeatureFamily::Revolve => {
+                    project_revolve(ctx, feature, label, &index, &mut revolve_losses)
+                }
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2109,6 +2138,14 @@ pub(crate) fn project(
                 });
             }
             None if history.placement(feature.identity.record_ordinal).is_some() => {
+                if label.is_some_and(|label| label.class_id() == REVOLVE_CLASS_ID) {
+                    revolve_losses.push(
+                        revolve::indexed_operands(feature, &index)
+                            .err()
+                            .unwrap_or(revolve::NativeReason::ProfileOrResult)
+                            .note(),
+                    );
+                }
                 projected.push(HistoryItem {
                     record: feature.identity.record_ordinal,
                     kind: history::HistoryNodeKind::Feature,
@@ -2207,6 +2244,7 @@ pub(crate) fn project(
                 CodecError::malformed("Inventor feature projection exceeds inventory")
             })?,
         unresolved_states: unresolved_states.min(neutral),
+        revolve_losses,
         features,
         result_topologies,
         input_topologies,
@@ -2751,48 +2789,20 @@ fn project_extrusion(
     Some(Ok((feature, result)))
 }
 
-/// A revolution of the boundary-patch profile about the slot-2 work axis.
-/// Extent value 3 is a full revolution; other extents stay native.
 fn project_revolve(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let op = match enum16(source, 0, PmDcFeatureEnumFamily::PartOperation, index)? {
-        1 => BooleanOp::NewBody,
-        2 => BooleanOp::Cut,
-        3 => BooleanOp::Join,
-        4 => BooleanOp::Intersect,
-        _ => return None,
-    };
+    let revolve::Operands {
+        axis,
+        extent,
+        op,
+        unresolved_control,
+    } = revolve::indexed_operands(source, index).ok()?;
     let boundary = BoundaryProfile::new(source, label, 1, index)?;
-    let PmDcFeaturePropertyKind::WorkAxis { origin, span, .. } =
-        &slot_property(source, 2, index)?.kind
-    else {
-        return None;
-    };
-    let origin = origin.map(cadmpeg_ir::scalar::FiniteReal::get);
-    let span = span.map(cadmpeg_ir::scalar::FiniteReal::get);
-    let direction =
-        cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(span[0], span[1], span[2]))?;
-    let axis = RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-            origin[0] * 10.0,
-            origin[1] * 10.0,
-            origin[2] * 10.0,
-        ))?,
-        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
-        reference: None,
-    };
-    if enum16(source, 3, PmDcFeatureEnumFamily::Extent, index)? != REVOLVE_EXTENT_FULL {
-        return None;
-    }
-    let extent = RevolveExtent::OneSided {
-        termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)?,
-        },
-    };
     let (feature_id, result) = match feature_result(ctx, source, 17, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -2827,6 +2837,11 @@ fn project_revolve(
         ),
         native_ref: Some(source.id()),
     };
+    if unresolved_control {
+        losses.push(crate::loss::InventorLossCode::FeatureRevolveControlUnresolved.note(
+            "Projected Inventor revolve with its true slot-16 control retained natively with unresolved meaning.",
+        ));
+    }
     Some(Ok((feature, result)))
 }
 
@@ -4127,6 +4142,7 @@ mod tests {
             pattern_features: Vec::new(),
             terminators: Vec::new(),
             properties: Vec::new(),
+            dimensions: Vec::new(),
             labels: Vec::new(),
             entity_style_links: Vec::new(),
             kernel_entity_links: Vec::new(),
@@ -4596,6 +4612,7 @@ mod tests {
         ProjectionIndex {
             result_model: None,
             edge_names: std::collections::HashMap::new(),
+            dimensions: std::collections::HashMap::new(),
             sketch_entities: std::collections::HashMap::new(),
             properties: super::unique_index(properties.iter().map(|record| {
                 (

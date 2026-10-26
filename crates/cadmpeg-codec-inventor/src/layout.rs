@@ -151,3 +151,15 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_legacy {
     /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.
     pub(crate) const THICKNESS: usize = 26;
 }
+
+/// Byte offsets for the `pm_dc_feature_dimension_tail` record.
+///
+/// Spec §13. Record length 9 B.
+///
+/// ```text
+/// The tail ends the record after the annotation list data.
+/// ```
+pub(crate) mod pm_dc_feature_dimension_tail {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 9;
+}
