@@ -71,6 +71,14 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
+    /// Revolve operands differ from the admitted construction forms.
+    FeatureRevolveOperandsNative,
+    /// Revolve extents retain unresolved angular termination operands.
+    FeatureRevolveExtentNative,
+    /// Fixed-angle revolutions retain an unresolved direction control.
+    FeatureRevolveDirectionNative,
+    /// A projected revolve retains an unresolved Boolean control natively.
+    FeatureRevolveControlUnresolved,
     /// Sweep construction controls have no exact neutral interpretation.
     FeatureSweepControlsUnresolved,
     /// Loft construction controls and section conditions have no exact neutral interpretation.
@@ -154,6 +162,10 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureShellDefinitionPartial,
+        Self::FeatureRevolveOperandsNative,
+        Self::FeatureRevolveExtentNative,
+        Self::FeatureRevolveDirectionNative,
+        Self::FeatureRevolveControlUnresolved,
         Self::FeatureSweepControlsUnresolved,
         Self::FeatureLoftControlsUnresolved,
         Self::FeatureStateUnresolved,
@@ -210,6 +222,10 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
+            Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
+            Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
+            Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
+            Self::FeatureRevolveControlUnresolved => "feature.revolve-control-unresolved",
             Self::FeatureSweepControlsUnresolved => "feature.sweep-controls-unresolved",
             Self::FeatureLoftControlsUnresolved => "feature.loft-controls-unresolved",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
@@ -279,6 +295,10 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureShellDefinitionPartial
+            | Self::FeatureRevolveOperandsNative
+            | Self::FeatureRevolveExtentNative
+            | Self::FeatureRevolveDirectionNative
+            | Self::FeatureRevolveControlUnresolved
             | Self::FeatureSweepControlsUnresolved
             | Self::FeatureLoftControlsUnresolved
             | Self::FeatureProfileBodyUndecoded
@@ -365,6 +385,10 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.shell-definition-partial",
+                "feature.revolve-operands-native",
+                "feature.revolve-extent-native",
+                "feature.revolve-direction-native",
+                "feature.revolve-control-unresolved",
                 "feature.sweep-controls-unresolved",
                 "feature.loft-controls-unresolved",
                 "feature.state-unresolved",

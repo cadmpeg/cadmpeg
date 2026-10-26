@@ -164,6 +164,7 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
         ],
         pattern_features: Vec::new(),
         terminators: vec![terminator(5), terminator(22)],
+        dimensions: Vec::new(),
         properties: Vec::new(),
         labels: vec![
             label(

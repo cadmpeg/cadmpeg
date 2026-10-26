@@ -127,3 +127,15 @@ pub(crate) mod kernel_entity_link {
     #[cfg(test)]
     pub(crate) const ENTITY_ID: usize = 15;
 }
+
+/// Byte offsets for the `pm_dc_feature_dimension_tail` record.
+///
+/// Spec §13. Record length 9 B.
+///
+/// ```text
+/// The tail ends the record after the annotation list data.
+/// ```
+pub(crate) mod pm_dc_feature_dimension_tail {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 9;
+}

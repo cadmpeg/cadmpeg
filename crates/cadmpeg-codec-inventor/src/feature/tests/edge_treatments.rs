@@ -268,6 +268,7 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
             pattern_features: Vec::new(),
             terminators: Vec::new(),
             properties: chamfer_properties(form),
+            dimensions: Vec::new(),
             labels: vec![test_label(100, 1, CHAMFER_CLASS_ID, &[])],
             entity_style_links: Vec::new(),
             kernel_entity_links: Vec::new(),

@@ -695,3 +695,52 @@ Parsed by:
 | 3 | `generator` | `token_stream` | little | spec | `generator` is the generating feature's content-header source index |
 | 4 | `sentinel` | `token_stream` | little | spec | `generator`, and −1 |
 | 5 | `family_payload` | `array` | little | spec | Family-selected integer tokens. |
+
+## `pm_dc_feature_dimension_prefix`
+
+Spec §13 · layout: byte offsets · size: 6 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/revolve.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value:u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id:u16 |
+
+## `pm_dc_feature_dimension_tail`
+
+Spec §13 · layout: byte offsets · size: 9 B
+
+The tail ends the record after the annotation list data.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/revolve.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `annotation` | `bytes[5]` | n/a | spec | five annotation bytes |
+| 5 | 4 | `parameter` | `u32` | little | spec | parameter reference |
+
+## `pm_dc_feature_dimension_list_prefix`
+
+Spec §13 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/revolve.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | marker:u32 = 0x30000002 · value `805306370` |
+| 4 | 4 | `item_count` | `u32` | little | spec | item_count:u32 |
+
+## `pm_dc_feature_dimension_list_metadata`
+
+Spec §13 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/revolve.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `values` | `u32[2]` | little | spec | two u32 metadata words |
