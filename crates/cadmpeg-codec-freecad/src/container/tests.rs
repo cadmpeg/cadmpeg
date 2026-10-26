@@ -650,3 +650,32 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
     }
 }
+
+#[test]
+fn byte_coverage_checks_each_entry_that_shares_a_name_against_its_spans() {
+    use crate::native::{ByteSpan, EntryRecord, LogicalClassification, LogicalSpan};
+    let entry = |id: &str| {
+        EntryRecord::new(
+            id.into(),
+            "dup".into(),
+            cadmpeg_core::container::ContainerRole::Auxiliary,
+            Vec::new(),
+            vec![1, 2, 3],
+        )
+        .unwrap()
+    };
+    let entries = [entry("fcstd:native:entry#a"), entry("fcstd:native:entry#b")];
+    let logical = [LogicalSpan {
+        id: "fcstd:native:logical-span#0".into(),
+        entry: "dup".into(),
+        span: ByteSpan::try_new(0, 3).unwrap(),
+        classification: LogicalClassification::Structural,
+    }];
+    let physical = [crate::native::ArchiveSpan {
+        id: "fcstd:native:archive-span#0".into(),
+        span: ByteSpan::try_new(0, 10).unwrap(),
+        role: crate::native::ArchiveSpanRole::LocalName("dup".into()),
+    }];
+    assert!(super::byte_coverage(&physical, &entries[..1], &logical, 10).exact);
+    assert!(super::byte_coverage(&physical, &entries, &logical, 10).exact);
+}

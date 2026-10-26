@@ -760,15 +760,26 @@ pub(crate) fn byte_coverage(
         && ordered_physical
             .last()
             .is_some_and(|span| span.span.end() == physical_byte_len);
+    let entry_names = entries
+        .iter()
+        .map(EntryRecord::name)
+        .collect::<HashSet<_>>();
     let mut logical_exact = logical
         .iter()
-        .all(|span| entries.iter().any(|entry| entry.name() == span.entry));
+        .all(|span| entry_names.contains(span.entry.as_str()));
     if logical_exact {
+        let mut spans_by_entry = HashMap::<&str, Vec<&LogicalSpan>>::new();
+        for span in logical {
+            spans_by_entry
+                .entry(span.entry.as_str())
+                .or_default()
+                .push(span);
+        }
         for entry in entries {
-            let mut spans = Vec::new();
-            for span in logical.iter().filter(|span| span.entry == entry.name()) {
-                spans.push(span);
-            }
+            let mut spans = spans_by_entry
+                .get(entry.name())
+                .cloned()
+                .unwrap_or_default();
             spans.sort_by_key(|left| left.span.start());
             let exact = if entry.byte_len() == 0 {
                 spans.is_empty()
