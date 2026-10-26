@@ -598,9 +598,9 @@ authoritative. A uniform `ScaleVector` takes the scalar `Scale` value on all axe
 has the built-in default one. Both original carriers remain independently persisted properties. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
 a `value` bit string. Its characters are ordered most-significant bit first: for a string of length
 `n`, character `n - 1 - i` is `1` when `ElementList` element `i` is visible and `0` when it is
-hidden. The typed native property record retains the complete bit string. CADIR decision:
-`VisibilityList` remains a native product carrier and does not populate `Occurrence.visible`; that
-neutral field remains unset for product occurrences. `PlacementList` and
+hidden. The typed native property record retains the complete bit string. For array elements,
+`VisibilityList` populates `Occurrence.visible`. For other occurrences, the object's view-provider
+`Visibility` populates `Occurrence.visible`. `PlacementList` and
 `ScaleList` are respectively `App::PropertyPlacementList` and `App::PropertyVectorList`, each
 with one `PlacementList` or `VectorList` root and at most one named side entry. `LinkPlacement`,
 `Placement`, and the inherited component placement are `App::PropertyPlacement` properties with
