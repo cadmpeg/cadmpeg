@@ -99,7 +99,7 @@ pub(crate) fn decode<'a>(
     if merged > 0 {
         fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
         report.notes.push(format!(
-            "{merged} merged component(s) retain occurrence-scoped model entities, native records, and source bytes"
+            "{merged} resolved external occurrence(s) retain shared member definitions, native records, and source bytes"
         ));
     }
     report.notes.push(format!(

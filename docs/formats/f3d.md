@@ -315,6 +315,10 @@ The root member can instead be an F2D drawing. In this form, the root design obj
 
 Reference resolution is member-local and recursive. Each member's `RedirectionsStream.dat` maps its occurrence-role strings to `relativePath` values naming other `.f3d` members, whose lineage and version URNs match those members' design objects. A child occurrence transform maps the child model into its containing member; ancestor occurrence transforms then map that complete result toward the root frame. A member path cannot recur in one active reference chain.
 
+Each resolved referenced design has one product definition. Its bodies use the design frame. A body's own transform maps its carrier into that frame. Bodies owned by local component definitions retain those owners. Every occurrence that places the referenced design has a local prototype reference to its definition. Repeated placements share the definition and its bodies. The document path, lineage, version, and source placement remain in the native xref records.
+
+Nested member occurrences form a separate tree below each placing occurrence. Their identities include the instance path, and each matrix maps into the direct parent's frame. For a definition body, `W(body) = W(occurrence path) * body-in-definition`. Occurrence placement does not change a definition body's own transform. The root document's bodies retain their existing frames and ownership.
+
 ---
 
 ## 2. B-rep streams

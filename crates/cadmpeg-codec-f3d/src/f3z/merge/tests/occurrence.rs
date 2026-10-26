@@ -16,8 +16,8 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::Native;
 
 use crate::f3z::merge::{
-    append_feature_history, compose_transforms, extend_native, occurrence_key,
-    reparent_component_roots, OccurrenceScope,
+    append_feature_history, extend_native, occurrence_key, reparent_component_roots,
+    OccurrenceScope,
 };
 use crate::records::xref::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
@@ -84,7 +84,7 @@ fn component_feature_history_refuses_an_exhausted_ordinal_domain() {
 }
 
 #[test]
-fn occurrence_transform_composes_outside_existing_body_transform() {
+fn member_definition_preserves_the_body_transform_inside_each_placement() {
     let outer = Transform::affine([
         [0.0, -1.0, 0.0, 20.0],
         [1.0, 0.0, 0.0, 30.0],
@@ -98,8 +98,19 @@ fn occurrence_transform_composes_outside_existing_body_transform() {
     ])
     .expect("affine transform");
 
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+    model.bodies[0].transform = Some(inner);
+    crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
     assert_eq!(
-        compose_transforms(outer, inner).unwrap().rows(),
+        model.product_definitions[0].bodies,
+        [model.bodies[0].id.clone()]
+    );
+    assert_eq!(
+        outer
+            .compose(model.bodies[0].transform.unwrap())
+            .unwrap()
+            .rows(),
         [
             [0.0, -1.0, 0.0, 20.0],
             [1.0, 0.0, 0.0, 35.0],
@@ -716,7 +727,16 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         references: vec![reference],
         ..Default::default()
     };
-    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.bodies[0].transform = Some(
+        Transform::affine([
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 1.0, 0.0, 7.0],
+            [0.0, 0.0, 1.0, 11.0],
+        ])
+        .unwrap(),
+    );
+    let root_body = ir.model.bodies[0].clone();
     let mut children = Vec::new();
     for index in 0..2 {
         let parent = OccurrenceId::mint(format!("f3d:model:occurrence#group-{index}")).unwrap();
@@ -776,22 +796,25 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         scan: &scan,
         archive: &archive,
         stack: vec!["root.f3d".to_owned()],
+        members: std::collections::BTreeMap::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
     assert_eq!(merged, 4);
     assert_eq!(ir.model.bodies.len(), 2);
-    let translations = ir
+    assert_eq!(ir.model.bodies[0], root_body);
+    assert!(ir.model.bodies[1].transform.is_none());
+    assert_eq!(ir.model.product_definitions.len(), 2);
+    let leaf_definition = ir
         .model
-        .bodies
+        .product_definitions
         .iter()
-        .map(|body| {
-            let rows = body.transform.unwrap().rows();
-            [rows[0][3], rows[1][3]]
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(translations, [[25.0, 60.0], [100.0, 5.0]]);
-    assert_ne!(ir.model.bodies[0].id, ir.model.bodies[1].id);
+        .find(|definition| !definition.bodies.is_empty())
+        .unwrap();
+    assert_eq!(leaf_definition.bodies, [ir.model.bodies[1].id.clone()]);
+    let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences).unwrap();
+    let mut translations = Vec::new();
+    let mut member_definitions = Vec::new();
     for child in children {
         let imported = ir
             .model
@@ -804,8 +827,47 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
                     }
             })
             .unwrap();
+        let placing = ir
+            .model
+            .occurrences
+            .iter()
+            .find(|item| item.id == child)
+            .unwrap();
+        let PrototypeReference::Local { definition } = &placing.prototype else {
+            panic!("member placement must resolve locally");
+        };
+        member_definitions.push(definition.clone());
+        assert_eq!(
+            imported.prototype,
+            PrototypeReference::Local {
+                definition: leaf_definition.id.clone(),
+            }
+        );
+        let world =
+            cadmpeg_test_support::assembly::resolved_transform(&graph, &imported.id).unwrap();
+        let body_world = world
+            .compose(
+                ir.model.bodies[1]
+                    .transform
+                    .unwrap_or_else(Transform::identity),
+            )
+            .unwrap();
+        let rows = body_world.rows();
+        translations.push([rows[0][3], rows[1][3]]);
         assert_eq!(imported.transform.rows()[1][3], 5.0);
     }
+    let references: Vec<XrefReference> = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as_for_decode(&ctx, "xref_references")
+        .unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].relative_path.as_str(), "leaf.f3d");
+    assert_eq!(references[0].neutron_role.as_str(), XREF_ROLE);
+    assert_eq!(references[0].transform.unwrap().rows(), child_matrix);
+    assert_eq!(translations, [[25.0, 60.0], [100.0, 5.0]]);
+    assert_eq!(member_definitions[0], member_definitions[1]);
     assert_eq!(ir.model.occurrences[1].transform.rows()[0][3], 20.0);
     assert_eq!(ir.model.occurrences[3].transform.rows()[0][3], 20.0);
 }
@@ -829,12 +891,78 @@ fn imported_definition_bodies_keep_their_definition_frame() {
             native_ref: None,
         });
     let original = model.bodies[0].transform;
-    let transform = Transform::affine([
-        [1.0, 0.0, 0.0, 20.0],
-        [0.0, 1.0, 0.0, 30.0],
-        [0.0, 0.0, 1.0, 0.0],
-    ])
-    .unwrap();
-    crate::f3z::merge::apply_occurrence_transform(&mut model, transform).unwrap();
+    let mut free_body = model.bodies[0].clone();
+    free_body.id = BodyId::mint("f3d:model:body#free").unwrap();
+    free_body.regions.clear();
+    free_body.transform = Some(
+        Transform::affine([
+            [1.0, 0.0, 0.0, 20.0],
+            [0.0, 1.0, 0.0, 30.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap(),
+    );
+    model.bodies.push(free_body.clone());
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let definition = crate::f3z::merge::define_member(&ctx, &mut model, "member").unwrap();
     assert_eq!(model.bodies[0].transform, original);
+    assert_eq!(model.bodies[1], free_body);
+    assert_eq!(model.product_definitions[1].id, definition);
+    assert_eq!(model.product_definitions[1].bodies, [free_body.id]);
+}
+
+#[test]
+fn shared_members_check_cycles_for_each_instance_path() {
+    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::products::PrototypeReference;
+    use std::io::Cursor;
+
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("first.f3d", "first-role"), ("second.f3d", "second-role")],
+    );
+    let first = f3d_without_brep(
+        "assembly-design",
+        "first.f3d",
+        &[("second.f3d", "child-role")],
+    );
+    let second = f3d_without_brep(
+        "assembly-design",
+        "second.f3d",
+        &[("first.f3d", "child-role")],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("first.f3d", &first),
+            ("second.f3d", &second),
+        ],
+    );
+    let decoded = crate::F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.product_definitions.len(), 2);
+    assert_eq!(decoded.ir().model.occurrences.len(), 6);
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .filter(|item| matches!(item.prototype, PrototypeReference::Local { .. }))
+            .count(),
+        4
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::F3dLossCode::XrefCycle.kind())
+            .count(),
+        2
+    );
 }
