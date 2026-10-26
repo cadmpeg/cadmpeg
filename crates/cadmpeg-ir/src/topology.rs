@@ -1491,6 +1491,13 @@ struct PointWire {
 }
 
 impl Point {
+    /// Attach the typed native carrier that supplies this record.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// The refusal of a position with a non-finite coordinate.
     pub const NON_FINITE_POSITION: &'static str = "point position coordinates must be finite";
 

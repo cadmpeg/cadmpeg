@@ -359,11 +359,13 @@ fn procedural_record_comparison_includes_actual_unique_carrier_wire_links() {
 fn actual_native_reference_groups_cover_registered_arenas_and_compare_complete_values() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut source = model();
-    source.points[0].native_ref = Some("test:native:entry#actual".to_owned());
+    source.points[0] = source.points[0]
+        .clone()
+        .with_native_ref(Some("test:native:entry#actual".to_owned()));
     source.attributes[0].native_ref = Some("test:native:entry#actual".to_owned());
     let mut peer = source.points[0].clone();
     peer.id = PointId::mint("test:model:point#peer").unwrap();
-    peer.native_ref = Some("test:native:entry#peer".to_owned());
+    peer = peer.with_native_ref(Some("test:native:entry#peer".to_owned()));
     source.points.push(peer);
     let source_index = ModelRecordIndex::new(&ctx, &source).unwrap();
     let groups = source_index.native_reference_groups(&ctx).unwrap();
@@ -384,7 +386,7 @@ fn actual_native_reference_groups_cover_registered_arenas_and_compare_complete_v
         .agrees_with_index(&ctx, &source_index, members)
         .unwrap());
     current = source.clone();
-    current.points[0].native_ref = None;
+    current.points[0] = current.points[0].clone().with_native_ref(None);
     assert!(!ModelRecordIndex::new(&ctx, &current)
         .unwrap()
         .agrees_with_index(&ctx, &source_index, members)
@@ -439,4 +441,70 @@ fn captured_identity_getter_returns_actual_arena_qualified_bytes() {
         .get("points", "test:model:point#first-suffix")
         .is_none());
     assert!(members.contains("points", source.points[0].id.as_str()));
+}
+
+#[test]
+fn constructed_mesh_link_participates_in_exact_projection_ownership() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mesh = crate::tessellation::Tessellation::new(
+        crate::tessellation::TessellationId::mint("test:model:tessellation#projected").unwrap(),
+        crate::tessellation::TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .unwrap()
+    .with_native_ref(Some("test:native:entry#mesh".to_owned()));
+    let mut source = Model::default();
+    source.tessellations.push(mesh);
+    let index = ModelRecordIndex::new(&ctx, &source).unwrap();
+    let groups = index.native_reference_groups(&ctx).unwrap();
+    let members = groups.get("test:native:entry#mesh").unwrap();
+    assert!(members.contains("tessellations", "test:model:tessellation#projected"));
+    assert_eq!(members.iter().count(), 1);
+    assert!(ModelRecordIndex::new(&ctx, &source)
+        .unwrap()
+        .agrees_with_index(&ctx, &index, members)
+        .unwrap());
+    let mut links = Vec::new();
+    crate::schema::native_links::visit_native_references(
+        &source,
+        &mut |arena, owner, id, native| {
+            links.push((arena, owner, id.to_owned(), native.map(str::to_owned)));
+        },
+    );
+    assert_eq!(
+        links,
+        vec![(
+            "tessellations",
+            std::any::type_name::<crate::tessellation::Tessellation>(),
+            "test:model:tessellation#projected".to_owned(),
+            Some("test:native:entry#mesh".to_owned()),
+        )]
+    );
+    let mut retargeted = source.clone();
+    retargeted.tessellations[0] = retargeted.tessellations[0]
+        .clone()
+        .with_native_ref(Some("test:native:entry#other".to_owned()));
+    assert!(!ModelRecordIndex::new(&ctx, &retargeted)
+        .unwrap()
+        .agrees_with_index(&ctx, &index, members)
+        .unwrap());
+    let mut detached = source.clone();
+    detached.tessellations[0] = detached.tessellations[0].clone().with_native_ref(None);
+    assert!(!ModelRecordIndex::new(&ctx, &detached)
+        .unwrap()
+        .agrees_with_index(&ctx, &index, members)
+        .unwrap());
+    assert!(ModelRecordIndex::new(&ctx, &detached)
+        .unwrap()
+        .native_reference_groups(&ctx)
+        .unwrap()
+        .get("test:native:entry#mesh")
+        .is_none());
 }

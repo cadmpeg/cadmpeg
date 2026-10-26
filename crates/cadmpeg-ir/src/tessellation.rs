@@ -1125,6 +1125,13 @@ fn require_texture_assignments(
 }
 
 impl Tessellation {
+    /// Attach the typed native carrier that supplies this record.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// Build a tessellation from its mesh rows and channels.
     pub fn new(
         id: TessellationId,
