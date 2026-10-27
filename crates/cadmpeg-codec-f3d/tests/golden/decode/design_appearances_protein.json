@@ -299,6 +299,27 @@
     },
     "native": {
       "f3d": {
+        "act_component_links": [
+          {
+            "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-component-link#370",
+            "byte_offset": 370,
+            "class_tag": "267",
+            "components_root_record": 7,
+            "components_root_record_offset": 451,
+            "display_name": "(Unsaved)",
+            "display_name_offset": 431,
+            "entity_id": "0_3",
+            "entity_id_offset": 406,
+            "instance_root_record": 12,
+            "instance_root_record_offset": 392,
+            "record_index": 9,
+            "record_index_offset": 377,
+            "registry_flag": 1,
+            "registry_flag_offset": 423,
+            "tracked_entity_record": 3,
+            "tracked_entity_record_offset": 413
+          }
+        ],
         "act_entities": [
           {
             "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-entity#7",
@@ -347,27 +368,6 @@
             "name": "PhysicalMaterial",
             "name_offset": 278,
             "ordinal": 1
-          }
-        ],
-        "act_root_components": [
-          {
-            "id": "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-root-component#370",
-            "byte_offset": 370,
-            "class_tag": "267",
-            "components_root_record": 7,
-            "components_root_record_offset": 451,
-            "display_name": "(Unsaved)",
-            "display_name_offset": 431,
-            "entity_id": "0_3",
-            "entity_id_offset": 406,
-            "instance_root_record": 12,
-            "instance_root_record_offset": 392,
-            "record_index": 9,
-            "record_index_offset": 377,
-            "registry_flag": 1,
-            "registry_flag_offset": 423,
-            "tracked_entity_record": 3,
-            "tracked_entity_record_offset": 413
           }
         ],
         "act_table_references": [
@@ -1628,6 +1628,11 @@
           "offset": 0,
           "tag": "design_type"
         },
+        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-component-link#370": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "ACTComponentLink"
+        },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-entity#7": {
           "stream": "f3d:native",
           "offset": 0,
@@ -1647,11 +1652,6 @@
           "stream": "f3d:native",
           "offset": 0,
           "tag": "ACTRegistryChannel"
-        },
-        "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-root-component#370": {
-          "stream": "f3d:native",
-          "offset": 0,
-          "tag": "ACTRootComponent"
         },
         "f3d:FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat:act-table-reference#169": {
           "stream": "f3d:native",

@@ -63,7 +63,7 @@ pub(super) fn write_new(
     if !native.act_entities.is_empty()
         || !native.act_guids.is_empty()
         || !native.act_registry_channels.is_empty()
-        || !native.act_root_components.is_empty()
+        || !native.act_component_links.is_empty()
         || !native.act_table_references.is_empty()
     {
         return Err(CodecError::NotImplemented(

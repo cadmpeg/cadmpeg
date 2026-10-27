@@ -1517,7 +1517,7 @@ pub(crate) fn hidden_body_geometry_and_visibility_round_trip() {
     );
     let transformed_text = export(&transformed);
     assert!(transformed_text.contains("MAPPED_ITEM"));
-    assert!(!transformed_text.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
+    assert!(transformed_text.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(transformed_text),

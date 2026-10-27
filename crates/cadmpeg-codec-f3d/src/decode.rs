@@ -307,14 +307,6 @@ fn report_unresolved_configuration_rules(
     }
 }
 
-fn report_unretained_act_component_links(report: &mut DecodeBody, count: usize) {
-    if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ActComponentLinkUnresolved, format_args!(
-            "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
-        ),);
-    }
-}
-
 fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
     if count != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::MaterialDistanceUnitUntyped, format_args!(
@@ -2345,7 +2337,6 @@ struct DecodeSessionState {
 
 struct DeferredBodylessInputs {
     model_body_maps_empty: bool,
-    non_root_act: usize,
     has_appearance: bool,
     mesh_projection: MeshProjection,
 }
@@ -2759,20 +2750,24 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Result<FinalizePath, CodecError> {
         let scan = self.scan;
         let act = crate::act::decode(scan)?;
-        let non_root_act_component_links = act.non_root_component_links;
+        let unresolved_links = act
+            .component_links
+            .iter()
+            .filter(|link| link.references.tracked_entity != 3)
+            .count();
+        if unresolved_links != 0 {
+            push_loss_vec(&mut self.report.losses, F3dLossCode::ActComponentLinkUnresolved,
+                format_args!("{unresolved_links} ACT component link(s) were retained natively without a resolved product-structure role."));
+        }
         self.native.act_entities = act.entities;
         self.native.act_guids = act.guids;
         self.native.act_registry_channels = act.registry_channels;
-        self.native.act_root_components = act.root_components;
+        self.native.act_component_links = act.component_links;
         self.native.act_table_references = act.table_references;
 
         let finalize_path = match path {
             SessionPath::Geometry(geometry_path) => {
                 let GeometrySessionPath { index, materials } = *geometry_path;
-                report_unretained_act_component_links(
-                    &mut self.report,
-                    non_root_act_component_links,
-                );
                 report_untyped_material_distances(
                     &mut self.report,
                     materials.untyped_distance_properties,
@@ -2823,7 +2818,6 @@ impl<'a> F3dDecodeSession<'a> {
                 }
                 FinalizePath::Bodyless(DeferredBodylessInputs {
                     model_body_maps_empty,
-                    non_root_act: non_root_act_component_links,
                     has_appearance: decoded_materials.has_topology_assignments,
                     mesh_projection,
                 })
@@ -2988,7 +2982,6 @@ impl<'a> F3dDecodeSession<'a> {
                     }
                     DesignState::Absent => false,
                 };
-                report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
                 reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
                 let mesh_projection = inputs.mesh_projection;
                 if projected {
@@ -4390,8 +4383,8 @@ fn populate_annotations(
         for entity in &native.act_registry_channels {
             note!(entity.id(), "ACTRegistryChannel");
         }
-        for entity in &native.act_root_components {
-            note!(entity.id(), "ACTRootComponent");
+        for entity in &native.act_component_links {
+            note!(entity.id(), "ACTComponentLink");
         }
         for entity in &native.act_table_references {
             note!(entity.id(), "ACTTableReference");

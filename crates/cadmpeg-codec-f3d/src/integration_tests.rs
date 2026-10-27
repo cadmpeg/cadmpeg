@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
+mod act_links;
 mod attribute_colors;
 mod body_reference_tails;
 mod design_containment;

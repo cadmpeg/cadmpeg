@@ -307,16 +307,24 @@ fn act_table_pool_without_component_links_needs_no_document_root() {
         super::super::validate_act(&ctx, &mut findings).unwrap();
         assert!(findings.is_empty(), "{findings:?}");
         for (offset, index) in [(100, 1), (200, 2)] {
-            native.act_root_components.push(
-                crate::records::act::ActRootComponent::try_new(
-                    format!("f3d:ACT/BulkStream.dat:act-root-component#{offset}"),
+            native.act_component_links.push(
+                crate::records::act::ActComponentLink::try_new(
+                    format!("f3d:ACT/BulkStream.dat:act-component-link#{offset}"),
                     index,
                     "267".to_owned().try_into().unwrap(),
-                    12,
-                    7,
+                    crate::records::act::ActComponentReferences {
+                        instance_root: 12,
+                        tracked_entity: 3,
+                        components_root: 7,
+                    },
                     crate::records::act::ActRegistryFlag::Off,
-                    crate::records::act::ActRootLayout::new(offset, "0_3".into(), "Root".into(), 1)
-                        .unwrap(),
+                    crate::records::act::ActComponentLayout::new(
+                        offset,
+                        "0_3".into(),
+                        "Root".into(),
+                        1,
+                    )
+                    .unwrap(),
                 )
                 .unwrap(),
             );

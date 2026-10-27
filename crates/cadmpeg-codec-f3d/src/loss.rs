@@ -42,7 +42,7 @@ pub(crate) enum F3dLossCode {
     ConfigurationParameterOverrideUnbound,
     /// Design configuration feature suppressions have no feature identity.
     ConfigurationFeatureSuppressionUnbound,
-    /// Non-root `ACT` component links stay source-only; product role is unresolved.
+    /// ACT component links have no resolved neutral product role.
     ActComponentLinkUnresolved,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,

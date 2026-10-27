@@ -1181,16 +1181,21 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     }
 
     let mut root_counts = BTreeMap::<&str, (&str, usize)>::new();
-    for root in &native.act_root_components {
+    for root in &native.act_component_links {
         let stream = root.stream();
 
         root_counts
             .entry(stream)
             .or_insert((root.id().as_str(), 0))
-            .1 += 1;
+            .1 += usize::from(root.references.tracked_entity == 3);
         let unique_record_index = record_indices.insert((stream, root.record_index));
         if !unique_record_index {
-            push_constant_finding(findings, Check::NativeLinks, "Fusion ACT root component has an invalid identity, frame, or tracked-entity reference", Some(root.id().to_owned()));
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion ACT component link repeats an ACT record index",
+                Some(root.id().to_owned()),
+            );
         }
     }
 

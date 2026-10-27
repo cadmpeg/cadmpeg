@@ -1934,6 +1934,15 @@ direct endpoints in reverse order, the item direction is inverted. If neither
 order, or both orders, identifies the child and parent representations, the
 occurrence placement is unresolved.
 
+An `ADVANCED_BREP_SHAPE_REPRESENTATION` contains at least one
+`MANIFOLD_SOLID_BREP` or `MAPPED_ITEM`. Manifold solid B-reps, mapped items,
+and `AXIS2_PLACEMENT_3D` records form its item set. Its solid shells contain
+`ADVANCED_FACE` records. A mapped item in this representation maps another
+`ADVANCED_BREP_SHAPE_REPRESENTATION`. A placement-only representation does
+not satisfy the required solid-or-mapped-item member. Solid and non-solid geometry can
+belong to separate representations joined by a
+`SHAPE_REPRESENTATION_RELATIONSHIP`.
+
 Exact and tessellated representations of one product remain linked when their
 source item has one exact body owner. A tessellated solid, shell, or shape
 representation may list a supported triangulated item directly or through a

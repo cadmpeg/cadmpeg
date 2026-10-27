@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
 use crate::records::{
-    act::{ActEntity, ActGuid, ActRegistryChannel, ActRootComponent},
+    act::{ActComponentLink, ActEntity, ActGuid, ActRegistryChannel},
     references::{DesignMaterialAssignment, LostEdgeReference},
     sketch_geometry::SketchCurveGeometry,
 };
@@ -1449,18 +1449,18 @@ pub(super) fn validate_act_registry_channel_edits(
     Ok(edits)
 }
 
-pub(super) fn validate_act_root_edits(
+pub(super) fn validate_act_link_edits(
     native: PatchNatives<'_>,
-) -> Result<BTreeMap<String, Vec<ActRootComponent>>, CodecError> {
+) -> Result<BTreeMap<String, Vec<ActComponentLink>>, CodecError> {
     let baseline_native = native.baseline;
     let target_native = native.target;
     let baseline = baseline_native
         .as_ref()
-        .map(|native| &native.act_root_components[..])
+        .map(|native| &native.act_component_links[..])
         .unwrap_or_default();
     let target = target_native
         .as_ref()
-        .map(|native| &native.act_root_components[..])
+        .map(|native| &native.act_component_links[..])
         .unwrap_or_default();
     let baseline_by_id = baseline
         .iter()
@@ -1472,15 +1472,14 @@ pub(super) fn validate_act_root_edits(
         .collect::<BTreeMap<_, _>>();
     if baseline_by_id.keys().ne(target_by_id.keys()) {
         return Err(CodecError::NotImplemented(
-            "F3D ACT root regeneration requires the unchanged root-id set".into(),
+            "F3D ACT component-link regeneration requires the unchanged link-id set".into(),
         ));
     }
-    let mut edits: BTreeMap<String, Vec<ActRootComponent>> = BTreeMap::new();
+    let mut edits: BTreeMap<String, Vec<ActComponentLink>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.instance_root_record = before.instance_root_record;
-        normalized.components_root_record = before.components_root_record;
+        normalized.references.clone_from(&before.references);
         normalized.registry_flag = before.registry_flag;
         normalized
             .try_set_strings(
@@ -1490,7 +1489,7 @@ pub(super) fn validate_act_root_edits(
             .map_err(CodecError::NotImplemented)?;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D ACT root edit changes fields outside supported graph links and fixed-length strings: {id}"
+                "F3D ACT component-link edit changes fields outside supported graph links and fixed-length strings: {id}"
             )));
         }
         if after == before {
@@ -1502,11 +1501,11 @@ pub(super) fn validate_act_root_edits(
                 != before.layout().display_name().encode_utf16().count()
         {
             return Err(CodecError::NotImplemented(format!(
-                "F3D ACT root strings must retain their UTF-16 lengths: {id}"
+                "F3D ACT component-link strings must retain their UTF-16 lengths: {id}"
             )));
         }
         edits
-            .entry(native_stream(id, ":act-root-component#")?)
+            .entry(native_stream(id, ":act-component-link#")?)
             .or_default()
             .push(after.clone());
     }

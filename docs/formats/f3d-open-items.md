@@ -358,7 +358,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A join between the ACT references and the Design root component must distinguish an absent root link from a root link selected by another reference. The join must establish whether the tracked-entity record value is a root selector or only a target identity.
 
-**Conflict.** The component-link rule requires exactly one document-root link when links are present and selects it by tracked-entity record `3`. No alternative root-selection rule is defined.
+**Conflict.** No complete root-selection rule is defined.
 
 ## 2. External references
 

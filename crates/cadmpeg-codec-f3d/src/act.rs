@@ -15,7 +15,7 @@ use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
     act::{
-        ActChannelGroup, ActEntity, ActGuid, ActRegistryChannel, ActRootComponent,
+        ActChannelGroup, ActComponentLink, ActEntity, ActGuid, ActRegistryChannel,
         ActStreamResidue, ActTableReference, ActTableRow,
     },
     identity::Located,
@@ -26,9 +26,8 @@ pub(crate) struct DecodedAct {
     pub(crate) entities: Vec<ActEntity>,
     pub(crate) guids: Vec<ActGuid>,
     pub(crate) registry_channels: Vec<ActRegistryChannel>,
-    pub(crate) root_components: Vec<ActRootComponent>,
+    pub(crate) component_links: Vec<ActComponentLink>,
     pub(crate) table_references: Vec<ActTableReference>,
-    pub(crate) non_root_component_links: usize,
 }
 
 struct RecordFrame {
@@ -147,9 +146,8 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
     let mut entities = Vec::new();
     let mut guids = Vec::new();
     let mut registry_channels = Vec::new();
-    let mut root_components = Vec::new();
+    let mut component_links = Vec::new();
     let mut table_references = Vec::new();
-    let mut non_root_component_links = 0usize;
     for entry in scan
         .entries
         .iter()
@@ -211,32 +209,9 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 groups.push(group);
             }
         }
-        let mut links = Vec::new();
         for frame in &frames {
             if let Some(link) = decode_component_link(bytes, frame, &entry.name)? {
-                links.push(link);
-            }
-        }
-        let stream_roots = links
-            .iter()
-            .filter(|link| matches!(link, ComponentLink::Root(_)))
-            .count();
-        if !links.is_empty() && stream_roots != 1 {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT segment does not have one root component link: {}",
-                entry.name
-            )));
-        }
-        non_root_component_links = non_root_component_links
-            .checked_add(links.len().checked_sub(stream_roots).ok_or_else(|| {
-                CodecError::Malformed("F3D ACT root count exceeds component links".into())
-            })?)
-            .ok_or_else(|| {
-                CodecError::Malformed("F3D ACT component-link count overflows".into())
-            })?;
-        for link in links {
-            if let ComponentLink::Root(root) = link {
-                root_components.push(root);
+                component_links.push(link);
             }
         }
 
@@ -257,9 +232,8 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
         entities,
         guids,
         registry_channels,
-        root_components,
+        component_links,
         table_references,
-        non_root_component_links,
     })
 }
 
@@ -595,16 +569,11 @@ fn decode_channel_group(
     }))
 }
 
-enum ComponentLink {
-    Root(ActRootComponent),
-    NonRoot,
-}
-
 fn decode_component_link(
     bytes: &[u8],
     frame: &RecordFrame,
     stream: &str,
-) -> Result<Option<ComponentLink>, CodecError> {
+) -> Result<Option<ActComponentLink>, CodecError> {
     macro_rules! some {
         ($value:expr) => {
             match $value {
@@ -650,10 +619,7 @@ fn decode_component_link(
     let registry_flag = some!(crate::records::act::ActRegistryFlag::from_code(
         registry_flag
     ));
-    if tracked_entity_record != 3 {
-        return Ok(Some(ComponentLink::NonRoot));
-    }
-    let layout = crate::records::act::ActRootLayout::new(
+    let layout = crate::records::act::ActComponentLayout::new(
         u64_from_index(frame.start),
         entity_id,
         display_name,
@@ -661,16 +627,19 @@ fn decode_component_link(
     )
     .ok();
     let layout = some!(layout);
-    Ok(Some(ComponentLink::Root(some!(ActRootComponent::try_new(
-        crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
+    Ok(Some(some!(ActComponentLink::try_new(
+        crate::ids::native_scoped_id(stream, "act-component-link", frame.start),
         frame.record_index,
         frame.class_tag.clone(),
-        instance_root_record,
-        components_root_record,
+        crate::records::act::ActComponentReferences {
+            instance_root: instance_root_record,
+            tracked_entity: tracked_entity_record,
+            components_root: components_root_record,
+        },
         registry_flag,
         layout,
     )
-    .ok()))))
+    .ok())))
 }
 
 /// Whether `key` has the ACT entity-key form `<segment id>_<entity id>`.
@@ -717,8 +686,8 @@ mod tests {
     use cadmpeg_core::decode::u64_from_index;
 
     use super::{
-        decode_channel_group, decode_component_link, merge_entities, ChannelGroup, ComponentLink,
-        RecordFrame, TableEntry,
+        decode_channel_group, decode_component_link, merge_entities, ChannelGroup, RecordFrame,
+        TableEntry,
     };
     use crate::records::act::ActTableRow;
     use crate::records::identity::Located;
@@ -832,7 +801,7 @@ mod tests {
             let (bytes, frame) = root_link(padding);
             let link = decode_component_link(&bytes, &frame, "synthetic").unwrap();
             assert!(
-                matches!(link, Some(ComponentLink::Root(ref root)) if root.record_index == 2),
+                matches!(link, Some(ref root) if root.record_index == 2),
                 "document-root link with {padding} padding bytes"
             );
         }
