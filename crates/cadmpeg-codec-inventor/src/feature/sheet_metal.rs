@@ -14,6 +14,7 @@ use crate::pmdc::{
     content_header, reference_list, state_content_header, type_id_string, Cursor, PmDcReference,
 };
 
+pub(crate) mod corner;
 pub(crate) mod flange;
 pub(super) mod inputs;
 pub(crate) mod operands;
@@ -696,6 +697,15 @@ pub(crate) fn native_kind_losses(
             "Retained {bends} separate bend record(s) as native history features: the attached plate or repeated bend operands do not close the neutral construction."
         )));
     }
+    for feature in features {
+        if matches!(feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native { kind, .. })
+                if kind.as_str() == "SheetMetalCorner")
+        {
+            losses.push(InventorLossCode::FeatureSheetMetalCornerEffectNative.note(format!(
+                "Retained {} as native: the corner treatment, paired bend, controls, or complete generated-name evidence do not close the unchanged branch.", feature.id)));
+        }
+    }
     losses
 }
 
@@ -780,6 +790,10 @@ pub(crate) fn retained_control_losses<'a>(
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { .. }) => (
                 InventorLossCode::FeatureSheetMetalBendControlsRetained,
                 "plate slot-0 construction wire, plate slot-1 direction, attachment control, type-9 first and second modes, direction references, first and second options, state bytes, optional extension state, bend scalar and state, slot-10 Boolean, relief Boolean, and transition Boolean",
+            ),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalCorner { .. }) => (
+                InventorLossCode::FeatureSheetMetalCornerControlsRetained,
+                "corner gap, size, Jacobi radius, relief-form and secondary-form enumerations, type-8 corner form, control and option Booleans, raw word, feature dimensions, and profile, attachment, and result references",
             ),
             _ => return Vec::new(),
         };

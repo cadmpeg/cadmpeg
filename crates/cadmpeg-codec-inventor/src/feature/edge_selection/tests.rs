@@ -385,3 +385,123 @@ fn history_section_wrapper_retains_the_first_edge_revision_identity() {
     .get(&150)
     .is_some_and(Option::is_some));
 }
+
+#[test]
+fn generated_sources_count_face_and_edge_revisions_without_selector_names() {
+    let entity = |index, name: &str| Record {
+        index,
+        name: name.into(),
+        tokens: Vec::new().into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = vec![
+        entity(0, "face"),
+        entity(1, "edge"),
+        attribute(2, 0, "INV_NMX_FLANGE_TAG", &[1, 61, -1, 7]),
+        attribute(3, 1, "INV_NMX_BEND_TAG", &[1, 61, -1, 9]),
+        attribute(4, 1, "INV_NMX_MATCHED_ATTRIB", &[1, 62, -1, 9, 0]),
+        attribute(5, 0, "other", &[1, 63, -1, 9]),
+    ];
+    let (sources, complete) = generated_sources(&records, 44);
+    assert!(complete);
+    assert_eq!(
+        sources.get(&61),
+        Some(&SourceNames {
+            face_revisions: 1,
+            edge_revisions: 1
+        })
+    );
+    assert!(!sources.contains_key(&62));
+    assert!(!sources.contains_key(&63));
+}
+
+#[test]
+fn legacy_names_preserve_every_source_pair_and_require_the_full_family_tail() {
+    for (family, tail_len) in [
+        ("NMx_Generated_Brep_tag", 3),
+        ("NMx_Sweep_Generated_Brep_tag", 10),
+        ("NMx_flange_tag", 7),
+        ("NMx_blend_tag", 7),
+        ("NMx_bend_tag", 8),
+        ("NMx_Hole_Brep_tag", 2),
+    ] {
+        let mut record = Record {
+            index: 2,
+            name: format!("{family}-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib"),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(0),
+                Token::Long(38),
+                Token::Long(2),
+                Token::Long(61),
+                Token::Long(7),
+                Token::Long(63),
+                Token::Long(-1),
+            ]
+            .into(),
+            offset: 0,
+            len: 0,
+        };
+        let mut tokens = record.tokens.to_vec();
+        tokens.extend(std::iter::repeat_n(Token::Long(0), tail_len));
+        record.tokens = tokens.clone().into();
+        assert_eq!(
+            source_names(&record, &values(&record), 38),
+            Some((0, HashSet::from([61, 63])))
+        );
+        tokens.pop();
+        record.tokens = tokens.into();
+        assert!(source_names(&record, &values(&record), 38).is_none());
+    }
+}
+
+#[test]
+fn unknown_generated_name_forms_prevent_an_absence_proof() {
+    let mut record = attribute(0, -1, "INV_NMX_FLANGE_TAG", &[1, 61, -1, 7]);
+    let (_, complete) = generated_sources(std::slice::from_ref(&record), 44);
+    assert!(complete);
+    let unknown = attribute(0, -1, "INV_NMX_UNKNOWN", &[1, 61, -1, 7]);
+    let (_, complete) = generated_sources(&[unknown], 44);
+    assert!(!complete);
+    record.tokens = vec![
+        Token::Ref(-1),
+        Token::Long(-1),
+        Token::Ref(-1),
+        Token::Ref(-1),
+        Token::Ref(-1),
+        Token::Str("INV_NMX_FLANGE_TAG".into()),
+        Token::Long(99),
+    ]
+    .into();
+    let (_, complete) = generated_sources(&[record], 44);
+    assert!(!complete);
+}
+
+#[test]
+fn duplicate_qualifiers_need_a_separate_generated_name_on_the_same_owner() {
+    let face = Record {
+        index: 0,
+        name: "face".into(),
+        tokens: Vec::new().into(),
+        offset: 0,
+        len: 0,
+    };
+    let generated = attribute(1, 0, "INV_NMX_GEN_TAG", &[1, 61, -1, 7, 0, 2]);
+    let duplicate = attribute(2, 0, "INV_NMX_DUP", &[31, 37, 41, 43]);
+    let (sources, complete) = generated_sources(&[face.clone(), generated, duplicate.clone()], 44);
+    assert!(complete);
+    assert_eq!(
+        sources.get(&61),
+        Some(&SourceNames {
+            face_revisions: 1,
+            edge_revisions: 0
+        })
+    );
+    assert!(!sources.contains_key(&31));
+    let (_, complete) = generated_sources(&[face, duplicate], 44);
+    assert!(!complete);
+}
