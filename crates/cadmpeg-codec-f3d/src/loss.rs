@@ -30,6 +30,8 @@ pub(crate) enum F3dLossCode {
     BodyReferenceTailUntyped,
     /// A placement construction has no unambiguous registered member layout.
     PlacementConstructionUntyped,
+    /// A work plane has no unique checked solved placement.
+    WorkPlaneFrameUnbound,
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -298,6 +300,7 @@ impl F3dLossCode {
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
         Self::PlacementConstructionUntyped,
+        Self::WorkPlaneFrameUnbound,
         Self::ConstructionTrackingPathUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
@@ -431,6 +434,7 @@ impl F3dLossCode {
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
+            Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -593,6 +597,7 @@ impl F3dLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
+            | Self::WorkPlaneFrameUnbound
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConfigurationMemberUnassigned
@@ -735,6 +740,7 @@ impl F3dLossCode {
             | Self::ParameterOrderBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
+            | Self::WorkPlaneFrameUnbound
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -885,6 +891,7 @@ mod tests {
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
                 "placement.construction-untyped",
+                "work-plane.frame-unbound",
                 "feature.tracking-path-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
