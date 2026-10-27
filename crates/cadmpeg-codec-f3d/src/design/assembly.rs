@@ -310,6 +310,89 @@ impl RigidGroupLayout {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RigidGroupLocatorLayout {
+    TypedIdentity,
+    TypedMatrix,
+    Compact,
+    WideIdentity,
+    WideMatrix,
+}
+
+impl RigidGroupLocatorLayout {
+    pub(crate) fn admit(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
+        use crate::layout::assembly_compact_rigid_group_locator as compact;
+        use crate::layout::assembly_typed_rigid_group_identity_locator as identity;
+        use crate::layout::assembly_typed_rigid_group_matrix_locator as matrix;
+        use crate::layout::assembly_wide_operand_path_locator as wide;
+        let (guid, version) = registered?;
+        if !guid.eq_ignore_ascii_case("2E3AC990-483D-4A55-8662-C064B976A957") {
+            return None;
+        }
+        match (version, length) {
+            (2, identity::LEN) => Some(Self::TypedIdentity),
+            (2, matrix::LEN) => Some(Self::TypedMatrix),
+            (3, compact::LEN) => Some(Self::Compact),
+            (5, length) if length == wide::TRANSFORM + 1 + 28 => Some(Self::WideIdentity),
+            (5, length) if length == wide::TRANSFORM + 16 * 8 + 1 + 28 => Some(Self::WideMatrix),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn reference_stride(self) -> usize {
+        match self {
+            Self::TypedIdentity | Self::TypedMatrix => crate::bytes::TYPED_LOCAL_REFERENCE_LEN,
+            Self::Compact | Self::WideIdentity | Self::WideMatrix => 11,
+        }
+    }
+
+    pub(crate) fn offsets(self) -> (usize, usize, usize, usize, usize) {
+        use crate::layout::assembly_compact_rigid_group_locator as compact;
+        use crate::layout::assembly_typed_rigid_group_identity_locator as identity;
+        use crate::layout::assembly_typed_rigid_group_matrix_locator as matrix;
+        use crate::layout::assembly_wide_operand_path_locator as wide;
+        match self {
+            Self::TypedIdentity => (
+                identity::LEN,
+                identity::SCOPE_BACKLINK,
+                identity::WRAPPER_REFERENCE,
+                identity::DISCRIMINATOR,
+                identity::ZERO_TAIL,
+            ),
+            Self::TypedMatrix => (
+                matrix::LEN,
+                matrix::SCOPE_BACKLINK,
+                matrix::WRAPPER_REFERENCE,
+                matrix::DISCRIMINATOR,
+                matrix::ZERO_TAIL,
+            ),
+            Self::Compact => (
+                compact::LEN,
+                compact::SCOPE_BACKLINK,
+                compact::WRAPPER_REFERENCE,
+                compact::DISCRIMINATOR,
+                compact::ZERO_TAIL,
+            ),
+            Self::WideIdentity | Self::WideMatrix => {
+                let backlink = wide::TRANSFORM
+                    + if matches!(self, Self::WideMatrix) {
+                        16 * 8
+                    } else {
+                        0
+                    }
+                    + 1;
+                (
+                    backlink + 28,
+                    backlink,
+                    backlink + 11,
+                    backlink + 22,
+                    backlink + 26,
+                )
+            }
+        }
+    }
+}
+
 pub(crate) fn rigid_as_built_scope(scope: &DesignParameterScope) -> bool {
     RigidGroupLayout::for_scope(scope).is_some()
 }

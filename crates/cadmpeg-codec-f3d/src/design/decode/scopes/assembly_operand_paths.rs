@@ -5,6 +5,7 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
+use crate::design::assembly::RigidGroupLocatorLayout;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
@@ -214,16 +215,28 @@ fn exact_assembly_operand_path_envelope(
         let registered_locator = stream_types
             .get(&u64::from(locator_record_index))
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
-        let (wide, compact, typed) = if crate::design::assembly::rigid_as_built_scope(scope) {
-            match registered_locator?.1 {
-                2 => (false, false, true),
-                3 => (false, true, false),
-                5 => (true, false, false),
-                _ => return None,
-            }
+        let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
+        let rigid_locator = if crate::design::assembly::rigid_as_built_scope(scope) {
+            Some(RigidGroupLocatorLayout::admit(
+                registered_locator.copied(),
+                locator_end.checked_sub(locator_at)?,
+            )?)
         } else {
-            (wide_family && registered_locator.is_some(), false, false)
+            None
         };
+        let (wide, compact, typed) = rigid_locator.map_or(
+            (wide_family && registered_locator.is_some(), false, false),
+            |layout| {
+                (
+                    matches!(
+                        layout,
+                        RigidGroupLocatorLayout::WideIdentity | RigidGroupLocatorLayout::WideMatrix
+                    ),
+                    matches!(layout, RigidGroupLocatorLayout::Compact),
+                    layout.reference_stride() == crate::bytes::TYPED_LOCAL_REFERENCE_LEN,
+                )
+            },
+        );
         let reference_stride = if typed {
             crate::bytes::TYPED_LOCAL_REFERENCE_LEN
         } else {
@@ -269,13 +282,21 @@ fn exact_assembly_operand_path_envelope(
                 return None;
             }
             let backlink = after_transform + 1;
-            (
-                backlink + 28,
-                backlink,
-                backlink + 11,
-                backlink + 22,
-                backlink + 26,
-            )
+            if let Some(layout) = rigid_locator {
+                let offsets = layout.offsets();
+                if offsets.1 != backlink {
+                    return None;
+                }
+                offsets
+            } else {
+                (
+                    backlink + 28,
+                    backlink,
+                    backlink + 11,
+                    backlink + 22,
+                    backlink + 26,
+                )
+            }
         } else if typed {
             let construction = typed_identity::CONSTRUCTION_REFERENCE;
             let flag = typed_identity::IDENTITY_FLAG;
@@ -294,23 +315,11 @@ fn exact_assembly_operand_path_envelope(
                 }
                 _ => return None,
             };
-            if backlink == typed_identity::SCOPE_BACKLINK {
-                (
-                    typed_identity::LEN,
-                    backlink,
-                    typed_identity::WRAPPER_REFERENCE,
-                    typed_identity::DISCRIMINATOR,
-                    typed_identity::ZERO_TAIL,
-                )
-            } else {
-                (
-                    typed_matrix::LEN,
-                    backlink,
-                    typed_matrix::WRAPPER_REFERENCE,
-                    typed_matrix::DISCRIMINATOR,
-                    typed_matrix::ZERO_TAIL,
-                )
+            let offsets = rigid_locator?.offsets();
+            if offsets.1 != backlink {
+                return None;
             }
+            offsets
         } else if compact {
             if bytes.get(
                 locator_at.checked_add(11)?..locator_at.checked_add(compact_locator::TRANSFORM)?,
@@ -322,13 +331,7 @@ fn exact_assembly_operand_path_envelope(
             {
                 return None;
             }
-            (
-                compact_locator::LEN,
-                compact_locator::SCOPE_BACKLINK,
-                compact_locator::WRAPPER_REFERENCE,
-                compact_locator::DISCRIMINATOR,
-                compact_locator::ZERO_TAIL,
-            )
+            rigid_locator?.offsets()
         } else if variable_reference {
             if locator_class_tag != "390"
                 || bytes
@@ -401,7 +404,7 @@ fn exact_assembly_operand_path_envelope(
             return None;
         }
         let path_at = locator_at.checked_add(locator_length)?;
-        if next_indexed_record_offset(bytes, locator_at.checked_add(1)?)? != path_at {
+        if locator_end != path_at {
             return None;
         }
         if wrapper_record_index < path_record_index {

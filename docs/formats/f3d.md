@@ -1878,7 +1878,8 @@ paired header must close the complete scope at that width.
 
 A rigid-group member locator has type
 `2E3AC990-483D-4A55-8662-C064B976A957`. Its stored type version selects its
-frame. A version-3 compact rigid-group locator is 180 bytes: the indexed
+frame. A length that does not match the version's frame is refused.
+A version-3 compact rigid-group locator is 180 bytes: the indexed
 header is followed by twelve zero bytes, a rigid matrix at offset 23,
 one zero byte at offset 151, an ordinary scope backlink at offset 152,
 an ordinary wrapper reference at offset 163, u32 value 2 at offset 174,

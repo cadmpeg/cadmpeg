@@ -574,3 +574,29 @@ fn typed_root_operand_path_keeps_two_identities_and_exact_closure() {
     padded.push(0);
     assert!(read(&padded, Some(TYPED)).is_none());
 }
+
+#[test]
+fn rigid_group_locator_refuses_cross_version_lengths() {
+    let mut scope = DesignParameterScope::empty("generated:scope", DesignFeatureKind::AsBuilt, 10);
+    scope
+        .try_edit(|draft| {
+            crate::design::test_support::lengthen_scope_frame(draft, 257);
+            draft.reference_count_offset = 153;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(Vec::new());
+            draft.layout_fixture_references();
+            draft.feature_ordinal_offset = 181;
+        })
+        .unwrap();
+    for (frame_version, wrong_version) in [(2, 3), (3, 2)] {
+        let bytes = versioned_rigid_group_envelope(frame_version, true);
+        for version in [frame_version, wrong_version] {
+            let types = std::collections::HashMap::from([(
+                64,
+                (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
+            )]);
+            let path =
+                exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0).unwrap();
+            assert_eq!(path.is_some(), version == frame_version);
+        }
+    }
+}
