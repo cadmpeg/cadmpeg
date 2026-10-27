@@ -148,10 +148,13 @@ pub(crate) fn document_local_sha256(
 ///
 /// Such an edit is authored by the synthesized path instead.
 fn admit_unedited(
-    attribute_context: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     fidelity: &cadmpeg_ir::SourceFidelity,
 ) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if let Some(namespace) = ir.native.namespace("fcstd") {
         if namespace
             .arena_as::<crate::native::ObjectRecord>("objects")?
@@ -175,26 +178,19 @@ fn admit_unedited(
                 "the retained typed-layout fingerprint is unavailable".into(),
             )
         })?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let current = document_local_sha256(&ctx, ir)?;
+    let current = document_local_sha256(ctx, ir)?;
     if current != *expected {
         return Err(CodecError::UnsupportedContent(
             "current uncarried typed records require FCStd graph regeneration".into(),
         ));
     }
-    projection::agrees(attribute_context, &ctx, ir).map_err(|error| match error {
+    projection::agrees(ctx, ir).map_err(|error| match error {
         CodecError::Malformed(_) | CodecError::Truncated { .. } => CodecError::UnsupportedContent(
             format!("current typed projection is unavailable: {error}"),
         ),
         error => error,
     })?;
-    let findings = crate::validate_native(&ctx, ir)?;
-    ctx.finish_session()?;
+    let findings = crate::validate_native(ctx, ir)?;
     if !findings.is_empty() {
         return Err(CodecError::UnsupportedContent(
             "the retained layout no longer agrees with its typed native records".into(),
@@ -263,3 +259,6 @@ pub(super) fn retained_baseline<'a>(
         target: target.clone(),
     })
 }
+
+#[cfg(test)]
+mod tests;

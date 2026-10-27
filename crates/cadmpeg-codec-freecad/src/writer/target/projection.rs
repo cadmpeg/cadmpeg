@@ -9,11 +9,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{ArenaName, CadIr};
 use std::collections::BTreeMap;
 
-pub(super) fn agrees(
-    attribute_context: &cadmpeg_core::decode::DecodeContext<'_>,
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-) -> Result<(), CodecError> {
+pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return decline("there is no typed FreeCAD graph");
     };
@@ -122,7 +121,7 @@ pub(super) fn agrees(
         )?;
     }
     crate::writer::body_styles::apply(&mut projected, &payloads, &properties)?;
-    crate::attributes::transfer(attribute_context, &mut projected, &objects, &properties)?;
+    crate::attributes::transfer(ctx, &mut projected, &objects, &properties)?;
     let current = serde_json::to_value(&ir.model).map_err(CodecError::malformed)?;
     let candidate = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     for arena in ArenaName::ALL {
