@@ -181,7 +181,15 @@ impl MergeSession<'_, '_> {
         table: &XrefTable,
     ) -> Result<usize, CodecError> {
         let placements = member_placements(&parent_ir.model, table, None);
-        self.merge_placements(parent_ir, parent_report, parent_fidelity, table, placements)
+        let merged =
+            self.merge_placements(parent_ir, parent_report, parent_fidelity, table, placements)?;
+        parent_report
+            .losses
+            .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
+        parent_report
+            .losses
+            .extend(crate::decode::saved_free_edge_bodies_loss(&parent_ir.model));
+        Ok(merged)
     }
 
     fn merge_placements(

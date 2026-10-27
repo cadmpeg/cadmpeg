@@ -121,6 +121,85 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
 }
 
 #[test]
+fn saved_edge_loss_counts_final_archive_ownership_once() {
+    use crate::loss::F3dLossCode;
+    use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_ir::codec::DecodeBody;
+    use cadmpeg_ir::report::decode::DecodeTransfer;
+
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[]);
+    let bytes = f3z_archive("root.f3d", &[("root.f3d", &root)]);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, bytes) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, bytes).unwrap();
+    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    for (has_definitions, owned_after_composition) in [(true, true), (true, false), (false, false)]
+    {
+        let mut member = Model::default();
+        if has_definitions {
+            crate::f3z::merge::define_member(&ctx, &mut member, "existing").unwrap();
+        }
+        member.bodies = (0..2)
+            .map(|index| Body {
+                id: BodyId::mint(format!("f3d:brep:saved-edge-body#{index}")).unwrap(),
+                kind: BodyKind::Wire,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            })
+            .collect();
+        let member_loss = crate::decode::saved_free_edge_bodies_loss(&member).unwrap();
+        let mut report = DecodeBody::new(DecodeTransfer::at(DecodeDepth::Full, true));
+        report.losses = vec![member_loss.clone(), member_loss];
+        let other_loss = F3dLossCode::XrefMemberMissing.note("missing member".to_owned());
+        report.losses.push(other_loss.clone());
+        if owned_after_composition {
+            crate::f3z::merge::define_member(&ctx, &mut member, "member").unwrap();
+        }
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model
+            .extend_rewritten(
+                member,
+                &mut OccurrenceScope {
+                    ctx: &ctx,
+                    occurrence: "member",
+                },
+            )
+            .unwrap();
+        crate::f3z::merge::MergeSession {
+            ctx: &ctx,
+            scan: &scan,
+            archive: &archive,
+            stack: vec!["root.f3d".to_owned()],
+            members: std::collections::BTreeMap::new(),
+        }
+        .merge(
+            &mut ir,
+            &mut report,
+            &mut cadmpeg_ir::SourceFidelity::default(),
+            &crate::xref::XrefTable::default(),
+        )
+        .unwrap();
+        let saved_losses = report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::SavedFreeEdgeBodyUnowned.kind())
+            .collect::<Vec<_>>();
+        if owned_after_composition {
+            assert!(saved_losses.is_empty());
+        } else {
+            assert_eq!(saved_losses.len(), 1);
+            assert_eq!(saved_losses[0].message, "2 saved free-edge bodies have no product-definition owner; their component placement is not assigned.");
+        }
+        assert!(report.losses.contains(&other_loss));
+    }
+}
+
+#[test]
 fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};

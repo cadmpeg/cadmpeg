@@ -338,6 +338,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A rule must tell a deleted sketch member from a missing record before the scope can pass structural validation without its absent references.
 
+### DR-101. Fixed typed occurrence path discriminator
+
+**Question.** What binding does the path discriminator of a fixed typed local component occurrence select?
+
+**Known.** The u32 path discriminator follows the typed definition reference at offset 75. The path terminator at offset 79 and the occurrence ordinal at offset 80 follow it. The definition references, owner, and stored placement identify the local occurrence independently of a neutral interpretation of this word.
+
+**Need.** The discriminator's target domain and binding rule are needed to retain its meaning in a component path.
+
+**Conflict.** An occurrence ordinal does not state a path-discriminator binding.
+
+**Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
+
 ### DR-104. ACT component-link root selection
 
 **Question.** Can an ACT segment contain only non-root component links, or does another reference identify its document-root link?
@@ -398,7 +410,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What do the two bytes before the occurrence ordinal and the marked record reference after the occurrence key of an attributed local component occurrence store?
 
-**Known.** `f3d.md` §3.1 "An attributed local component occurrence" gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
+**Known.** `f3d.md` §3.1 "An attributed local component occurrence carries a counted attribute run and an occurrence key." gives the frame. The two bytes are `00 00` in most frames and `01 00` in one. The reference names a different record in each frame, in increasing order.
 
 **Need.** The two bytes can be a grounding or visibility state of the occurrence.
 

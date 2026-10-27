@@ -2381,6 +2381,26 @@ enum FinalizePath {
     Bodyless(DeferredBodylessInputs),
 }
 
+pub(crate) fn saved_free_edge_bodies_loss(
+    model: &cadmpeg_ir::document::Model,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let owned = model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.bodies)
+        .collect::<std::collections::BTreeSet<_>>();
+    let count = model
+        .bodies
+        .iter()
+        .filter(|body| {
+            cadmpeg_asm::brep::emit::is_saved_free_edge_body(&body.id) && !owned.contains(&body.id)
+        })
+        .count();
+    (count != 0).then(|| F3dLossCode::SavedFreeEdgeBodyUnowned.note(format!(
+        "{count} saved free-edge bodies have no product-definition owner; their component placement is not assigned."
+    )))
+}
+
 impl FinalizePath {
     fn component_bodies(
         &self,
@@ -2388,7 +2408,13 @@ impl FinalizePath {
         has_pending_body_source: bool,
     ) -> Option<std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>> {
         match self {
-            Self::Geometry(_) => Some(bodies.iter().map(|body| body.id.clone()).collect()),
+            Self::Geometry(_) => Some(
+                bodies
+                    .iter()
+                    .filter(|body| !cadmpeg_asm::brep::emit::is_saved_free_edge_body(&body.id))
+                    .map(|body| body.id.clone())
+                    .collect(),
+            ),
             Self::Bodyless(inputs) if inputs.model_body_maps_empty && !has_pending_body_source => {
                 Some(std::collections::BTreeSet::new())
             }
@@ -2566,6 +2592,11 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
             );
         }
+        self.report.losses.extend(
+            crate::design::decode::components::superseded_occurrences_loss(
+                prereqs.design_superseded_component_occurrences,
+            ),
+        );
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)
@@ -2806,6 +2837,11 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(crate::design::decode::components::revised_definitions_loss(
+                &local_components,
+            ));
+        self.report
+            .losses
+            .extend(crate::design::decode::components::unbound_roots_loss(
                 &local_components,
             ));
         let bodies = finalize_path.component_bodies(
@@ -4075,6 +4111,7 @@ fn decode_result(
         admitted_entities,
         "admit F3D entities",
     )?;
+    report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
