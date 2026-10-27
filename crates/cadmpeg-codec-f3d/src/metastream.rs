@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared Fusion `MetaStream` segment framing.
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{bounded_len, u64_from_index};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -11,6 +11,10 @@ use crate::records::entity_header::SegmentTypeData;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
 pub(crate) const MODERN_SERIALIZER_MAGIC: u32 = 1234;
+
+/// A short version context without zero prefixes: u64 token, two LP-UTF16
+/// 36-unit GUIDs, and a u32 revision.
+const MIN_VERSION_CONTEXT_LEN: usize = 8 + 2 * (4 + 36 * 2) + 4;
 
 /// One record-index entry locating a header in the sibling `BulkStream`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -232,12 +236,16 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
     let count_at = *at;
     let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
     *at = require(at.checked_add(4), "version-context count", *at)?;
-    if count > 64 {
-        return Err(ParseFailure {
-            field: "version-context count",
-            offset: count_at,
-        });
-    }
+    let remaining = require(
+        bytes.len().checked_sub(*at),
+        "version-context count",
+        count_at,
+    )?;
+    require(
+        bounded_len(u64::from(count), MIN_VERSION_CONTEXT_LEN, remaining),
+        "version-context count",
+        count_at,
+    )?;
     for _ in 0..count {
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
         require(bytes.get(*at..token_end), "version-context token", *at)?;
@@ -586,6 +594,53 @@ mod tests {
         bytes[primary_count..primary_count + 4].copy_from_slice(&u32::MAX.to_le_bytes());
 
         assert!(parse(&bytes, "oversized-primary-index").is_err());
+    }
+
+    fn version_contexts(count: u32) -> (Vec<u8>, usize) {
+        let mut bytes = stream_prefix();
+        bytes.extend_from_slice(&17u64.to_le_bytes());
+        let count_at = bytes.len();
+        bytes.extend_from_slice(&count.to_le_bytes());
+        for ordinal in 0..count {
+            bytes.extend_from_slice(&19u64.to_le_bytes());
+            lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+            lp_utf16(&mut bytes, "66666666-7777-8888-9999-aaaaaaaaaaaa");
+            if ordinal % 2 == 0 {
+                lp_utf16(&mut bytes, "urn:synthetic:version:23");
+                lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+            }
+            bytes.extend_from_slice(&23u32.to_le_bytes());
+        }
+        (bytes, count_at)
+    }
+
+    #[test]
+    fn parses_version_context_count_above_64() {
+        let (mut bytes, _) = version_contexts(67);
+        parse(&bytes, "counted-contexts").expect("contexts close the stream");
+
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_ascii(&mut bytes, "Synthetic");
+        bytes.extend_from_slice(&29u32.to_le_bytes());
+        let parsed =
+            parse(&bytes, "counted-contexts-properties").expect("properties close the stream");
+        assert!(parsed.types.is_empty());
+        assert!(parsed.records.is_empty());
+        assert!(parsed.secondary_records.is_empty());
+    }
+
+    #[test]
+    fn rejects_version_context_count_mismatches_and_unframed_tail() {
+        let (bytes, count_at) = version_contexts(67);
+        for count in [66u32, 68, u32::MAX] {
+            let mut invalid = bytes.clone();
+            invalid[count_at..count_at + 4].copy_from_slice(&count.to_le_bytes());
+            assert!(parse(&invalid, "context-count-mismatch").is_err());
+        }
+        assert!(parse(&bytes[..bytes.len() - 1], "truncated-contexts").is_err());
+        let mut trailing = bytes;
+        trailing.push(0);
+        assert!(parse(&trailing, "context-trailing-byte").is_err());
     }
 
     #[test]
