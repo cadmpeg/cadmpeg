@@ -3507,6 +3507,9 @@ fn validate_gui_list_payloads(
         if property.side_entries.is_empty() {
             continue;
         }
+        if !has_registered_property_grammar(&property.name, &property.type_name) {
+            continue;
+        }
         if property.type_name == "Part::PropertyTopoShapeList" {
             for entry_name in &property.side_entries {
                 entries.get(entry_name).ok_or_else(|| {

@@ -488,6 +488,7 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
         )
         .unwrap();
     let entries = BTreeMap::from([("GuiDocument.xml".into(), view)]);
+    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     let graph = crate::gui::transfer(
         &ctx,
@@ -584,7 +585,6 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
         Vec::new(),
         xml.as_bytes().to_vec(),
     );
-    let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     let ledger = crate::container::logical_ledger(
         &[entry.record],
         &[],
