@@ -1924,29 +1924,59 @@ The tail form selects the reference width; the stored member count and
 paired header must close the complete scope at that width.
 
 A rigid-group member locator has type
-`2E3AC990-483D-4A55-8662-C064B976A957`. The admitted locator forms are
-selected by type version and frame length.
-Other locator forms are refused here.
-A version-3 compact rigid-group locator is 180 bytes in the admitted
-null-reference matrix form: the indexed
-header is followed by twelve zero bytes, a rigid matrix at offset 23,
-one zero byte at offset 151, an ordinary scope backlink at offset 152,
-an ordinary wrapper reference at offset 163, u32 value 2 at offset 174,
-and two zero bytes at offset 178. The locator itself is the frame carrier.
+`2E3AC990-483D-4A55-8662-C064B976A957`. Its registered type version and length
+select the frame together. A length that does not match the version is refused.
+In versions 2 and 3, its indexed header is followed by ten zero bytes and a
+construction reference at offset 21. The reference is null or nonzero and local. Version 2 uses a 51-byte typed nonnull reference;
+version 3 uses an eleven-byte nonnull reference. A null reference is one zero byte.
+The identity flag immediately follows the reference. Flag 0 stores a rigid
+matrix immediately after the flag; flag 1 omits the matrix. Version 3 stores
+one zero byte after the flag or matrix. Version 2 has no such separator.
+The scope backlink, wrapper reference, u32 discriminator and two zero bytes
+close the locator. Both closing references use the version's nonnull local
+reference width. A member locator has discriminator 2. The separately
+referenced pathless locator has discriminator 0 and is not a member locator.
+A nonnull construction reference selects the frame carrier. With a null
+construction reference, the locator itself is the frame carrier.
 
-The admitted version-2 typed rigid-group locator forms are 181 or 309 bytes.
-They store ten zero bytes after the indexed header, a nonzero typed
-construction reference at offset 21,
-and an identity flag at offset 72. Flag 0 stores a rigid matrix at offset
-73; flag 1 omits the matrix. The typed scope backlink immediately follows
-the matrix or identity flag; a typed wrapper reference, u32 discriminator,
-and two zero bytes follow the backlink. A member locator has discriminator
-2. The matrix form is 309 bytes, with backlink at offset 201, wrapper
-reference at offset 252, discriminator at offset 303, and zero tail at
-offset 307. The identity form is 181 bytes, with backlink at offset 73,
-wrapper reference at offset 124, discriminator at offset 175, and zero tail
-at offset 179. Discriminator 0 is refused as a member locator. Version 5 uses the wide
-operand-path locator frame.
+A version-3 compact rigid-group locator is 180 bytes with a matrix and
+52 bytes with identity. Its construction reference is null at offset 21;
+the identity flag is at offset 22. The matrix starts at offset 23. The matrix
+form has separator at offset 151, scope backlink at offset 152, wrapper reference at offset 163,
+discriminator at offset 174 and zero tail at offset 178. The compact identity
+form has separator at offset 23, scope backlink at offset 24, wrapper reference
+at offset 35, discriminator at offset 46 and zero tail at offset 50.
+
+A version-3 construction-bearing rigid-group locator is 190 bytes with a
+matrix and 62 bytes with identity. Its construction reference starts at
+offset 21 and its identity flag is at offset 32. The matrix starts at offset
+33. The matrix form has separator at offset 161, scope backlink at offset 162,
+wrapper reference at offset 173, discriminator at offset 184 and zero tail at
+offset 188. The ordinary identity form has separator at offset 33, scope
+backlink at offset 34, wrapper reference at offset 45, discriminator at offset
+56 and zero tail at offset 60.
+
+A version-2 typed rigid-group locator with a nonnull construction reference
+has its identity flag at offset 72. The matrix form is 309 bytes, with matrix
+at offset 73, backlink at offset 201, wrapper reference at offset 252,
+discriminator at offset 303 and zero tail at offset 307. The identity form is
+181 bytes, with backlink at offset 73, wrapper reference at offset 124,
+discriminator at offset 175 and zero tail at offset 179.
+
+A version-2 null-construction rigid-group locator has a null reference at
+offset 21 and an identity flag at offset 22. The null-construction matrix form
+is 259 bytes, with matrix at offset 23, backlink at offset 151, wrapper
+reference at offset 202, discriminator at offset 253 and zero tail at offset
+257. The null-construction identity form is 131 bytes, with backlink at offset
+23, wrapper reference at offset 74, discriminator at offset 125 and zero tail
+at offset 129. Version 5 uses the wide operand-path locator frame: 97 bytes
+with identity or 225 bytes with a matrix.
+
+A positive-count null-construction member path projects only through a
+concrete local occurrence carrier or placement carrier join. Without that
+join, the member remains native and contributes to `AssemblyJointUnprojected`.
+A null construction reference does not select deletion or suppression.
+A document identity does not select an occurrence.
 
 Each member locator ends exactly at its first path record. The consecutive
 path records end at the wrapper. The wrapper stores ten zero bytes after
@@ -1991,7 +2021,7 @@ An axial selector primary record has a 37-byte fixed prefix: its eleven-byte ind
 
 The two selectors of one construction carrier have the same selector GUIDs, external-object reference, segment, external asset GUID, link name, optional property GUID, version identity, and role GUID. Their axis-specific occurrence references can differ. The common role GUID uniquely identifies the `Component Insert` scope whose component construction carries that role. The insertion's projected occurrence qualifies the operand, and the selectors' common external-object identity names its connector. A frame reference can instead equal one `JointOrigin` scope record index while its transform equals that origin's solved frame. This form selects the current document root: the neutral operand has no occurrence or external-document qualifier, and its object is the `JointOrigin` feature.
 
-The 705- and 772-byte forms store no occurrence paths. Each other two-operand form stores a u32 count of two followed by two marked same-segment operand-path-locator references. The 378- and 399-byte `As-built` forms store the count at scope offset 47 and the references at offsets 51 and 62. The 422- and 444-byte `As-built` forms store them `11K` bytes later, after their `K` additional-owner references: at offsets 69, 73, and 84, and at offsets 80, 84, and 95. The 627-, 637-, and 692-byte forms store the count at scope offset 362 and the references at offsets 366 and 377. The 633- and 732-byte forms store the count at offset 358 and the references at offsets 362 and 373. The class-430/262 744-byte form stores the count at offset 358 and the references at offsets 362 and 373; its 748-byte form uses offset 362 and offsets 366 and 377. Each reference resolves to exactly one locator envelope after the scope's paired indexed header. The locator record indices are distinct, and the two envelopes do not overlap. The first locator reference qualifies the first operand frame and the second locator reference qualifies the second operand frame. For `As-built`, each locator's nonzero reference at locator offset 21 is the operand construction reference and its transform at locator offset 33 is the operand frame.
+The 705- and 772-byte forms store no occurrence paths. Each other two-operand form stores a u32 count of two followed by two marked same-segment operand-path-locator references. The 378- and 399-byte `As-built` forms store the count at scope offset 47 and the references at offsets 51 and 62. The 422- and 444-byte `As-built` forms store them `11K` bytes later, after their `K` additional-owner references: at offsets 69, 73, and 84, and at offsets 80, 84, and 95. The 627-, 637-, and 692-byte forms store the count at scope offset 362 and the references at offsets 366 and 377. The 633- and 732-byte forms store the count at offset 358 and the references at offsets 362 and 373. The class-430/262 744-byte form stores the count at offset 358 and the references at offsets 362 and 373; its 748-byte form uses offset 362 and offsets 366 and 377. Each reference resolves to exactly one locator envelope after the scope's paired indexed header. The locator record indices are distinct, and the two envelopes do not overlap. The first locator reference qualifies the first operand frame and the second locator reference qualifies the second operand frame. For the 378-, 399-, 422- and 444-byte `As-built` forms, each locator's nonzero reference at locator offset 21 is the operand construction reference and its transform at locator offset 33 is the operand frame.
 
 The direct-path subform of the class-283/264 and class-347/260 generations uses a 180-byte locator envelope. Its rigid transform starts at offset 23, one zero separator is at offset 151, its owning-scope backlink is at offset 152, its path-wrapper reference is at offset 163, u32 value 2 is at offset 174, and two zero tail bytes occupy offsets 178 and 179. One or more consecutive class-330 path records immediately follow the locator. Each contributes its ordered occurrence GUID and four identity GUIDs to one operand path. A class-330 path whose first occurrence GUID is not a current-document occurrence identifies an external operand; its first identity GUID is the external document identity. The class-397 wrapper follows the final path record. Its byte at offset 21 is one, its u32 at offset 22 is the path-record count, and its marked reference at offset 26 names the first path record. Each further path record has one marked reference in an eleven-byte run starting at wrapper offset 37. The wrapper length is therefore `37 + 11(C - 1)` for path-record count `C`.
 
@@ -2018,7 +2048,7 @@ their scope backlinks are at +479 and +490. The two identities of one
 carrier contain equal GUIDs. The occurrence GUID qualifies the operand and the
 component identity GUID identifies its external component.
 
-An operand-path locator is a fixed 190-byte indexed record with record index `N`. Its eleven-byte header is followed by ten zero bytes, a nonzero marked same-segment reference at offset 21, one zero byte at offset 32, a row-major rigid 4×4 transform at offset 33, one zero byte at offset 161, a marked backlink to the assembly-operation scope at offset 162, a marked reference to record index `N+2` at offset 173, u32 value 2 at offset 184, and two zero bytes at offset 188. The occurrence-path record starts at locator offset 190 and has record index `N+1`. The next indexed record is its wrapper at record index `N+2`. The wrapper is exactly 37 bytes: its eleven-byte indexed header, ten zero bytes, byte value 1 at offset 21, u32 value 1 at offset 22, and a marked reference to path record `N+1` at offset 26. The next indexed record starts at wrapper offset 37.
+In the standard two-operand form, an operand-path locator is a fixed 190-byte indexed record with record index `N`. Its eleven-byte header is followed by ten zero bytes, a nonzero marked same-segment reference at offset 21, one zero byte at offset 32, a row-major rigid 4×4 transform at offset 33, one zero byte at offset 161, a marked backlink to the assembly-operation scope at offset 162, a marked reference to record index `N+2` at offset 173, u32 value 2 at offset 184, and two zero bytes at offset 188. The occurrence-path record starts at locator offset 190 and has record index `N+1`. The next indexed record is its wrapper at record index `N+2`. The wrapper is exactly 37 bytes: its eleven-byte indexed header, ten zero bytes, byte value 1 at offset 21, u32 value 1 at offset 22, and a marked reference to path record `N+1` at offset 26. The next indexed record starts at wrapper offset 37.
 
 The class-388/266 legacy locator run uses class `451` for each 190-byte locator and class `369` for each wrapper. A class-451 locator keeps the same fixed offsets and backlinks as the common locator. Its wrapper reference names the class-369 record at `N + count + 1`, where `count` is the class-369 path count. A class-369 wrapper stores ten zero bytes, byte value 1 at offset 21, and path count 1 or 2 at offset 22. A class-369 wrapper stores marker 1 and its path count. A class-369 wrapper with path count 1 is 37 bytes. A class-369 wrapper with path count 2 is 48 bytes. Count 1 uses one marked path reference at offset 26 and a 37-byte span. Count 2 adds a marked path reference at offset 37 and has a 48-byte span. A class-369 wrapper stores one marked path reference at offset 26. A class-369 wrapper stores two marked path references at offsets 26 and 37. The referenced class-412 path records have consecutive indexes `N + 1` through `N + count` and each has a 425-byte span. A class-412 path record is 425 bytes in the class-388 legacy envelope. The class-412 path prefix stores ten zero bytes, marker 1 at offset 21, and three zero bytes at offsets 22 through 24. A class-412 path stores one occurrence GUID followed by four identity GUIDs. The class-412 path stores u64 value 2 between its identity pairs. The class-412 path stores u32 value 2 before its zero tail. The wrapper order is the occurrence order. The occurrence GUIDs from all wrapper members form the ordered occurrence path; the four identity GUIDs from the final wrapper member form the identity suffix.
 

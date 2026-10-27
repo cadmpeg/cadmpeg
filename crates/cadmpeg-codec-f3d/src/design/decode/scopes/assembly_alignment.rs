@@ -361,7 +361,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                 };
                 for path in member_paths {
                     let frame = super::assembly_operand_frames::exact_as_built_operand_frame(
-                        bytes, &path, true,
+                        bytes, &path, scope, stream_types,
                     )?;
                     additional_members.push(assembly::DesignQualifiedAssemblyOperand {
                         frame,
@@ -375,7 +375,8 @@ pub(super) fn exact_assembly_alignment_with_types(
                         frames: exact_as_built_operand_frames(
                             bytes,
                             &paths,
-                            crate::design::assembly::wide_as_built_scope(scope),
+                            scope,
+                            stream_types,
                         ),
                         paths,
                     })

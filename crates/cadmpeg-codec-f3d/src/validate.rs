@@ -15,9 +15,6 @@ mod xref;
 
 use xref::validate_xref_placement_sources;
 
-use crate::layout::assembly_compact_rigid_group_locator as compact_group_locator;
-use crate::layout::assembly_typed_rigid_group_identity_locator as typed_group_identity;
-use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_group_matrix;
 use cadmpeg_core::convert::f64_from_index;
 
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_distance_layout;
@@ -152,7 +149,6 @@ fn as_built_operand_frame_link(
     stream_types: &std::collections::HashMap<u64, (&str, u32)>,
 ) -> bool {
     use crate::layout::assembly_wide_operand_path_locator as wide_locator;
-    use design::assembly::RigidGroupLocatorLayout;
     let locator = path.link().locator_byte_offset;
     let identity = frame.transform.rows() == cadmpeg_ir::transform::Transform::identity().rows();
     let length = path
@@ -161,28 +157,24 @@ fn as_built_operand_frame_link(
         .and_then(|length| usize::try_from(length).ok());
     let rigid = design::assembly::rigid_as_built_scope(scope);
     let layout = rigid_group_locator_layout(path, stream_types);
-    let (reference, flag, matrix) = if rigid {
-        match layout {
-            Some(RigidGroupLocatorLayout::Compact) => (
-                crate::layout::indexed_design_record_header::RECORD_INDEX,
-                None,
-                compact_group_locator::TRANSFORM,
-            ),
-            Some(RigidGroupLocatorLayout::TypedIdentity | RigidGroupLocatorLayout::TypedMatrix) => {
-                (
-                    typed_group_identity::CONSTRUCTION_REFERENCE + 1,
-                    Some(typed_group_identity::IDENTITY_FLAG),
-                    typed_group_matrix::TRANSFORM,
-                )
-            }
-            Some(RigidGroupLocatorLayout::WideIdentity | RigidGroupLocatorLayout::WideMatrix) => (
-                wide_locator::NONZERO_RECORD_REFERENCE + 1,
-                Some(wide_locator::IDENTITY_FLAG),
-                wide_locator::TRANSFORM,
-            ),
-            None => return false,
-        }
-    } else if design::assembly::wide_as_built_scope(scope) {
+    if rigid {
+        let Some(layout) = layout else {
+            return false;
+        };
+        let reference = if layout.null_construction {
+            crate::layout::indexed_design_record_header::RECORD_INDEX
+        } else {
+            layout.construction_reference + 1
+        };
+        let transform = layout.transform.unwrap_or(layout.identity_flag);
+        return locator.checked_add(u64_from_index(reference)) == Some(frame.reference_offset)
+            && locator.checked_add(u64_from_index(transform)) == Some(frame.transform_offset)
+            && (layout.transform.is_some() || identity)
+            && frame.reference_record_index != 0
+            && (!layout.null_construction
+                || frame.reference_record_index == path.link().locator_record_index);
+    }
+    let (reference, flag, matrix) = if design::assembly::wide_as_built_scope(scope) {
         if !matches!(
             length,
             Some(
@@ -211,9 +203,6 @@ fn as_built_operand_frame_link(
                     locator.checked_add(u64_from_index(flag)) == Some(frame.transform_offset)
                 }))
         && frame.reference_record_index != 0
-        && (!rigid
-            || !matches!(layout, Some(RigidGroupLocatorLayout::Compact))
-            || frame.reference_record_index == path.link().locator_record_index)
 }
 
 fn rigid_group_locator_layout(
@@ -269,16 +258,23 @@ fn valid_assembly_operand_path_link(
         } else if wide {
             use crate::layout::assembly_wide_operand_path_identity_locator as identity;
             use crate::layout::assembly_wide_operand_path_matrix_locator as matrix;
-            let layout = match path
+            let (length, backlink, wrapper) = match path
                 .byte_offset()
                 .checked_sub(link.locator_byte_offset)
                 .and_then(|length| usize::try_from(length).ok())
             {
-                Some(identity::LEN) => design::assembly::RigidGroupLocatorLayout::WideIdentity,
-                Some(matrix::LEN) => design::assembly::RigidGroupLocatorLayout::WideMatrix,
+                Some(identity::LEN) => (
+                    identity::LEN,
+                    identity::SCOPE_BACKLINK,
+                    identity::WRAPPER_REFERENCE,
+                ),
+                Some(matrix::LEN) => (
+                    matrix::LEN,
+                    matrix::SCOPE_BACKLINK,
+                    matrix::WRAPPER_REFERENCE,
+                ),
                 _ => return false,
             };
-            let (length, backlink, wrapper, _, _) = layout.offsets();
             (
                 u64_from_index(length),
                 u64_from_index(backlink + 1),

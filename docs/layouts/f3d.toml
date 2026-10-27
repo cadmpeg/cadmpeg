@@ -5068,7 +5068,7 @@ name = "assembly_operand_path_locator"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "An operand-path locator is a fixed 190-byte indexed record with record index `N`."
+anchor = "In the standard two-operand form, an operand-path locator is a fixed 190-byte indexed record with record index `N`."
 size = 190
 note = "Offsets are relative to the locator's indexed header. The variable-length occurrence-path record starts immediately after this record."
 
@@ -19604,7 +19604,7 @@ name = "assembly_compact_rigid_group_locator"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
 kind = "byte"
 section = "Assembly operands"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
 size = 180
 note = "Offsets are relative to the primary indexed header."
 
@@ -19613,56 +19613,72 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
 
 [[record.field]]
-name = "zero_run_12"
+name = "zero_run_10"
 offset = 11
-type = "bytes[12]"
+type = "bytes[10]"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "Its construction reference is null at offset 21"
+value = 0
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "the identity flag is at offset 22"
+value = 0
 
 [[record.field]]
 name = "transform"
 offset = 23
 type = "f64[16]"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "A version-3 compact rigid-group locator is 180 bytes with a matrix"
 
 [[record.field]]
 name = "zero_151"
 offset = 151
 type = "u8"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "The matrix form has separator at offset 151"
 
 [[record.field]]
 name = "scope_backlink"
 offset = 152
 type = "bytes[11]"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "scope backlink at offset 152"
 
 [[record.field]]
 name = "wrapper_reference"
 offset = 163
 type = "bytes[11]"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "wrapper reference at offset 163"
 
 [[record.field]]
 name = "discriminator"
 offset = 174
 type = "u32"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "discriminator at offset 174"
 
 [[record.field]]
 name = "zero_tail"
 offset = 178
 type = "bytes[2]"
 source = "spec"
-anchor = "A version-3 compact rigid-group locator is 180 bytes in the admitted"
+anchor = "zero tail at offset 178"
 
 [[record]]
 name = "assembly_typed_rigid_group_identity_locator"
@@ -22248,3 +22264,284 @@ offset = 56
 type = "bytes[11]"
 source = "spec"
 anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+
+[[record]]
+name = "assembly_compact_rigid_group_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The compact identity"
+size = 52
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[1]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "separator"
+offset = 23
+type = "u8"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 35
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "discriminator"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "The compact identity"
+
+[[record.field]]
+name = "zero_tail"
+offset = 50
+type = "bytes[2]"
+source = "spec"
+anchor = "The compact identity"
+
+[[record]]
+name = "assembly_ordinary_rigid_group_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The ordinary identity"
+size = 62
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "identity_flag"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "separator"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "discriminator"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record.field]]
+name = "zero_tail"
+offset = 60
+type = "bytes[2]"
+source = "spec"
+anchor = "The ordinary identity"
+
+[[record]]
+name = "assembly_null_typed_rigid_group_matrix_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction matrix form"
+size = 259
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[1]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "transform"
+offset = 23
+type = "f64[16]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 151
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 202
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "discriminator"
+offset = 253
+type = "u32"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record.field]]
+name = "zero_tail"
+offset = 257
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction matrix form"
+
+[[record]]
+name = "assembly_null_typed_rigid_group_identity_locator"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The null-construction identity form"
+size = 131
+note = "Offsets are relative to the locator's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "construction_reference"
+offset = 21
+type = "bytes[1]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "identity_flag"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 23
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 74
+type = "bytes[51]"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "discriminator"
+offset = 125
+type = "u32"
+source = "spec"
+anchor = "The null-construction identity form"
+
+[[record.field]]
+name = "zero_tail"
+offset = 129
+type = "bytes[2]"
+source = "spec"
+anchor = "The null-construction identity form"

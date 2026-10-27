@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand frames, including as-built frames.
 
-use crate::layout::assembly_compact_rigid_group_locator as compact_group_locator;
 use crate::layout::assembly_compact_wide_limit_owner_run as limit_run;
 use crate::layout::assembly_compact_wide_scope as compact_wide;
-use crate::layout::assembly_typed_rigid_group_identity_locator as typed_group_identity;
-use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_group_matrix;
 use cadmpeg_core::decode::{u64_from_index, View};
 
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
@@ -240,11 +237,12 @@ pub(super) fn exact_assembly_operand_frames(
 pub(super) fn exact_as_built_operand_frames(
     bytes: &[u8],
     paths: &[DesignAssemblyOperandPath; 2],
-    wide: bool,
+    scope: &DesignParameterScope,
+    stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
 ) -> Option<[DesignAssemblyOperandFrame; 2]> {
     let frames = paths
         .each_ref()
-        .map(|path| exact_as_built_operand_frame(bytes, path, wide));
+        .map(|path| exact_as_built_operand_frame(bytes, path, scope, stream_types));
     let [Some(first), Some(second)] = frames else {
         return None;
     };
@@ -256,7 +254,8 @@ pub(super) fn exact_as_built_operand_frames(
 pub(super) fn exact_as_built_operand_frame(
     bytes: &[u8],
     path: &DesignAssemblyOperandPath,
-    wide: bool,
+    scope: &DesignParameterScope,
+    stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
 ) -> Option<DesignAssemblyOperandFrame> {
     let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
     let length = usize::try_from(
@@ -264,65 +263,95 @@ pub(super) fn exact_as_built_operand_frame(
             .checked_sub(path.link().locator_byte_offset)?,
     )
     .ok()?;
-    let (reference_at, transform_at, transform, reference_record_index) = if wide
-        && length == compact_group_locator::LEN
-    {
-        let transform_at = locator_at.checked_add(compact_group_locator::TRANSFORM)?;
-        (
-            locator_at.checked_add(crate::layout::indexed_design_record_header::RECORD_INDEX)?,
-            transform_at,
-            rigid_transform_at(bytes, transform_at)?,
-            path.link().locator_record_index,
-        )
-    } else if wide {
-        let typed = matches!(length, typed_group_identity::LEN | typed_group_matrix::LEN);
-        let (reference, flag, matrix) = if typed {
-            let reference = typed_group_identity::CONSTRUCTION_REFERENCE;
-            let flag = typed_group_identity::IDENTITY_FLAG;
-            (reference, flag, typed_group_matrix::TRANSFORM)
-        } else if matches!(
+    let wide = crate::design::assembly::wide_as_built_scope(scope);
+    let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) {
+        Some(crate::design::assembly::RigidGroupLocatorLayout::admit(
+            stream_types
+                .get(&u64::from(path.link().locator_record_index))
+                .copied(),
             length,
-            crate::layout::assembly_wide_operand_path_identity_locator::LEN
-                | crate::layout::assembly_wide_operand_path_matrix_locator::LEN
-        ) {
+        )?)
+    } else {
+        None
+    };
+    let (reference_at, transform_at, transform, reference_record_index) =
+        if let Some(layout) = group_layout {
+            if bytes.get(locator_at.checked_add(layout.identity_flag)?)?
+                != &u8::from(layout.transform.is_none())
+            {
+                return None;
+            }
+            let (reference_at, reference_record_index) = if layout.null_construction {
+                (
+                    locator_at
+                        .checked_add(crate::layout::indexed_design_record_header::RECORD_INDEX)?,
+                    path.link().locator_record_index,
+                )
+            } else {
+                let at = locator_at.checked_add(layout.construction_reference)?;
+                (
+                    at.checked_add(1)?,
+                    crate::bytes::local_reference_target(bytes, at, layout.typed)?,
+                )
+            };
+            let (transform_at, transform) = match layout.transform {
+                Some(transform) => {
+                    let at = locator_at.checked_add(transform)?;
+                    (at, rigid_transform_at(bytes, at)?)
+                }
+                None => (
+                    locator_at.checked_add(layout.identity_flag)?,
+                    cadmpeg_ir::transform::Transform::identity()
+                        .rows()
+                        .try_into()
+                        .ok()?,
+                ),
+            };
             (
+                reference_at,
+                transform_at,
+                transform,
+                reference_record_index,
+            )
+        } else if wide {
+            if !matches!(length, 97 | 225) {
+                return None;
+            }
+            let (reference, flag, matrix) = (
                 wide_locator::NONZERO_RECORD_REFERENCE,
                 wide_locator::IDENTITY_FLAG,
                 wide_locator::TRANSFORM,
+            );
+            let reference_at = locator_at.checked_add(reference)?;
+            let flag_at = locator_at.checked_add(flag)?;
+            let transform_at = locator_at.checked_add(matrix)?;
+            let (transform_at, transform) = match bytes.get(flag_at)? {
+                0 => (transform_at, rigid_transform_at(bytes, transform_at)?),
+                1 => (
+                    flag_at,
+                    cadmpeg_ir::transform::Transform::identity()
+                        .rows()
+                        .try_into()
+                        .ok()?,
+                ),
+                _ => return None,
+            };
+            (
+                reference_at.checked_add(1)?,
+                transform_at,
+                transform,
+                crate::bytes::local_reference_target(bytes, reference_at, false)?,
             )
         } else {
-            return None;
+            let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
+            let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
+            (
+                reference_at.checked_add(1)?,
+                transform_at,
+                rigid_transform_at(bytes, transform_at)?,
+                marked_record_reference(bytes, reference_at)?,
+            )
         };
-        let reference_at = locator_at.checked_add(reference)?;
-        let flag_at = locator_at.checked_add(flag)?;
-        let transform_at = locator_at.checked_add(matrix)?;
-        let (transform_at, transform) = match bytes.get(flag_at)? {
-            0 => (transform_at, rigid_transform_at(bytes, transform_at)?),
-            1 => (
-                flag_at,
-                cadmpeg_ir::transform::Transform::identity()
-                    .rows()
-                    .try_into()
-                    .ok()?,
-            ),
-            _ => return None,
-        };
-        (
-            reference_at.checked_add(1)?,
-            transform_at,
-            transform,
-            crate::bytes::local_reference_target(bytes, reference_at, typed)?,
-        )
-    } else {
-        let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
-        let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
-        (
-            reference_at.checked_add(1)?,
-            transform_at,
-            rigid_transform_at(bytes, transform_at)?,
-            marked_record_reference(bytes, reference_at)?,
-        )
-    };
     Some(DesignAssemblyOperandFrame {
         reference_record_index,
         reference_offset: u64::try_from(reference_at).ok()?,

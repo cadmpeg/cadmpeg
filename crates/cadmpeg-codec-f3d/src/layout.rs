@@ -5745,12 +5745,10 @@ pub(crate) mod assembly_typed_rigid_group_scope {
 pub(crate) mod assembly_compact_rigid_group_locator {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 180;
-    /// Offset of `zero_run_12` (`bytes[12]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN_12: usize = 11;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 22;
     /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const TRANSFORM: usize = 23;
-    /// Offset of `zero_151` (`u8`). Spec §Assembly operands.
-    pub(crate) const ZERO_151: usize = 151;
     /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SCOPE_BACKLINK: usize = 152;
     /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
@@ -5771,8 +5769,6 @@ pub(crate) mod assembly_compact_rigid_group_locator {
 pub(crate) mod assembly_typed_rigid_group_identity_locator {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 181;
-    /// Offset of `zero_run_10` (`bytes[10]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `construction_reference` (`bytes[51]`). Spec §Assembly operands.
     pub(crate) const CONSTRUCTION_REFERENCE: usize = 21;
     /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
@@ -6171,6 +6167,8 @@ pub(crate) mod assembly_wide_operand_path_identity_locator {
 pub(crate) mod assembly_wide_operand_path_matrix_locator {
     /// Record length in bytes. Spec §Assembly operands.
     pub(crate) const LEN: usize = 225;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const TRANSFORM: usize = 68;
     /// Offset of `zero_separator` (`u8`). Spec §Assembly operands.
     pub(crate) const ZERO_SEPARATOR: usize = 196;
     /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
@@ -6247,4 +6245,94 @@ pub(crate) mod assembly_alternate_rigid_group_prefix {
     pub(crate) const ZERO_RUN_5: usize = 21;
     /// Offset of `pathless_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const PATHLESS_LOCATOR_REFERENCE: usize = 26;
+}
+
+/// Byte offsets for the `assembly_compact_rigid_group_identity_locator` record.
+///
+/// Spec §Assembly operands. Record length 52 B.
+///
+/// ```text
+/// Offsets are relative to the locator's indexed header.
+/// ```
+pub(crate) mod assembly_compact_rigid_group_identity_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 52;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 22;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 24;
+    /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 35;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const DISCRIMINATOR: usize = 46;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 50;
+}
+
+/// Byte offsets for the `assembly_ordinary_rigid_group_identity_locator` record.
+///
+/// Spec §Assembly operands. Record length 62 B.
+///
+/// ```text
+/// Offsets are relative to the locator's indexed header.
+/// ```
+pub(crate) mod assembly_ordinary_rigid_group_identity_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 62;
+    /// Offset of `construction_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const CONSTRUCTION_REFERENCE: usize = 21;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 32;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 34;
+    /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 45;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const DISCRIMINATOR: usize = 56;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 60;
+}
+
+/// Byte offsets for the `assembly_null_typed_rigid_group_matrix_locator` record.
+///
+/// Spec §Assembly operands. Record length 259 B.
+///
+/// ```text
+/// Offsets are relative to the locator's indexed header.
+/// ```
+pub(crate) mod assembly_null_typed_rigid_group_matrix_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 259;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const TRANSFORM: usize = 23;
+    /// Offset of `scope_backlink` (`bytes[51]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 151;
+    /// Offset of `wrapper_reference` (`bytes[51]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 202;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const DISCRIMINATOR: usize = 253;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 257;
+}
+
+/// Byte offsets for the `assembly_null_typed_rigid_group_identity_locator` record.
+///
+/// Spec §Assembly operands. Record length 131 B.
+///
+/// ```text
+/// Offsets are relative to the locator's indexed header.
+/// ```
+pub(crate) mod assembly_null_typed_rigid_group_identity_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 131;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 22;
+    /// Offset of `scope_backlink` (`bytes[51]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 23;
+    /// Offset of `wrapper_reference` (`bytes[51]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 74;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const DISCRIMINATOR: usize = 125;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 129;
 }
