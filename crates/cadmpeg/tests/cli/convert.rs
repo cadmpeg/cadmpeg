@@ -104,6 +104,73 @@ fn convert_stdout_contains_only_json_artifact() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("check: OK"));
 }
 
+/// Sphere poles, a cone apex, and Rhino singular trims are edges with no 3D
+/// curve whose pcurves stay at their one vertex. STEP writes every face of
+/// these sources without those edges and reports no loss for them.
+#[cfg(all(feature = "fcstd", feature = "rhino"))]
+#[test]
+fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
+    let dir = tempdir().unwrap();
+    let sources: [(&str, &[u8]); 3] = [
+        (
+            "geometry_topology.FCStd",
+            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd"),
+        ),
+        (
+            "binary_exact_shape.FCStd",
+            include_bytes!("../../../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd"),
+        ),
+        (
+            "brep_singular_seam.3dm",
+            include_bytes!(
+                "../../../cadmpeg-codec-rhino/tests/golden/fixtures/brep_singular_seam.3dm"
+            ),
+        ),
+    ];
+    for (name, bytes) in sources {
+        let input = dir.path().join(name);
+        fs::write(&input, bytes).unwrap();
+        let output = dir.path().join(format!("{name}.step"));
+        let report = dir.path().join(format!("{name}.json"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--report",
+                report.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let report: serde_json::Value =
+            serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let codes: Vec<&str> = report["export"]["losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|loss| loss["code"]["code"].as_str().unwrap())
+            .collect();
+        for code in [
+            "topology.edge-no-3d-curve",
+            "geometry.curveless-edge-omitted",
+        ] {
+            assert!(!codes.contains(&code), "{name}: {codes:?}");
+        }
+        let faces = report["check_report"]["entity_counts"]["faces"]
+            .as_u64()
+            .unwrap();
+        assert!(faces > 0, "{name}");
+        let text = fs::read_to_string(&output).unwrap();
+        assert_eq!(
+            u64::try_from(text.matches("ADVANCED_FACE(").count()).unwrap(),
+            faces,
+            "{name}"
+        );
+    }
+}
+
 /// The decode report line names the depth the codec delivered. A codec with
 /// no geometry-depth cut delivers `full` for STEP's geometry request, with or
 /// without `--full-decode`, which excludes `--container-only`.

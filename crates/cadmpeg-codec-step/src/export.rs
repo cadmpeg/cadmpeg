@@ -353,6 +353,10 @@ pub(crate) struct Builder<'a> {
     /// Rings that are only a seam and edges collapsed at its poles, by loop.
     seam_rings: HashMap<&'a str, SeamRing<'a>>,
 
+    /// Coedges of edges with no 3D curve whose pcurves lift to the edge's
+    /// one vertex: collapsed edges a loop with extent leaves out.
+    collapsed_curveless_coedges: BTreeSet<&'a str>,
+
     /// Faces skipped because their surface geometry is unknown (opaque), so no
     /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
     /// is reached once per shell) and aggregated into a single counted loss.
@@ -572,6 +576,7 @@ impl<'a> Builder<'a> {
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
             point_loop_points: BTreeSet::new(),
+            collapsed_curveless_coedges: BTreeSet::new(),
             seam_rings: HashMap::new(),
             unknown_surface_faces: BTreeSet::new(),
             topology_relation_losses: BTreeSet::new(),
@@ -611,6 +616,7 @@ impl<'a> Builder<'a> {
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
         builder.seam_rings = builder.seam_rings()?;
+        builder.collapsed_curveless_coedges = builder.collapsed_curveless_coedges()?;
         Ok(builder)
     }
 
@@ -2964,6 +2970,26 @@ impl<'a> Builder<'a> {
         Ok(rings)
     }
 
+    /// The coedges of edges with no 3D curve that start and end at one vertex
+    /// and whose pcurves lift to it.
+    fn collapsed_curveless_coedges(
+        &self,
+    ) -> Result<BTreeSet<&'a str>, cadmpeg_core::decode::ResourceLimit> {
+        let mut collapsed = BTreeSet::new();
+        for (coedge_id, coedge) in &self.coedges {
+            let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() else {
+                continue;
+            };
+            if edge.curve().is_none()
+                && edge.start == edge.end
+                && self.pcurves_collapse_to(coedge, edge)?
+            {
+                collapsed.insert(*coedge_id);
+            }
+        }
+        Ok(collapsed)
+    }
+
     /// The pole, carriers, and other pole points of a ring made only of seam
     /// edges, each used once in each direction, and edges collapsed at the
     /// singular points of the surface, as on a sphere face that keeps its
@@ -3151,6 +3177,9 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let Some(curve_id) = edge.curve() else {
+                if has_extent && self.collapsed_curveless_coedges.contains(coedge_key) {
+                    continue;
+                }
                 self.curveless_edges.insert(edge_key.to_string());
                 self.topology_relation_loss(
                     format!("edge:{edge_key}:curve"),

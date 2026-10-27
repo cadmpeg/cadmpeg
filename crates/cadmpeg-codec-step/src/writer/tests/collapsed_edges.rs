@@ -25,20 +25,33 @@ enum Ring {
     /// After a closed edge on a circle through its vertex, the two the
     /// whole ring.
     AfterAClosedCircle,
+    /// As [`Ring::Beside`], with no 3D curve and a pcurve that stays at the
+    /// vertex.
+    CurvelessOnItsVertex,
+    /// As [`Ring::Beside`], with no 3D curve and a pcurve that runs a unit
+    /// length along the face.
+    CurvelessWithLength,
+    /// As [`Ring::Beside`], with no 3D curve and no pcurve.
+    CurvelessBare,
 }
 
 /// A loop of [`unit_cube`] with an edge collapsed to one of its corners, as
 /// a decoder adds one at a sphere's pole, placed as `ring` says.
 fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, DegenerateCurve};
     use cadmpeg_ir::geometry::pcurve::{
         Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
     };
-    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::ids::{CoedgeId, EdgeId, PcurveId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, PcurveUse, Sense};
     let same_vertex = ring_kind != Ring::BetweenVertices;
+    let curveless = matches!(
+        ring_kind,
+        Ring::CurvelessOnItsVertex | Ring::CurvelessWithLength | Ring::CurvelessBare
+    );
     let mut source = unit_cube().expect("unit cube fixture is admitted");
     let (loop_index, ring) = source
         .model
@@ -76,23 +89,24 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             .find(|p| p.id == vertex.point)
             .unwrap()
             .position()
-            .get()
     };
     let corner_vertex = corner.clone();
     let curve = CurveId::mint("test:model:curve#collapsed").unwrap();
     let edge = EdgeId::mint("test:model:edge#collapsed").unwrap();
     let coedge = CoedgeId::mint("test:model:coedge#collapsed").unwrap();
-    source.model.curves.push(Curve {
-        id: curve.clone(),
-        parameter_range: None,
-        source_object: None,
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-            DegenerateCurve::try_new(position).unwrap(),
-        )),
-    });
+    if !curveless {
+        source.model.curves.push(Curve {
+            id: curve.clone(),
+            parameter_range: None,
+            source_object: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                DegenerateCurve::try_new(position.get()).unwrap(),
+            )),
+        });
+    }
     source.model.edges.push(Edge {
         id: edge.clone(),
-        carrier: EdgeCarrier::unbounded(Some(curve)),
+        carrier: EdgeCarrier::unbounded((!curveless).then_some(curve)),
         start: if same_vertex { corner.clone() } else { other },
         end: corner.clone(),
         tolerance: None,
@@ -146,6 +160,66 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             });
         }
     }
+    if matches!(
+        ring_kind,
+        Ring::CurvelessOnItsVertex | Ring::CurvelessWithLength
+    ) {
+        // The plane is moved to have its origin at the corner, so the pcurve
+        // point (0, 0) lifts to the corner.
+        let face_id = source.model.loops[loop_index].face.clone();
+        let surface_id = source
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == face_id)
+            .unwrap()
+            .surface
+            .clone();
+        let surface = source
+            .model
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.id == surface_id)
+            .unwrap();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
+            panic!("a unit cube face is planar");
+        };
+        surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::new(position, *plane.frame()),
+        ));
+        let end = if ring_kind == Ring::CurvelessWithLength {
+            Point2::new(1.0, 0.0)
+        } else {
+            Point2::new(0.0, 0.0)
+        };
+        let pcurve = PcurveId::mint("test:model:pcurve#collapsed").unwrap();
+        source.model.pcurves.push(Pcurve {
+            id: pcurve.clone(),
+            geometry: PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    PcurveNurbsPoles::Polynomial {
+                        points: vec![Point2::new(0.0, 0.0), end],
+                    },
+                    false,
+                )
+                .unwrap(),
+            },
+            metadata: PcurveMetadata::default(),
+        });
+        let collapsed = source
+            .model
+            .coedges
+            .iter_mut()
+            .find(|candidate| candidate.id == coedge)
+            .unwrap();
+        collapsed.pcurves.push(PcurveUse {
+            pcurve,
+            isoparametric: None,
+            parameter_range: Some(DirectedParameterRange::new([0.0, 1.0]).unwrap()),
+        });
+    }
     if ring_kind == Ring::AfterAClosedCircle {
         let circle = CurveId::mint("test:model:curve#closed-circle").unwrap();
         let circle_edge = EdgeId::mint("test:model:edge#closed-circle").unwrap();
@@ -156,7 +230,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 CircleCurve::try_new(
-                    Point3::new(position.x - 0.25, position.y, position.z),
+                    Point3::new(position.get().x - 0.25, position.get().y, position.get().z),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     0.25,
@@ -241,6 +315,46 @@ fn writer_leaves_an_edge_collapsed_to_one_vertex_out_of_its_loop() {
         kept, plain,
         "an edge between two vertices is written or reported"
     );
+}
+
+/// An edge with no 3D curve whose pcurve stays at its one vertex is a
+/// collapsed edge: it is left out of its loop without a loss, as an edge on
+/// a degenerate curve is. Only the parameter range of its pcurve use is
+/// reported.
+#[test]
+fn writer_leaves_a_curveless_edge_whose_pcurve_stays_at_its_vertex_out_without_a_loss() {
+    let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
+    assert_eq!(
+        written(&cube_with_a_collapsed_edge(Ring::CurvelessOnItsVertex)),
+        Written {
+            losses: vec!["step/pcurve.use-native-metadata".to_owned()],
+            ..plain
+        }
+    );
+}
+
+/// An edge with no 3D curve is reported as left out when its pcurve leaves
+/// its vertex, or when it has no pcurve: nothing shows that it has no length.
+#[test]
+fn writer_reports_a_curveless_edge_that_may_have_length() {
+    let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
+    for ring in [Ring::CurvelessWithLength, Ring::CurvelessBare] {
+        let reported = written(&cube_with_a_collapsed_edge(ring));
+        assert_eq!(
+            (reported.oriented_edges, reported.faces),
+            (plain.oriented_edges, plain.faces)
+        );
+        for code in [
+            "step/topology.edge-no-3d-curve",
+            "step/geometry.curveless-edge-omitted",
+        ] {
+            assert!(
+                reported.losses.contains(&code.to_owned()),
+                "{:?}",
+                reported.losses
+            );
+        }
+    }
 }
 
 /// A ring of collapsed edges alone, with no coedge geometry, is the point
