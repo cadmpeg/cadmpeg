@@ -357,6 +357,8 @@ fn rigid_group_tail_selects_between_equal_frame_lengths() {
     use crate::design::assembly::RigidGroupLayout;
     assert_eq!(RigidGroupLayout::new(741, 76).unwrap().members, 46);
     assert_eq!(RigidGroupLayout::new(741, 196).unwrap().members, 6);
+    assert_eq!(RigidGroupLayout::new(537, 88).unwrap().members, 26);
+    assert_eq!(RigidGroupLayout::new(537, 196).unwrap().members, 2);
     assert_eq!(RigidGroupLayout::new(269, 88).unwrap().members, 2);
     assert_eq!(RigidGroupLayout::new(269, 77).unwrap().members, 3);
     assert_eq!(RigidGroupLayout::new(279, 76).unwrap().members, 4);
@@ -430,6 +432,8 @@ fn rigid_group_lengths_and_dynamic_classes_do_not_select_owner_generations() {
 
 #[test]
 fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
+    use crate::layout::assembly_alternate_rigid_group_prefix as prefix;
+    use crate::layout::assembly_rigid_as_built_scope as canonical;
     let parse = |bytes: &[u8]| {
         let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
         let class = "405".to_owned().try_into().unwrap();
@@ -438,12 +442,18 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
         )
         .unwrap()
     };
-    for (tail_length, frame_length, references, zero_tail) in [
+    for ((tail_length, frame_length, references, zero_tail), alternate) in [
         (76, 257, vec![19, 50, 63], 74),
         (77, 258, vec![19, 50, 64], 75),
         (87, 268, vec![19, 30, 61, 74], 85),
         (88, 269, vec![19, 30, 61, 75], 86),
-    ] {
+    ]
+    .into_iter()
+    .flat_map(|case| {
+        [false, true]
+            .into_iter()
+            .map(move |alternate| (case.clone(), alternate))
+    }) {
         let mut bytes = rigid_as_built_stream();
         let mut tail = Vec::new();
         push_ordinary_tail(
@@ -452,18 +462,57 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
             tail_length == 77 || tail_length == 88,
         );
         assert_eq!(tail.len(), tail_length);
-        bytes.splice(181..257, tail);
+        bytes.splice(canonical::SCOPE_TAIL..canonical::LEN, tail);
+        let shift = if alternate {
+            let mut prologue = vec![0; prefix::PATHLESS_LOCATOR_REFERENCE - prefix::ZERO_RUN_8];
+            prologue[prefix::PROPERTY_BLOCK_PRESENCE - prefix::ZERO_RUN_8] =
+                prefix::PROPERTY_BLOCK_PRESENCE_VALUE;
+            bytes.splice(
+                prefix::ZERO_RUN_8..canonical::PATHLESS_LOCATOR_REFERENCE,
+                prologue,
+            );
+            prefix::PATHLESS_LOCATOR_REFERENCE - canonical::PATHLESS_LOCATOR_REFERENCE
+        } else {
+            0
+        };
+        let tail_at = canonical::SCOPE_TAIL + shift;
         let mut scope = parse(&bytes).unwrap();
         scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
-        assert_eq!(scope.frame_length(), frame_length);
+        assert_eq!(
+            scope.frame_length(),
+            frame_length + u64::try_from(shift).unwrap()
+        );
         assert_eq!(
             scope.paired_byte_offset() - scope.feature_ordinal_offset(),
             u64::try_from(tail_length).unwrap()
         );
         assert_eq!(
             scope.previous_history_state_id_offset(),
-            Some(181 + if tail_length < 80 { 30 } else { 41 })
+            Some(u64::try_from(tail_at).unwrap() + if tail_length < 80 { 30 } else { 41 })
         );
+        let layout = crate::design::assembly::RigidGroupLayout::for_scope(&scope).unwrap();
+        assert_eq!(
+            layout.count_at,
+            if alternate {
+                prefix::LOCATOR_COUNT
+            } else {
+                canonical::LOCATOR_COUNT
+            }
+        );
+        assert_eq!(
+            layout.first_reference,
+            if alternate {
+                prefix::FIRST_LOCATOR_REFERENCE
+            } else {
+                canonical::FIRST_LOCATOR_REFERENCE
+            }
+        );
+        assert_eq!(layout.empty_table, canonical::REFERENCE_COUNT + shift);
+        if alternate {
+            assert!(scope
+                .try_edit(|draft| draft.reference_count_offset -= u64::try_from(shift).unwrap())
+                .is_err());
+        }
         let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
         let types = [64, 67]
             .into_iter()
@@ -500,23 +549,29 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
         assert!(alignment.additional_members.is_empty());
         if tail_length == 77 || tail_length == 88 {
             let mut payload = bytes.clone();
-            let field = 181 + if tail_length == 77 { 61 } else { 72 };
+            let field = tail_at + if tail_length == 77 { 61 } else { 72 };
             payload[field + 1..field + 3].copy_from_slice(&[1, 1]);
             assert!(parse(&payload).is_some());
         }
         if tail_length < 80 {
             let mut ambiguous_marker = bytes.clone();
-            ambiguous_marker[211..215].copy_from_slice(&1_u32.to_le_bytes());
-            ambiguous_marker[215..219].fill(0);
-            ambiguous_marker[219..222].fill(0);
-            assert!(crate::bytes::local_reference_target(&ambiguous_marker, 211, false).is_some());
+            ambiguous_marker[tail_at + 30..tail_at + 34].copy_from_slice(&1_u32.to_le_bytes());
+            ambiguous_marker[tail_at + 34..tail_at + 38].fill(0);
+            ambiguous_marker[tail_at + 38..tail_at + 41].fill(0);
+            assert!(
+                crate::bytes::local_reference_target(&ambiguous_marker, tail_at + 30, false)
+                    .is_some()
+            );
             let admitted = parse(&ambiguous_marker).unwrap();
             assert_eq!(admitted.previous_history_state_id(), Some(1));
-            assert_eq!(admitted.previous_history_state_id_offset(), Some(211));
+            assert_eq!(
+                admitted.previous_history_state_id_offset(),
+                Some(u64::try_from(tail_at + 30).unwrap())
+            );
         }
         for at in references.into_iter().chain([4, zero_tail]) {
             let mut bad = bytes.clone();
-            bad[181 + at] ^= 1;
+            bad[tail_at + at] ^= 1;
             assert!(
                 parse(&bad).is_none(),
                 "tail length {tail_length}, mutation {at}"
@@ -530,14 +585,21 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
     use crate::design::decode::scopes::parameter_scope::{
         decode_parameter_scopes, ParameterScopeSources,
     };
-    for (frame, tail, alternate) in [
-        (257, 76, false),
-        (258, 77, false),
-        (268, 87, false),
-        (269, 88, false),
-        (273, 88, true),
+    use crate::layout::assembly_alternate_rigid_group_prefix as prefix;
+    for (frame, tail, prologue_mutation, nonempty_properties) in [
+        (257, 76, None, false),
+        (258, 77, None, false),
+        (268, 87, None, false),
+        (269, 88, None, false),
+        (273, 88, Some(prefix::LEADING_BLOCK_PRESENCE), false),
+        (273, 88, Some(prefix::PROPERTY_BLOCK_PRESENCE), false),
+        (273, 88, Some(prefix::PROPERTY_COUNT), false),
+        (273, 88, Some(prefix::ZERO_SEPARATOR), false),
+        (313, 88, None, true),
     ] {
         let mut bytes = rigid_as_built_stream();
+        let alternate = prologue_mutation.is_some() || nonempty_properties;
+        let mut property_width = 0;
         if alternate {
             let mut long_tail = Vec::new();
             push_ordinary_tail(&mut long_tail, true, true);
@@ -546,13 +608,31 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             prologue.push(1);
             prologue.extend_from_slice(&[0; 5]);
             bytes.splice(11..22, prologue);
+            if let Some(at) = prologue_mutation {
+                bytes[at] = 2;
+            }
+            if nonempty_properties {
+                bytes[prefix::PROPERTY_COUNT..prefix::ZERO_SEPARATOR]
+                    .copy_from_slice(&1_u32.to_le_bytes());
+                let mut property = Vec::new();
+                for value in ["x", "IntrinsicMetaTypeuint64"] {
+                    property.extend_from_slice(&u32::try_from(value.len()).unwrap().to_le_bytes());
+                    property.extend_from_slice(value.as_bytes());
+                }
+                property.extend_from_slice(&0_u64.to_le_bytes());
+                property_width = property.len();
+                bytes.splice(prefix::ZERO_SEPARATOR..prefix::ZERO_SEPARATOR, property);
+            }
         } else {
             let mut replacement = Vec::new();
             push_ordinary_tail(&mut replacement, tail >= 87, tail == 77 || tail == 88);
             replacement[if tail < 80 { 61 } else { 72 }] = 2;
             bytes.splice(181..257, replacement);
         }
-        assert_eq!(frame - 181 - if alternate { 4 } else { 0 }, tail);
+        assert_eq!(
+            frame - 181 - if alternate { 4 } else { 0 } - property_width,
+            tail
+        );
         let archive = crate::test_support::zip_test::f3d_with_configuration(
             &[],
             "FusionAssetName[Active]/Design1/BulkStream.dat",

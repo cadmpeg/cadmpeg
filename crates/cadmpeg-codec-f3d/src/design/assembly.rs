@@ -343,6 +343,7 @@ impl OrdinaryRigidGroupTail {
 pub(crate) struct RigidGroupLayout {
     pub(crate) members: usize,
     pub(crate) count_at: usize,
+    pub(crate) pathless_reference: usize,
     pub(crate) first_reference: usize,
     pub(crate) stride: usize,
     pub(crate) empty_table: usize,
@@ -350,6 +351,15 @@ pub(crate) struct RigidGroupLayout {
 
 impl RigidGroupLayout {
     pub(crate) fn new(frame_length: u64, tail_length: u64) -> Option<Self> {
+        let mut candidates = [false, true]
+            .into_iter()
+            .filter_map(|alternate| Self::with_prologue(frame_length, tail_length, alternate));
+        let layout = candidates.next()?;
+        candidates.next().is_none().then_some(layout)
+    }
+
+    fn with_prologue(frame_length: u64, tail_length: u64, alternate: bool) -> Option<Self> {
+        use crate::layout::assembly_alternate_rigid_group_prefix as expanded;
         use crate::layout::assembly_rigid_as_built_scope as ordinary;
         use crate::layout::assembly_typed_rigid_group_scope as typed;
         let (kind_end, count_at, first_reference, stride, empty_base) =
@@ -361,7 +371,7 @@ impl RigidGroupLayout {
                     ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE,
                     ordinary::REFERENCE_COUNT,
                 )
-            } else if tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
+            } else if !alternate && tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
                 (
                     typed::SCOPE_TAIL,
                     typed::LOCATOR_COUNT,
@@ -372,21 +382,57 @@ impl RigidGroupLayout {
             } else {
                 return None;
             };
+        let shift = if alternate {
+            expanded::PATHLESS_LOCATOR_REFERENCE - ordinary::PATHLESS_LOCATOR_REFERENCE
+        } else {
+            0
+        };
+        let kind_end = kind_end.checked_add(shift)?;
         let base = u64_from_index(kind_end.checked_sub(2_usize.checked_mul(stride)?)?)
             .checked_add(tail_length)?;
         let member_bytes = usize::try_from(frame_length.checked_sub(base)?).ok()?;
         if !member_bytes.is_multiple_of(stride) || member_bytes / stride < 2 {
             return None;
         }
-        let empty_table =
-            empty_base.checked_add(member_bytes.checked_sub(2_usize.checked_mul(stride)?)?)?;
+        let empty_table = empty_base
+            .checked_add(shift)?
+            .checked_add(member_bytes.checked_sub(2_usize.checked_mul(stride)?)?)?;
         Some(Self {
             members: member_bytes / stride,
-            count_at,
-            first_reference,
+            count_at: count_at.checked_add(shift)?,
+            pathless_reference: ordinary::PATHLESS_LOCATOR_REFERENCE.checked_add(shift)?,
+            first_reference: first_reference.checked_add(shift)?,
             stride,
             empty_table,
         })
+    }
+
+    pub(crate) fn prologue_matches(self, frame: cadmpeg_core::decode::View<'_>) -> bool {
+        use crate::layout::assembly_alternate_rigid_group_prefix as alternate;
+        use crate::layout::assembly_rigid_as_built_scope as ordinary;
+        let bytes = frame.window();
+        let zero = |range: std::ops::Range<usize>| {
+            bytes
+                .get(range)
+                .is_some_and(|run| run.iter().all(|byte| *byte == 0))
+        };
+        if self.pathless_reference == alternate::PATHLESS_LOCATOR_REFERENCE {
+            zero(alternate::ZERO_RUN_8..alternate::LEADING_BLOCK_PRESENCE)
+                && bytes.get(alternate::LEADING_BLOCK_PRESENCE)
+                    == Some(&alternate::LEADING_BLOCK_PRESENCE_VALUE)
+                && bytes.get(alternate::PROPERTY_BLOCK_PRESENCE)
+                    == Some(&alternate::PROPERTY_BLOCK_PRESENCE_VALUE)
+                && cadmpeg_core::decode::View::u32_le_at(bytes, alternate::PROPERTY_COUNT)
+                    == Some(alternate::PROPERTY_COUNT_VALUE)
+                && bytes.get(alternate::ZERO_SEPARATOR) == Some(&alternate::ZERO_SEPARATOR_VALUE)
+        } else {
+            zero(ordinary::ZERO_RUN_8..ordinary::LEADING_BLOCK_PRESENCE)
+                && bytes.get(ordinary::LEADING_BLOCK_PRESENCE)
+                    == Some(&ordinary::LEADING_BLOCK_PRESENCE_VALUE)
+                && bytes.get(ordinary::PROPERTY_BLOCK_PRESENCE)
+                    == Some(&ordinary::PROPERTY_BLOCK_PRESENCE_VALUE)
+                && bytes.get(ordinary::ZERO_SEPARATOR) == Some(&ordinary::ZERO_SEPARATOR_VALUE)
+        }
     }
 
     pub(crate) fn for_scope(scope: &DesignParameterScope) -> Option<Self> {

@@ -921,38 +921,57 @@ fn unparsed_rigid_group_tail_length(
     use crate::layout::assembly_rigid_as_built_scope as ordinary;
     let start = usize::try_from(byte_offset).ok()?;
     let paired =
-        records.first_at_or_after(start.checked_add(ordinary::ZERO_RUN_11)?, record_index)?;
-    let prologue_shift = if bytes
-        .get(
-            start.checked_add(ordinary::ZERO_RUN_11)?
-                ..start.checked_add(ordinary::PATHLESS_LOCATOR_REFERENCE)?,
-        )?
-        .iter()
-        .all(|byte| *byte == 0)
+        records.first_at_or_after(start.checked_add(ordinary::ZERO_RUN_8)?, record_index)?;
+    let stride = ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE;
+    let known_tail = [
+        crate::layout::ordinary_rigid_group_tail_76::LEN,
+        crate::layout::ordinary_rigid_group_tail_77::LEN,
+        crate::layout::ordinary_rigid_group_tail_87::LEN,
+        crate::layout::ordinary_rigid_group_tail_88::LEN,
+        crate::layout::assembly_typed_rigid_group_scope::LEN
+            - crate::layout::assembly_typed_rigid_group_scope::SCOPE_TAIL,
+    ]
+    .into_iter()
+    .find_map(|tail_length| {
+        let kind_end = paired.checked_sub(tail_length)?;
+        let kind_at = kind_end.checked_sub(ordinary::SCOPE_TAIL - ordinary::KIND)?;
+        let table = kind_at.checked_sub(ordinary::KIND - ordinary::REFERENCE_COUNT)?;
+        if table < start.checked_add(ordinary::ZERO_RUN_8)? || View::u32_le_at(bytes, table)? != 0 {
+            return None;
+        }
+        let (kind, end) = lp_utf16_bounded(bytes.get(..paired)?, kind_at, 8..=8)?;
+        if kind != "As-built" || end != kind_end {
+            return None;
+        }
+        let guid_at = kind_at.checked_sub(ordinary::KIND - ordinary::JOINT_REFERENCE - stride)?;
+        let guid_end = crate::design::decode::text::fixed_guid_end(bytes, guid_at)?;
+        let padding = ordinary::REFERENCE_COUNT - ordinary::ZERO_RUN_150;
+        (guid_end.checked_add(padding)? == table
+            && bytes.get(guid_end..table)?.iter().all(|byte| *byte == 0))
+        .then_some(tail_length)
+    });
+    if known_tail.is_some() {
+        return known_tail;
+    }
+    let prologue_shift = if crate::bytes::local_reference_target(
+        bytes,
+        start.checked_add(ordinary::PATHLESS_LOCATOR_REFERENCE)?,
+        false,
+    )
+    .is_some()
     {
         0
-    } else if bytes
-        .get(
-            start.checked_add(alternate::ZERO_RUN_9)?
-                ..start.checked_add(alternate::CONSTANT_ONE)?,
-        )?
-        .iter()
-        .all(|byte| *byte == 0)
-        && bytes.get(start.checked_add(alternate::CONSTANT_ONE)?)
-            == Some(&alternate::CONSTANT_ONE_VALUE)
-        && bytes
-            .get(
-                start.checked_add(alternate::ZERO_RUN_5)?
-                    ..start.checked_add(alternate::PATHLESS_LOCATOR_REFERENCE)?,
-            )?
-            .iter()
-            .all(|byte| *byte == 0)
+    } else if crate::bytes::local_reference_target(
+        bytes,
+        start.checked_add(alternate::PATHLESS_LOCATOR_REFERENCE)?,
+        false,
+    )
+    .is_some()
     {
         alternate::PATHLESS_LOCATOR_REFERENCE - ordinary::PATHLESS_LOCATOR_REFERENCE
     } else {
         return None;
     };
-    let stride = ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE;
     let first = start
         .checked_add(ordinary::FIRST_LOCATOR_REFERENCE)?
         .checked_add(prologue_shift)?;
@@ -1244,14 +1263,11 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             let target = |at| {
                 crate::bytes::local_reference_target(bytes, at, typed).filter(|target| *target != 0)
             };
-            let pathless_at = start.checked_add(ordinary::PATHLESS_LOCATOR_REFERENCE)?;
+            let pathless_at = start.checked_add(layout.pathless_reference)?;
             let count_at = start.checked_add(layout.empty_table)?;
             let first = start.checked_add(layout.first_reference)?;
             let members_end = first.checked_add(layout.members.checked_mul(layout.stride)?)?;
-            if bytes
-                .get(start.checked_add(ordinary::ZERO_RUN_11)?..pathless_at)?
-                .iter()
-                .any(|byte| *byte != 0)
+            if !layout.prologue_matches(View::over_retained(bytes.get(start..paired_at)?))
                 || target(pathless_at).is_none()
                 || bytes.get(
                     pathless_at.checked_add(layout.stride)?..start.checked_add(layout.count_at)?,

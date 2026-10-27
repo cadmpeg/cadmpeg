@@ -5695,8 +5695,23 @@ pub(crate) mod assembly_wide_scope {
 /// Offsets are relative to the primary indexed header.
 /// ```
 pub(crate) mod assembly_rigid_as_built_scope {
-    /// Offset of `zero_run_11` (`bytes[11]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN_11: usize = 11;
+    /// Record length in bytes. Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 257;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `leading_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const LEADING_BLOCK_PRESENCE: usize = 19;
+    /// Stated value of `leading_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const LEADING_BLOCK_PRESENCE_VALUE: u8 = 0;
+    /// Offset of `property_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_BLOCK_PRESENCE: usize = 20;
+    /// Stated value of `property_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_BLOCK_PRESENCE_VALUE: u8 = 0;
+    /// Offset of `zero_separator` (`u8`). Spec §Assembly operands.
+    pub(crate) const ZERO_SEPARATOR: usize = 21;
+    /// Stated value of `zero_separator` (`u8`). Spec §Assembly operands.
+    pub(crate) const ZERO_SEPARATOR_VALUE: u8 = 0;
     /// Offset of `pathless_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const PATHLESS_LOCATOR_REFERENCE: usize = 22;
     /// Offset of `zero_run_33` (`bytes[4]`). Spec §Assembly operands.
@@ -6409,6 +6424,30 @@ pub(crate) mod ordinary_rigid_group_tail_88 {
     pub(crate) const ZERO_TAIL: usize = 86;
 }
 
+/// Byte offsets for the `ordinary_rigid_group_tail_77` record.
+///
+/// Spec §Assembly operands. Record length 77 B.
+///
+/// ```text
+/// Offsets are relative to the kind end; the optional reference and field tag select the 77-byte closure independently.
+/// ```
+pub(crate) mod ordinary_rigid_group_tail_77 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 77;
+}
+
+/// Byte offsets for the `ordinary_rigid_group_tail_87` record.
+///
+/// Spec §Assembly operands. Record length 87 B.
+///
+/// ```text
+/// Offsets are relative to the kind end; the optional reference and field tag select the 87-byte closure independently.
+/// ```
+pub(crate) mod ordinary_rigid_group_tail_87 {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 87;
+}
+
 /// Byte offsets for the `assembly_alternate_rigid_group_prefix` record.
 ///
 /// Spec §Assembly operands. Record length 67 B.
@@ -6417,16 +6456,32 @@ pub(crate) mod ordinary_rigid_group_tail_88 {
 /// The alternate ordinary prologue through its first two member references. Offsets are relative to the primary indexed header.
 /// ```
 pub(crate) mod assembly_alternate_rigid_group_prefix {
-    /// Offset of `zero_run_9` (`bytes[9]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN_9: usize = 11;
-    /// Offset of `constant_one` (`u8`). Spec §Assembly operands.
-    pub(crate) const CONSTANT_ONE: usize = 20;
-    /// Stated value of `constant_one` (`u8`). Spec §Assembly operands.
-    pub(crate) const CONSTANT_ONE_VALUE: u8 = 1;
-    /// Offset of `zero_run_5` (`bytes[5]`). Spec §Assembly operands.
-    pub(crate) const ZERO_RUN_5: usize = 21;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `leading_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const LEADING_BLOCK_PRESENCE: usize = 19;
+    /// Stated value of `leading_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const LEADING_BLOCK_PRESENCE_VALUE: u8 = 0;
+    /// Offset of `property_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_BLOCK_PRESENCE: usize = 20;
+    /// Stated value of `property_block_presence` (`u8`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_BLOCK_PRESENCE_VALUE: u8 = 1;
+    /// Offset of `property_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PROPERTY_COUNT: usize = 21;
+    /// Stated value of `property_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const PROPERTY_COUNT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `zero_separator` (`u8`). Spec §Assembly operands.
+    pub(crate) const ZERO_SEPARATOR: usize = 25;
+    /// Stated value of `zero_separator` (`u8`). Spec §Assembly operands.
+    pub(crate) const ZERO_SEPARATOR_VALUE: u8 = 0;
     /// Offset of `pathless_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const PATHLESS_LOCATOR_REFERENCE: usize = 26;
+    /// Offset of `locator_count` (`u32`, little-endian). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const LOCATOR_COUNT: usize = 41;
+    /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 45;
 }
 
 /// Byte offsets for the `assembly_compact_rigid_group_identity_locator` record.

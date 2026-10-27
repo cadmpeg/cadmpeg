@@ -1872,7 +1872,9 @@ Its member count `N` is at least two. The ordinary two-member rigid-group
 scope has four tail combinations: 257/76, 258/77, 268/87, and 269/88
 bytes (frame/tail).
 Its indexed header occupies offsets 0 through 10;
-eleven zero bytes follow it. A marked pathless-locator reference is at offset
+eight zero bytes follow it. The leading-block presence byte at offset 19
+and the property-block presence byte at offset 20 are zero. A zero separator
+is at offset 21. A marked pathless-locator reference is at offset
 22, four zero bytes are at offset 33, the u32 member count is at offset 37,
 and the first marked member-locator reference is at offset 41. References are
 eleven bytes. The next member reference is at offset 52. For two members,
@@ -1885,12 +1887,20 @@ fields shift by `11(N - 2)` bytes. The paired indexed header starts at
 `159 + 11N + T`, where `T` is the tail width.
 
 An alternate ordinary prologue stores nine zero bytes after its indexed
-header, byte 1 at offset 20, five zero bytes at offset 21, and the marked
-pathless-locator reference at offset 26. Four zero bytes at offset 37
-precede the member count at offset 41. Its member references start at offsets
-45 and 56. The joint reference and all later fields are four bytes after
-the corresponding ordinary-prologue fields. This prologue form is refused
-here.
+header. The leading-block presence byte at offset 19 is zero. The
+property-block presence byte at offset 20 is 1, and the u32 property count
+at offset 21 is zero. This is a present, empty property block. The canonical
+form has property-block presence 0 and no property count. A zero separator
+follows the block at offset 25 in the alternate form and offset 21 in the
+canonical form. Both forms have no property entries; a nonempty property
+block is outside these fixed layouts.
+The alternate form's marked pathless-locator reference is at offset 26.
+Four zero bytes at offset 37 precede the member count at offset 41.
+Its member references start at offsets 45 and 56. The joint reference and
+all later fields are four bytes after the corresponding canonical fields.
+The alternate form uses the same member count, eleven-byte references,
+empty reference table, and ordinary tail grammar. Its paired indexed header
+starts at `163 + 11N + T`.
 
 The ordinary rigid-group tail starts at the end of the LP-UTF16 kind.
 It stores a nonzero u32 feature ordinal, fifteen zero bytes, an eleven-byte
@@ -1914,14 +1924,12 @@ is at offset 72, the final reference at 75, and the two zero bytes at 86.
 Tag 0 moves the final reference and zero tail one byte earlier and gives an
 87-byte tail.
 
-No separate presence selector is established for the optional reference.
-The reader tries its absence and presence, reads the field tag at each
-candidate position, checks each local reference and zero run, and requires
-exactly one candidate to end at the paired indexed header. Zero or multiple
-complete candidates are refused. The member count and kind end must also
-close the scope prefix. The earlier single 76-byte tail statement is
-replaced because real frames carry an optional reference and a two- or
-three-byte field.
+The optional reference is selected by unique exact closure. Its absence
+and presence each give one candidate position for the field tag. Each
+candidate must have valid local references and zero runs. Exactly one
+candidate ends at the paired indexed header. Zero or multiple complete
+candidates are refused. The member count and kind end also close the
+scope prefix.
 
 The typed two-member rigid-group scope is 537 bytes. Its indexed header and
 eleven zero bytes have the same positions. The pathless-locator reference at
