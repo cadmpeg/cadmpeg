@@ -2101,6 +2101,36 @@ size = 42
 note = "The fixed frame tail before the paired indexed header is not assigned."
 
 [[record]]
+name = "design_hole_extent_controls"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
+size = 4
+note = "Offsets are relative to the end of the Hole property block, or to the end of the u32 word that type versions 5 and 7 store after it. Type version 3 stores only the two-byte prefix."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
+
+[[record.field]]
+name = "extent_control"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "The extent control `X` is `0` for Distance and `1` for a non-distance extent"
+
+[[record.field]]
+name = "suffix"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "Type version `4` stores the extent controls `01 01 X 00` directly"
+
+[[record]]
 name = "design_hole_point_data_v1_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

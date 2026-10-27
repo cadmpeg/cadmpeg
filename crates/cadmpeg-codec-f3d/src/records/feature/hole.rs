@@ -44,6 +44,69 @@ cadmpeg_core::named_optional_field!(
     u8,
     "tangent_point_data_prefix"
 );
+cadmpeg_core::named_optional_field!(deserialize_extent_control, u8, "extent_control");
+cadmpeg_core::named_optional_field!(
+    deserialize_extent_leading_word,
+    Located<u32>,
+    "leading_word"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_saved_non_distance_depth,
+    Located<FiniteReal>,
+    "saved_non_distance_depth"
+);
+
+pub(crate) fn valid_hole_extent_control(control: u8) -> bool {
+    matches!(control, 0 | 1)
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "DesignHoleExtentWire")]
+pub(crate) struct DesignHoleExtent {
+    /// Located u32 word before the extent controls in type versions 5 and 7.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) leading_word: Option<Located<u32>>,
+    /// Extent control; type version 3 stores none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) extent_control: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) saved_non_distance_depth: Option<Located<FiniteReal>>,
+}
+
+#[derive(Deserialize)]
+struct DesignHoleExtentWire {
+    #[serde(default, deserialize_with = "deserialize_extent_leading_word")]
+    leading_word: Option<Located<u32>>,
+    #[serde(default, deserialize_with = "deserialize_extent_control")]
+    extent_control: Option<u8>,
+    #[serde(default, deserialize_with = "deserialize_saved_non_distance_depth")]
+    saved_non_distance_depth: Option<Located<FiniteReal>>,
+}
+
+impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
+    type Error = &'static str;
+
+    fn try_from(wire: DesignHoleExtentWire) -> Result<Self, Self::Error> {
+        if wire
+            .extent_control
+            .is_some_and(|control| !valid_hole_extent_control(control))
+        {
+            return Err("invalid Hole extent control");
+        }
+        Ok(Self {
+            leading_word: wire.leading_word,
+            extent_control: wire.extent_control,
+            saved_non_distance_depth: wire.saved_non_distance_depth,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DesignHoleScope {
+    pub(crate) point: Option<DesignHoleConstruction>,
+    pub(crate) extent: Option<DesignHoleExtent>,
+}
+
 /// Tangent-point payload of a version-four Hole point carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignHoleTangentPoint {
@@ -443,6 +506,39 @@ impl Serialize for DesignHoleFaceSelection {
 mod tests {
     use super::{DesignHoleConstruction, DesignHoleFaceSelection};
     use cadmpeg_test_support::native_serialization::assert_native_limit;
+
+    #[test]
+    fn hole_extent_round_trip_checks_control() {
+        for control in [0, 1] {
+            let value = serde_json::json!({"extent_control": control, "saved_non_distance_depth": {"value": 1.0, "offset": 5}});
+            let extent: super::DesignHoleExtent = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(extent).unwrap(), value);
+        }
+        let worded =
+            serde_json::json!({"leading_word": {"value": 2, "offset": 3}, "extent_control": 0});
+        let extent: super::DesignHoleExtent = serde_json::from_value(worded.clone()).unwrap();
+        assert_eq!(serde_json::to_value(extent).unwrap(), worded);
+        assert!(serde_json::from_value::<super::DesignHoleExtent>(
+            serde_json::json!({"leading_word": null, "extent_control": 0})
+        )
+        .is_err());
+        let bare = serde_json::json!({});
+        let extent: super::DesignHoleExtent = serde_json::from_value(bare.clone()).unwrap();
+        assert_eq!(extent.extent_control, None);
+        assert_eq!(serde_json::to_value(extent).unwrap(), bare);
+        assert!(serde_json::from_value::<super::DesignHoleExtent>(
+            serde_json::json!({"extent_control": null})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<super::DesignHoleExtent>(
+            serde_json::json!({"extent_control": 2})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<super::DesignHoleExtent>(
+            serde_json::json!({"extent_control": 1, "saved_non_distance_depth": null})
+        )
+        .is_err());
+    }
 
     #[test]
     fn hole_construction_input_columns_stream_once_with_retained_limit() {

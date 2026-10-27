@@ -266,8 +266,20 @@ pub(crate) fn decode_parameter_scopes(
                     &stream_types,
                     &scope::DesignFeatureKind::Hole,
                 )?;
+                let extent = super::hole::hole_extent(
+                    bytes,
+                    &scope,
+                    scope
+                        .class_tag
+                        .as_str()
+                        .parse::<u32>()
+                        .ok()
+                        .and_then(|tag| class_types.get(&tag))
+                        .map(|row| row.version),
+                );
                 if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    slot.point = construction;
+                    slot.extent = extent;
                 }
             }
             if let Some(placement) = exact_coil_placement(ctx, bytes, &records, &scope, recipes)? {
@@ -819,6 +831,21 @@ pub(in crate::design::decode) fn payload_prologue(
     at: usize,
     end: usize,
 ) -> Option<usize> {
+    read_payload_prologue(bytes, at, end).map(|prologue| prologue.end)
+}
+
+pub(super) struct PayloadPrologue {
+    pub(super) end: usize,
+    pub(super) property_count: u32,
+    pub(super) saved_hole_depth:
+        Option<crate::records::identity::Located<cadmpeg_ir::scalar::FiniteReal>>,
+}
+
+pub(super) fn read_payload_prologue(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+) -> Option<PayloadPrologue> {
     fn graphic_ascii_at(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
         let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         if !(1..=64).contains(&length) {
@@ -829,30 +856,53 @@ pub(in crate::design::decode) fn payload_prologue(
         let raw = bytes.get(start..end)?;
         raw.iter().all(u8::is_ascii_graphic).then_some((raw, end))
     }
-
+    let bytes = bytes.get(..end)?;
     let mut cursor = at.checked_add(1)?;
     let present = *bytes.get(cursor)?;
-    cursor += 1;
-    match present {
-        0 => Some(cursor),
+    cursor = cursor.checked_add(1)?;
+    let count = match present {
+        0 => 0,
         1 => {
             let count = View::u32_le_at(bytes, cursor)?;
-            if count > 16 {
-                return None;
+            cursor = cursor.checked_add(4)?;
+            count
+        }
+        _ => return None,
+    };
+    if count > 16 {
+        return None;
+    }
+    let mut saved_hole_depth = None;
+    for _ in 0..count {
+        let (key, after_key) = graphic_ascii_at(bytes, cursor)?;
+        let (type_name, after_type) = graphic_ascii_at(bytes, after_key)?;
+        match type_name {
+            b"IntrinsicMetaTypeuint64" => {
+                View::u64_le_at(bytes, after_type)?;
             }
-            cursor += 4;
-            for _ in 0..count {
-                let (_key, after_key) = graphic_ascii_at(bytes, cursor)?;
-                let (type_name, after_type) = graphic_ascii_at(bytes, after_key)?;
-                if type_name != b"IntrinsicMetaTypeuint64" {
+            b"IntrinsicMetaTypedouble" if key == b"SavedHoleDepthInNonDistanceExtentsCase" => {
+                let value =
+                    cadmpeg_ir::scalar::FiniteReal::try_from(View::f64_le_at(bytes, after_type)?)
+                        .ok()?;
+                if saved_hole_depth
+                    .replace(crate::records::identity::Located {
+                        value,
+                        offset: u64::try_from(after_type).ok()?,
+                    })
+                    .is_some()
+                {
                     return None;
                 }
-                cursor = after_type.checked_add(8)?;
             }
-            (cursor <= end).then_some(cursor)
+            _ => return None,
         }
-        _ => None,
+        cursor = after_type.checked_add(8)?;
     }
+    (cursor <= end).then_some(PayloadPrologue {
+        end: cursor,
+        property_count: count,
+        saved_hole_depth,
+    })
 }
 
 /// Every indexed-record header that can open a parameter scope: a scope is

@@ -547,3 +547,31 @@ fn rigid_group_history_offsets_follow_both_tail_choices() {
             .is_err());
     }
 }
+
+#[test]
+fn hole_extent_without_point_carrier_round_trips_and_checks_kind() {
+    use super::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut};
+    for control in [0, 1] {
+        let mut scope = DesignParameterScope::empty("f3d:scope#1", DesignFeatureKind::Hole, 1);
+        if let DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
+            slot.extent = Some(crate::records::feature::hole::DesignHoleExtent {
+                leading_word: None,
+                extent_control: Some(control),
+                saved_non_distance_depth: None,
+            });
+        }
+        let wire = serde_json::to_value(&scope).unwrap();
+        let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded.hole_extent(), scope.hole_extent());
+        assert!(decoded.hole_construction().is_none());
+        let mut invalid = wire.clone();
+        invalid["hole_extent"]["extent_control"] = serde_json::json!(2);
+        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+        let mut invalid = wire.clone();
+        invalid["kind"] = serde_json::json!("Thread");
+        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+        let mut invalid = wire;
+        invalid["hole_extent"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<DesignParameterScope>(invalid).is_err());
+    }
+}

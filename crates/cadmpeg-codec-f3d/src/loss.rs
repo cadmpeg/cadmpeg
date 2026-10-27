@@ -118,6 +118,8 @@ pub(crate) enum F3dLossCode {
     SheetThicknessUnruled,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
+    /// Hole extent controls do not define an admitted termination.
+    HoleExtentUnproven,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
     /// A non-equivalent duplicate scope envelope was superseded by the
@@ -346,6 +348,7 @@ impl F3dLossCode {
         Self::FeatureDefinitionIncomplete,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
+        Self::HoleExtentUnproven,
         Self::FeatureScopePayloadUninterpreted,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
@@ -490,6 +493,7 @@ impl F3dLossCode {
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
+            Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
@@ -645,6 +649,7 @@ impl F3dLossCode {
             | Self::EdgeReferenceLostUnrepaired
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
+            | Self::HoleExtentUnproven
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -758,6 +763,7 @@ impl F3dLossCode {
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
+            | Self::HoleExtentUnproven
             | Self::FeatureScopeUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
@@ -949,6 +955,7 @@ mod tests {
                 "feature.definition-incomplete",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
+                "feature.hole-extent-unproven",
                 "feature.scope-payload-uninterpreted",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
