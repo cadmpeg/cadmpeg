@@ -181,8 +181,21 @@ impl MergeSession<'_, '_> {
         table: &XrefTable,
     ) -> Result<usize, CodecError> {
         let placements = member_placements(&parent_ir.model, table, None);
-        let merged =
-            self.merge_placements(parent_ir, parent_report, parent_fidelity, table, placements)?;
+        let mut member_roots = std::collections::BTreeMap::new();
+        let merged = self.merge_placements(
+            parent_ir,
+            parent_report,
+            parent_fidelity,
+            table,
+            placements,
+            &mut member_roots,
+        )?;
+        rebind_joint_descent(
+            self.ctx,
+            parent_ir,
+            &member_roots,
+            &mut parent_report.losses,
+        )?;
         parent_report
             .losses
             .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
@@ -199,6 +212,10 @@ impl MergeSession<'_, '_> {
         parent_fidelity: &mut cadmpeg_ir::SourceFidelity,
         table: &XrefTable,
         placements: Vec<MemberPlacement<'_>>,
+        member_roots: &mut std::collections::BTreeMap<
+            cadmpeg_ir::ids::OccurrenceId,
+            cadmpeg_ir::ids::OccurrenceId,
+        >,
     ) -> Result<usize, CodecError> {
         use cadmpeg_ir::products::PrototypeReference;
 
@@ -340,6 +357,14 @@ impl MergeSession<'_, '_> {
             };
             let mut instance = member.instantiate(self.ctx, &occurrence, &placement.parent)?;
             let child_placements = member_placements(&instance, &member.table, Some(&occurrence));
+            for root in &instance.occurrences {
+                if matches!(root.parent, cadmpeg_ir::products::OccurrenceParent::Root {})
+                    && matches!(root.prototype, PrototypeReference::Local { .. })
+                    && root.native_ref.is_none()
+                {
+                    member_roots.insert(root.id.clone(), placement.parent.clone());
+                }
+            }
             reparent_component_roots(&mut instance.occurrences, &placement.parent)?;
             parent_ir.model.occurrences.extend(instance.occurrences);
             parent_ir
@@ -362,6 +387,7 @@ impl MergeSession<'_, '_> {
                 parent_fidelity,
                 &member.table,
                 child_placements,
+                member_roots,
             )?;
             self.stack.pop();
             merged += descendants + 1;
@@ -372,6 +398,106 @@ impl MergeSession<'_, '_> {
         }
         Ok(merged)
     }
+}
+
+fn rebind_joint_descent(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    member_roots: &std::collections::BTreeMap<
+        cadmpeg_ir::ids::OccurrenceId,
+        cadmpeg_ir::ids::OccurrenceId,
+    >,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    use crate::records::feature::assembly_features::DesignComponentOccurrence;
+    use cadmpeg_ir::products::{OccurrenceParent, OperandContainer};
+
+    if !ir.model.assembly_joints.iter().any(|joint| {
+        joint.connectors().any(|connector| {
+            matches!(
+                connector.operand.container,
+                OperandContainer::Occurrence { .. }
+            ) && !connector.operand.subelements.is_empty()
+        })
+    }) {
+        return Ok(());
+    }
+    let Some(namespace) = ir.native.namespace("f3d") else {
+        return Ok(());
+    };
+    let carriers = namespace
+        .arena_iter_as_for_decode::<DesignComponentOccurrence>(ctx, "design_component_occurrences")
+        .map(|carrier| carrier.map(|carrier| (carrier.id, carrier.occurrence_guid)))
+        .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+    let mut children = std::collections::BTreeMap::new();
+    for occurrence in &ir.model.occurrences {
+        let Some(key) = occurrence
+            .native_ref
+            .as_deref()
+            .and_then(|id| carriers.get(id))
+        else {
+            continue;
+        };
+        let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+            continue;
+        };
+        let mut parent = parent;
+        for _ in 0..=member_roots.len() {
+            children
+                .entry((parent.clone(), key.as_str().to_ascii_lowercase()))
+                .and_modify(|selected| *selected = None)
+                .or_insert(Some(&occurrence.id));
+            let Some(outer) = member_roots.get(parent) else {
+                break;
+            };
+            parent = outer;
+        }
+    }
+    for joint in &mut ir.model.assembly_joints {
+        let joint_id = joint.id.clone();
+        for connector in joint.connectors_mut() {
+            let operand = &mut connector.operand;
+            // An operand that already names a nested document path is not
+            // rebound: its path is relative to the current container.
+            let OperandContainer::Occurrence {
+                occurrence,
+                occurrence_path,
+            } = &operand.container
+            else {
+                continue;
+            };
+            if !occurrence_path.is_empty() {
+                continue;
+            }
+            let mut selected = occurrence;
+            let mut consumed = 0;
+            let mut ambiguous = false;
+            for key in &operand.subelements {
+                match children.get(&(selected.clone(), key.to_ascii_lowercase())) {
+                    Some(Some(child)) => {
+                        selected = child;
+                        consumed += 1;
+                    }
+                    Some(None) => {
+                        ambiguous = true;
+                        losses.push(F3dLossCode::AssemblyOperandDescentAmbiguous.note(format!(
+                            "joint {joint_id}: operand descent key {key} selects multiple merged child occurrences; the operand is unchanged"
+                        )));
+                        break;
+                    }
+                    None => break,
+                }
+            }
+            if consumed != 0 && !ambiguous {
+                operand.container = OperandContainer::Occurrence {
+                    occurrence: selected.clone(),
+                    occurrence_path: Vec::new(),
+                };
+                operand.subelements.drain(..consumed);
+            }
+        }
+    }
+    Ok(())
 }
 
 impl MemberDefinition {
