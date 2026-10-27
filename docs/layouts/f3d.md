@@ -5089,6 +5089,8 @@ Parsed by:
 | 19 | 1 | `path_marker` | `u8` | little | spec | `u8 1` at offset 19 · value `1` |
 | 20 | 4 | `path_count` | `u32` | little | spec | u32 path count `1` at offset 20 · value `1` |
 | 24 | 9 | `component_reference` | `bytes[9]` | little | spec | Marked component-record references at offsets 24 and 197 |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | The u32 instance discriminator is at offset 35 |
+| 39 | 1 | `path_terminator` | `u8` | little | spec | the path terminator is at offset 39 · value `0` |
 | 40 | 4 | `occurrence_ordinal` | `u32` | little | spec | the one-based occurrence ordinal at offset 40 |
 | 44 | 76 | `carrier_guid` | `bytes[76]` | little | spec | an LP-UTF16 carrier GUID at offset 44 |
 | 120 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | an LP-UTF16 occurrence GUID at offset 120 |
@@ -5098,7 +5100,7 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): Indexed header.
-- `33..40` (7 B): Zero trailing field of the component-record reference.
+- `33..35` (2 B): Two zero trailing bytes of the local component reference.
 - `196..197` (1 B): Zero separator.
 - `206..208` (2 B): Zero trailing field of the repeated component-record reference.
 
@@ -6491,6 +6493,173 @@ Parsed by:
 | 9 | 4 | `type_guid_length` | `u32` | little | spec | an additional u32 length `36` |
 | 13 | 36 | `type_guid` | `bytes[36]` | little | spec | 36 ASCII type-GUID bytes between the target and the flags |
 | 49 | 2 | `flags` | `bytes[2]` | little | spec | two zero flag bytes |
+
+## `local_component_occurrence_typed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 289 B
+
+The 349-byte identity frame has one zero separator before the repeated reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 19 | 1 | `path_marker` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 24 | 51 | `component_reference` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 75 | 4 | `path_discriminator` | `u32` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 79 | 1 | `path_terminator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
+| 80 | 4 | `occurrence_ordinal` | `u32` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 84 | 76 | `carrier_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 160 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 236 | 1 | `separator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
+| 237 | 51 | `component_reference_repeat` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+
+## `local_component_occurrence_typed_compact_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 288 B
+
+The 348-byte identity and 476-byte matrix frames have no separator before the repeated reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 19 | 1 | `path_marker` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 24 | 51 | `component_reference` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 75 | 4 | `path_discriminator` | `u32` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 79 | 1 | `path_terminator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
+| 80 | 4 | `occurrence_ordinal` | `u32` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 84 | 76 | `carrier_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 160 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 236 | 51 | `component_reference_repeat` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 287 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+
+## `local_component_occurrence_typed_identity_tail`
+
+Spec §3.1 · layout: byte offsets · size: 60 B
+
+Relative to the end of the typed identity prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 9 | `zero_run` | `bytes[9]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 9 | 51 | `owner_reference` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+
+## `local_component_occurrence_typed_matrix_tail`
+
+Spec §3.1 · layout: byte offsets · size: 188 B
+
+Relative to the end of the typed compact prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 128 | `transform` | `f64[16]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 128 | 9 | `zero_run` | `bytes[9]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+| 137 | 51 | `owner_reference` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
+
+## `local_component_occurrence_typed_attributed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 84 B
+
+The counted attribute run follows the typed component reference and the path discriminator.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An attributed local component occurrence also permits a typed component reference. |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | An attributed local component occurrence also permits a typed component reference. |
+| 19 | 1 | `path_marker` | `u8` | little | spec | An attributed local component occurrence also permits a typed component reference. · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | An attributed local component occurrence also permits a typed component reference. · value `1` |
+| 24 | 51 | `component_reference` | `bytes[51]` | little | spec | An attributed local component occurrence also permits a typed component reference. |
+| 75 | 4 | `path_discriminator` | `u32` | little | spec | An attributed local component occurrence also permits a typed component reference. |
+| 79 | 1 | `attributes_marker` | `u8` | little | spec | An attributed local component occurrence also permits a typed component reference. · value `1` |
+| 80 | 4 | `attribute_count` | `u32` | little | spec | An attributed local component occurrence also permits a typed component reference. |
+
+## `root_instance_empty_path_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+The path has no component-definition reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A named root-instance record can store an empty path. |
+| 11 | 4 | `leading_zero` | `u32` | little | spec | A named root-instance record can store an empty path. · value `0` |
+| 15 | 4 | `instance_name_length` | `u32` | little | spec | A named root-instance record can store an empty path. · value `12` |
+| 19 | 12 | `instance_name` | `bytes[12]` | little | spec | A named root-instance record can store an empty path. |
+| 31 | 1 | `path_marker` | `u8` | little | spec | A named root-instance record can store an empty path. · value `1` |
+| 32 | 4 | `path_count` | `u32` | little | spec | A named root-instance record can store an empty path. · value `0` |
+
+## `root_instance_empty_path_frame`
+
+Spec §3.1 · layout: byte offsets · size: 255 B
+
+The typed reference after the two GUIDs names the root component definition.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. |
+| 11 | 4 | `leading_zero` | `u32` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. · value `0` |
+| 15 | 4 | `instance_name_length` | `u32` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. · value `12` |
+| 19 | 12 | `instance_name` | `bytes[12]` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. |
+| 31 | 1 | `path_marker` | `u8` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. · value `1` |
+| 32 | 4 | `path_count` | `u32` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. · value `0` |
+| 36 | 1 | `separator` | `u8` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. · value `0` |
+| 37 | 4 | `word` | `u32` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. · value `2` |
+| 41 | 76 | `carrier_guid` | `bytes[76]` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. |
+| 117 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. |
+| 193 | 51 | `component_reference` | `bytes[51]` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. |
+| 244 | 1 | `identity_flag` | `u8` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. · value `1` |
+| 245 | 10 | `zero_tail` | `bytes[10]` | little | spec | The empty-path typed identity root-instance frame is 255 bytes. |
+
+## `root_instance_empty_path_separated_frame`
+
+Spec §3.1 · layout: byte offsets · size: 256 B
+
+The typed reference after the two GUIDs names the root component definition.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. |
+| 11 | 4 | `leading_zero` | `u32` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `0` |
+| 15 | 4 | `instance_name_length` | `u32` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `12` |
+| 19 | 12 | `instance_name` | `bytes[12]` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. |
+| 31 | 1 | `path_marker` | `u8` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `1` |
+| 32 | 4 | `path_count` | `u32` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `0` |
+| 36 | 1 | `separator` | `u8` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `0` |
+| 37 | 4 | `word` | `u32` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `2` |
+| 41 | 76 | `carrier_guid` | `bytes[76]` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. |
+| 117 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. |
+| 193 | 1 | `reference_separator` | `u8` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `0` |
+| 194 | 51 | `component_reference` | `bytes[51]` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. |
+| 245 | 1 | `identity_flag` | `u8` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. · value `1` |
+| 246 | 10 | `zero_tail` | `bytes[10]` | little | spec | The separated empty-path typed identity root-instance frame is 256 bytes. |
 
 ## `assembly_root_operand_path`
 

@@ -183,7 +183,8 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
     assert_eq!(bodies.len(), 5);
     let mut model = cadmpeg_ir::document::Model::default();
     model.bodies.extend(bodies);
-    assert!(super::super::saved_free_edge_bodies_loss(&model).is_none());
+    let loss = super::super::saved_free_edge_bodies_loss(&model).unwrap();
+    assert!(loss.message.starts_with("2 saved free-edge bodies"));
     let definition: cadmpeg_ir::products::ProductDefinition =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:design:product-definition#1", "kind": "part", "bodies": []

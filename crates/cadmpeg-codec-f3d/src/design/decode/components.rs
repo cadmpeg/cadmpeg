@@ -1310,6 +1310,18 @@ mod tests {
                     "changed {changed_at}"
                 );
             }
+            let owner_guid = owner_at + 13..owner_at + 49;
+            assert_eq!(
+                &frame[owner_guid.clone()],
+                super::OWNER_TYPE_GUID.as_bytes()
+            );
+            let mut other_owner = frame.clone();
+            other_owner[owner_guid].copy_from_slice(
+                crate::records::feature::occurrence_transfer::COMPONENT_TYPE.as_bytes(),
+            );
+            assert!(
+                exact_component_occurrence(&other_owner, 0, "f3d:Design/BulkStream.dat").is_none()
+            );
             let mut truncated = frame.clone();
             truncated.remove(truncated.len() - 12);
             assert!(

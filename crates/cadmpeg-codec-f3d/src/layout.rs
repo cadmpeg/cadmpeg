@@ -4879,6 +4879,12 @@ pub(crate) mod local_component_occurrence_prefix {
     pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `component_reference` (`bytes[9]`). Spec §3.1.
     pub(crate) const COMPONENT_REFERENCE: usize = 24;
+    /// Offset of `path_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_DISCRIMINATOR: usize = 35;
+    /// Offset of `path_terminator` (`u8`). Spec §3.1.
+    pub(crate) const PATH_TERMINATOR: usize = 39;
+    /// Stated value of `path_terminator` (`u8`). Spec §3.1.
+    pub(crate) const PATH_TERMINATOR_VALUE: u8 = 0;
     /// Offset of `occurrence_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OCCURRENCE_ORDINAL: usize = 40;
     /// Offset of `carrier_guid` (`bytes[76]`). Spec §3.1.
@@ -6111,6 +6117,182 @@ pub(crate) mod sketch_owner_reference {
 pub(crate) mod sketch_owner_typed_reference {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 51;
+}
+
+/// Byte offsets for the `local_component_occurrence_typed_prefix` record.
+///
+/// Spec §3.1. Record length 289 B.
+///
+/// ```text
+/// The 349-byte identity frame has one zero separator before the repeated reference.
+/// ```
+pub(crate) mod local_component_occurrence_typed_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 289;
+    /// Offset of `empty_instance_name` (`bytes[8]`). Spec §3.1.
+    pub(crate) const EMPTY_INSTANCE_NAME: usize = 11;
+    /// Offset of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER: usize = 19;
+    /// Stated value of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER_VALUE: u8 = 1;
+    /// Offset of `path_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_COUNT: usize = 20;
+    /// Stated value of `path_count` (`u32`). Spec §3.1.
+    pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `component_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 24;
+    /// Offset of `path_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_DISCRIMINATOR: usize = 75;
+    /// Offset of `path_terminator` (`u8`). Spec §3.1.
+    pub(crate) const PATH_TERMINATOR: usize = 79;
+    /// Stated value of `path_terminator` (`u8`). Spec §3.1.
+    pub(crate) const PATH_TERMINATOR_VALUE: u8 = 0;
+    /// Offset of `occurrence_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_ORDINAL: usize = 80;
+    /// Offset of `carrier_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const CARRIER_GUID: usize = 84;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const OCCURRENCE_GUID: usize = 160;
+    /// Offset of `separator` (`u8`). Spec §3.1.
+    pub(crate) const SEPARATOR: usize = 236;
+    /// Stated value of `separator` (`u8`). Spec §3.1.
+    pub(crate) const SEPARATOR_VALUE: u8 = 0;
+    /// Offset of `component_reference_repeat` (`bytes[51]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE_REPEAT: usize = 237;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 288;
+}
+
+/// Byte offsets for the `local_component_occurrence_typed_compact_prefix` record.
+///
+/// Spec §3.1. Record length 288 B.
+///
+/// ```text
+/// The 348-byte identity and 476-byte matrix frames have no separator before the repeated reference.
+/// ```
+pub(crate) mod local_component_occurrence_typed_compact_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 288;
+    /// Offset of `component_reference_repeat` (`bytes[51]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE_REPEAT: usize = 236;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 287;
+}
+
+/// Byte offsets for the `local_component_occurrence_typed_identity_tail` record.
+///
+/// Spec §3.1. Record length 60 B.
+///
+/// ```text
+/// Relative to the end of the typed identity prefix.
+/// ```
+pub(crate) mod local_component_occurrence_typed_identity_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 60;
+    /// Offset of `owner_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 9;
+}
+
+/// Byte offsets for the `local_component_occurrence_typed_matrix_tail` record.
+///
+/// Spec §3.1. Record length 188 B.
+///
+/// ```text
+/// Relative to the end of the typed compact prefix.
+/// ```
+pub(crate) mod local_component_occurrence_typed_matrix_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 188;
+    /// Offset of `owner_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 137;
+}
+
+/// Byte offsets for the `local_component_occurrence_typed_attributed_prefix` record.
+///
+/// Spec §3.1. Record length 84 B.
+///
+/// ```text
+/// The counted attribute run follows the typed component reference and the path discriminator.
+/// ```
+pub(crate) mod local_component_occurrence_typed_attributed_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 84;
+    /// Offset of `path_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_DISCRIMINATOR: usize = 75;
+    /// Offset of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER: usize = 79;
+    /// Stated value of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER_VALUE: u8 = 1;
+    /// Offset of `attribute_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ATTRIBUTE_COUNT: usize = 80;
+}
+
+/// Byte offsets for the `root_instance_empty_path_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// The path has no component-definition reference.
+/// ```
+pub(crate) mod root_instance_empty_path_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 36;
+}
+
+/// Byte offsets for the `root_instance_empty_path_frame` record.
+///
+/// Spec §3.1. Record length 255 B.
+///
+/// ```text
+/// The typed reference after the two GUIDs names the root component definition.
+/// ```
+pub(crate) mod root_instance_empty_path_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 255;
+    /// Stated value of `path_count` (`u32`). Spec §3.1.
+    pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `separator` (`u8`). Spec §3.1.
+    pub(crate) const SEPARATOR: usize = 36;
+    /// Stated value of `separator` (`u8`). Spec §3.1.
+    pub(crate) const SEPARATOR_VALUE: u8 = 0;
+    /// Offset of `word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const WORD: usize = 37;
+    /// Stated value of `word` (`u32`). Spec §3.1.
+    pub(crate) const WORD_VALUE: u32 = 0x0000_0002;
+    /// Offset of `carrier_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const CARRIER_GUID: usize = 41;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const OCCURRENCE_GUID: usize = 117;
+    /// Offset of `component_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 193;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 244;
+    /// Stated value of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG_VALUE: u8 = 1;
+    /// Offset of `zero_tail` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_TAIL: usize = 245;
+}
+
+/// Byte offsets for the `root_instance_empty_path_separated_frame` record.
+///
+/// Spec §3.1. Record length 256 B.
+///
+/// ```text
+/// The typed reference after the two GUIDs names the root component definition.
+/// ```
+pub(crate) mod root_instance_empty_path_separated_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 256;
+    /// Offset of `reference_separator` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_SEPARATOR: usize = 193;
+    /// Stated value of `reference_separator` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_SEPARATOR_VALUE: u8 = 0;
+    /// Offset of `component_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 194;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 245;
+    /// Offset of `zero_tail` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_TAIL: usize = 246;
 }
 
 /// Byte offsets for the `assembly_root_operand_path` record.

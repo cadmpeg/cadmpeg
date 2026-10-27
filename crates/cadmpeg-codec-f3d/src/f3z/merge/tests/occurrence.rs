@@ -135,9 +135,12 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
     let (ctx, bytes) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, bytes).unwrap();
     let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
-    for owned_after_composition in [true, false] {
+    for (has_definitions, owned_after_composition) in [(true, true), (true, false), (false, false)]
+    {
         let mut member = Model::default();
-        crate::f3z::merge::define_member(&ctx, &mut member, "existing").unwrap();
+        if has_definitions {
+            crate::f3z::merge::define_member(&ctx, &mut member, "existing").unwrap();
+        }
         member.bodies = (0..2)
             .map(|index| Body {
                 id: BodyId::mint(format!("f3d:brep:saved-edge-body#{index}")).unwrap(),

@@ -2384,9 +2384,6 @@ enum FinalizePath {
 pub(crate) fn saved_free_edge_bodies_loss(
     model: &cadmpeg_ir::document::Model,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    if model.product_definitions.is_empty() {
-        return None;
-    }
     let owned = model
         .product_definitions
         .iter()
