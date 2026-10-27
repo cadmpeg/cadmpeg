@@ -405,85 +405,181 @@ impl RigidGroupLayout {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum RigidGroupLocatorLayout {
-    TypedIdentity,
-    TypedMatrix,
-    Compact,
-    WideIdentity,
-    WideMatrix,
+pub(crate) struct RigidGroupLocatorLayout {
+    pub(crate) length: usize,
+    pub(crate) typed: bool,
+    pub(crate) wide: bool,
+    pub(crate) construction_reference: usize,
+    pub(crate) null_construction: bool,
+    pub(crate) identity_flag: usize,
+    pub(crate) transform: Option<usize>,
+    pub(crate) scope_backlink: usize,
+    pub(crate) wrapper_reference: usize,
+    pub(crate) discriminator: usize,
+    pub(crate) zero_tail: usize,
 }
 
 impl RigidGroupLocatorLayout {
     pub(crate) fn admit(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
+        use crate::layout::assembly_compact_rigid_group_identity_locator as compact_identity;
         use crate::layout::assembly_compact_rigid_group_locator as compact;
-        use crate::layout::assembly_typed_rigid_group_identity_locator as identity;
-        use crate::layout::assembly_typed_rigid_group_matrix_locator as matrix;
+        use crate::layout::assembly_null_typed_rigid_group_identity_locator as null_identity;
+        use crate::layout::assembly_null_typed_rigid_group_matrix_locator as null_matrix;
+        use crate::layout::assembly_operand_path_locator as ordinary;
+        use crate::layout::assembly_ordinary_rigid_group_identity_locator as ordinary_identity;
+        use crate::layout::assembly_typed_rigid_group_identity_locator as typed_identity;
+        use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_matrix;
         use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
+        use crate::layout::assembly_wide_operand_path_locator as wide;
         use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
         let (guid, version) = registered?;
         if !guid.eq_ignore_ascii_case("2E3AC990-483D-4A55-8662-C064B976A957") {
             return None;
         }
-        match (version, length) {
-            (2, identity::LEN) => Some(Self::TypedIdentity),
-            (2, matrix::LEN) => Some(Self::TypedMatrix),
-            (3, compact::LEN) => Some(Self::Compact),
-            (5, wide_identity::LEN) => Some(Self::WideIdentity),
-            (5, wide_matrix::LEN) => Some(Self::WideMatrix),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn reference_stride(self) -> usize {
-        match self {
-            Self::TypedIdentity | Self::TypedMatrix => crate::bytes::TYPED_LOCAL_REFERENCE_LEN,
-            Self::Compact | Self::WideIdentity | Self::WideMatrix => 11,
-        }
-    }
-
-    pub(crate) fn offsets(self) -> (usize, usize, usize, usize, usize) {
-        use crate::layout::assembly_compact_rigid_group_locator as compact;
-        use crate::layout::assembly_typed_rigid_group_identity_locator as identity;
-        use crate::layout::assembly_typed_rigid_group_matrix_locator as matrix;
-        use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
-        use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
-        match self {
-            Self::TypedIdentity => (
-                identity::LEN,
-                identity::SCOPE_BACKLINK,
-                identity::WRAPPER_REFERENCE,
-                identity::DISCRIMINATOR,
-                identity::ZERO_TAIL,
-            ),
-            Self::TypedMatrix => (
-                matrix::LEN,
-                matrix::SCOPE_BACKLINK,
-                matrix::WRAPPER_REFERENCE,
-                matrix::DISCRIMINATOR,
-                matrix::ZERO_TAIL,
-            ),
-            Self::Compact => (
-                compact::LEN,
+        let (
+            typed,
+            construction_reference,
+            identity_flag,
+            transform,
+            scope_backlink,
+            wrapper_reference,
+            discriminator,
+            zero_tail,
+        ) = match (version, length) {
+            (3, compact::LEN) => (
+                false,
+                None,
+                compact::IDENTITY_FLAG,
+                Some(compact::TRANSFORM),
                 compact::SCOPE_BACKLINK,
                 compact::WRAPPER_REFERENCE,
                 compact::DISCRIMINATOR,
                 compact::ZERO_TAIL,
             ),
-            Self::WideIdentity => (
-                wide_identity::LEN,
+            (3, compact_identity::LEN) => (
+                false,
+                None,
+                compact_identity::IDENTITY_FLAG,
+                None,
+                compact_identity::SCOPE_BACKLINK,
+                compact_identity::WRAPPER_REFERENCE,
+                compact_identity::DISCRIMINATOR,
+                compact_identity::ZERO_TAIL,
+            ),
+            (3, ordinary::LEN) => (
+                false,
+                Some(ordinary_identity::CONSTRUCTION_REFERENCE),
+                ordinary_identity::IDENTITY_FLAG,
+                Some(ordinary::TRANSFORM),
+                ordinary::SCOPE_BACKLINK,
+                ordinary::WRAPPER_REFERENCE,
+                ordinary::CONSTANT_TWO,
+                ordinary::ZERO_TAIL_2,
+            ),
+            (3, ordinary_identity::LEN) => (
+                false,
+                Some(ordinary_identity::CONSTRUCTION_REFERENCE),
+                ordinary_identity::IDENTITY_FLAG,
+                None,
+                ordinary_identity::SCOPE_BACKLINK,
+                ordinary_identity::WRAPPER_REFERENCE,
+                ordinary_identity::DISCRIMINATOR,
+                ordinary_identity::ZERO_TAIL,
+            ),
+            (2, typed_matrix::LEN) => (
+                true,
+                Some(typed_identity::CONSTRUCTION_REFERENCE),
+                typed_identity::IDENTITY_FLAG,
+                Some(typed_matrix::TRANSFORM),
+                typed_matrix::SCOPE_BACKLINK,
+                typed_matrix::WRAPPER_REFERENCE,
+                typed_matrix::DISCRIMINATOR,
+                typed_matrix::ZERO_TAIL,
+            ),
+            (2, typed_identity::LEN) => (
+                true,
+                Some(typed_identity::CONSTRUCTION_REFERENCE),
+                typed_identity::IDENTITY_FLAG,
+                None,
+                typed_identity::SCOPE_BACKLINK,
+                typed_identity::WRAPPER_REFERENCE,
+                typed_identity::DISCRIMINATOR,
+                typed_identity::ZERO_TAIL,
+            ),
+            (2, null_matrix::LEN) => (
+                true,
+                None,
+                null_identity::IDENTITY_FLAG,
+                Some(null_matrix::TRANSFORM),
+                null_matrix::SCOPE_BACKLINK,
+                null_matrix::WRAPPER_REFERENCE,
+                null_matrix::DISCRIMINATOR,
+                null_matrix::ZERO_TAIL,
+            ),
+            (2, null_identity::LEN) => (
+                true,
+                None,
+                null_identity::IDENTITY_FLAG,
+                None,
+                null_identity::SCOPE_BACKLINK,
+                null_identity::WRAPPER_REFERENCE,
+                null_identity::DISCRIMINATOR,
+                null_identity::ZERO_TAIL,
+            ),
+            (5, wide_identity::LEN) => (
+                false,
+                Some(wide::NONZERO_RECORD_REFERENCE),
+                wide::IDENTITY_FLAG,
+                None,
                 wide_identity::SCOPE_BACKLINK,
                 wide_identity::WRAPPER_REFERENCE,
                 wide_identity::DISCRIMINATOR,
                 wide_identity::ZERO_TAIL,
             ),
-            Self::WideMatrix => (
-                wide_matrix::LEN,
+            (5, wide_matrix::LEN) => (
+                false,
+                Some(wide::NONZERO_RECORD_REFERENCE),
+                wide::IDENTITY_FLAG,
+                Some(wide_matrix::TRANSFORM),
                 wide_matrix::SCOPE_BACKLINK,
                 wide_matrix::WRAPPER_REFERENCE,
                 wide_matrix::DISCRIMINATOR,
                 wide_matrix::ZERO_TAIL,
             ),
+            _ => return None,
+        };
+        Some(Self {
+            length,
+            typed,
+            wide: version == 5,
+            null_construction: construction_reference.is_none(),
+            construction_reference: construction_reference
+                .unwrap_or(ordinary::NONZERO_RECORD_REFERENCE),
+            identity_flag,
+            transform,
+            scope_backlink,
+            wrapper_reference,
+            discriminator,
+            zero_tail,
+        })
+    }
+
+    pub(crate) fn reference_stride(self) -> usize {
+        if self.typed {
+            crate::bytes::TYPED_LOCAL_REFERENCE_LEN
+        } else {
+            11
         }
+    }
+
+    pub(crate) fn offsets(self) -> (usize, usize, usize, usize, usize) {
+        (
+            self.length,
+            self.scope_backlink,
+            self.wrapper_reference,
+            self.discriminator,
+            self.zero_tail,
+        )
     }
 }
 
@@ -956,6 +1052,7 @@ fn project_assembly_joint(
         )) => {
             let projected = project_qualified_operands(
                 operands.each_ref().map(|operand| &operand.qualifier),
+                operands.each_ref().map(null_construction_operand),
                 stream,
                 occurrences,
                 scopes,
@@ -1137,6 +1234,7 @@ fn rigid_group_member_joints(
     for (ordinal, member) in alignment.additional_members.iter().enumerate() {
         let operands = project_qualified_operands(
             [&first.qualifier, &member.qualifier],
+            [first, member].map(null_construction_operand),
             stream,
             occurrences,
             scopes,
@@ -1220,15 +1318,30 @@ pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &[A
     }
 }
 
+fn null_construction_operand(
+    operand: &crate::records::feature::assembly::DesignQualifiedAssemblyOperand,
+) -> bool {
+    operand.qualifier.occurrence_path().is_some_and(|path| {
+        operand.frame.reference_record_index == path.link().locator_record_index
+            && Some(operand.frame.reference_offset)
+                == path.link().locator_byte_offset.checked_add(u64_from_index(
+                    crate::layout::indexed_design_record_header::RECORD_INDEX,
+                ))
+    })
+}
+
 fn project_qualified_operands(
     qualifiers: [&DesignAssemblyOperandQualifier; 2],
+    require_carriers: [bool; 2],
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     inserts: &ComponentInserts,
     paths: &super::components::paths::LocalOccurrencePaths,
 ) -> Option<[JointOperand; 2]> {
-    let project = |qualifier: &DesignAssemblyOperandQualifier| -> Option<JointOperand> {
+    let project = |qualifier: &DesignAssemblyOperandQualifier,
+                   require_carrier: bool|
+     -> Option<JointOperand> {
         match qualifier {
             DesignAssemblyOperandQualifier::OccurrencePath { path } => {
                 let root_guid = &path.occurrence_guids().first()?.value;
@@ -1263,6 +1376,7 @@ fn project_qualified_operands(
                     ));
                 }
                 if paths.ambiguous(stream, &keys)
+                    || require_carrier && occurrence.is_none()
                     || occurrence.is_none()
                         && !path.admitted_by_type()
                         && !matches!(path.class_tag().as_str(), "330" | "386")
@@ -1311,7 +1425,10 @@ fn project_qualified_operands(
             } => project_joint_origin_operand(*scope_record_index, stream, scopes),
         }
     };
-    Some([project(qualifiers[0])?, project(qualifiers[1])?])
+    Some([
+        project(qualifiers[0], require_carriers[0])?,
+        project(qualifiers[1], require_carriers[1])?,
+    ])
 }
 
 /// The current-document-root operand named by a `JointOrigin` scope whose
@@ -1727,6 +1844,7 @@ mod tests {
         let legacy = DesignAssemblyOperandQualifier::OccurrencePath { path: legacy_path };
         let bound_operands = super::project_qualified_operands(
             [&legacy, &legacy],
+            [false; 2],
             "f3d:Design/BulkStream.dat",
             &BTreeMap::new(),
             &[],
@@ -1849,6 +1967,7 @@ mod tests {
         ];
         let operands = super::project_qualified_operands(
             qualifiers.each_ref(),
+            [false; 2],
             "Design/BulkStream.dat",
             &std::collections::BTreeMap::new(),
             &[],
@@ -1988,6 +2107,72 @@ mod tests {
             crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
         );
         assert!(loss.message.starts_with("1 rigid group member(s)"));
+
+        let mut null_member = third();
+        null_member.frame.reference_record_index = 30;
+        null_member.frame.reference_offset = 7;
+        assert!(super::null_construction_operand(&null_member));
+        let mut null_group = grouped(false, vec![null_member.clone(), null_member]);
+        null_group[0]
+            .try_edit(|draft| {
+                crate::design::test_support::lengthen_scope_frame(draft, 279);
+                draft.reference_count_offset = 175;
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(Vec::new());
+                draft.layout_fixture_references();
+                draft.feature_ordinal_offset = 203;
+                let DesignScopePayload::Assemble(alignment) = &draft.payload else {
+                    panic!("alignment")
+                };
+                draft.payload = DesignScopePayload::AsBuilt(alignment.clone());
+            })
+            .unwrap();
+        assert!(super::rigid_as_built_scope(&null_group[0]));
+        let projection = super::project_assembly_joints(&null_group, &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 1);
+        let [loss] = projection.losses.as_slice() else {
+            panic!("one member loss")
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
+        );
+        assert_eq!(loss.message, "2 rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects.");
+        let occurrences = instances(&table.references[..1]);
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &table.references[..1],
+            &occurrences,
+        );
+        let projection =
+            super::project_assembly_joints_with_paths(&null_group, &[], &inserts, &[], &bindings);
+        assert_eq!(projection.joints.len(), 3);
+        assert!(projection.losses.is_empty());
+        assert!(projection
+            .joints
+            .iter()
+            .all(|joint| joint.connectors().all(|connector| {
+                matches!(
+                    connector.operand.container,
+                    cadmpeg_ir::products::OperandContainer::Occurrence { .. }
+                )
+            })));
+        let local = crate::records::feature::assembly_features::DesignComponentOccurrence::try_new(
+            crate::records::feature::assembly_features::DesignComponentOccurrenceDraft {
+                id: "f3d:Design/BulkStream.dat:design-component-occurrence#100".into(),
+                class_tag: "380".to_owned().try_into().unwrap(),
+                record_index: 100,
+                byte_offset: 0,
+                component_record_index: 200,
+                component_guid: "22222222-2222-2222-2222-22222222222b".to_owned().try_into().unwrap(),
+                occurrence_guid: "11111111-1111-1111-1111-11111111111a".to_owned().try_into().unwrap(),
+                placement: crate::records::feature::assembly_features::DesignComponentOccurrencePlacement::Base,
+                owner_entity: 0,
+            },
+        ).unwrap();
+        let projection = super::project_assembly_joints(&null_group, &[local], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 3);
+        assert!(projection.losses.is_empty());
 
         // The class tag alone admits no external path and no untyped arity.
         assert!(path(11, false).is_err());
@@ -2777,6 +2962,7 @@ mod tests {
              inserts: &crate::design::components::ComponentInserts| {
                 super::project_qualified_operands(
                     qualifiers.each_ref(),
+                    [false; 2],
                     "f3d:Design/BulkStream.dat",
                     &BTreeMap::new(),
                     scopes,

@@ -352,11 +352,11 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ### DR-100. Rigid-group operand forms and root identities
 
-**Question.** Which native identities do the two identity GUIDs of a zero-count root operand path name, and what are the field grammars of the refused locator forms? What do byte 20 of the alternate ordinary prologue and the payload of the two- or three-byte field before the final ordinary-tail reference mean? Is there a separate selector for the optional tail reference?
+**Question.** Which native identities do the two identity GUIDs of a zero-count root operand path name? What do byte 20 of the alternate ordinary prologue and the payload of the two- or three-byte field before the final ordinary-tail reference mean? Is there a separate selector for the optional tail reference?
 
-**Known.** The typed root operand path stores a zero count, the zero root key, a zero word, u64 value 1, two ordered identity GUIDs, u32 value 2, and an eight-byte zero tail. The complete frame is 277 bytes. Null-reference member locators also have a 52-byte version-3 form and 131- and 259-byte version-2 forms. A separate 181-byte version-2 pathless locator has a nonzero construction reference and discriminator 0. These locator forms are refused here. The ordinary-tail field starts with tag 0 for two bytes and tag 1 for three bytes. Its measured byte sequences are `00 00`, `01 00 00`, and `01 01 01`. The tag selects width independently of the optional reference. The reader requires unique exact closure for the reference choice; no separate presence selector is established. An alternate ordinary prologue has byte 1 at offset 20, its pathless reference at offset 26, its member count at offset 41, and its first member reference at offset 45. Its 88-byte-tail frame is `251 + 11N` bytes. This prologue is refused.
+**Known.** The typed root operand path stores a zero count, the zero root key, a zero word, u64 value 1, two ordered identity GUIDs, u32 value 2, and an eight-byte zero tail. The complete frame is 277 bytes. `f3d.md` "Assembly operands" defines every member locator form, null or nonnull, for versions 2, 3 and 5. A separate 181-byte version-2 pathless locator has a nonzero construction reference and discriminator 0; it is not a member locator. The ordinary-tail field starts with tag 0 for two bytes and tag 1 for three bytes. Its measured byte sequences are `00 00`, `01 00 00`, and `01 01 01`. The tag selects width independently of the optional reference. The reader requires unique exact closure for the reference choice; no separate presence selector is established. An alternate ordinary prologue has byte 1 at offset 20, its pathless reference at offset 26, its member count at offset 41, and its first member reference at offset 45. Its 88-byte-tail frame is `251 + 11N` bytes. This prologue is refused.
 
-**Need.** Complete field grammars for the refused locator forms, the meaning of alternate-prologue byte 20 and the variable-width field payload, and a separate optional-reference selector if one exists. An explicit join from each identity GUID to its owning native record or document context.
+**Need.** The meaning of alternate-prologue byte 20 and the variable-width field payload, and a separate optional-reference selector if one exists. An explicit join from each identity GUID to its owning native record or document context.
 
 **Conflict.** None.
 
@@ -373,6 +373,18 @@ the native feature when a fixed lane carries a symmetric distance.
 **Conflict.** The second UUID's occurrence binding does not establish an identity domain for the first metadata UUID or the first class-294/299 identity GUID.
 
 **Note.** UUID equality alone does not identify a namespace. An unresolved path admitted by class 294/299 remains native and its joint is refused with `assembly.joint-unprojected`. An ambiguous local occurrence key also refuses the joint with that loss; it does not state an external document.
+
+### DR-103. Rigid-group member keys without occurrence carriers
+
+**Question.** Which native relation selects the occurrence and liveness of a positive-count null-construction rigid-group member path whose root key has no local carrier or repeated-target placement carrier?
+
+**Known.** Versions 2 and 3 admit null construction references with stored matrices or identity flags. The member locator has discriminator 2 and a complete counted path wrapper. A positive-count typed path retains its root occurrence key and identity suffix. A null construction reference also occurs with a concrete occurrence binding.
+
+**Need.** A native relation must distinguish a current instance, an archived instance and an unresolved external instance. Controlled saves that delete, suppress and restore a grouped occurrence must establish that relation and the carrier join for a current instance.
+
+**Conflict.** A null construction reference alone does not establish that a member is deleted or suppressed. A document identity does not select one repeated occurrence.
+
+**Note.** The complete locator frame and ordered path remain native. A positive-count null-construction member path projects only with a concrete local occurrence carrier or placement carrier join. A member without that join contributes to `AssemblyJointUnprojected`.
 
 ### DR-82. Other joint freedom codes and the limit flags
 

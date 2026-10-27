@@ -101,8 +101,19 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
     };
     use crate::records::identity::{Located, ReferenceRun};
 
-    let cases = [(309, 2, 3, 201, 252, 73), (180, 3, 2, 152, 163, 23)];
-    for (segment, (length, version, wrong_version, backlink, wrapper, matrix)) in
+    let cases = [
+        (309, 2, 201, 252, 73, true),
+        (181, 2, 73, 124, 72, true),
+        (259, 2, 151, 202, 23, false),
+        (131, 2, 23, 74, 22, false),
+        (180, 3, 152, 163, 23, false),
+        (52, 3, 24, 35, 22, false),
+        (190, 3, 162, 173, 33, true),
+        (62, 3, 34, 45, 32, true),
+        (225, 5, 197, 208, 68, true),
+        (97, 5, 69, 80, 67, true),
+    ];
+    for (segment, (length, version, backlink, wrapper, transform, construction)) in
         ["f3d:Design", "f3d:xref/member/occurrence-0/Design"]
             .into_iter()
             .flat_map(|segment| cases.into_iter().map(move |case| (segment, case)))
@@ -158,17 +169,27 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
             .unwrap();
             DesignQualifiedAssemblyOperand {
                 frame: DesignAssemblyOperandFrame {
-                    reference_record_index: if version == 3 { index } else { index + 900 },
-                    reference_offset: locator + if version == 3 { 7 } else { 22 },
+                    reference_record_index: if construction { index + 900 } else { index },
+                    reference_offset: locator
+                        + if construction {
+                            if version == 5 {
+                                57
+                            } else {
+                                22
+                            }
+                        } else {
+                            7
+                        },
                     transform: cadmpeg_ir::transform::Transform::identity()
                         .rows()
                         .try_into()
                         .unwrap(),
-                    transform_offset: locator + matrix,
+                    transform_offset: locator + transform,
                 },
                 qualifier: DesignAssemblyOperandQualifier::OccurrencePath { path },
             }
         });
+        let placement_operands = operands.clone();
         scope
             .try_edit(|draft| {
                 crate::design::test_support::lengthen_scope_frame(draft, 257);
@@ -223,21 +244,61 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
                 findings
             };
             assert!(findings(&native).is_empty());
-            native.design_types[0].set_version(wrong_version);
-            let findings = findings(&native);
-            assert_eq!(findings.len(), 1);
-            assert_eq!(
-                findings[0].check,
-                cadmpeg_ir::report::check::Check::NativeLinks
-            );
-            assert_eq!(
-                findings[0].entity.as_deref(),
-                Some(native.design_parameter_scopes[0].id.as_str())
-            );
-            assert_eq!(
-                findings[0].message,
-                "Fusion Design parameter scope has an invalid paired frame"
-            );
+            for wrong_version in [1, 2, 3, 4, 5, 6]
+                .into_iter()
+                .filter(|other| *other != version)
+            {
+                native.design_types[0].set_version(wrong_version);
+                let rejected = findings(&native);
+                assert_eq!(rejected.len(), 1);
+                assert_eq!(
+                    rejected[0].check,
+                    cadmpeg_ir::report::check::Check::NativeLinks
+                );
+                assert_eq!(
+                    rejected[0].entity.as_deref(),
+                    Some(native.design_parameter_scopes[0].id.as_str())
+                );
+                assert_eq!(
+                    rejected[0].message,
+                    "Fusion Design parameter scope has an invalid paired frame"
+                );
+            }
         });
+        if !matches!(length, 97 | 225) {
+            let mut placement = DesignParameterScope::empty(
+                &format!("{segment}/BulkStream.dat:design-parameter-scope#4"),
+                DesignFeatureKind::AsBuilt,
+                4,
+            );
+            placement
+                .try_edit(|draft| {
+                    draft.frame_length = 422;
+                    draft.paired_byte_offset = draft.byte_offset + 422;
+                    draft.reference_members =
+                        ReferenceRun::unlocated(vec![80, 50, 51, 52, 53, 81, 82, 83, 84, 54, 55]);
+                    draft.layout_fixture_references();
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
+            assert!(crate::design::assembly::placement_ordered_as_built_scope(
+                &placement
+            ));
+            for operand in &placement_operands {
+                let DesignAssemblyOperandQualifier::OccurrencePath { path } = &operand.qualifier
+                else {
+                    panic!("occurrence path operand");
+                };
+                assert!(
+                    !crate::validate::as_built_operand_frame_link(
+                        &placement,
+                        path,
+                        &operand.frame,
+                        &std::collections::HashMap::new(),
+                    ),
+                    "{length}-byte locator under a placement-ordered scope"
+                );
+            }
+        }
     }
 }

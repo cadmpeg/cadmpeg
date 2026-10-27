@@ -391,7 +391,7 @@ fn wide_locator_path_continues_over_typed_records() {
     );
 }
 
-fn versioned_rigid_group_envelope(version: u32, matrix: bool) -> Vec<u8> {
+fn versioned_rigid_group_envelope(version: u32, matrix: bool, construction: bool) -> Vec<u8> {
     fn reference(bytes: &mut Vec<u8>, target: u32, typed: bool) {
         if typed {
             bytes.push(1);
@@ -407,14 +407,20 @@ fn versioned_rigid_group_envelope(version: u32, matrix: bool) -> Vec<u8> {
     }
     let typed = version == 2;
     let mut bytes = envelope_bytes(10)[..11].to_vec();
-    if typed {
-        bytes.extend_from_slice(&[0; 10]);
-        reference(&mut bytes, 164, true);
-        bytes.push(u8::from(!matrix));
+    if version == 5 {
+        bytes.extend_from_slice(&[0; 28]);
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 13]);
     } else {
-        bytes.extend_from_slice(&[0; 12]);
+        bytes.extend_from_slice(&[0; 10]);
     }
-    if matrix || !typed {
+    if construction {
+        reference(&mut bytes, 164, typed);
+    } else {
+        bytes.push(0);
+    }
+    bytes.push(u8::from(!matrix));
+    if matrix {
         for ordinal in 0..16 {
             let value: f64 = if ordinal % 5 == 0 {
                 1.0
@@ -433,18 +439,6 @@ fn versioned_rigid_group_envelope(version: u32, matrix: bool) -> Vec<u8> {
     reference(&mut bytes, 66, typed);
     bytes.extend_from_slice(&2_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 2]);
-    assert_eq!(
-        bytes.len(),
-        if typed {
-            if matrix {
-                309
-            } else {
-                181
-            }
-        } else {
-            180
-        }
-    );
     bytes.extend_from_slice(&path_bytes());
     let start = bytes.len();
     bytes.extend_from_slice(&envelope_bytes(10)[..11]);
@@ -474,8 +468,17 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
         .unwrap();
     scope.class_tag = "283".to_owned().try_into().unwrap();
     scope.paired_class_tag = "264".to_owned().try_into().unwrap();
-    for (version, matrix, length) in [(3, true, 180), (2, true, 309), (2, false, 181)] {
-        let bytes = versioned_rigid_group_envelope(version, matrix);
+    for (version, matrix, construction, length) in [
+        (3, true, false, 180),
+        (3, false, false, 52),
+        (3, true, true, 190),
+        (3, false, true, 62),
+        (2, true, true, 309),
+        (2, false, true, 181),
+        (2, true, false, 259),
+        (2, false, false, 131),
+    ] {
+        let bytes = versioned_rigid_group_envelope(version, matrix, construction);
         let read = |bytes: &[u8], version| {
             let types = std::collections::HashMap::from([(
                 64,
@@ -499,30 +502,44 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
         pathless[discriminator..discriminator + 4].copy_from_slice(&0_u32.to_le_bytes());
         assert!(read(&pathless, version).is_none());
         assert_eq!(path.byte_offset(), length);
-        let frame = exact_as_built_operand_frame(&bytes, &path, true).unwrap();
+        let frame = exact_as_built_operand_frame(
+            &bytes,
+            &path,
+            &scope,
+            &std::collections::HashMap::from([(64, (super::WIDE_PATH_LOCATOR_TYPE_GUID, version))]),
+        )
+        .unwrap();
         assert_eq!(
             frame.reference_record_index,
-            if version == 3 { 64 } else { 164 }
+            if construction { 164 } else { 64 }
         );
-        assert_eq!(frame.reference_offset, if version == 3 { 7 } else { 22 });
-        assert_eq!(
-            frame.transform_offset,
-            if version == 3 {
-                23
-            } else if matrix {
-                73
-            } else {
+        assert_eq!(frame.reference_offset, if construction { 22 } else { 7 });
+        let flag = if construction {
+            if version == 2 {
                 72
+            } else {
+                32
             }
-        );
+        } else {
+            22
+        };
+        assert_eq!(frame.transform_offset, flag + u64::from(matrix));
+        let mut bad_flag = bytes.clone();
+        bad_flag[usize::try_from(flag).unwrap()] = 2;
+        assert!(read(&bad_flag, version).is_none());
         assert_eq!(frame.transform.rows()[0][3], if matrix { 2.5 } else { 0.0 });
         for other_version in [1, 2, 3, 4, 5, 6] {
             if other_version != version {
                 assert!(read(&bytes, other_version).is_none());
             }
         }
+        for discriminator in [0_u32, 3] {
+            let mut pathless = bytes.clone();
+            let at = usize::try_from(length - 6).unwrap();
+            pathless[at..at + 4].copy_from_slice(&discriminator.to_le_bytes());
+            assert!(read(&pathless, version).is_none());
+        }
         for at in [
-            length - 6,
             length - 1,
             length + u64::try_from(path_bytes().len()).unwrap() + 26,
         ] {
@@ -580,7 +597,8 @@ fn typed_root_operand_path_keeps_two_identities_and_exact_closure() {
 }
 
 #[test]
-fn rigid_group_locator_refuses_cross_version_lengths() {
+fn rigid_group_nullable_locators_keep_counted_path_order_and_reference_width() {
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID as TYPED;
     let mut scope = DesignParameterScope::empty("generated:scope", DesignFeatureKind::AsBuilt, 10);
     scope
         .try_edit(|draft| {
@@ -591,16 +609,102 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
             draft.feature_ordinal_offset = 181;
         })
         .unwrap();
-    for (frame_version, wrong_version) in [(2, 3), (3, 2)] {
-        let bytes = versioned_rigid_group_envelope(frame_version, true);
-        for version in [frame_version, wrong_version] {
+    for (version, matrix, length) in [
+        (3, false, 52),
+        (3, true, 180),
+        (2, false, 131),
+        (2, true, 259),
+    ] {
+        let original = versioned_rigid_group_envelope(version, matrix, false);
+        let stride = if version == 2 { 51 } else { 11 };
+        let mut bytes = original[..length].to_vec();
+        write_reference(&mut bytes, length - 6 - stride, 67);
+        let first = identity_qualified_path_bytes(*b"384", true);
+        let mut second = first.clone();
+        second[7..15].copy_from_slice(&66_u64.to_le_bytes());
+        bytes.extend_from_slice(&first);
+        bytes.extend_from_slice(&second);
+        let wrapper_at = bytes.len();
+        let original_wrapper = length + path_bytes().len();
+        let mut wrapper = original[original_wrapper..original.len() - 11].to_vec();
+        wrapper[7..11].copy_from_slice(&67_u32.to_le_bytes());
+        wrapper[22..26].copy_from_slice(&2_u32.to_le_bytes());
+        let mut reference = wrapper[26..].to_vec();
+        reference[1..5].copy_from_slice(&66_u32.to_le_bytes());
+        wrapper.extend_from_slice(&reference);
+        bytes.extend_from_slice(&wrapper);
+        bytes.extend_from_slice(&original[original.len() - 11..]);
+        let end = bytes.len();
+        bytes[end - 4..].copy_from_slice(&68_u32.to_le_bytes());
+        let types = std::collections::HashMap::from([
+            (64, (super::WIDE_PATH_LOCATOR_TYPE_GUID, version)),
+            (65, (TYPED, 4)),
+            (66, (TYPED, 4)),
+        ]);
+        let read = |bytes: &[u8]| {
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+        };
+        let path = read(&bytes).unwrap();
+        assert_eq!(path.occurrence_guids().len(), 2);
+        assert_eq!(path.identity_guids().len(), 8);
+        assert_eq!(path.link().wrapper_record_index, 67);
+        for at in [wrapper_at + 22, wrapper_at + 27, wrapper_at + 27 + stride] {
+            let mut bad = bytes.clone();
+            bad[at] ^= 1;
+            assert!(read(&bad).is_none());
+        }
+        let mut invalid_tail = bytes.clone();
+        invalid_tail.insert(wrapper_at, 0xff);
+        assert!(read(&invalid_tail).is_none());
+    }
+}
+
+#[test]
+fn rigid_group_locator_refuses_cross_version_lengths() {
+    use crate::design::decode::scopes::assembly_operand_frames::exact_as_built_operand_frame;
+    let mut scope = DesignParameterScope::empty("generated:scope", DesignFeatureKind::AsBuilt, 10);
+    scope
+        .try_edit(|draft| {
+            crate::design::test_support::lengthen_scope_frame(draft, 257);
+            draft.reference_count_offset = 153;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(Vec::new());
+            draft.layout_fixture_references();
+            draft.feature_ordinal_offset = 181;
+        })
+        .unwrap();
+    for (frame_version, matrix, construction) in [
+        (2, true, true),
+        (2, false, true),
+        (2, true, false),
+        (2, false, false),
+        (3, true, false),
+        (3, false, false),
+        (3, true, true),
+        (3, false, true),
+        (5, true, true),
+        (5, false, true),
+    ] {
+        let bytes = versioned_rigid_group_envelope(frame_version, matrix, construction);
+        let types = std::collections::HashMap::from([(
+            64,
+            (super::WIDE_PATH_LOCATOR_TYPE_GUID, frame_version),
+        )]);
+        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0)
+            .unwrap()
+            .unwrap();
+        assert!(exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some());
+        for version in [1, 2, 3, 4, 5, 6] {
             let types = std::collections::HashMap::from([(
                 64,
                 (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
             )]);
-            let path =
+            let decoded =
                 exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0).unwrap();
-            assert_eq!(path.is_some(), version == frame_version);
+            assert_eq!(decoded.is_some(), version == frame_version);
+            assert_eq!(
+                exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some(),
+                version == frame_version
+            );
         }
     }
 }

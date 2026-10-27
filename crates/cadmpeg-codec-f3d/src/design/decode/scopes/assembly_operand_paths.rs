@@ -9,12 +9,9 @@ use crate::design::assembly::RigidGroupLocatorLayout;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
-use crate::layout::assembly_compact_rigid_group_locator as compact_locator;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
-use crate::layout::assembly_typed_rigid_group_identity_locator as typed_identity;
-use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_matrix;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
 use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
@@ -218,7 +215,7 @@ fn exact_assembly_operand_path_envelope(
             .get(&u64::from(locator_record_index))
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
         let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
-        let rigid_locator = if crate::design::assembly::rigid_as_built_scope(scope) {
+        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) {
             Some(RigidGroupLocatorLayout::admit(
                 registered_locator.copied(),
                 locator_end.checked_sub(locator_at)?,
@@ -226,24 +223,18 @@ fn exact_assembly_operand_path_envelope(
         } else {
             None
         };
-        let (wide, compact, typed) = rigid_locator.map_or(
-            (wide_family && registered_locator.is_some(), false, false),
-            |layout| {
-                (
-                    matches!(
-                        layout,
-                        RigidGroupLocatorLayout::WideIdentity | RigidGroupLocatorLayout::WideMatrix
-                    ),
-                    matches!(layout, RigidGroupLocatorLayout::Compact),
-                    layout.reference_stride() == crate::bytes::TYPED_LOCAL_REFERENCE_LEN,
-                )
-            },
-        );
-        let reference_stride = if typed {
-            crate::bytes::TYPED_LOCAL_REFERENCE_LEN
-        } else {
-            11
-        };
+        let wide = group_layout.map_or(wide_family && registered_locator.is_some(), |layout| {
+            layout.wide
+        });
+        let typed = group_layout.is_some_and(|layout| layout.typed);
+        let reference_stride = group_layout.map_or(11, RigidGroupLocatorLayout::reference_stride);
+        if let Some(layout) = group_layout {
+            if bytes.get(locator_at.checked_add(layout.identity_flag)?)?
+                != &u8::from(layout.transform.is_none())
+            {
+                return None;
+            }
+        }
         let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) = if wide {
             if bytes
                 .get(
@@ -269,66 +260,59 @@ fn exact_assembly_operand_path_envelope(
             {
                 return None;
             }
-            let (layout, separator) = match bytes
+            let (offsets, separator) = match bytes
                 .get(locator_at.checked_add(wide_locator::IDENTITY_FLAG)?)?
             {
                 1 => (
-                    RigidGroupLocatorLayout::WideIdentity,
+                    (
+                        wide_identity::LEN,
+                        wide_identity::SCOPE_BACKLINK,
+                        wide_identity::WRAPPER_REFERENCE,
+                        wide_identity::DISCRIMINATOR,
+                        wide_identity::ZERO_TAIL,
+                    ),
                     wide_identity::ZERO_SEPARATOR,
                 ),
                 0 => {
                     rigid_transform_at(bytes, locator_at.checked_add(wide_locator::TRANSFORM)?)?;
                     (
-                        RigidGroupLocatorLayout::WideMatrix,
+                        (
+                            wide_matrix::LEN,
+                            wide_matrix::SCOPE_BACKLINK,
+                            wide_matrix::WRAPPER_REFERENCE,
+                            wide_matrix::DISCRIMINATOR,
+                            wide_matrix::ZERO_TAIL,
+                        ),
                         wide_matrix::ZERO_SEPARATOR,
                     )
                 }
                 _ => return None,
             };
-            let offsets = layout.offsets();
             if bytes.get(locator_at.checked_add(separator)?) != Some(&0)
-                || rigid_locator.is_some_and(|admitted| admitted.offsets() != offsets)
+                || group_layout.is_some_and(|layout| layout.offsets() != offsets)
             {
                 return None;
             }
             offsets
-        } else if typed {
-            let construction = typed_identity::CONSTRUCTION_REFERENCE;
-            let flag = typed_identity::IDENTITY_FLAG;
-            if bytes.get(
-                locator_at.checked_add(typed_identity::ZERO_RUN_10)?
-                    ..locator_at.checked_add(construction)?,
-            )? != [0; 10]
-                || local_record_reference(bytes, locator_at.checked_add(construction)?, true)?.0
-                    == 0
-            {
-                return None;
-            }
-            let backlink = match bytes.get(locator_at.checked_add(flag)?)? {
-                1 => typed_identity::SCOPE_BACKLINK,
-                0 => {
-                    rigid_transform_at(bytes, locator_at.checked_add(typed_matrix::TRANSFORM)?)?;
-                    typed_matrix::SCOPE_BACKLINK
+        } else if let Some(layout) = group_layout {
+            let construction_at = locator_at.checked_add(layout.construction_reference)?;
+            if bytes.get(locator_at.checked_add(path_locator::ZERO_RUN_10)?..construction_at)?
+                != [0; 10]
+                || if layout.null_construction {
+                    bytes.get(construction_at)? != &0
+                } else {
+                    local_record_reference(bytes, construction_at, typed)?.0 == 0
                 }
-                _ => return None,
-            };
-            let offsets = rigid_locator?.offsets();
-            if offsets.1 != backlink {
-                return None;
-            }
-            offsets
-        } else if compact {
-            if bytes.get(
-                locator_at.checked_add(compact_locator::ZERO_RUN_12)?
-                    ..locator_at.checked_add(compact_locator::TRANSFORM)?,
-            )? != [0; 12]
-                || bytes.get(locator_at.checked_add(compact_locator::ZERO_151)?) != Some(&0)
-                || rigid_transform_at(bytes, locator_at.checked_add(compact_locator::TRANSFORM)?)
-                    .is_none()
+                || (!typed
+                    && bytes.get(locator_at.checked_add(layout.scope_backlink.checked_sub(1)?)?)
+                        != Some(&0))
             {
                 return None;
             }
-            rigid_locator?.offsets()
+            if let Some(transform) = layout.transform {
+                rigid_transform_at(bytes, locator_at.checked_add(transform)?)?;
+            }
+            layout.offsets()
         } else if variable_reference {
             if locator_class_tag != "390"
                 || bytes
@@ -385,7 +369,7 @@ fn exact_assembly_operand_path_envelope(
         let path_record_index = locator_record_index.checked_add(1)?;
         // A variable-reference or wide locator's path can continue over
         // further path records before its wrapper.
-        let counted_wrapper = variable_reference || wide || compact || typed;
+        let counted_wrapper = variable_reference || wide || group_layout.is_some();
         if scope_record_index != scope.record_index
             || if counted_wrapper {
                 !(locator_record_index.checked_add(2)?..=locator_record_index.checked_add(65)?)
@@ -503,7 +487,7 @@ fn exact_assembly_operand_path_envelope(
             let continues = if variable_reference {
                 continuation.class_tag().as_str() == "330"
             } else {
-                (wide || compact || typed)
+                (wide || group_layout.is_some())
                     && path.admitted_by_type()
                     && continuation.admitted_by_type()
             };

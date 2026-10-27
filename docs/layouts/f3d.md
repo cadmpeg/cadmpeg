@@ -5931,14 +5931,16 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
-| 11 | 12 | `zero_run_12` | `bytes[12]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
-| 23 | 128 | `transform` | `f64[16]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
-| 151 | 1 | `zero_151` | `u8` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
-| 152 | 11 | `scope_backlink` | `bytes[11]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
-| 163 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
-| 174 | 4 | `discriminator` | `u32` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
-| 178 | 2 | `zero_tail` | `bytes[2]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A version-3 compact rigid-group locator is 180 bytes with a matrix |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | A version-3 compact rigid-group locator is 180 bytes with a matrix |
+| 21 | 1 | `construction_reference` | `u8` | little | spec | Its construction reference is null at offset 21 · value `0` |
+| 22 | 1 | `identity_flag` | `u8` | little | spec | the identity flag is at offset 22 · value `0` |
+| 23 | 128 | `transform` | `f64[16]` | little | spec | A version-3 compact rigid-group locator is 180 bytes with a matrix |
+| 151 | 1 | `zero_151` | `u8` | little | spec | The matrix form has separator at offset 151 |
+| 152 | 11 | `scope_backlink` | `bytes[11]` | little | spec | scope backlink at offset 152 |
+| 163 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | wrapper reference at offset 163 |
+| 174 | 4 | `discriminator` | `u32` | little | spec | discriminator at offset 174 |
+| 178 | 2 | `zero_tail` | `bytes[2]` | little | spec | zero tail at offset 178 |
 
 ## `assembly_typed_rigid_group_identity_locator`
 
@@ -6671,6 +6673,89 @@ Parsed by:
 | 41 | 4 | `locator_count` | `u32` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 | 45 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 | 56 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+
+## `assembly_compact_rigid_group_identity_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 52 B
+
+Offsets are relative to the locator's indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact identity |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The compact identity |
+| 21 | 1 | `construction_reference` | `bytes[1]` | little | spec | The compact identity |
+| 22 | 1 | `identity_flag` | `u8` | little | spec | The compact identity |
+| 23 | 1 | `separator` | `u8` | little | spec | The compact identity |
+| 24 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The compact identity |
+| 35 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | The compact identity |
+| 46 | 4 | `discriminator` | `u32` | little | spec | The compact identity |
+| 50 | 2 | `zero_tail` | `bytes[2]` | little | spec | The compact identity |
+
+## `assembly_ordinary_rigid_group_identity_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 62 B
+
+Offsets are relative to the locator's indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ordinary identity |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The ordinary identity |
+| 21 | 11 | `construction_reference` | `bytes[11]` | little | spec | The ordinary identity |
+| 32 | 1 | `identity_flag` | `u8` | little | spec | The ordinary identity |
+| 33 | 1 | `separator` | `u8` | little | spec | The ordinary identity |
+| 34 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The ordinary identity |
+| 45 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | The ordinary identity |
+| 56 | 4 | `discriminator` | `u32` | little | spec | The ordinary identity |
+| 60 | 2 | `zero_tail` | `bytes[2]` | little | spec | The ordinary identity |
+
+## `assembly_null_typed_rigid_group_matrix_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 259 B
+
+Offsets are relative to the locator's indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The null-construction matrix form |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The null-construction matrix form |
+| 21 | 1 | `construction_reference` | `bytes[1]` | little | spec | The null-construction matrix form |
+| 22 | 1 | `identity_flag` | `u8` | little | spec | The null-construction matrix form |
+| 23 | 128 | `transform` | `f64[16]` | little | spec | The null-construction matrix form |
+| 151 | 51 | `scope_backlink` | `bytes[51]` | little | spec | The null-construction matrix form |
+| 202 | 51 | `wrapper_reference` | `bytes[51]` | little | spec | The null-construction matrix form |
+| 253 | 4 | `discriminator` | `u32` | little | spec | The null-construction matrix form |
+| 257 | 2 | `zero_tail` | `bytes[2]` | little | spec | The null-construction matrix form |
+
+## `assembly_null_typed_rigid_group_identity_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 131 B
+
+Offsets are relative to the locator's indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The null-construction identity form |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The null-construction identity form |
+| 21 | 1 | `construction_reference` | `bytes[1]` | little | spec | The null-construction identity form |
+| 22 | 1 | `identity_flag` | `u8` | little | spec | The null-construction identity form |
+| 23 | 51 | `scope_backlink` | `bytes[51]` | little | spec | The null-construction identity form |
+| 74 | 51 | `wrapper_reference` | `bytes[51]` | little | spec | The null-construction identity form |
+| 125 | 4 | `discriminator` | `u32` | little | spec | The null-construction identity form |
+| 129 | 2 | `zero_tail` | `bytes[2]` | little | spec | The null-construction identity form |
 
 ## Not tabulated
 
