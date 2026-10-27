@@ -1713,13 +1713,16 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
     }
 
     /// Whether the shell under `index` is closed: every non-degenerate edge
-    /// occurrence of its faces' wires is used exactly twice within the shell.
+    /// occurrence of its faces' wires is used as often forward as reversed,
+    /// in the orientation its face and wire give it. An edge where two parts
+    /// of the boundary touch bounds four faces, two each way.
     /// An occurrence is an edge shape at its composed face, wire, and edge
     /// location, so one shape placed at two locations is two edges.
     fn shell_closed(&self, index: usize, shell: Located) -> Result<bool, CodecError> {
-        let mut uses = HashMap::<OccurrenceKey, u32>::new();
+        let mut uses = HashMap::<OccurrenceKey, [u32; 2]>::new();
         for face_use in &self.shape(index)?.children {
             let face_transform = self.compose(shell, self.location(face_use.location)?)?;
+            let face_reversed = is_reversed(face_use.orientation);
             for wire_use in &self.shape(face_use.shape)?.children {
                 let wire = self.shape(wire_use.shape)?;
                 if wire.kind() != TextShapeKind::Wire {
@@ -1727,6 +1730,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 }
                 let wire_transform =
                     self.compose(face_transform, self.location(wire_use.location)?)?;
+                let wire_reversed = face_reversed ^ is_reversed(wire_use.orientation);
                 for edge_use in &wire.children {
                     if let TextTShapeGeometry::Edge {
                         degenerated: false, ..
@@ -1734,9 +1738,10 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     {
                         let edge_transform =
                             self.compose(wire_transform, self.location(edge_use.location)?)?;
-                        let count = uses
+                        let sense = usize::from(is_reversed(edge_use.orientation) ^ wire_reversed);
+                        let count = &mut uses
                             .entry(OccurrenceKey::new(edge_use.shape, edge_transform))
-                            .or_default();
+                            .or_default()[sense];
                         *count = count.checked_add(1).ok_or_else(|| {
                             CodecError::malformed("shell edge use count overflows u32")
                         })?;
@@ -1744,7 +1749,10 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 }
             }
         }
-        Ok(!uses.is_empty() && uses.values().all(|&count| count == 2))
+        Ok(!uses.is_empty()
+            && uses
+                .values()
+                .all(|&[forward, reversed]| forward > 0 && forward == reversed))
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
