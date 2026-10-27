@@ -10,3 +10,6 @@ pub use archive::{
     ArchiveSnapshot, EntryRecord, MemberFrame, MemberPayload, PhysicalSpan, ZipCompression,
     ZipSpanRole,
 };
+
+#[cfg(test)]
+mod integration_tests;

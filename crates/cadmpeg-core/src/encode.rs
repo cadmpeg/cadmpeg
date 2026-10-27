@@ -7,6 +7,8 @@ use crate::operation_budget::OperationBudget;
 
 use crate::decode::{DecodeContext, DecodePolicy, ResourceLimit};
 
+mod seekable;
+
 /// One encode operation's cumulative entities and live retained allocations.
 #[derive(Debug)]
 pub struct EncodeSession {
