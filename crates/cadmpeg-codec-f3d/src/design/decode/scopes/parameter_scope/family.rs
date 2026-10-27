@@ -41,20 +41,12 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::ComponentInsert,
     ),
     (
-        "BA3059E4-4B23-4D02-9D18-E7BB95C991F3",
-        DesignFeatureKind::CopyPasteBodies,
-    ),
-    (
         "29EF07D3-7BAF-4FA1-A28A-43A36279EA6D",
         DesignFeatureKind::DeleteFace,
     ),
     (
         "66E375EA-40F1-4115-8D83-0F23DD30593E",
         DesignFeatureKind::DerivedInstance,
-    ),
-    (
-        "F4163A07-9E71-4C46-BD92-ACE5B5B40BED",
-        DesignFeatureKind::Draft,
     ),
     (
         "C3A9ECCE-7D25-4432-A645-3A0D9687F22A",
@@ -89,10 +81,6 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::Move,
     ),
     (
-        "D087EFE5-2D28-42E6-BB45-61739E7D0204",
-        DesignFeatureKind::OffsetFaces,
-    ),
-    (
         "73615646-8752-4EE6-AD02-0B90804B7CD7",
         DesignFeatureKind::Pipe,
     ),
@@ -103,10 +91,6 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
         "E8816367-E309-4C27-A220-7862EE1A3498",
         DesignFeatureKind::RPattern,
-    ),
-    (
-        "4A782808-FBDD-4351-A10A-F7AE5693D330",
-        DesignFeatureKind::RemoveBody,
     ),
     (
         "E3849A15-2FC6-42A0-AF3A-2F1D7273B406",
@@ -135,10 +119,6 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
         "D869265F-F339-4751-A066-91D30F81FF08",
         DesignFeatureKind::WorkPlane,
-    ),
-    (
-        "E276745D-D84E-40D5-88BC-8C94DD4ACCDF",
-        DesignFeatureKind::ComponentInsert,
     ),
 ];
 
