@@ -17,6 +17,7 @@ use crate::layout::assembly_class_388_266_scope_968 as class_388_assemble;
 use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
+use crate::layout::assembly_wide_scope as wide_scope;
 use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::scope::DesignParameterScope;
@@ -178,9 +179,16 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::Wide
     ) {
-        if bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
-            || !matches!(bytes.get(start + 25), Some(0 | 1))
-            || bytes.get(start + 26..start + 37)? != [0; 11]
+        if bytes.get(start + wide_scope::WIDE_MARKER) != Some(&1)
+            || bytes
+                .get(start + wide_scope::ZERO_RUN_21..start + wide_scope::FRAME_SENSE)?
+                .iter()
+                .any(|byte| *byte != 0)
+            || !matches!(bytes.get(start + wide_scope::FRAME_SENSE), Some(0 | 1))
+            || bytes
+                .get(start + wide_scope::ZERO_RUN_26..start + frame_offsets.0)?
+                .iter()
+                .any(|byte| *byte != 0)
             || bytes.get(start + 48..start + 55)? != [0; 7]
             || bytes.get(start + 270..start + 277)? != [0; 7]
         {
@@ -272,7 +280,11 @@ pub(super) fn exact_as_built_operand_frame(
             let reference = typed_group_identity::CONSTRUCTION_REFERENCE;
             let flag = typed_group_identity::IDENTITY_FLAG;
             (reference, flag, typed_group_matrix::TRANSFORM)
-        } else if matches!(length, 97 | 225) {
+        } else if matches!(
+            length,
+            crate::layout::assembly_wide_operand_path_identity_locator::LEN
+                | crate::layout::assembly_wide_operand_path_matrix_locator::LEN
+        ) {
             (
                 wide_locator::NONZERO_RECORD_REFERENCE,
                 wide_locator::IDENTITY_FLAG,

@@ -334,13 +334,13 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ## 2. External references
 
-### DR-100. Root operand context identities
+### DR-100. Rigid-group operand forms and root identities
 
-**Question.** Which native identities do the two identity GUIDs of a zero-count root operand path name?
+**Question.** Which native identities do the two identity GUIDs of a zero-count root operand path name, and what are the field grammars of the refused locator forms? What do byte 20 of the alternate ordinary prologue and the payload of the two- or three-byte field before the final ordinary-tail reference mean? Is there a separate selector for the optional tail reference?
 
-**Known.** The typed root operand path stores a zero count, the zero root key, a zero word, u64 value 1, two ordered identity GUIDs, u32 value 2, and an eight-byte zero tail. The complete frame is 277 bytes.
+**Known.** The typed root operand path stores a zero count, the zero root key, a zero word, u64 value 1, two ordered identity GUIDs, u32 value 2, and an eight-byte zero tail. The complete frame is 277 bytes. Null-reference member locators also have a 52-byte version-3 form and 131- and 259-byte version-2 forms. A separate 181-byte version-2 pathless locator has a nonzero construction reference and discriminator 0. These locator forms are refused here. The ordinary-tail field starts with tag 0 for two bytes and tag 1 for three bytes. Its measured byte sequences are `00 00`, `01 00 00`, and `01 01 01`. The tag selects width independently of the optional reference. The reader requires unique exact closure for the reference choice; no separate presence selector is established. An alternate ordinary prologue has byte 1 at offset 20, its pathless reference at offset 26, its member count at offset 41, and its first member reference at offset 45. Its 88-byte-tail frame is `251 + 11N` bytes. This prologue is refused.
 
-**Need.** An explicit join from each identity GUID to its owning native record or document context.
+**Need.** Complete field grammars for the refused locator forms, the meaning of alternate-prologue byte 20 and the variable-width field payload, and a separate optional-reference selector if one exists. An explicit join from each identity GUID to its owning native record or document context.
 
 **Conflict.** None.
 

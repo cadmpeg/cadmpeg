@@ -65,6 +65,8 @@ pub(crate) enum F3dLossCode {
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
     /// project.
     AssemblyJointUnprojected,
+    /// An ordinary rigid-group frame has no admitted grammar.
+    AssemblyRigidGroupFrameUnparsed,
     /// Design assembly joints projected as fixed because their freedom codes or
     /// limit lanes do not map to a joint kind.
     AssemblyJointMotionUndecoded,
@@ -306,6 +308,7 @@ impl F3dLossCode {
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
         Self::AssemblyJointUnprojected,
+        Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
         Self::AssemblyJointAngularLimitsNative,
@@ -439,6 +442,7 @@ impl F3dLossCode {
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
+            Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
@@ -592,6 +596,7 @@ impl F3dLossCode {
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentDefinitionRevised
             | Self::AssemblyJointUnprojected
+            | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
@@ -749,6 +754,7 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyJointUnprojected
+            | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
@@ -875,6 +881,7 @@ mod tests {
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
                 "assembly.joint-unprojected",
+                "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
                 "assembly.joint-angular-limits-native",

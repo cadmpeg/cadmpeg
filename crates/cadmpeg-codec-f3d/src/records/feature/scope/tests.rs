@@ -508,3 +508,33 @@ fn emboss_scope_wire_refuses_a_typed_reference_table() {
     draft.payload = super::DesignScopePayload::Emboss(None);
     assert!(super::DesignParameterScope::try_new(draft).is_ok());
 }
+
+#[test]
+fn rigid_group_history_offsets_follow_both_tail_choices() {
+    for (frame, tail, previous) in [(257, 76, 30), (258, 77, 30), (268, 87, 41), (269, 88, 41)] {
+        let mut scope = super::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#3",
+            super::DesignFeatureKind::AsBuilt,
+            3,
+        );
+        scope
+            .try_edit(|draft| {
+                crate::design::test_support::lengthen_scope_frame(draft, frame);
+                draft.reference_count_offset = draft.byte_offset + frame - tail - 28;
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(Vec::new());
+                draft.layout_fixture_references();
+                draft.feature_ordinal_offset = draft.paired_byte_offset - tail;
+                draft.previous_history_state_id = Some(1);
+                draft.previous_history_state_id_offset =
+                    Some(draft.feature_ordinal_offset + previous);
+            })
+            .unwrap();
+        assert!(scope
+            .try_edit(|draft| {
+                draft.previous_history_state_id_offset =
+                    Some(draft.feature_ordinal_offset + previous + 1);
+            })
+            .is_err());
+    }
+}

@@ -16,7 +16,9 @@ use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_typed_rigid_group_identity_locator as typed_identity;
 use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_matrix;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
+use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
+use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
@@ -267,41 +269,36 @@ fn exact_assembly_operand_path_envelope(
             {
                 return None;
             }
-            // The transform is present only when the identity flag is 0.
-            let after_transform = match bytes
+            let (layout, separator) = match bytes
                 .get(locator_at.checked_add(wide_locator::IDENTITY_FLAG)?)?
             {
-                1 => wide_locator::TRANSFORM,
+                1 => (
+                    RigidGroupLocatorLayout::WideIdentity,
+                    wide_identity::ZERO_SEPARATOR,
+                ),
                 0 => {
                     rigid_transform_at(bytes, locator_at.checked_add(wide_locator::TRANSFORM)?)?;
-                    wide_locator::TRANSFORM + 16 * 8
+                    (
+                        RigidGroupLocatorLayout::WideMatrix,
+                        wide_matrix::ZERO_SEPARATOR,
+                    )
                 }
                 _ => return None,
             };
-            if bytes.get(locator_at.checked_add(after_transform)?) != Some(&0) {
+            let offsets = layout.offsets();
+            if bytes.get(locator_at.checked_add(separator)?) != Some(&0)
+                || rigid_locator.is_some_and(|admitted| admitted.offsets() != offsets)
+            {
                 return None;
             }
-            let backlink = after_transform + 1;
-            if let Some(layout) = rigid_locator {
-                let offsets = layout.offsets();
-                if offsets.1 != backlink {
-                    return None;
-                }
-                offsets
-            } else {
-                (
-                    backlink + 28,
-                    backlink,
-                    backlink + 11,
-                    backlink + 22,
-                    backlink + 26,
-                )
-            }
+            offsets
         } else if typed {
             let construction = typed_identity::CONSTRUCTION_REFERENCE;
             let flag = typed_identity::IDENTITY_FLAG;
-            if bytes.get(locator_at.checked_add(11)?..locator_at.checked_add(construction)?)?
-                != [0; 10]
+            if bytes.get(
+                locator_at.checked_add(typed_identity::ZERO_RUN_10)?
+                    ..locator_at.checked_add(construction)?,
+            )? != [0; 10]
                 || local_record_reference(bytes, locator_at.checked_add(construction)?, true)?.0
                     == 0
             {
@@ -322,10 +319,10 @@ fn exact_assembly_operand_path_envelope(
             offsets
         } else if compact {
             if bytes.get(
-                locator_at.checked_add(11)?..locator_at.checked_add(compact_locator::TRANSFORM)?,
+                locator_at.checked_add(compact_locator::ZERO_RUN_12)?
+                    ..locator_at.checked_add(compact_locator::TRANSFORM)?,
             )? != [0; 12]
-                || bytes.get(locator_at.checked_add(compact_locator::TRANSFORM + 16 * 8)?)
-                    != Some(&0)
+                || bytes.get(locator_at.checked_add(compact_locator::ZERO_151)?) != Some(&0)
                 || rigid_transform_at(bytes, locator_at.checked_add(compact_locator::TRANSFORM)?)
                     .is_none()
             {
@@ -336,7 +333,7 @@ fn exact_assembly_operand_path_envelope(
             if locator_class_tag != "390"
                 || bytes
                     .get(
-                        locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
+                        locator_at.checked_add(variable_path_locator::ZERO_SEPARATOR)?
                             ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
                     )?
                     .iter()

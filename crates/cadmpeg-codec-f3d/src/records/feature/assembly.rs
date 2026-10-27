@@ -1590,6 +1590,9 @@ impl DesignAssemblyOperandPath {
     /// This path continued by a further path record of its own form: two
     /// class-330 records, or two records admitted by the typed path type.
     pub(crate) fn try_append(self, continuation: Self) -> Option<Self> {
+        if self.is_root() || continuation.is_root() {
+            return None;
+        }
         let typed = self.admitted_by_type() && continuation.admitted_by_type();
         if !typed && (self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330")
         {

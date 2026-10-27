@@ -25,7 +25,7 @@ fn rigid_group_frame_requires_its_further_members() {
         DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
     };
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    let scope = |frame_length: u64| {
+    let scope = |frame_length: u64, tail_length: u64| {
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#3",
             DesignFeatureKind::AsBuilt,
@@ -34,11 +34,11 @@ fn rigid_group_frame_requires_its_further_members() {
         scope
             .try_edit(|draft| {
                 crate::design::test_support::lengthen_scope_frame(draft, frame_length);
-                draft.reference_count_offset = draft.byte_offset + frame_length - 104;
+                draft.reference_count_offset = draft.byte_offset + frame_length - tail_length - 28;
                 draft.reference_members =
                     crate::records::identity::ReferenceRun::unlocated(Vec::new());
                 draft.layout_fixture_references();
-                draft.feature_ordinal_offset = draft.paired_byte_offset - 76;
+                draft.feature_ordinal_offset = draft.paired_byte_offset - tail_length;
             })
             .unwrap();
         scope
@@ -60,30 +60,32 @@ fn rigid_group_frame_requires_its_further_members() {
     )
     .unwrap();
     let unread = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
-    assert!(rigid_group_members_link(
-        &scope(257),
-        &read,
-        true,
-        &Default::default()
-    ));
-    assert!(!rigid_group_members_link(
-        &scope(268),
-        &read,
-        true,
-        &Default::default()
-    ));
-    assert!(rigid_group_members_link(
-        &scope(268),
-        &unread,
-        true,
-        &Default::default()
-    ));
-    assert!(rigid_group_members_link(
-        &scope(268),
-        &read,
-        false,
-        &Default::default()
-    ));
+    for (frame, tail) in [(257, 76), (258, 77), (268, 87), (269, 88)] {
+        assert!(rigid_group_members_link(
+            &scope(frame, tail),
+            &read,
+            true,
+            &Default::default()
+        ));
+        assert!(!rigid_group_members_link(
+            &scope(frame + 11, tail),
+            &read,
+            true,
+            &Default::default()
+        ));
+        assert!(rigid_group_members_link(
+            &scope(frame + 11, tail),
+            &unread,
+            true,
+            &Default::default()
+        ));
+        assert!(rigid_group_members_link(
+            &scope(frame + 11, tail),
+            &read,
+            false,
+            &Default::default()
+        ));
+    }
 }
 
 #[test]
@@ -99,11 +101,14 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
     };
     use crate::records::identity::{Located, ReferenceRun};
 
-    for (length, version, wrong_version, backlink, wrapper, matrix) in
-        [(309, 2, 3, 201, 252, 73), (180, 3, 2, 152, 163, 23)]
+    let cases = [(309, 2, 3, 201, 252, 73), (180, 3, 2, 152, 163, 23)];
+    for (segment, (length, version, wrong_version, backlink, wrapper, matrix)) in
+        ["f3d:Design", "f3d:xref/member/occurrence-0/Design"]
+            .into_iter()
+            .flat_map(|segment| cases.into_iter().map(move |case| (segment, case)))
     {
         let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#3",
+            &format!("{segment}/BulkStream.dat:design-parameter-scope#3"),
             DesignFeatureKind::AsBuilt,
             3,
         );
@@ -184,13 +189,13 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
             .unwrap();
         let mut native = crate::native::F3dNative {
             design_record_headers: vec![crate::records::decal::DesignRecordHeader {
-                id: "f3d:Design/BulkStream.dat:design-record-header#3".into(),
+                id: format!("{segment}/BulkStream.dat:design-record-header#3"),
                 record_index: 3,
                 class_tag: scope.class_tag.clone(),
                 byte_offset: scope.byte_offset(),
             }],
             design_types: vec![SegmentType::try_new(
-                "f3d:Design/MetaStream.dat:design-type#0".into(),
+                format!("{segment}/MetaStream.dat:design-type#0"),
                 SegmentTypeData {
                     byte_offset: 0,
                     type_guid: "2E3AC990-483D-4A55-8662-C064B976A957"

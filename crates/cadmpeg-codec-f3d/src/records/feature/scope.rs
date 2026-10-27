@@ -2315,7 +2315,7 @@ impl DesignParameterScope {
                     Some(crate::layout::typed_reference_parameter_scope_tail::PREVIOUS_HISTORY_STATE_ID)
                 } else {
                     crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
-                        kind, tail,
+                        kind, tail, draft.reference_members.is_empty(),
                     )
                 }
                 .ok_or_else(|| fail("previous_history_state_id_offset"))?;

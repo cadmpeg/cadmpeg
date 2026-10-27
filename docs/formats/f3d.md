@@ -1847,9 +1847,17 @@ the operand construction references and transforms. The 378-, 422-, and
 444-byte forms' locators are wide operand-path locators: each operand frame is its wide locator's nonzero
 reference and transform, or the identity when the locator's identity flag is 1.
 
+The wide locator identity frame is 97 bytes. Its zero separator is at offset
+68, scope backlink at 69, wrapper reference at 80, discriminator at 91, and
+two zero tail bytes at 95. The wide locator matrix frame is 225 bytes. Its
+matrix is at offset 68, zero separator at 196, scope backlink at 197, wrapper
+reference at 208, discriminator at 219, and two zero tail bytes at 223.
+
 A rigid-group scope has no parameter owners and stores the kind `As-built`.
 Its member count `N` is at least two. The ordinary two-member rigid-group
-scope is 257 bytes. Its indexed header occupies offsets 0 through 10;
+scope has four tail combinations: 257/76, 258/77, 268/87, and 269/88
+bytes (frame/tail).
+Its indexed header occupies offsets 0 through 10;
 eleven zero bytes follow it. A marked pathless-locator reference is at offset
 22, four zero bytes are at offset 33, the u32 member count is at offset 37,
 and the first marked member-locator reference is at offset 41. References are
@@ -1857,10 +1865,49 @@ eleven bytes. The next member reference is at offset 52. For two members,
 the joint reference is at offset 63, the LP-UTF16 GUID is at offset 74,
 three zero bytes are at offset 150, the empty reference-table u32 count is
 at offset 153, the history-state u32 is at offset 157, and the LP-UTF16
-`As-built` kind starts at offset 161. Its feature ordinal and 76-byte scope
-tail start at offset 181. For `N` members the joint reference and all later
+`As-built` kind starts at offset 161. Its feature ordinal and scope tail
+start at offset 181. For `N` members the joint reference and all later
 fields shift by `11(N - 2)` bytes. The paired indexed header starts at
-`235 + 11N`.
+`159 + 11N + T`, where `T` is the tail width.
+
+An alternate ordinary prologue stores nine zero bytes after its indexed
+header, byte 1 at offset 20, five zero bytes at offset 21, and the marked
+pathless-locator reference at offset 26. Four zero bytes at offset 37
+precede the member count at offset 41. Its member references start at offsets
+45 and 56. The joint reference and all later fields are four bytes after
+the corresponding ordinary-prologue fields. This prologue form is refused
+here.
+
+The ordinary rigid-group tail starts at the end of the LP-UTF16 kind.
+It stores a nonzero u32 feature ordinal, fifteen zero bytes, an eleven-byte
+local reference at offset 19, an optional eleven-byte local reference,
+the preceding history-state u32, a u32, an f64, a u32, a local reference,
+a variable-width field, a final local reference, and two zero bytes.
+The variable-width field starts with a tag byte: tag 0 selects two bytes
+in total; tag 1 selects three bytes in total. Other tags are refused.
+Its payload has one byte for tag 0 and two bytes for tag 1.
+The optional reference and field width are independent.
+
+The 76-byte tail has no additional reference and has field tag 0.
+The history-state word is at offset 30; the u32, f64, u32, and next local
+reference are at offsets 34, 38, 46, and 50. The variable-width field is at
+offset 61, the final reference at 63, and the two zero bytes at 74.
+Tag 1 moves the final reference and zero tail one byte later and gives a
+77-byte tail. The 88-byte tail has the additional local reference at offset
+30 and field tag 1. The history-state word is at offset 41; the u32, f64,
+u32, and next local reference are at offsets 45, 49, 57, and 61. The field
+is at offset 72, the final reference at 75, and the two zero bytes at 86.
+Tag 0 moves the final reference and zero tail one byte earlier and gives an
+87-byte tail.
+
+No separate presence selector is established for the optional reference.
+The reader tries its absence and presence, reads the field tag at each
+candidate position, checks each local reference and zero run, and requires
+exactly one candidate to end at the paired indexed header. Zero or multiple
+complete candidates are refused. The member count and kind end must also
+close the scope prefix. The earlier single 76-byte tail statement is
+replaced because real frames carry an optional reference and a two- or
+three-byte field.
 
 The typed two-member rigid-group scope is 537 bytes. Its indexed header and
 eleven zero bytes have the same positions. The pathless-locator reference at
@@ -1877,16 +1924,19 @@ The tail form selects the reference width; the stored member count and
 paired header must close the complete scope at that width.
 
 A rigid-group member locator has type
-`2E3AC990-483D-4A55-8662-C064B976A957`. Its stored type version selects its
-frame. A length that does not match the version's frame is refused.
-A version-3 compact rigid-group locator is 180 bytes: the indexed
+`2E3AC990-483D-4A55-8662-C064B976A957`. The admitted locator forms are
+selected by type version and frame length.
+Other locator forms are refused here.
+A version-3 compact rigid-group locator is 180 bytes in the admitted
+null-reference matrix form: the indexed
 header is followed by twelve zero bytes, a rigid matrix at offset 23,
 one zero byte at offset 151, an ordinary scope backlink at offset 152,
 an ordinary wrapper reference at offset 163, u32 value 2 at offset 174,
 and two zero bytes at offset 178. The locator itself is the frame carrier.
 
-A version-2 typed rigid-group locator stores ten zero bytes after its
-indexed header, a nonzero typed construction reference at offset 21,
+The admitted version-2 typed rigid-group locator forms are 181 or 309 bytes.
+They store ten zero bytes after the indexed header, a nonzero typed
+construction reference at offset 21,
 and an identity flag at offset 72. Flag 0 stores a rigid matrix at offset
 73; flag 1 omits the matrix. The typed scope backlink immediately follows
 the matrix or identity flag; a typed wrapper reference, u32 discriminator,
@@ -1895,9 +1945,8 @@ and two zero bytes follow the backlink. A member locator has discriminator
 reference at offset 252, discriminator at offset 303, and zero tail at
 offset 307. The identity form is 181 bytes, with backlink at offset 73,
 wrapper reference at offset 124, discriminator at offset 175, and zero tail
-at offset 179. The separately referenced pathless locator has discriminator
-0 and is not a member locator. Version 5 uses the wide operand-path locator
-frame.
+at offset 179. Discriminator 0 is refused as a member locator. Version 5 uses the wide
+operand-path locator frame.
 
 Each member locator ends exactly at its first path record. The consecutive
 path records end at the wrapper. The wrapper stores ten zero bytes after
@@ -1909,8 +1958,10 @@ is `26 + CW` for path count `C` and reference width `W`. The next indexed
 header starts exactly after the wrapper. Locator indices are distinct and
 member envelopes do not overlap.
 
-A typed root operand path is a 277-byte frame. Its fifteen-byte indexed
-header is followed by six zero bytes, u32 count 0 at offset 21, and the
+A typed root operand path is a 277-byte frame. Its indexed header has a
+u32 tag length of 3, a three-digit ASCII class tag, and a u64 record index.
+This fifteen-byte indexed header is followed by six zero bytes, u32 count 0
+at offset 21, and the
 LP-UTF16 root key `00000000-0000-0000-0000-000000000000` at offset 25.
 Offset 101 stores u32 0, offset 105 stores u64 1, and offsets 113 and 189
 store the two LP-UTF16 identity GUIDs. Offset 265 stores u32 2; eight zero
@@ -1942,9 +1993,9 @@ The two selectors of one construction carrier have the same selector GUIDs, exte
 
 The 705- and 772-byte forms store no occurrence paths. Each other two-operand form stores a u32 count of two followed by two marked same-segment operand-path-locator references. The 378- and 399-byte `As-built` forms store the count at scope offset 47 and the references at offsets 51 and 62. The 422- and 444-byte `As-built` forms store them `11K` bytes later, after their `K` additional-owner references: at offsets 69, 73, and 84, and at offsets 80, 84, and 95. The 627-, 637-, and 692-byte forms store the count at scope offset 362 and the references at offsets 366 and 377. The 633- and 732-byte forms store the count at offset 358 and the references at offsets 362 and 373. The class-430/262 744-byte form stores the count at offset 358 and the references at offsets 362 and 373; its 748-byte form uses offset 362 and offsets 366 and 377. Each reference resolves to exactly one locator envelope after the scope's paired indexed header. The locator record indices are distinct, and the two envelopes do not overlap. The first locator reference qualifies the first operand frame and the second locator reference qualifies the second operand frame. For `As-built`, each locator's nonzero reference at locator offset 21 is the operand construction reference and its transform at locator offset 33 is the operand frame.
 
-The direct-path subform of the class-283/264 and class-347/260 generations uses a 180-byte locator envelope. Its rigid transform starts at offset 23, its owning-scope backlink is at offset 152, its path-wrapper reference is at offset 163, u32 value 2 is at offset 174, and two zero tail bytes occupy offsets 178 and 179. One or more consecutive class-330 path records immediately follow the locator. Each contributes its ordered occurrence GUID and four identity GUIDs to one operand path. A class-330 path whose first occurrence GUID is not a current-document occurrence identifies an external operand; its first identity GUID is the external document identity. The class-397 wrapper follows the final path record. Its byte at offset 21 is one, its u32 at offset 22 is the path-record count, and its marked reference at offset 26 names the first path record. Each further path record has one marked reference in an eleven-byte run starting at wrapper offset 37. The wrapper length is therefore `37 + 11(C - 1)` for path-record count `C`.
+The direct-path subform of the class-283/264 and class-347/260 generations uses a 180-byte locator envelope. Its rigid transform starts at offset 23, one zero separator is at offset 151, its owning-scope backlink is at offset 152, its path-wrapper reference is at offset 163, u32 value 2 is at offset 174, and two zero tail bytes occupy offsets 178 and 179. One or more consecutive class-330 path records immediately follow the locator. Each contributes its ordered occurrence GUID and four identity GUIDs to one operand path. A class-330 path whose first occurrence GUID is not a current-document occurrence identifies an external operand; its first identity GUID is the external document identity. The class-397 wrapper follows the final path record. Its byte at offset 21 is one, its u32 at offset 22 is the path-record count, and its marked reference at offset 26 names the first path record. Each further path record has one marked reference in an eleven-byte run starting at wrapper offset 37. The wrapper length is therefore `37 + 11(C - 1)` for path-record count `C`.
 
-The class-307 JointOrigin scope is 366 bytes and has a paired class-264 header. It is a pathless operand qualifier for the current document root. Marked references occur at +21 and +33. One 36-code-unit identity GUID starts at +44. A u32 reference count 12 at +123 introduces twelve marked references starting at +127. Four FF bytes follow the reference table. The 11-code-unit `JointOrigin` kind starts at +263, and the feature ordinal is at +289. An operand frame that references this scope uses the scope's solved transform and projects an operand with no occurrence or external-document qualifier. A variable-reference `Assemble` can pair this qualifier with a class-363 occurrence-path qualifier; operand-frame order fixes operand order.
+The class-307 JointOrigin scope is 366 bytes and has a paired class-264 header. It is a pathless operand qualifier for the current document root. Marked references occur at +21 and +33. One 36-code-unit identity GUID starts at +44. A three-byte separator starts at +120. A u32 reference count 12 at +123 introduces twelve marked references starting at +127. Four FF bytes follow the reference table. The 11-code-unit `JointOrigin` kind starts at +263, and the feature ordinal is at +289. An operand frame that references this scope uses the scope's solved transform and projects an operand with no occurrence or external-document qualifier. A variable-reference `Assemble` can pair this qualifier with a class-363 occurrence-path qualifier; operand-frame order fixes operand order.
 
 An assembly joint has a joint record and, when the joint has relative motion, a motion record. In the generation with `Assemble` scopes, the joint record's index is one less than its scope's, and the scope references it; the motion record stores a marked same-segment reference to the joint record at offset 24. In the earlier generation, which has no `Assemble` scope, the motion record's index is one more than its joint record's, and the motion record references the joint record. A motion record stores one freedom entry for each degree of freedom: byte `1`, f64 `0`, f64 π, a u32 word, and the u32 freedom code. The word is `3` or `1`, and an entry whose word is `1` stores an f64 after its code. A word-`1` entry can store f64 `0` in place of π; a motion record whose entries store π stores no such entry. A joint whose motion record has no freedom entry is rigid. Freedom code `1` is a rotation about the joint's local y axis, code `2` a rotation about its local z axis, and code `8` a translation along its local z axis. Eleven bytes after its marked self-reference, the joint record stores two limit flag bytes, each `0` or `1`. Twenty-three bytes after the self-reference it stores the finite f64 maximum followed by the finite f64 minimum. A rotation's limits are in radians and a translation's are in centimetres. A joint without limits stores flags `0 0` and zero values. Thirteen bytes after the self-reference, after the two limit flags, the joint record stores the rest flag byte, `0` or `1`. Thirty-nine bytes after the self-reference, after the minimum, the joint record stores the finite f64 rest value in the same unit. The rest value can be nonzero while the rest flag is `0`.
 

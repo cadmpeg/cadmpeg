@@ -180,7 +180,13 @@ fn as_built_operand_frame_link(
             None => return false,
         }
     } else if design::assembly::wide_as_built_scope(scope) {
-        if !matches!(length, Some(97 | 225)) {
+        if !matches!(
+            length,
+            Some(
+                crate::layout::assembly_wide_operand_path_identity_locator::LEN
+                    | crate::layout::assembly_wide_operand_path_matrix_locator::LEN
+            )
+        ) {
             return false;
         }
         (
@@ -258,12 +264,23 @@ fn valid_assembly_operand_path_link(
                 u64_from_index(wrapper + 1),
             )
         } else if wide {
-            let Some(length @ (97 | 225)) =
-                path.byte_offset().checked_sub(link.locator_byte_offset)
-            else {
-                return false;
+            use crate::layout::assembly_wide_operand_path_identity_locator as identity;
+            use crate::layout::assembly_wide_operand_path_matrix_locator as matrix;
+            let layout = match path
+                .byte_offset()
+                .checked_sub(link.locator_byte_offset)
+                .and_then(|length| usize::try_from(length).ok())
+            {
+                Some(identity::LEN) => design::assembly::RigidGroupLocatorLayout::WideIdentity,
+                Some(matrix::LEN) => design::assembly::RigidGroupLocatorLayout::WideMatrix,
+                _ => return false,
             };
-            (length, length - 28 + 1, length - 17 + 1)
+            let (length, backlink, wrapper, _, _) = layout.offsets();
+            (
+                u64_from_index(length),
+                u64_from_index(backlink + 1),
+                u64_from_index(wrapper + 1),
+            )
         } else if variable_reference {
             (
                 u64_from_index(variable_path_locator::LEN),

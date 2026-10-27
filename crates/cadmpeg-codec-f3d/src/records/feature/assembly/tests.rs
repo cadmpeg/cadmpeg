@@ -1161,3 +1161,30 @@ fn guids<T: TryFrom<String, Error = String>>(
         })
         .collect()
 }
+
+#[test]
+fn root_operand_paths_refuse_continuations() {
+    let path = |root, shift| {
+        let mut wire = serde_json::to_value(borrowed_assembly_path(true)).unwrap();
+        wire["type_guid"] = serde_json::json!(super::TYPED_OCCURRENCE_PATH_TYPE_GUID);
+        wire["byte_offset"] = serde_json::json!(300 + shift);
+        wire["occurrence_guid_offsets"] = serde_json::json!([400 + shift]);
+        wire["identity_guid_offsets"] =
+            serde_json::json!([500 + shift, 580 + shift, 660 + shift, 740 + shift]);
+        if root {
+            wire["occurrence_guids"] = serde_json::json!(["00000000-0000-0000-0000-000000000000"]);
+            wire["identity_guids"].as_array_mut().unwrap().truncate(2);
+            wire["identity_guid_offsets"]
+                .as_array_mut()
+                .unwrap()
+                .truncate(2);
+        }
+        let path: super::DesignAssemblyOperandPath = serde_json::from_value(wire).unwrap();
+        assert_eq!(path.is_root(), root);
+        path
+    };
+    assert!(path(false, 0).try_append(path(false, 1000)).is_some());
+    assert!(path(true, 0).try_append(path(true, 1000)).is_none());
+    assert!(path(true, 0).try_append(path(false, 1000)).is_none());
+    assert!(path(false, 0).try_append(path(true, 1000)).is_none());
+}

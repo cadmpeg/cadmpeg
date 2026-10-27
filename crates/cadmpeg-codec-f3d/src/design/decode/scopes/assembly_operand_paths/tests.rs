@@ -494,6 +494,10 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
         .unwrap()
         .is_none());
         let path = read(&bytes, version).unwrap();
+        let discriminator = usize::try_from(length).unwrap() - 6;
+        let mut pathless = bytes.clone();
+        pathless[discriminator..discriminator + 4].copy_from_slice(&0_u32.to_le_bytes());
+        assert!(read(&pathless, version).is_none());
         assert_eq!(path.byte_offset(), length);
         let frame = exact_as_built_operand_frame(&bytes, &path, true).unwrap();
         assert_eq!(

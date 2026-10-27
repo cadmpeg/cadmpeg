@@ -247,6 +247,99 @@ pub(crate) fn joint_placed_occurrence_loss(
 }
 
 #[derive(Debug, Clone, Copy)]
+pub(crate) struct OrdinaryRigidGroupTail {
+    pub(crate) previous_history: usize,
+    second_reference: usize,
+    prefix: usize,
+    final_reference: usize,
+    zero_tail: usize,
+    end: usize,
+}
+
+impl OrdinaryRigidGroupTail {
+    fn new(additional_reference: bool, wide_field: bool) -> Self {
+        use crate::layout::ordinary_rigid_group_tail_76 as short;
+        use crate::layout::ordinary_rigid_group_tail_88 as long;
+        let reference_width = long::PREVIOUS_HISTORY_STATE_ID - long::ADDITIONAL_REFERENCE;
+        let reference_shift = usize::from(additional_reference) * reference_width;
+        let second_reference = short::SECOND_REFERENCE + reference_shift;
+        let prefix = second_reference + reference_width;
+        let narrow_width = short::THIRD_REFERENCE - short::SECOND_REFERENCE - reference_width;
+        let wide_width = long::THIRD_REFERENCE - long::SECOND_REFERENCE - reference_width;
+        let field_width = if wide_field { wide_width } else { narrow_width };
+        let final_reference = prefix + field_width;
+        let zero_tail = final_reference + reference_width;
+        Self {
+            previous_history: short::PREVIOUS_HISTORY_STATE_ID + reference_shift,
+            second_reference,
+            prefix,
+            final_reference,
+            zero_tail,
+            end: zero_tail
+                + if wide_field {
+                    long::LEN - long::ZERO_TAIL
+                } else {
+                    short::LEN - short::ZERO_TAIL
+                },
+        }
+    }
+
+    fn unique_closed(length: usize, candidates: impl Iterator<Item = Self>) -> Option<Self> {
+        let mut closed = candidates.filter(|candidate| candidate.end == length);
+        let candidate = closed.next()?;
+        closed.next().is_none().then_some(candidate)
+    }
+
+    pub(crate) fn for_length(length: usize) -> Option<Self> {
+        Self::unique_closed(
+            length,
+            [false, true].into_iter().flat_map(|additional| {
+                [false, true]
+                    .into_iter()
+                    .map(move |wide| Self::new(additional, wide))
+            }),
+        )
+    }
+
+    pub(crate) fn read(tail: &[u8]) -> Option<Self> {
+        use crate::layout::ordinary_rigid_group_tail_76 as short;
+        let target = |at| crate::bytes::local_reference_target(tail, at, false).is_some();
+        if !tail
+            .get(short::ZERO_RUN..short::FIRST_REFERENCE)?
+            .iter()
+            .all(|byte| *byte == 0)
+            || !target(short::FIRST_REFERENCE)
+        {
+            return None;
+        }
+        Self::unique_closed(
+            tail.len(),
+            [false, true].into_iter().filter_map(|additional| {
+                let narrow = Self::new(additional, false);
+                if additional && !target(short::PREVIOUS_HISTORY_STATE_ID) {
+                    return None;
+                }
+                let mut field = cadmpeg_core::decode::View::over_retained(tail);
+                field.seek(narrow.prefix)?;
+                let wide = match field.u8()? {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                };
+                let candidate = Self::new(additional, wide);
+                (target(candidate.second_reference)
+                    && target(candidate.final_reference)
+                    && tail
+                        .get(candidate.zero_tail..candidate.end)?
+                        .iter()
+                        .all(|byte| *byte == 0))
+                .then_some(candidate)
+            }),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct RigidGroupLayout {
     pub(crate) members: usize,
     pub(crate) count_at: usize,
@@ -259,10 +352,10 @@ impl RigidGroupLayout {
     pub(crate) fn new(frame_length: u64, tail_length: u64) -> Option<Self> {
         use crate::layout::assembly_rigid_as_built_scope as ordinary;
         use crate::layout::assembly_typed_rigid_group_scope as typed;
-        let (length, count_at, first_reference, stride, empty_base) =
-            if tail_length == u64_from_index(ordinary::LEN - ordinary::SCOPE_TAIL) {
+        let (kind_end, count_at, first_reference, stride, empty_base) =
+            if OrdinaryRigidGroupTail::for_length(usize::try_from(tail_length).ok()?).is_some() {
                 (
-                    ordinary::LEN,
+                    ordinary::SCOPE_TAIL,
                     ordinary::LOCATOR_COUNT,
                     ordinary::FIRST_LOCATOR_REFERENCE,
                     ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE,
@@ -270,7 +363,7 @@ impl RigidGroupLayout {
                 )
             } else if tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
                 (
-                    typed::LEN,
+                    typed::SCOPE_TAIL,
                     typed::LOCATOR_COUNT,
                     typed::FIRST_LOCATOR_REFERENCE,
                     typed::SECOND_LOCATOR_REFERENCE - typed::FIRST_LOCATOR_REFERENCE,
@@ -279,7 +372,8 @@ impl RigidGroupLayout {
             } else {
                 return None;
             };
-        let base = u64_from_index(length.checked_sub(2_usize.checked_mul(stride)?)?);
+        let base = u64_from_index(kind_end.checked_sub(2_usize.checked_mul(stride)?)?)
+            .checked_add(tail_length)?;
         let member_bytes = usize::try_from(frame_length.checked_sub(base)?).ok()?;
         if !member_bytes.is_multiple_of(stride) || member_bytes / stride < 2 {
             return None;
@@ -324,7 +418,8 @@ impl RigidGroupLocatorLayout {
         use crate::layout::assembly_compact_rigid_group_locator as compact;
         use crate::layout::assembly_typed_rigid_group_identity_locator as identity;
         use crate::layout::assembly_typed_rigid_group_matrix_locator as matrix;
-        use crate::layout::assembly_wide_operand_path_locator as wide;
+        use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
+        use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
         let (guid, version) = registered?;
         if !guid.eq_ignore_ascii_case("2E3AC990-483D-4A55-8662-C064B976A957") {
             return None;
@@ -333,8 +428,8 @@ impl RigidGroupLocatorLayout {
             (2, identity::LEN) => Some(Self::TypedIdentity),
             (2, matrix::LEN) => Some(Self::TypedMatrix),
             (3, compact::LEN) => Some(Self::Compact),
-            (5, length) if length == wide::TRANSFORM + 1 + 28 => Some(Self::WideIdentity),
-            (5, length) if length == wide::TRANSFORM + 16 * 8 + 1 + 28 => Some(Self::WideMatrix),
+            (5, wide_identity::LEN) => Some(Self::WideIdentity),
+            (5, wide_matrix::LEN) => Some(Self::WideMatrix),
             _ => None,
         }
     }
@@ -350,7 +445,8 @@ impl RigidGroupLocatorLayout {
         use crate::layout::assembly_compact_rigid_group_locator as compact;
         use crate::layout::assembly_typed_rigid_group_identity_locator as identity;
         use crate::layout::assembly_typed_rigid_group_matrix_locator as matrix;
-        use crate::layout::assembly_wide_operand_path_locator as wide;
+        use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
+        use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
         match self {
             Self::TypedIdentity => (
                 identity::LEN,
@@ -373,22 +469,20 @@ impl RigidGroupLocatorLayout {
                 compact::DISCRIMINATOR,
                 compact::ZERO_TAIL,
             ),
-            Self::WideIdentity | Self::WideMatrix => {
-                let backlink = wide::TRANSFORM
-                    + if matches!(self, Self::WideMatrix) {
-                        16 * 8
-                    } else {
-                        0
-                    }
-                    + 1;
-                (
-                    backlink + 28,
-                    backlink,
-                    backlink + 11,
-                    backlink + 22,
-                    backlink + 26,
-                )
-            }
+            Self::WideIdentity => (
+                wide_identity::LEN,
+                wide_identity::SCOPE_BACKLINK,
+                wide_identity::WRAPPER_REFERENCE,
+                wide_identity::DISCRIMINATOR,
+                wide_identity::ZERO_TAIL,
+            ),
+            Self::WideMatrix => (
+                wide_matrix::LEN,
+                wide_matrix::SCOPE_BACKLINK,
+                wide_matrix::WRAPPER_REFERENCE,
+                wide_matrix::DISCRIMINATOR,
+                wide_matrix::ZERO_TAIL,
+            ),
         }
     }
 }
@@ -1260,6 +1354,24 @@ fn unique_scope<'a>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rigid_group_tail_requires_unique_exact_closure() {
+        use super::OrdinaryRigidGroupTail;
+        let candidate = OrdinaryRigidGroupTail::new(false, false);
+        assert!(OrdinaryRigidGroupTail::unique_closed(76, [candidate].into_iter()).is_some());
+        assert!(OrdinaryRigidGroupTail::unique_closed(77, [candidate].into_iter()).is_none());
+        assert!(
+            OrdinaryRigidGroupTail::unique_closed(76, [candidate, candidate].into_iter()).is_none()
+        );
+        for length in 0..=196 {
+            let expected = matches!(length, 76 | 77 | 87 | 88);
+            assert_eq!(
+                OrdinaryRigidGroupTail::for_length(length).is_some(),
+                expected
+            );
+        }
+    }
+
     use cadmpeg_core::decode::u64_from_index;
 
     use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
