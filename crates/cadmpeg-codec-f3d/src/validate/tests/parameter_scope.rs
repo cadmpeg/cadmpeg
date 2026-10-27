@@ -154,3 +154,109 @@ fn validation_accepts_malformed_rest_with_retained_limits() {
     });
     assert_eq!(before, after);
 }
+
+#[test]
+fn corner_flange_scope_round_trip_and_layout_validation() {
+    use crate::layout::edge_flange_corner_operation as layout;
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#40",
+        DesignFeatureKind::EdgeFlange,
+        40,
+    );
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = cadmpeg_core::decode::u64_from_index(layout::LEN);
+            draft.paired_byte_offset =
+                draft.byte_offset + cadmpeg_core::decode::u64_from_index(layout::LEN);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                51, 52, 55, 61, 62, 65, 81, 91, 101, 104, 108, 141,
+            ]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let operation = serde_json::from_value(serde_json::json!({
+        "edge_wrapper_record_indices":[51,61], "edge_group_record_indices":[52,62],
+        "edge_operand_record_indices":[55,65], "aggregate_group_record_index":101,
+        "aggregate_operand_record_indices":[104,108], "height_owner_record_index":81,
+        "angle_owner_record_index":91, "width_mode":"full_edge",
+        "width_distance_owner_record_indices":[], "settings_record_index":141,
+        "bend_radius":0.35, "bend_radius_offset":scope.byte_offset() + cadmpeg_core::decode::u64_from_index(layout::INSIDE_BEND_RADIUS),
+        "reference_side_code":4, "height_datum":"outer_faces", "bend_position":"inside"
+    })).unwrap();
+    if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
+        *slot = Some(operation);
+    }
+    let wire = serde_json::to_value(&scope).unwrap();
+    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
+    let findings = |scope: DesignParameterScope| {
+        crate::test_support::with_decode_context(|service_ctx| {
+            let ir = cadmpeg_ir::document::CadIr::empty();
+            let headers = std::iter::once(scope.record_index)
+                .chain(scope.reference_members().values().copied())
+                .map(|record_index| crate::records::decal::DesignRecordHeader {
+                    id: format!("f3d:Design/BulkStream.dat:design-record-header#{record_index}"),
+                    record_index,
+                    class_tag: if record_index == scope.record_index {
+                        scope.class_tag.clone()
+                    } else {
+                        crate::records::references::DesignClassTag::try_from("256".to_owned())
+                            .unwrap()
+                    },
+                    byte_offset: if record_index == scope.record_index {
+                        scope.byte_offset()
+                    } else {
+                        scope.paired_byte_offset() + u64::from(record_index) * 21
+                    },
+                })
+                .collect();
+            let native = crate::native::F3dNative {
+                design_parameter_scopes: vec![scope],
+                design_record_headers: headers,
+                ..Default::default()
+            };
+            let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+            let mut findings = Vec::new();
+            super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+            findings
+        })
+    };
+    assert!(findings(decoded).is_empty());
+    let mut invalid = scope.clone();
+    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+        operation.bend_radius_offset += 1;
+    }
+    assert!(!findings(invalid).is_empty());
+    let mut invalid = scope.clone();
+    invalid.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap();
+    assert!(!findings(invalid).is_empty());
+    let mut invalid = scope.clone();
+    invalid
+        .try_edit(|draft| {
+            draft.frame_length -= 1;
+            draft.paired_byte_offset -= 1;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(!findings(invalid).is_empty());
+    let mut invalid = scope.clone();
+    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+        operation.height_datum =
+            crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::InnerFaces;
+    }
+    assert!(!findings(invalid).is_empty());
+    let mut invalid = scope;
+    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+        operation.bend_position = crate::records::feature::sheet_metal::DesignBendPosition::Outside;
+    }
+    assert!(!findings(invalid).is_empty());
+}

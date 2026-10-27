@@ -483,3 +483,27 @@ the native feature when a fixed lane carries a symmetric distance.
 **Known.** `f3d.md` §1.1.1 "In a domain with no deleted slots" defines the same-numbered neutral binding and selector-specific element domains. Raw-slot and compact-index predictions agree on all-live topology. An out-of-range operand supplies no discriminator. A raw pair remains retained when the predictions disagree. At sweep `1`, the forward and reverse rotation steps are `+2*pi/N` and `-2*pi/N`; the native sweep scalar remains separate.
 
 **Need.** A producer-generated radial TSM must retain a deleted domain slot at `p` and map a live element with raw slot `q > p`. The raw-slot prediction is `q`; the compact-index prediction after one deletion is `q-1`. Saving must preserve the deleted slot to separate these predictions. A controlled radial export with a nondefault sweep must establish the sweep-to-angle rule.
+
+### DR-109. EdgeFlange corner controls
+
+**Question.** Which fields select corner relief, miter, and the corner gap for adjacent flange edges?
+
+**Known.** The two-edge distance form names two edge wrappers, two edge groups, two aggregate operands, and one settings record. The settings input mask can be zero. The operation contains one height and angle owner pair.
+
+**Need.** Controlled changes to each corner control with the same selected edges.
+
+**Conflict.** None.
+
+**Note.** The fixed edge list does not identify an independent corner-control field.
+
+### DR-110. EdgeFlange scope radius control
+
+**Question.** What physical quantity does the positive f64 scope radius control represent?
+
+**Known.** The two-edge scope contains one positive f64 control at the `inside_bend_radius` layout slot. The native operation retains its value and location. The inside bend radius is the smaller radius of the coaxial inner and outer bend carriers.
+
+**Need.** Controlled changes that separate sheet thickness, inside radius, and centerline radius.
+
+**Conflict.** None.
+
+**Note.** The layout slot name does not establish the control's physical role.

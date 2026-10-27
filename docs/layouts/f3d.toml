@@ -23159,3 +23159,209 @@ offset = 129
 type = "bytes[2]"
 source = "spec"
 anchor = "The null-construction identity form"
+
+[[record]]
+name = "edge_flange_corner_operation"
+kind = "byte"
+section = "3.1"
+anchor = "A class-`361`/`258` or class-`362`/`258` two-edge distance-form"
+size = 620
+note = "Offsets are relative to the primary scope header."
+
+[[record.gap]]
+offset = 0
+size = 101
+note = "Scope envelope or uninterpreted bytes."
+
+[[record.field]]
+name = "bend_position"
+value = 2
+offset = 101
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_count"
+value = 2
+offset = 105
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_wrapper_one_reference"
+offset = 109
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_wrapper_two_reference"
+offset = 120
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "settings_reference"
+offset = 131
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "height_datum"
+value = 2
+offset = 142
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "angle_owner_reference"
+offset = 146
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "height_owner_reference"
+offset = 157
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "reference_side"
+value = 4
+offset = 168
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "side_padding"
+offset = 172
+type = "bytes[11]"
+source = "spec"
+anchor = "The side padding, radius padding, and group padding are zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "inside_bend_radius"
+offset = 183
+type = "f64"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "radius_padding"
+offset = 191
+type = "bytes[6]"
+source = "spec"
+anchor = "The side padding, radius padding, and group padding are zero bytes"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "result_count"
+value = 3
+offset = 197
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_one_reference"
+offset = 201
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_one_trailer"
+value = 1
+offset = 212
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_two_reference"
+offset = 216
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_two_trailer"
+value = 1
+offset = 227
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_three_reference"
+offset = 231
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_three_trailer"
+value = 0
+offset = 242
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "result_separator"
+value = 1
+offset = 246
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "aggregate_group_reference"
+offset = 250
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "group_padding"
+offset = 261
+type = "bytes[12]"
+source = "spec"
+anchor = "The side padding, radius padding, and group padding are zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "edge_group_count"
+value = 2
+offset = 273
+type = "u32"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_group_one_reference"
+offset = 277
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.field]]
+name = "edge_group_two_reference"
+offset = 288
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed fields are defined by `edge_flange_corner_operation`"
+
+[[record.gap]]
+offset = 299
+size = 321
+note = "Scope envelope follows the edge groups."

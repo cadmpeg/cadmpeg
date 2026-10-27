@@ -2140,7 +2140,22 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .iter()
                     .copied()
                     .collect::<std::collections::HashSet<_>>();
-                edge_count > 0
+                let corner_layout =
+                    matches!(scope.class_tag.as_str(), "361" | "362") && edge_count > 1;
+                let corner_form = !corner_layout
+                    || (scope.paired_class_tag.as_str() == "258"
+                        && design::decode::scopes::sheet_metal::corner_flange::operation_holds(
+                            operation,
+                            scope.byte_offset(),
+                            scope.frame_length(),
+                        )
+                        && scope
+                            .reference_members()
+                            .values()
+                            .zip(scope.reference_members().values().skip(1))
+                            .all(|(left, right)| left < right));
+                corner_form
+                    && edge_count > 0
                     && claimed.len() == scope.reference_members().len()
                     && unique_claimed.len() == claimed.len()
                     && claimed.iter().all(|index| {
