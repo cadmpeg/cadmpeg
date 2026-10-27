@@ -5,15 +5,18 @@
 //! held. It consumes typed records, never archive entries or retained bytes.
 
 use crate::{brep, native};
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 pub(super) fn project(
-    attribute_context: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<Option<(CadIr, Vec<LossNote>)>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     if ir.scope.model {
         return Ok(None);
     }
@@ -25,10 +28,7 @@ pub(super) fn project(
         return Ok(None);
     }
     let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let property_reader = crate::property_reader::PropertyReader::typed(&ctx);
+    let property_reader = crate::property_reader::PropertyReader::typed(ctx);
     let mut typed_properties = Vec::new();
     for property in properties {
         if super::xml::native(&property)?.is_some() {
@@ -39,8 +39,8 @@ pub(super) fn project(
     let mut scope = projected.scope;
     scope.model = true;
     projected.set_scope(scope).map_err(CodecError::malformed)?;
-    let mut curves = brep::transfer_text_curves(&ctx, &payloads, &typed_properties)?;
-    let surfaces = brep::transfer_text_surfaces(&ctx, &payloads, &typed_properties, &mut curves)?;
+    let mut curves = brep::transfer_text_curves(ctx, &payloads, &typed_properties)?;
+    let surfaces = brep::transfer_text_surfaces(ctx, &payloads, &typed_properties, &mut curves)?;
     projected.model.curves = curves.curves;
     projected
         .model
@@ -53,7 +53,7 @@ pub(super) fn project(
         .map_err(CodecError::malformed)?;
     let mut losses = Vec::new();
     let topology_occurrences = crate::topology_transfer::transfer(
-        &ctx,
+        ctx,
         &mut projected,
         &payloads,
         &typed_properties,
@@ -101,7 +101,7 @@ pub(super) fn project(
             .and_then(|document| document.program_version.as_deref());
         let entries = std::collections::BTreeMap::new();
         let graph = crate::gui::transfer(
-            &ctx,
+            ctx,
             &mut projected,
             gui.as_bytes(),
             &crate::gui::GuiSources {
@@ -116,12 +116,9 @@ pub(super) fn project(
         losses.extend(graph.losses);
     }
     super::body_styles::apply(&mut projected, &payloads, &typed_properties)?;
-    crate::attributes::transfer(
-        attribute_context,
-        &mut projected,
-        &objects,
-        &typed_properties,
-    )?;
-    ctx.finish_session()?;
+    crate::attributes::transfer(ctx, &mut projected, &objects, &typed_properties)?;
     Ok(Some((projected, losses)))
 }
+
+#[cfg(test)]
+mod tests;
