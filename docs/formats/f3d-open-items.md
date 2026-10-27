@@ -362,6 +362,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ## 2. External references
 
+### DR-113. Solved placement without a bound assembly operand
+
+**Question.** Which native relation, if any, selects the current solved pose of an inserted occurrence when no assembly operand path binds to it?
+
+**Known.** `f3d.md` §1.4 defines the occurrence-placement carrier's stored transform. Assembly operand paths can select occurrences whose solved poses differ from their stored transforms.
+
+**Need.** Independently authored saves that change only an inserted occurrence's pose and retain the complete occurrence and constraint carriers must identify the relation that supplies its solved placement.
+
+**Conflict.** A stored placement can disagree with the checked assembly while no projected joint selects the occurrence. This does not distinguish an unbound constraint, an unread placement carrier, and a different saved assembly state.
+
+**Note.** Retain the stored transform and native records.
+
 ### DR-100. Rigid-group operand forms and root identities
 
 **Question.** Which native identities do the two identity GUIDs of a zero-count root operand path name? What do byte 20 of the alternate ordinary prologue and the payload of the two- or three-byte field before the final ordinary-tail reference mean? Is there a separate selector for the optional tail reference?

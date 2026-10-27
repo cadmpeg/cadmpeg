@@ -812,20 +812,7 @@ pub(crate) fn project_assembly_joints_with_paths(
                 if paired {
                     paired_joints += 1;
                 }
-                // Every projected `Assemble` joint is paired.
-                joint.set_frame_sense(
-                    scope
-                        .assembly_alignment()
-                        .and_then(|alignment| alignment.frame_sense)
-                        .map(|sense| match sense {
-                            crate::records::feature::assembly::DesignJointFrameSense::Aligned => {
-                                cadmpeg_ir::products::PlaneSense::Aligned
-                            }
-                            crate::records::feature::assembly::DesignJointFrameSense::Opposed => {
-                                cadmpeg_ir::products::PlaneSense::Opposed
-                            }
-                        }),
-                );
+                joint.set_frame_sense(projected_frame_sense(scope));
                 if motion.is_some_and(zero_lane_rotation_limits) && undecoded.is_none() {
                     native_angular_limits += 1;
                 }
@@ -1270,6 +1257,7 @@ fn rigid_group_member_joints(
             None,
         );
         joint.native_ref = Some(scope.id.clone());
+        joint.set_frame_sense(projected_frame_sense(scope));
         if first_paired
             || member
                 .qualifier
@@ -1316,6 +1304,23 @@ pub(crate) fn bind_assembly_joint_features(features: &mut [Feature], joints: &[A
                 },
             ));
     }
+}
+
+fn projected_frame_sense(scope: &DesignParameterScope) -> Option<cadmpeg_ir::products::PlaneSense> {
+    if rigid_as_built_scope(scope) {
+        return Some(cadmpeg_ir::products::PlaneSense::Aligned);
+    }
+    scope
+        .assembly_alignment()
+        .and_then(|alignment| alignment.frame_sense)
+        .map(|sense| match sense {
+            crate::records::feature::assembly::DesignJointFrameSense::Aligned => {
+                cadmpeg_ir::products::PlaneSense::Aligned
+            }
+            crate::records::feature::assembly::DesignJointFrameSense::Opposed => {
+                cadmpeg_ir::products::PlaneSense::Opposed
+            }
+        })
 }
 
 fn null_construction_operand(
@@ -2144,10 +2149,65 @@ mod tests {
             &table.references[..1],
             &occurrences,
         );
+        null_group[0]
+            .try_edit(|draft| {
+                let DesignScopePayload::AsBuilt(Some(alignment)) = &mut draft.payload else {
+                    panic!("rigid group alignment");
+                };
+                let Some(DesignAssemblyAlignmentForm::Qualified(operands)) = &mut alignment.form
+                else {
+                    panic!("qualified group operands");
+                };
+                for (ordinal, operand) in operands
+                    .iter_mut()
+                    .chain(&mut alignment.additional_members)
+                    .enumerate()
+                {
+                    let shift = f64::from(u32::try_from(ordinal).unwrap());
+                    operand.frame.transform = [
+                        [0.0, -1.0, 0.0, 2.0 + shift],
+                        [1.0, 0.0, 0.0, 4.0 + shift],
+                        [0.0, 0.0, 1.0, 6.0 + shift],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                    .try_into()
+                    .unwrap();
+                }
+            })
+            .unwrap();
         let projection =
             super::project_assembly_joints_with_paths(&null_group, &[], &inserts, &[], &bindings);
         assert_eq!(projection.joints.len(), 3);
         assert!(projection.losses.is_empty());
+        for (ordinal, joint) in projection.joints.iter().enumerate() {
+            assert_eq!(
+                joint.frame_sense(),
+                Some(cadmpeg_ir::products::PlaneSense::Aligned)
+            );
+            let frames = joint
+                .connectors()
+                .map(|connector| connector.frame.rows())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                frames[0],
+                [
+                    [0.0, -1.0, 0.0, 20.0],
+                    [1.0, 0.0, 0.0, 40.0],
+                    [0.0, 0.0, 1.0, 60.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            );
+            let shift = 10.0 * f64::from(u32::try_from(ordinal + 1).unwrap());
+            assert_eq!(
+                frames[1],
+                [
+                    [0.0, -1.0, 0.0, 20.0 + shift],
+                    [1.0, 0.0, 0.0, 40.0 + shift],
+                    [0.0, 0.0, 1.0, 60.0 + shift],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            );
+        }
         assert!(projection
             .joints
             .iter()

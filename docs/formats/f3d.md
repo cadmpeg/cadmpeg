@@ -2012,7 +2012,10 @@ store the two LP-UTF16 identity GUIDs. Offset 265 stores u32 2; eight zero
 bytes at offset 269 close the frame. This path selects the current document
 root and has no occurrence member. Its two identity GUIDs remain ordered.
 
-The linked rigid-group joint motion has no freedom entry.
+The linked rigid-group joint motion has no freedom entry. Each member's
+locator transform maps the common group frame into that member's local
+space. The member placements compose with these transforms to give the
+same frame. All member frames mate aligned.
 Matrix translations are in centimetres. Alignment
 angles are in radians and alignment offsets are in centimetres. The alignment
 owner references are one ordered, contiguous scope-reference run unless an
