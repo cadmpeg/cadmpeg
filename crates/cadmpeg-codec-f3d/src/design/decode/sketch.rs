@@ -257,7 +257,8 @@ pub(crate) fn decode_sketch_placements(
     }
     // A sketch entity header pairs with a same-index member-run record whose
     // leading marked reference names a head record carrying the row-major
-    // 4×4 placement. A localized Sketch scope belongs to the preceding sketch
+    // 4×4 placement. A Sketch scope whose entity binding names the entity owns
+    // it. Otherwise a localized Sketch scope belongs to the preceding sketch
     // entity interval: it follows that entity and precedes the next sketch
     // entity in the same stream. Some member-run sketches have no scope.
     let initial_placements = out.len();
@@ -292,13 +293,8 @@ pub(crate) fn decode_sketch_placements(
             })
             .map(|candidate| candidate.byte_offset)
             .min();
-        let mut matching_scopes = scopes.iter().filter(|scope| {
-            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
-                && native_stream(&scope.id) == Some(stream)
-                && scope.byte_offset() > entity.byte_offset
-                && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
-        });
-        if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
+        let owner = member_run_sketch_scope(scopes, stream, entity, next_entity_offset);
+        if let Some(scope) = owner {
             placement.scope_record_index = Some(scope.record_index);
         }
         placement.id = design_record_id(
@@ -585,6 +581,39 @@ const MEMBER_RUN_HEAD_FRAME: usize = 162;
 /// The explicit head frame whose closing reference at offset 151 carries an
 /// inline type GUID: forty bytes longer than the plain frame.
 const TYPED_MEMBER_RUN_HEAD_FRAME: usize = MEMBER_RUN_HEAD_FRAME + 40;
+
+/// The Sketch scope that owns a member-run sketch entity.
+fn member_run_sketch_scope<'a>(
+    scopes: &'a [DesignParameterScope],
+    stream: &str,
+    entity: &DesignEntityHeader,
+    next_entity_offset: Option<u64>,
+) -> Option<&'a DesignParameterScope> {
+    let sketch_scopes = || {
+        scopes.iter().filter(|scope| {
+            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
+                && native_stream(&scope.id) == Some(stream)
+        })
+    };
+    let mut bound_scopes = sketch_scopes().filter(|scope| {
+        scope
+            .sketch_entity()
+            .is_some_and(|binding| binding.entity_id == entity.entity_id)
+    });
+    let mut interval_scopes = sketch_scopes().filter(|scope| {
+        scope.sketch_entity().is_none()
+            && scope.byte_offset() > entity.byte_offset
+            && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
+    });
+    match (bound_scopes.next(), bound_scopes.next()) {
+        (Some(scope), None) => Some(scope),
+        (Some(_), Some(_)) => None,
+        (None, _) => match (interval_scopes.next(), interval_scopes.next()) {
+            (Some(scope), None) => Some(scope),
+            _ => None,
+        },
+    }
+}
 
 /// Parse a member-run head placement: the paired same-index record after the
 /// sketch's entity header opens with a marked

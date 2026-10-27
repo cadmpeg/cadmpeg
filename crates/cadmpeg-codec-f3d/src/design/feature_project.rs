@@ -2341,7 +2341,15 @@ fn resolved_fillet_assignments<'a>(
             assigned.push(record);
         }
     }
+    let one_shared_set = assignments.windows(2).all(|pair| {
+        pair[0].law == pair[1].law
+            && pair[0].tangency_weight_parameter_record_index
+                == pair[1].tangency_weight_parameter_record_index
+    });
     assigned.sort_unstable_by(Ord::cmp);
+    if one_shared_set {
+        assigned.dedup();
+    }
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
         return None;
     }

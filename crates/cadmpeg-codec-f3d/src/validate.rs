@@ -5746,7 +5746,7 @@ fn validate_fillet_radius_groups<'a>(
         let assignment_parameter = |record_index: u32| {
             let parameter = *parameters_by_index.get(&(native_stream, record_index))?;
             let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index()?))?;
-            (owner.scope_record_index() == assignment.scope_record_index
+            (scope.is_some_and(|scope| scope.names_owner(owner))
                 && owner.parameter_record_index() == record_index)
                 .then_some(parameter)
         };
@@ -6010,6 +6010,44 @@ fn validate_fillet_operand_groups<'a>(
             }
             continue;
         }
+        let in_selection_pair = scope.is_some_and(|scope| {
+            let mut scope_groups = native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|candidate| {
+                    design_stream(&candidate.id) == native_stream
+                        && candidate.scope_record_index == scope.record_index
+                })
+                .collect::<Vec<_>>();
+            scope_groups.sort_by_key(|candidate| candidate.scope_reference_ordinal);
+            design::decode::operands::fillet_edge_and_face_groups(&scope_groups).is_some_and(
+                |pair| {
+                    let face_backed = pair
+                        .iter()
+                        .filter(|candidate| candidate.role() == DesignOperandRole::ROLE_0X10)
+                        .flat_map(|candidate| {
+                            candidate
+                                .members()
+                                .iter()
+                                .map(move |member| (candidate, member))
+                        })
+                        .all(|(candidate, member)| {
+                            native.design_face_operands.iter().any(|operand| {
+                                design_stream(&operand.id) == native_stream
+                                    && operand.scope_record_index == scope.record_index
+                                    && operand.group_record_index() == Some(candidate.record_index)
+                                    && operand.record_index() == member.value
+                                    && operand.recipe_kind
+                                        == records::recipes::ConstructionRecipeKind::BoundedFace
+                            })
+                        });
+                    face_backed
+                        && pair
+                            .iter()
+                            .any(|candidate| candidate.record_index == group.record_index)
+                },
+            )
+        });
         let has_fixed_assignment = scope
             .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
             .is_some_and(|(scope, fixed)| {
@@ -6042,7 +6080,8 @@ fn validate_fillet_operand_groups<'a>(
                             == 1
                     })
                     && ((fixed_edge_group_count == fixed.groups.len() && is_fixed_edge_group)
-                        || (fixed.groups.len() == 1 && sole_compact_group_shape))
+                        || (fixed.groups.len() == 1
+                            && (sole_compact_group_shape || in_selection_pair)))
             });
         if is_fillet
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
@@ -7985,13 +8024,17 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let unique_index = owner_indices.insert((native_stream, owner.record_index()));
         let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index()));
         let legacy_68_frame = owner.frame_length() == 68;
+        let scope_key = (native_stream, owner.scope_record_index());
+        let detached = !records_by_index.contains_key(&scope_key)
+            || ctx
+                .scopes_by_index
+                .get(&scope_key)
+                .is_some_and(|scope| !scope.names_owner(owner));
         let frame_layout = !matches!(owner.frame_length(), 68 | 88)
             || parameter.is_some_and(|parameter| {
                 owner.evaluated_value_offset() == parameter.evaluated_value_offset()
             });
-        let scope_resolves = legacy_68_frame
-            || records_by_index.contains_key(&(native_stream, owner.scope_record_index()));
-        let unique_local_ordinal = if legacy_68_frame {
+        let unique_local_ordinal = if legacy_68_frame || detached {
             true
         } else {
             owner_local_ordinals.insert((
@@ -8001,7 +8044,6 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             ))
         };
         let valid = frame_layout
-            && scope_resolves
             && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
             && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
             && companions_by_index

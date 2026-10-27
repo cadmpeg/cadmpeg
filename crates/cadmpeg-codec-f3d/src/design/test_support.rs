@@ -249,3 +249,26 @@ pub(crate) fn lengthen_scope_frame(
     draft.frame_length = frame_length;
     draft.paired_byte_offset += shift;
 }
+
+/// Append `records` to the ordered reference table of `scope`, as a scope
+/// names the parameter owners that belong to it.
+pub(crate) fn name_scope_references(
+    scope: &mut crate::records::feature::scope::DesignParameterScope,
+    records: impl IntoIterator<Item = u32>,
+) {
+    let mut members = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    members.extend(records);
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(members);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .expect("the scope fixture admits its extended reference table");
+}
