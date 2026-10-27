@@ -1136,7 +1136,11 @@ fn exact_base_feature_body_snapshot(
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let body_count =
             usize::try_from(View::u32_le_at(bytes, start + snapshot::BODY_COUNT)?).ok()?;
-        let kind_width = scope.kind_name().encode_utf16().count().checked_mul(2)?;
+        let kind_width = scope
+            .source_kind_name()
+            .encode_utf16()
+            .count()
+            .checked_mul(2)?;
         let expected_frame_length = FIXED_FRAME_LENGTH
             .checked_add(u64::try_from(body_count.checked_mul(snapshot_entry::LEN)?).ok()?)?
             .checked_add(u64::try_from(kind_width).ok()?)?;
@@ -1282,7 +1286,7 @@ fn exact_base_feature_body_snapshot(
         let kind_start = kind_at.checked_add(4)?;
         let kind_end = kind_start.checked_add(kind_count.checked_mul(2)?)?;
         let mut kind_view = View::over_retained(bytes.get(kind_start..kind_end)?);
-        if !std::iter::from_fn(|| kind_view.u16_le()).eq(scope.kind_name().encode_utf16())
+        if !std::iter::from_fn(|| kind_view.u16_le()).eq(scope.source_kind_name().encode_utf16())
             || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal.get()
             || scope.feature_ordinal_offset() != u64::try_from(kind_end).ok()?
             || scope.previous_history_state_id().is_some()

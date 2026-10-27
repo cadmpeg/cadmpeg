@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
+mod family;
+
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
@@ -113,14 +115,23 @@ pub(crate) fn decode_parameter_scopes(
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
+        let class_types =
+            crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
-            let Some(mut scope) = parse_parameter_scope(
+            let Some(mut scope) = parse_parameter_scope_with_type_guid(
                 bytes,
                 &records,
                 header.record_index,
                 &header.class_tag,
                 header.byte_offset,
+                header
+                    .class_tag
+                    .as_str()
+                    .parse::<u32>()
+                    .ok()
+                    .and_then(|tag| class_types.get(&tag))
+                    .map(|row| row.type_guid.as_str()),
             )?
             else {
                 if let Some(tail_length) = unparsed_rigid_group_tail_length(
@@ -777,6 +788,7 @@ fn strip_scope_variant_provenance(
                     && matches!(
                         key.as_str(),
                         "id" | "class_tag"
+                            | "source_kind"
                             | "frame_length"
                             | "history_state_id"
                             | "previous_history_state_id"
@@ -1066,6 +1078,7 @@ fn parameter_scope_previous_history_offset_for_form(
     }
 }
 
+#[cfg(test)]
 pub(in crate::design::decode) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -1073,7 +1086,19 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
 ) -> Result<Option<DesignParameterScope>, CodecError> {
+    parse_parameter_scope_with_type_guid(bytes, records, record_index, class_tag, byte_offset, None)
+}
+
+pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    class_tag: &crate::records::references::DesignClassTag,
+    byte_offset: u64,
+    type_guid: Option<&str>,
+) -> Result<Option<DesignParameterScope>, CodecError> {
     (|| {
+        let type_family = type_guid.and_then(family::from_type_guid);
         let start = usize::try_from(byte_offset).ok()?;
         let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
         let (paired_class_tag, _) =
@@ -1095,6 +1120,10 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             if !kind.chars().all(|character| !character.is_control()) {
                 continue;
             }
+            let selected = scope_feature_kind(&kind, type_family.as_ref());
+            let kind = selected
+                .as_ref()
+                .map_or(kind.as_str(), scope::DesignFeatureKind::as_str);
             let Some(tail_length) = paired_at.checked_sub(kind_end) else {
                 continue;
             };
@@ -1106,7 +1135,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 || (kind == "Hole"
                     && exact_thread_bound_hole_tail(bytes.get(kind_end..paired_at)?, record_index));
             if fixed_tail
-                && parameter_scope_tail_length_is_valid(&kind, tail_length)
+                && parameter_scope_tail_length_is_valid(kind, tail_length)
                 && fixed_candidate
                     .replace((at, kind_end, tail_length, ScopeTailForm::Fixed))
                     .is_some()
@@ -1124,7 +1153,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             }
             let named_tail_possible = (78..=590).contains(&tail_length)
                 && tail_length.is_multiple_of(2)
-                && (parameter_scope_tail_length_is_valid(&kind, tail_length) || tail_length == 78);
+                && (parameter_scope_tail_length_is_valid(kind, tail_length) || tail_length == 78);
             let named_tail = if named_tail_possible {
                 named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                     .unwrap_or_default()
@@ -1153,7 +1182,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         if confirmed_kind_end != kind_end {
             return None;
         }
-        let kind = scope::DesignFeatureKind::try_from(kind_text).ok()?;
+        let kind = scope_feature_kind(&kind_text, type_family.as_ref())?;
+        let source_kind = (kind_text != kind.as_str()).then_some(kind_text);
         let reference_table_end = kind_at.checked_sub(4)?;
         let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
         let history_state_id_offset = reference_table_end;
@@ -1477,6 +1507,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             paired_byte_offset: u64_from_index(paired_at),
         })
         .ok()?;
+        scope.source_kind = source_kind;
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
@@ -1672,8 +1703,21 @@ fn named_parameter_scope_tail_is_valid(
     })()
 }
 
+/// Select the family of a stored family name. A name that names no family
+/// takes the family of the scope class type identity when one is listed.
+fn scope_feature_kind(
+    stored: &str,
+    type_family: Option<&scope::DesignFeatureKind>,
+) -> Option<scope::DesignFeatureKind> {
+    let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
+    Some(match (literal, type_family) {
+        (scope::DesignFeatureKind::Native(_), Some(family)) => family.clone(),
+        (literal, _) => literal,
+    })
+}
+
 pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
-    let kind_bytes = u64::try_from(scope.kind_name().encode_utf16().count())
+    let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
         .ok()?
         .checked_mul(2)?;
     scope.frame_length().checked_sub(kind_bytes)

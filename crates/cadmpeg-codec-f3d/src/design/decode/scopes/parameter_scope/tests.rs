@@ -285,3 +285,138 @@ fn thread_bound_hole_scope_requires_reciprocal_tail_and_history() {
         assert!(parse(&invalid).is_none());
     }
 }
+
+#[test]
+fn scope_class_type_selects_hole_and_preserves_the_display_name() {
+    use std::io::{Cursor, Write};
+
+    use crate::records::entity_header::SegmentType;
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::zip_test::with_scan;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"256");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    lp_utf16(&mut bytes, "Perçage");
+    let mut tail = [0; 78];
+    tail[..4].copy_from_slice(&1u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&u32::MAX.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"257");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&bytes).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let row = crate::design::test_support::design_type(
+        "1C037A07-4A15-43F6-ABFC-BBF61B9038D4",
+        None,
+        1,
+        "Fusion",
+        vec![1],
+    );
+    let types = [SegmentType::try_new(
+        crate::ids::native_design_type_id("FusionAssetName[Active]/Design1/MetaStream.dat", 0),
+        row,
+    )
+    .unwrap()];
+    with_scan(&archive, |scan| {
+        for type_rows in [&types[..], &[][..]] {
+            let scopes = super::decode_parameter_scopes(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                &super::ParameterScopeSources {
+                    types: type_rows,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .scopes;
+            assert_eq!(scopes.len(), 1);
+            let scope = &scopes[0];
+            if type_rows.is_empty() {
+                assert!(matches!(scope.kind(), DesignFeatureKind::Native(_)));
+                assert_eq!(scope.kind_name(), "Perçage");
+                assert_eq!(scope.source_kind, None);
+            } else {
+                assert_eq!(scope.kind(), DesignFeatureKind::Hole);
+                assert_eq!(scope.source_kind.as_deref(), Some("Perçage"));
+                let mut english = scope.clone().into_draft();
+                english.frame_length -= 6;
+                english.feature_ordinal_offset -= 6;
+                english.paired_byte_offset -= 6;
+                english.previous_history_state_id_offset = english
+                    .previous_history_state_id_offset
+                    .map(|offset| offset - 6);
+                let english = DesignParameterScope::try_new(english).unwrap();
+                assert!(super::equivalent_scope_variant_payload(
+                    &cadmpeg_test_support::service_decode_context(),
+                    scope,
+                    &english,
+                )
+                .unwrap());
+            }
+            assert_eq!(scope.source_kind_name(), "Perçage");
+            assert_eq!(
+                super::parameter_scope_payload_length(scope),
+                Some(scope.frame_length() - 14)
+            );
+            let wire = serde_json::to_string(scope).unwrap();
+            let restored: DesignParameterScope = serde_json::from_str(&wire).unwrap();
+            assert_eq!(&restored, scope);
+            let mut wrong_width: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            wrong_width["source_kind"] = "Perçages".into();
+            assert!(serde_json::from_value::<DesignParameterScope>(wrong_width).is_err());
+        }
+    });
+}
+
+#[test]
+fn stored_family_name_takes_precedence_over_the_class_type_family() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    let hole = Some(&DesignFeatureKind::Hole);
+    assert_eq!(
+        super::scope_feature_kind("Perçage", hole),
+        Some(DesignFeatureKind::Hole)
+    );
+    assert_eq!(
+        super::scope_feature_kind("Congé", Some(&DesignFeatureKind::Fillet)),
+        Some(DesignFeatureKind::Conge)
+    );
+    assert_eq!(
+        super::scope_feature_kind("Thread", hole),
+        Some(DesignFeatureKind::Thread)
+    );
+    assert!(matches!(
+        super::scope_feature_kind("Perçage", None),
+        Some(DesignFeatureKind::Native(_))
+    ));
+    for shared in [
+        "D57B1A22-9D5A-4D7D-A909-E08C579612CA",
+        "7AFA0A65-B53C-472C-ACA4-5C7C0A65001C",
+    ] {
+        assert_eq!(super::family::from_type_guid(shared), None);
+        assert!(matches!(
+            super::scope_feature_kind("CutPaste", super::family::from_type_guid(shared).as_ref()),
+            Some(DesignFeatureKind::Native(_))
+        ));
+    }
+    assert_eq!(
+        super::family::from_type_guid("1c037a07-4a15-43f6-abfc-bbf61b9038d4"),
+        Some(DesignFeatureKind::Hole)
+    );
+}

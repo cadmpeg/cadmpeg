@@ -159,7 +159,7 @@ fn exact_legacy_mirror_scope_tolerance(
         ),
         _ => return None,
     };
-    let kind_code_units = scope.kind_name().encode_utf16().count();
+    let kind_code_units = scope.source_kind_name().encode_utf16().count();
     let kind_end = usize::try_from(scope.kind_offset())
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;

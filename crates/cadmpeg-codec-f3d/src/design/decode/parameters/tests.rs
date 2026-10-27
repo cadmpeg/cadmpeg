@@ -1771,3 +1771,49 @@ fn earlier_family_document_parameter_admits_its_trailer() {
     assert_eq!(parameter.name(), "ClipAngle");
     assert_eq!(parameter.expression(), "45 deg");
 }
+
+#[test]
+fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
+    let mut frame = parameter_record(Some(1), "5 mm", "AlongDistance", Some("mm"), "d1", 1.0);
+    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    let tail_at = frame.len() - 10;
+    frame[tail_at] = 16;
+    frame.splice(22..22, [0; 4]);
+    let expression_end = 50 + 4 + 2 * "5 mm".len();
+    frame.splice(expression_end..expression_end, [0; 2]);
+
+    let parameter = parse_design_parameter_record(&frame).expect("wide owned parameter");
+    assert_eq!(parameter.owner_record_index(), Some(1));
+    assert_eq!(parameter.expression(), "5 mm");
+    assert_eq!(parameter.source_kind(), "AlongDistance");
+    let wire = serde_json::to_value(&parameter).unwrap();
+    assert_eq!(wire["source_kind_offset"], 77);
+    assert_eq!(parameter.name(), "d1");
+    assert_eq!(parameter.evaluated_value().get(), 1.0);
+
+    for extra_at in [expression_end + 9, expression_end + 10] {
+        let mut nonzero = frame.clone();
+        nonzero[extra_at] = 1;
+        assert!(parse_design_parameter_record(&nonzero).is_none());
+    }
+    let mut longer = frame.clone();
+    longer.insert(expression_end, 0);
+    assert!(parse_design_parameter_record(&longer).is_none());
+
+    let mut intermediate = frame.clone();
+    let tail_at = intermediate.len() - 10;
+    intermediate[tail_at] = 17;
+    assert!(parse_design_parameter_record(&intermediate).is_none());
+
+    let mut narrow = frame.clone();
+    narrow.drain(22..26);
+    assert!(parse_design_parameter_record(&narrow).is_none());
+    let mut scale = parameter_record(Some(1), "1", "ScaleFactor", None, "d1", 1.0);
+    let tail_at = scale.len() - 10;
+    scale[tail_at] = 16;
+    scale.splice(22..22, [0; 4]);
+    assert!(parse_design_parameter_record(&scale).is_some());
+    let expression_end = 50 + 4 + 2;
+    scale.splice(expression_end..expression_end, [0; 2]);
+    assert!(parse_design_parameter_record(&scale).is_none());
+}

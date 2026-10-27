@@ -63,6 +63,7 @@ cadmpeg_core::named_optional_field!(
     "occurrence_transfer"
 );
 
+cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
@@ -368,7 +369,7 @@ macro_rules! design_feature_kinds {
      fixed { $($fixed:ident => $fixed_lit:literal : $fixed_payload:ty),+ $(,)? }
      required { $($required:ident => $required_lit:literal : $required_payload:ty),+ $(,)? }
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
-        /// Source feature-family name stored on a parameter scope.
+        /// Feature family selected by a type identity or stored name.
         #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
         #[serde(try_from = "String")]
         pub(crate) enum DesignFeatureKind {
@@ -381,7 +382,7 @@ macro_rules! design_feature_kinds {
         }
 
         impl DesignFeatureKind {
-            /// Source spelling written on the wire.
+            /// Family token or native source spelling.
             pub(crate) fn as_str(&self) -> &str {
                 match self {
                     $(Self::$variant => $lit,)+
@@ -419,7 +420,7 @@ macro_rules! design_feature_kinds {
             }
         }
 
-        /// Source family and its construction carrier. An independently decoded
+        /// Feature family and its construction carrier. An independently decoded
         /// scope envelope can lack specialized construction data.
         #[derive(Debug, Clone, PartialEq)]
         pub(crate) enum DesignScopePayload {
@@ -667,6 +668,9 @@ pub(crate) struct DesignParameterScope {
     pub(crate) record_index: u32,
     /// Byte length from the primary header to the paired header.
     frame_length: u64,
+    /// Stored family spelling when it differs from the selected family.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) source_kind: Option<String>,
     /// Byte offset of the kind's UTF-16LE code units.
     kind_offset: u64,
     /// Byte offset of the state word before the length-prefixed kind name.
@@ -761,8 +765,15 @@ struct DesignParameterScopeSerde {
     record_index: u32,
     /// Byte length from the primary header to the paired header.
     frame_length: u64,
-    /// Source feature-family name.
+    /// Selected feature family.
     kind: DesignFeatureKind,
+    /// Stored family spelling when it differs from the selected family.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_kind"
+    )]
+    source_kind: Option<String>,
     /// Byte offset of the kind's UTF-16LE code units.
     kind_offset: u64,
     /// Extrude prologue, fixed parameters, and profile.
@@ -1490,6 +1501,18 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
     type Error = DesignParameterScopePayloadError;
 
     fn try_from(mut wire: DesignParameterScopeSerde) -> Result<Self, Self::Error> {
+        if let Some(source) = &wire.source_kind {
+            let units = u64::try_from(source.encode_utf16().count()).ok();
+            if !units.is_some_and(|count| (1..=256).contains(&count))
+                || source.chars().any(char::is_control)
+                || units.and_then(|count| count.checked_mul(2))
+                    != wire.feature_ordinal_offset.checked_sub(wire.kind_offset)
+            {
+                return Err(DesignParameterScopePayloadError(
+                    "invalid source_kind".into(),
+                ));
+            }
+        }
         if extrude_scope_is_absent(wire.extrude.as_ref()) {
             wire.extrude = None;
         }
@@ -2013,6 +2036,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "occurrence_transfer disagrees with scope".into(),
             ));
         }
+        admitted.source_kind = wire.source_kind;
         admitted.occurrence_transfer = occurrence_transfer;
         Ok(admitted)
     }
@@ -2032,6 +2056,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             record_index: scope.record_index,
             frame_length: scope.frame_length,
             kind,
+            source_kind: scope.source_kind,
             kind_offset: scope.kind_offset,
             extrude: None,
             coil: None,
@@ -2397,6 +2422,7 @@ impl DesignParameterScope {
             record_index: draft.record_index,
             frame_length: draft.frame_length,
             kind_offset: draft.kind_offset,
+            source_kind: None,
             history_state_id_offset,
             feature_ordinal: draft.feature_ordinal,
             feature_ordinal_offset: draft.feature_ordinal_offset,
@@ -2516,7 +2542,14 @@ impl DesignParameterScope {
         self.payload.kind()
     }
 
-    /// Source spelling without allocating a kind tag.
+    /// Stored display spelling of the family name.
+    pub(crate) fn source_kind_name(&self) -> &str {
+        self.source_kind
+            .as_deref()
+            .unwrap_or_else(|| self.kind_name())
+    }
+
+    /// Selected family name without allocating a kind tag.
     pub(crate) fn kind_name(&self) -> &str {
         self.payload.kind_name()
     }

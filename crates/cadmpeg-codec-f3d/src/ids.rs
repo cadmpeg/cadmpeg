@@ -418,7 +418,7 @@ pub(crate) fn document_parameter_scope_id() -> cadmpeg_ir::features::FeatureId {
 pub(crate) fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::FeatureId {
     neutral_feature_id_parts(
         native_stream(&scope.id).unwrap_or(DEFAULT_STREAM),
-        scope.kind_name(),
+        scope.source_kind_name(),
         scope.feature_ordinal.get(),
         scope.record_index,
     )
