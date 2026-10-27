@@ -29,7 +29,7 @@ mod pattern;
 pub(crate) mod pipe;
 pub(super) mod point_data;
 pub(super) mod shared_frames;
-mod sheet_metal;
+pub(crate) mod sheet_metal;
 mod solid_primitive;
 mod surfaces;
 mod thicken_shell;

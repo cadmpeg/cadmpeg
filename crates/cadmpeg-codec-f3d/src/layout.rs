@@ -6518,3 +6518,95 @@ pub(crate) mod assembly_null_typed_rigid_group_identity_locator {
     /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
     pub(crate) const ZERO_TAIL: usize = 129;
 }
+
+/// Byte offsets for the `edge_flange_corner_operation` record.
+///
+/// Spec §3.1. Record length 620 B.
+///
+/// ```text
+/// Offsets are relative to the primary scope header.
+/// ```
+pub(crate) mod edge_flange_corner_operation {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 620;
+    /// Offset of `bend_position` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BEND_POSITION: usize = 101;
+    /// Stated value of `bend_position` (`u32`). Spec §3.1.
+    pub(crate) const BEND_POSITION_VALUE: u32 = 0x0000_0002;
+    /// Offset of `edge_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EDGE_COUNT: usize = 105;
+    /// Stated value of `edge_count` (`u32`). Spec §3.1.
+    pub(crate) const EDGE_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `edge_wrapper_one_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_WRAPPER_ONE_REFERENCE: usize = 109;
+    /// Offset of `edge_wrapper_two_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_WRAPPER_TWO_REFERENCE: usize = 120;
+    /// Offset of `settings_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SETTINGS_REFERENCE: usize = 131;
+    /// Offset of `height_datum` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const HEIGHT_DATUM: usize = 142;
+    /// Stated value of `height_datum` (`u32`). Spec §3.1.
+    pub(crate) const HEIGHT_DATUM_VALUE: u32 = 0x0000_0002;
+    /// Offset of `angle_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ANGLE_OWNER_REFERENCE: usize = 146;
+    /// Offset of `height_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const HEIGHT_OWNER_REFERENCE: usize = 157;
+    /// Offset of `reference_side` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_SIDE: usize = 168;
+    /// Stated value of `reference_side` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_SIDE_VALUE: u32 = 0x0000_0004;
+    /// Offset of `side_padding` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SIDE_PADDING: usize = 172;
+    /// Stated value of `side_padding` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SIDE_PADDING_VALUE: [u8; 11] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Offset of `inside_bend_radius` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const INSIDE_BEND_RADIUS: usize = 183;
+    /// Offset of `radius_padding` (`bytes[6]`). Spec §3.1.
+    pub(crate) const RADIUS_PADDING: usize = 191;
+    /// Stated value of `radius_padding` (`bytes[6]`). Spec §3.1.
+    pub(crate) const RADIUS_PADDING_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `result_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_COUNT: usize = 197;
+    /// Offset of `result_one_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RESULT_ONE_REFERENCE: usize = 201;
+    /// Offset of `result_one_trailer` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_ONE_TRAILER: usize = 212;
+    /// Stated value of `result_one_trailer` (`u32`). Spec §3.1.
+    pub(crate) const RESULT_ONE_TRAILER_VALUE: u32 = 0x0000_0001;
+    /// Offset of `result_two_reference` (`bytes[11]`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const RESULT_TWO_REFERENCE: usize = 216;
+    /// Offset of `result_two_trailer` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const RESULT_TWO_TRAILER: usize = 227;
+    /// Stated value of `result_two_trailer` (`u32`). Spec §3.1.
+    pub(crate) const RESULT_TWO_TRAILER_VALUE: u32 = 0x0000_0001;
+    /// Offset of `result_three_reference` (`bytes[11]`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const RESULT_THREE_REFERENCE: usize = 231;
+    /// Offset of `result_three_trailer` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const RESULT_THREE_TRAILER: usize = 242;
+    /// Stated value of `result_three_trailer` (`u32`). Spec §3.1.
+    pub(crate) const RESULT_THREE_TRAILER_VALUE: u32 = 0x0000_0000;
+    /// Offset of `result_separator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_SEPARATOR: usize = 246;
+    /// Offset of `aggregate_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AGGREGATE_GROUP_REFERENCE: usize = 250;
+    /// Offset of `group_padding` (`bytes[12]`). Spec §3.1.
+    pub(crate) const GROUP_PADDING: usize = 261;
+    /// Stated value of `group_padding` (`bytes[12]`). Spec §3.1.
+    pub(crate) const GROUP_PADDING_VALUE: [u8; 12] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Offset of `edge_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EDGE_GROUP_COUNT: usize = 273;
+    /// Stated value of `edge_group_count` (`u32`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `edge_group_one_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_ONE_REFERENCE: usize = 277;
+    /// Offset of `edge_group_two_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_TWO_REFERENCE: usize = 288;
+}

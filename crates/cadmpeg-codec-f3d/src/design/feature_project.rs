@@ -3752,8 +3752,7 @@ fn project_base_flange(
 
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
 ///
-/// The typed operation supplies the bend position, height datum, and inside
-/// radius. Owner parameters supply the height, angle, and width. A to-object
+/// Owner parameters supply the height, angle, and width. A to-object
 /// height resolves its target entity to a known neutral construction feature;
 /// otherwise the source selection remains explicit in the neutral height law.
 fn project_edge_flange(
@@ -3981,6 +3980,64 @@ fn project_edge_flange(
     if operation.selection.shape().edges().next().is_none() {
         return Ok(None);
     }
+    let bend_radius = if matches!(scope.class_tag.as_str(), "361" | "362")
+        && operation.selection.shape().edges().count() > 1
+    {
+        let mut aggregates = groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.record_index == operation.selection.aggregate_group_record_index()
+        });
+        let aggregate = or_none!(aggregates.next());
+        if aggregates.next().is_some()
+            || aggregate.role() != DesignOperandRole::ROLE_0X43
+            || !aggregate
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq(operation
+                    .selection
+                    .shape()
+                    .edges()
+                    .map(|edge| edge.aggregate_operand_record_index))
+        {
+            return Ok(None);
+        }
+        let mut matching = inputs.sheet_metal_settings.iter().filter(|settings| {
+            native_stream(settings.id()) == Some(stream)
+                && settings.record_index == u64::from(operation.settings_record_index)
+                && settings.owner_record_index == u64::from(scope.record_index)
+        });
+        let settings = or_none!(matching.next());
+        if matching.next().is_some() || settings.mask != 0 {
+            return Ok(None);
+        }
+        let thickness = or_none!(settings.rule_thickness).get() * 10.0;
+        let mut selected = operation.selection.shape().edges();
+        let first = or_none!(selected.next());
+        let second = or_none!(selected.next());
+        if selected.next().is_some() {
+            return Ok(None);
+        }
+        let slot = |edge: &crate::records::feature::sheet_metal::DesignEdgeFlangeEdge| {
+            unique_feature_match(edge_operands.iter().filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.record_index() == edge.operand_record_index()
+            }))?
+            .resolved_edge_slot
+        };
+        or_none!(crate::history::edge_flange::inside_radius_for_scope(
+            scope,
+            [or_none!(slot(first)), or_none!(slot(second))],
+            thickness,
+            inputs.histories,
+        ))
+    } else {
+        or_none!(cadmpeg_ir::scalar::PositiveLength::new(
+            operation.bend_radius.get() * 10.0
+        ))
+    };
     let mut selections = Vec::new();
     for edge in operation.selection.shape().edges() {
         let mut matching = groups.iter().filter(|group| {
@@ -3993,7 +4050,11 @@ fn project_edge_flange(
         };
         if matching.next().is_some()
             || edge_group.role() != DesignOperandRole::BODIES_B
-            || edge_group.members().len() != 1
+            || !edge_group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq([edge.operand_record_index()])
         {
             return Ok(None);
         }
@@ -4022,9 +4083,7 @@ fn project_edge_flange(
             height_datum,
             bend_position,
             width,
-            bend_radius: or_none!(cadmpeg_ir::scalar::PositiveLength::new(
-                operation.bend_radius.get() * 10.0,
-            )),
+            bend_radius,
         },
     )))
 }

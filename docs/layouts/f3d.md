@@ -6926,6 +6926,45 @@ Parsed by:
 | 125 | 4 | `discriminator` | `u32` | little | spec | The null-construction identity form |
 | 129 | 2 | `zero_tail` | `bytes[2]` | little | spec | The null-construction identity form |
 
+## `edge_flange_corner_operation`
+
+Spec §3.1 · layout: byte offsets · size: 620 B
+
+Offsets are relative to the primary scope header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 101 | 4 | `bend_position` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `2` |
+| 105 | 4 | `edge_count` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `2` |
+| 109 | 11 | `edge_wrapper_one_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 120 | 11 | `edge_wrapper_two_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 131 | 11 | `settings_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 142 | 4 | `height_datum` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `2` |
+| 146 | 11 | `angle_owner_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 157 | 11 | `height_owner_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 168 | 4 | `reference_side` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `4` |
+| 172 | 11 | `side_padding` | `bytes[11]` | little | spec | The side padding, radius padding, and group padding are zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 183 | 8 | `inside_bend_radius` | `f64` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 191 | 6 | `radius_padding` | `bytes[6]` | little | spec | The side padding, radius padding, and group padding are zero bytes · value `[0, 0, 0, 0, 0, 0]` |
+| 197 | 4 | `result_count` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `3` |
+| 201 | 11 | `result_one_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 212 | 4 | `result_one_trailer` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `1` |
+| 216 | 11 | `result_two_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 227 | 4 | `result_two_trailer` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `1` |
+| 231 | 11 | `result_three_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 242 | 4 | `result_three_trailer` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `0` |
+| 246 | 4 | `result_separator` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `1` |
+| 250 | 11 | `aggregate_group_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 261 | 12 | `group_padding` | `bytes[12]` | little | spec | The side padding, radius padding, and group padding are zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 273 | 4 | `edge_group_count` | `u32` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` · value `2` |
+| 277 | 11 | `edge_group_one_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+| 288 | 11 | `edge_group_two_reference` | `bytes[11]` | little | spec | The fixed fields are defined by `edge_flange_corner_operation` |
+
+Unstated regions:
+
+- `0..101` (101 B): Scope envelope or uninterpreted bytes.
+- `299..620` (321 B): Scope envelope follows the edge groups.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

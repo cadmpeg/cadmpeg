@@ -1365,3 +1365,56 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
         }
     });
 }
+
+#[test]
+fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#flange").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("EdgeFlange".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native {
+                    kind: "EdgeFlange".into(),
+                    parameters: Default::default(),
+                },
+            ),
+        ),
+        native_ref: None,
+    });
+    let mut native = F3dNative::default();
+    native
+        .design_parameter_scopes
+        .push(DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:parameter-scope#70",
+            crate::records::feature::scope::DesignFeatureKind::EdgeFlange,
+            70,
+        ));
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::FeatureDefinitionIncomplete.kind()
+        && loss.message.contains("EdgeFlange=1")));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::FeatureScopePayloadUninterpreted.kind()
+        && loss.message.starts_with("1 native feature scope(s)")));
+}
