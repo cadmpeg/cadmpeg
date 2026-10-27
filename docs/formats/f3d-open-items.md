@@ -322,6 +322,16 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A complete field grammar must identify the tail boundaries and reference roles before a writer can construct the full collection frame.
 
+### DR-104. ACT component-link root selection
+
+**Question.** Can an ACT segment contain only non-root component links, or does another reference identify its document-root link?
+
+**Known.** `f3d.md` §3.1 "An **ACT component link** payload" defines the complete component-link frame. The tracked-entity field is a record reference. A link can close under this frame without its tracked-entity reference having value `3`. Exact frame closure does not establish the link's document-root role.
+
+**Need.** A join between the ACT references and the Design root component must distinguish an absent root link from a root link selected by another reference. The join must establish whether the tracked-entity record value is a root selector or only a target identity.
+
+**Conflict.** The component-link rule requires exactly one document-root link when links are present and selects it by tracked-entity record `3`. No alternative root-selection rule is defined.
+
 ## 2. External references
 
 ### DR-82. Other joint freedom codes and the limit flags
