@@ -390,3 +390,187 @@ fn wide_locator_path_continues_over_typed_records() {
             .is_none()
     );
 }
+
+fn versioned_rigid_group_envelope(version: u32, matrix: bool) -> Vec<u8> {
+    fn reference(bytes: &mut Vec<u8>, target: u32, typed: bool) {
+        if typed {
+            bytes.push(1);
+            bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+            bytes.extend_from_slice(&36_u32.to_le_bytes());
+            bytes.extend_from_slice(b"11111111-2222-3333-4444-555555555555");
+            bytes.extend_from_slice(&[0; 2]);
+        } else {
+            let start = bytes.len();
+            bytes.resize(start + 11, 0);
+            write_reference(bytes, start, target);
+        }
+    }
+    let typed = version == 2;
+    let mut bytes = envelope_bytes(10)[..11].to_vec();
+    if typed {
+        bytes.extend_from_slice(&[0; 10]);
+        reference(&mut bytes, 164, true);
+        bytes.push(u8::from(!matrix));
+    } else {
+        bytes.extend_from_slice(&[0; 12]);
+    }
+    if matrix || !typed {
+        for ordinal in 0..16 {
+            let value: f64 = if ordinal % 5 == 0 {
+                1.0
+            } else if ordinal == 3 {
+                2.5
+            } else {
+                0.0
+            };
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    if !typed {
+        bytes.push(0);
+    }
+    reference(&mut bytes, 10, typed);
+    reference(&mut bytes, 66, typed);
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    assert_eq!(
+        bytes.len(),
+        if typed {
+            if matrix {
+                309
+            } else {
+                181
+            }
+        } else {
+            180
+        }
+    );
+    bytes.extend_from_slice(&path_bytes());
+    let start = bytes.len();
+    bytes.extend_from_slice(&envelope_bytes(10)[..11]);
+    bytes[start + 7..start + 11].copy_from_slice(&66_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    reference(&mut bytes, 65, typed);
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"396");
+    bytes.extend_from_slice(&67_u32.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
+    use crate::design::decode::scopes::assembly_operand_frames::exact_as_built_operand_frame;
+    let mut scope = DesignParameterScope::empty("generated:scope", DesignFeatureKind::AsBuilt, 10);
+    scope
+        .try_edit(|draft| {
+            crate::design::test_support::lengthen_scope_frame(draft, 257);
+            draft.reference_count_offset = 153;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(Vec::new());
+            draft.layout_fixture_references();
+            draft.feature_ordinal_offset = 181;
+        })
+        .unwrap();
+    scope.class_tag = "283".to_owned().try_into().unwrap();
+    scope.paired_class_tag = "264".to_owned().try_into().unwrap();
+    for (version, matrix, length) in [(3, true, 180), (2, true, 309), (2, false, 181)] {
+        let bytes = versioned_rigid_group_envelope(version, matrix);
+        let read = |bytes: &[u8], version| {
+            let types = std::collections::HashMap::from([(
+                64,
+                (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
+            )]);
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+        };
+        assert!(exact_assembly_operand_path_envelope(
+            &bytes,
+            &scope,
+            &std::collections::HashMap::new(),
+            64,
+            1,
+            0,
+        )
+        .unwrap()
+        .is_none());
+        let path = read(&bytes, version).unwrap();
+        assert_eq!(path.byte_offset(), length);
+        let frame = exact_as_built_operand_frame(&bytes, &path, true).unwrap();
+        assert_eq!(
+            frame.reference_record_index,
+            if version == 3 { 64 } else { 164 }
+        );
+        assert_eq!(frame.reference_offset, if version == 3 { 7 } else { 22 });
+        assert_eq!(
+            frame.transform_offset,
+            if version == 3 {
+                23
+            } else if matrix {
+                73
+            } else {
+                72
+            }
+        );
+        assert_eq!(frame.transform.rows()[0][3], if matrix { 2.5 } else { 0.0 });
+        for other_version in [1, 2, 3, 4, 5, 6] {
+            if other_version != version {
+                assert!(read(&bytes, other_version).is_none());
+            }
+        }
+        for at in [
+            length - 6,
+            length - 1,
+            length + u64::try_from(path_bytes().len()).unwrap() + 26,
+        ] {
+            let mut bad = bytes.clone();
+            bad[usize::try_from(at).unwrap()] ^= 1;
+            assert!(read(&bad, version).is_none(), "mutation at {at}");
+        }
+        let mut padded = bytes.clone();
+        padded.insert(usize::try_from(length).unwrap(), 0);
+        assert!(read(&padded, version).is_none());
+        let mut wrapper_padded = bytes.clone();
+        let end = wrapper_padded.len() - 11;
+        wrapper_padded.insert(end, 0);
+        assert!(read(&wrapper_padded, version).is_none());
+    }
+}
+
+#[test]
+fn typed_root_operand_path_keeps_two_identities_and_exact_closure() {
+    use crate::records::feature::assembly::{
+        DesignAssemblyOperandPath, TYPED_OCCURRENCE_PATH_TYPE_GUID as TYPED,
+    };
+    let mut bytes = path_bytes()[..21].to_vec();
+    bytes[4..7].copy_from_slice(b"294");
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    push_guid(&mut bytes, "00000000-0000-0000-0000-000000000000");
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u64.to_le_bytes());
+    push_guid(&mut bytes, "22222222-2222-2222-2222-222222222222");
+    push_guid(&mut bytes, "33333333-3333-3333-3333-333333333333");
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    assert_eq!(bytes.len(), 277);
+    let read = |bytes: &[u8], typed| {
+        exact_assembly_operand_path(bytes, 0, 65, bytes.len(), path_link(), typed).unwrap()
+    };
+    let path = read(&bytes, Some(TYPED)).unwrap();
+    assert_eq!(
+        path.occurrence_guids()[0].value.as_str(),
+        "00000000-0000-0000-0000-000000000000"
+    );
+    assert_eq!(path.identity_guids().len(), 2);
+    let round_trip: DesignAssemblyOperandPath =
+        serde_json::from_value(serde_json::to_value(&path).unwrap()).unwrap();
+    assert_eq!(path, round_trip);
+    assert!(read(&bytes, None).is_none());
+    for at in [21, 29, 101, 105, 265, 276] {
+        let mut bad = bytes.clone();
+        bad[at] ^= 1;
+        assert!(read(&bad, Some(TYPED)).is_none(), "mutation at {at}");
+    }
+    let mut padded = bytes.clone();
+    padded.push(0);
+    assert!(read(&padded, Some(TYPED)).is_none());
+}

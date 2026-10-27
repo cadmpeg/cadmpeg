@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The 269-byte rigid `As-built` scope: no reference table entries, no
+//! The 257-byte rigid `As-built` scope: no reference table entries, no
 //! parameter owners, and two wide operand-path locators.
 
 use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_operand_path};
 
-/// A 269-byte rigid as-built scope (record 10) whose operand
+/// A 257-byte rigid as-built scope (record 10) whose operand
 /// locators are records 64 and 67, then its paired header, the two wide
 /// operand paths and the next header.
 fn rigid_as_built_stream() -> Vec<u8> {
@@ -24,9 +24,9 @@ fn rigid_as_built_stream() -> Vec<u8> {
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
     push_lp_utf16(&mut bytes, "As-built");
     bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.resize(269, 0);
+    bytes.resize(257, 0);
     push_header(&mut bytes, b"262", 10);
-    bytes.resize(269 + 30, 0);
+    bytes.resize(257 + 30, 0);
     push_wide_operand_path(&mut bytes, 64, 10, "11111111-1111-1111-1111-111111111111");
     // The second operand names a different construction record.
     let second = bytes.len();
@@ -52,13 +52,13 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
         scope.kind(),
         crate::records::feature::scope::DesignFeatureKind::AsBuilt
     );
-    assert_eq!(scope.frame_length(), 269);
+    assert_eq!(scope.frame_length(), 257);
     assert_eq!(scope.reference_members().len(), 0);
     // Class tags are per-file dynamic values: the same scope under other tags
     // is the same rigid form, and the kind and frame length identify it.
     let mut retagged = bytes.clone();
     retagged[4..7].copy_from_slice(b"328");
-    retagged[269 + 4..269 + 7].copy_from_slice(b"264");
+    retagged[257 + 4..257 + 7].copy_from_slice(b"264");
     let retagged_records = crate::design::decode::sketch::IndexedRecordOffsets::build(&retagged);
     let retagged_class =
         crate::records::references::DesignClassTag::try_from("328".to_owned()).unwrap();
@@ -71,7 +71,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     )
     .unwrap()
     .expect("the rigid form under other class tags");
-    assert_eq!(retagged_scope.frame_length(), 269);
+    assert_eq!(retagged_scope.frame_length(), 257);
     assert_eq!(retagged_scope.reference_members().len(), 0);
     // The empty table is read only for the `As-built` kind.
     let mut other = bytes.clone();
@@ -125,7 +125,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     );
 }
 
-/// A 280-byte rigid group of three members (record 10, class tags 328/264)
+/// A 268-byte rigid group of three members (record 10, class tags 328/264)
 /// whose locators are records 64, 67, and 73.
 fn three_member_rigid_group_stream() -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -144,9 +144,9 @@ fn three_member_rigid_group_stream() -> Vec<u8> {
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
     push_lp_utf16(&mut bytes, "As-built");
     bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.resize(280, 0);
+    bytes.resize(268, 0);
     push_header(&mut bytes, b"264", 10);
-    bytes.resize(280 + 30, 0);
+    bytes.resize(268 + 30, 0);
     push_wide_operand_path(&mut bytes, 64, 10, "11111111-1111-1111-1111-111111111111");
     for (locator, construction, guid) in [
         (67, 901_u32, "66666666-6666-6666-6666-666666666666"),
@@ -174,7 +174,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
     )
     .unwrap()
     .expect("a three-member rigid group");
-    assert_eq!(scope.frame_length(), 280);
+    assert_eq!(scope.frame_length(), 268);
     assert_eq!(scope.reference_members().len(), 0);
     // The empty table's count sits 11 bytes past a two-member group's.
     let mut moved = scope.clone();
@@ -240,4 +240,167 @@ fn rigid_group_reads_every_member_after_its_first_two() {
         .unwrap()
         .is_none()
     );
+}
+
+fn typed_rigid_group_stream() -> Vec<u8> {
+    fn reference(bytes: &mut Vec<u8>, target: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+        bytes.extend_from_slice(&36_u32.to_le_bytes());
+        bytes.extend_from_slice(b"11111111-2222-3333-4444-555555555555");
+        bytes.extend_from_slice(&[0; 2]);
+    }
+    let ordinary = three_member_rigid_group_stream();
+    let mut bytes = ordinary[..22].to_vec();
+    reference(&mut bytes, 70);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    for index in [64, 67, 73, 9] {
+        reference(&mut bytes, index);
+    }
+    push_lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
+    bytes.extend_from_slice(&[0; 3]);
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    push_lp_utf16(&mut bytes, "As-built");
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 15]);
+    reference(&mut bytes, 80);
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_f64.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    reference(&mut bytes, 81);
+    bytes.extend_from_slice(&[0; 2]);
+    reference(&mut bytes, 82);
+    bytes.extend_from_slice(&[0; 2]);
+    assert_eq!(bytes.len(), 435 + 51 * 3);
+    bytes.extend_from_slice(&ordinary[268..]);
+    bytes
+}
+
+#[test]
+fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    let bytes = typed_rigid_group_stream();
+    let class = "328".to_owned().try_into().unwrap();
+    let parse = |bytes: &[u8]| {
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+        crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            bytes, &records, 10, &class, 0,
+        )
+        .unwrap()
+    };
+    let mut scope = parse(&bytes).unwrap();
+    scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
+    assert_eq!(scope.frame_length(), 588);
+    assert!(scope.reference_members().is_empty());
+    let layout = crate::design::assembly::RigidGroupLayout::for_scope(&scope).unwrap();
+    assert_eq!(
+        (layout.members, layout.first_reference, layout.stride),
+        (3, 81, 51)
+    );
+    let types = [64, 67, 73]
+        .into_iter()
+        .flat_map(|index| {
+            [
+                (index, ("2E3AC990-483D-4A55-8662-C064B976A957", 5)),
+                (index + 1, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+            ]
+        })
+        .collect();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let alignment = exact_assembly_alignment_with_types(&bytes, &records, &scope, &[], &types)
+        .unwrap()
+        .unwrap();
+    assert!(alignment.operand_path_refs().is_some());
+    assert_eq!(alignment.additional_members.len(), 1);
+    for at in [77, 81, 81 + 49, 588 - 196 + 19] {
+        let mut bad = bytes.clone();
+        bad[at] ^= 1;
+        assert!(parse(&bad).is_none(), "mutation at {at}");
+    }
+    for length in [587, 589] {
+        let mut bad = bytes.clone();
+        if length == 587 {
+            bad.remove(587);
+        } else {
+            bad.insert(588, 0);
+        }
+        assert!(parse(&bad).is_none());
+    }
+}
+
+#[test]
+fn rigid_group_tail_selects_between_equal_frame_lengths() {
+    use crate::design::assembly::RigidGroupLayout;
+    assert_eq!(RigidGroupLayout::new(1302, 76).unwrap().members, 97);
+    assert_eq!(RigidGroupLayout::new(1302, 196).unwrap().members, 17);
+    assert!(RigidGroupLayout::new(1302, 88).is_none());
+    assert!(RigidGroupLayout::new(269, 76).is_none());
+}
+
+#[test]
+fn rigid_group_lengths_and_dynamic_classes_do_not_select_owner_generations() {
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    for members in [13_u32, 17, 19] {
+        let mut bytes = rigid_as_built_stream();
+        bytes.truncate(bytes.len() - 11);
+        let mut references = Vec::new();
+        for ordinal in 0..members - 2 {
+            push_marked(&mut references, 73 + 3 * ordinal);
+        }
+        bytes.splice(63..63, references);
+        bytes[4..7].copy_from_slice(b"283");
+        bytes[37..41].copy_from_slice(&members.to_le_bytes());
+        let length = 235 + 11 * usize::try_from(members).unwrap();
+        bytes[length + 4..length + 7].copy_from_slice(b"264");
+        let mut locators = vec![64, 67];
+        for ordinal in 0..members - 2 {
+            let locator = 73 + 3 * ordinal;
+            locators.push(locator);
+            push_wide_operand_path(
+                &mut bytes,
+                locator,
+                10,
+                "77777777-7777-7777-7777-777777777777",
+            );
+        }
+        push_header(&mut bytes, b"300", 5000);
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+        let class = "283".to_owned().try_into().unwrap();
+        let mut scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+            &bytes, &records, 10, &class, 0,
+        )
+        .unwrap()
+        .unwrap();
+        scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
+        assert_eq!(scope.frame_length(), u64::try_from(length).unwrap());
+        assert!(!crate::design::assembly::placement_ordered_as_built_scope(
+            &scope
+        ));
+        let types = locators
+            .into_iter()
+            .map(u64::from)
+            .flat_map(|index| {
+                [
+                    (index, ("2E3AC990-483D-4A55-8662-C064B976A957", 5)),
+                    (index + 1, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+                ]
+            })
+            .collect();
+        let alignment = exact_assembly_alignment_with_types(&bytes, &records, &scope, &[], &types)
+            .unwrap()
+            .unwrap();
+        assert_eq!(alignment.angle(), 0.0);
+        assert_eq!(alignment.offset(), [0.0; 3]);
+        assert!(alignment.owners.is_empty());
+        assert!(alignment.additional_owner_run.is_none());
+        assert_eq!(
+            alignment.additional_members.len(),
+            usize::try_from(members - 2).unwrap()
+        );
+    }
 }

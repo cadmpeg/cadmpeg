@@ -17,7 +17,8 @@ use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::{
     assembly::{
-        DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandQualifier,
+        DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandPath,
+        DesignAssemblyOperandQualifier,
     },
     assembly_features::DesignComponentOccurrence,
     scope::DesignParameterScope,
@@ -122,12 +123,6 @@ impl AssemblyScopeGeneration {
             806 | 861 => (Some(CompactWide), Some((4, 0, 4)), Some([534, 545])),
             850 => (Some(CompactWide), Some((6, 0, 4)), Some([556, 567])),
             945 => (Some(Wide), Some((4, 0, 4)), Some([541, 552])),
-            269 => {
-                (None, Some((0, 0, 0)), Some([
-                    crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
-                    crate::layout::assembly_rigid_as_built_scope::SECOND_LOCATOR_REFERENCE,
-                ]))
-            }
             length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
@@ -135,12 +130,6 @@ impl AssemblyScopeGeneration {
                 ])),
             length if length == u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) => (
                 (class_tag == "383" && paired_class_tag == "258").then_some(Standard), Some((20, 8, 12)), None),
-            // A rigid group with more than two members keeps the 269-byte
-            // prefix; its first two locators lead the run.
-            length if rigid_group_member_count(length).is_some() => (None, Some((0, 0, 0)), Some([
-                crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
-                crate::layout::assembly_rigid_as_built_scope::SECOND_LOCATOR_REFERENCE,
-            ])),
             _ => (None, None, None),
         };
         if variable_reference_assembly_generation(class_tag, paired_class_tag) {
@@ -155,6 +144,25 @@ impl AssemblyScopeGeneration {
                 alignment: AssemblyAlignmentLanes::Fixed(lanes),
                 locator_offsets,
             }
+        }
+    }
+
+    pub(crate) fn for_scope(scope: &DesignParameterScope) -> Self {
+        if let Some(layout) = RigidGroupLayout::for_scope(scope) {
+            Self {
+                operand_frame: None,
+                alignment: AssemblyAlignmentLanes::Fixed(Some((0, 0, 0))),
+                locator_offsets: Some([
+                    layout.first_reference,
+                    layout.first_reference + layout.stride,
+                ]),
+            }
+        } else {
+            Self::new(
+                scope.frame_length(),
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            )
         }
     }
 
@@ -238,18 +246,80 @@ pub(crate) fn joint_placed_occurrence_loss(
     })
 }
 
-/// The rigid `As-built` scope of a rigid group: no parameter owners and one
-/// wide operand-path locator per member. The 269-byte frame has two members;
-/// each further member adds one 11-byte locator reference. Its class tags are
-/// per-file dynamic values, so its kind and frame length identify it.
-pub(crate) fn rigid_as_built_scope(frame_length: u64, as_built: bool) -> bool {
-    as_built && rigid_group_member_count(frame_length).is_some()
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RigidGroupLayout {
+    pub(crate) members: usize,
+    pub(crate) count_at: usize,
+    pub(crate) first_reference: usize,
+    pub(crate) stride: usize,
+    pub(crate) empty_table: usize,
+}
+
+impl RigidGroupLayout {
+    pub(crate) fn new(frame_length: u64, tail_length: u64) -> Option<Self> {
+        use crate::layout::assembly_rigid_as_built_scope as ordinary;
+        use crate::layout::assembly_typed_rigid_group_scope as typed;
+        let (length, count_at, first_reference, stride, empty_base) =
+            if tail_length == u64_from_index(ordinary::LEN - ordinary::SCOPE_TAIL) {
+                (
+                    ordinary::LEN,
+                    ordinary::LOCATOR_COUNT,
+                    ordinary::FIRST_LOCATOR_REFERENCE,
+                    ordinary::SECOND_LOCATOR_REFERENCE - ordinary::FIRST_LOCATOR_REFERENCE,
+                    ordinary::REFERENCE_COUNT,
+                )
+            } else if tail_length == u64_from_index(typed::LEN - typed::SCOPE_TAIL) {
+                (
+                    typed::LEN,
+                    typed::LOCATOR_COUNT,
+                    typed::FIRST_LOCATOR_REFERENCE,
+                    typed::SECOND_LOCATOR_REFERENCE - typed::FIRST_LOCATOR_REFERENCE,
+                    typed::REFERENCE_COUNT,
+                )
+            } else {
+                return None;
+            };
+        let base = u64_from_index(length.checked_sub(2_usize.checked_mul(stride)?)?);
+        let member_bytes = usize::try_from(frame_length.checked_sub(base)?).ok()?;
+        if !member_bytes.is_multiple_of(stride) || member_bytes / stride < 2 {
+            return None;
+        }
+        let empty_table =
+            empty_base.checked_add(member_bytes.checked_sub(2_usize.checked_mul(stride)?)?)?;
+        Some(Self {
+            members: member_bytes / stride,
+            count_at,
+            first_reference,
+            stride,
+            empty_table,
+        })
+    }
+
+    pub(crate) fn for_scope(scope: &DesignParameterScope) -> Option<Self> {
+        if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt
+            || !scope.reference_members().is_empty()
+        {
+            return None;
+        }
+        Self::new(
+            scope.frame_length(),
+            scope
+                .paired_byte_offset()
+                .checked_sub(scope.feature_ordinal_offset())?,
+        )
+    }
+}
+
+pub(crate) fn rigid_as_built_scope(scope: &DesignParameterScope) -> bool {
+    RigidGroupLayout::for_scope(scope).is_some()
 }
 
 /// The placement-ordered `As-built` form, whose first four owners are
 /// `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` in local order.
-pub(crate) fn placement_ordered_as_built_scope(frame_length: u64, as_built: bool) -> bool {
-    as_built && as_built_additional_owner_count(frame_length).is_some()
+pub(crate) fn placement_ordered_as_built_scope(scope: &DesignParameterScope) -> bool {
+    !rigid_as_built_scope(scope)
+        && scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && as_built_additional_owner_count(scope.frame_length()).is_some()
 }
 
 /// The additional-owner count selected by the scope frame length.
@@ -262,20 +332,8 @@ pub(crate) fn as_built_additional_owner_count(frame_length: u64) -> Option<usize
     }
 }
 
-/// An `As-built` scope whose operand-path locators are wide locators: a rigid
-/// group, or the placement-ordered form.
-pub(crate) fn wide_as_built_scope(frame_length: u64, as_built: bool) -> bool {
-    rigid_as_built_scope(frame_length, as_built)
-        || placement_ordered_as_built_scope(frame_length, as_built)
-}
-
-/// The member count a rigid `As-built` frame length implies.
-pub(crate) fn rigid_group_member_count(frame_length: u64) -> Option<usize> {
-    let extra = frame_length.checked_sub(269)?;
-    if extra % 11 != 0 {
-        return None;
-    }
-    usize::try_from(extra / 11).ok()?.checked_add(2)
+pub(crate) fn wide_as_built_scope(scope: &DesignParameterScope) -> bool {
+    rigid_as_built_scope(scope) || placement_ordered_as_built_scope(scope)
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.
@@ -445,6 +503,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
+    let mut root_contexts = 0_usize;
     let mut unprojected_members = 0_usize;
     let mut resting_joints = 0_usize;
     let mut malformed_rest_joints = 0_usize;
@@ -456,6 +515,19 @@ pub(crate) fn project_assembly_joints_with_paths(
         let motion = scope_joint_motion(scope, stream, motions);
         match project_assembly_joint(scope, stream, &occurrences, scopes, inserts, motion, paths) {
             Ok(Some((mut joint, undecoded))) => {
+                if scope.assembly_alignment().is_some_and(|alignment| {
+                    alignment
+                        .operand_path_refs()
+                        .is_some_and(|paths| paths.iter().any(|path| path.is_root()))
+                        || alignment.additional_members.iter().any(|member| {
+                            member
+                                .qualifier
+                                .occurrence_path()
+                                .is_some_and(DesignAssemblyOperandPath::is_root)
+                        })
+                }) {
+                    root_contexts += 1;
+                }
                 let paired = scope
                     .assembly_alignment()
                     .and_then(|alignment| alignment.operand_path_refs())
@@ -536,6 +608,11 @@ pub(crate) fn project_assembly_joints_with_paths(
     if resting_joints != 0 {
         losses.push(F3dLossCode::AssemblyJointRestUnprojected.note(format!(
             "{resting_joints} projected Design assembly joint(s) enable a rest position; the neutral joint does not carry it, which is retained natively."
+        )));
+    }
+    if root_contexts != 0 {
+        losses.push(F3dLossCode::AssemblyRootPathIdentitiesNative.note(format!(
+            "{root_contexts} projected Design assembly joint scope(s) retain root operand identity GUIDs natively; their meanings are not defined."
         )));
     }
     if paired_joints != 0 {
@@ -659,15 +736,17 @@ fn project_assembly_joint(
     motion: Option<&crate::records::feature::joint_motion::DesignJointMotion>,
     paths: &super::components::paths::LocalOccurrencePaths,
 ) -> Result<Option<(AssemblyJoint, Option<String>)>, CodecError> {
+    let unresolved_rigid_group =
+        || CodecError::NotImplemented("rigid group operand paths or frames are unresolved".into());
     let Some(alignment) = scope.assembly_alignment() else {
-        return Ok(None);
+        return if rigid_as_built_scope(scope) {
+            Err(unresolved_rigid_group())
+        } else {
+            Ok(None)
+        };
     };
     // A rigid group's joint record has a motion record with no freedom entry.
-    if rigid_as_built_scope(
-        scope.frame_length(),
-        scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-    ) && motion.is_some_and(|motion| !motion.freedoms.is_empty())
-    {
+    if rigid_as_built_scope(scope) && motion.is_some_and(|motion| !motion.freedoms.is_empty()) {
         return Err(CodecError::NotImplemented(
             "rigid group joint record states a freedom".into(),
         ));
@@ -720,18 +799,15 @@ fn project_assembly_joint(
         // A wide scope always qualifies its operands; frames without
         // qualifiers are an unprojected joint, not an absent one.
         Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. })
-            if AssemblyScopeGeneration::new(
-                scope.frame_length(),
-                scope.class_tag.as_str(),
-                scope.paired_class_tag.as_str(),
-            )
-            .operand_frame_variant()
-            .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
+            if AssemblyScopeGeneration::for_scope(scope)
+                .operand_frame_variant()
+                .is_some_and(AssemblyOperandFrameVariant::is_wide_family) =>
         {
             return Err(CodecError::NotImplemented(
                 "wide assembly joint operand paths are unresolved".into(),
             ));
         }
+        _ if rigid_as_built_scope(scope) => return Err(unresolved_rigid_group()),
         _ => return Ok(None),
     };
     let (angular_limits, linear_limits) = match limits {
@@ -979,6 +1055,15 @@ fn project_qualified_operands(
         match qualifier {
             DesignAssemblyOperandQualifier::OccurrencePath { path } => {
                 let root_guid = &path.occurrence_guids().first()?.value;
+                if path.is_root() {
+                    return Some(JointOperand::root(
+                        root_guid.as_str().to_owned(),
+                        path.occurrence_guids()[1..]
+                            .iter()
+                            .map(|key| key.value.as_str().to_owned())
+                            .collect(),
+                    ));
+                }
                 let lookup_guid = root_guid.as_str().to_ascii_lowercase();
                 let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
                 if occurrence.is_none()
@@ -1405,6 +1490,65 @@ mod tests {
         assert_eq!(projection.joints.len(), 1);
         assert!(projection.losses.is_empty());
 
+        let external = path(11, true).unwrap();
+        let root = DesignAssemblyOperandPath::try_new_typed(
+            external.link().clone(),
+            11,
+            external.class_tag().clone(),
+            Some(
+                TYPED_OCCURRENCE_PATH_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+            ),
+            100,
+            vec![crate::records::identity::Located {
+                value: "00000000-0000-0000-0000-000000000000"
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+                offset: 200,
+            }],
+            external.identity_guids()[..2].to_vec(),
+        )
+        .unwrap();
+        let qualifiers = [
+            DesignAssemblyOperandQualifier::OccurrencePath { path: root },
+            DesignAssemblyOperandQualifier::OccurrencePath { path: external },
+        ];
+        let operands = super::project_qualified_operands(
+            qualifiers.each_ref(),
+            "Design/BulkStream.dat",
+            &std::collections::BTreeMap::new(),
+            &[],
+            &inserts,
+            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[]),
+        )
+        .unwrap();
+        assert!(matches!(
+            operands[0].container,
+            cadmpeg_ir::products::OperandContainer::Root {}
+        ));
+        let mut rooted = scopes(true, false);
+        rooted[0]
+            .try_edit(|draft| {
+                let DesignScopePayload::Assemble(Some(alignment)) = &mut draft.payload else {
+                    panic!("alignment");
+                };
+                let frames = alignment.operand_frames().unwrap();
+                alignment.form = Some(DesignAssemblyAlignmentForm::qualified(
+                    frames,
+                    qualifiers.clone(),
+                ));
+            })
+            .unwrap();
+        let projection = super::project_assembly_joints(&rooted, &[], &inserts, &[]);
+        assert_eq!(projection.joints.len(), 1);
+        assert_eq!(
+            projection.losses[0].code,
+            crate::loss::F3dLossCode::AssemblyRootPathIdentitiesNative.kind()
+        );
+
         // Occurrence identity pairs keep the joint and say it with a loss.
         let projection = super::project_assembly_joints(&scopes(true, true), &[], &inserts, &[]);
         assert_eq!(projection.joints.len(), 1);
@@ -1766,11 +1910,35 @@ mod tests {
                         panic!("an Assemble payload");
                     };
                     draft.payload = DesignScopePayload::AsBuilt(alignment.clone());
-                    crate::design::test_support::lengthen_scope_frame(draft, 269);
+                    crate::design::test_support::lengthen_scope_frame(draft, 257);
+                    draft.reference_count_offset = draft.byte_offset + 153;
+                    draft.reference_members =
+                        crate::records::identity::ReferenceRun::unlocated(Vec::new());
+                    draft.layout_fixture_references();
+                    draft.feature_ordinal_offset = draft.paired_byte_offset - 76;
                 })
                 .unwrap();
             rigid_scopes
         };
+        let mut unresolved = rigid_scopes.clone();
+        unresolved
+            .last_mut()
+            .unwrap()
+            .try_edit(|draft| {
+                draft.payload = DesignScopePayload::AsBuilt(None);
+            })
+            .unwrap();
+        let projection = super::project_assembly_joints(
+            &unresolved,
+            &[],
+            &crate::design::components::ComponentInserts::default(),
+            &[],
+        );
+        assert!(projection.joints.is_empty());
+        assert_eq!(
+            projection.losses[0].code,
+            crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
+        );
         let project_rigid = |motions: &[DesignJointMotion]| {
             super::project_assembly_joints(
                 &rigid_scopes,

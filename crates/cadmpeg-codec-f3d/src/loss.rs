@@ -77,6 +77,8 @@ pub(crate) enum F3dLossCode {
     /// Projected Design assembly joints whose operand paths carry occurrence
     /// identity pairs of unknown effect on the joint, retained natively.
     AssemblyOperandPathPairsNative,
+    /// Root operand identity GUIDs retained natively without a neutral interpretation.
+    AssemblyRootPathIdentitiesNative,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -308,6 +310,7 @@ impl F3dLossCode {
         Self::AssemblyJointRestUnprojected,
         Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
+        Self::AssemblyRootPathIdentitiesNative,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -440,6 +443,7 @@ impl F3dLossCode {
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
+            Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -592,6 +596,7 @@ impl F3dLossCode {
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
             | Self::ReferenceImageNativeRetained
@@ -747,7 +752,8 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
-            | Self::AssemblyOperandPathPairsNative => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyRootPathIdentitiesNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
@@ -873,6 +879,7 @@ mod tests {
                 "assembly.joint-rest-unprojected",
                 "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
+                "assembly.root-path-identities-native",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",

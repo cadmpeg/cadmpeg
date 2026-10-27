@@ -1845,26 +1845,78 @@ references at offsets 28 and 167 and transforms at offsets 39 and 178. In the
 378-, 399-, 422-, and 444-byte `As-built` forms, the locator records store
 the operand construction references and transforms. The 378-, 422-, and
 444-byte forms' locators are wide operand-path locators: each operand frame is its wide locator's nonzero
-reference and transform, or the identity when the locator's identity flag is 1. The 269-byte `As-built` form is a
-rigid as-built joint with no parameter owners. After its indexed header it
-stores eleven zero bytes, a marked reference at offset 22 to a wide
-operand-path locator whose path has no occurrence, four zero bytes, u32 value
-2 at offset 37, the marked references to its two wide operand-path locators at
-offsets 41 and 52, a marked reference to its joint record at offset 63, an
-LP-UTF16 GUID at offset 74, three zero bytes, and an empty reference table:
-u32 count 0 immediately before the history state. Each operand frame is its
-wide locator's nonzero reference and transform, or the identity when the
-locator's identity flag is 1. Its joint record's motion record stores no
-freedom entry, so the joint is rigid. The form is a rigid group of two
-members. A rigid group of N members stores N at offset 37 and the marked references to its N locators at offsets 41 + 11k
-for k from 0 to N − 1; the joint reference, GUID, zero bytes, and empty
-reference table follow at offsets 11(N − 2) later, so its frame is
-269 + 11(N − 2) bytes. Each member's operand frame is read from its locator as
-for the first two. The group projects as N − 1 fixed joints: the first ties
-the first two members, and each further joint ties one later member to the
-first member at their as-built frames. Every joint of one group names the
-group's scope as its native record. A group whose joint's motion record states
-a freedom does not project.
+reference and transform, or the identity when the locator's identity flag is 1.
+
+A rigid-group scope has no parameter owners and stores the kind `As-built`.
+Its member count `N` is at least two. The ordinary two-member rigid-group
+scope is 257 bytes. Its indexed header occupies offsets 0 through 10;
+eleven zero bytes follow it. A marked pathless-locator reference is at offset
+22, four zero bytes are at offset 33, the u32 member count is at offset 37,
+and the first marked member-locator reference is at offset 41. References are
+eleven bytes. The next member reference is at offset 52. For two members,
+the joint reference is at offset 63, the LP-UTF16 GUID is at offset 74,
+three zero bytes are at offset 150, the empty reference-table u32 count is
+at offset 153, the history-state u32 is at offset 157, and the LP-UTF16
+`As-built` kind starts at offset 161. Its feature ordinal and 76-byte scope
+tail start at offset 181. For `N` members the joint reference and all later
+fields shift by `11(N - 2)` bytes. The paired indexed header starts at
+`235 + 11N`.
+
+The typed two-member rigid-group scope is 537 bytes. Its indexed header and
+eleven zero bytes have the same positions. The pathless-locator reference at
+offset 22 is a 51-byte typed local reference. Four zero bytes start at offset
+73. The u32 member count is at offset 77; the typed member-locator references
+start at offsets 81 and 132. The typed joint reference is at offset 183,
+the LP-UTF16 GUID is at offset 234, three zero bytes are at offset 310,
+the empty reference-table u32 count is at offset 313, the history-state u32
+is at offset 317, and the LP-UTF16 `As-built` kind starts at offset 321.
+Its feature ordinal and 196-byte typed scope tail start at offset 341.
+For `N` members the joint reference and all later fields shift by
+`51(N - 2)` bytes. The paired indexed header starts at `435 + 51N`.
+The tail form selects the reference width; the stored member count and
+paired header must close the complete scope at that width.
+
+A rigid-group member locator has type
+`2E3AC990-483D-4A55-8662-C064B976A957`. Its stored type version selects its
+frame. A version-3 compact rigid-group locator is 180 bytes: the indexed
+header is followed by twelve zero bytes, a rigid matrix at offset 23,
+one zero byte at offset 151, an ordinary scope backlink at offset 152,
+an ordinary wrapper reference at offset 163, u32 value 2 at offset 174,
+and two zero bytes at offset 178. The locator itself is the frame carrier.
+
+A version-2 typed rigid-group locator stores ten zero bytes after its
+indexed header, a nonzero typed construction reference at offset 21,
+and an identity flag at offset 72. Flag 0 stores a rigid matrix at offset
+73; flag 1 omits the matrix. The typed scope backlink immediately follows
+the matrix or identity flag; a typed wrapper reference, u32 discriminator,
+and two zero bytes follow the backlink. A member locator has discriminator
+2. The matrix form is 309 bytes, with backlink at offset 201, wrapper
+reference at offset 252, discriminator at offset 303, and zero tail at
+offset 307. The identity form is 181 bytes, with backlink at offset 73,
+wrapper reference at offset 124, discriminator at offset 175, and zero tail
+at offset 179. The separately referenced pathless locator has discriminator
+0 and is not a member locator. Version 5 uses the wide operand-path locator
+frame.
+
+Each member locator ends exactly at its first path record. The consecutive
+path records end at the wrapper. The wrapper stores ten zero bytes after
+its indexed header, byte 1 at offset 21, the u32 path-record count at offset
+22, and its first path reference at offset 26. Each path has one reference
+in that run. The wrapper uses 51-byte typed local references for a version-2
+locator and eleven-byte references for versions 3 and 5. Its complete length
+is `26 + CW` for path count `C` and reference width `W`. The next indexed
+header starts exactly after the wrapper. Locator indices are distinct and
+member envelopes do not overlap.
+
+A typed root operand path is a 277-byte frame. Its fifteen-byte indexed
+header is followed by six zero bytes, u32 count 0 at offset 21, and the
+LP-UTF16 root key `00000000-0000-0000-0000-000000000000` at offset 25.
+Offset 101 stores u32 0, offset 105 stores u64 1, and offsets 113 and 189
+store the two LP-UTF16 identity GUIDs. Offset 265 stores u32 2; eight zero
+bytes at offset 269 close the frame. This path selects the current document
+root and has no occurrence member. Its two identity GUIDs remain ordered.
+
+The linked rigid-group joint motion has no freedom entry.
 Matrix translations are in centimetres. Alignment
 angles are in radians and alignment offsets are in centimetres. The alignment
 owner references are one ordered, contiguous scope-reference run unless an
@@ -1887,7 +1939,7 @@ An axial selector primary record has a 37-byte fixed prefix: its eleven-byte ind
 
 The two selectors of one construction carrier have the same selector GUIDs, external-object reference, segment, external asset GUID, link name, optional property GUID, version identity, and role GUID. Their axis-specific occurrence references can differ. The common role GUID uniquely identifies the `Component Insert` scope whose component construction carries that role. The insertion's projected occurrence qualifies the operand, and the selectors' common external-object identity names its connector. A frame reference can instead equal one `JointOrigin` scope record index while its transform equals that origin's solved frame. This form selects the current document root: the neutral operand has no occurrence or external-document qualifier, and its object is the `JointOrigin` feature.
 
-The 705- and 772-byte forms store no occurrence paths. Every other form stores a u32 count of two followed by two marked same-segment operand-path-locator references. The 378- and 399-byte `As-built` forms store the count at scope offset 47 and the references at offsets 51 and 62. The 422- and 444-byte `As-built` forms store them `11K` bytes later, after their `K` additional-owner references: at offsets 69, 73, and 84, and at offsets 80, 84, and 95. The 627-, 637-, and 692-byte forms store the count at scope offset 362 and the references at offsets 366 and 377. The 633- and 732-byte forms store the count at offset 358 and the references at offsets 362 and 373. The class-430/262 744-byte form stores the count at offset 358 and the references at offsets 362 and 373; its 748-byte form uses offset 362 and offsets 366 and 377. Each reference resolves to exactly one locator envelope after the scope's paired indexed header. The locator record indices are distinct, and the two envelopes do not overlap. The first locator reference qualifies the first operand frame and the second locator reference qualifies the second operand frame. For `As-built`, each locator's nonzero reference at locator offset 21 is the operand construction reference and its transform at locator offset 33 is the operand frame.
+The 705- and 772-byte forms store no occurrence paths. Each other two-operand form stores a u32 count of two followed by two marked same-segment operand-path-locator references. The 378- and 399-byte `As-built` forms store the count at scope offset 47 and the references at offsets 51 and 62. The 422- and 444-byte `As-built` forms store them `11K` bytes later, after their `K` additional-owner references: at offsets 69, 73, and 84, and at offsets 80, 84, and 95. The 627-, 637-, and 692-byte forms store the count at scope offset 362 and the references at offsets 366 and 377. The 633- and 732-byte forms store the count at offset 358 and the references at offsets 362 and 373. The class-430/262 744-byte form stores the count at offset 358 and the references at offsets 362 and 373; its 748-byte form uses offset 362 and offsets 366 and 377. Each reference resolves to exactly one locator envelope after the scope's paired indexed header. The locator record indices are distinct, and the two envelopes do not overlap. The first locator reference qualifies the first operand frame and the second locator reference qualifies the second operand frame. For `As-built`, each locator's nonzero reference at locator offset 21 is the operand construction reference and its transform at locator offset 33 is the operand frame.
 
 The direct-path subform of the class-283/264 and class-347/260 generations uses a 180-byte locator envelope. Its rigid transform starts at offset 23, its owning-scope backlink is at offset 152, its path-wrapper reference is at offset 163, u32 value 2 is at offset 174, and two zero tail bytes occupy offsets 178 and 179. One or more consecutive class-330 path records immediately follow the locator. Each contributes its ordered occurrence GUID and four identity GUIDs to one operand path. A class-330 path whose first occurrence GUID is not a current-document occurrence identifies an external operand; its first identity GUID is the external document identity. The class-397 wrapper follows the final path record. Its byte at offset 21 is one, its u32 at offset 22 is the path-record count, and its marked reference at offset 26 names the first path record. Each further path record has one marked reference in an eleven-byte run starting at wrapper offset 37. The wrapper length is therefore `37 + 11(C - 1)` for path-record count `C`.
 
@@ -1918,7 +1970,7 @@ An operand-path locator is a fixed 190-byte indexed record with record index `N`
 
 The class-388/266 legacy locator run uses class `451` for each 190-byte locator and class `369` for each wrapper. A class-451 locator keeps the same fixed offsets and backlinks as the common locator. Its wrapper reference names the class-369 record at `N + count + 1`, where `count` is the class-369 path count. A class-369 wrapper stores ten zero bytes, byte value 1 at offset 21, and path count 1 or 2 at offset 22. A class-369 wrapper stores marker 1 and its path count. A class-369 wrapper with path count 1 is 37 bytes. A class-369 wrapper with path count 2 is 48 bytes. Count 1 uses one marked path reference at offset 26 and a 37-byte span. Count 2 adds a marked path reference at offset 37 and has a 48-byte span. A class-369 wrapper stores one marked path reference at offset 26. A class-369 wrapper stores two marked path references at offsets 26 and 37. The referenced class-412 path records have consecutive indexes `N + 1` through `N + count` and each has a 425-byte span. A class-412 path record is 425 bytes in the class-388 legacy envelope. The class-412 path prefix stores ten zero bytes, marker 1 at offset 21, and three zero bytes at offsets 22 through 24. A class-412 path stores one occurrence GUID followed by four identity GUIDs. The class-412 path stores u64 value 2 between its identity pairs. The class-412 path stores u32 value 2 before its zero tail. The wrapper order is the occurrence order. The occurrence GUIDs from all wrapper members form the ordered occurrence path; the four identity GUIDs from the final wrapper member form the identity suffix.
 
-A class-329 path begins with its indexed header, six zero bytes, a positive u32 path count, and exactly that many LP-UTF16 occurrence GUIDs in outermost-to-innermost order. It either ends at the wrapper after the occurrence run or continues with the identity suffix. A class-294 or class-299 path begins with its indexed header, six zero bytes, u32 value 1, three zero bytes, one LP-UTF16 occurrence GUID, two LP-UTF16 identity GUIDs, u64 value 2, two more LP-UTF16 identity GUIDs, u32 value 2, and a zero tail ending at the wrapper. The class-329 identity-qualified form and class-386 and class-390 paths append two LP-UTF16 identity GUIDs, u64 value 2, two more identity GUIDs, u32 value 2, and a zero tail ending at the wrapper after the occurrence run. The first occurrence GUID names the component occurrence containing the selected connector. Remaining occurrence GUIDs are the ordered descent path within that component. The four identity GUIDs are retained in source order. A class-294, class-299, or class-386 path whose root occurrence is not local uses its first identity GUID as the unresolved external-document identity. A path record whose type GUID is `96CBEA21-17E0-4BCB-BA77-04EA87B47934` has the identity-qualified form whatever its dynamic class tag: the occurrence run, the four identity GUIDs, and the zero tail. In place of the zero tail after its u32 value 2, such a path can store a zero u32, a positive u32 pair count, and that many pairs; each pair is u32 value 2 followed by two LP-UTF16 occurrence identities, each a decimal occurrence key or an occurrence GUID. The path ends at the wrapper after the last pair. Its root occurrence can be external, and its first identity GUID is then the unresolved external-document identity. Occurrence translations, connector-frame translations, and the three alignment offsets are in centimetres. The alignment angle is in radians.
+A class-329 path begins with its indexed header, six zero bytes, a positive u32 path count, and exactly that many LP-UTF16 occurrence GUIDs in outermost-to-innermost order. It either ends at the wrapper after the occurrence run or continues with the identity suffix. A class-294 or class-299 path begins with its indexed header, six zero bytes, u32 value 1, three zero bytes, one LP-UTF16 occurrence GUID, two LP-UTF16 identity GUIDs, u64 value 2, two more LP-UTF16 identity GUIDs, u32 value 2, and a zero tail ending at the wrapper. The class-329 identity-qualified form and class-386 and class-390 paths append two LP-UTF16 identity GUIDs, u64 value 2, two more identity GUIDs, u32 value 2, and a zero tail ending at the wrapper after the occurrence run. The first occurrence GUID names the component occurrence containing the selected connector. Remaining occurrence GUIDs are the ordered descent path within that component. The four identity GUIDs are retained in source order. A class-294, class-299, or class-386 path whose root occurrence is not local uses its first identity GUID as the unresolved external-document identity. The positive-count form of a path record whose type GUID is `96CBEA21-17E0-4BCB-BA77-04EA87B47934` has the identity-qualified form whatever its dynamic class tag: the occurrence run, the four identity GUIDs, and the zero tail. In place of the zero tail after its u32 value 2, such a path can store a zero u32, a positive u32 pair count, and that many pairs; each pair is u32 value 2 followed by two LP-UTF16 occurrence identities, each a decimal occurrence key or an occurrence GUID. The path ends at the wrapper after the last pair. Its root occurrence can be external, and its first identity GUID is then the unresolved external-document identity. Occurrence translations, connector-frame translations, and the three alignment offsets are in centimetres. The alignment angle is in radians.
 
 A Design circular-pattern scope stores one seed operand group with role `0x0000000400000000` or `0x0000000800000000`, one count owner at owner-local ordinal zero, one total-angle owner at owner-local ordinal one, and one axis construction. Role `0x0000000400000000` selects faces through entity-selection operands. Role `0x0000000800000000` selects bodies through whole-body recipe operands. The count is a positive integer including the seed. The total angle is a positive scalar in radians. Both owner values are duplicated from their parameter records and are independent of the owner-frame class and width. The 195-byte axis record stores a three-component origin in centimetres at offset 25 followed by a three-component displacement in centimetres at offset 49; the neutral unit axis direction is the normalized displacement. The displacement is nonzero and finite. Its marked selection reference identifies the persisted axis operand. A scope can contain this record and an earlier axis record. Exactly one 195-byte record supplies the solved axis when it is present. An earlier record supplies the axis only when the scope contains no 195-byte record and contains exactly one earlier record. Multiple 195-byte records or multiple earlier records without a 195-byte record leave the axis unresolved. The earlier axis record has a 129-byte two-wrapper form and a 118-byte compact form. Both begin after the indexed header and ten zero bytes. The two-wrapper form stores u32 one, a marked wrapper reference, u32 one, the marked seed-member reference, u32 one, a second marked wrapper reference, and the marked scope reference. The compact form stores u32 zero, u32 one, the marked seed-member reference, u32 one, one marked wrapper reference, and the marked scope reference. Both then store a repeated nonzero u32 around a finite f64, marked references to axis-record indexes plus two and one, and a second marked scope reference. Each wrapper stores a nonzero u64 lane, the asset and context GUIDs, a nested two-record chain, and a persistent u64 identity. Both wrappers in the expanded form carry the same persistent identity. A historical edge, coedge, curve, pcurve, vertex, or point identity supplies the unique analytic carrier axis in the feature's preceding history topology. If the scope has no preceding history state, the identity must yield the same model-space axis line in every state containing it. A face identity supplies the axis of its unique analytic surface carrier: a planar carrier uses its normal, and a cylindrical, conical, or toroidal carrier uses its axis; a surface identity supplies the axis of its unique analytic carrier, using a planar normal or a cylindrical, conical, or toroidal axis. An identity that does not resolve directly is a snapshot-local record ordinal only when exactly one archived record occupies that ordinal and the record is an edge; the record's positive revision identity selects the historical edge. A selected historical edge uses the axis of its line, circle, or ellipse carrier. An edge without such a carrier uses the common model-space axis line of its incident cylinder, cone, and torus surface carriers. Missing carrier bindings, multiple bindings for one selected face, or conflicting incident surface axes leave the axis unresolved. A whole-body recipe member selects the unique body in the preceding history topology identified by its persistent recipe. When no preceding history state exists, the recipe's Design id and selector join to one current persistent body link; if candidate faces are present, that body must occur in their body incidence. Without that link, a direct model-body selection resolves only when every reference maps to one common body, displayed bodies take precedence over cache bodies, and group members map to distinct bodies. Pattern face operands name result-face equivalence classes. A selected source face is the unique changed face in the preceding history topology whose procedural surface radius equals the one radius shared by every result face in that equivalence class. Missing radii, unequal result radii, or more than one matching changed face leave the source face unresolved.
 

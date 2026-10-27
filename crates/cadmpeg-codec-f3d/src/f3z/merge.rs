@@ -159,6 +159,7 @@ struct MemberDefinition {
     definition: cadmpeg_ir::ids::ProductDefinitionId,
     scope: String,
     occurrences: Vec<cadmpeg_ir::products::Occurrence>,
+    joints: Vec<cadmpeg_ir::products::AssemblyJoint>,
     table: XrefTable,
 }
 
@@ -220,8 +221,16 @@ impl MergeSession<'_, '_> {
             let _depth = ctx.enter_nested("f3z member reference")?;
             let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
                 self.ctx.charge_entities(
-                    cadmpeg_core::decode::u64_from_index(member.occurrences.len()),
-                    "F3Z repeated member occurrences",
+                    cadmpeg_core::decode::u64_from_index(
+                        member
+                            .occurrences
+                            .len()
+                            .checked_add(member.joints.len())
+                            .ok_or_else(|| {
+                                CodecError::malformed("F3Z repeated member entity count overflows")
+                            })?,
+                    ),
+                    "F3Z repeated member occurrences and joints",
                 )?;
                 member.clone()
             } else {
@@ -273,6 +282,7 @@ impl MergeSession<'_, '_> {
                     occurrence: &occurrence,
                 };
                 let occurrence_start = parent_ir.model.occurrences.len();
+                let joint_start = parent_ir.model.assembly_joints.len();
                 parent_ir
                     .model
                     .extend_rewritten(component_ir.model, &mut scope)?;
@@ -283,6 +293,11 @@ impl MergeSession<'_, '_> {
                         .model
                         .occurrences
                         .drain(occurrence_start..)
+                        .collect(),
+                    joints: parent_ir
+                        .model
+                        .assembly_joints
+                        .drain(joint_start..)
                         .collect(),
                     table: {
                         for reference in &mut child_table.references {
@@ -315,11 +330,14 @@ impl MergeSession<'_, '_> {
                     .insert(reference.relative_path.as_str().to_owned(), member.clone());
                 member
             };
-            let mut instance = Model::default();
-            instance.occurrences = member.instantiate(self.ctx, &occurrence)?;
+            let mut instance = member.instantiate(self.ctx, &occurrence, &placement.parent)?;
             let child_placements = member_placements(&instance, &member.table, Some(&occurrence));
             reparent_component_roots(&mut instance.occurrences, &placement.parent)?;
             parent_ir.model.occurrences.extend(instance.occurrences);
+            parent_ir
+                .model
+                .assembly_joints
+                .extend(instance.assembly_joints);
             let placing = parent_ir
                 .model
                 .occurrences
@@ -353,28 +371,55 @@ impl MemberDefinition {
         &self,
         ctx: &DecodeContext<'_>,
         scope: &str,
-    ) -> Result<Vec<cadmpeg_ir::products::Occurrence>, CodecError> {
+        parent: &cadmpeg_ir::ids::OccurrenceId,
+    ) -> Result<Model, CodecError> {
         let prefix = format!("f3d:xref/{}/", self.scope);
         let ids = self
             .occurrences
             .iter()
-            .map(|occurrence| {
-                let tail = occurrence
-                    .id
-                    .as_str()
+            .map(|occurrence| occurrence.id.as_str())
+            .chain(self.joints.iter().map(|joint| joint.id.as_str()))
+            .map(|id| {
+                let tail = id
                     .strip_prefix(&prefix)
-                    .ok_or_else(|| CodecError::malformed("invalid F3Z member occurrence scope"))?;
-                Ok((occurrence.id.as_str(), format!("f3d:xref/{scope}/{tail}")))
+                    .ok_or_else(|| CodecError::malformed("invalid F3Z member instance scope"))?;
+                Ok((id, format!("f3d:xref/{scope}/{tail}")))
             })
             .collect::<Result<std::collections::BTreeMap<_, _>, CodecError>>()?;
-        self.occurrences
+        let rewrite =
+            |id: &str| Ok::<_, CodecError>(ids.get(id).cloned().unwrap_or_else(|| id.to_owned()));
+        let occurrences = self
+            .occurrences
             .iter()
             .map(|occurrence| {
-                cadmpeg_ir::schema::rewrite::identities(ctx, occurrence.clone(), |id: &str| {
-                    Ok::<_, CodecError>(ids.get(id).cloned().unwrap_or_else(|| id.to_owned()))
-                })
+                cadmpeg_ir::schema::rewrite::identities(ctx, occurrence.clone(), rewrite)
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        let assembly_joints = self
+            .joints
+            .iter()
+            .map(|joint| {
+                let mut joint =
+                    cadmpeg_ir::schema::rewrite::identities(ctx, joint.clone(), rewrite)?;
+                for connector in joint.connectors_mut() {
+                    if matches!(
+                        connector.operand.container,
+                        cadmpeg_ir::products::OperandContainer::Root {}
+                    ) {
+                        connector.operand.container =
+                            cadmpeg_ir::products::OperandContainer::Occurrence {
+                                occurrence: parent.clone(),
+                                occurrence_path: Vec::new(),
+                            };
+                    }
+                }
+                Ok(joint)
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        let mut instance = Model::default();
+        instance.occurrences = occurrences;
+        instance.assembly_joints = assembly_joints;
+        Ok(instance)
     }
 }
 

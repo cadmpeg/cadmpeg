@@ -34,6 +34,11 @@ fn rigid_group_frame_requires_its_further_members() {
         scope
             .try_edit(|draft| {
                 crate::design::test_support::lengthen_scope_frame(draft, frame_length);
+                draft.reference_count_offset = draft.byte_offset + frame_length - 104;
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(Vec::new());
+                draft.layout_fixture_references();
+                draft.feature_ordinal_offset = draft.paired_byte_offset - 76;
             })
             .unwrap();
         scope
@@ -55,8 +60,8 @@ fn rigid_group_frame_requires_its_further_members() {
     )
     .unwrap();
     let unread = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
-    assert!(rigid_group_members_link(&scope(269), &read, true));
-    assert!(!rigid_group_members_link(&scope(280), &read, true));
-    assert!(rigid_group_members_link(&scope(280), &unread, true));
-    assert!(rigid_group_members_link(&scope(280), &read, false));
+    assert!(rigid_group_members_link(&scope(257), &read, true));
+    assert!(!rigid_group_members_link(&scope(268), &read, true));
+    assert!(rigid_group_members_link(&scope(268), &unread, true));
+    assert!(rigid_group_members_link(&scope(268), &read, false));
 }

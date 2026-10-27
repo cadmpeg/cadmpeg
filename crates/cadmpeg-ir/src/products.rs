@@ -1694,6 +1694,15 @@ impl AssemblyJoint {
         };
         slice.iter()
     }
+
+    /// Visits every connector in operand order for mutation.
+    pub fn connectors_mut(&mut self) -> impl Iterator<Item = &mut JointConnector> {
+        let slice: &mut [JointConnector] = match &mut self.operands {
+            JointOperands::Grounded { connector, .. } => std::slice::from_mut(connector),
+            JointOperands::Pair { connectors, .. } => connectors.as_mut_slice(),
+        };
+        slice.iter_mut()
+    }
 }
 
 #[cfg(test)]

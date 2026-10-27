@@ -334,6 +334,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ## 2. External references
 
+### DR-100. Root operand context identities
+
+**Question.** Which native identities do the two identity GUIDs of a zero-count root operand path name?
+
+**Known.** The typed root operand path stores a zero count, the zero root key, a zero word, u64 value 1, two ordered identity GUIDs, u32 value 2, and an eight-byte zero tail. The complete frame is 277 bytes.
+
+**Need.** An explicit join from each identity GUID to its owning native record or document context.
+
+**Conflict.** None.
+
+**Note.** The zero-count path selects the current document root. Its identity GUIDs remain native.
+
 ### DR-82. Other joint freedom codes and the limit flags
 
 **Question.** Which degrees of freedom do freedom codes other than `1`, `2`, and `8` name, and what do the two joint-record limit flag bytes select, and does the 444-byte `As-built` form's `SlideRest` owner hold the joint-record rest value?

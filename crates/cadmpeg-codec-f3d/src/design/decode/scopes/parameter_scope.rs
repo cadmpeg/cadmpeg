@@ -1106,33 +1106,46 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 return None;
             }
         }
-        // The rigid `As-built` scope stores count 0 at its fixed offset,
-        // immediately before its history state, with no reference marker in
-        // the slot before it. Every other scope keeps a counted table.
-        let frame_length = paired_at
-            .checked_sub(start)
-            .and_then(|length| u64::try_from(length).ok());
-        if let Some(frame_length) = frame_length.filter(|frame_length| {
-            reference_table.is_none()
-                && crate::design::assembly::rigid_as_built_scope(
-                    *frame_length,
-                    kind == scope::DesignFeatureKind::AsBuilt,
-                )
-        }) {
-            // Each member past the second adds one locator reference.
-            let members = crate::design::assembly::rigid_group_member_count(frame_length)?;
-            let count_at = start
-                .checked_add(crate::layout::assembly_rigid_as_built_scope::REFERENCE_COUNT)?
-                .checked_add(members.checked_sub(2)?.checked_mul(11)?)?;
-            let locator_count_at =
-                start.checked_add(crate::layout::assembly_rigid_as_built_scope::LOCATOR_COUNT)?;
-            if usize::try_from(View::u32_le_at(bytes, locator_count_at)?).ok() == Some(members)
-                && count_at.checked_add(4) == Some(reference_table_end)
-                && View::u32_le_at(bytes, count_at)? == 0
-                && bytes.get(count_at.checked_sub(11)?) != Some(&1)
+        if reference_table.is_none() && kind == scope::DesignFeatureKind::AsBuilt {
+            let frame_length = u64::try_from(paired_at.checked_sub(start)?).ok()?;
+            let layout = crate::design::assembly::RigidGroupLayout::new(
+                frame_length,
+                u64::try_from(tail_length).ok()?,
+            )?;
+            let typed = layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+            let target = |at| {
+                crate::bytes::local_reference_target(bytes, at, typed).filter(|target| *target != 0)
+            };
+            let pathless_at = start.checked_add(
+                crate::layout::assembly_rigid_as_built_scope::PATHLESS_LOCATOR_REFERENCE,
+            )?;
+            let count_at = start.checked_add(layout.empty_table)?;
+            let first = start.checked_add(layout.first_reference)?;
+            let members_end = first.checked_add(layout.members.checked_mul(layout.stride)?)?;
+            if bytes.get(start.checked_add(11)?..pathless_at)? != [0; 11]
+                || target(pathless_at).is_none()
+                || bytes.get(
+                    pathless_at.checked_add(layout.stride)?..start.checked_add(layout.count_at)?,
+                )? != [0; 4]
+                || usize::try_from(View::u32_le_at(bytes, start.checked_add(layout.count_at)?)?)
+                    .ok()?
+                    != layout.members
+                || (0..layout.members)
+                    .any(|member| target(first + member * layout.stride).is_none())
+                || target(members_end).is_none()
+                || crate::design::decode::text::fixed_guid_end(
+                    bytes,
+                    members_end.checked_add(layout.stride)?,
+                )?
+                .checked_add(3)?
+                    != count_at
+                || bytes.get(count_at.checked_sub(3)?..count_at)? != [0; 3]
+                || count_at.checked_add(4)? != reference_table_end
+                || View::u32_le_at(bytes, count_at)? != 0
             {
-                reference_table = Some((count_at, Vec::new(), Vec::new()));
+                return None;
             }
+            reference_table = Some((count_at, Vec::new(), Vec::new()));
         }
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
