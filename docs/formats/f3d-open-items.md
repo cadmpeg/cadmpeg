@@ -36,9 +36,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?
 
-**Known.** Type versions 3 and 4 do not store the word, and type version 3 stores no extent control. Type version 7 stores `0`. Type version 5 stores `0`, `2`, and other values on Distance holes. The word does not change the extent control or the parameter set.
+**Known.** Type versions 3 and 4 do not store the word, and type version 3 stores no extent control. Every observed word is `0`, on Distance and non-distance holes.
 
-**Need.** Holes of type version 5 or 7 with known hole type, tap, or position settings, for each observed word value.
+**Need.** A Hole of type version 5 or 7 with a nonzero word, and the hole type, tap, or position setting that produces it.
 
 **Conflict.** None.
 
