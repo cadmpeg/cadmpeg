@@ -452,6 +452,22 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut design.sketch_surfaces,
         &mut design.sketch_relations,
     )?;
+    let placements = crate::design::decode::placement_construction::decode(ctx, scan)?;
+    design.design_placement_constructions = placements.records;
+    if placements.unparsed != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::PlacementConstructionUntyped,
+            format_args!("{} placement construction record(s) remain source-only because their registration or bounded member layout is unsupported or ambiguous.", placements.unparsed),
+        );
+    }
+
+    losses.extend(
+        crate::design::decode::placement_construction::work_planes::bind(
+            &mut design.design_parameter_scopes,
+            &design.design_placement_constructions,
+        ),
+    );
     crate::design::decode::operands::bind_work_point_input_carriers(
         scan,
         &mut design.design_parameter_scopes,
@@ -584,16 +600,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut losses,
             F3dLossCode::BodyReferenceTailUntyped,
             format_args!("{} whole-body reference tail(s) remain source-only because no complete standard reference-run frame was admitted.", tails.unparsed),
-        );
-    }
-
-    let placements = crate::design::decode::placement_construction::decode(ctx, scan)?;
-    design.design_placement_constructions = placements.records;
-    if placements.unparsed != 0 {
-        push_loss_vec(
-            &mut losses,
-            F3dLossCode::PlacementConstructionUntyped,
-            format_args!("{} placement construction record(s) remain source-only because their registration or bounded member layout is unsupported or ambiguous.", placements.unparsed),
         );
     }
 

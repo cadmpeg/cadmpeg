@@ -1439,12 +1439,12 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
     }
 }
 
-/// Explicit 16-f64 frame carried by a `WorkPlane` scope.
+/// Solved frame carried by a `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct DesignWorkPlaneTransform {
     /// Exact row-major local-to-model frame.
     pub(crate) work_plane_transform: SketchPlacementMatrix,
-    /// Byte offset of the explicit 16-f64 matrix.
+    /// Byte offset of the matrix or its implicit-identity marker.
     pub(crate) work_plane_transform_offset: u64,
     /// Construction record referenced by the frame, when present.
     #[serde(flatten)]
