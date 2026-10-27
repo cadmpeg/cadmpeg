@@ -113,9 +113,9 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .to_string()
         .try_into()
         .unwrap();
-    let act_root = &mut native.act_root_components[0];
-    act_root.instance_root_record = 71;
-    act_root.components_root_record = 72;
+    let act_root = &mut native.act_component_links[0];
+    act_root.references.instance_root = 71;
+    act_root.references.components_root = 72;
     act_root.registry_flag = crate::records::act::ActRegistryFlag::Off;
     act_root
         .try_set_strings("1_3".into(), "(Renamed)".into())
@@ -252,10 +252,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .act_guids
         .iter()
         .any(|guid| guid.guid.as_str() == "ffffffff-1111-2222-3333-444444444444"));
-    let act_root = &f3d_native(round_trip.ir()).act_root_components[0];
+    let act_root = &f3d_native(round_trip.ir()).act_component_links[0];
     assert_eq!(act_root.record_index, 9);
-    assert_eq!(act_root.instance_root_record, 71);
-    assert_eq!(act_root.components_root_record, 72);
+    assert_eq!(act_root.references.instance_root, 71);
+    assert_eq!(act_root.references.components_root, 72);
     assert_eq!(
         act_root.registry_flag,
         crate::records::act::ActRegistryFlag::Off

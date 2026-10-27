@@ -445,7 +445,11 @@ pub(super) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     let entity_1 = [1];
     let entity_2 = [2];
     let entity_7 = [7];
-    let entity_9 = [9];
+    let entity_9 = records
+        .iter()
+        .map(|&(id, _)| id)
+        .filter(|id| ![1, 2, 7].contains(id))
+        .collect::<Vec<_>>();
     let types = [
         (
             "00000000-0000-0000-0000-000000000100",

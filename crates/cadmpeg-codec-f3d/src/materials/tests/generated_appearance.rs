@@ -58,34 +58,38 @@ fn decode_transfers_generated_protein_appearance() {
         "PhysicalMaterial"
     );
     assert!(f3d_native(result.ir()).act_entities[0].in_table());
-    assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
+    assert_eq!(f3d_native(result.ir()).act_component_links.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0]
+        f3d_native(result.ir()).act_component_links[0]
             .layout()
             .entity_id(),
         "0_3"
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0]
+        f3d_native(result.ir()).act_component_links[0]
             .layout()
             .display_name(),
         "(Unsaved)"
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].instance_root_record,
+        f3d_native(result.ir()).act_component_links[0]
+            .references
+            .instance_root,
         12
     );
     assert_eq!(
-        serde_json::to_value(&f3d_native(result.ir()).act_root_components[0]).unwrap()
+        serde_json::to_value(&f3d_native(result.ir()).act_component_links[0]).unwrap()
             ["tracked_entity_record"],
         3
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].components_root_record,
+        f3d_native(result.ir()).act_component_links[0]
+            .references
+            .components_root,
         7
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].registry_flag,
+        f3d_native(result.ir()).act_component_links[0].registry_flag,
         crate::records::act::ActRegistryFlag::On
     );
     assert_eq!(

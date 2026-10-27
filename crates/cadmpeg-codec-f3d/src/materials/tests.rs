@@ -1093,14 +1093,14 @@ fn generated_act_native_validation_rejects_structural_drift() {
 
     let mut colliding_root = decoded.ir().clone();
     update_f3d_native(&mut colliding_root, |native| {
-        native.act_root_components[0].record_index = native.act_entities[0].record_index();
+        native.act_component_links[0].record_index = native.act_entities[0].record_index();
     });
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &colliding_root)
             .expect("validate the native namespace")
     })
     .iter()
-    .any(|finding| finding.message.contains("ACT root component")));
+    .any(|finding| finding.message.contains("ACT component link")));
 
     let (mut wrong_registry, _, _) = decoded.into_parts();
     update_f3d_native(&mut wrong_registry, |native| {

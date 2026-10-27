@@ -94,7 +94,7 @@ fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
         .expect("generated ACT decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
-        native.act_root_components[0].record_index += 1;
+        native.act_component_links[0].record_index += 1;
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
@@ -102,6 +102,6 @@ fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("ACT root edit changes fields")
+            if message.contains("ACT component-link edit changes fields")
     ));
 }

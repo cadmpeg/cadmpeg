@@ -125,7 +125,6 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
     for model_body_maps_empty in [true, false] {
         let path = super::super::FinalizePath::Bodyless(super::super::DeferredBodylessInputs {
             model_body_maps_empty,
-            non_root_act: 0,
             has_appearance: false,
             mesh_projection: super::super::MeshProjection {
                 count: 0,

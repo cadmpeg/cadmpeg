@@ -365,3 +365,177 @@ fn unclaimed_bodies_without_occurrences_keep_a_product_representation() {
         }
     }
 }
+
+fn assert_solid_representation_membership(exchange: &Exchange, solid_count: usize) {
+    let advanced = entities(exchange, "ADVANCED_BREP_SHAPE_REPRESENTATION")
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let solids = entities(exchange, "MANIFOLD_SOLID_BREP")
+        .into_iter()
+        .chain(entities(exchange, "BREP_WITH_VOIDS"))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(solids.len(), solid_count);
+    let mut represented_solids = BTreeMap::<u64, usize>::new();
+    for &representation in &advanced {
+        let Value::List(items) = &parameters(
+            exchange,
+            representation,
+            "ADVANCED_BREP_SHAPE_REPRESENTATION",
+        )[1] else {
+            panic!("representation items");
+        };
+        let mut has_shape = false;
+        for item in items.iter().map(reference) {
+            let record = &exchange.records()[&item];
+            if solids.contains(&item) {
+                *represented_solids.entry(item).or_default() += 1;
+                has_shape = true;
+            } else if record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "MAPPED_ITEM")
+            {
+                let map = reference(&parameters(exchange, item, "MAPPED_ITEM")[1]);
+                let source = reference(&parameters(exchange, map, "REPRESENTATION_MAP")[1]);
+                assert!(
+                    advanced.contains(&source),
+                    "mapped advanced B-rep source has the same subtype"
+                );
+                has_shape = true;
+            } else {
+                assert!(record
+                    .partials
+                    .iter()
+                    .any(|partial| partial.name == "AXIS2_PLACEMENT_3D"));
+            }
+        }
+        assert!(
+            has_shape,
+            "advanced B-rep representations contain a solid or mapped solid"
+        );
+    }
+    assert_eq!(represented_solids.len(), solids.len());
+    assert!(represented_solids.values().all(|&count| count == 1));
+}
+
+#[test]
+fn solids_keep_advanced_representations_across_product_and_body_placements() {
+    for schema in [
+        StepSchema::Ap203Edition1,
+        StepSchema::Ap214,
+        StepSchema::Ap242Edition3,
+    ] {
+        for (graph, claimed) in [(false, false), (true, false), (true, true)] {
+            for placed in [false, true] {
+                for standalone in [false, true] {
+                    let mut ir = assembly(claimed);
+                    if !graph {
+                        ir.model.product_definitions.clear();
+                        ir.model.occurrences.clear();
+                    }
+                    if placed {
+                        ir.model.bodies[1].transform = Some(translation(40.0));
+                    }
+                    if standalone {
+                        let mut point = ir.model.points[0].clone();
+                        point.id =
+                            cadmpeg_ir::ids::PointId::mint("test:representations:point#standalone")
+                                .unwrap();
+                        ir.model.points.push(point);
+                    }
+                    let mut bytes = Vec::new();
+                    write_step(&ir, &mut bytes, schema, &StepWriteOptions::default()).unwrap();
+                    let (exchange, _) = crate::test_support::with_service_context(
+                        &bytes,
+                        crate::parse::parse_inner,
+                    )
+                    .unwrap();
+                    assert_solid_representation_membership(&exchange, 2);
+                    let decoded = StepCodec::default()
+                        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                        .unwrap();
+                    assert_eq!(decoded.ir().model.bodies.len(), 2);
+                    let mut actual = decoded.into_parts().0;
+                    ir.model.product_definitions.clear();
+                    ir.model.occurrences.clear();
+                    actual.model.product_definitions.clear();
+                    actual.model.occurrences.clear();
+                    measures_agree("typed solid representations", &ir, &actual).unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn mixed_solid_and_sheet_geometry_uses_linked_representations() {
+    for schema in [
+        StepSchema::Ap203Edition1,
+        StepSchema::Ap214,
+        StepSchema::Ap242Edition3,
+    ] {
+        for graph in [false, true] {
+            let mut ir = assembly(false);
+            ir.model.bodies[1].kind = BodyKind::Sheet;
+            if graph {
+                ir.model.product_definitions[0].bodies =
+                    ir.model.bodies.iter().map(|body| body.id.clone()).collect();
+            } else {
+                ir.model.product_definitions.clear();
+                ir.model.occurrences.clear();
+            }
+            let mut bytes = Vec::new();
+            write_step(&ir, &mut bytes, schema, &StepWriteOptions::default()).unwrap();
+            let (exchange, _) =
+                crate::test_support::with_service_context(&bytes, crate::parse::parse_inner)
+                    .unwrap();
+            assert_solid_representation_membership(&exchange, 1);
+            assert_eq!(entities(&exchange, "SHELL_BASED_SURFACE_MODEL").len(), 1);
+            assert!(!entities(&exchange, "SHAPE_REPRESENTATION_RELATIONSHIP").is_empty());
+            let decoded = StepCodec::default()
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(decoded.ir().model.bodies.len(), 2);
+            assert_eq!(
+                decoded
+                    .ir()
+                    .model
+                    .bodies
+                    .iter()
+                    .filter(|body| body.kind == BodyKind::Solid)
+                    .count(),
+                1
+            );
+            if graph {
+                let product = decoded
+                    .ir()
+                    .model
+                    .product_definitions
+                    .iter()
+                    .find(|product| product.label.as_deref() == Some("first"))
+                    .unwrap();
+                assert_eq!(product.bodies.len(), 2);
+            }
+        }
+    }
+}
+
+#[test]
+fn omitted_solid_geometry_does_not_create_an_empty_advanced_representation() {
+    for schema in [
+        StepSchema::Ap203Edition1,
+        StepSchema::Ap214,
+        StepSchema::Ap242Edition3,
+    ] {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        ir.model.regions.clear();
+        ir.model.bodies[0].regions.clear();
+        let mut bytes = Vec::new();
+        write_step(&ir, &mut bytes, schema, &StepWriteOptions::default()).unwrap();
+        let (exchange, _) =
+            crate::test_support::with_service_context(&bytes, crate::parse::parse_inner).unwrap();
+        assert_solid_representation_membership(&exchange, 0);
+        assert!(entities(&exchange, "ADVANCED_BREP_SHAPE_REPRESENTATION").is_empty());
+        assert_eq!(entities(&exchange, "SHAPE_REPRESENTATION").len(), 1);
+    }
+}

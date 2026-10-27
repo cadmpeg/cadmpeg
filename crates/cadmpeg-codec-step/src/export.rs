@@ -39,6 +39,7 @@ pub(crate) mod approximation;
 mod implicit_outer;
 mod non_manifold;
 mod ownership;
+mod representations;
 mod wire;
 
 const EPS_IDENTITY: f64 = 1.0e-12;
@@ -371,6 +372,7 @@ pub(crate) struct Builder<'a> {
     default_product_definition_shape: Option<Ref>,
     body_shape_refs: HashMap<String, Ref>,
     pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
+    advanced_brep_items: std::collections::HashSet<Ref>,
     body_step_item_refs: HashMap<String, Vec<Ref>>,
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
@@ -585,6 +587,7 @@ impl<'a> Builder<'a> {
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
             body_item_refs: HashMap::new(),
+            advanced_brep_items: std::collections::HashSet::new(),
             body_step_item_refs: HashMap::new(),
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
@@ -655,10 +658,8 @@ impl<'a> Builder<'a> {
         }
         let context = self.emit_context();
 
-        let shape_items = self.emit_shape_items(context);
-        let mut standalone_items = self.emit_standalone_geometry();
-        let has_standalone_geometry = !standalone_items.is_empty();
-        let mut emitted_items = shape_items;
+        let mut emitted_items = self.emit_shape_items(context);
+        let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
         if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
             self.loss(
@@ -667,56 +668,30 @@ impl<'a> Builder<'a> {
                           geometry, so the STEP representation is empty"
                     .to_string(),
             );
-            emitted_items.clear();
         }
-        let mut items = emitted_items;
-        let origin = geometry::placement(
-            &mut self.emitter,
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::units::UnitVector3::Z_AXIS,
-            cadmpeg_ir::units::UnitVector3::X_AXIS,
-        );
-        items.push(origin);
-
         if self.ir.model.product_definitions.is_empty() {
+            let origin = geometry::placement(
+                &mut self.emitter,
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::units::UnitVector3::Z_AXIS,
+                cadmpeg_ir::units::UnitVector3::X_AXIS,
+            );
             let product_def_shape = self.emit_product_structure();
             self.default_product_definition_shape = Some(product_def_shape);
-            let representation_kind = if !has_standalone_geometry
-                && !self.ir.model.bodies.is_empty()
-                && self.ir.model.bodies.iter().all(|body| {
-                    body.transform
-                        .is_none_or(|transform| is_identity(&transform.rows()))
-                })
-                && self
-                    .ir
-                    .model
-                    .bodies
-                    .iter()
-                    .all(|body| body.kind == BodyKind::Solid)
-            {
-                "ADVANCED_BREP_SHAPE_REPRESENTATION"
-            } else {
-                "SHAPE_REPRESENTATION"
-            };
-            let representation = self.emitter.emit(
-                representation_kind,
-                &format!("'',{},{context}", refs(&items)),
-            );
+            let representation =
+                self.emit_shape_representation("", emitted_items, vec![origin], context);
             self.emitter.emit(
                 "SHAPE_DEFINITION_REPRESENTATION",
                 &format!("{product_def_shape},{representation}"),
             );
         } else {
             self.emit_product_graph(context);
-            if has_standalone_geometry {
-                standalone_items.push(origin);
-                self.emitter.emit(
-                    "SHAPE_REPRESENTATION",
-                    &format!(
-                        "{},{},{context}",
-                        string("standalone geometry"),
-                        refs(&standalone_items)
-                    ),
+            if !standalone_items.is_empty() {
+                self.emit_shape_representation(
+                    "standalone geometry",
+                    standalone_items,
+                    Vec::new(),
+                    context,
                 );
             }
         }
@@ -1554,7 +1529,7 @@ impl<'a> Builder<'a> {
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
             self.default_product_definition_shape.get_or_insert(shape);
-            let mut body_items = product
+            let body_items = product
                 .bodies
                 .iter()
                 .flat_map(|body| {
@@ -1565,16 +1540,16 @@ impl<'a> Builder<'a> {
                         .copied()
                 })
                 .collect::<Vec<_>>();
-            if let Some(origin) = product_origins.get(&product.id) {
-                body_items.push(*origin);
+            let mut placements = product_origins
+                .get(&product.id)
+                .copied()
+                .into_iter()
+                .collect::<Vec<_>>();
+            if let Some(child_placements) = representation_placements.get(&product.id) {
+                placements.extend(child_placements);
             }
-            if let Some(placements) = representation_placements.get(&product.id) {
-                body_items.extend(placements);
-            }
-            let representation = self.emitter.emit(
-                "SHAPE_REPRESENTATION",
-                &format!("{},{},{context}", string(name), refs(&body_items)),
-            );
+            let representation =
+                self.emit_shape_representation(name, body_items, placements, context);
             self.emitter.emit(
                 "SHAPE_DEFINITION_REPRESENTATION",
                 &format!("{shape},{representation}"),
@@ -1786,30 +1761,18 @@ impl<'a> Builder<'a> {
         if bodies.is_empty() {
             return;
         }
-        let mut items = bodies
+        let items = bodies
             .iter()
             .flat_map(|body| &self.body_item_refs[body.id.as_str()])
             .copied()
             .collect::<Vec<_>>();
-        let kind = if bodies.iter().all(|body| {
-            body.kind == BodyKind::Solid
-                && body
-                    .transform
-                    .is_none_or(|transform| is_identity(&transform.rows()))
-        }) {
-            "ADVANCED_BREP_SHAPE_REPRESENTATION"
-        } else {
-            "SHAPE_REPRESENTATION"
-        };
-        items.push(geometry::placement(
+        let origin = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::units::UnitVector3::Z_AXIS,
             cadmpeg_ir::units::UnitVector3::X_AXIS,
-        ));
-        let representation = self
-            .emitter
-            .emit(kind, &format!("'',{},{context}", refs(&items)));
+        );
+        let representation = self.emit_shape_representation("", items, vec![origin], context);
         if let Some(root) = root {
             self.emitter.emit(
                 "SHAPE_REPRESENTATION_RELATIONSHIP",
@@ -1999,6 +1962,9 @@ impl<'a> Builder<'a> {
                     &format!("'',{outer},{}", refs(&void_refs)),
                 )
             };
+            if closed {
+                self.advanced_brep_items.insert(item);
+            }
             let shape_item = self.place_body_item(&region.body, item, context);
             items.push(shape_item);
             self.body_shape_refs
@@ -2068,10 +2034,8 @@ impl<'a> Builder<'a> {
             cadmpeg_ir::units::UnitVector3::Z_AXIS,
             cadmpeg_ir::units::UnitVector3::X_AXIS,
         );
-        let representation = self.emitter.emit(
-            "SHAPE_REPRESENTATION",
-            &format!("'body-local',({item}),{context}"),
-        );
+        let representation =
+            self.emit_shape_representation("body-local", vec![item], Vec::new(), context);
         let map = self
             .emitter
             .emit("REPRESENTATION_MAP", &format!("{origin},{representation}"));
@@ -2082,10 +2046,14 @@ impl<'a> Builder<'a> {
             *frame.axis(),
             *frame.reference(),
         );
-        self.emitter.emit(
+        let mapped = self.emitter.emit(
             "MAPPED_ITEM",
             &format!("'cadmpeg body placement',{map},{target}"),
-        )
+        );
+        if self.advanced_brep_items.contains(&item) {
+            self.advanced_brep_items.insert(mapped);
+        }
+        mapped
     }
 
     fn emit_visibility(&mut self) {
