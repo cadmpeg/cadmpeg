@@ -3144,15 +3144,7 @@ fn check_feature_references(
                 edge_selections.push(attachment);
                 if let FeatureOperation::SheetMetalAttachedPlate { profile, .. } = definition {
                     sheet_metal::check_profile(&feature.id, profile, ids, findings);
-                }
-                if matches!(definition, FeatureOperation::SheetMetalAttachedPlate { op, .. }
-                    if *op != crate::features::BooleanOp::Join)
-                {
-                    geometry_error(
-                        findings,
-                        feature.id.as_str(),
-                        "attached plate operation must be join",
-                    );
+                    sheet_metal::check_pair(feature, &ir.model.features, findings);
                 }
                 if let FeatureOperation::SheetMetalBend { plate, .. } = definition {
                     let candidate = feature_records.get(plate.as_str());
@@ -4019,11 +4011,9 @@ fn check_feature_references(
                 _ => None,
             };
             if let Some((state, selected)) = historical {
-                let owner = sheet_metal::shared_attachment_owner(ir, feature, selection)
-                    .unwrap_or(&feature.id);
                 check_historical_members(
                     findings,
-                    owner,
+                    &feature.id,
                     (
                         state,
                         selected.iter().map(crate::ids::HistoricalEdgeId::as_str),

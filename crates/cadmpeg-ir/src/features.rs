@@ -3195,7 +3195,8 @@ pub enum FeatureOperation {
         /// Distribution of thickness relative to the profile plane.
         side: SheetMetalThicknessSide,
     },
-    /// Planar sheet-metal plate attached to edges of an existing sheet.
+    /// Flat plate attached to an existing sheet edge.
+    /// Replay the plate before its paired `SheetMetalBend`. The bend builds the joining region.
     SheetMetalAttachedPlate {
         /// Closed profile in the attached plate's sketch plane.
         profile: PlanarProfileRef,
@@ -3203,22 +3204,15 @@ pub enum FeatureOperation {
         thickness: PositiveLength,
         /// Distribution of thickness relative to the profile plane.
         side: SheetMetalThicknessSide,
-        /// Boolean combination with the existing sheet.
-        op: BooleanOp,
         /// Selected edges of the existing sheet.
         attachment: EdgeSelection,
-        /// Inside radius at the attachment.
-        inside_radius: PositiveLength,
-        /// Relief form and evaluated length operands.
-        relief: SheetMetalRelief,
-        /// Transition form and evaluated radius.
-        transition: SheetMetalTransition,
     },
-    /// Bend associated with a separate attached-plate history feature.
+    /// Bend region joining a separate flat plate to the selected sheet edge.
+    /// Replay after the paired `SheetMetalAttachedPlate`. Bend dimensions belong to this operation.
     SheetMetalBend {
-        /// Attached plate that supplies the planar profile and thickness.
+        /// Preceding attached plate that supplies the planar profile and thickness.
         plate: FeatureId,
-        /// Selected edges of the existing sheet.
+        /// Selected edges of the existing sheet, in this bend's input topology.
         attachment: EdgeSelection,
         /// Inside bend radius.
         inside_radius: PositiveLength,

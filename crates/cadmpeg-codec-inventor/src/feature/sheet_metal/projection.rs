@@ -8,8 +8,8 @@ use cadmpeg_core::{
     CodecError,
 };
 use cadmpeg_ir::features::{
-    BooleanOp, DistinctMembers, EdgeSelection, Feature, FeatureContent, FeatureDefinition,
-    FeatureEvaluation, FeatureOperation, FeatureResultTopology,
+    DistinctMembers, EdgeSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+    FeatureOperation, FeatureResultTopology,
 };
 
 use super::{flange::Flange, operands, style::Style};
@@ -165,13 +165,6 @@ pub(in crate::feature) fn project_plate(
     inventory: &FeatureInventory,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
     let token = source.identity.segment_token.as_str();
-    let style = style(&inventory.sheet_metal_styles, token)?;
-    let values = operands::plate(
-        source,
-        style,
-        |reference| resolve_property(token, reference.index(), index),
-        |reference| length_reference(token, reference.index(), index),
-    )?;
     let attachment = attachment(source, index)?;
     let inputs = operands::selection_sources(source, |reference| {
         resolve_property(token, reference.index(), index)
@@ -184,7 +177,6 @@ pub(in crate::feature) fn project_plate(
     }) {
         return None;
     }
-    crate::feature::resolve_direction(source, 1, index)?;
     let sketch_ordinal = *index
         .plate_sketches
         .get(&(token, source.identity.record_ordinal))?;
@@ -192,6 +184,8 @@ pub(in crate::feature) fn project_plate(
     let sketch_id = index.sketch_ids.get(sketch.id().as_str())?;
     let sketch = index.sketches_by_id.get(sketch_id.as_str())?;
     let profile = index.profiles.whole_sketch(token, sketch_ordinal, sketch)?;
+    let (_, normal, u_axis) = sketch.resolved_placement()?;
+    let values = plate_values(source, normal, u_axis, index, inventory)?;
     let (id, result) = match feature_result(ctx, source, 15, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -215,11 +209,7 @@ pub(in crate::feature) fn project_plate(
                     profile,
                     thickness: values.thickness,
                     side: values.side,
-                    op: BooleanOp::Join,
                     attachment,
-                    inside_radius: values.inside_radius,
-                    relief: values.relief,
-                    transition: values.transition,
                 },
             )),
             native_ref: Some(source.id()),
@@ -228,10 +218,40 @@ pub(in crate::feature) fn project_plate(
     )))
 }
 
+fn plate_values(
+    source: &PmDcFeature,
+    normal: cadmpeg_ir::features::FiniteVector3,
+    u_axis: cadmpeg_ir::features::FiniteVector3,
+    index: &ProjectionIndex<'_>,
+    inventory: &FeatureInventory,
+) -> Option<operands::PlateOperands> {
+    let token = source.identity.segment_token.as_str();
+    operands::plate(
+        source,
+        style(&inventory.sheet_metal_styles, token)?,
+        |reference| resolve_property(token, reference.index(), index),
+        |reference| length_reference(token, reference.index(), index),
+        |reference| {
+            let record = index
+                .directions
+                .get(&(token, reference.record_ordinal()?))?
+                .as_ref()?;
+            cadmpeg_ir::units::UnitVector3::normalized(cadmpeg_ir::math::Vector3::new(
+                record.direction[0].get(),
+                record.direction[1].get(),
+                record.direction[2].get(),
+            ))
+        },
+        cadmpeg_ir::units::UnitVector3::normalized(*normal.as_raw())?,
+        cadmpeg_ir::units::UnitVector3::normalized(*u_axis.as_raw())?,
+    )
+}
+
 pub(crate) fn bend_definition<'a>(
     plate: &Feature,
     plate_source: &PmDcFeature,
     bend_source: &PmDcFeature,
+    values: &operands::PlateOperands,
     property: impl Fn(crate::pmdc::PmDcReference) -> Option<&'a crate::feature::PmDcFeatureProperty>,
 ) -> Option<FeatureOperation> {
     if plate.native_ref.as_deref() != Some(plate_source.id().as_str())
@@ -242,10 +262,6 @@ pub(crate) fn bend_definition<'a>(
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
         attachment:
             attachment @ (EdgeSelection::Generated { .. } | EdgeSelection::Historical { .. }),
-        inside_radius,
-        relief,
-        transition,
-        op: BooleanOp::Join,
         ..
     }) = plate.evaluation.definition()
     else {
@@ -254,9 +270,9 @@ pub(crate) fn bend_definition<'a>(
     Some(FeatureOperation::SheetMetalBend {
         plate: plate.id.clone(),
         attachment: attachment.clone(),
-        inside_radius: *inside_radius,
-        relief: relief.clone(),
-        transition: transition.clone(),
+        inside_radius: values.inside_radius,
+        relief: values.relief.clone(),
+        transition: values.transition.clone(),
     })
 }
 
@@ -283,21 +299,68 @@ pub(in crate::feature) fn reject_unresolved_inputs(
         if complete {
             continue;
         }
-        let source = inventory
-            .features
-            .iter()
-            .find(|source| source.identity.record_ordinal == item.record)
-            .ok_or_else(|| CodecError::malformed("Inventor attached plate has no source record"))?;
-        let mut native =
-            crate::feature::native_feature(ctx, &source.identity, item.label, source.id())?;
-        native.ordinal = item.feature.ordinal;
-        native.suppressed = item.feature.suppressed;
-        native.dependencies = item.feature.dependencies.clone();
-        native.source_properties = item.feature.source_properties.clone();
-        item.feature = native;
-        item.result = None;
-        item.neutral = false;
+        retain_native(ctx, item, inventory)?;
         rejected += 1;
+    }
+    Ok(rejected)
+}
+
+fn retain_native(
+    ctx: &DecodeContext<'_>,
+    item: &mut HistoryItem<'_>,
+    inventory: &FeatureInventory,
+) -> Result<(), CodecError> {
+    let source = inventory
+        .features
+        .iter()
+        .find(|source| Some(source.id().as_str()) == item.feature.native_ref.as_deref())
+        .ok_or_else(|| {
+            CodecError::malformed("Inventor sheet-metal feature has no source record")
+        })?;
+    let mut native =
+        crate::feature::native_feature(ctx, &source.identity, item.label, source.id())?;
+    native.ordinal = item.feature.ordinal;
+    native.suppressed = item.feature.suppressed;
+    native.dependencies = item.feature.dependencies.clone();
+    native.source_properties = item.feature.source_properties.clone();
+    item.feature = native;
+    item.result = None;
+    item.neutral = false;
+    Ok(())
+}
+
+pub(in crate::feature) fn reject_incomplete_pairs(
+    ctx: &DecodeContext<'_>,
+    projected: &mut [HistoryItem<'_>],
+    inventory: &FeatureInventory,
+) -> Result<usize, CodecError> {
+    let pairs: HashSet<_> = projected.iter().filter_map(|plate| {
+        if !plate.neutral || !matches!(plate.feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. })) {
+            return None;
+        }
+        let mut bends = projected.iter().filter(|bend| bend.neutral && bend.feature.ordinal > plate.feature.ordinal
+            && bend.feature.dependencies.contains(&plate.feature.id)
+            && matches!(bend.feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { plate: target, .. }) if *target == plate.feature.id));
+        let bend = bends.next()?;
+        bends.next().is_none().then_some((plate.feature.id.clone(), bend.feature.id.clone()))
+    }).collect();
+    let mut rejected = 0;
+    for item in projected {
+        let complete = match item.feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. }) => {
+                pairs.iter().any(|(plate, _)| *plate == item.feature.id)
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { .. }) => {
+                pairs.iter().any(|(_, bend)| *bend == item.feature.id)
+            }
+            _ => continue,
+        };
+        if !complete {
+            retain_native(ctx, item, inventory)?;
+            rejected += 1;
+        }
     }
     Ok(rejected)
 }
@@ -321,21 +384,6 @@ pub(in crate::feature) fn project_bends(
         let Some(plate) = plate else {
             continue;
         };
-        let Some(plate_position) = projected
-            .iter()
-            .position(|item| item.record == plate && item.neutral)
-        else {
-            continue;
-        };
-        let Some(bend_position) = projected
-            .iter()
-            .position(|item| item.record == bend && !item.neutral)
-        else {
-            continue;
-        };
-        if projected[plate_position].feature.ordinal >= projected[bend_position].feature.ordinal {
-            continue;
-        }
         let Some(plate_source) = inventory.features.iter().find(|source| {
             source.identity.segment_token.as_str() == token
                 && source.identity.record_ordinal == plate
@@ -348,10 +396,41 @@ pub(in crate::feature) fn project_bends(
         }) else {
             continue;
         };
+        let Some(plate_position) = projected.iter().position(|item| {
+            item.feature.native_ref.as_deref() == Some(plate_source.id().as_str()) && item.neutral
+        }) else {
+            continue;
+        };
+        let Some(bend_position) = projected.iter().position(|item| {
+            item.feature.native_ref.as_deref() == Some(bend_source.id().as_str()) && !item.neutral
+        }) else {
+            continue;
+        };
+        if projected[plate_position].feature.ordinal >= projected[bend_position].feature.ordinal {
+            continue;
+        }
+        let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
+            profile: cadmpeg_ir::features::PlanarProfileRef::SketchRegions { sketch, .. },
+            ..
+        }) = projected[plate_position].feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some((_, normal, u_axis)) = index
+            .sketches_by_id
+            .get(sketch.as_str())
+            .and_then(|s| s.resolved_placement())
+        else {
+            continue;
+        };
+        let Some(values) = plate_values(plate_source, normal, u_axis, index, inventory) else {
+            continue;
+        };
         let Some(definition) = bend_definition(
             &projected[plate_position].feature,
             plate_source,
             bend_source,
+            &values,
             |reference| resolve_property(token, reference.index(), index),
         ) else {
             continue;

@@ -13,6 +13,9 @@ fn attached(fixture: &Fixture) -> Feature {
         &fixture.style,
         |r| fixture.property(r),
         Fixture::length,
+        Fixture::direction,
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        cadmpeg_ir::units::UnitVector3::X_AXIS,
     )
     .expect("operands");
     let attachment = EdgeSelection::generated(
@@ -46,23 +49,23 @@ fn attached(fixture: &Fixture) -> Feature {
                 )),
                 thickness: values.thickness,
                 side: values.side,
-                op: BooleanOp::Join,
                 attachment,
-                inside_radius: values.inside_radius,
-                relief: values.relief,
-                transition: values.transition,
             },
         )),
     }
 }
 
 #[test]
-fn bend_references_the_separate_projected_plate_and_repeats_its_operands() {
+fn bend_owns_the_dimensions_and_names_the_separate_flat_plate() {
     let fixture = Fixture::new();
     let plate = attached(&fixture);
-    let operation = bend_definition(&plate, &fixture.plate, &fixture.bend, |r| {
-        fixture.property(r)
-    })
+    let operation = bend_definition(
+        &plate,
+        &fixture.plate,
+        &fixture.bend,
+        &fixture.values(),
+        |r| fixture.property(r),
+    )
     .expect("bend");
     let FeatureOperation::SheetMetalBend {
         plate: target,
@@ -93,11 +96,14 @@ fn bend_rejects_a_native_plate_or_another_plate_identity() {
     let fixture = Fixture::new();
     let mut plate = attached(&fixture);
     plate.native_ref = Some("inventor:pmdc:feature#other-100".to_owned());
-    assert!(
-        bend_definition(&plate, &fixture.plate, &fixture.bend, |r| fixture
-            .property(r))
-        .is_none()
-    );
+    assert!(bend_definition(
+        &plate,
+        &fixture.plate,
+        &fixture.bend,
+        &fixture.values(),
+        |r| fixture.property(r)
+    )
+    .is_none());
     let mut plate = attached(&fixture);
     plate.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::Native {
@@ -105,11 +111,14 @@ fn bend_rejects_a_native_plate_or_another_plate_identity() {
             parameters: BTreeMap::default(),
         },
     ));
-    assert!(
-        bend_definition(&plate, &fixture.plate, &fixture.bend, |r| fixture
-            .property(r))
-        .is_none()
-    );
+    assert!(bend_definition(
+        &plate,
+        &fixture.plate,
+        &fixture.bend,
+        &fixture.values(),
+        |r| fixture.property(r)
+    )
+    .is_none());
 }
 
 #[test]
@@ -130,17 +139,22 @@ fn projected_features_each_report_their_retained_controls() {
     let plate = attached(&fixture);
     let mut bend = plate.clone();
     bend.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-        bend_definition(&plate, &fixture.plate, &fixture.bend, |r| {
-            fixture.property(r)
-        })
+        bend_definition(
+            &plate,
+            &fixture.plate,
+            &fixture.bend,
+            &fixture.values(),
+            |r| fixture.property(r),
+        )
         .expect("bend"),
     ));
     let losses = super::super::retained_control_losses([&plate, &bend]);
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 3);
     let text = serde_json::to_string(&losses).expect("losses");
     assert!(text.contains("feature.sheet-metal-attachment-controls-retained"));
     assert!(text.contains("feature.sheet-metal-bend-controls-retained"));
     assert!(text.contains("slot-10 Boolean"));
+    assert!(text.contains("feature.sheet-metal-style-forms-native"));
 }
 
 fn label(
@@ -294,4 +308,79 @@ fn a_generated_attachment_requires_a_preceding_projected_result() {
         items[1].feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
+}
+
+#[test]
+fn plate_and_bend_projection_is_all_or_nothing_in_history_order() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let fixture = Fixture::new();
+    let plate = attached(&fixture);
+    let mut bend = plate.clone();
+    bend.id = crate::feature::history_feature_id(&fixture.bend.identity).expect("bend");
+    bend.native_ref = Some(fixture.bend.id());
+    bend.ordinal = 2;
+    bend.dependencies.insert(plate.id.clone());
+    bend.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        bend_definition(
+            &plate,
+            &fixture.plate,
+            &fixture.bend,
+            &fixture.values(),
+            |r| fixture.property(r),
+        )
+        .expect("bend"),
+    ));
+    let item = |feature: Feature, record| HistoryItem {
+        record,
+        kind: crate::feature::history::HistoryNodeKind::Feature,
+        flags: 0,
+        label: None,
+        feature,
+        result: None,
+        neutral: true,
+    };
+    let inventory = FeatureInventory {
+        features: vec![fixture.plate, fixture.bend],
+        labels: vec![
+            label(501, 100, crate::feature::PLATE_CLASS_ID, &[]),
+            label(502, 200, super::super::BEND_CLASS, &[]),
+        ],
+        ..Default::default()
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let complete = || vec![item(plate.clone(), 100), item(bend.clone(), 200)];
+    let mut items = complete();
+    assert_eq!(
+        reject_incomplete_pairs(&ctx, &mut items, &inventory).expect("pair"),
+        0
+    );
+    for missing in [0, 1] {
+        let mut items = complete();
+        retain_native(&ctx, &mut items[missing], &inventory).expect("native");
+        assert_eq!(
+            reject_incomplete_pairs(&ctx, &mut items, &inventory).expect("pair"),
+            1
+        );
+        assert!(items.iter().all(|item| !item.neutral
+            && matches!(
+                item.feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
+            )));
+        let losses = super::super::native_kind_losses(
+            &inventory,
+            &items.iter().map(|i| i.feature.clone()).collect::<Vec<_>>(),
+        );
+        assert_eq!(losses.len(), 2);
+        let wire = serde_json::to_string(&losses).expect("losses");
+        assert!(wire.contains("feature.sheet-metal-attachment-controls-native"));
+        assert!(wire.contains("feature.sheet-metal-bend-controls-native"));
+    }
+    let mut items = complete();
+    items[1].feature.ordinal = 0;
+    assert_eq!(
+        reject_incomplete_pairs(&ctx, &mut items, &inventory).expect("order"),
+        2
+    );
 }

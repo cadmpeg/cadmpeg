@@ -79,6 +79,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalAttachmentControlsRetained,
     /// Projected bends retain construction controls in native records.
     FeatureSheetMetalBendControlsRetained,
+    /// Projected sheet-metal relief and transition forms remain in native style records.
+    FeatureSheetMetalStyleFormsNative,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// Revolve extents retain unresolved angular termination operands.
@@ -174,6 +176,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsNative,
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
+        Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
@@ -244,6 +247,7 @@ impl InventorLossCode {
             Self::FeatureSheetMetalBendControlsRetained => {
                 "feature.sheet-metal-bend-controls-retained"
             }
+            Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
@@ -321,6 +325,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsNative
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
+            | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
@@ -415,6 +420,7 @@ mod tests {
                 "feature.sheet-metal-bend-controls-native",
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
+                "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",

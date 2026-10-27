@@ -57,8 +57,7 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
 pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     use crate::feature::sheet_metal::{operands, projection};
     use cadmpeg_ir::features::{
-        BooleanOp, EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue,
-        PlanarProfileRef,
+        EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue, PlanarProfileRef,
     };
     let properties =
         cadmpeg_core::decode::unique_index(data.pm_dc_feature_properties.iter().map(|p| {
@@ -119,44 +118,24 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
             profile,
             thickness,
             side,
-            op: BooleanOp::Join,
             attachment:
-                selected_attachment @ EdgeSelection::Historical {
+                EdgeSelection::Historical {
                     state,
                     edges,
                     native,
                 },
-            inside_radius,
-            relief,
-            transition,
         }) = feature.evaluation.definition()
         else {
             return None;
         };
         let token = source.identity.segment_token.as_str();
-        let style = projection::style(&data.pm_dc_sheet_metal_styles, token)?;
-        let expected =
-            operands::plate(source, style, |r| property(token, r), |r| length(token, r))?;
-        if expected.thickness != *thickness
-            || expected.side != *side
-            || expected.inside_radius != *inside_radius
-            || expected.relief != *relief
-            || expected.transition != *transition
-        {
-            return None;
-        }
         let selection = property(token, *source.properties.references().get(12)?)?;
         let topology = ir
             .model
             .feature_input_topologies
             .iter()
             .find(|topology| topology.id == *state)?;
-        let owner_matches = topology.input_of == feature.id || ir.model.features.iter().any(|bend| {
-            bend.id == topology.input_of && matches!(bend.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { plate, attachment, .. })
-                if *plate == feature.id && attachment == selected_attachment)
-        });
-        if !owner_matches
+        if topology.input_of != feature.id
             || edges.iter().any(|edge| {
                 !topology.edge_geometry.iter().any(|geometry| {
                     geometry.edge == *edge
@@ -204,19 +183,57 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
         let PlanarProfileRef::SketchRegions { sketch, .. } = profile else {
             return None;
         };
-        if !ir.model.sketches.iter().any(|s| {
+        let mut sketches = ir.model.sketches.iter().filter(|s| {
             s.id == *sketch && s.native_ref.as_deref() == Some(native_sketch.id().as_str())
-        }) {
+        });
+        let neutral_sketch = sketches.next()?;
+        if sketches.next().is_some() {
             return None;
         }
-        Some(parent)
+        let (_, normal, u_axis) = neutral_sketch.resolved_placement()?;
+        let style = projection::style(&data.pm_dc_sheet_metal_styles, token)?;
+        let expected = operands::plate(
+            source,
+            style,
+            |r| property(token, r),
+            |r| length(token, r),
+            |reference| {
+                let mut directions = data.pm_dc_directions.iter().filter(|d| {
+                    d.identity.segment_token.as_str() == token
+                        && Some(d.identity.record_ordinal) == reference.record_ordinal()
+                });
+                let direction = directions.next()?;
+                if directions.next().is_some() {
+                    return None;
+                }
+                cadmpeg_ir::units::UnitVector3::normalized(cadmpeg_ir::math::Vector3::new(
+                    direction.direction[0].get(),
+                    direction.direction[1].get(),
+                    direction.direction[2].get(),
+                ))
+            },
+            cadmpeg_ir::units::UnitVector3::normalized(*normal.as_raw())?,
+            cadmpeg_ir::units::UnitVector3::normalized(*u_axis.as_raw())?,
+        )?;
+        if expected.thickness != *thickness || expected.side != *side {
+            return None;
+        }
+        Some((parent, expected))
     };
     for feature in &ir.model.features {
         let valid = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. }) => {
                 source_of(feature)
                     .and_then(|source| attached(feature, source))
-                    .is_some()
+                    .is_some_and(|(parent, _)| {
+                        let mut bends = ir.model.features.iter().filter(|bend| {
+                            matches!(bend.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { plate, .. })
+                                if *plate == feature.id)
+                                && source_of(bend).is_some_and(|source| source_of(feature).is_some_and(|plate_source| source.identity.segment_token == plate_source.identity.segment_token)
+                                    && source.identity.record_ordinal == parent.bend)
+                        });
+                        bends.next().is_some() && bends.next().is_none()
+                    })
             }
             FeatureDefinition::Operation(
                 actual @ FeatureOperation::SheetMetalBend { plate, .. },
@@ -228,11 +245,11 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
                     return None;
                 }
                 let plate_source = source_of(target)?;
-                let parent = attached(target, plate_source)?;
+                let (parent, values) = attached(target, plate_source)?;
                 if parent.bend != source.identity.record_ordinal {
                     return None;
                 }
-                let expected = projection::bend_definition(target, plate_source, source, |r| {
+                let mut expected = projection::bend_definition(target, plate_source, source, &values, |r| {
                     property(source.identity.segment_token.as_str(), r)
                 })?;
                 if let (
@@ -243,7 +260,7 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
                     FeatureOperation::SheetMetalBend {
                         attachment: actual, ..
                     },
-                ) = (&expected, actual)
+                ) = (&mut expected, actual)
                 {
                     let EdgeSelection::Historical {
                         state,
@@ -275,6 +292,7 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
                     {
                         return None;
                     }
+                    *expected = EdgeSelection::historical(state.clone(), edges.to_vec(), native.as_str().to_owned()).ok()?;
                 }
                 (expected == *actual).then_some(())
             })()

@@ -45,7 +45,11 @@ pub(crate) fn property(index: u32, kind: &Kind) -> PmDcFeatureProperty {
     .expect("property");
     Located::new(
         payload,
-        RecordTypeId::try_from("00000000000000000000000000000001".to_owned()).expect("type"),
+        if matches!(kind, Kind::ProfileSelection { .. }) {
+            RecordTypeId::try_from("473f20fcd11101cf000835bd0663dc09".to_owned()).expect("type")
+        } else {
+            RecordTypeId::try_from("00000000000000000000000000000001".to_owned()).expect("type")
+        },
         IdentityKey::try_new("fixture").expect("token"),
         index - 1,
     )
@@ -66,6 +70,32 @@ impl Fixture {
         let sheet = |definition| Kind::SheetMetal { definition };
         let enumeration = |type_value, value| sheet(Sheet::Enumeration { type_value, value });
         let mut properties = vec![
+            property(
+                1,
+                &Kind::ProfileSelection {
+                    entity_link: reference(0),
+                    value: 0,
+                },
+            ),
+            property(
+                8,
+                &sheet(Sheet::Corner {
+                    control: reference(70),
+                    gap: reference(71),
+                    size: reference(72),
+                    relief_form: reference(73),
+                    corner_form: reference(74),
+                    secondary_form: reference(75),
+                    jacobi_radius: reference(76),
+                    value: 0,
+                    option: reference(77),
+                }),
+            ),
+            property(70, &boolean(true)),
+            property(73, &enumeration(501, 103)),
+            property(74, &enumeration(8, 3)),
+            property(75, &enumeration(501, 303)),
+            property(77, &boolean(true)),
             property(3, &boolean(false)),
             property(
                 5,
@@ -191,10 +221,32 @@ impl Fixture {
                 28 => 0.0,
                 30 => 19.0,
                 36 => 23.0,
+                71 | 72 | 76 => 0.0,
                 _ => return None,
             })
             .expect("length"),
         )
+    }
+    pub(crate) fn direction(reference: Reference) -> Option<cadmpeg_ir::units::UnitVector3> {
+        use cadmpeg_ir::units::UnitVector3;
+        match reference.index() {
+            2 => Some(UnitVector3::X_AXIS.reversed()),
+            33 => Some(UnitVector3::X_AXIS),
+            34 => Some(UnitVector3::Y_AXIS),
+            _ => None,
+        }
+    }
+    pub(crate) fn values(&self) -> crate::feature::sheet_metal::operands::PlateOperands {
+        crate::feature::sheet_metal::operands::plate(
+            &self.plate,
+            &self.style,
+            |r| self.property(r),
+            Self::length,
+            Self::direction,
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
+        )
+        .expect("operands")
     }
     pub(crate) fn edit(&mut self, index: u32, edit: impl FnOnce(&mut Kind)) {
         let p = self

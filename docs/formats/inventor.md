@@ -493,7 +493,7 @@ A single closed periodic polynomial spline is a whole profile ring when its name
 
 Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively. Feature-label class identifier `b54dd6f6d311c4966000f2b21d6eefb0` identifies a sheet-metal corner round. Its feature record uses the constant-radius edge-fillet slots and rounds the selected edges. Type `08dcddc3d311d0976000a7a99dccefb0` is a sheet-metal flange record. After the content header it stores `state:i32`, a type-2 reference list, and a u32 value. The list names the plate, bend, and corner feature records that form the flange, in that order. Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face record with the same layout; its list names one plate feature record. The face label's participants are the face's planar sketch and that plate. The flange label's participants are its planar sketch, plate, bend, and corner, in that order. The flange and face state headers have no content-header stamps.
 
-A feature label with class identifier `c65f5855d311730c60003aa99dccefb0` labels a sheet-metal plate. A plate uses property slots 0 through 3 for its profile selection, direction, thickness-side control, and thickness parameter, slot 7 for an edge collection, and slot 8 for its feature dimensions. Type `473f20fcd11101cf000835bd0663dc09` is the plate profile selection and has the profile-selection layout. The direction is the normal of the face sketch. A Boolean thickness-side control selects thickness along this normal when false and against it when true. Type `69b9505efb4bbaa925c3dfa870817810` is a thickness-side enumeration. Its versioned content header, including stamps, is followed by `type_value:i16` and `value:u16`, then the record ends. Type value 2 and value 0 select thickness along the normal.
+A feature label with class identifier `c65f5855d311730c60003aa99dccefb0` labels a sheet-metal plate. A plate uses property slots 0 through 3 for its profile selection, direction, thickness-side control, and thickness parameter, slot 7 for an edge collection, and slot 8 for its feature dimensions. Type `473f20fcd11101cf000835bd0663dc09` is the plate profile selection and has the profile-selection layout. For a plate owned by a `904bc1c4d311ff2860004da99dccefb0` face record, the direction is the normal of the face sketch. A Boolean thickness-side control selects thickness along this normal when false and against it when true. Type `69b9505efb4bbaa925c3dfa870817810` is a thickness-side enumeration. Its versioned content header, including stamps, is followed by `type_value:i16` and `value:u16`, then the record ends. Type value 2 and value 0 select thickness along the normal.
 
 A plate with a surface-body reference in slot 6 has that body as its result. The result-collection plate form has 17 properties, null slot 6, a result object collection in slot 15, and a part-operation enumeration in slot 16. Part-operation value 1 creates a new body. With no bend operands, the plate is the closed profile region of its face sketch, thickened from the sketch plane by its thickness parameter on the selected side. A plate that names a record in slot 4 or in slots 9 through 13 is joined to an existing face by a bend.
 
@@ -693,7 +693,7 @@ The 17-property attached-plate form has these slots:
 
 | Slot | Operand |
 | ---: | --- |
-| 0 | Plate profile selection |
+| 0 | Construction-wire profile selection |
 | 1 | Direction reference |
 | 2 | Thickness-side control |
 | 3 | Thickness length parameter |
@@ -709,6 +709,51 @@ The 17-property attached-plate form has these slots:
 | 14 | Null |
 | 15 | Result object collection |
 | 16 | Part operation; value 3 joins the existing body |
+
+One flange control form has the following values and reference relations. Direction comparisons use normalized vectors. Parallel directions have dot product at least `1 - 1e-10`; antiparallel directions have dot product at most `-1 + 1e-10`; perpendicular directions have absolute dot product at most `1e-10`.
+
+| Operand | Value or relation |
+| --- | --- |
+| Plate property count | 17 |
+| Plate slots 5, 6, 14 | Null |
+| Plate slot 0 | Type `473f20fcd11101cf000835bd0663dc09`, profile selection, value 0 |
+| Plate slot 1 | Antiparallel to the first attachment direction |
+| Plate slot 2 | Boolean false or enumeration `(2, 0)` places thickness along the consumed sketch normal |
+| Plate slot 3 | Positive thickness length |
+| Plate slot 7 | Empty edge collection |
+| Plate slot 8 | Feature-dimension reference list |
+| Plate slot 9 | Corner control with the fields below |
+| Plate slot 13 | Scalar 0 |
+| Plate slot 16 | Part-operation enumeration `(5, 3)` |
+| Attachment control, first option, second option | Boolean false |
+| Attachment first mode, second mode | Enumeration `(9, 1)` |
+| Attachment states | `[1, 1, 1]` |
+| Attachment first direction | Parallel or antiparallel to the consumed sketch U axis; its sign does not change thickness side |
+| Attachment second direction | Parallel to the consumed sketch V axis, `normal × U` |
+| Attachment thickness | Same reference as plate slot 3 |
+| Attachment extension | Absent, or state 10 with repeated thickness, radius, attachment, relief width, minimum remnant, and option references |
+| Relief control | Boolean true |
+| Relief form | Same enumeration type and value as the document-style bend-relief form |
+| Relief width, minimum remnant | Same references as the attachment operands |
+| Relief width, depth | Positive lengths |
+| Relief minimum remnant, seam gap | Nonnegative lengths |
+| Transition control | Boolean true |
+| Transition form | Same enumeration type and value as the document-style transition form |
+| Transition radius | Nonnegative length |
+| Corner control, option | Boolean |
+| Corner relief, corner, and secondary forms | Enumerations |
+| Corner raw value | 0 |
+| Corner gap, size, Jacobi radius | Nonnegative lengths |
+| Bend property count | 11 |
+| Bend slot 5 | Null |
+| Bend slot 6 | Feature-dimension reference list |
+| Bend slot 8 | Scalar 6, state 1 |
+| Bend slot 10 | Boolean true |
+| Bend slots 0, 2, 3, 4, 7, 9 | Same references as plate slots 7, 3, 4, 10, 11, 15 respectively |
+| Bend slot 1 | Same positive radius-length reference as the attachment radius |
+| Document style | Same segment and save-version major as the plate |
+
+The corner-control values configure the flange's corner child feature. The plate and bend do not consume them.
 
 The attachment selection list contains a type-2 reference list after the versioned content header and stamps. Each member selects a selection wrapper of type `799c7cfa5a4ef5b2597b6494fc798db5`. A wrapper contains the versioned content header and stamps followed by `edges:u32`, then ends. `edges` references an edge collection. Its edge-item indexes name edge-selector source indexes as defined in section 13. This path selects edges on the input sheet. It does not name the new plate's profile edges. The plate and bend edge collection can be empty while the attachment selection list is nonempty.
 
@@ -729,6 +774,8 @@ Feature-label class `f258f74cd3114f24600047a99dccefb0` identifies a bend. Its 11
 | 10 | Boolean control |
 
 Type `08dcddc3d311d0976000a7a99dccefb0` stores the flange parent. It contains the state content header without stamps, `state:i32`, a type-2 reference list, and `value:u32`, then ends. The reference list selects the plate, bend, and corner generic-feature records in that order. The parent's feature label has four ordered participants: the consumed planar sketch, that plate, that bend, and that corner. The consumed sketch defines the plate's planar profile. The attached-plate slot-0 kernel selection stores its construction wire; that wire is not the closed boundary of the consumed sketch.
+
+For a plate owned by a `08dcddc3d311d0976000a7a99dccefb0` flange record, slot 1 is antiparallel to the first attachment direction. Slot 1 is in the sketch plane. It does not define the thickness direction. Slot 2 Boolean false or enumeration `(2, 0)` places the plate between the sketch plane and its positive-normal offset by the thickness. Reversing the first attachment direction does not reverse this offset.
 
 The bend radius in slot 1 repeats the radius reference of the attachment control. The flange record owns ordered plate, bend, and corner children. Each child is a separate generic feature with its own source index, label owner, state, and history position. Sharing an attachment control identifies the plate and bend pair. The bend is not a property sub-record of the plate. The plate and bend refer to a common result-body wrapper; result identity alone does not select a history revision. Neither the attachment control nor the bend's property vector contains an angle parameter.
 

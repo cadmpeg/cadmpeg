@@ -5,8 +5,8 @@ use cadmpeg_ir::features::{
     SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
     SheetMetalTransitionForm,
 };
-use cadmpeg_ir::scalar::Length;
-use cadmpeg_ir::scalar::{NonNegativeLength, PositiveLength};
+use cadmpeg_ir::scalar::{Length, NonNegativeLength, PositiveLength};
+use cadmpeg_ir::units::UnitVector3;
 
 use super::{style::Style, SheetMetalProperty};
 use crate::feature::{
@@ -14,6 +14,9 @@ use crate::feature::{
     PmDcFeatureReferenceFamily,
 };
 use crate::pmdc::PmDcReference;
+
+const EPS_PLATE_DIRECTION: f64 = 1.0e-10;
+const EPS_ATTACHMENT_DIRECTION: f64 = 1.0e-10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PlateOperands {
@@ -49,7 +52,7 @@ fn enumeration(property: &PmDcFeatureProperty) -> Option<(i16, u16)> {
     }
 }
 
-pub(crate) fn side(property: &PmDcFeatureProperty) -> Option<SheetMetalThicknessSide> {
+fn flange_side(property: &PmDcFeatureProperty) -> Option<SheetMetalThicknessSide> {
     match property.kind {
         PmDcFeaturePropertyKind::Boolean { value: false, .. }
         | PmDcFeaturePropertyKind::Enumeration {
@@ -57,9 +60,6 @@ pub(crate) fn side(property: &PmDcFeatureProperty) -> Option<SheetMetalThickness
             type_value: 2,
             value: 0,
         } => Some(SheetMetalThicknessSide::Forward),
-        PmDcFeaturePropertyKind::Boolean { value: true, .. } => {
-            Some(SheetMetalThicknessSide::Reverse)
-        }
         _ => None,
     }
 }
@@ -69,6 +69,9 @@ pub(crate) fn plate<'a>(
     style: &Style,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     length: impl Fn(PmDcReference) -> Option<Length>,
+    direction: impl Fn(PmDcReference) -> Option<UnitVector3>,
+    normal: UnitVector3,
+    u_axis: UnitVector3,
 ) -> Option<PlateOperands> {
     let slots = source.properties.references();
     if slots.len() != 17
@@ -82,13 +85,20 @@ pub(crate) fn plate<'a>(
                 value: 3
             }
         )
+        || property(slots[0])?.identity.type_id.as_str()
+            != crate::pmdc::type_id_string(crate::feature::PLATE_PROFILE_SELECTION_TYPE)
         || !matches!(
-            property(slots[7])?.kind,
+            property(slots[0])?.kind,
+            PmDcFeaturePropertyKind::ProfileSelection { value: 0, .. }
+        )
+        || !matches!(
+            &property(slots[7])?.kind,
             PmDcFeaturePropertyKind::References {
                 family: PmDcFeatureReferenceFamily::EdgeCollection,
-                ..
-            }
+                items,
+            } if items.references().is_empty()
         )
+        || !corner(property(slots[9])?, &property, &length)
         || !matches!(
             property(slots[8])?.kind,
             PmDcFeaturePropertyKind::References {
@@ -107,7 +117,7 @@ pub(crate) fn plate<'a>(
         control,
         thickness,
         first_mode,
-        directions: _,
+        directions,
         radius,
         second_mode,
         relief_width,
@@ -120,7 +130,14 @@ pub(crate) fn plate<'a>(
     else {
         return None;
     };
-    if !same(*thickness, slots[3])
+    let plate_direction = direction(slots[1])?;
+    let first_direction = direction(directions[0])?;
+    let second_direction = direction(directions[1])?;
+    let v_axis = UnitVector3::normalized(normal.as_raw().cross(*u_axis.as_raw()))?;
+    if plate_direction.as_raw().dot(*first_direction.as_raw()) > -1.0 + EPS_PLATE_DIRECTION
+        || first_direction.as_raw().dot(*u_axis.as_raw()).abs() < 1.0 - EPS_ATTACHMENT_DIRECTION
+        || second_direction.as_raw().dot(*v_axis.as_raw()) < 1.0 - EPS_ATTACHMENT_DIRECTION
+        || !same(*thickness, slots[3])
         || boolean(property(*control)?)?
         || boolean(property(*first_option)?)?
         || boolean(property(*second_option)?)?
@@ -165,7 +182,7 @@ pub(crate) fn plate<'a>(
     else {
         return None;
     };
-    if boolean(property(*control)?).is_none()
+    if boolean(property(*control)?) != Some(true)
         || !same(*width, *relief_width)
         || !same(*relief_remnant, *minimum_remnant)
         || enumeration(property(*form)?)? != enumeration(property(style.bend_relief_form)?)?
@@ -187,14 +204,14 @@ pub(crate) fn plate<'a>(
     else {
         return None;
     };
-    if boolean(property(*control)?).is_none()
+    if boolean(property(*control)?) != Some(true)
         || enumeration(property(*form)?)? != enumeration(property(style.transition_form)?)?
     {
         return None;
     }
     Some(PlateOperands {
         thickness: PositiveLength::try_from(length(*thickness)?).ok()?,
-        side: side(property(slots[2])?)?,
+        side: flange_side(property(slots[2])?)?,
         inside_radius: PositiveLength::try_from(length(*radius)?).ok()?,
         relief,
         transition: SheetMetalTransition {
@@ -202,6 +219,38 @@ pub(crate) fn plate<'a>(
             radius: NonNegativeLength::try_from(length(*transition_radius)?).ok()?,
         },
     })
+}
+
+fn corner<'a>(
+    source: &PmDcFeatureProperty,
+    property: &impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    length: &impl Fn(PmDcReference) -> Option<Length>,
+) -> bool {
+    let Some(SheetMetalProperty::Corner {
+        control,
+        gap,
+        size,
+        relief_form,
+        corner_form,
+        secondary_form,
+        jacobi_radius,
+        value: 0,
+        option,
+    }) = sheet(source)
+    else {
+        return false;
+    };
+    // The corner child feature owns these values; the plate only requires the
+    // shared control to be well formed.
+    [*control, *option]
+        .iter()
+        .all(|reference| property(*reference).and_then(boolean).is_some())
+        && [*relief_form, *corner_form, *secondary_form]
+            .iter()
+            .all(|reference| property(*reference).and_then(enumeration).is_some())
+        && [*gap, *size, *jacobi_radius]
+            .iter()
+            .all(|reference| length(*reference).is_some_and(|value| value.get() >= 0.0))
 }
 
 pub(crate) fn bend<'a>(

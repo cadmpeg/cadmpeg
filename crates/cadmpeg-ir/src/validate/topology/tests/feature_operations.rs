@@ -161,7 +161,7 @@ fn many_datum_plane_cycles_are_each_reported_once_in_linear_time() {
 #[test]
 fn attached_plate_and_bend_validate_profiles_edges_and_history() {
     use crate::features::{
-        BooleanOp, EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef,
+        EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation, PlanarProfileRef,
         SheetMetalRelief, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransition,
         SheetMetalTransitionForm,
     };
@@ -184,13 +184,9 @@ fn attached_plate_and_bend_validate_profiles_edges_and_history() {
         ),
         thickness: PositiveLength::new(1.0).unwrap(),
         side: SheetMetalThicknessSide::Forward,
-        op: BooleanOp::Join,
         attachment: EdgeSelection::Edges(vec![
             crate::ids::EdgeId::mint("test:model:edge#missing").unwrap()
         ]),
-        inside_radius: PositiveLength::new(1.0).unwrap(),
-        relief: relief.clone(),
-        transition: transition.clone(),
     };
     let bend = FeatureOperation::SheetMetalBend {
         plate: plate_id.clone(),
@@ -240,34 +236,52 @@ fn attached_plate_and_bend_validate_profiles_edges_and_history() {
 }
 
 #[test]
-fn an_attached_plate_requires_a_join_operation() {
+fn an_attached_plate_requires_one_bend() {
     use crate::features::*;
     use crate::scalar::{NonNegativeLength, PositiveLength};
     let mut ir = crate::CadIr::empty();
-    ir.model.features.push(feature(
-        "test:model:feature#plate",
-        0,
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
-            profile: PlanarProfileRef::Native("test:profile".into()),
-            thickness: PositiveLength::new(1.0).unwrap(),
-            side: SheetMetalThicknessSide::Forward,
-            op: BooleanOp::Cut,
-            attachment: EdgeSelection::All,
-            inside_radius: PositiveLength::new(1.0).unwrap(),
-            relief: SheetMetalRelief {
-                form: SheetMetalReliefForm::StyleDefault,
-                width: PositiveLength::new(1.0).unwrap(),
-                depth: PositiveLength::new(1.0).unwrap(),
-                minimum_remnant: NonNegativeLength::new(0.0).unwrap(),
-                seam_gap: NonNegativeLength::new(0.0).unwrap(),
-            },
-            transition: SheetMetalTransition {
-                form: SheetMetalTransitionForm::StyleDefault,
-                radius: NonNegativeLength::new(0.0).unwrap(),
-            },
-        }),
-    ));
-    assert!(feature_reference_findings(&ir)
-        .iter()
-        .any(|finding| finding.message == "attached plate operation must be join"));
+    let id = FeatureId::mint("test:model:feature#plate").unwrap();
+    let plate = FeatureOperation::SheetMetalAttachedPlate {
+        profile: PlanarProfileRef::Native("test:profile".into()),
+        thickness: PositiveLength::new(1.0).unwrap(),
+        side: SheetMetalThicknessSide::Forward,
+        attachment: EdgeSelection::All,
+    };
+    ir.model
+        .features
+        .push(feature(id.as_str(), 0, FeatureDefinition::Operation(plate)));
+    let missing_bend = |ir: &crate::CadIr| {
+        feature_reference_findings(ir)
+            .iter()
+            .any(|finding| finding.message == "attached plate requires exactly one bend")
+    };
+    assert!(missing_bend(&ir));
+    let bend = FeatureOperation::SheetMetalBend {
+        plate: id.clone(),
+        attachment: EdgeSelection::All,
+        inside_radius: PositiveLength::new(1.0).unwrap(),
+        relief: SheetMetalRelief {
+            form: SheetMetalReliefForm::StyleDefault,
+            width: PositiveLength::new(1.0).unwrap(),
+            depth: PositiveLength::new(1.0).unwrap(),
+            minimum_remnant: NonNegativeLength::new(0.0).unwrap(),
+            seam_gap: NonNegativeLength::new(0.0).unwrap(),
+        },
+        transition: SheetMetalTransition {
+            form: SheetMetalTransitionForm::StyleDefault,
+            radius: NonNegativeLength::new(0.0).unwrap(),
+        },
+    };
+    let mut bend = feature(
+        "test:model:feature#bend",
+        1,
+        FeatureDefinition::Operation(bend),
+    );
+    bend.dependencies.insert(id);
+    ir.model.features.push(bend.clone());
+    assert!(!missing_bend(&ir));
+    bend.id = FeatureId::mint("test:model:feature#second-bend").unwrap();
+    bend.ordinal = 2;
+    ir.model.features.push(bend);
+    assert!(missing_bend(&ir));
 }

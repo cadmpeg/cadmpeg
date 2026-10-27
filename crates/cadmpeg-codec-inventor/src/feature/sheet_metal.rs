@@ -771,7 +771,7 @@ pub(crate) fn retained_control_losses<'a>(
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::InventorLossCode;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-    features.into_iter().filter_map(|feature| {
+    features.into_iter().flat_map(|feature| {
         let (code, controls) = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. }) => (
                 InventorLossCode::FeatureSheetMetalAttachmentControlsRetained,
@@ -781,8 +781,17 @@ pub(crate) fn retained_control_losses<'a>(
                 InventorLossCode::FeatureSheetMetalBendControlsRetained,
                 "plate slot-0 construction wire, plate slot-1 direction, attachment control, type-9 first and second modes, direction references, first and second options, state bytes, optional extension state, bend scalar and state, slot-10 Boolean, relief Boolean, and transition Boolean",
             ),
-            _ => return None,
+            _ => return Vec::new(),
         };
-        Some(code.note(format!("Projected {} with {controls} retained in its native records.", feature.id)))
+        let mut losses = vec![code.note(format!("Projected {} with {controls} retained in its native records.", feature.id))];
+        if let FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { relief, transition, .. }) = feature.evaluation.definition() {
+            if matches!(relief.form, cadmpeg_ir::features::SheetMetalReliefForm::StyleDefault)
+                || matches!(transition.form, cadmpeg_ir::features::SheetMetalTransitionForm::StyleDefault) {
+                losses.push(InventorLossCode::FeatureSheetMetalStyleFormsNative.note(format!(
+                    "Projected {} with relief or transition set to StyleDefault; the form definitions remain in the native document style.", feature.id
+                )));
+            }
+        }
+        losses
     }).collect()
 }

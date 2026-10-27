@@ -1383,13 +1383,8 @@ fn append_design_losses(
                 FeatureOperation::SheetMetalAttachedPlate {
                     profile,
                     attachment,
-                    op,
                     ..
-                } => {
-                    incomplete_planar_profile(profile)
-                        || incomplete_edge_selection(attachment)
-                        || *op == BooleanOp::Unresolved
-                }
+                } => incomplete_planar_profile(profile) || incomplete_edge_selection(attachment),
                 FeatureOperation::SheetMetalBend { attachment, .. } => {
                     incomplete_edge_selection(attachment)
                 }
