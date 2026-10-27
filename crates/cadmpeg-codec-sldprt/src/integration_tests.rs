@@ -598,3 +598,5 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     plan.write_to(&mut written).unwrap();
     assert_eq!(classify(written), claimed);
 }
+
+mod partition_sketches;
