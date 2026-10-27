@@ -40,6 +40,8 @@ pub(in crate::design::decode) fn rigid_transform_at(
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct FixedScalarFrame<T = FiniteReal> {
+    pub(super) start: u64,
+    pub(super) end: u64,
     pub(super) owner_record_index: Option<u32>,
     pub(super) ordinal: u8,
     pub(super) value: T,
@@ -80,6 +82,8 @@ pub(super) fn exact_fixed_scalar(
         }
         let value = FiniteReal::new(View::f64_le_at(bytes, start + 40)?)?;
         Some(FixedScalarFrame {
+            start: u64::try_from(start).ok()?,
+            end: u64::try_from(end).ok()?,
             owner_record_index: (bytes.get(start + 24) == Some(&1))
                 .then(|| View::u32_le_at(bytes, start + 25))
                 .flatten(),

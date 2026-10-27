@@ -119,20 +119,6 @@ fn value_record_header_at(bytes: &[u8], offset: usize, tag: u8) -> Option<ValueR
     })
 }
 
-/// Return kind, identity, and extent without allocating a payload.
-pub(crate) fn entity_value_record_identity_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<(u16, u32, usize)> {
-    value_record_frame_at(bytes, offset).map(|frame| {
-        (
-            u16::from(frame.payload.tag()),
-            u32::from(frame.xmt),
-            frame.end - offset,
-        )
-    })
-}
-
 enum ValuePayload<'a> {
     Integers(BorrowedValues<'a, u32>),
     Doubles(BorrowedValues<'a, f64>),
@@ -143,21 +129,6 @@ enum ValuePayload<'a> {
     Tags(BorrowedValues<'a, u32>),
     Directions(BorrowedValues<'a, [f64; 3]>),
     Unicode(UnicodeLane<'a>),
-}
-impl ValuePayload<'_> {
-    fn tag(&self) -> u8 {
-        match self {
-            Self::Integers(..) => 0x52,
-            Self::Doubles(..) => 0x53,
-            Self::String(..) => 0x54,
-            Self::Points(..) => 0x55,
-            Self::Vectors(..) => 0x56,
-            Self::Axes(..) => 0x57,
-            Self::Tags(..) => 0x58,
-            Self::Directions(..) => 0x59,
-            Self::Unicode(..) => 0x62,
-        }
-    }
 }
 struct ValueRecordFrame<'a> {
     offset: usize,

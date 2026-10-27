@@ -26,6 +26,7 @@ mod occurrence_transfer;
 pub(crate) mod parameter_scope;
 mod path_feature;
 mod pattern;
+pub(crate) mod pipe;
 pub(super) mod point_data;
 pub(super) mod shared_frames;
 mod sheet_metal;

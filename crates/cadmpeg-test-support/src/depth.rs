@@ -214,7 +214,7 @@ fn findings(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())?;
     let mut findings = validate_neutral(ir, Vec::new())?.findings;
-    findings.extend(codec.validate_native(&ctx, ir)?);
+    findings.extend(codec.validate_native(&ctx, ir, None)?);
     Ok(findings
         .into_iter()
         .map(|finding| format!("{:?}: {}", finding.check, finding.message))

@@ -449,6 +449,11 @@ fn generated_sweep_sections_round_trip_and_validate() {
         Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
     )
     .is_err());
+    assert!(crate::features::SweepCircularRegion::new(
+        crate::scalar::PositiveLength::new(3.0).unwrap(),
+        Some(crate::scalar::PositiveLength::new(3.5).unwrap()),
+    )
+    .is_err());
     // The mode is fixed at construction: there is no mutator left to refuse a
     // sheet result for a sweep that generates its own geometry, and the sheet
     // section type is uninhabited in the generated arm, so the shape has no

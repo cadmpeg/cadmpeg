@@ -2383,6 +2383,11 @@ impl DesignParameterScope {
         {
             return Err(fail("reference_member_offsets/kind_offset"));
         }
+        if let DesignScopePayload::Pipe(Some(pipe)) = &draft.payload {
+            if !pipe.scope_offsets_are_valid(draft.byte_offset, draft.reference_count_offset) {
+                return Err(fail("Pipe prefix offsets"));
+            }
+        }
         let scope = Self {
             #[cfg(test)]
             clone_probe: ScopeCloneProbe,

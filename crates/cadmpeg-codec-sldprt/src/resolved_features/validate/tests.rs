@@ -305,8 +305,9 @@ fn native_validation_route_refuses_nesting_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) =
-        SldprtCodec.validate_native(&ctx, decoded.ir()).unwrap_err()
+    let CodecError::ResourceLimit(limit) = SldprtCodec
+        .validate_native(&ctx, decoded.ir(), None)
+        .unwrap_err()
     else {
         panic!("native validation must propagate a resource refusal");
     };
@@ -314,7 +315,7 @@ fn native_validation_route_refuses_nesting_limit() {
     policy.limits.max_recursion_depth = limit.used + limit.additional - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     assert!(
-        matches!(SldprtCodec.validate_native(&ctx, decoded.ir()), Err(CodecError::ResourceLimit(refusal))
+        matches!(SldprtCodec.validate_native(&ctx, decoded.ir(), None), Err(CodecError::ResourceLimit(refusal))
         if refusal.dimension == ResourceDimension::RecursionDepth && refusal.operation == limit.operation)
     );
 }

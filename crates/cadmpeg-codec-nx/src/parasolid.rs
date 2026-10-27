@@ -269,28 +269,17 @@ pub(crate) struct FieldNamesRecord {
 }
 
 /// Locate unique snapshot values.
+///
+/// An identity that frames more than one value record, or more than one
+/// owning record, is a historical sequence rather than a snapshot and names
+/// no value here.
 pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
-    referenced_value_offsets(bytes, ValueMultiplicity::UniqueSnapshot)
-}
-
-/// Locate historical value events.
-pub(crate) fn referenced_value_event_offsets(bytes: &[u8]) -> Vec<usize> {
-    referenced_value_offsets(bytes, ValueMultiplicity::HistoricalEvents)
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ValueMultiplicity {
-    UniqueSnapshot,
-    HistoricalEvents,
-}
-
-fn referenced_value_offsets(bytes: &[u8], multiplicity: ValueMultiplicity) -> Vec<usize> {
-    let references = referenced_value_xmts(bytes, multiplicity);
+    let references = referenced_value_xmts(bytes);
     let candidates = value_records::value_record_candidates(bytes, &references);
     let mut offsets = Vec::new();
 
     for positions in candidates.into_values() {
-        if multiplicity == ValueMultiplicity::UniqueSnapshot && positions.len() != 1 {
+        if positions.len() != 1 {
             continue;
         }
         offsets.extend(positions);
@@ -298,7 +287,7 @@ fn referenced_value_offsets(bytes: &[u8], multiplicity: ValueMultiplicity) -> Ve
     offsets
 }
 
-fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTreeSet<u32> {
+fn referenced_value_xmts(bytes: &[u8]) -> BTreeSet<u32> {
     let mut referenced = BTreeSet::new();
     let entities = group_pairs(
         entity_51_records(bytes)
@@ -306,7 +295,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
             .map(|record| (u32::from(record.xmt), record)),
     );
     for records in entities.into_values() {
-        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
+        if records.len() != 1 {
             continue;
         }
         for record in records {
@@ -325,7 +314,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
     );
     let mut referenced_lists = BTreeSet::new();
     for records in definitions.into_values() {
-        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
+        if records.len() != 1 {
             continue;
         }
         for record in records {
@@ -335,9 +324,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
         }
     }
     for (xmt, records) in field_names {
-        if !referenced_lists.contains(&xmt)
-            || (multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1)
-        {
+        if !referenced_lists.contains(&xmt) || records.len() != 1 {
             continue;
         }
         for record in records {
@@ -411,11 +398,6 @@ pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
         }
     }
     records
-}
-
-/// Decode and retain one complete type-81 entity/attribute-list record.
-pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity51Record> {
-    entity_51_record_from_frame(bytes, entity_51_frame_at(bytes, offset)?)
 }
 
 #[derive(Clone, Copy)]
@@ -835,11 +817,13 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> Result<bool
         return Ok(crate::records::PrimaryRecords::read(inflated)?
             .is_some_and(|primary| !primary.records().is_empty()));
     }
-    let census = crate::deltas::census::walk(inflated)?;
-    if !census.records.is_empty() || !census.tombstones.is_empty() {
-        return Ok(true);
-    }
-    Ok(false)
+    let owner = crate::records::DeltasRecords::read(inflated)?;
+    Ok(owner.events().iter().any(|event| {
+        matches!(
+            event.content(),
+            crate::records::deltas::EventContent::PartitionPrefix(_)
+        )
+    }))
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`

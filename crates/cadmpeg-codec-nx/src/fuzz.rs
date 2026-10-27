@@ -19,12 +19,7 @@ fn fuzz_policy() -> DecodePolicy {
 
 /// Exercise the NX deltas walker.
 pub fn deltas(data: &[u8]) {
-    drop(crate::deltas::census::walk(data));
-    let mid = data.len() / 2;
-    drop(crate::deltas::unmatched_terminal_tombstones(
-        &data[..mid],
-        &data[mid..],
-    ));
+    drop(crate::records::DeltasRecords::read(data));
 }
 
 /// Exercise NX object-model indexed section framing.

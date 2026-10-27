@@ -644,33 +644,21 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
 }
 
 #[test]
-fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
+fn unselected_ext11_deltas_do_not_assign_primary_uv_lanes() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
         two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
     let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition()
-    else {
-        panic!("typed intersection");
-    };
-    let [Some(PcurveGeometry::Nurbs { nurbs: first }), Some(PcurveGeometry::Nurbs { nurbs: second })] =
-        context
-            .sides()
-            .clone()
-            .map(|side| side.pcurve.map(|binding| binding.geometry))
-    else {
-        panic!("two ext11 pcurves");
-    };
+    let baseline = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&partition)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     assert_eq!(
-        first.control_points(),
-        [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]
-    );
-    assert_eq!(
-        second.control_points(),
-        [Point2::new(0.0, 0.0), Point2::new(0.0, 10.0)]
+        serde_json::to_value(&result.ir().model).unwrap(),
+        serde_json::to_value(&baseline.ir().model).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -760,6 +748,15 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
 
 #[test]
 fn completed_intersection_support_lane_attaches_after_topology_emission() {
+    assert_completed_intersection_support_lane(false);
+}
+
+#[test]
+fn completed_intersection_support_lane_retains_the_primary_fin_origin() {
+    assert_completed_intersection_support_lane(true);
+}
+
+fn assert_completed_intersection_support_lane(present_fin: bool) {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let edge =
@@ -845,7 +842,18 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         );
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
-        let graph = crate::topology::Graph::parse(&[]);
+        let raw = if present_fin {
+            let mut primary = crate::test_support::test_streams::topology_partition_stream();
+            let at = primary
+                .windows(4)
+                .position(|bytes| bytes == [0, 17, 0, 7])
+                .expect("primary FIN");
+            put_ref(&mut primary, at + 2, 42);
+            primary
+        } else {
+            Vec::new()
+        };
+        let graph = crate::topology::Graph::parse(&raw);
         let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
             geometry_ctx,
             usize::MAX,
@@ -902,6 +910,23 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             .pcurves
             .iter()
             .any(|pcurve| pcurve.pcurve == completed.id)));
+        let provenance = annotations.build().provenance;
+        let source = provenance.get(completed.id.as_str());
+        if present_fin {
+            let source = source.expect("completed pcurve has a primary FIN origin");
+            assert_eq!(source.stream(), "nx:test");
+            assert_eq!(
+                source.offset,
+                cadmpeg_core::decode::u64_from_index(
+                    raw.windows(4)
+                        .position(|bytes| bytes == [0, 17, 0, 42])
+                        .expect("primary FIN source offset")
+                )
+            );
+            assert_eq!(source.tag.as_deref(), Some("INTERSECTION_PCURVE"));
+        } else {
+            assert!(source.is_none());
+        }
     });
 }
 

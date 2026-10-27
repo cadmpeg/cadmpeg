@@ -1136,6 +1136,16 @@ fn extend_related_design_records(
             &mut design.design_parameter_scopes,
             &design.design_record_headers,
         )?;
+    crate::design::decode::scopes::pipe::bind_constructions(
+        scan,
+        &crate::design::decode::scopes::pipe::PipeSources {
+            types: &prereqs.design_types,
+            headers: &design.design_record_headers,
+            owners: &prereqs.design_parameter_owners,
+            groups: &design.design_construction_operand_groups,
+        },
+        &mut design.design_parameter_scopes,
+    )?;
     design.design_loft_legacy_body_carriers =
         crate::design::decode::operands::decode_loft_legacy_body_carriers(
             scan,

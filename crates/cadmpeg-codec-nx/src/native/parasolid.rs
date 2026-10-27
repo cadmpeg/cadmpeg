@@ -11,10 +11,11 @@ use crate::topology::offset_surface_state::OffsetSurfaceState;
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
-use crate::deltas::census::Census;
 use crate::deltas::record_family::RecordFamily;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
+use crate::records::deltas::EventContent;
+use crate::records::DeltasRecords;
 use std::num::NonZeroU32;
 
 pub(super) mod structured_value_kind;
@@ -35,20 +36,17 @@ use entity51_wire::Entity51Wire;
 pub(super) mod named_fields;
 use named_fields::NamedField;
 pub(super) mod body_id;
-mod body_revision_wire;
+pub(super) mod deltas_instance;
+pub(super) mod deltas_metadata;
+pub(super) mod deltas_source;
+use deltas_instance::{ParasolidDeltasInstance, ParasolidDeltasSchema};
+use deltas_metadata::ParasolidDeltasMetadata;
 mod chart_wire;
 mod support_uv_wire;
-mod tail_wire;
 mod transmit_header_wire;
-use crate::deltas::packet_marker::ReferenceMarker;
 use crate::deltas::partition_prefix::PartitionPrefixState;
-use crate::deltas::pmark_nodes::PmarkNodes;
-use crate::deltas::reference_lanes::{MapEntries, TaggedReferences};
-use crate::deltas::tails::NullTailForm;
 use crate::deltas::transmit_state::TransmitState;
 use crate::framing::xmt_reference::NonNullXmt;
-use crate::records::instance::SchemaNode;
-use body_revision_wire::RevisionLengths;
 use transmit_header_wire::TransmitHeaderWire;
 pub(super) mod group_member;
 mod group_state;
@@ -60,7 +58,7 @@ use group_record::GroupOrigin;
 
 use super::substrate::{ParsedStreams, StreamView};
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// One complete Parasolid GROUP record with its primary or Deltas source scope.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -154,8 +152,8 @@ impl Clone for ParasolidGroupMember {
 
 /// Retain primary GROUP records and closed membership from one source cursor.
 ///
-/// Deltas records use the partition pairing already selected for topology
-/// reconstruction. A record in an unpaired deltas stream remains exact native
+/// Deltas records use partition pairing only for source namespace attribution.
+/// A record in an unpaired deltas stream remains exact native
 /// evidence but has no partition-local namespace assignment.
 pub(super) fn parasolid_groups(
     streams: &[Stream],
@@ -212,22 +210,8 @@ pub(super) fn parasolid_groups(
             });
         }
         let records = primary.membership_records();
-        let mut current = group_state::GroupState::from_records(&records);
-        let mut complete = true;
-        for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
-            let Ok(delta_ordinal) = u32::try_from(*delta) else {
-                complete = false;
-                break;
-            };
-            if streams.get(*delta).is_none() {
-                complete = false;
-                break;
-            }
-            current.apply_deltas(delta_ordinal, &deltas.records, &deltas.tombstones);
-        }
-        if complete {
-            current.append_members(stream_ordinal_u32, &mut members);
-        }
+        let current = group_state::GroupState::from_records(&records);
+        current.append_members(stream_ordinal_u32, &mut members);
     }
     for record in &deltas.records {
         let crate::deltas::record_family::RecordFamily::Group {
@@ -275,7 +259,7 @@ pub(super) fn resolve_group_members(
         let Ok(primary) = usize::try_from(member.primary_stream_ordinal) else {
             continue;
         };
-        let graph = parsed.stream(primary).view_for_geometry().graph.as_ref();
+        let graph = parsed.stream(primary).graph.as_ref();
         member.target = member.target.resolve(graph, member.member_xmt);
     }
 }
@@ -288,7 +272,7 @@ pub(super) struct ParasolidDeltasRecord {
     pub(super) id: String,
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
-    /// Semantic family, including POINT position and GROUP controls.
+    /// Source projection derived from the owned generic instance.
     pub(super) family: crate::deltas::record_family::RecordFamily,
     /// Stream-local XMT identity.
     pub(super) xmt: u32,
@@ -303,21 +287,23 @@ impl Serialize for ParasolidDeltasRecord {
         use crate::deltas::record_family::RecordFamilyReferences;
         use serde::ser::SerializeStruct;
 
+        let region_type = match &self.family {
+            RecordFamily::Region { fields } => Some(fields.region_type),
+            RecordFamily::Group { .. } => None,
+        };
         let (group_selector, group_linked_reference_status) = match &self.family {
             RecordFamily::Group {
                 selector,
                 linked_reference_status,
                 ..
             } => (Some(*selector), Some(*linked_reference_status)),
-            _ => (None, None),
+            RecordFamily::Region { .. } => (None, None),
         };
         let mut wire = serializer.serialize_struct(
             "ParasolidDeltasRecordWire",
-            10 + usize::from(matches!(
-                self.family,
-                RecordFamily::List { .. } | RecordFamily::PointerListBlock { .. }
-            )) + usize::from(group_selector.is_some())
-                + usize::from(group_linked_reference_status.is_some()),
+            9 + usize::from(group_selector.is_some())
+                + usize::from(group_linked_reference_status.is_some())
+                + usize::from(region_type.is_some()),
         )?;
         wire.serialize_field("id", &self.id)?;
         wire.serialize_field("stream_ordinal", &self.stream_ordinal)?;
@@ -326,20 +312,15 @@ impl Serialize for ParasolidDeltasRecord {
         wire.serialize_field("xmt", &self.xmt)?;
         wire.serialize_field("node_id", &self.family.node_id())?;
         wire.serialize_field("references", &RecordFamilyReferences(&self.family))?;
+        if let Some(value) = region_type {
+            wire.serialize_field("region_type", &value)?;
+        }
         if let Some(value) = group_selector {
             wire.serialize_field("group_selector", &value)?;
         }
         if let Some(value) = group_linked_reference_status {
             wire.serialize_field("group_linked_reference_status", &value)?;
         }
-        match &self.family {
-            RecordFamily::List { fields } => wire.serialize_field("list_fields", fields)?,
-            RecordFamily::PointerListBlock { fields } => {
-                wire.serialize_field("pointer_list_block_fields", fields)?;
-            }
-            _ => {}
-        }
-        wire.serialize_field("position", &self.family.position())?;
         wire.serialize_field("byte_len", &self.byte_len)?;
         wire.serialize_field("inflated_offset", &self.inflated_offset)?;
         wire.end()
@@ -347,14 +328,21 @@ impl Serialize for ParasolidDeltasRecord {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ParasolidDeltasRecordWire {
     id: String,
     stream_ordinal: u32,
     family: String,
     kind: u16,
     xmt: u32,
-    node_id: Option<u32>,
+    node_id: u32,
     references: Vec<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_region_type"
+    )]
+    region_type: Option<crate::deltas::region::RegionType>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -367,106 +355,48 @@ struct ParasolidDeltasRecordWire {
         deserialize_with = "deserialize_group_linked_reference_status"
     )]
     group_linked_reference_status: Option<GroupReferenceStatus>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_list_fields"
-    )]
-    list_fields: Option<crate::deltas::list::ListFields>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_pointer_list_block_fields"
-    )]
-    pointer_list_block_fields: Option<crate::deltas::pointer_list_block::PointerListBlockFields>,
-    position: Option<[f64; 3]>,
     byte_len: u64,
     inflated_offset: u64,
 }
 
-#[cfg(test)]
-impl From<ParasolidDeltasRecord> for ParasolidDeltasRecordWire {
-    fn from(value: ParasolidDeltasRecord) -> Self {
-        let (group_selector, group_linked_reference_status) = match &value.family {
-            crate::deltas::record_family::RecordFamily::Group {
-                selector,
-                linked_reference_status,
-                ..
-            } => (Some(*selector), Some(*linked_reference_status)),
-            _ => (None, None),
-        };
-        Self {
-            id: value.id,
-            stream_ordinal: value.stream_ordinal,
-            family: value.family.family_name().to_string(),
-            kind: value.family.kind(),
-            xmt: value.xmt,
-            node_id: value.family.node_id(),
-            references: value.family.references(),
-            group_selector,
-            group_linked_reference_status,
-            list_fields: match &value.family {
-                RecordFamily::List { fields } => Some(*fields),
-                _ => None,
-            },
-            pointer_list_block_fields: match &value.family {
-                RecordFamily::PointerListBlock { fields } => Some(fields.clone()),
-                _ => None,
-            },
-            position: value.family.position(),
-            byte_len: value.byte_len,
-            inflated_offset: value.inflated_offset,
-        }
-    }
-}
-
 impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
-    type Error = String;
-
+    type Error = &'static str;
     fn try_from(wire: ParasolidDeltasRecordWire) -> Result<Self, Self::Error> {
-        if wire.family == "POINT" {
-            if let Some(position) = wire.position {
-                crate::deltas::record_family::PointCoordinates::try_from(position)?;
-            }
+        if wire.xmt <= 1
+            || wire.references.contains(&0)
+            || wire.byte_len == 0
+            || wire.inflated_offset.checked_add(wire.byte_len).is_none()
+        {
+            return Err("invalid Deltas projection identity, references, or range");
         }
-        let family = match (wire.list_fields, wire.pointer_list_block_fields) {
-            (Some(fields), None)
-                if wire.family == "LIST"
-                    && fields.references().as_slice() == wire.references.as_slice()
-                    && wire.xmt > 1 =>
-            {
-                Some(RecordFamily::List { fields })
+        let family = match (
+            wire.kind,
+            wire.family.as_str(),
+            wire.region_type,
+            wire.group_selector,
+            wire.group_linked_reference_status,
+        ) {
+            (19, "REGION", Some(region_type), None, None) => RecordFamily::Region {
+                fields: crate::deltas::region::RegionFields::from_wire(
+                    wire.node_id,
+                    wire.references,
+                    region_type,
+                )
+                .ok_or("invalid REGION references")?,
+            },
+            (90, "GROUP", None, Some(selector), Some(linked_reference_status)) => {
+                RecordFamily::Group {
+                    references: wire
+                        .references
+                        .try_into()
+                        .map_err(|_| "invalid GROUP references")?,
+                    node_id: wire.node_id,
+                    selector,
+                    linked_reference_status,
+                }
             }
-            (None, Some(fields))
-                if wire.family == "POINTER_LIS_BLOCK"
-                    && fields.references().eq(wire.references.iter().copied())
-                    && wire.xmt > 1 =>
-            {
-                Some(RecordFamily::PointerListBlock { fields })
-            }
-            (None, None) => RecordFamily::from_wire(
-                &wire.family,
-                wire.kind,
-                wire.node_id,
-                wire.position,
-                wire.group_selector,
-                wire.group_linked_reference_status,
-                wire.references,
-            ),
-            _ => None,
-        }
-        .filter(|family| {
-            family.kind() == wire.kind
-                && family.family_name() == wire.family
-                && family.node_id() == wire.node_id
-                && family.position() == wire.position
-                && (matches!(family, RecordFamily::Group { .. })
-                    || (wire.group_selector.is_none()
-                        && wire.group_linked_reference_status.is_none()))
-        })
-        .ok_or_else(|| {
-            "deltas record family disagrees with kind, references, or payload".to_owned()
-        })?;
+            _ => return Err("Deltas projection family, kind, or controls disagree"),
+        };
         Ok(Self {
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
@@ -480,299 +410,31 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
 
 #[cfg(test)]
 mod deltas_record_wire_tests {
-    use super::{ParasolidDeltasRecord, ParasolidDeltasRecordWire};
+    use super::ParasolidDeltasRecord;
 
     #[test]
-    fn deltas_record_borrowed_wire_matches_owned_bytes() {
+    fn group_and_region_projections_preserve_values_and_reject_conflicting_controls() {
         for json in [
-            r#"{"id":"nx:deltas:record#group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#,
-            r#"{"id":"nx:deltas:record#type70","stream_ordinal":0,"family":"LIST","kind":70,"xmt":6,"node_id":0,"references":[3,1,1,53,52],"list_fields":{"node_id":0,"list_type":4,"notransmit":true,"owner":3,"next":1,"previous":1,"list_length":65538,"block_length":20,"finger_index":21,"finger_block":53,"list_block":52},"position":null,"byte_len":32,"inflated_offset":0}"#,
-            r#"{"id":"nx:deltas:record#empty","stream_ordinal":0,"family":"ENTITY_52","kind":82,"xmt":40,"node_id":null,"references":[],"position":null,"byte_len":10,"inflated_offset":0}"#,
+            r#"{"id":"nx:test:group#0","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"byte_len":22,"inflated_offset":0}"#,
+            r#"{"id":"nx:test:region#0","stream_ordinal":0,"family":"REGION","kind":19,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"region_type":83,"byte_len":24,"inflated_offset":0}"#,
         ] {
-            let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
-            assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&ParasolidDeltasRecordWire::from(record.clone())).unwrap()
+            let value: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            cadmpeg_test_support::native_serialization::assert_native_limit(
+                &value,
+                serde_json::from_str::<serde_json::Value>(json).unwrap(),
             );
-        }
-    }
-
-    #[test]
-    fn deltas_record_retained_limit_refuses_before_reference_collection() {
-        let json = r#"{"id":"nx:deltas:record#group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#;
-        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-        cadmpeg_test_support::native_serialization::assert_native_limit(
-            &record,
-            serde_json::from_str::<serde_json::Value>(json).unwrap(),
-        );
-    }
-
-    #[test]
-    fn record_family_owns_fixed_and_empty_reference_payloads() {
-        for json in [
-            r#"{"id":"group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#,
-            r#"{"id":"list","stream_ordinal":0,"family":"TYPE_91","kind":91,"xmt":30,"node_id":null,"references":[10,100,3,4,20,1],"position":null,"byte_len":26,"inflated_offset":0}"#,
-            r#"{"id":"value","stream_ordinal":0,"family":"ENTITY_52","kind":82,"xmt":40,"node_id":null,"references":[],"position":null,"byte_len":10,"inflated_offset":0}"#,
-        ] {
-            let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), json);
-            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-            let references = wire["references"].as_array_mut().unwrap();
-            if references.is_empty() {
-                references.push(serde_json::json!(1));
-            } else {
-                references.pop();
-            }
-            assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains("references"));
-        }
-    }
-
-    #[test]
-    fn list_wire_retains_distinct_finger_and_head_and_rejects_projection_mismatch() {
-        let json = r#"{"id":"type70","stream_ordinal":0,"family":"LIST","kind":70,"xmt":6,"node_id":0,"references":[3,1,1,53,52],"list_fields":{"node_id":0,"list_type":4,"notransmit":true,"owner":3,"next":1,"previous":1,"list_length":65538,"block_length":20,"finger_index":21,"finger_block":53,"list_block":52},"position":null,"byte_len":32,"inflated_offset":0}"#;
-        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
-        for references in [[3, 1, 1, 52, 53], [3, 1, 1, 0, 0], [3, 1, 1, 1, 1]] {
-            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-            wire["references"] = serde_json::json!(references);
-            assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains("references"));
-        }
-    }
-
-    #[test]
-    fn entity_51_retains_the_bounded_trailing_lane() {
-        for count in [6, 37] {
-            let references = vec![0; count];
-            let json = format!(
-                r#"{{"id":"entity","stream_ordinal":0,"family":"ENTITY_51","kind":81,"xmt":10,"node_id":null,"references":{},"position":null,"byte_len":32,"inflated_offset":0}}"#,
-                serde_json::to_string(&references).unwrap()
-            );
-            let record: ParasolidDeltasRecord = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), json);
-            for invalid_count in [0, 5, 38] {
-                let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-                wire["references"] = serde_json::json!(vec![0; invalid_count]);
-                assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("references"));
-            }
-        }
-    }
-
-    #[test]
-    fn curve_descriptor_retains_both_reference_layouts() {
-        for references in [vec![0, 1], vec![3, 4, 5]] {
-            let json = format!(
-                r#"{{"id":"curve","stream_ordinal":0,"family":"B_CURVE_DESCRIPTOR","kind":136,"xmt":20,"node_id":null,"references":{},"position":null,"byte_len":32,"inflated_offset":0}}"#,
-                serde_json::to_string(&references).unwrap()
-            );
-            let record: ParasolidDeltasRecord = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), json);
-            for invalid in [
-                vec![],
-                vec![3],
-                vec![3, 4, 5, 6],
-                vec![0, 4, 5],
-                vec![3, 1, 5],
-                vec![3, 4, 0],
+            for (field, invalid) in [
+                ("kind", serde_json::json!(12)),
+                ("xmt", serde_json::json!(1)),
+                ("references", serde_json::json!([0, 1, 1, 1, 1])),
             ] {
-                let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-                wire["references"] = serde_json::json!(invalid);
-                assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("references"));
+                let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+                wire[field] = invalid;
+                assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire).is_err());
             }
         }
     }
-
-    #[test]
-    fn pointer_list_block_wire_requires_complete_typed_fields_and_matching_projection() {
-        let json = r#"{"id":"slots","stream_ordinal":0,"family":"POINTER_LIS_BLOCK","kind":74,"xmt":20,"node_id":null,"references":[21,30,1],"pointer_list_block_fields":{"entry_array_length":2,"n_entries":1,"index_map_offset":0,"next_block":21,"entries":[30,1]},"position":null,"byte_len":32,"inflated_offset":0}"#;
-        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
-        for field in ["references", "pointer_list_block_fields", "kind", "node_id"] {
-            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-            wire[field] = if field == "node_id" {
-                serde_json::json!(0)
-            } else {
-                serde_json::Value::Null
-            };
-            assert!(
-                serde_json::from_value::<ParasolidDeltasRecord>(wire).is_err(),
-                "{field}"
-            );
-        }
-        for family in ["BODY", "LIST", "ATTDEF_LIST"] {
-            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-            wire["family"] = family.into();
-            assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire).is_err());
-        }
-    }
-
-    #[test]
-    fn point_wire_preserves_signed_zero_and_rejects_subnormal_coordinates() {
-        let json = r#"{"id":"point","stream_ordinal":0,"family":"POINT","kind":29,"xmt":20,"node_id":7,"references":[1,1,1,1],"position":[0.0,-0.0,1.5],"byte_len":32,"inflated_offset":0}"#;
-        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
-        assert!(
-            serde_json::from_str::<ParasolidDeltasRecord>(&json.replace("1.5", "5e-324"))
-                .unwrap_err()
-                .to_string()
-                .contains("position")
-        );
-    }
-}
-
-/// One compact deletion in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "ParasolidDeltasTombstoneWire")]
-pub(super) struct ParasolidDeltasTombstone {
-    /// Globally unique event identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Numeric Parasolid node type.
-    kind: crate::deltas::record_kind::RecordKind,
-    /// Stream-local deleted XMT identity.
-    xmt: u32,
-    /// Record tag offset in the inflated stream.
-    pub(super) inflated_offset: u64,
-}
-
-#[derive(Serialize)]
-struct ParasolidDeltasTombstoneRef<'a> {
-    id: &'a str,
-    stream_ordinal: u32,
-    family: &'static str,
-    kind: u16,
-    xmt: u32,
-    byte_len: u64,
-    inflated_offset: u64,
-}
-
-impl Serialize for ParasolidDeltasTombstone {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        ParasolidDeltasTombstoneRef {
-            id: &self.id,
-            stream_ordinal: self.stream_ordinal,
-            family: self.kind.name(),
-            kind: u16::from(self.kind.code()),
-            xmt: self.xmt,
-            byte_len: 6,
-            inflated_offset: self.inflated_offset,
-        }
-        .serialize(serializer)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct ParasolidDeltasTombstoneWire {
-    /// Globally unique event identity.
-    id: String,
-    /// Zero-based source stream ordinal.
-    stream_ordinal: u32,
-    /// Stable Parasolid record-family name.
-    family: String,
-    /// Numeric Parasolid node type.
-    kind: u16,
-    /// Stream-local deleted XMT identity.
-    xmt: u32,
-    /// Exact compact tombstone length.
-    byte_len: u64,
-    /// Record tag offset in the inflated stream.
-    inflated_offset: u64,
-}
-
-#[cfg(test)]
-impl From<ParasolidDeltasTombstone> for ParasolidDeltasTombstoneWire {
-    fn from(value: ParasolidDeltasTombstone) -> Self {
-        Self {
-            family: value.kind.name().into(),
-            kind: u16::from(value.kind.code()),
-            id: value.id,
-            stream_ordinal: value.stream_ordinal,
-            xmt: value.xmt,
-            byte_len: 6,
-            inflated_offset: value.inflated_offset,
-        }
-    }
-}
-
-impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
-    type Error = &'static str;
-    fn try_from(wire: ParasolidDeltasTombstoneWire) -> Result<Self, Self::Error> {
-        if wire.byte_len != 6 {
-            return Err("byte_len: compact tombstone must contain six bytes");
-        }
-        let kind = crate::deltas::record_kind::RecordKind::try_from(wire.kind)?;
-        if kind.name() != wire.family {
-            return Err("deltas tombstone family disagrees with its node kind");
-        }
-        Ok(Self {
-            kind,
-            id: wire.id,
-            stream_ordinal: wire.stream_ordinal,
-            xmt: wire.xmt,
-            inflated_offset: wire.inflated_offset,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tombstone_wire_tests {
-    use super::{ParasolidDeltasTombstone, ParasolidDeltasTombstoneWire};
-
-    #[test]
-    fn tombstone_borrowed_wire_matches_owned_bytes() {
-        let json = r#"{"id":"nx:parasolid:tombstone#0","stream_ordinal":0,"family":"BODY","kind":12,"xmt":3,"byte_len":6,"inflated_offset":10}"#;
-        let record: ParasolidDeltasTombstone = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
-        assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&ParasolidDeltasTombstoneWire::from(record.clone())).unwrap()
-        );
-    }
-
-    #[test]
-    fn tombstone_native_limit_refuses_before_family_copy() {
-        let json = r#"{"id":"nx:parasolid:tombstone#0","stream_ordinal":0,"family":"BODY","kind":12,"xmt":3,"byte_len":6,"inflated_offset":10}"#;
-        let record: ParasolidDeltasTombstone = serde_json::from_str(json).unwrap();
-        cadmpeg_test_support::native_serialization::assert_native_limit(
-            &record,
-            serde_json::from_str::<serde_json::Value>(json).unwrap(),
-        );
-    }
-}
-
-/// BODY revision envelope in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "body_revision_wire::RevisionWire")]
-pub(super) struct ParasolidDeltasBodyRevision {
-    /// Globally unique revision identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Stream-local BODY XMT identity.
-    xmt: NonNullXmt,
-    /// Monotonic kernel revision identity.
-    node_id: u32,
-    /// Eight ordered BODY references.
-    references: [u32; 8],
-    /// Prefix and state-tail lengths with a representable total.
-    lengths: RevisionLengths,
-    /// SHA-256 of the exact bounded state-tail bytes.
-    state_tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    /// BODY tag offset in the inflated stream.
-    pub(super) inflated_offset: u64,
 }
 
 /// Parasolid transmit header at the start of a deltas stream.
@@ -788,91 +450,6 @@ pub(super) struct ParasolidDeltasTransmitHeader {
     byte_len: u64,
     /// SHA-256 of the exact header bytes.
     sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-}
-
-/// Null references at the boundary of a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(try_from = "tail_wire::NullTailWire")]
-pub(super) struct ParasolidDeltasTerminalNullReferences {
-    /// Globally unique trailer identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Complete two- or four-reference trailer form.
-    form: NullTailForm,
-    /// First trailer byte offset in the inflated stream.
-    pub(super) inflated_offset: u64,
-}
-
-/// Maximal deltas gap composed entirely of typed stream-local references.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct ParasolidDeltasTaggedReferenceLane {
-    /// Globally unique reference-lane identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Ordered `(Parasolid record kind, XMT identity)` references.
-    references: TaggedReferences,
-    /// Exact reference-lane byte length.
-    byte_len: u64,
-    /// SHA-256 of the exact reference-lane bytes.
-    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    /// First byte of the first tagged reference.
-    pub(super) inflated_offset: u64,
-}
-
-/// Framed reference/type map in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct ParasolidDeltasReferenceTypeMap {
-    /// Globally unique map identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Ordered `(XMT identity, Parasolid type code)` entries.
-    entries: MapEntries,
-    /// Optional raw word following the terminal null-reference separator.
-    #[serde(deserialize_with = "deserialize_map_terminal_word")]
-    terminal_word: Option<std::num::NonZeroU16>,
-    /// Exact map byte length.
-    byte_len: u64,
-    /// SHA-256 of the exact map bytes.
-    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    /// First map byte offset in the inflated stream.
-    pub(super) inflated_offset: u64,
-}
-
-fn deserialize_map_terminal_word<'de, D>(
-    deserializer: D,
-) -> Result<Option<std::num::NonZeroU16>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    cadmpeg_core::absent_key::nullable::<D, u16>(deserializer)?
-        .map(|word| {
-            std::num::NonZeroU16::new(word).ok_or_else(|| {
-                serde::de::Error::custom("terminal_word: must be nonzero when present")
-            })
-        })
-        .transpose()
-}
-
-/// Partition-owned PMARK packet in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct ParasolidDeltasPmarkPacket {
-    /// Globally unique packet identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Ordered PMARK nodes.
-    nodes: PmarkNodes,
-    /// Whether the packet ends with `ref(1)[3], u32(1)`.
-    terminal: bool,
-    /// Exact packet byte length.
-    byte_len: u64,
-    /// SHA-256 of the exact packet bytes.
-    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    /// First packet byte offset in the inflated stream.
-    pub(super) inflated_offset: u64,
 }
 
 /// Leading PARTITION and current PMARK nodes in a Parasolid deltas stream.
@@ -892,43 +469,6 @@ pub(super) struct ParasolidDeltasPartitionPrefix {
     pub(super) inflated_offset: u64,
 }
 
-/// Reference-marker packet in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct ParasolidDeltasReferenceMarkerPacket {
-    /// Globally unique packet identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Non-null stream-local XMT reference.
-    reference: NonNullXmt,
-    /// Serialized marker byte.
-    marker: ReferenceMarker,
-    /// Exact packet byte length.
-    byte_len: u64,
-    /// SHA-256 of the exact packet bytes.
-    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    /// First packet byte offset in the inflated stream.
-    pub(super) inflated_offset: u64,
-}
-
-/// Inline schema declaration in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct ParasolidDeltasSchemaNode {
-    /// Globally unique declaration identity.
-    pub(super) id: String,
-    /// Zero-based source stream ordinal.
-    pub(super) stream_ordinal: u32,
-    /// Schema-specific declaration body.
-    #[serde(flatten)]
-    fields: SchemaNode,
-    /// Exact declaration byte length.
-    byte_len: u64,
-    /// SHA-256 of the exact declaration bytes.
-    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
-    /// First declaration byte offset in the inflated stream.
-    pub(super) inflated_offset: u64,
-}
-
 /// Maximal inflated-stream span outside every admitted deltas event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct ParasolidDeltasResidualSpan {
@@ -944,38 +484,32 @@ pub(super) struct ParasolidDeltasResidualSpan {
     pub(super) inflated_offset: u64,
 }
 
+#[derive(Default)]
 pub(in crate::native) struct ParasolidDeltasEvents {
     pub(super) transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
-    pub(super) terminal_null_references: Vec<ParasolidDeltasTerminalNullReferences>,
     pub(super) records: Vec<ParasolidDeltasRecord>,
-    pub(super) tombstones: Vec<ParasolidDeltasTombstone>,
-    pub(super) body_revisions: Vec<ParasolidDeltasBodyRevision>,
-    pub(super) tagged_reference_lanes: Vec<ParasolidDeltasTaggedReferenceLane>,
-    pub(super) reference_type_maps: Vec<ParasolidDeltasReferenceTypeMap>,
-    pub(super) pmark_packets: Vec<ParasolidDeltasPmarkPacket>,
+    pub(super) instances: Vec<ParasolidDeltasInstance>,
     pub(super) partition_prefixes: Vec<ParasolidDeltasPartitionPrefix>,
-    pub(super) reference_marker_packets: Vec<ParasolidDeltasReferenceMarkerPacket>,
-    pub(super) schema_nodes: Vec<ParasolidDeltasSchemaNode>,
+    pub(super) schemas: Vec<ParasolidDeltasSchema>,
     pub(super) residual_spans: Vec<ParasolidDeltasResidualSpan>,
+    pub(super) metadata: Vec<ParasolidDeltasMetadata>,
 }
 
 /// Retain every completely bounded event in every Parasolid deltas stream.
 #[cfg(test)]
 fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
-    crate::test_support::with_decode_context(|_| {
-        let delta_censuses = streams
-            .iter()
-            .map(|stream| {
-                if stream.kind() == crate::parasolid::StreamKind::Deltas {
-                    Ok(Some(crate::deltas::census::walk(&stream.inflated)?))
-                } else {
-                    Ok(None)
-                }
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        parasolid_deltas_events_with_censuses(streams, delta_censuses)
-    })
-    .expect("bounded test deltas")
+    let delta_records = streams
+        .iter()
+        .map(|stream| {
+            if stream.kind() == crate::parasolid::StreamKind::Deltas {
+                Ok(Some(DeltasRecords::read(&stream.inflated)?))
+            } else {
+                Ok(None)
+            }
+        })
+        .collect::<Result<Vec<_>, CodecError>>()
+        .expect("bounded test deltas");
+    parasolid_deltas_events_from_records(streams, delta_records).expect("bounded test deltas")
 }
 
 /// Format one deltas event identity.
@@ -991,278 +525,113 @@ fn deltas_event_id(
     }
 }
 
-/// Retain deltas events from censuses produced by the shared decode substrate.
-///
-/// The function consumes the census vector after semantic construction has
-/// finished, so the large record walk is performed once and its owned records
-/// are moved directly into native output.
-pub(super) fn parasolid_deltas_events_with_censuses(
+/// Materialize native records exclusively from the shared sequential owner.
+pub(super) fn parasolid_deltas_events_from_records(
     streams: &[Stream],
-    mut delta_censuses: Vec<Option<Census>>,
+    mut owners: Vec<Option<DeltasRecords<'_>>>,
 ) -> Result<ParasolidDeltasEvents, CodecError> {
-    let mut events = ParasolidDeltasEvents {
-        transmit_headers: Vec::new(),
-        terminal_null_references: Vec::new(),
-        records: Vec::new(),
-        tombstones: Vec::new(),
-        body_revisions: Vec::new(),
-        tagged_reference_lanes: Vec::new(),
-        reference_type_maps: Vec::new(),
-        pmark_packets: Vec::new(),
-        partition_prefixes: Vec::new(),
-        reference_marker_packets: Vec::new(),
-        schema_nodes: Vec::new(),
-        residual_spans: Vec::new(),
-    };
-    for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if stream.kind() != crate::parasolid::StreamKind::Deltas {
+    let mut events = ParasolidDeltasEvents::default();
+    for (ordinal, stream) in streams.iter().enumerate() {
+        if stream.kind() != StreamKind::Deltas {
             continue;
         }
-        let stream_ordinal_u32 = u32::try_from(stream_ordinal)
+        let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("NX deltas stream ordinal exceeds u32"))?;
-        let census = match delta_censuses
-            .get_mut(stream_ordinal)
+        let owner = owners
+            .get_mut(ordinal)
             .and_then(Option::take)
-        {
-            Some(census) => census,
-            None => crate::deltas::census::walk(&stream.inflated)?,
-        };
-        let mut residual_start = 0;
-        for (covered_start, covered_end) in census.covered_spans() {
-            if residual_start < covered_start {
-                push_deltas_residual_span(
-                    &mut events.residual_spans,
-                    stream_ordinal,
-                    &stream.inflated,
-                    residual_start,
-                    covered_start,
-                )?;
+            .ok_or_else(|| CodecError::Malformed("missing NX Deltas source owner".into()))?;
+        if owner.source() != stream.inflated.as_slice() {
+            return Err(CodecError::Malformed(
+                "NX Deltas owner source differs from retained stream".into(),
+            ));
+        }
+        deltas_events_for_stream(&owner, ordinal_u32, &mut events)?;
+    }
+    Ok(events)
+}
+
+fn deltas_events_for_stream(
+    owner: &DeltasRecords<'_>,
+    ordinal_u32: u32,
+    events: &mut ParasolidDeltasEvents,
+) -> Result<(), CodecError> {
+    let ordinal = cadmpeg_core::decode::index_from_u32(ordinal_u32);
+    let source = owner.source();
+    let mut schemas = BTreeMap::new();
+    for definition in owner.definitions() {
+        let schema = ParasolidDeltasSchema::from_owned(source, ordinal_u32, definition);
+        schemas.insert(definition.declaration().start, events.schemas.len());
+        events.schemas.push(schema);
+    }
+    for event in owner.events() {
+        let range = event.range();
+        let bytes = &source[range.clone()];
+        match event.content() {
+            EventContent::Header(state) => {
+                events.transmit_headers.push(ParasolidDeltasTransmitHeader {
+                    id: deltas_event_id(ordinal, "deltas-transmit-header", range.start, None),
+                    stream_ordinal: ordinal_u32,
+                    state: state.clone(),
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
+                });
             }
-            residual_start = residual_start.max(covered_end);
-        }
-        if residual_start < stream.inflated.len() {
-            push_deltas_residual_span(
-                &mut events.residual_spans,
-                stream_ordinal,
-                &stream.inflated,
-                residual_start,
-                stream.inflated.len(),
-            )?;
-        }
-        let census = census.into_events();
-        if let Some(header) = census.transmit_header {
-            let bytes = &stream.inflated[..header.end];
-            events.transmit_headers.push(ParasolidDeltasTransmitHeader {
-                id: deltas_event_id(stream_ordinal, "deltas-transmit-header", 0, None),
-                stream_ordinal: stream_ordinal_u32,
-                state: header.state,
-                byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-            });
-        }
-        if let Some(trailer) = census.terminal_null_references {
-            events
-                .terminal_null_references
-                .push(ParasolidDeltasTerminalNullReferences {
-                    id: deltas_event_id(
-                        stream_ordinal,
-                        "deltas-terminal-null-references",
-                        trailer.offset(),
-                        None,
-                    ),
-                    stream_ordinal: stream_ordinal_u32,
-                    form: trailer.form(),
-                    inflated_offset: cadmpeg_core::decode::u64_from_index(trailer.offset()),
-                });
-        }
-        for record in census.records {
-            events.records.push(ParasolidDeltasRecord {
-                id: deltas_event_id(
-                    stream_ordinal,
-                    "deltas-record",
-                    record.offset,
-                    Some(record.xmt),
-                ),
-                stream_ordinal: stream_ordinal_u32,
-                family: record.family,
-                xmt: record.xmt,
-                byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
-            });
-        }
-        for tombstone in census.tombstones {
-            events.tombstones.push(ParasolidDeltasTombstone {
-                id: deltas_event_id(
-                    stream_ordinal,
-                    "deltas-tombstone",
-                    tombstone.offset,
-                    Some(tombstone.xmt),
-                ),
-                stream_ordinal: stream_ordinal_u32,
-                kind: tombstone.kind,
-                xmt: tombstone.xmt,
-                inflated_offset: cadmpeg_core::decode::u64_from_index(tombstone.offset),
-            });
-        }
-        for revision in census.body_revisions {
-            let state_tail = &stream.inflated[revision.prefix_end..revision.end];
-            events.body_revisions.push(ParasolidDeltasBodyRevision {
-                id: deltas_event_id(
-                    stream_ordinal,
-                    "deltas-body-revision",
-                    revision.offset,
-                    Some(revision.node_id),
-                ),
-                stream_ordinal: stream_ordinal_u32,
-                xmt: revision.xmt,
-                node_id: revision.node_id,
-                references: revision.references,
-                lengths: RevisionLengths::from_slices(
-                    &stream.inflated[revision.offset..revision.prefix_end],
-                    state_tail,
-                ),
-                state_tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(state_tail),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
-            });
-        }
-        for lane in census.tagged_reference_lanes {
-            let bytes = &stream.inflated[lane.offset..lane.end];
-            events
-                .tagged_reference_lanes
-                .push(ParasolidDeltasTaggedReferenceLane {
-                    id: deltas_event_id(
-                        stream_ordinal,
-                        "deltas-tagged-reference-lane",
-                        lane.offset,
-                        None,
-                    ),
-                    stream_ordinal: stream_ordinal_u32,
-                    references: lane.references,
-                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                    inflated_offset: cadmpeg_core::decode::u64_from_index(lane.offset),
-                });
-        }
-        for map in census.reference_type_maps {
-            let bytes = &stream.inflated[map.offset..map.end];
-            events
-                .reference_type_maps
-                .push(ParasolidDeltasReferenceTypeMap {
-                    id: deltas_event_id(
-                        stream_ordinal,
-                        "deltas-reference-type-map",
-                        map.offset,
-                        None,
-                    ),
-                    stream_ordinal: stream_ordinal_u32,
-                    entries: map.entries,
-                    terminal_word: map.terminal_word,
-                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                    inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
-                });
-        }
-        for packet in census.pmark_packets {
-            let bytes = &stream.inflated[packet.offset..packet.end];
-            events.pmark_packets.push(ParasolidDeltasPmarkPacket {
-                id: deltas_event_id(stream_ordinal, "deltas-pmark", packet.offset, None),
-                stream_ordinal: stream_ordinal_u32,
-                nodes: packet.nodes,
-                terminal: packet.terminal,
-                byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-            });
-        }
-        if let Some(prefix) = census.partition_prefix {
-            let bytes = &stream.inflated[prefix.offset..prefix.end];
-            events
-                .partition_prefixes
-                .push(ParasolidDeltasPartitionPrefix {
-                    id: deltas_event_id(
-                        stream_ordinal,
-                        "deltas-partition-prefix",
-                        prefix.offset,
-                        None,
-                    ),
-                    stream_ordinal: stream_ordinal_u32,
-                    state: prefix.state,
-                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                    inflated_offset: cadmpeg_core::decode::u64_from_index(prefix.offset),
-                });
-        }
-        for packet in census.reference_marker_packets {
-            let bytes = &stream.inflated[packet.offset..packet.end];
-            events
-                .reference_marker_packets
-                .push(ParasolidDeltasReferenceMarkerPacket {
-                    id: deltas_event_id(
-                        stream_ordinal,
-                        "deltas-reference-marker",
-                        packet.offset,
-                        None,
-                    ),
-                    stream_ordinal: stream_ordinal_u32,
-                    reference: packet.reference,
-                    marker: packet.marker,
-                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                    inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
-                });
-        }
-        for declaration in census.schema_nodes {
-            let bytes = &stream.inflated[declaration.offset..declaration.end];
-            events.schema_nodes.push(ParasolidDeltasSchemaNode {
-                id: deltas_event_id(
-                    stream_ordinal,
-                    "deltas-schema-node",
-                    declaration.offset,
-                    None,
-                ),
-                stream_ordinal: stream_ordinal_u32,
-                fields: declaration.fields,
-                byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
-                inflated_offset: cadmpeg_core::decode::u64_from_index(declaration.offset),
-            });
+            EventContent::PartitionPrefix(state) => {
+                events
+                    .partition_prefixes
+                    .push(ParasolidDeltasPartitionPrefix {
+                        id: deltas_event_id(ordinal, "deltas-partition-prefix", range.start, None),
+                        stream_ordinal: ordinal_u32,
+                        state: *state,
+                        byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+                        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
+                        inflated_offset: cadmpeg_core::decode::u64_from_index(range.start),
+                    });
+            }
+            EventContent::Metadata(metadata) => events.metadata.push(
+                ParasolidDeltasMetadata::from_owned(source, ordinal_u32, range, metadata),
+            ),
+            EventContent::Instance(instance) => {
+                let index = schemas
+                    .get(&instance.definition().declaration().start)
+                    .ok_or_else(|| CodecError::Malformed("missing NX Deltas schema join".into()))?;
+                let value = ParasolidDeltasInstance::from_owned(
+                    source,
+                    ordinal_u32,
+                    event,
+                    &events.schemas[*index],
+                )?;
+                if let Some(family) = value.project_record(&events.schemas[*index]) {
+                    events.records.push(ParasolidDeltasRecord {
+                        id: deltas_event_id(
+                            ordinal,
+                            "deltas-record",
+                            range.start,
+                            Some(u32::from(instance.xmt())),
+                        ),
+                        stream_ordinal: ordinal_u32,
+                        family,
+                        xmt: u32::from(instance.xmt()),
+                        byte_len: cadmpeg_core::decode::u64_from_index(range.len()),
+                        inflated_offset: cadmpeg_core::decode::u64_from_index(range.start),
+                    });
+                }
+                events.instances.push(value);
+            }
         }
     }
-    events
-        .transmit_headers
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .terminal_null_references
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events.records.sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .tombstones
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .body_revisions
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .tagged_reference_lanes
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .reference_type_maps
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .pmark_packets
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .partition_prefixes
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .reference_marker_packets
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .schema_nodes
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .residual_spans
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(events)
+    let suffix = owner.suffix();
+    if !suffix.is_empty() {
+        push_deltas_residual_span(
+            &mut events.residual_spans,
+            ordinal,
+            source,
+            suffix.start,
+            suffix.end,
+        )?;
+    }
+    Ok(())
 }
 
 fn push_deltas_residual_span(
@@ -1296,7 +665,7 @@ pub(super) trait ParasolidStreamRecords {
     /// Identity stem between the `nx:s{ordinal}:` prefix and the `#{xmt}` suffix.
     const ID_STEM: &'static str;
     /// The cached rows of one stream's record view.
-    fn rows(view: &StreamView) -> &[Self::Row];
+    fn rows<'view>(view: &'view StreamView<'_>) -> &'view [Self::Row];
     /// Cross-reference index carried into the record identity.
     fn xmt(row: &Self::Row) -> u32;
     /// Build one record from its identity, stream ordinal, and cached row.
@@ -1319,8 +688,8 @@ fn parasolid_offset_record_id(
 }
 
 /// Run the cached-view record skeleton for one family: map every cached row of
-/// every stream to a record, then sort by identity. Non-Parasolid streams hold
-/// empty views, so no per-stream guard is needed.
+/// every stream to a record, then sort by identity. Deltas and non-Parasolid
+/// streams hold empty views, so no per-stream guard is needed.
 pub(super) fn per_parasolid_stream<P: ParasolidStreamRecords>(
     parsed: &ParsedStreams,
 ) -> Result<Vec<P::Record>, CodecError> {
@@ -1328,7 +697,7 @@ pub(super) fn per_parasolid_stream<P: ParasolidStreamRecords>(
     for (stream_ordinal, stream) in parsed.iter() {
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX Parasolid stream ordinal exceeds u32"))?;
-        for row in P::rows(stream.view_for_records()) {
+        for row in P::rows(stream) {
             let id = parasolid_record_id(stream_ordinal, P::ID_STEM, P::xmt(row));
             records.push(P::record(id, ordinal, row));
         }
@@ -1338,7 +707,7 @@ pub(super) fn per_parasolid_stream<P: ParasolidStreamRecords>(
 }
 
 /// Shared skeleton for Parasolid record families scanned fresh from each
-/// Parasolid stream's inflated bytes. It owns the `is_parasolid()` guard, the
+/// primary Parasolid stream's inflated bytes. It owns the stream-kind guard, the
 /// stream loop, the `nx:s{ordinal}:{ID_STEM}#{xmt}` identity, and the sort; each
 /// family supplies only its scanner and its record constructor.
 trait ParasolidScanRecords {
@@ -1358,14 +727,14 @@ trait ParasolidScanRecords {
     fn id(record: &Self::Record) -> &str;
 }
 
-/// Run the fresh-scan record skeleton for one family: scan every Parasolid
-/// stream, map each scanned row to a record, then sort by identity.
+/// Run the fresh-scan record skeleton for one family on primary Parasolid
+/// streams, map each scanned row to a record, then sort by identity.
 fn per_parasolid_scan<P: ParasolidScanRecords>(
     streams: &[Stream],
 ) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind().is_parasolid() {
+        if !stream.kind().is_parasolid() || stream.kind() == StreamKind::Deltas {
             continue;
         }
         let ordinal = u32::try_from(stream_ordinal)
@@ -1403,7 +772,7 @@ impl ParasolidStreamRecords for ParasolidOffsetSurfaceRecord {
     type Row = crate::topology::OffsetSurface;
     type Record = ParasolidOffsetSurfaceRecord;
     const ID_STEM: &'static str = "offset-surface-record";
-    fn rows(view: &StreamView) -> &[Self::Row] {
+    fn rows<'view>(view: &'view StreamView<'_>) -> &'view [Self::Row] {
         &view.offset_surfaces
     }
     fn xmt(row: &Self::Row) -> u32 {
@@ -1444,7 +813,7 @@ impl ParasolidStreamRecords for ParasolidTrimmedCurveRecord {
     type Row = crate::topology::TrimmedCurve;
     type Record = ParasolidTrimmedCurveRecord;
     const ID_STEM: &'static str = "trimmed-curve-record";
-    fn rows(view: &StreamView) -> &[Self::Row] {
+    fn rows<'view>(view: &'view StreamView<'_>) -> &'view [Self::Row] {
         &view.trimmed_curves
     }
     fn xmt(row: &Self::Row) -> u32 {
@@ -1483,7 +852,7 @@ impl ParasolidStreamRecords for ParasolidSurfaceCurveRecord {
     type Row = crate::topology::SurfaceCurve;
     type Record = ParasolidSurfaceCurveRecord;
     const ID_STEM: &'static str = "surface-curve-record";
-    fn rows(view: &StreamView) -> &[Self::Row] {
+    fn rows<'view>(view: &'view StreamView<'_>) -> &'view [Self::Row] {
         &view.surface_curves
     }
     fn xmt(row: &Self::Row) -> u32 {
@@ -1723,13 +1092,15 @@ mod term_use_identity_tests {
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
 pub(super) fn parasolid_term_use_records(
     streams: &[Stream],
-    deltas_records: &[ParasolidDeltasRecord],
 ) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
     let mut records = Vec::new();
     for (ordinal, stream) in streams.iter().enumerate() {
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
+        if stream.kind() == StreamKind::Deltas {
+            continue;
+        }
         let Some(point_layout) = subtype.chart_point_layout() else {
             continue;
         };
@@ -1737,38 +1108,9 @@ pub(super) fn parasolid_term_use_records(
         if rows.is_empty() {
             continue;
         }
-        let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
-            CodecError::malformed(format_args!(
-                "{} exceeds its local bound",
-                "NX LIMIT stream ordinal"
-            ))
-        })?;
-        // Only nested candidates need an index. Do not copy the unrelated
-        // census into another per-stream ownership map.
-        let mut nested = BTreeSet::new();
-        for record in deltas_records
-            .iter()
-            .filter(|r| r.stream_ordinal == ordinal_u32)
-        {
-            let start = record.inflated_offset;
-            let end = start + record.byte_len;
-            let first =
-                rows.partition_point(|r| cadmpeg_core::decode::u64_from_index(r.pos) < start);
-            for row in rows[first..]
-                .iter()
-                .take_while(|r| cadmpeg_core::decode::u64_from_index(r.pos) < end)
-            {
-                if record.family.kind() != 41
-                    || cadmpeg_core::decode::u64_from_index(row.pos) != start
-                {
-                    nested.insert(row.pos);
-                }
-            }
-        }
+        let ordinal_u32 = u32::try_from(ordinal)
+            .map_err(|_| CodecError::malformed("NX LIMIT stream ordinal exceeds u32"))?;
         for row in rows {
-            if nested.contains(&row.pos) {
-                continue;
-            }
             records.push(ParasolidTermUseRecord {
                 id: parasolid_offset_record_id(
                     ordinal,
@@ -1868,6 +1210,9 @@ pub(super) fn parasolid_chart_records(
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
+        if stream.kind() == StreamKind::Deltas {
+            continue;
+        }
         let Some(point_layout) = subtype.chart_point_layout() else {
             continue;
         };
@@ -1916,7 +1261,7 @@ impl ParasolidStreamRecords for ParasolidIntersectionRecord {
     type Row = crate::topology::CompositeCurve;
     type Record = ParasolidIntersectionRecord;
     const ID_STEM: &'static str = "intersection-record";
-    fn rows(view: &StreamView) -> &[Self::Row] {
+    fn rows<'view>(view: &'view StreamView<'_>) -> &'view [Self::Row] {
         &view.intersections.source_constructions
     }
     fn xmt(row: &Self::Row) -> u32 {
@@ -2823,7 +2168,7 @@ pub(super) fn parasolid_attribute_definitions(
 ) -> Result<Vec<ParasolidAttributeDefinition>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind().is_parasolid() {
+        if !stream.kind().is_parasolid() || stream.kind() == StreamKind::Deltas {
             continue;
         }
         let ordinal = u32::try_from(stream_ordinal)
@@ -2865,7 +2210,7 @@ pub(super) fn parasolid_field_names_records(
 ) -> Result<Vec<ParasolidFieldNamesRecord>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind().is_parasolid() {
+        if !stream.kind().is_parasolid() || stream.kind() == StreamKind::Deltas {
             continue;
         }
         let ordinal = u32::try_from(stream_ordinal)
@@ -2980,7 +2325,7 @@ impl ParasolidStreamRecords for ParasolidBlendSurfaceRecord {
     type Row = crate::topology::BlendSurface;
     type Record = ParasolidBlendSurfaceRecord;
     const ID_STEM: &'static str = "blend-surface-record";
-    fn rows(view: &StreamView) -> &[Self::Row] {
+    fn rows<'view>(view: &'view StreamView<'_>) -> &'view [Self::Row] {
         &view.blend_surfaces
     }
     fn xmt(row: &Self::Row) -> u32 {
@@ -3015,7 +2360,7 @@ pub(super) fn parasolid_topology_attribute_list_references(
     }
     let mut references = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
-        let graph = &stream.view_for_records().graph;
+        let graph = &stream.graph;
         for topology_type in TopologyAttributeKind::ALL {
             for node in graph.of_kind(topology_type.node_kind()) {
                 let attribute_list_xmt = match topology_type {
@@ -3077,7 +2422,7 @@ pub(super) fn parasolid_entity_51_records(
 ) -> Result<Vec<ParasolidEntity51Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind().is_parasolid() {
+        if !stream.kind().is_parasolid() || stream.kind() == StreamKind::Deltas {
             continue;
         }
         let ordinal = u32::try_from(stream_ordinal)
@@ -3109,7 +2454,6 @@ pub(super) fn parasolid_entity_51_records(
 
 pub(super) fn parasolid_entity_value_records(
     streams: &[Stream],
-    deltas_records: &[ParasolidDeltasRecord],
 ) -> Result<ParasolidEntityValueRecords, CodecError> {
     let mut records = ParasolidEntityValueRecords {
         integers: Vec::new(),
@@ -3123,38 +2467,10 @@ pub(super) fn parasolid_entity_value_records(
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         let ordinal = u32::try_from(stream_ordinal)
             .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
-        let owned_offsets = match stream.kind() {
-            StreamKind::Deltas => {
-                let mut offsets = Vec::new();
-                for record in deltas_records {
-                    if record.stream_ordinal != ordinal
-                        || !matches!(
-                            record.family,
-                            RecordFamily::Entity52
-                                | RecordFamily::Entity53
-                                | RecordFamily::Entity54
-                                | RecordFamily::Entity55
-                                | RecordFamily::Entity56
-                                | RecordFamily::Entity57
-                                | RecordFamily::Entity58
-                                | RecordFamily::Entity59
-                                | RecordFamily::Entity62
-                        )
-                    {
-                        continue;
-                    }
-                    let Ok(offset) = usize::try_from(record.inflated_offset) else {
-                        continue;
-                    };
-                    offsets.push(offset);
-                }
-                offsets
-            }
-            StreamKind::Partition | StreamKind::Plain => {
-                crate::parasolid::referenced_value_record_offsets(&stream.inflated)
-            }
-            StreamKind::Preview => continue,
-        };
+        if !matches!(stream.kind(), StreamKind::Partition | StreamKind::Plain) {
+            continue;
+        }
+        let owned_offsets = crate::parasolid::referenced_value_record_offsets(&stream.inflated);
         let values = crate::parasolid::value_records::entity_value_records_at(
             &stream.inflated,
             owned_offsets,
@@ -3891,6 +3207,11 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
 mod tests;
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_region_type,
+    crate::deltas::region::RegionType,
+    "region_type"
+);
 cadmpeg_core::named_optional_field!(deserialize_group_selector, GroupSelector, "group_selector");
 cadmpeg_core::named_optional_field!(
     deserialize_group_linked_reference_status,
@@ -3901,15 +3222,4 @@ cadmpeg_core::named_optional_field!(
     deserialize_attribute_list_record,
     String,
     "attribute_list_record"
-);
-
-cadmpeg_core::named_optional_field!(
-    deserialize_list_fields,
-    crate::deltas::list::ListFields,
-    "list_fields"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_pointer_list_block_fields,
-    crate::deltas::pointer_list_block::PointerListBlockFields,
-    "pointer_list_block_fields"
 );

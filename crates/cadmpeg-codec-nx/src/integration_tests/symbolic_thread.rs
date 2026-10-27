@@ -57,16 +57,18 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
         cadmpeg_ir::validate_neutral_with_source_fidelity(&ir, &fidelity, report.losses).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
     crate::test_support::with_decode_context(|ctx| {
-        assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
-            .unwrap()
-            .is_empty());
+        assert!(
+            <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None)
+                .unwrap()
+                .is_empty()
+        );
         let mut invalid = wire.clone();
         invalid["construction"]["coordinates"][2]["value"] = serde_json::json!(1.0);
         ir.native
             .namespace_mut("nx")
             .set_arena(ctx, "feature_symbolic_threads", &[invalid])
             .unwrap();
-        let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir).unwrap();
+        let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None).unwrap();
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("value"));
         let mut null = wire;
@@ -75,7 +77,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
             .namespace_mut("nx")
             .set_arena(ctx, "feature_symbolic_threads", &[null])
             .unwrap();
-        let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir).unwrap();
+        let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None).unwrap();
         assert_eq!(findings.len(), 1);
         assert!(findings[0]
             .message

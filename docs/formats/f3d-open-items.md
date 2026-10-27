@@ -82,13 +82,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** A positive direction-two symmetry control must bind the third rectangular flag to its serialized state. A circular pattern with a positive closing flag and a partial angular extent must distinguish symmetric from one-direction distribution. A non-empty two-direction rectangular map must identify its general instance-to-key rule. Empty maps remain valid and do not require that rule.
 
-### DR-31. Editable Pipe section-type carrier
+### DR-31. Editable Pipe section-type carrier and path parameterization
 
-**Question.** Which native carrier stores the editable `Pipe` section type?
+**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four scalar roles, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. A section shape can be bound from unique saved topology.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. A section shape can be bound from unique saved topology. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin.
 
-**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links.
+**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation.
 
 ### DR-61. Cross-document selection stamp and evaluation scalar
 

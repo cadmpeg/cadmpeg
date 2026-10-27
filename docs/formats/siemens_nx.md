@@ -143,7 +143,8 @@ indexed stream directory. Distinct indexed members have disjoint compressed
 extents; overlap rejects the directory. Supplemental members cannot overlap
 indexed members.
 An unindexed member is admitted only when its inflated bytes contain a complete
-Parasolid structural record or tombstone. Supplemental members are read in
+Parasolid structural record or, for a Deltas stream, a complete sequentially
+owned partition prefix. Supplemental members are read in
 physical order. Each enters the roster before the first existing member with
 a greater file offset, or at the end if none exists. Indexed members keep their
 relative row and word order. For a primary partition or plain stream, the counted header selects
@@ -745,8 +746,8 @@ following type tag selects these field edits.
 The node-sequence cursor begins after the transmit header. Each declared node
 consumes its type, first-use information when required, variable count when
 required, index, and transmitted fields. Its endpoint is the next cursor. The
-terminator is type `0001` followed by encoded null index `0001`. Bytes retained
-after that terminator are outside the node sequence.
+terminator is type `0001` followed by encoded null index `0001`. It closes the
+node sequence. Deltas sections continue with the enclosing grammar in §4.2.
 
 A type-looking run inside an already consumed field is payload. Graph
 completion, typed-reference joins, type-map membership, a following boundary,
@@ -877,7 +878,9 @@ A numeric expression table contains a `hostglobalvariables` root entity. Each ex
 
 ### 4.1 Fixed record families
 
-Lengths are logical, before escape/large-index shifts. Each code is a Parasolid XT node type.
+Lengths are logical, before escape/large-index shifts. BODY and REGION lengths
+are ownership prefixes, not complete instance lengths. Each code is a
+Parasolid XT node type.
 
 | Type | Name    | Length | Type | Name          | Length     |
 | ---: | ------- | -----: | ---: | ------------- | ---------- |
@@ -921,216 +924,97 @@ record, so each bounds the fixed record before it.
 
 ### 4.2 Deltas-stream framing
 
-A deltas stream is a schema-framed incremental edit log paired with a partition. Both declare the same schema token. Records are not length-prefixed; they self-delimit by typed decode. Records use the following forms:
+Deltas streams retain physical history; aggregate change selection is unresolved.
+Every paired or unpaired Deltas stream, including a schema-only stream, has an
+empty semantic view. A paired partition keeps its own input bytes. Raw Deltas
+bytes do not enter Graph, NURBS, intersection, attribute, or native family
+scanners. Primary-only Graph ownership remains a separate obligation.
 
-A deltas stream uses the counted transmit header in section 3.1. Its printable
-ASCII description contains `(deltas)`. The maximum node type and user-field
-size belong to the header. A following PARTITION node, its first-use schema
-marker, and its instance fields belong to the node sequence, not the header.
+The counted `PS` header names the 13006 base and has zero user-field words.
+Its printable description contains `(deltas)`. A three-part schema token uses
+the base directly. A four-part token also declares the maximum node kind and
+uses embedded first-use information. The header precedes a status-free
+PARTITION/current-PMARK prefix.
 
-A deltas stream may end with the exact trailer `ref(1)[2|4]`. Each null XMT
-reference uses the compact encoding `0001`; the final reference ends at the
-inflated-stream boundary. When both suffix lengths match, the four-reference
-form applies.
+Embedded first use reads the schema metadata after the kind. `ff` selects the
+base definition on that first use; an edit program selects its complete effective
+field list. Subsequent instances use the shared plan; `ff` at their identity
+position is part of the extended integer encoding. Plain-schema first use takes
+its definition from the base. Unknown scalar descriptors stop the sequence even
+when a zero count would hide them.
 
-Status-framed fixed records use a status byte in `0..=1` after each encoded reference. The established schema state selects the position of the count and index; completing two local field grammars does not select either reading of `ff`. The following bytes need not begin with a recognized node type. Fixed records are normalized by removing each reference status byte before graph decoding. An unpaired deltas stream uses the same normalization as a deltas stream that contributes a complete replacement to a partition. Current-revision records needed by semantic scanners remain in a separate semantic lane.
+After the prefix, sections have this grammar. `T` is `00 01 00 01`.
 
-A terminal zero reference status may also serve as the high zero byte of the
-following record type. The following record begins at that shared byte and must
-satisfy its complete family grammar.
+```text
+leading       = ordinary_node* T
+map_section   = map_prefix ordinary_node* T
+pmark_section = primary_pmark+ ordinary_node* T
+stream_tail   = leading map_section (pmark_section map_section)* final_T
+              | leading map_section (pmark_section map_section)* pmark_section EOF
+```
 
-Type-81 entity/attribute-list records and type-82 through type-89 and type-98 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted value records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
+An ordinary node has kind 2 or a kind from 5 through the declared maximum.
+Kinds 1, 3, and 4 are not ordinary nodes. Kind 2 is WORKSPACE; its `ws` field is
+a transmitted variable character array. Each ordinary node consumes its
+established status-framed fields. A primary PMARK has kind 4 and the same
+status-free fields as the prefix's current PMARK, without another declaration.
+A PMARK section starts with one or more such nodes. A kind-4 head after its first
+ordinary node is not a supported transition.
 
-The deltas byte ledger admits a type-82 through type-89 or type-98 value record
-when it begins at the stream or transmit-header boundary, begins immediately
-after an admitted ledger production, or has an XMT identity referenced by a
-complete type-81 record in the same stream. Repeated type-81 and value XMT
-identities in a deltas stream are historical events and retain every complete
-occurrence. A complete value frame with no owner bounds one opaque span; its
-payload is not searched for nested records. Type-98 does not use compact
-tombstone, tagged-reference, or following-record form-selection grammar.
+A map prefix consists of zero or more pairs `(nonnull_XMT, kind:u16 BE)`, followed
+by `null_XMT, zero:u16 BE, terminal_word:u16 BE`. Each kind is from 2 through the
+declared maximum. The null XMT is `00 01`. Map XMT encoding is canonical: direct
+zero, an extended zero quotient, and an `80 00` remainder are invalid. This
+canonicality rule is local to map entries. The terminal word is below `0x8000`;
+a high bit leaves its encoded width unresolved. Its value does not count the
+section's nodes and does not select a state. The six-byte map tail places null
+XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the
+entry pairs.
 
-In a partition or plain stream, a value record is admitted only when its XMT
-and complete frame are unique and it is referenced by a unique complete
-type-81 record, or when a unique type-80 definition and type-99 field-name list
-reference a unique type-84 or type-98 character record. These ownership rules
-do not require the type-81 definition to resolve. A value-record-shaped byte
-run inside another record or without one of these owners does not create a
-native value.
+After a closed leading section, a map section is required. After a closed map
+section, a PMARK section or one exact final `T` is required. That final `T`
+consumes the entire remaining input and has the neutral label
+`FinalTerminator`. After a closed PMARK section, EOF completes the stream;
+otherwise another map section is required. EOF after a closed leading or map
+section is incomplete.
 
-Type 91 is `MEMBER_OF_GROUP`, named `MEMBER_OF_FEATURE` in schemas 11004 and 13006. Its fields are `dummy_node_id:u32 BE`, `owning_group`, `owner`, `next`, `previous`, `next_member`, and `previous_member`. The integer is an entity label, not a logical flag. A primary record uses six plain biased pointers and ends immediately after `previous_member`. A status-framed Deltas record is `type:005b [ff], xmt, dummy_node_id:u32 BE, reference_status[6]`. The record XMT is non-null. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The optional `ff` envelope byte precedes the XMT identity. A complete escaped layout takes precedence over a coincidental longer direct layout beginning at that `ff`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
+Each section stages its events, first-use definitions, and first-use lookup
+state. Its closing `T` commits all three. A failed section changes none of the
+committed collections. First-use state remains stream-global across closed
+sections and includes earlier staged declarations within the open section.
+EOF, malformed fields, or unsupported content inside an open section retains
+the exact suffix from that section's start. A failure between sections retains
+from the current cursor. Invalid headers and unsupported bases retain the whole
+input. Type-looking bytes inside consumed fields are payload. No byte search,
+reference match, complement interval, or repaired byte image establishes a
+record start. PMARK counts and map tails frame no production and select no
+current state.
 
-Types 45, 67, 70, 74, 90, 91, 101, and 141 use an explicit optional `ff` envelope before their body. When `ff` follows the type tag, a complete escaped body owns that byte. The direct body applies only when the escaped family grammar is incomplete. This decision uses no bytes after the selected body.
+Generic native output uses `parasolid_deltas_schemas` and
+`parasolid_deltas_instances`. Enclosing productions use
+`parasolid_deltas_metadata`, one row for each map prefix, primary PMARK,
+section terminator, or final terminator. Each metadata row retains its stream
+ordinal, inflated offset, byte length, SHA-256, and tagged production. A map
+retains every ordered entry and its terminal word. A PMARK retains every field.
+A section terminator retains the closed section's kind and start offset.
+Metadata spans do not overlap. Each definition is shared in memory and serialized
+once, including custom type name and description. Instances join their schema
+and retain identity, variable count, exact field ranges, and ordered typed values.
+Floating values are sixteen-digit lowercase IEEE-754 hexadecimal bit strings;
+nonfinite and subnormal physical values are preserved. Pointer value `1` is null,
+node identities exceed one, direct zero and an extended zero quotient are invalid,
+and the independent pointer status is `0` or `1`.
 
-Status-framed type-38 `INTERSECTION` records end after the construction references in their effective field array and do not require a following recognized tag. The V13 base has five construction pointers; a declaration that appends `intersection_data` adds the sixth pointer. The first instance after an embedded-schema edit belongs to that same type 38 and uses the Deltas reference/status grammar. The declaration terminator is not an additional record in the byte ledger.
-
-A complete type-101 record whose start lies inside a fixed-record candidate and
-whose end extends beyond that candidate takes precedence over the fixed
-candidate.
-
-Direct and escaped type-40 `CHART_s`, type-41 `term_use`, type-59 blend-bound, and type-204 support-UV records use the layouts in section 6.3. A `CHART_s` record ends after its declared `xyz3` or `ext11` point lane. A type-41 LIMIT record ends after its complete count-selected Hvec lane: one or two `xyz3` rows in a partition and one or two `ext11` rows in deltas. Its fields and complete byte span belong to that record. A partition-style blend-bound record ends after its blend-surface reference. Its deltas form inserts a binary status byte after each of the five header references and status `01` after the blend-surface reference; it ends after that terminal status. A support-UV record ends after its declared finite-scalar lane. These records participate in the deltas byte ledger and remain in the semantic lane.
-
-Direct and escaped type-125 through type-128 and type-135 through type-136 NURBS records use the layouts in section 9.3. Counted payload, multiplicity, and knot records end after their declared value lanes. A type-125 surface-data header ends after its four trailing status-framed references. A type-135 curve-data header ends after its single status-framed reference. Surface descriptors end after the control-payload reference following the type-125 payload-family marker in their selected short or extended-reference layout. Curve descriptors end after their knot reference. These records participate in the deltas byte ledger and remain in the semantic lane.
-
-Type 141 is `GEOMETRIC_OWNER`. Its complete deltas record is
-`008d [ff], xmt, owner status, next 00, previous 00, shared_geometry status`.
-The four pointers are non-null. A zero status does not make a pointer null.
-`owner` is the geometry that uses `shared_geometry`. Both fields target the
-GEOMETRY union. `next` and `previous` link the doubly linked ring of
-GEOMETRIC_OWNER nodes for the same shared geometry. A geometry node's
-`geometric_owner` pointer enters this ring. GEOMETRIC_OWNER has no `node_id`.
-
-The first and fourth statuses are binary. Each XMT field uses the compact or
-extended XMT encoding. The optional `ff` envelope precedes the record identity.
-A complete escaped family grammar selects the escaped layout when the same
-byte also begins a direct large-index identity. The record ends after the
-fourth status byte, participates in the deltas byte ledger, and remains in
-the semantic lane. The native record retains the pointers in the order
-`[owner, next, previous, shared_geometry]`.
-
-Type 67 has the complete deltas record
-`0043 [ff], xmt, node_id:u32 BE, ref(1) 01, ref(3) 01, ref 01, ref 01,
-ref 00, 2b, ref 01, value[4]:f64 BE`. The XMT identity and the final four
-non-null references are non-null. Every value is finite and either zero or
-normal. The optional `ff` envelope byte precedes the XMT identity. The record
-ends after the fourth value, participates in
-the deltas byte ledger, and remains in the semantic lane.
-
-Type 70 `LIST` has the complete deltas record
-`0046 [ff], xmt, node_id:u32 BE, list_type:u8, notransmit:logical,
-owner 01, next 01, previous 01, list_length:u32 BE, block_length:u32 BE,
-finger_index:u32 BE, finger_block 00, list_block 00`.
-The XMT identity is non-null. `node_id` is zero, `list_type` is 4 (pointer
-list), and `block_length` is 20. `list_length` is the full 32-bit length,
-including zero. `notransmit` is a logical byte. `owner` is a non-null pointer
-to the owning BODY, ASSEMBLY, or WORLD. `next` and `previous` are nullable
-LIST pointers. `finger_index` is in `1..=list_length`, or 1 for an empty list.
-`finger_block` points to a block in the list; `list_block` points to the head
-of its singly linked block chain. These non-null block pointers need not be
-equal. Each pointer is an encoded XMT followed by its stated status byte.
-The record ends after the head pointer status and participates in the deltas
-byte ledger.
-
-Type 45 has the complete deltas record
-`002d [ff], count:u32 BE, xmt, value[count]:f64 BE` and is the
-`BSPLINE_VERTICES` node. The count is nonzero, the XMT identity is non-null,
-and every admitted value is finite and either zero or normal. The optional
-`ff` envelope byte precedes the count. The record ends after exactly
-`count * 8` value bytes. Following bytes do not change its cardinality.
-Without the optional envelope, the count starts at offset 2 and the XMT
-identity starts at offset 6 relative to the type tag.
-The record participates in the deltas byte ledger and remains in the semantic
-lane.
-
-A NURBS descriptor's `bspline_vertices` pointer identifies this control array.
-For a curve, `count = n_vertices * vertex_dim`. For a surface,
-`count = n_u_vertices * n_v_vertices * vertex_dim`; U is the major index and
-V varies fastest. Each consecutive `vertex_dim` scalars forms one control
-vertex. Non-rational dimension-2 vertices are surface parameters; non-rational
-dimension-3 vertices are model-space coordinates. Rational vertices carry one
-extra dimension: dimension 3 is `(u*w, v*w, w)` and dimension 4 is
-`(x*w, y*w, z*w, w)`. Divide the coordinate lanes by the nonzero weight before
-applying length conversion to model-space coordinates. Surface-parameter
-coordinates keep their support's parameter units. An array without a unique
-compatible descriptor has no assigned coordinate grouping.
-
-Type 74 `POINTER_LIS_BLOCK` has the complete deltas record
-`004a [ff], entry_array_length:u32 BE, xmt, n_entries:u32 BE,
-index_map_offset:u32 BE, next_block 01, entries[entry_array_length]`.
-The variable array count precedes the non-null record XMT. `index_map_offset`
-is zero. `next_block` is a nullable pointer to the next block; null XMT 1
-ends the chain. Each entry is an encoded XMT followed by status `01`.
-The first `n_entries` entries are non-null; the remaining entries are null
-XMT 1. `n_entries` must not exceed the array length. Part-file blocks have
-20 entries; only the first block may have zero populated entries. A block
-used as the root of a multi-part transmit is not subject to the twenty-entry
-limit. Part-file LIST entries reference ATTRIBUTE instances, type 81.
-The optional envelope precedes the array count. The record ends after the
-complete declared entry lane and participates in the deltas byte ledger.
-
-Type 90 `GROUP` has the complete deltas record `005a [ff], xmt, node_id:u32 BE, ref 01, ref 01, ref 01, ref 01, mode, ref status`. The XMT identity is non-null, `mode` is `02`, `04`, or `09`, and the final status is binary. The optional `ff` envelope byte precedes the XMT identity. The record ends after the final status byte, participates in the deltas byte ledger, and does not enter the procedural-intersection semantic lane. The low byte of this two-byte type tag has no standalone intersection-record meaning.
-
-A primary type-90 `GROUP`, named `FEATURE` in schemas 11004 and 13006,
-contains `node_id:u32`, four pointers, `type:u8`, and a final pointer.
-The pointers are `attributes_features`, `owner`, `next`, `previous`, and
-`first_member`. Each uses the independently sized biased index encoding.
-Primary pointers have no status bytes. The record ends immediately after
-`first_member`, before the next type or node-sequence terminator. First-use
-schema information precedes its XMT according to §3.2.
-
-The public GROUP field `attributes_groups` is named `attributes_features`
-in schemas 11004 and 13006. The public MEMBER_OF_GROUP field `owning_group`
-is named `owning_feature` in those schemas. These pairs name the same fields.
-
-`owner` references the owning part. `next` and `previous` chain groups and
-attributes within that part. `attributes_features` starts the group's own
-attribute chain. `first_member` references the first `MEMBER_OF_GROUP`
-node. A member's `owning_group` points back to the group, and its `owner`
-references the member entity. The member-chain directions and the entity's
-attribute-chain directions are distinct pointer fields.
-
-The GROUP `type` names its allowed member family:
-
-| Value | Family |
-| --- | --- |
-| 1 | INSTANCE |
-| 2 | FACE |
-| 3 | LOOP |
-| 4 | EDGE |
-| 5 | VERTEX |
-| 6 | SURFACE |
-| 7 | CURVE |
-| 8 | POINT |
-| 9 | Mixed |
-| 10 | REGION |
-
-The concrete member kinds are INSTANCE (11), FACE (14), LOOP (15), EDGE (16),
-VERTEX (18), REGION (19), and POINT (29). CURVE comprises LINE (30), CIRCLE
-(31), ELLIPSE (32), INTERSECTION (38), PE_CURVE (130), TRIMMED_CURVE (133),
-B_CURVE (134), and SP_CURVE (137). SURFACE comprises PLANE (50), CYLINDER
-(51), CONE (52), SPHERE (53), TORUS (54), BLEND_SURF (56), BLEND_BOUND (59),
-OFFSET_SURF (60), SWEPT_SURF (67), SPUN_SURF (68), PE_SURF (120), and
-B_SURFACE (124). Schemas 11004 and 13006 name kind 56 `BLENDED_EDGE`.
-Every listed primary kind starts with a transmitted `node_id:u32 BE` field.
-Kind 100 is TRANSFORM, not INSTANCE. BODY, SHELL, FIN, ASSEMBLY, and TRANSFORM
-are outside the member union.
-
-A repeated type-101 `WORLD` record is `0065 [ff]` followed by the instance
-fields selected by the preceding WORLD schema. The fifteen-, eighteen-, and
-nineteen-field lists are defined below. The optional envelope precedes the
-XMT identity. The reference projection contains only the pointer targets in
-that declared order. It excludes `alive` and the three integer words. The
-record ends after the final declared field, independently of the next event.
-A WORLD-shaped byte run without established schema state does not select a
-layout.
-
-A BODY instance follows its effective field list. Its highest node identifier
-and its pointer fields have separate roles. A following recognized tag does
-not define an otherwise unbounded BODY state tail.
-
-After complete typed node frames, complete enclosing packets, and complete
-LIMIT records are bounded, each maximal complement interval that consists
-entirely of one or more `kind:u16 BE, xmt` pairs is a tagged-reference lane.
-Each `kind` is a defined Parasolid record kind, including type 79 and type 80,
-and each XMT is a non-null compact or extended encoded index. The lane retains
-pair order and exact byte identity; field roles remain unassigned.
-
-A reference/type map begins with either `ref(1), 0001` or `01, ref(1)` and
-continues with `entry[n]`, where `n > 0` and each entry is
-`ref, kind:u16 BE`. The map either ends after its entries or has the terminal
-`ref(1), 0000`, optionally followed by `terminal_word:u16 BE`. A targetless
-terminal closes at the end of the containing complement interval. A terminal
-with `terminal_word` self-delimits the map independently of following bytes.
-A final entry may share its `kind` bytes with a complete record beginning at
-that kind tag.
-When a final type-82 entry is followed by a terminal with a word, the map
-owns the shared type-82 kind and terminal before counted-record framing is
-applied.
-Every entry reference is a non-null compact or extended XMT. Every entry kind
-is a defined Parasolid record kind, type 11, type 79, type 80, type 35, type
-55, type 61, type 67, or type 100.
-When present, `terminal_word` is a nonzero unsigned 16-bit raw value. The
-terminal null reference distinguishes the clause from the non-null entry lane.
+Physical coverage is the sequential owned prefix. A declaration plus first
+instance contributes once; its schema metadata view does not add coverage.
+The stopped suffix retains offset, length, and digest, with the original bytes
+available in the retained stream. Extraction checks joins, cardinalities, ranges,
+values, and hashes against that source. Reopened admission additionally needs an
+re-read through the same sequential owner. Exact per-stream record-set
+comparison authenticates identities, values, spans, digests, and absence,
+including every metadata production. A hash alone cannot authenticate a mutated
+effective plan or custom metadata. GROUP and REGION source projections
+are derived from the same generic owned fields for their existing consumers.
 
 A type-3 `PARTITION` instance contains `xmt, current_pmark:ref,
 highest_id:u32 BE`. The identity belongs to the partition node;
@@ -1148,8 +1032,10 @@ Each reference uses compact or extended XMT encoding; `1` is the null value.
 The node's own identity is non-null. `identifier` retains all 32 bits and is
 distinct from the stream-local XMT identity. `delta_is_forward` is `0` or `1`.
 The four preceding words count new, deleted, and copied-or-modified nodes and
-identify the delta. The delta relates adjacent partition marks and is keyed by
-the succeeding mark.
+identify the delta. A delta contains a unidirectional change between adjacent
+partition marks and is associated with the succeeding mark. The transmitted
+`delta_key` identifies the delta. Delta keys, PMARK XMT values, and persistent
+identifiers have separate identity roles; their numeric values can coincide.
 
 A PMARK scalar tail starts immediately after the five encoded indices. Its
 21 bytes contain `n_new_nodes` at `+0`, `n_del_nodes` at `+4`,
@@ -1161,28 +1047,9 @@ The initial partition mark is the unique mark with null `preceding`.
 `first_following` names the first successor; `next_sibling` and `prev_sibling`
 link the following marks with the same predecessor. A sibling is not a second
 child. The main line follows the initial mark to the partition's current mark.
+These relations define the partition's PMARK graph. They do not establish
+which aggregate node section implements a constituent delta.
 
-A historical PMARK packet is `0001, 0001, node[n], terminal?`, where `n > 0`
-and each node is `0004` followed by the established PMARK instance fields.
-The packet prefix does not change those fields. `terminal`, when present, is
-`ref(1)[3], one:u32 BE`, where `one` is `1`. The packet ends after its final
-node or terminal. Each node owns its fields independently of the containing
-packet and joins the partition's mark graph by XMT identity.
-
-There is no separate schema-reference preamble between the leading PARTITION
-and current PMARK. Their fields end at the full PMARK identifier. A following
-reference/type map or schema declaration owns its own bytes.
-
-One reference-marker packet is `ref 01, ref(1) 01, marker:u8, ref(1) 01`.
-The leading reference is non-null and uses compact or extended XMT encoding.
-`marker` is `53` or `56`. The two remaining references are the null XMT value
-`1`. The packet ends after the final status byte.
-
-A PLANE record starts with the two-byte node type `0032`. Its `node_id` is
-one four-byte field. A low identifier byte `96` does not begin a separate
-record. The following five reference/status fields, surface sense, and
-`pvec`, `normal`, and `x_axis` vectors belong to that PLANE. Surface sense is
-`2b` (`+`) or `2d` (`-`).
 
 The first node of each declared type inserts the schema information from
 section 3.2 between its type tag and its ordinary instance. The edit program
@@ -1201,8 +1068,8 @@ node's non-null identity. Characters and bytes occupy one byte, logicals are
 `00` or `01`, short and word fields occupy two big-endian bytes, and integer
 fields occupy four big-endian bytes. Integer projection preserves all source
 bits. Real values occupy eight big-endian bytes. Interval, vector, and box
-values contain two, three, and six finite binary64 values. A Deltas Hvec
-contains eleven finite binary64 values in the order defined in section 6.3.
+values contain two, three, and six binary64 bit patterns. A Deltas Hvec
+contains eleven binary64 bit patterns in the order defined in section 6.3.
 Schema metadata and first-instance values retain separate boundaries inside
 one complete first-node span. A subsequent node or schema program owns its
 own storage.
@@ -1255,9 +1122,16 @@ region. `index_map_offset`, `index_map`, `node_id_index_map`, and
 body has offset zero and null map pointers.
 
 The REGION field list is `node_id, attributes_features, body, next, previous,
-shell, frame, type, owner`. Its eight-field form omits `frame`. The complete
-instance includes the shell reference, type character, and owner reference.
-Four reference/status pairs do not complete this node.
+shell, frame, type, owner`. Its eight-field form omits `frame`; its seven-field
+base form omits both `frame` and `owner`. `attributes_features` has pointer
+class 1019, `body` and `owner` class 12, `next` and `previous` class 19,
+`shell` class 13, and `frame` class 230. `next` and `previous` link the body's
+region chain. `shell` heads the region's shell chain. `type` is `53` (`S`)
+for a solid region or `56` (`V`) for a void region. Each pointer stores its
+own nonzero XMT value and status; `1` is the null XMT value. The complete
+instance ends after its final declared field. Four reference/status pairs
+do not complete this node. A shell reference, null frame, type character,
+and null owner remain REGION fields; they do not form a separate packet.
 
 The INTERSECTION list is `node_id, attributes_features, owner, next, previous,
 geometric_owner, sense, surface[2], chart, start, end, intersection_data`.
@@ -1292,27 +1166,58 @@ The nineteen-field list additionally inserts `lattice` after `polyline`.
 Every field except logical `alive` and the three u32 integer words is a
 status-framed pointer. The pointer counts are eleven, fourteen, and fifteen,
 respectively. Every first instance ends after its final declared pointer
-status. A following PMARK packet owns its own fields.
+status. The following production follows the enclosing section grammar.
 
-The union of the transmit header, terminal null-reference trailer, those events, tagged-reference lanes,
-the leading PARTITION/current-PMARK pair, historical PMARK packets, reference/type maps,
-reference-marker packets, and complete first-use schema nodes defines the typed
-deltas-event coverage. Each maximal nonempty complement interval in the
-inflated stream is one residual span. Residual spans retain their exact offset,
-length, and SHA-256 independently of the containing compressed stream.
 
-**Full record:** a deltas node has a type code, its encoded XMT identity,
-and the transmitted fields selected by its effective schema. Each pointer
-field carries an encoded XMT and its status byte. FIN has no `node_id` field.
-The first u32 of BODY is `highest_node_id`; it is not a delta-stream ordinal
-or a revision counter.
+A primary type-90 `GROUP`, named `FEATURE` in schemas 11004 and 13006,
+contains `node_id:u32`, four pointers, `type:u8`, and a final pointer.
+The pointers are `attributes_features`, `owner`, `next`, `previous`, and
+`first_member`. Each uses the independently sized biased index encoding.
+Primary pointers have no status bytes. The record ends immediately after
+`first_member`, before the next type or node-sequence terminator. First-use
+schema information precedes its XMT according to §3.2.
+
+The public GROUP field `attributes_groups` is named `attributes_features`
+in schemas 11004 and 13006. The public MEMBER_OF_GROUP field `owning_group`
+is named `owning_feature` in those schemas. These pairs name the same fields.
+
+`owner` references the owning part. `next` and `previous` chain groups and
+attributes within that part. `attributes_features` starts the group's own
+attribute chain. `first_member` references the first `MEMBER_OF_GROUP`
+node. A member's `owning_group` points back to the group, and its `owner`
+references the member entity. The member-chain directions and the entity's
+attribute-chain directions are distinct pointer fields.
+
+The GROUP `type` names its allowed member family:
+
+| Value | Family |
+| --- | --- |
+| 1 | INSTANCE |
+| 2 | FACE |
+| 3 | LOOP |
+| 4 | EDGE |
+| 5 | VERTEX |
+| 6 | SURFACE |
+| 7 | CURVE |
+| 8 | POINT |
+| 9 | Mixed |
+| 10 | REGION |
+
+The concrete member kinds are INSTANCE (11), FACE (14), LOOP (15), EDGE (16),
+VERTEX (18), REGION (19), and POINT (29). CURVE comprises LINE (30), CIRCLE
+(31), ELLIPSE (32), INTERSECTION (38), PE_CURVE (130), TRIMMED_CURVE (133),
+B_CURVE (134), and SP_CURVE (137). SURFACE comprises PLANE (50), CYLINDER
+(51), CONE (52), SPHERE (53), TORUS (54), BLEND_SURF (56), BLEND_BOUND (59),
+OFFSET_SURF (60), SWEPT_SURF (67), SPUN_SURF (68), PE_SURF (120), and
+B_SURFACE (124). Schemas 11004 and 13006 name kind 56 `BLENDED_EDGE`.
+Every listed primary kind starts with a transmitted `node_id:u32 BE` field.
+Kind 100 is TRANSFORM, not INSTANCE. BODY, SHELL, FIN, ASSEMBLY, and TRANSFORM
+are outside the member union.
 
 **Deletion framing:** complete enclosing fields own their bytes. A six-byte
-`kind, xmt, 00 01` shape does not establish a deletion event. An extended XMT
-reference followed by `kind` remains a reference/type-map entry even when an
-opposite-aligned reading forms a descending sequence of apparent deletions.
-The node type, target identity, byte extent, and enclosing change state are
-independent requirements for a deletion relation.
+`kind, xmt, 00 01` shape does not establish a deletion event. A deletion needs
+an independently established node frame, target identity, byte extent, and
+owning change. No deletion or numerical BODY scope selects a current state.
 
 ---
 
@@ -1371,7 +1276,7 @@ referenced list and its instances resolve.
 ### 5.2 Reference domains
 
 - Ordinary BREP references (`FACE.surface`, `EDGE.curve`, `FIN.curve`, `VERTEX.point`, BLEND_SURF/INTERSECTION support refs) resolve within the same stream.
-- SHELL ownership records may resolve in `{partition, paired_deltas}`. A SHELL's non-null BODY and REGION references remain ownership identities when either referenced record is not serialized.
+- SHELL ownership records resolve within the primary stream. A SHELL's non-null BODY and REGION references remain ownership identities when either referenced record is not serialized.
 
 ### 5.3 Topology assembly
 
@@ -1545,7 +1450,7 @@ instances begin with the ordinary two-byte nodetype `0026`.
 
 `cache_fit_tolerance` belongs to a separately solved 3D curve cache. An intersection represented directly by its procedural construction has no cache-fit tolerance; its incident edge tolerance bounds support-chart completion and transfers to each derived pcurve fit contract.
 
-CHART_s, term-use, support-UV, and blend-bound XMT identities are unique within one physical stream. A duplicate identity rejects that auxiliary relation. A second chart record may supply native parameters and support-UV lanes only when its point count and model-space points agree with the geometric chart within the larger chordal tolerance. When deltas history is merged into its paired partition, a later complete CHART_s record replaces an earlier record with the same XMT before intersection validation.
+CHART_s, term-use, support-UV, and blend-bound XMT identities are unique within one physical stream. A duplicate identity rejects that auxiliary relation. A second chart record may supply native parameters and support-UV lanes only when its point count and model-space points agree with the geometric chart within the larger chordal tolerance. Unselected Deltas CHART_s records do not replace primary charts or supply auxiliary geometry inputs.
 
 The stream-local intersection-construction identity is the type-38 XMT. A
 first-use schema declaration and an ordinary subsequent nodetype do not create
@@ -1669,8 +1574,7 @@ chart. Its native parameter is distinct from the singularity parameter. A
 chart's accumulated chord length does not replace either serialized parameter.
 The typed source record retains all rows, their layout, count, form, framing,
 and inflated-stream offset. Its identity includes the source offset; duplicate
-XMT records remain distinct source records. A deltas tag inside another complete
-census record's payload does not identify a separate LIMIT.
+XMT records remain distinct source records. A tag inside an owned Deltas field does not identify a separate LIMIT.
 
 The chart-backed carrier's hard-point admission requires each resolved hard
 limit (`ref[3]` start, `ref[4]` end) to lie within CHART_s `chordal_error` of the
@@ -1681,9 +1585,7 @@ VERTEX and POINT, and exactly one ordering must match the chart endpoints
 within `chordal_error`. The matching topology point replaces only the missing
 term witness. Direct tagged, `0xff`-escaped, and descriptor-inline record framing
 is retained. Within one physical stream a duplicate term-use XMT invalidates
-that endpoint identity for carrier construction. When deltas history is merged
-into its paired partition, later complete records replace earlier records with
-the same XMT before endpoint validation.
+that endpoint identity for carrier construction. Unselected Deltas records do not replace primary endpoint witnesses.
 
 **`0x00cc` values-array** packs support UV samples by marker byte:
 
@@ -1925,7 +1827,7 @@ A `UGS::COLOR_table` offset store carries one counted name roster followed by th
 
 An `RMFastLoad` linked-index or target-index row has an explicit display-color assignment when a canonical color-index token occurs immediately before its row opener and immediately after the preceding row's exact `01 c0 44 04 00` suffix. The linked opener is `02 0b`; the target-index opener is `02 01 01 01 16`. Indices 1 through 127 use the one-byte token equal to the index. Indices 128 through 216 use `80, index`. The assignment retains its complete row encoding, resolved part color definition, exact compact-index and color tokens, and absolute token and row offsets. The linked encoding retains the unresolved leading object identity, discriminator, target index, three post-marker indices, flag, and mode. The target encoding retains its target index, three post-marker indices, and mode. The target index is the zero-based ordinal of a member in the section's counted object-ID table; an in-range target retains that member identity. The other row indices retain serialized roles only. Index zero, an index greater than 216, a changed preceding suffix, a missing unique part color definition, or intervening bytes reject the assignment atomically.
 
-An explicit display-color assignment addresses a face when its leading object identity equals one `FACE` kernel node identity, that record belongs to one deltas stream paired with one partition stream, and its XMT identity names one surviving face in the paired partition topology. The face receives the normalized RGB value of the assignment's resolved palette definition with opacity one and one face-targeted appearance binding to the corresponding palette appearance. A conflicting palette assignment, ambiguous stream pairing, multiple surviving face targets, or absent target does not assign a neutral face color or face appearance binding.
+An explicit display-color assignment remains native source metadata. Joining its object identity through an unselected Deltas FACE does not assign a current neutral face color or appearance binding.
 
 Every display-color assignment with one resolved `RMFastLoad` object-ID target also creates one neutral source appearance binding for that target when every assignment for the target resolves to the same palette definition. Duplicate rows share one appearance binding. A conflicting palette definition or absent target identity creates no source appearance binding. This source binding does not establish body or face ownership.
 
@@ -3109,7 +3011,7 @@ Each persistent-handle identity separately counts serialized occurrences in OM/c
 
 **Same-section record references.** A counted reference run is `01, count:u8, (count - 1) × (90, record_ordinal:u16 BE)`, with `count >= 2`. Every ordinal addresses an entity record in the same external entity-index directory. The containing record depends on the addressed records; the addressed records have the containing record as a dependent. The complete run lies within one bounded record; any out-of-range ordinal invalidates the run atomically. Token order is operand order, and inverse dependent order follows containing-record ordinal.
 
-### 7.2 Partition and deltas merge
+### 7.2 Partition images and unresolved Deltas selection
 
 A complex part contains current body images and historical or tool bodies, each with its own partition/deltas pair and stream-local xmt namespace, plus optional plain cached tool bodies. `RMFastLoad` object-ID membership identifies the current body images. Multiple decisively represented images are distinct current bodies. When membership does not distinguish current images from historical or tool bodies, the final body set requires the operand bindings and order encoded by NX OM feature-history records.
 
@@ -3117,6 +3019,9 @@ A complex part contains current body images and historical or tool bodies, each 
 contains its owner token, UTF-8 title and value, schema type, PDM-ownership flag,
 and record version. These part-level values transfer as document attributes;
 the native record retains the remaining ownership and schema fields.
+
+Current decoding uses the partition image unchanged. No aggregate Deltas stream
+has an established selection, so neither replacements nor deletions are applied.
 
 A delta contains a unidirectional change between two adjacent pmarks. An
 aggregate transmit can contain several such changes. Its physical node order
@@ -3189,11 +3094,17 @@ The `00 ce` stream-root schema declares `index_map`, `node_id_index_map`,
 and `schema_embedding_map`. An empty array supplies no relation between a
 reference and a deletion target.
 
-BODY and WORLD field roles are defined in §4.2. The current partition roots
-and pmark identities select state; a BODY's highest node identifier and its
-physical position do not define a revision counter or a snapshot delimiter.
+BODY and WORLD field roles are defined in §4.2. The partition's current
+roots and pmark identity identify its current state. Aggregate Deltas
+section-to-change binding remains separate. A BODY's highest node
+identifier and physical position do not define a revision counter or
+snapshot delimiter.
 
 ### 9.3 B-spline payloads
+
+The scanner layouts below apply to primary semantic input. Deltas physical
+instances use their effective field plans from §4.2, retain floating bits, and
+supply no current geometry or auxiliary replacement input.
 
 A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte. A candidate containing another type-125 header with the same XMT before its `double_count` field is the descriptor prefix of the nested record, not a control payload. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains either `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`, or, for marker `01`, eight bytes `42` followed by four bytes `3f`.
 
@@ -3253,10 +3164,8 @@ the topology. The third leading reference is retained as a structural reference
 but is not required for this ownership relation. Duplicate XMT identities,
 missing heads, or a different head owner leave the topology relation unresolved.
 
-The terminal `00` of a status-prefixed type-81 or printable type-84 record may
-also be the leading `00` of the immediately following two-byte record tag. The
-shared byte belongs to both record frames and is counted once in the deltas byte
-ledger.
+In Deltas, terminal-looking bytes belong to their declared field spans; no
+shared-byte or following-record shape establishes a transition.
 
 The first five type-81 references form a fixed leading lane. The remaining `flags` references form the trailing payload lane. Only trailing references address attribute value records; their reference ordinals retain the five leading slots, so the first trailing reference has ordinal five. Leading references remain structural and do not produce attribute values even when their values collide with value-record XMT identities.
 
@@ -3296,17 +3205,16 @@ A type-98 Unicode value record is `00 62 [ff], count:u32 BE, xmt, code_unit[coun
 A trailing type-81 reference resolves a value only when exactly one value record of all type-82 through type-89 and type-98 families in the same stream has the referenced XMT. A collision between families or duplicate records leaves the reference unresolved. Reference order and every serialized value lane remain ordered. Pointer fields have no value-record family and are always transmitted empty.
 
 Value-record framing ownership and semantic value resolution are separate.
-Repeated deltas events with one XMT remain exact native events when a complete
-type-81 record references that XMT, but the type-81 field value remains
-unresolved until one current value event is selected.
+Repeated Deltas instances with one XMT remain exact native events when reached
+by sequential ownership. A reference does not establish their physical boundary
+or select a current field value.
 
 Snapshot value discovery first checks that the candidate XMT is referenced by
 an unambiguous complete type-81 trailing lane or an owned type-99 field-name
 list. An unreferenced value-shaped byte sequence does not claim a frame or
 exclude later referenced records inside its apparent counted span. Complete
 referenced frames retain their payload boundaries; duplicate snapshot value
-identities remain unresolved. Historical deltas ownership retains repeated
-events separately.
+identities remain unresolved. Deltas ownership follows §4.2 and retains repeated sequential events separately.
 
 The named `UG2/CMOD_FEAT_ATTRIBUTE` instances with one trailing reference carry
 one scalar type-82 value. The named `UG2/CMOD_FACR_ATTRIBUTE` instances with two

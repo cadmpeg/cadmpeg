@@ -4850,7 +4850,12 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Pipe) => {
-                    group.role() == DesignOperandRole::ROLE_0X5 && group.extrude_role().is_none()
+                    matches!(
+                        group.role(),
+                        DesignOperandRole::ROLE_0X5
+                            | DesignOperandRole::BODIES_A
+                            | DesignOperandRole::BODIES_B
+                    ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::CircularPattern) => {
                     matches!(
@@ -5065,31 +5070,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
     }
 }
 
-fn pipe_operand_roles_are_valid(
-    operation: records::feature::extrude::DesignExtrudeOperation,
-    groups: &[(DesignOperandRole, usize)],
-) -> bool {
-    let expected_bodies =
-        usize::from(operation != records::feature::extrude::DesignExtrudeOperation::NewBody);
-    groups.len() == 1 + expected_bodies
-        && groups.iter().all(|(_, members)| *members > 0)
-        && groups
-            .iter()
-            .filter(|(role, _)| *role == DesignOperandRole::ROLE_0X5)
-            .count()
-            == 1
-        && groups
-            .iter()
-            .filter(|(role, _)| {
-                matches!(
-                    *role,
-                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                )
-            })
-            .count()
-            == expected_bodies
-}
-
 /// Validate path-feature operand roles against the scope construction.
 ///
 /// The role grammar is shared with the fixed Loft projector. Keeping the
@@ -5164,11 +5144,12 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
         return;
     }
     let native = ctx.native;
-    for scope in native
-        .design_parameter_scopes
-        .iter()
-        .filter(|scope| scope.has_path_construction())
-    {
+    // A Pipe construction's complete group relation is admitted with the
+    // native records; Intersect has no assigned role sequence.
+    for scope in native.design_parameter_scopes.iter().filter(|scope| {
+        scope.has_path_construction()
+            && scope.kind() != records::feature::scope::DesignFeatureKind::Pipe
+    }) {
         let native_stream = design_stream(&scope.id);
         let groups = native
             .design_construction_operand_groups
@@ -5294,11 +5275,6 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         }
                     }
             }
-            records::feature::scope::DesignScopePayload::Pipe(Some(
-                crate::records::feature::path_features::DesignPipeConstruction {
-                    operation, ..
-                },
-            )) => pipe_operand_roles_are_valid(*operation, &group_roles),
             _ => false,
         };
         if !valid {

@@ -220,7 +220,7 @@ fn stored_base_keeps_history_order_suppression_and_native_result_identity() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
     let findings = InventorCodec
-        .validate_native(&ctx, &ir)
+        .validate_native(&ctx, &ir, None)
         .expect("native validation");
     assert!(
         !findings
@@ -232,7 +232,7 @@ fn stored_base_keeps_history_order_suppression_and_native_result_identity() {
         serde_json::from_slice(&serde_json::to_vec(&ir).expect("serialize")).expect("deserialize");
     assert_eq!(round_trip.model.features, ir.model.features);
     let findings = InventorCodec
-        .validate_native(&ctx, &round_trip)
+        .validate_native(&ctx, &round_trip, None)
         .expect("round-trip native validation");
     assert!(
         !findings
@@ -253,7 +253,7 @@ fn stored_base_keeps_history_order_suppression_and_native_result_identity() {
                 .remove("result_body_link");
         }
         let findings = InventorCodec
-            .validate_native(&ctx, &changed)
+            .validate_native(&ctx, &changed, None)
             .expect("changed native validation");
         assert!(findings
             .iter()
@@ -415,7 +415,7 @@ fn base_native_validation_rejects_ambiguous_or_invalid_result_identity() {
                 .expect("changed native records");
         }
         let findings = InventorCodec
-            .validate_native(&ctx, &changed)
+            .validate_native(&ctx, &changed, None)
             .expect("changed native validation");
         assert!(
             findings

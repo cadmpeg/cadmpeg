@@ -589,9 +589,11 @@ mod tests {
             .unwrap();
         let (mut ir, _, _) = result.into_parts();
         crate::test_support::with_decode_context(|ctx| {
-            assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
-                .unwrap()
-                .is_empty());
+            assert!(
+                <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None)
+                    .unwrap()
+                    .is_empty()
+            );
             let namespace = ir.native.namespace_mut("nx");
             let original = serde_json::to_value(
                 &namespace.arenas()["feature_surface_construction_payloads"][0],
@@ -644,9 +646,11 @@ mod tests {
             namespace
                 .set_arena(ctx, "feature_surface_construction_payloads", &[original])
                 .unwrap();
-            assert!(<crate::NxCodec as CodecBackend>::validate_native(ctx, &ir)
-                .unwrap()
-                .is_empty());
+            assert!(
+                <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None)
+                    .unwrap()
+                    .is_empty()
+            );
         });
     }
 

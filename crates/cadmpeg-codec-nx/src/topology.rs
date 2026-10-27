@@ -1057,28 +1057,6 @@ impl Graph {
             .collect()
     }
 
-    /// Admit one complete canonical record without building graph indices.
-    /// A typed root that occupies the complete input wins physical selection
-    /// in both node-ID domains and cannot contain a second selected record.
-    /// Ownership records and all other shapes retain full graph admission.
-    pub(crate) fn has_canonical_record(bytes: &[u8], kind: NodeKind, xmt: u32) -> bool {
-        if !matches!(kind, NodeKind::Body | NodeKind::Region)
-            && bytes.first() == Some(&0)
-            && bytes.get(1).and_then(|tag| NodeKind::try_from(*tag).ok()) == Some(kind)
-        {
-            let root_matches = |full_node_id_domain| {
-                Self::fixed_record_candidates(bytes, 0, kind, full_node_id_domain)
-                    .into_iter()
-                    .flatten()
-                    .any(|candidate| candidate.xmt() == xmt && candidate.end == bytes.len())
-            };
-            if root_matches(false) && root_matches(true) {
-                return true;
-            }
-        }
-        Self::parse(bytes).get(kind, xmt).is_some()
-    }
-
     fn fixed_record_candidates(
         stream: &[u8],
         pos: usize,
@@ -1339,28 +1317,6 @@ impl Graph {
             endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
             tolerance: edge.tolerance,
         })
-    }
-
-    /// Carrier identities required by the surviving fixed topology image.
-    pub(crate) fn referenced_carrier_xmts(&self) -> BTreeSet<u32> {
-        let mut references = self.referenced_curve_xmts();
-        for reference in self
-            .of_kind(NodeKind::Face)
-            .filter_map(Node::face_fields)
-            .filter_map(|fields| fields.surface.map(u32::from))
-            .filter(|reference| *reference > 1)
-        {
-            references.insert(reference);
-        }
-        for reference in self
-            .of_kind(NodeKind::Vertex)
-            .filter_map(Node::vertex_fields)
-            .filter_map(|fields| fields.point.map(u32::from))
-            .filter(|reference| *reference > 1)
-        {
-            references.insert(reference);
-        }
-        references
     }
 
     /// Return SHELL nodes whose ownership fields define a body shape.

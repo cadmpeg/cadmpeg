@@ -54,7 +54,7 @@ fn rse_compression_methods_reach_records_and_valid_sphere_geometry() {
         .expect("neutral and source-fidelity validation");
         check.findings.extend(
             InventorCodec
-                .validate_native(&ctx, &ir)
+                .validate_native(&ctx, &ir, None)
                 .expect("native validation"),
         );
         let errors: Vec<_> = check

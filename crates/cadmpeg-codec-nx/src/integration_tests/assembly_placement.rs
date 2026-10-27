@@ -25,7 +25,7 @@ fn placement_native_validator_rejects_matrix_that_disagrees_with_source_bytes() 
         .namespace_mut("nx")
         .set_arena(&ctx, "assembly_placements", &[&wire])
         .unwrap();
-    assert!(crate::NxCodec::validate_native(&ctx, &ir)
+    assert!(crate::NxCodec::validate_native(&ctx, &ir, None)
         .unwrap()
         .is_empty());
     wire["matrix"][3] = serde_json::json!(1.0);
@@ -33,7 +33,7 @@ fn placement_native_validator_rejects_matrix_that_disagrees_with_source_bytes() 
         .namespace_mut("nx")
         .set_arena(&ctx, "assembly_placements", &[&wire])
         .unwrap();
-    let findings = crate::NxCodec::validate_native(&ctx, &ir).unwrap();
+    let findings = crate::NxCodec::validate_native(&ctx, &ir, None).unwrap();
     assert_eq!(findings.len(), 1);
     assert_eq!(
         findings[0].check,

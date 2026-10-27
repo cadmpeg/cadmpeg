@@ -15,7 +15,7 @@ use cadmpeg_ir::validate::{
 };
 use cadmpeg_ir::{
     report::check::{Finding, ValidationReport},
-    CadIr,
+    CadIr, SourceFidelity,
 };
 use cadmpeg_measure::{MeasureOptions, WorkProfile};
 use cadmpeg_registry::InputCatalog;
@@ -46,9 +46,12 @@ pub(crate) fn validate_loaded(
             ),
             None => validate_neutral_for_decode(&ctx, &document.ir, losses),
         }?;
-        report
-            .findings
-            .extend(validate_native(&ctx, inputs, &document.ir)?);
+        report.findings.extend(validate_native(
+            &ctx,
+            inputs,
+            &document.ir,
+            document.fidelity(),
+        )?);
         report.findings.extend(cadmpeg_measure::findings(
             &ctx,
             &document.ir,
@@ -68,6 +71,7 @@ fn validate_native(
     ctx: &DecodeContext<'_>,
     inputs: &InputCatalog,
     ir: &CadIr,
+    source: Option<&SourceFidelity>,
 ) -> Result<Vec<Finding>, CodecError> {
     let mut findings = Vec::new();
     for descriptor in inputs.descriptors() {
@@ -75,7 +79,7 @@ fn validate_native(
             continue;
         };
         if ir.native.namespace(codec.id().as_str()).is_some() {
-            findings.extend(codec.validate_native(ctx, ir)?);
+            findings.extend(codec.validate_native(ctx, ir, source)?);
         }
     }
     Ok(findings)
@@ -83,6 +87,9 @@ fn validate_native(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "nx")]
+    mod deltas_source;
+
     use super::validate_native;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::CadIr;
@@ -92,7 +99,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("validation context");
-        validate_native(&ctx, inputs, ir).expect("validation fits service policy")
+        validate_native(&ctx, inputs, ir, None).expect("validation fits service policy")
     }
 
     #[test]
@@ -147,5 +154,11 @@ mod tests {
                 .any(|finding| finding.message.contains("FCStd")),
             "{findings:?}"
         );
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let fidelity = cadmpeg_ir::SourceFidelity::default();
+        let with_source = validate_native(&ctx, &inputs, &ir, Some(&fidelity)).unwrap();
+        assert_eq!(with_source, findings);
     }
 }

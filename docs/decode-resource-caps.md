@@ -342,6 +342,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-nx`       | `src/jt_topology.rs`                               | `MAX_TOPOLOGY_SLOTS`                      | `8_000_000`                                             | 2    | Running vertex and face slot total before `alloc_filled`. Excess leaves the topology undecoded.                                                                                                                                                                              |
 | `cadmpeg-codec-nx`       | `src/om/state_block.rs`                            | `MAX_STATE_BLOCK_TAIL_BYTES`              | `64 * 1024`                                             | 1    | Tail admitted after a state-block path when no exact boundary exists; a framing discriminator.                                                                                                                                                                               |
 | `cadmpeg-codec-nx`       | `src/om/state_counter.rs`                          | `MAX_COUNTER_TAIL_BYTES`                  | `64`                                                    | 1    | Tail admitted after a counter run; a framing discriminator.                                                                                                                                                                                                                  |
+| `cadmpeg-codec-nx`       | `src/deltas/pmark_state.rs`                        | `MAX_XMT`                                 | `65_535 * 32_767 + 32_768`                              | 1    | Largest XMT identity the escaped two-word encoding can express in a PMARK field. A larger value is malformed.                                                                                                                                                                |
+| `cadmpeg-codec-nx`       | `src/deltas/section.rs`                            | `MAX_MAP_XMT`                             | `65_535 * 32_767 + 32_767`                              | 1    | Largest nonnull XMT identity of a Deltas map entry. A larger value ends the map section as malformed.                                                                                                                                                                        |
 | `cadmpeg-codec-nx`       | `src/om/state_status.rs`                           | `MAX_OPAQUE_STATUS_BYTES`                 | `64 * 1024`                                             | 1    | Window searched for the opaque status terminator.                                                                                                                                                                                                                            |
 | `cadmpeg-codec-nx`       | `src/decode/geometry_work.rs`                      | `MAX_ADAPTIVE_GEOMETRY_WORK`              | `8_000_000`                                             | 4    | Model-wide `GeometryWorkBudget` for adaptive certification (`build.rs`). Exhaustion leaves results untyped and reports `geometry.adaptive-work-bounded`. Each of the five model-wide geometry limits is the larger of its constant and `GEOMETRY_WORK_PER_RECORD` (4096) × selected Parasolid records. |
 | `cadmpeg-codec-nx`       | `src/decode/geometry_work.rs`                      | `MAX_PCURVE_COMPLETION_GEOMETRY_WORK`     | `8_000_000`                                             | 4    | Floor of the model-wide geometry budget for intersection pcurve completion, scaled like the adaptive row. Exhaustion leaves lanes incomplete and reports `intersection.pcurve-completion-bounded`. |
@@ -480,16 +482,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 265.
+Production `MAX_*` constants: 267.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 33    |
+| 1    | Format or reader invariant | 35    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 133   |
 | N    | Not a decode bound         | 28    |
-|      | Total                      | 265   |
+|      | Total                      | 267   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -498,7 +500,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm`
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,
+`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
 ## Routing

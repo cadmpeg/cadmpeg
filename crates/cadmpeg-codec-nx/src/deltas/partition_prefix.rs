@@ -2,9 +2,7 @@
 //! Leading ordinary PARTITION and current PMARK nodes.
 
 use super::pmark_state::PmarkState;
-use crate::framing::read_and_advance;
 use crate::framing::xmt_reference::NonNullXmt;
-use cadmpeg_core::decode::View;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,19 +43,13 @@ impl TryFrom<PrefixWire> for PartitionPrefixState {
 }
 
 impl PartitionPrefixState {
-    /// Read the two first-use schema-match nodes at the header endpoint.
-    pub(super) fn read(stream: &[u8], offset: usize) -> Option<(Self, usize)> {
-        let mut view = View::over_retained(stream);
-        view.seek(offset)?;
-        (view.u16_be()? == 3 && view.u8()? == 255).then_some(())?;
-        let mut at = view.position();
-        let xmt = NonNullXmt::try_from(read_and_advance(stream, &mut at)?).ok()?;
-        let current_pmark = NonNullXmt::try_from(read_and_advance(stream, &mut at)?).ok()?;
-        view.seek(at)?;
-        let highest_id = view.u32_be()?;
-        (view.u16_be()? == 4 && view.u8()? == 255).then_some(())?;
-        let (mark, end) = PmarkState::read(stream, view.position())?;
-        let state = Self::try_from(PrefixWire {
+    pub(crate) fn new(
+        xmt: NonNullXmt,
+        current_pmark: NonNullXmt,
+        highest_id: u32,
+        mark: PmarkState,
+    ) -> Option<Self> {
+        Self::try_from(PrefixWire {
             partition: PartitionState {
                 xmt,
                 current_pmark,
@@ -65,20 +57,7 @@ impl PartitionPrefixState {
             },
             current_pmark: mark,
         })
-        .ok()?;
-        Some((state, end))
-    }
-
-    pub(crate) fn current_pmark(self) -> PmarkState {
-        self.current_pmark
-    }
-
-    pub(super) fn partition_xmt(self) -> u32 {
-        self.partition.xmt.into()
-    }
-
-    pub(crate) fn highest_id(self) -> u32 {
-        self.partition.highest_id
+        .ok()
     }
 }
 

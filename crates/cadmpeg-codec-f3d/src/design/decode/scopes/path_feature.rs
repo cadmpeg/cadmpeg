@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact path-feature construction scopes and pipe owner lanes.
+//! Exact path-feature construction scopes.
 
 use super::fixed_parameters::unique_revolve_angle_owner;
 use super::parameter_scope::parameter_scope_payload_length;
+use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use super::shared_frames::FixedScalarFrame;
-use super::shared_frames::{exact_fixed_scalar, extrude_operation_at};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
-use crate::ids::native_stream;
 use crate::layout::class_403_revolve_scope_frame as class_403_revolve;
 use crate::layout::compact_loft_operation_prefix as compact_loft;
-use crate::layout::fixed_pipe_operation_prefix as fixed_pipe;
-use crate::layout::legacy_pipe_operation_prefix as legacy_pipe;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::referenced_angle_revolve_prologue as referenced_revolve;
 use crate::records::feature::extrude::DesignExtrudeOperation;
@@ -22,98 +18,6 @@ use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct PipePrefix {
-    operation: DesignExtrudeOperation,
-    operation_offset: u64,
-    is_hollow: bool,
-    is_hollow_offset: u64,
-    opaque_post_operation: [u8; 2],
-    opaque_post_operation_offset: u64,
-}
-
-fn exact_pipe_prefix(bytes: &[u8], start: usize) -> Option<PipePrefix> {
-    let frame = bytes.get(start..)?;
-    let (hollow_at, operation_at, opaque_at) =
-        if frame.get(fixed_pipe::ZERO_RUN_10..fixed_pipe::IS_HOLLOW) == Some(&[0; 10]) {
-            (
-                fixed_pipe::IS_HOLLOW,
-                fixed_pipe::OPERATION,
-                fixed_pipe::OPAQUE_POST_OPERATION,
-            )
-        } else if frame.get(legacy_pipe::ZERO_RUN_9..legacy_pipe::PREFIX_MARKER) == Some(&[0; 9])
-            && frame.get(legacy_pipe::PREFIX_MARKER) == Some(&legacy_pipe::PREFIX_MARKER_VALUE)
-            && frame.get(legacy_pipe::ZERO_RUN_4..legacy_pipe::IS_HOLLOW) == Some(&[0; 4])
-        {
-            (
-                legacy_pipe::IS_HOLLOW,
-                legacy_pipe::OPERATION,
-                legacy_pipe::OPAQUE_POST_OPERATION,
-            )
-        } else {
-            return None;
-        };
-    let is_hollow = match *frame.get(hollow_at)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    Some(PipePrefix {
-        operation: extrude_operation_at(frame, operation_at)?,
-        operation_offset: u64::try_from(start.checked_add(operation_at)?).ok()?,
-        is_hollow,
-        is_hollow_offset: u64::try_from(start.checked_add(hollow_at)?).ok()?,
-        opaque_post_operation: frame
-            .get(opaque_at..opaque_at.checked_add(2)?)?
-            .try_into()
-            .ok()?,
-        opaque_post_operation_offset: u64::try_from(start.checked_add(opaque_at)?).ok()?,
-    })
-}
-
-fn pipe_owner_belongs_to_scope(scope: &DesignParameterScope, owner: &DesignParameterOwner) -> bool {
-    native_stream(&scope.id).is_some_and(|stream| {
-        native_stream(owner.id()) == Some(stream)
-            && owner.scope_record_index() == scope.record_index
-            && scope
-                .reference_members()
-                .values()
-                .any(|value| value == &owner.record_index())
-    })
-}
-
-fn exact_pipe_owner_lanes(
-    scope: &DesignParameterScope,
-    parameter_owners: &[DesignParameterOwner],
-) -> Option<[(u32, FixedScalarFrame); 4]> {
-    let mut owners = [None; 4];
-    for owner in parameter_owners
-        .iter()
-        .filter(|owner| pipe_owner_belongs_to_scope(scope, owner))
-    {
-        let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
-        let slot = owners.get_mut(ordinal)?;
-        if slot.replace(owner).is_some() {
-            return None;
-        }
-    }
-    let [Some(first), Some(second), Some(third), Some(fourth)] = owners else {
-        return None;
-    };
-    let lane = |owner: &DesignParameterOwner| {
-        Some((
-            owner.record_index(),
-            FixedScalarFrame {
-                owner_record_index: Some(scope.record_index),
-                ordinal: u8::try_from(owner.local_ordinal()).ok()?,
-                value: owner.evaluated_value(),
-                value_offset: owner.evaluated_value_offset(),
-            },
-        ))
-    };
-    Some([lane(first)?, lane(second)?, lane(third)?, lane(fourth)?])
-}
 
 pub(super) fn exact_path_feature_construction(
     bytes: &[u8],
@@ -329,54 +233,6 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignSweepConstruction {
                     operation: operation(start + 25)?,
                     operation_offset: u64::try_from(start + 25).ok()?,
-                    values: lanes.map(|(_, scalar)| scalar.value),
-                    record_indexes: lanes.map(|(record_index, _)| record_index),
-                    value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
-                },
-            ))
-        }
-        DesignFeatureFamily::Pipe => {
-            let end = usize::try_from(scope.paired_byte_offset()).ok()?;
-            let prefix = exact_pipe_prefix(bytes.get(..end)?, start)?;
-            let lanes = if parameter_owners
-                .iter()
-                .any(|owner| pipe_owner_belongs_to_scope(scope, owner))
-            {
-                exact_pipe_owner_lanes(scope, parameter_owners)?
-            } else {
-                let mut matched = [None; 4];
-                for record_index in scope.reference_members().values() {
-                    let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) else {
-                        continue;
-                    };
-                    if scalar.owner_record_index != Some(scope.record_index) {
-                        continue;
-                    }
-                    let slot = matched.get_mut(usize::from(scalar.ordinal))?;
-                    if slot.replace((*record_index, scalar)).is_some() {
-                        return None;
-                    }
-                }
-                let [Some(first), Some(second), Some(third), Some(fourth)] = matched else {
-                    return None;
-                };
-                [first, second, third, fourth]
-            };
-            if lanes
-                .iter()
-                .enumerate()
-                .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
-            {
-                return None;
-            }
-            Some(DesignPathFeatureConstruction::Pipe(
-                path_features::DesignPipeConstruction {
-                    operation: prefix.operation,
-                    operation_offset: prefix.operation_offset,
-                    is_hollow: prefix.is_hollow,
-                    is_hollow_offset: prefix.is_hollow_offset,
-                    opaque_post_operation: prefix.opaque_post_operation.into(),
-                    opaque_post_operation_offset: prefix.opaque_post_operation_offset,
                     values: lanes.map(|(_, scalar)| scalar.value),
                     record_indexes: lanes.map(|(record_index, _)| record_index),
                     value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),

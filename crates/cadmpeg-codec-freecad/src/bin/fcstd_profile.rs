@@ -216,7 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new())?;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
-        let native = FcstdCodec.validate_native(&ctx, first.ir())?;
+        let native = FcstdCodec.validate_native(&ctx, first.ir(), None)?;
         let namespace = first
             .ir()
             .native
@@ -1217,7 +1217,9 @@ fn source_less_profile(
         generation: SourceLessGenerationFlags {
             generated: true,
             deterministic: first == second,
-            decodes_cleanly: FcstdCodec.validate_native(&ctx, decoded.ir())?.is_empty(),
+            decodes_cleanly: FcstdCodec
+                .validate_native(&ctx, decoded.ir(), None)?
+                .is_empty(),
         },
         object_type,
         typed_parameters,

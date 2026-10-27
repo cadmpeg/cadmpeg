@@ -968,53 +968,6 @@ fn topology_reference_views_reserve_only_one_as_null() {
 }
 
 #[test]
-fn canonical_point_admission_does_not_build_a_topology_graph() {
-    let stream = topology_partition_stream();
-    let graph = Graph::parse(&stream);
-    let point = graph.of_kind(NodeKind::Point).next().unwrap();
-    assert!(Graph::has_canonical_record(
-        &point.bytes,
-        NodeKind::Point,
-        point.xmt()
-    ));
-}
-
-#[test]
-fn canonical_admission_keeps_the_graph_fallback_for_composite_input() {
-    let stream = topology_partition_stream();
-    let graph = Graph::parse(&stream);
-    let point_xmt = graph.of_kind(NodeKind::Point).next().unwrap().xmt();
-    assert!(Graph::has_canonical_record(
-        &stream,
-        NodeKind::Point,
-        point_xmt
-    ));
-    assert!(!Graph::has_canonical_record(&stream, NodeKind::Point, 999));
-}
-
-#[test]
-fn canonical_admission_matches_graph_identity_selection() {
-    for bytes in [
-        topology_partition_stream(),
-        offset_surface_topology_partition_stream(),
-        partnered_trimmed_topology_partition_stream(),
-    ] {
-        let graph = Graph::parse(&bytes);
-        for node in graph.nodes.values() {
-            for identity in [node.xmt(), 999_999] {
-                let expected = Graph::parse(&node.bytes).get(node.kind, identity).is_some();
-                assert_eq!(
-                    Graph::has_canonical_record(&node.bytes, node.kind, identity),
-                    expected,
-                    "family {:?}, identity {identity}",
-                    node.kind,
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn shell_census_work_does_not_scan_unrelated_record_kinds() {
     let mut stream = topology_partition_stream();
     for xmt in 100..1100 {

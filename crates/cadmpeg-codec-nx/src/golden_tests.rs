@@ -334,18 +334,13 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_blend_bound_records",
     "parasolid_blend_surface_records",
     "parasolid_chart_records",
-    "parasolid_deltas_body_revisions",
+    "parasolid_deltas_instances",
     "parasolid_deltas_transmit_headers",
-    "parasolid_deltas_terminal_null_references",
     "parasolid_deltas_records",
     "parasolid_deltas_residual_spans",
-    "parasolid_deltas_tagged_reference_lanes",
-    "parasolid_deltas_reference_type_maps",
-    "parasolid_deltas_pmark_packets",
     "parasolid_deltas_partition_prefixes",
-    "parasolid_deltas_reference_marker_packets",
-    "parasolid_deltas_schema_nodes",
-    "parasolid_deltas_tombstones",
+    "parasolid_deltas_schemas",
+    "parasolid_deltas_metadata",
     "parasolid_entity_51_numeric_uses",
     "parasolid_entity_51_records",
     "parasolid_entity_51_structured_uses",
@@ -1107,14 +1102,13 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    // The removed byte-150 arena has no independent record ownership.
-    assert_eq!(CATALOGUE.len(), 258, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 253, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| matches!(&row.phase, Phase::GroupA { .. }))
             .count(),
-        114,
+        109,
         "group A family count"
     );
     assert_eq!(

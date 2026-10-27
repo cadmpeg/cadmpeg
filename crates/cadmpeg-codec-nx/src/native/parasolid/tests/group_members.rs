@@ -138,57 +138,35 @@ fn group_members_follow_complete_bidirectional_type_91_chain() {
 }
 
 #[test]
-fn group_members_reuse_cached_delta_events_without_losing_order_or_ambiguity() {
-    use crate::deltas::record_family::RecordFamily;
-    use crate::deltas::record_kind::RecordKind;
-    use crate::native::parasolid::{ParasolidDeltasRecord, ParasolidDeltasTombstone};
-    let primary = [
-        membership_record(90, 10, Some(7), vec![3, 4, 5, 6, 30]),
-        membership_record(91, 30, None, vec![10, 100, 1, 1, 1, 1]),
-        membership_record(14, 100, Some(50), Vec::new()),
+fn paired_deltas_do_not_change_primary_group_membership() {
+    let primary = primary_group_stream(10, 7, 30);
+    let mut delta = crate::test_support::test_pmarks::prefix(1);
+    delta.extend(crate::test_support::owned_deltas::region(7, 100, b'S'));
+    let streams = [
+        stream(
+            crate::parasolid::ParasolidSubtype::Partition,
+            "SCH_TEST_13006",
+            primary,
+        ),
+        crate::test_support::owned_deltas::stream(crate::test_support::test_pmarks::complete(
+            delta,
+        )),
     ];
-    let replacement = |stream_ordinal, inflated_offset, node_id| ParasolidDeltasRecord {
-        id: format!("replacement-{stream_ordinal}-{inflated_offset}"),
-        stream_ordinal,
-        family: RecordFamily::Face {
-            references: [1; 11],
-            node_id,
-        },
-        xmt: 100,
-        byte_len: 1,
-        inflated_offset,
-    };
-    let replacements = [
-        replacement(1, 90, 51),
-        replacement(1, 20, 52),
-        replacement(2, 1000, 99),
-    ];
-    let tombstones = [ParasolidDeltasTombstone {
-        id: "deletion".into(),
-        stream_ordinal: 1,
-        kind: RecordKind::Face,
-        xmt: 100,
-        inflated_offset: 50,
-    }];
     crate::test_support::with_decode_context(|_ctx| {
-        let mut state = crate::native::parasolid::group_state::GroupState::from_records(&primary);
-        state.apply_deltas(1, &replacements, &tombstones);
-        let mut members = Vec::new();
-        state.append_members(4, &mut members);
-        assert_eq!(members.len(), 1);
-        assert_eq!(members[0].target.node_id, 51);
-        let mut deleted = crate::native::parasolid::group_state::GroupState::from_records(&primary);
-        deleted.apply_deltas(1, &replacements[1..2], &tombstones);
-        let mut removed = Vec::new();
-        deleted.append_members(4, &mut removed);
-        assert!(removed.is_empty());
-        let mut ambiguous = primary.to_vec();
-        ambiguous.push(membership_record(14, 100, Some(53), Vec::new()));
-        let mut state = crate::native::parasolid::group_state::GroupState::from_records(&ambiguous);
-        state.apply_deltas(1, &replacements, &tombstones);
-        let mut rejected = Vec::new();
-        state.append_members(4, &mut rejected);
-        assert!(rejected.is_empty());
+        let events = crate::native::parasolid::parasolid_deltas_events(&streams);
+        let baseline = crate::native::parasolid::parasolid_groups(
+            &streams[..1],
+            &BTreeMap::new(),
+            &crate::native::parasolid::parasolid_deltas_events(&streams[..1]),
+        )
+        .unwrap();
+        let paired = crate::native::parasolid::parasolid_groups(
+            &streams,
+            &BTreeMap::from([(0, vec![1])]),
+            &events,
+        )
+        .unwrap();
+        assert_eq!(paired.1, baseline.1);
     });
 }
 
@@ -347,6 +325,13 @@ fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
 
 #[test]
 fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
+    let owned_group = |xmt, node, linked| {
+        let mut bytes = crate::test_support::test_pmarks::prefix(1);
+        let mut record = group_record(xmt, node, linked);
+        record.insert(2, 0xff);
+        bytes.extend(record);
+        crate::test_support::test_pmarks::complete(bytes)
+    };
     let streams = [
         stream(
             crate::parasolid::ParasolidSubtype::Partition,
@@ -356,12 +341,12 @@ fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
         stream(
             crate::parasolid::ParasolidSubtype::Deltas,
             "SCH_TEST",
-            group_record(11, 8, 9),
+            owned_group(11, 8, 9),
         ),
         stream(
             crate::parasolid::ParasolidSubtype::Deltas,
             "SCH_OTHER",
-            group_record(12, 9, 10),
+            owned_group(12, 9, 10),
         ),
     ];
     let events = crate::native::parasolid::parasolid_deltas_events(&streams);

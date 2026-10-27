@@ -63,7 +63,12 @@
       "source": {
         "attributes": {
           "deltas.0.bytes_decoded": "0",
-          "deltas.0.grammar": "typed_status_framed_records",
+          "deltas.0.grammar": "sequential_owned_records",
+          "deltas.0.instances": "0",
+          "deltas.0.schemas": "0",
+          "deltas.0.selection": "unresolved",
+          "deltas.0.stop_offset": "0",
+          "deltas.0.stop_reason": "UnsupportedBase",
           "deltas_streams": "1",
           "directory_entries": "1",
           "file_size": "201",
@@ -215,14 +220,10 @@
         "attributes": {
           "file_offset": "76",
           "kind": "deltas",
-          "records.body": "0",
-          "records.edge": "0",
-          "records.face": "0",
-          "records.fin": "0",
-          "records.loop": "0",
-          "records.region": "0",
-          "records.shell": "0",
-          "records.vertex": "0",
+          "records.delta.bytes_decoded": "0",
+          "records.delta.instances": "0",
+          "records.delta.schemas": "0",
+          "records.delta.selection": "unresolved",
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",

@@ -1,8 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{positive, read, DataType, SchemaField};
+use super::{positive, read_definition, BaseVersion, DataType, SchemaField, SchemaPlan};
 use crate::test_support::with_decode_context;
 use cadmpeg_core::decode::View;
+
+pub(super) fn read(
+    bytes: &[u8],
+    offset: usize,
+) -> Result<Option<(SchemaPlan, usize)>, cadmpeg_core::CodecError> {
+    let mut view = View::over_retained(bytes);
+    let Some((kind, count)) = (|| {
+        view.seek(offset)?;
+        Some((view.u16_be()?, view.u8()?))
+    })() else {
+        return Ok(None);
+    };
+    let Some(plan) = read_definition(&mut view, BaseVersion::V13006, kind, count)? else {
+        return Ok(None);
+    };
+    Ok(Some((plan, view.position())))
+}
 
 fn descriptor(bytes: &mut Vec<u8>, op: u8, name: &str, class: u16, scalar: u8) {
     bytes.push(op);
@@ -58,8 +75,8 @@ fn world_variants_come_from_edit_fields_and_end_before_the_instance() {
             bytes.extend_from_slice(&[0, 2, 0, 1, 1]);
             let (schema, actual_end) = read(&bytes, 0).unwrap().unwrap();
             assert_eq!(actual_end, end);
-            assert_eq!(schema.plan.kind, 101);
-            assert_eq!(schema.plan.fields.len(), count);
+            assert_eq!(schema.kind, 101);
+            assert_eq!(schema.fields.len(), count);
             let mut names = vec![
                 "assembly",
                 "attribute",
@@ -90,7 +107,6 @@ fn world_variants_come_from_edit_fields_and_end_before_the_instance() {
             }
             assert_eq!(
                 schema
-                    .plan
                     .fields
                     .iter()
                     .map(|f| f.name.as_str())
@@ -126,21 +142,14 @@ fn region_insert_and_append_preserve_class_constraints() {
             bytes.push(b'Z');
             let (schema, end) = read(&bytes, 0).unwrap().unwrap();
             assert_eq!(end, bytes.len());
+            assert_eq!(schema.fields.last().unwrap().pointer_class, owner_class);
             assert_eq!(
-                schema.plan.fields.last().unwrap().pointer_class,
-                owner_class
-            );
-            assert_eq!(
-                schema
-                    .plan
-                    .fields
-                    .iter()
-                    .any(|f| f.name.as_str() == "frame"),
+                schema.fields.iter().any(|f| f.name.as_str() == "frame"),
                 frame
             );
             let wire = serde_json::to_value(&schema).unwrap();
             assert_eq!(
-                wire["fields"][schema.plan.fields.len() - 1]["pointer_class"],
+                wire["fields"][schema.fields.len() - 1]["pointer_class"],
                 owner_class
             );
         }
@@ -148,16 +157,15 @@ fn region_insert_and_append_preserve_class_constraints() {
 }
 
 #[test]
-fn first_use_match_is_distinct_from_a_missing_edit_or_a_zero_field_candidate() {
+fn first_use_match_and_zero_field_definition_are_distinct_from_a_missing_edit() {
     with_decode_context(|_ctx| {
         let (schema, end) = read(&[0, 101, 255, 0, 2], 0).unwrap().unwrap();
         assert_eq!(end, 3);
-        assert_eq!(schema.plan.fields.len(), 11);
-        for bytes in [
-            &[0, 101, 0, b'Z'][..],
-            &[0, 101, 1, b'A', b'Z'],
-            &[0, 250, 255],
-        ] {
+        assert_eq!(schema.fields.len(), 11);
+        let (empty, end) = read(&[0, 101, 0, b'Z'], 0).unwrap().unwrap();
+        assert!(empty.fields.is_empty());
+        assert_eq!(end, 4);
+        for bytes in [&[0, 101, 1, b'A', b'Z'][..], &[0, 250, 255]] {
             assert!(read(bytes, 0).unwrap().is_none());
         }
     });
@@ -196,7 +204,13 @@ fn unestablished_primary_scalar_codes_cannot_enter_status_metadata() {
             let mut bytes = vec![0, 41, 1, b'D', b'D'];
             descriptor(&mut bytes, b'A', "opaque", 0, scalar);
             bytes.push(b'Z');
-            assert!(read(&bytes, 0).unwrap().is_none());
+            let mut stream = crate::test_support::test_pmarks::prefix(1);
+            let start = stream.len();
+            stream.extend(bytes);
+            stream.extend([0, 2]);
+            let owner = super::DeltasRecords::read(&stream).unwrap();
+            assert_eq!(owner.suffix().start, start);
+            assert_eq!(owner.census().instance_count(), 0);
         }
     });
 }

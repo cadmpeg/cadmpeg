@@ -159,16 +159,16 @@
             "geometry": {
               "axis": {
                 "x": 0.0,
-                "y": 1.0,
-                "z": 0.0
+                "y": 0.0,
+                "z": 1.0
               },
               "kind": "cylinder",
               "origin": {
-                "x": 1.0,
-                "y": 2.0,
-                "z": 3.0
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
               },
-              "radius": 25.0,
+              "radius": 10.0,
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
@@ -190,36 +190,12 @@
       },
       "native": {
         "nx": {
-          "parasolid_deltas_records": [
-            {
-              "byte_len": 104,
-              "family": "CYLINDER",
-              "id": "nx:s1:deltas-record#70-12",
-              "inflated_offset": 70,
-              "kind": 51,
-              "node_id": 910,
-              "position": [
-                0.001,
-                0.002,
-                0.003
-              ],
-              "references": [
-                1,
-                1,
-                1,
-                1,
-                1
-              ],
-              "stream_ordinal": 1,
-              "xmt": 12
-            }
-          ],
           "parasolid_deltas_residual_spans": [
             {
-              "byte_len": 70,
+              "byte_len": 174,
               "id": "nx:s1:deltas-residual#0",
               "inflated_offset": 0,
-              "sha256": "894857f2f9b776a00dadb52f361df957a104fa45d2d42d162ce8ead227d37b87",
+              "sha256": "7cd3517adc0e5b7dec21c8bff799d443e8e72411a7122e05325fbd9d77f4a25c",
               "stream_ordinal": 1
             }
           ],
@@ -240,9 +216,13 @@
       },
       "source": {
         "attributes": {
-          "deltas.0.bytes_decoded": "104",
-          "deltas.0.full.CYLINDER": "1",
-          "deltas.0.grammar": "typed_status_framed_records",
+          "deltas.0.bytes_decoded": "0",
+          "deltas.0.grammar": "sequential_owned_records",
+          "deltas.0.instances": "0",
+          "deltas.0.schemas": "0",
+          "deltas.0.selection": "unresolved",
+          "deltas.0.stop_offset": "0",
+          "deltas.0.stop_reason": "UnsupportedBase",
           "deltas_streams": "1",
           "directory_entries": "1",
           "file_size": "520",
@@ -341,13 +321,13 @@
         },
         {
           "code": {
-            "code": "deltas.applied",
+            "code": "deltas.selection-unresolved",
             "kind": "decode_diagnostic",
             "namespace": "nx",
             "scope": "namespaced"
           },
-          "message": "1 Parasolid deltas stream(s) were processed in validated UG_PART segment order. Equal-schema deltas were paired with the preceding partition. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact non-topology replacements and tombstones were applied using the last event for each key within each current body-sequence interval. Type-38 records and deletion candidates remained in the native ledger without replay; the paired partition's current relation remained authoritative. Validated partition topology remained authoritative, including any point, curve, or surface carrier still referenced by surviving topology. Complete ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native attribute extraction. Every completely bounded full record, compact tombstone, and BODY revision envelope was retained as an individually identified native event with its source bounds and decoded identities; BODY state tails retain exact bounded bytes and digests. Complete transmit headers retain their description, schema, consecutive identities, and exact bytes. Terminal two- and four-null-reference trailers retain their exact stream boundary and bytes. Count-selected numeric tails after term-use endpoints were retained with their ordered finite binary64 values. Maximal event gaps containing only typed stream-local references, framed reference/type maps, and complete four-reference state packets, reference-marker packets, and inline schema declarations were retained in order. Spans outside those events were retained with exact inflated-stream bounds and digests. Semantic intersection and NURBS records were retained in the semantic lane. Every terminal tombstone considered for replay resolved to an exact current or earlier-added key.",
-          "severity": "info"
+          "message": "1 Parasolid Deltas stream(s) retain sequentially owned physical records and the exact suffix at the first unsupported or malformed packet. Aggregate selection is unresolved. Paired partitions retain their own semantic input; Deltas streams contribute no semantic bytes.",
+          "severity": "warning"
         },
         {
           "code": {
@@ -506,7 +486,7 @@
             "tag": "PLANE"
           },
           "nx:s0:surf#1": {
-            "offset": 572,
+            "offset": 473,
             "stream": "nx:parasolid#0:partition",
             "tag": "CYLINDER"
           },
@@ -584,15 +564,10 @@
         "attributes": {
           "file_offset": "358",
           "kind": "deltas",
-          "records.body": "0",
-          "records.delta.full.cylinder": "1",
-          "records.edge": "0",
-          "records.face": "0",
-          "records.fin": "0",
-          "records.loop": "0",
-          "records.region": "0",
-          "records.shell": "0",
-          "records.vertex": "0",
+          "records.delta.bytes_decoded": "0",
+          "records.delta.instances": "0",
+          "records.delta.schemas": "0",
+          "records.delta.selection": "unresolved",
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",

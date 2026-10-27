@@ -1675,6 +1675,7 @@ impl F3dNative {
         for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
             *history.states_mut() = states;
         }
+        crate::records::feature::path_features::pipe::admit_native(&native)?;
         Ok(native)
     }
 

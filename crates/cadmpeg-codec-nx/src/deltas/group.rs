@@ -1,17 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed control fields of a GROUP record.
 
-use crate::records::group::GroupSelector;
 use serde::{Deserialize, Serialize};
-
-pub(super) fn selector(value: u8) -> Option<GroupSelector> {
-    match value {
-        2 => Some(GroupSelector::Face),
-        4 => Some(GroupSelector::Edge),
-        9 => Some(GroupSelector::Mixed),
-        _ => None,
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]

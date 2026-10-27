@@ -368,6 +368,8 @@ fn exact_embedded_extrude_distance(
         }
         let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
         Some(FixedScalarFrame {
+            start: u64::try_from(start).ok()?,
+            end: u64::try_from(end).ok()?,
             owner_record_index: Some(scope_record_index),
             ordinal: 0,
             value,

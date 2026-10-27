@@ -46,7 +46,8 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             .is_ok());
         assert!(<F3dCodec as CodecBackend>::validate_native(
             &cadmpeg_test_support::service_decode_context(),
-            decoded.ir()
+            decoded.ir(),
+            None,
         )
         .unwrap()
         .is_empty());

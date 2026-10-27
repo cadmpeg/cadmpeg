@@ -1,615 +1,125 @@
 // SPDX-License-Identifier: Apache-2.0
-
-use crate::parasolid::Stream;
-
-fn deltas_type_45(xmt: u16) -> Vec<u8> {
-    let mut bytes = 45u16.to_be_bytes().to_vec();
-    bytes.extend_from_slice(&2u32.to_be_bytes());
-    bytes.extend_from_slice(&xmt.to_be_bytes());
-    bytes.extend_from_slice(&1.25f64.to_be_bytes());
-    bytes.extend_from_slice(&2.5f64.to_be_bytes());
-    bytes
-}
+use crate::test_support::{owned_deltas, test_pmarks, with_decode_context};
 
 #[test]
-fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
-    let mut bytes = vec![0xaa, 0xbb, 0xcc, 0, 12, 0, 3];
-    bytes.extend_from_slice(&9u32.to_be_bytes());
-    for reference in [2u16, 3, 4, 5, 6, 7, 8, 9] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-        bytes.push(1);
-    }
-    let revision_prefix_end = bytes.len();
-    let revision_state_tail = [0xde, 0xad, 0xbe, 0xef];
-    bytes.extend_from_slice(&revision_state_tail);
-    let type_45_offset = bytes.len();
-    bytes.extend(deltas_type_45(10));
-    bytes.extend_from_slice(&[0xdd, 0xee]);
-    let tombstone_offset = bytes.len();
-    bytes.extend_from_slice(&[0, 29, 0, 11, 0, 1]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes,
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let census = crate::deltas::census::walk(&streams[0].inflated).unwrap();
-    let events = crate::native::parasolid::parasolid_deltas_events_with_censuses(
-        &streams,
-        vec![Some(census)],
-    )
-    .unwrap();
-
-    assert_eq!(events.body_revisions.len(), 1);
-    assert_eq!(u32::from(events.body_revisions[0].xmt), 3);
-    assert_eq!(events.body_revisions[0].node_id, 9);
+fn owned_definitions_are_shared_and_instances_retain_exact_source_ranges() {
+    let (declaration, ordinary, _) = owned_deltas::body(36);
+    let mut bytes = owned_deltas::body_stream(36);
+    let second = bytes.len();
+    bytes.extend(&ordinary);
+    let bytes = test_pmarks::complete(bytes);
+    let streams = [owned_deltas::stream(bytes.clone())];
+    let events = super::super::parasolid_deltas_events(&streams);
+    assert_eq!(events.schemas.len(), 3);
+    assert_eq!(events.instances.len(), 2);
+    assert!(events.records.is_empty());
+    assert_eq!(events.metadata.len(), 4);
+    assert!(events.residual_spans.is_empty());
+    let first = serde_json::to_value(&events.instances[0]).unwrap();
+    let later = serde_json::to_value(&events.instances[1]).unwrap();
+    let schema = serde_json::to_value(&events.schemas[2]).unwrap();
+    assert_eq!(first["schema"], schema["id"]);
+    assert_eq!(later["schema"], schema["id"]);
+    assert!(first.get("definition").is_none());
     assert_eq!(
-        events.body_revisions[0].references,
-        [2, 3, 4, 5, 6, 7, 8, 9]
+        first["identity_offset"],
+        test_pmarks::prefix(1).len() + declaration.len()
     );
-    assert_eq!(events.body_revisions[0].lengths.prefix(), 32);
-    assert_eq!(events.body_revisions[0].lengths.tail(), 4);
-    assert_eq!(events.body_revisions[0].lengths.total(), 36);
+    assert_eq!(later["inflated_offset"], second);
+    assert_eq!(later["byte_len"], ordinary.len());
+    assert_eq!(first["fields"].as_array().unwrap().len(), 36);
+    let owner = with_decode_context(|_ctx| crate::records::DeltasRecords::read(&bytes)).unwrap();
     assert_eq!(
-        events.body_revisions[0].state_tail_sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&revision_state_tail)
-    );
-    assert_eq!(
-        events.body_revisions[0].inflated_offset + events.body_revisions[0].lengths.prefix(),
-        cadmpeg_core::decode::u64_from_index(revision_prefix_end)
-    );
-    assert_eq!(events.records.len(), 1);
-    assert_eq!(events.records[0].family.family_name(), "TYPE_45");
-    assert_eq!(events.records[0].xmt, 10);
-    assert_eq!(
-        events.records[0].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(type_45_offset)
-    );
-    assert_eq!(events.records[0].byte_len, 24);
-    assert_eq!(events.tombstones.len(), 1);
-    assert_eq!(events.tombstones[0].kind.name(), "POINT");
-    assert_eq!(events.tombstones[0].xmt, 11);
-    assert_eq!(
-        serde_json::to_value(&events.tombstones[0]).unwrap()["byte_len"],
-        6
-    );
-    assert_eq!(
-        events.tombstones[0].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(tombstone_offset)
-    );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].inflated_offset, 0);
-    assert_eq!(events.residual_spans[0].byte_len, 3);
-    assert_eq!(
-        events.residual_spans[0].sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&[0xaa, 0xbb, 0xcc])
-    );
-    assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(type_45_offset + 24)
-    );
-    assert_eq!(events.residual_spans[1].byte_len, 2);
-}
-
-#[test]
-fn deltas_events_subtract_complete_limit_storage_from_residuals() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    bytes.extend_from_slice(&41u16.to_be_bytes());
-    bytes.extend_from_slice(&1u32.to_be_bytes());
-    bytes.extend_from_slice(&20u16.to_be_bytes());
-    bytes.extend_from_slice(b"L?");
-    for coordinate in [1.0f64, 2.0, 3.0] {
-        bytes.extend_from_slice(&coordinate.to_be_bytes());
-    }
-    let tail_offset = bytes.len();
-    for value in [0.5_f64, 1.5, 2.5, 3.5, 1.0, 0.0, 0.0, 7.5] {
-        bytes.extend_from_slice(&value.to_be_bytes());
-    }
-    bytes.extend_from_slice(&[0xcc, 0xdd, 0xee]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes,
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    let limits: Vec<_> = events
-        .records
-        .iter()
-        .filter(|r| r.family.kind() == 41)
-        .collect();
-    assert_eq!(limits.len(), 1);
-    assert_eq!(limits[0].xmt, 20);
-    assert_eq!(limits[0].inflated_offset, 2);
-    assert_eq!(limits[0].byte_len, 34 + 64);
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].byte_len, 2);
-    assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(tail_offset + 64)
-    );
-    assert_eq!(events.residual_spans[1].byte_len, 3);
-}
-
-#[test]
-fn deltas_events_subtract_tagged_reference_lanes_from_residuals() {
-    let mut bytes = [0xaa, 0xbb, 0xcc].to_vec();
-    bytes.extend(deltas_type_45(10));
-    let lane_offset = bytes.len();
-    bytes.extend([
-        0x00, 0x4f, 0x00, 0x0a, // direct type-79 reference
-        0x00, 0x50, 0xff, 0xff, 0x00, 0x01, // extended type-80 reference
-    ]);
-    let lane_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
-    let suffix_offset = bytes.len();
-    bytes.extend([0xdd, 0xee]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.tagged_reference_lanes.len(), 1);
-    let lane = &events.tagged_reference_lanes[0];
-    assert_eq!(
-        Vec::<(u16, u32)>::from(lane.references.clone()),
-        [(79, 10), (80, 32_768)]
-    );
-    assert_eq!(lane.byte_len, 10);
-    assert_eq!(
-        lane.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(lane_offset)
-    );
-    assert_eq!(
-        lane.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[lane_offset..lane_end])
-    );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].inflated_offset, 0);
-    assert_eq!(events.residual_spans[0].byte_len, 3);
-    assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(suffix_offset)
-    );
-    assert_eq!(events.residual_spans[1].byte_len, 2);
-}
-
-#[test]
-fn deltas_events_subtract_transmit_headers_from_residuals() {
-    let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
-    let schema = b"SCH_3501171_35102_13006";
-    let mut bytes = b"PS".to_vec();
-    bytes.extend_from_slice(
-        &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
-    );
-    bytes.extend_from_slice(description);
-    bytes.extend_from_slice(
-        &(u32::try_from(schema.len()).expect("fixture value fits u32")).to_be_bytes(),
-    );
-    bytes.extend_from_slice(schema);
-    bytes.extend_from_slice(&[0, 0xe7, 0, 0, 0, 0]);
-    let header_end = bytes.len();
-    bytes.extend([0xaa, 0xbb]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: Some(
-                cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_3501171_35102_13006")
-                    .expect("the fixture text is a schema token"),
-            ),
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.transmit_headers.len(), 1);
-    let header = &events.transmit_headers[0];
-    assert_eq!(header.id, "nx:s0:deltas-transmit-header#0");
-    assert_eq!(header.state.description().as_bytes(), description);
-    assert_eq!(header.state.schema().as_bytes(), schema);
-    assert_eq!(header.state.maximum_node_type(), 231);
-    assert_eq!(header.state.user_field_size(), 0);
-    assert_eq!(
-        header.byte_len,
-        cadmpeg_core::decode::u64_from_index(header_end)
-    );
-    assert_eq!(
-        header.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[..header_end])
-    );
-    assert_eq!(events.residual_spans.len(), 1);
-    assert_eq!(
-        events.residual_spans[0].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(header_end)
-    );
-    assert_eq!(events.residual_spans[0].byte_len, 2);
-}
-
-#[test]
-fn deltas_events_retain_terminal_null_references() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    let trailer_offset = bytes.len();
-    bytes.extend_from_slice(&[0, 1, 0, 1, 0, 1, 0, 1]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.terminal_null_references.len(), 1);
-    let trailer = &events.terminal_null_references[0];
-    assert_eq!(trailer.form.references(), [1; 4]);
-    assert_eq!(trailer.form.raw().len(), 8);
-    assert_eq!(
-        trailer.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(trailer_offset)
-    );
-    assert_eq!(
-        serde_json::to_value(trailer).unwrap()["sha256"],
-        serde_json::json!(
-            cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[trailer_offset..]).as_str()
-        )
-    );
-    assert_eq!(events.residual_spans.len(), 1);
-    assert_eq!(events.residual_spans[0].inflated_offset, 0);
-    assert_eq!(
-        events.residual_spans[0].byte_len,
-        cadmpeg_core::decode::u64_from_index(trailer_offset)
-    );
-}
-
-#[test]
-fn deltas_events_subtract_reference_type_maps_from_residuals() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    bytes.extend(deltas_type_45(10));
-    let map_offset = bytes.len();
-    bytes.extend([
-        0, 1, 0, 1, 0xe3, 0xbf, 0, 1, 0, 81, 0, 3, 0, 100, 0, 1, 0, 0, 0, 55,
-    ]);
-    let map_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
-    let suffix_offset = bytes.len();
-    bytes.extend([0xcc, 0xdd]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.reference_type_maps.len(), 1);
-    let map = &events.reference_type_maps[0];
-    assert_eq!(
-        Vec::<(u32, u16)>::from(map.entries.clone()),
-        [(40_000, 81), (3, 100)]
-    );
-    assert_eq!(map.terminal_word.map(std::num::NonZeroU16::get), Some(55));
-    let wire = serde_json::to_value(map).unwrap();
-    assert_eq!(wire["terminal_word"], 55);
-    assert!(wire.get("target_kind").is_none());
-    let mut invalid = wire;
-    invalid["terminal_word"] = serde_json::json!(0);
-    let error =
-        serde_json::from_value::<crate::native::parasolid::ParasolidDeltasReferenceTypeMap>(
-            invalid,
-        )
-        .unwrap_err();
-    assert!(error.to_string().contains("terminal_word: must be nonzero"));
-    assert_eq!(map.byte_len, 20);
-    assert_eq!(
-        map.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(map_offset)
-    );
-    assert_eq!(
-        map.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[map_offset..map_end])
-    );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].byte_len, 2);
-    assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(suffix_offset)
-    );
-    assert_eq!(events.residual_spans[1].byte_len, 2);
-}
-
-#[test]
-fn deltas_events_subtract_pmark_packets_from_residuals() {
-    let mut bytes = crate::test_support::test_pmarks::prefix(40_000);
-    bytes.extend([0xaa, 0xbb]);
-    bytes.extend(deltas_type_45(10));
-    let packet_offset = bytes.len();
-    bytes.extend(crate::test_support::test_pmarks::packet());
-    let packet_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
-    let suffix_offset = bytes.len();
-    bytes.extend([0xcc, 0xdd, 0xee]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.pmark_packets.len(), 1);
-    let packet = &events.pmark_packets[0];
-    assert_eq!(packet.nodes.as_slice().len(), 1);
-    assert_eq!(packet.nodes.as_slice()[0].xmt(), 40_000);
-    assert_eq!(packet.nodes.as_slice()[0].identifier(), 0x1234_5677);
-    assert!(!packet.terminal);
-    assert_eq!(packet.byte_len, 41);
-    assert_eq!(
-        packet.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(packet_offset)
-    );
-    assert_eq!(
-        packet.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
-    );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].byte_len, 2);
-    assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(suffix_offset)
-    );
-    assert_eq!(events.residual_spans[1].byte_len, 3);
-}
-
-#[test]
-fn deltas_events_retain_partition_prefixes() {
-    let bytes = crate::test_support::test_pmarks::prefix(1);
-    let prefix_offset = crate::test_support::test_pmarks::header().len();
-    let prefix_end = bytes.len();
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.partition_prefixes.len(), 1);
-    let prefix = &events.partition_prefixes[0];
-    assert_eq!(prefix.state.highest_id(), u32::MAX);
-    assert_eq!(prefix.state.current_pmark().identifier(), 0x1234_5678);
-    assert_eq!(
-        prefix.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(prefix_offset)
-    );
-    assert_eq!(
-        prefix.byte_len,
-        cadmpeg_core::decode::u64_from_index(prefix_end - prefix_offset)
-    );
-    assert_eq!(
-        prefix.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[prefix_offset..prefix_end])
-    );
-}
-
-#[test]
-fn deltas_events_subtract_reference_marker_packets_from_residuals() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    bytes.extend(deltas_type_45(10));
-    let packet_offset = bytes.len();
-    bytes.extend([0, 9, 1, 0, 1, 1, 0x53, 0, 1, 1]);
-    let packet_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
-    let suffix_offset = bytes.len();
-    bytes.extend([0xcc, 0xdd]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.reference_marker_packets.len(), 1);
-    let packet = &events.reference_marker_packets[0];
-    assert_eq!(u32::from(packet.reference), 9);
-    assert_eq!(u8::from(packet.marker), 0x53);
-    assert_eq!(packet.byte_len, 10);
-    assert_eq!(
-        packet.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(packet_offset)
-    );
-    assert_eq!(
-        packet.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
-    );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].byte_len, 2);
-    assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(suffix_offset)
-    );
-    assert_eq!(events.residual_spans[1].byte_len, 2);
-}
-
-#[test]
-fn deltas_events_subtract_schema_nodes_from_residuals() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    bytes.extend(deltas_type_45(10));
-    let declaration_offset = bytes.len();
-    bytes.extend([
-        0x00, 0x13, 0x09, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x49, 0x05, 0x66, 0x72, 0x61, 0x6d,
-        0x65, 0x00, 0xe6, 0x00, 0x01, 0x43, 0x41, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x00, 0x0c,
-        0x00, 0x01, 0x5a,
-    ]);
-    bytes.extend_from_slice(&11u16.to_be_bytes());
-    bytes.extend_from_slice(&5u32.to_be_bytes());
-    for reference in [1u16, 3, 1, 9] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-        bytes.push(1);
-    }
-    for reference in [10u16, 11] {
-        bytes.extend_from_slice(&reference.to_be_bytes());
-        bytes.push(0);
-    }
-    bytes.push(b'S');
-    bytes.extend_from_slice(&[0, 3, 1]);
-    let declaration_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
-    let suffix_offset = bytes.len();
-    bytes.extend([0xcc, 0xdd]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.schema_nodes.len(), 1);
-    let declaration = &events.schema_nodes[0];
-    let fields = serde_json::to_value(&declaration.fields).unwrap();
-    assert_eq!(fields["definition"]["kind"], 19);
-    assert_eq!(fields["definition"]["fields"].as_array().unwrap().len(), 9);
-    assert_eq!(fields["schema_byte_len"], 33);
-    assert_eq!(fields["xmt"], 11);
-    assert_eq!(
-        fields["values"][0],
-        serde_json::json!([{"type":"integer","value":5}])
-    );
-    assert_eq!(
-        fields["values"][6],
-        serde_json::json!([{"type":"pointer","value":{"target":11,"status":false}}])
-    );
-    assert_eq!(
-        fields["values"][7],
-        serde_json::json!([{"type":"char","value":83}])
-    );
-    assert_eq!(
-        fields["values"][8],
-        serde_json::json!([{"type":"pointer","value":{"target":3,"status":true}}])
-    );
-    assert_eq!(declaration.byte_len, 61);
-    assert_eq!(
-        declaration.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(declaration_offset)
-    );
-    assert_eq!(
-        declaration.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[declaration_offset..declaration_end])
-    );
-    assert_eq!(events.residual_spans.len(), 2);
-    assert_eq!(events.residual_spans[0].byte_len, 2);
-    assert_eq!(
-        events.residual_spans[1].inflated_offset,
-        cadmpeg_core::decode::u64_from_index(suffix_offset)
-    );
-    assert_eq!(events.residual_spans[1].byte_len, 2);
-}
-
-#[test]
-fn unowned_byte_150_shape_stays_in_fidelity_residuals() {
-    let mut bytes = [0xaa, 0xbb].to_vec();
-    bytes.extend(deltas_type_45(10));
-    let packet_offset = bytes.len();
-    bytes.push(150);
-    for (reference, status) in [(1u16, 1), (3, 1), (6_192, 0), (6_193, 1), (6_194, 0)] {
-        bytes.extend(reference.to_be_bytes());
-        bytes.push(status);
-    }
-    bytes.push(0x2b);
-    let values: [f64; 9] = [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0];
-    for value in values {
-        bytes.extend(value.to_be_bytes());
-    }
-    let packet_end = bytes.len();
-    bytes.extend(deltas_type_45(11));
-    let suffix_offset = bytes.len();
-    bytes.extend([0xcc, 0xdd]);
-    let streams = [Stream {
-        file_offset: 0,
-        consumed: 0,
-        inflated: bytes.clone(),
-        body: crate::parasolid::StreamBody::Parasolid {
-            subtype: crate::parasolid::ParasolidSubtype::Deltas,
-            schema: None,
-        },
-    }];
-
-    let events = crate::native::parasolid::parasolid_deltas_events(&streams);
-
-    assert_eq!(events.residual_spans.len(), 3);
-    let residual = events
-        .residual_spans
-        .iter()
-        .find(|span| span.inflated_offset == cadmpeg_core::decode::u64_from_index(packet_offset))
-        .expect("the entire unowned shape is one retained residual");
-    assert_eq!(
-        residual.inflated_offset,
-        cadmpeg_core::decode::u64_from_index(packet_offset)
-    );
-    assert_eq!(
-        residual.byte_len,
-        cadmpeg_core::decode::u64_from_index(packet_end - packet_offset)
-    );
-    assert_eq!(
-        residual.sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[packet_offset..packet_end])
-    );
-    assert_eq!(
-        events
-            .residual_spans
+        owner
+            .events()
             .iter()
-            .map(|span| (span.inflated_offset, span.byte_len))
-            .collect::<std::collections::BTreeMap<_, _>>(),
-        std::collections::BTreeMap::from([
-            (0, 2),
-            (
-                cadmpeg_core::decode::u64_from_index(packet_offset),
-                cadmpeg_core::decode::u64_from_index(packet_end - packet_offset),
-            ),
-            (cadmpeg_core::decode::u64_from_index(suffix_offset), 2),
-        ])
+            .map(|event| event.range().len())
+            .sum::<usize>(),
+        bytes.len()
     );
+    assert_eq!(owner.census().bytes_decoded(), bytes.len());
+}
+
+#[test]
+fn unsupported_packets_and_every_later_marker_remain_one_exact_suffix() {
+    for suffix in [
+        test_pmarks::packet(),
+        vec![0, 1, 0, 1],
+        vec![0xde, 0xad, 0, 19, 255],
+    ] {
+        let mut bytes = test_pmarks::prefix(1);
+        let at = bytes.len()
+            + if suffix.starts_with(&test_pmarks::TERMINATOR) {
+                4
+            } else {
+                0
+            };
+        bytes.extend(suffix);
+        bytes.extend(owned_deltas::region(9, 52, b'S'));
+        let streams = [owned_deltas::stream(bytes.clone())];
+        let events = super::super::parasolid_deltas_events(&streams);
+        assert!(events.instances.is_empty());
+        assert_eq!(events.transmit_headers.len(), 1);
+        assert_eq!(events.partition_prefixes.len(), 1);
+        assert_eq!(events.residual_spans.len(), 1);
+        let span = serde_json::to_value(&events.residual_spans[0]).unwrap();
+        assert_eq!(span["inflated_offset"], at);
+        assert_eq!(span["byte_len"], bytes.len() - at);
+        assert_eq!(
+            span["sha256"],
+            serde_json::to_value(cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[at..]))
+                .unwrap()
+        );
+    }
+}
+
+#[test]
+fn region_projection_uses_the_same_owned_fields_as_generic_native_values() {
+    for layout in [7, 8, 9] {
+        for region_type in *b"SV" {
+            let mut bytes = test_pmarks::prefix(1);
+            bytes.extend(owned_deltas::region(layout, 52, region_type));
+            let streams = [owned_deltas::stream(test_pmarks::complete(bytes))];
+            let events = super::super::parasolid_deltas_events(&streams);
+            assert_eq!(events.instances.len(), 1);
+            let [record] = events.records.as_slice() else {
+                panic!("REGION projection");
+            };
+            let crate::deltas::record_family::RecordFamily::Region { fields } = &record.family
+            else {
+                panic!("REGION");
+            };
+            assert_eq!(record.family.node_id(), u32::MAX);
+            assert_eq!(u8::from(fields.region_type), region_type);
+            assert_eq!(fields.references().count(), usize::from(layout - 2));
+            let wire = serde_json::to_value(&events.instances[0]).unwrap();
+            assert_eq!(wire["fields"][0]["values"][0]["value"], u32::MAX);
+        }
+    }
+}
+
+#[test]
+fn two_streams_join_instances_to_their_own_aggregate_schema_indices() {
+    let mut region = test_pmarks::prefix(1);
+    region.extend(owned_deltas::region(7, 8, b'S'));
+    let streams = [
+        owned_deltas::stream(test_pmarks::complete(owned_deltas::body_stream(36))),
+        owned_deltas::stream(test_pmarks::complete(region)),
+    ];
+    let events = super::super::parasolid_deltas_events(&streams);
+    assert_eq!(events.schemas.len(), 6);
+    assert_eq!(events.instances.len(), 2);
+    assert_eq!(events.metadata.len(), 8);
+    for (ordinal, expected_kind) in [(0, 12), (1, 19)] {
+        let instance = serde_json::to_value(&events.instances[ordinal]).unwrap();
+        assert_eq!(instance["stream_ordinal"], ordinal);
+        let schema = events
+            .schemas
+            .iter()
+            .map(|schema| serde_json::to_value(schema).unwrap())
+            .find(|schema| schema["id"] == instance["schema"])
+            .unwrap();
+        assert_eq!(schema["stream_ordinal"], ordinal);
+        assert_eq!(schema["definition"]["kind"], expected_kind);
+    }
 }

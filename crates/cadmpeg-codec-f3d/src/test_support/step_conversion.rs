@@ -48,7 +48,7 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
     .expect("neutral validation");
     validation.findings.extend(
         F3dCodec
-            .validate_native(&ctx, &ir)
+            .validate_native(&ctx, &ir, None)
             .expect("native validation"),
     );
     ctx.finish_session().expect("the validation session closes");

@@ -389,10 +389,6 @@ pub(crate) fn decode_parameter_scopes(
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
                     ) => *slot = Some(value),
                     (
-                        scope::DesignScopePayloadMut::Pipe(slot),
-                        crate::records::feature::path_features::DesignPathFeatureConstruction::Pipe(value),
-                    ) => *slot = Some(value),
-                    (
                         scope::DesignScopePayloadMut::Sweep(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Sweep(value),
                     ) => *slot = Some(scope::DesignSweepScope {
