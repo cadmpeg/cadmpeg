@@ -2385,10 +2385,26 @@ impl FinalizePath {
     fn component_bodies(
         &self,
         bodies: &[cadmpeg_ir::topology::Body],
+        native_keys: &[cadmpeg_asm::brep::records::BodyNativeKey],
         has_pending_body_source: bool,
     ) -> Option<std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>> {
         match self {
-            Self::Geometry(_) => Some(bodies.iter().map(|body| body.id.clone()).collect()),
+            Self::Geometry(_) => {
+                let native_bodies = native_keys
+                    .iter()
+                    .map(|key| &key.body)
+                    .collect::<std::collections::BTreeSet<_>>();
+                Some(
+                    bodies
+                        .iter()
+                        .filter(|body| {
+                            body.kind != cadmpeg_ir::topology::BodyKind::Wire
+                                || native_bodies.contains(&body.id)
+                        })
+                        .map(|body| body.id.clone())
+                        .collect(),
+                )
+            }
             Self::Bodyless(inputs) if inputs.model_body_maps_empty && !has_pending_body_source => {
                 Some(std::collections::BTreeSet::new())
             }
@@ -2566,6 +2582,16 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
             );
         }
+        self.report.losses.extend(
+            crate::design::decode::components::superseded_occurrences_loss(
+                prereqs.design_superseded_component_occurrences,
+            ),
+        );
+        self.report.losses.extend(
+            crate::design::decode::components::unretained_discriminators_loss(
+                &prereqs.design_occurrence_path_discriminators,
+            ),
+        );
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)
@@ -2808,8 +2834,14 @@ impl<'a> F3dDecodeSession<'a> {
             .extend(crate::design::decode::components::revised_definitions_loss(
                 &local_components,
             ));
+        self.report
+            .losses
+            .extend(crate::design::decode::components::unbound_roots_loss(
+                &local_components,
+            ));
         let bodies = finalize_path.component_bodies(
             &self.ir.model.bodies,
+            &self.native.body_native_keys,
             !prereqs.design_body_members.is_empty()
                 || !prereqs.design_body_bindings.is_empty()
                 || container::text_brep_names(scan).next().is_some(),

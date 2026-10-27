@@ -43,6 +43,8 @@ pub(super) struct ProductPrereqs {
     pub(super) design_owner_record_headers: Vec<DesignRecordHeader>,
     pub(super) design_parameter_owners: Vec<DesignParameterOwner>,
     pub(super) design_component_occurrences: Vec<DesignComponentOccurrence>,
+    pub(super) design_superseded_component_occurrences: usize,
+    pub(super) design_occurrence_path_discriminators: Vec<u32>,
     /// Scopes after history-bound variant admission, before design-intent
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
@@ -98,6 +100,8 @@ impl ProductPrereqs {
             design_owner_record_headers,
             design_parameter_owners,
             design_component_occurrences,
+            design_superseded_component_occurrences: _,
+            design_occurrence_path_discriminators: _,
             design_parameter_scopes,
             design_parameter_scope_losses: _,
             design_joint_motions,
@@ -171,8 +175,11 @@ pub(super) fn decode(
         &design_parameters,
         &merged_record_headers(&design_record_headers, &design_owner_record_headers),
     )?;
-    let design_component_occurrences =
-        crate::design::decode::components::decode_component_occurrences(scan)?;
+    let crate::design::decode::components::DecodedComponentOccurrences {
+        occurrences: design_component_occurrences,
+        superseded: design_superseded_component_occurrences,
+        path_discriminators: design_occurrence_path_discriminators,
+    } = crate::design::decode::components::decode_component_occurrences(scan)?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
         scopes: mut design_parameter_scopes,
         losses: design_parameter_scope_losses,
@@ -226,6 +233,8 @@ pub(super) fn decode(
         design_owner_record_headers,
         design_parameter_owners,
         design_component_occurrences,
+        design_superseded_component_occurrences,
+        design_occurrence_path_discriminators,
         design_parameter_scopes,
         design_parameter_scope_losses,
         design_joint_motions,

@@ -255,7 +255,7 @@ pub(crate) struct DesignComponentOccurrence {
     byte_offset: u64,
     /// Referenced component-definition record.
     pub(crate) component_record_index: u64,
-    /// Carrier GUID at frame offset 44.
+    /// Carrier GUID.
     pub(crate) component_guid: DesignRelaxedGuidText,
     /// Stable placed-occurrence identity: a GUID or a decimal key.
     pub(crate) occurrence_guid: DesignOccurrenceKey,
@@ -272,6 +272,8 @@ pub(crate) struct DesignComponentOccurrence {
 pub(crate) enum DesignComponentOccurrenceFrame {
     /// The 229-byte identity frame or the 357-byte matrix frame.
     Fixed,
+    /// A fixed frame with typed definition and owner references.
+    FixedTyped { separated: bool },
     /// The attributed frame, with a counted attribute run and an occurrence
     /// key that can be a decimal key.
     Attributed(Box<DesignAttributedOccurrenceFrame>),
@@ -355,7 +357,7 @@ pub(crate) struct DesignComponentOccurrenceDraft {
     pub(crate) byte_offset: u64,
     /// Referenced component-definition record.
     pub(crate) component_record_index: u64,
-    /// Carrier GUID at frame offset 44.
+    /// Carrier GUID.
     pub(crate) component_guid: DesignRelaxedGuidText,
     /// Stable placed-occurrence identity: a GUID or a decimal key.
     pub(crate) occurrence_guid: DesignOccurrenceKey,
@@ -409,6 +411,44 @@ impl DesignComponentOccurrence {
         })
     }
 
+    pub(crate) fn try_new_typed(
+        draft: DesignComponentOccurrenceDraft,
+        separated: bool,
+    ) -> Result<Self, String> {
+        if separated
+            && matches!(
+                draft.placement,
+                DesignComponentOccurrencePlacement::Explicit { .. }
+            )
+        {
+            return Err("the separated typed frame must store identity".into());
+        }
+        let last_offset = Self::typed_owner_offset(&draft.placement, separated);
+        draft
+            .byte_offset
+            .checked_add(last_offset)
+            .ok_or("component occurrence offsets overflow byte_offset")?;
+        let mut record = Self::try_new(draft)?;
+        record.frame = DesignComponentOccurrenceFrame::FixedTyped { separated };
+        Ok(record)
+    }
+
+    fn typed_owner_offset(placement: &DesignComponentOccurrencePlacement, separated: bool) -> u64 {
+        use crate::layout::{
+            local_component_occurrence_typed_compact_prefix as compact,
+            local_component_occurrence_typed_identity_tail as identity,
+            local_component_occurrence_typed_matrix_tail as matrix,
+            local_component_occurrence_typed_prefix as typed,
+        };
+        cadmpeg_core::decode::u64_from_index(match placement {
+            DesignComponentOccurrencePlacement::Explicit { .. } => {
+                compact::LEN + matrix::OWNER_REFERENCE + 1
+            }
+            _ if separated => typed::LEN + identity::OWNER_REFERENCE + 1,
+            _ => compact::LEN + identity::OWNER_REFERENCE + 1,
+        })
+    }
+
     /// Admit a local occurrence read from an attributed frame. Its field
     /// offsets strictly increase after the indexed header, and a placed
     /// occurrence stores its matrix offset.
@@ -447,7 +487,8 @@ impl DesignComponentOccurrence {
     /// Attributed-frame members on the wire, for an attributed frame.
     fn attributed_wire(&self) -> Option<DesignAttributedOccurrenceWire> {
         match &self.frame {
-            DesignComponentOccurrenceFrame::Fixed => None,
+            DesignComponentOccurrenceFrame::Fixed
+            | DesignComponentOccurrenceFrame::FixedTyped { .. } => None,
             DesignComponentOccurrenceFrame::Attributed(frame) => {
                 Some(DesignAttributedOccurrenceWire {
                     attributes: frame.attributes.clone(),
@@ -466,9 +507,15 @@ impl DesignComponentOccurrence {
     }
 
     /// Component GUID byte offset.
-    fn component_guid_offset(&self) -> u64 {
+    pub(crate) fn component_guid_offset(&self) -> u64 {
         match &self.frame {
             DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 48,
+            DesignComponentOccurrenceFrame::FixedTyped { .. } => {
+                self.byte_offset
+                    + cadmpeg_core::decode::u64_from_index(
+                        crate::layout::local_component_occurrence_typed_prefix::CARRIER_GUID + 4,
+                    )
+            }
             DesignComponentOccurrenceFrame::Attributed(frame) => frame.component_guid_offset,
         }
     }
@@ -477,6 +524,12 @@ impl DesignComponentOccurrence {
     fn occurrence_guid_offset(&self) -> u64 {
         match &self.frame {
             DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 124,
+            DesignComponentOccurrenceFrame::FixedTyped { .. } => {
+                self.byte_offset
+                    + cadmpeg_core::decode::u64_from_index(
+                        crate::layout::local_component_occurrence_typed_prefix::OCCURRENCE_GUID + 4,
+                    )
+            }
             DesignComponentOccurrenceFrame::Attributed(frame) => frame.occurrence_guid_offset,
         }
     }
@@ -491,6 +544,9 @@ impl DesignComponentOccurrence {
                         | DesignComponentOccurrencePlacement::Identity { .. } => BASE_OWNER_OFFSET,
                         DesignComponentOccurrencePlacement::Explicit { .. } => PLACED_OWNER_OFFSET,
                     }
+            }
+            DesignComponentOccurrenceFrame::FixedTyped { separated } => {
+                self.byte_offset + Self::typed_owner_offset(&self.placement, *separated)
             }
             DesignComponentOccurrenceFrame::Attributed(frame) => frame.owner_entity_offset,
         }
@@ -515,15 +571,21 @@ impl DesignComponentOccurrence {
         match self.placement {
             DesignComponentOccurrencePlacement::Base
             | DesignComponentOccurrencePlacement::Identity { .. } => None,
-            DesignComponentOccurrencePlacement::Explicit { transform, .. } => Some(Located {
-                value: transform,
-                offset: match &self.frame {
-                    DesignComponentOccurrenceFrame::Attributed(frame) => {
-                        frame.transform_offset.unwrap_or(self.byte_offset + 209)
-                    }
-                    DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 209,
-                },
-            }),
+            DesignComponentOccurrencePlacement::Explicit { transform, .. } => {
+                Some(Located {
+                    value: transform,
+                    offset: match &self.frame {
+                        DesignComponentOccurrenceFrame::Attributed(frame) => {
+                            frame.transform_offset.unwrap_or(self.byte_offset + 209)
+                        }
+                        DesignComponentOccurrenceFrame::Fixed => self.byte_offset + 209,
+                        DesignComponentOccurrenceFrame::FixedTyped { .. } => self.byte_offset
+                            + cadmpeg_core::decode::u64_from_index(
+                                crate::layout::local_component_occurrence_typed_compact_prefix::LEN,
+                            ),
+                    },
+                })
+            }
         }
     }
 }
@@ -715,7 +777,19 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
                 },
             );
         }
-        let record = Self::try_new(draft)?;
+        let record = if value.component_guid_offset.checked_sub(value.byte_offset)
+            == Some(cadmpeg_core::decode::u64_from_index(
+                crate::layout::local_component_occurrence_typed_prefix::CARRIER_GUID + 4,
+            )) {
+            let separated = !matches!(
+                draft.placement,
+                DesignComponentOccurrencePlacement::Explicit { .. }
+            ) && value.owner_entity_offset.checked_sub(value.byte_offset)
+                == Some(Self::typed_owner_offset(&draft.placement, true));
+            Self::try_new_typed(draft, separated)?
+        } else {
+            Self::try_new(draft)?
+        };
         if value.component_guid_offset != record.component_guid_offset() {
             return Err("component_guid_offset disagrees with byte_offset".into());
         }

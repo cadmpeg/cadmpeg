@@ -1201,7 +1201,7 @@ mod tests {
                     ),
                 ]),
                 root_component,
-                revised_definitions: 0,
+                ..Default::default()
             },
         )])
     }

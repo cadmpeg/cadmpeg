@@ -84,3 +84,25 @@ fn component_insert_native_retained_limit_refuses_before_record_clone() {
         || COMPONENT_INSERT_CLONE_COUNT.with(std::cell::Cell::get),
     );
 }
+
+#[test]
+fn typed_component_occurrence_wire_retains_offsets_without_new_fields() {
+    for (explicit, owner_offset) in [(false, 299_u64), (false, 298), (true, 426)] {
+        let mut wire = serde_json::to_value(occurrence(explicit)).unwrap();
+        wire["component_guid_offset"] = (10 + 88).into();
+        wire["occurrence_guid_offset"] = (10 + 164).into();
+        wire["owner_entity_offset"] = (10 + owner_offset).into();
+        if explicit {
+            wire["transform_offset"] = (10 + 288).into();
+        }
+        let record: DesignComponentOccurrence = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        let owned = DesignComponentOccurrenceWire::from(record.clone());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+        wire["owner_entity_offset"] = (12 + owner_offset).into();
+        assert!(serde_json::from_value::<DesignComponentOccurrence>(wire).is_err());
+    }
+}
