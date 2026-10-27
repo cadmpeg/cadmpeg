@@ -147,6 +147,27 @@ fn definitions(
         if definition.kind != ProductDefinitionKind::Object {
             object.kind = kind.into();
         }
+        if !ir.model.features.iter().any(|feature| {
+            feature.native_ref.is_some() && feature.native_ref == definition.native_ref
+        }) {
+            if let Some(native) = native_objects
+                .iter()
+                .find(|native| definition.native_ref.as_deref() == Some(native.id().as_str()))
+            {
+                object.dependencies = native
+                    .dependencies
+                    .iter()
+                    .filter_map(|id| names.get(id).cloned())
+                    .collect();
+                if object.dependencies.len() != native.dependencies.len() {
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "object {} ({}) dependencies on omitted records are removed",
+                        object.name,
+                        native.id().as_str()
+                    )));
+                }
+            }
+        }
         for property in native_properties
             .iter()
             .filter(|property| definition.native_ref.as_deref() == Some(property.owner.as_str()))
@@ -589,7 +610,6 @@ pub(super) fn write(
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("product group has no output object"))?;
-        object.dependencies.clone_from(&members);
         object.set("Group", group(&members));
     }
     joints::write(ir, objects, names, losses)?;

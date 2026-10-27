@@ -366,3 +366,5 @@ fn unknown_ancestor_omits_descendants_and_dependent_joint_without_composing_loca
         Some(Transform::identity())
     );
 }
+
+mod object_dependencies;
