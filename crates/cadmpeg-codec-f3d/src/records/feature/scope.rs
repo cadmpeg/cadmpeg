@@ -2480,6 +2480,18 @@ impl DesignParameterScope {
     pub(crate) fn reference_members(&self) -> &ReferenceRun<u32> {
         &self.reference_members
     }
+    /// Whether the ordered reference table names `owner`, so that the
+    /// parameter owner belongs to this scope.
+    pub(crate) fn names_owner(
+        &self,
+        owner: &crate::records::parameters::DesignParameterOwner,
+    ) -> bool {
+        self.record_index == owner.scope_record_index()
+            && self
+                .reference_members
+                .values()
+                .any(|record_index| *record_index == owner.record_index())
+    }
     pub(crate) fn payload(&self) -> &DesignScopePayload {
         &self.payload
     }

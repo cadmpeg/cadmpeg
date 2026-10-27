@@ -330,6 +330,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** Each face group must have one radius before a Fillet with several selection sets and face selections can transfer as a neutral feature.
 
+### DR-108. Sketch scope references without a record
+
+**Question.** What did a Sketch scope reference name when the Design stream contains no record with that index?
+
+**Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" defines the ordered reference table. A Sketch scope can name record indices that occur in no indexed header and in no other record of the stream. Its other references name records that only the generic indexed header classifies. `f3d.md` §3.1 "An owner frame whose stored scope record is absent" defines detached parameter owners, which remain after their dimension is deleted.
+
+**Need.** A rule must tell a deleted sketch member from a missing record before the scope can pass structural validation without its absent references.
+
 ### DR-104. ACT component-link root selection
 
 **Question.** Can an ACT segment contain only non-root component links, or does another reference identify its document-root link?

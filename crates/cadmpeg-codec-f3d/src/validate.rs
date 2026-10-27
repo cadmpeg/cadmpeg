@@ -7999,13 +7999,17 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let unique_index = owner_indices.insert((native_stream, owner.record_index()));
         let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index()));
         let legacy_68_frame = owner.frame_length() == 68;
+        let scope_key = (native_stream, owner.scope_record_index());
+        let detached = !records_by_index.contains_key(&scope_key)
+            || ctx
+                .scopes_by_index
+                .get(&scope_key)
+                .is_some_and(|scope| !scope.names_owner(owner));
         let frame_layout = !matches!(owner.frame_length(), 68 | 88)
             || parameter.is_some_and(|parameter| {
                 owner.evaluated_value_offset() == parameter.evaluated_value_offset()
             });
-        let scope_resolves = legacy_68_frame
-            || records_by_index.contains_key(&(native_stream, owner.scope_record_index()));
-        let unique_local_ordinal = if legacy_68_frame {
+        let unique_local_ordinal = if legacy_68_frame || detached {
             true
         } else {
             owner_local_ordinals.insert((
@@ -8015,7 +8019,6 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             ))
         };
         let valid = frame_layout
-            && scope_resolves
             && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
             && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
             && companions_by_index
