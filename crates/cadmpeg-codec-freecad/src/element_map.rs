@@ -385,11 +385,15 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
 
 /// Connect kernel indexed-map positions to every neutral placed occurrence.
 pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
+    let mut by_property = HashMap::<&str, Vec<&TopologyOccurrence>>::new();
+    for occurrence in occurrences {
+        by_property
+            .entry(occurrence.property.as_str())
+            .or_default()
+            .push(occurrence);
+    }
     for map in maps {
-        for occurrence in occurrences
-            .iter()
-            .filter(|occurrence| occurrence.property == map.property)
-        {
+        for occurrence in by_property.get(map.property.as_str()).into_iter().flatten() {
             map.maps.bind_root_topology(
                 occurrence.indexed_name,
                 occurrence.source_index,

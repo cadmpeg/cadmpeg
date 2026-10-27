@@ -875,6 +875,63 @@ fn unreadable_child_map_reference_keeps_independent_geometry() {
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
 
+#[test]
+fn topology_binds_each_map_to_its_own_property_occurrences_in_order() {
+    use crate::native::element_map::{
+        ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
+    };
+    use crate::topology_transfer::TopologyOccurrence;
+    let map = |property: &str| ElementMapRecord {
+        id: format!("map-{property}"),
+        property: property.into(),
+        version: "4".into(),
+        hasher_index: None,
+        source_entry: None,
+        map_id: 0,
+        declared_count: None,
+        postfixes: Vec::new(),
+        maps: ElementMapNodes::try_from(vec![ElementMapNode {
+            map_id: 0,
+            groups: vec![ElementMapGroup {
+                indexed_name: "Edge".into(),
+                children: Vec::new(),
+                names: vec![
+                    Vec::new(),
+                    vec![ElementMappedName {
+                        encoded: ";stable.0".into(),
+                        resolved: Some("stable".into()),
+                        string_ids: Vec::new(),
+                        topology_ids: Vec::new(),
+                    }],
+                ],
+            }],
+        }])
+        .expect("valid name group"),
+    };
+    let occurrence = |property: &str, id: &str| TopologyOccurrence {
+        property: property.into(),
+        indexed_name: "Edge",
+        source_index: 1,
+        topology_id: id.into(),
+    };
+    let mut maps = vec![map("a"), map("b"), map("a"), map("unplaced")];
+    super::bind_topology(
+        &mut maps,
+        &[
+            occurrence("a", "a-first"),
+            occurrence("b", "b-only"),
+            occurrence("other", "other-only"),
+            occurrence("a", "a-second"),
+        ],
+    );
+    let ids = |map: &ElementMapRecord| map.maps.root().groups[0].names[1][0].topology_ids.clone();
+
+    assert_eq!(ids(&maps[0]), ["a-first", "a-second"]);
+    assert_eq!(ids(&maps[1]), ["b-only"]);
+    assert_eq!(ids(&maps[2]), ["a-first", "a-second"]);
+    assert!(ids(&maps[3]).is_empty());
+}
+
 mod metadata_recovery;
 
 fn parse(
