@@ -76,12 +76,10 @@ impl LocalOccurrencePaths {
             if keys.is_empty() {
                 continue;
             }
-            if keys.len() > 1 {
-                result.insert(
-                    stream,
-                    vec![keys.last().cloned().unwrap_or_default()],
-                    &leaf.id,
-                );
+            // An operand path starts at an occurrence of the component that
+            // stores it, so every chain suffix ending at this leaf selects it.
+            for start in 1..keys.len() {
+                result.insert(stream, keys[start..].to_vec(), &leaf.id);
             }
             result.insert(stream, keys, &leaf.id);
         }
@@ -299,6 +297,51 @@ mod tests {
         assert!(nested_paths
             .resolve(sources[2].0, &[key_b.to_owned()])
             .is_none());
+        let key_c = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+        let mut table = table;
+        table.references[2] = serde_json::from_value(serde_json::json!({
+            "id":"f3d:xref:reference#2", "ordinal":2,
+            "from":"root.f3d", "relative_path":"part.f3d",
+            "neutron_role":"same-role", "neutron_data":"",
+            "placement_source": {
+                "stream":sources[0].0, "carrier_record_index":102,
+                "occurrence_guid":key_c.to_ascii_uppercase()
+            }
+        }))
+        .unwrap();
+        let mut chain = occurrences.clone();
+        chain[1].parent = OccurrenceParent::Occurrence {
+            occurrence: chain[0].id.clone(),
+        };
+        chain[2].parent = OccurrenceParent::Occurrence {
+            occurrence: chain[1].id.clone(),
+        };
+        let chain_paths = LocalOccurrencePaths::new(&[], &table.references, &chain);
+        let stream = sources[0].0;
+        let keys = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            chain_paths.resolve(stream, &keys(&[key_b, key_c, "dddd"])),
+            Some((chain[2].id.clone(), 2))
+        );
+        assert_eq!(
+            chain_paths.resolve(stream, &keys(&[key_a, key_b, key_c])),
+            Some((chain[2].id.clone(), 3))
+        );
+        assert_eq!(
+            chain_paths.resolve(stream, &keys(&[key_b])),
+            Some((chain[1].id.clone(), 1))
+        );
+        let mut repeated = chain.clone();
+        let mut second = chain[2].clone();
+        second.id = OccurrenceId::mint("f3d:model:occurrence#second-c").unwrap();
+        second.parent = OccurrenceParent::Root {};
+        repeated.push(second);
+        let repeated_paths = LocalOccurrencePaths::new(&[], &table.references, &repeated);
+        assert!(repeated_paths.ambiguous(stream, &keys(&[key_c])));
+        assert_eq!(
+            repeated_paths.resolve(stream, &keys(&[key_b, key_c])),
+            Some((chain[2].id.clone(), 2))
+        );
         let encoded = serde_json::to_value(&table.references[0]).unwrap();
         let retained: crate::records::xref::XrefReference =
             serde_json::from_value(encoded.clone()).unwrap();
