@@ -21,7 +21,7 @@ fn work_plane_binds_explicit_unmarked_and_identity_placements() {
 
 #[test]
 fn work_plane_refuses_missing_foreign_ambiguous_and_overflowing_placements_with_loss() {
-    use crate::test_support::work_plane::{placements, scope};
+    use crate::test_support::work_plane::placements;
     let placement = placements().remove(0);
     let mut foreign = placement.clone();
     foreign.id = "f3d:Other/BulkStream.dat:placement#13".into();
@@ -30,13 +30,21 @@ fn work_plane_refuses_missing_foreign_ambiguous_and_overflowing_placements_with_
     let mut rows = matrix.value.rows();
     rows[0][3] = f64::MAX;
     matrix.value = rows.try_into().unwrap();
-    for candidates in [
-        vec![],
-        vec![foreign],
-        vec![placement.clone(), placement.clone()],
-        vec![overflow],
+    let mut second = placement.clone();
+    second.record_index = placement.record_index + 1;
+    second.id = format!(
+        "{}:design-placement-construction#{}",
+        crate::ids::native_stream(&placement.id).unwrap(),
+        second.record_index
+    );
+    let both = [placement.record_index, second.record_index];
+    for (candidates, references) in [
+        (vec![], &both[..1]),
+        (vec![foreign], &both[..1]),
+        (vec![placement.clone(), second], &both[..]),
+        (vec![overflow], &both[..1]),
     ] {
-        let mut scope = scope(&placement);
+        let mut scope = crate::test_support::work_plane::scope_referencing(references);
         let losses = super::bind(std::slice::from_mut(&mut scope), &candidates);
         assert!(scope.work_plane_frame().is_none());
         assert_eq!(losses.len(), 1);

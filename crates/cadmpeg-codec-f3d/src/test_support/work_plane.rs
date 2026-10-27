@@ -3,6 +3,13 @@
 pub(crate) fn scope(
     placement: &crate::records::placement_construction::DesignPlacementConstruction,
 ) -> crate::records::feature::scope::DesignParameterScope {
+    scope_referencing(&[placement.record_index])
+}
+
+/// A `WorkPlane` scope whose member references name the given record indices.
+pub(crate) fn scope_referencing(
+    record_indices: &[u64],
+) -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#1",
@@ -11,11 +18,12 @@ pub(crate) fn scope(
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![u32::try_from(
-                    placement.record_index,
-                )
-                .unwrap()]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(
+                record_indices
+                    .iter()
+                    .map(|index| u32::try_from(*index).unwrap())
+                    .collect(),
+            );
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;

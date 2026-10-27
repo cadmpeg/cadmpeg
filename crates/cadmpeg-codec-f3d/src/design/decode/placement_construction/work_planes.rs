@@ -62,12 +62,7 @@ pub(crate) fn solved_frame(
         }
         _ => return None,
     };
-    let rows = matrix.rows();
-    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-        cadmpeg_ir::math::Point3::new(rows[0][3] * 10.0, rows[1][3] * 10.0, rows[2][3] * 10.0),
-        cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
-        cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
-    )?;
+    crate::design::feature_project::work_plane_datum_frame(matrix.rows())?;
     Some(DesignWorkPlaneTransform {
         work_plane_transform: matrix,
         work_plane_transform_offset: offset,
