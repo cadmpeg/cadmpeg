@@ -5882,7 +5882,10 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
-| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | The ordinary two-member rigid-group |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | The ordinary two-member rigid-group · value `0` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | The ordinary two-member rigid-group · value `0` |
+| 21 | 1 | `zero_separator` | `u8` | little | spec | The ordinary two-member rigid-group · value `0` |
 | 22 | 11 | `pathless_locator_reference` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
 | 33 | 4 | `zero_run_33` | `bytes[4]` | little | spec | The ordinary two-member rigid-group |
 | 37 | 4 | `locator_count` | `u32` | little | spec | The ordinary two-member rigid-group |
@@ -6829,14 +6832,16 @@ Spec §Assembly operands · layout: byte offsets · size: 67 B
 The alternate ordinary prologue through its first two member references. Offsets are relative to the primary indexed header.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs`
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
-| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
-| 20 | 1 | `constant_one` | `u8` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed · value `1` |
-| 21 | 5 | `zero_run_5` | `bytes[5]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed · value `0` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed · value `0` |
+| 25 | 1 | `zero_separator` | `u8` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed · value `0` |
 | 26 | 11 | `pathless_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 | 37 | 4 | `zero_run_4` | `bytes[4]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 | 41 | 4 | `locator_count` | `u32` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |

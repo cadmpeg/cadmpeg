@@ -511,7 +511,16 @@ fn emboss_scope_wire_refuses_a_typed_reference_table() {
 
 #[test]
 fn rigid_group_history_offsets_follow_both_tail_choices() {
-    for (frame, tail, previous) in [(257, 76, 30), (258, 77, 30), (268, 87, 41), (269, 88, 41)] {
+    for (frame, tail, previous) in [
+        (257, 76, 30),
+        (258, 77, 30),
+        (268, 87, 41),
+        (269, 88, 41),
+        (261, 76, 30),
+        (262, 77, 30),
+        (272, 87, 41),
+        (273, 88, 41),
+    ] {
         let mut scope = super::DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#3",
             super::DesignFeatureKind::AsBuilt,

@@ -60,7 +60,16 @@ fn rigid_group_frame_requires_its_further_members() {
     )
     .unwrap();
     let unread = DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), None).unwrap();
-    for (frame, tail) in [(257, 76), (258, 77), (268, 87), (269, 88)] {
+    for (frame, tail) in [
+        (257, 76),
+        (258, 77),
+        (268, 87),
+        (269, 88),
+        (261, 76),
+        (262, 77),
+        (272, 87),
+        (273, 88),
+    ] {
         assert!(rigid_group_members_link(
             &scope(frame, tail),
             &read,

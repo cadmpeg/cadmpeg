@@ -19417,11 +19417,35 @@ source = "spec"
 anchor = "The ordinary two-member rigid-group"
 
 [[record.field]]
-name = "zero_run_11"
+name = "zero_run_8"
 offset = 11
-type = "bytes[11]"
+type = "bytes[8]"
 source = "spec"
 anchor = "The ordinary two-member rigid-group"
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+value = 0
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+value = 0
+
+[[record.field]]
+name = "zero_separator"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "The ordinary two-member rigid-group"
+value = 0
 
 [[record.field]]
 name = "pathless_locator_reference"
@@ -22808,7 +22832,7 @@ anchor = "87-byte tail"
 
 [[record]]
 name = "assembly_alternate_rigid_group_prefix"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
 kind = "byte"
 section = "Assembly operands"
 anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
@@ -22823,14 +22847,22 @@ source = "spec"
 anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
 
 [[record.field]]
-name = "zero_run_9"
+name = "zero_run_8"
 offset = 11
-type = "bytes[9]"
+type = "bytes[8]"
 source = "spec"
 anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
 
 [[record.field]]
-name = "constant_one"
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+value = 0
+
+[[record.field]]
+name = "property_block_presence"
 offset = 20
 type = "u8"
 source = "spec"
@@ -22838,11 +22870,20 @@ anchor = "An alternate ordinary prologue stores nine zero bytes after its indexe
 value = 1
 
 [[record.field]]
-name = "zero_run_5"
+name = "property_count"
 offset = 21
-type = "bytes[5]"
+type = "u32"
 source = "spec"
 anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+value = 0
+
+[[record.field]]
+name = "zero_separator"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "An alternate ordinary prologue stores nine zero bytes after its indexed"
+value = 0
 
 [[record.field]]
 name = "pathless_locator_reference"
