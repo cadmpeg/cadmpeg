@@ -322,6 +322,14 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Need.** A complete field grammar must identify the tail boundaries and reference roles before a writer can construct the full collection frame.
 
+### DR-107. Fillet face groups with several radius sets
+
+**Question.** Which radius set does a role-`0x0000001000000000` face group use when a Fillet scope has more than one radius set?
+
+**Known.** `f3d.md` §3.1 "A Fillet selection set can store its face selections" defines the face group and its radius when the scope has one edge group, one face group, and one constant radius. Groups and parameters store no assignment cross-reference.
+
+**Need.** Each face group must have one radius before a Fillet with several selection sets and face selections can transfer as a neutral feature.
+
 ### DR-104. ACT component-link root selection
 
 **Question.** Can an ACT segment contain only non-root component links, or does another reference identify its document-root link?

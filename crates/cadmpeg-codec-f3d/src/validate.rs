@@ -6006,6 +6006,23 @@ fn validate_fillet_operand_groups<'a>(
             }
             continue;
         }
+        let in_selection_pair = scope.is_some_and(|scope| {
+            let mut scope_groups = native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|candidate| {
+                    design_stream(&candidate.id) == native_stream
+                        && candidate.scope_record_index == scope.record_index
+                })
+                .collect::<Vec<_>>();
+            scope_groups.sort_by_key(|candidate| candidate.scope_reference_ordinal);
+            design::decode::operands::fillet_edge_and_face_groups(&scope_groups).is_some_and(
+                |pair| {
+                    pair.iter()
+                        .any(|candidate| candidate.record_index == group.record_index)
+                },
+            )
+        });
         let has_fixed_assignment = scope
             .and_then(|scope| scope.fixed_fillet_parameters().map(|fixed| (scope, fixed)))
             .is_some_and(|(scope, fixed)| {
@@ -6038,7 +6055,8 @@ fn validate_fillet_operand_groups<'a>(
                             == 1
                     })
                     && ((fixed_edge_group_count == fixed.groups.len() && is_fixed_edge_group)
-                        || (fixed.groups.len() == 1 && sole_compact_group_shape))
+                        || (fixed.groups.len() == 1
+                            && (sole_compact_group_shape || in_selection_pair)))
             });
         if is_fillet
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)

@@ -2342,6 +2342,7 @@ fn resolved_fillet_assignments<'a>(
         }
     }
     assigned.sort_unstable_by(Ord::cmp);
+    assigned.dedup();
     if !assigned.iter().copied().eq(by_record.keys().copied()) {
         return None;
     }

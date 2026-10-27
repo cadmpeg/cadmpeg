@@ -2055,6 +2055,19 @@ fn push_fillet_radius_group(
     });
 }
 
+/// The edge group and the face group of a Fillet selection set that stores its
+/// face selections in a separate group, in scope-reference order.
+pub(crate) fn fillet_edge_and_face_groups<'a>(
+    scope_groups: &[&'a DesignConstructionOperandGroup],
+) -> Option<[&'a DesignConstructionOperandGroup; 2]> {
+    let [first, second] = scope_groups else {
+        return None;
+    };
+    let roles = [first.role(), second.role()];
+    (roles.contains(&DesignOperandRole::BODIES_B) && roles.contains(&DesignOperandRole::ROLE_0X10))
+        .then_some([*first, *second])
+}
+
 pub(crate) fn decode_fillet_radius_groups(
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
@@ -2131,6 +2144,25 @@ pub(crate) fn decode_fillet_radius_groups(
                 );
             }
             continue;
+        }
+        if let (Some(pair), [radius]) =
+            (fillet_edge_and_face_groups(&scope_groups), radii.as_slice())
+        {
+            if owned_parameters.len() == 1 + weights.len() && weights.len() <= 1 {
+                for (ordinal, group) in (0_u32..).zip(pair) {
+                    push_fillet_radius_group(
+                        &mut out,
+                        stream,
+                        ordinal,
+                        group,
+                        DesignFilletRadiusLaw::Constant {
+                            radius_parameter_record_index: radius.record_index,
+                        },
+                        weights.first().map(|parameter| parameter.record_index),
+                    );
+                }
+                continue;
+            }
         }
         let [group] = scope_groups.as_slice() else {
             continue;
