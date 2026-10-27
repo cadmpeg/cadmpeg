@@ -1557,6 +1557,85 @@ mod tests {
     }
 
     #[test]
+    fn empty_component_cluster_keeps_its_occurrence_without_taking_root_bodies() {
+        const EMPTY_CONTEXT: &str = "00000000-0000-4000-8000-000000000010";
+        let mut components = two_component_stream(Some(276));
+        let stream = components.get_mut(STREAM).unwrap();
+        stream.root_entities.insert(220);
+        stream.roots.insert(
+            219,
+            ComponentDefinition {
+                root_entity: 220,
+                context_uuid: guid(EMPTY_CONTEXT),
+                name: Some("Empty component".to_owned()),
+            },
+        );
+        let mut empty = carrier(
+            200,
+            "00000000-0000-4000-8000-000000000002",
+            placed(1, super::IDENTITY),
+            DOCUMENT_ROOT,
+        );
+        empty.component_record_index = 219;
+        let carriers = [
+            carrier(
+                100,
+                "00000000-0000-4000-8000-000000000001",
+                DesignComponentOccurrencePlacement::Base,
+                DOCUMENT_ROOT,
+            ),
+            empty,
+            carrier(
+                300,
+                "00000000-0000-4000-8000-000000000003",
+                placed(2, super::IDENTITY),
+                DOCUMENT_ROOT,
+            ),
+        ];
+        let projection = project_carriers(&carriers, &components, &[COMPONENT_BODY, ROOT_BODY]);
+        assert!(projection.losses.is_empty());
+        assert_eq!(projection.definitions.len(), 3);
+        assert_eq!(projection.occurrences.len(), 4);
+        for (context, expected) in [
+            (
+                COMPONENT_CONTEXT,
+                vec![BodyId::mint(COMPONENT_BODY).unwrap()],
+            ),
+            (EMPTY_CONTEXT, Vec::new()),
+            (ROOT_CONTEXT, vec![BodyId::mint(ROOT_BODY).unwrap()]),
+        ] {
+            let id = crate::ids::neutral_component_id(&guid(context));
+            let definition = projection
+                .definitions
+                .iter()
+                .find(|definition| definition.id == id)
+                .unwrap();
+            assert_eq!(definition.bodies, expected);
+        }
+        let root = crate::ids::neutral_root_occurrence_id(&guid(ROOT_CONTEXT));
+        for carrier in &carriers {
+            let id = crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid);
+            let occurrence = projection
+                .occurrences
+                .iter()
+                .find(|occurrence| occurrence.id == id)
+                .unwrap();
+            assert_eq!(
+                occurrence.parent,
+                OccurrenceParent::Occurrence {
+                    occurrence: root.clone()
+                }
+            );
+            assert!(projection.occurrences.iter().all(|other| {
+                other.parent
+                    != OccurrenceParent::Occurrence {
+                        occurrence: id.clone(),
+                    }
+            }));
+        }
+    }
+
+    #[test]
     fn carriers_the_source_does_not_place_stay_unplaced_with_a_loss() {
         const OCCURRENCE: &str = "443e5aa6-d561-4b5b-9634-661e7da12db3";
         let identity = DesignComponentOccurrencePlacement::Base;
