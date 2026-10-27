@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand frames, including as-built frames.
 
+use crate::layout::assembly_compact_rigid_group_locator as compact_group_locator;
 use crate::layout::assembly_compact_wide_limit_owner_run as limit_run;
 use crate::layout::assembly_compact_wide_scope as compact_wide;
+use crate::layout::assembly_typed_rigid_group_identity_locator as typed_group_identity;
+use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_group_matrix;
 use cadmpeg_core::decode::{u64_from_index, View};
 
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
@@ -14,6 +17,7 @@ use crate::layout::assembly_class_388_266_scope_968 as class_388_assemble;
 use crate::layout::assembly_class_406_261_scope_671 as class_406_assemble;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
+use crate::layout::assembly_wide_scope as wide_scope;
 use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::scope::DesignParameterScope;
@@ -175,9 +179,16 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::Wide
     ) {
-        if bytes.get(start + 20..start + 25)? != [1, 0, 0, 0, 0]
-            || !matches!(bytes.get(start + 25), Some(0 | 1))
-            || bytes.get(start + 26..start + 37)? != [0; 11]
+        if bytes.get(start + wide_scope::WIDE_MARKER) != Some(&1)
+            || bytes
+                .get(start + wide_scope::ZERO_RUN_21..start + wide_scope::FRAME_SENSE)?
+                .iter()
+                .any(|byte| *byte != 0)
+            || !matches!(bytes.get(start + wide_scope::FRAME_SENSE), Some(0 | 1))
+            || bytes
+                .get(start + wide_scope::ZERO_RUN_26..start + frame_offsets.0)?
+                .iter()
+                .any(|byte| *byte != 0)
             || bytes.get(start + 48..start + 55)? != [0; 7]
             || bytes.get(start + 270..start + 277)? != [0; 7]
         {
@@ -225,10 +236,7 @@ pub(super) fn exact_assembly_operand_frames(
     (first.reference_record_index != second.reference_record_index).then_some([first, second])
 }
 
-/// The operand frames an as-built scope's two locators carry. A common locator
-/// stores its transform; a wide locator (`wide`) stores one only when its
-/// identity flag is 0, and its frame is the identity otherwise, located at the
-/// flag.
+/// Read the operand frames from admitted as-built locator envelopes.
 pub(super) fn exact_as_built_operand_frames(
     bytes: &[u8],
     paths: &[DesignAssemblyOperandPath; 2],
@@ -251,20 +259,46 @@ pub(super) fn exact_as_built_operand_frame(
     wide: bool,
 ) -> Option<DesignAssemblyOperandFrame> {
     let locator_at = usize::try_from(path.link().locator_byte_offset).ok()?;
-    let (reference_at, transform_at, transform) = if wide {
-        let reference_at = locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?;
-        let flag_at = locator_at.checked_add(wide_locator::IDENTITY_FLAG)?;
-        match bytes.get(flag_at)? {
-            0 => {
-                let transform_at = locator_at.checked_add(wide_locator::TRANSFORM)?;
-                (
-                    reference_at,
-                    transform_at,
-                    rigid_transform_at(bytes, transform_at)?,
-                )
-            }
+    let length = usize::try_from(
+        path.byte_offset()
+            .checked_sub(path.link().locator_byte_offset)?,
+    )
+    .ok()?;
+    let (reference_at, transform_at, transform, reference_record_index) = if wide
+        && length == compact_group_locator::LEN
+    {
+        let transform_at = locator_at.checked_add(compact_group_locator::TRANSFORM)?;
+        (
+            locator_at.checked_add(crate::layout::indexed_design_record_header::RECORD_INDEX)?,
+            transform_at,
+            rigid_transform_at(bytes, transform_at)?,
+            path.link().locator_record_index,
+        )
+    } else if wide {
+        let typed = matches!(length, typed_group_identity::LEN | typed_group_matrix::LEN);
+        let (reference, flag, matrix) = if typed {
+            let reference = typed_group_identity::CONSTRUCTION_REFERENCE;
+            let flag = typed_group_identity::IDENTITY_FLAG;
+            (reference, flag, typed_group_matrix::TRANSFORM)
+        } else if matches!(
+            length,
+            crate::layout::assembly_wide_operand_path_identity_locator::LEN
+                | crate::layout::assembly_wide_operand_path_matrix_locator::LEN
+        ) {
+            (
+                wide_locator::NONZERO_RECORD_REFERENCE,
+                wide_locator::IDENTITY_FLAG,
+                wide_locator::TRANSFORM,
+            )
+        } else {
+            return None;
+        };
+        let reference_at = locator_at.checked_add(reference)?;
+        let flag_at = locator_at.checked_add(flag)?;
+        let transform_at = locator_at.checked_add(matrix)?;
+        let (transform_at, transform) = match bytes.get(flag_at)? {
+            0 => (transform_at, rigid_transform_at(bytes, transform_at)?),
             1 => (
-                reference_at,
                 flag_at,
                 cadmpeg_ir::transform::Transform::identity()
                     .rows()
@@ -272,19 +306,26 @@ pub(super) fn exact_as_built_operand_frame(
                     .ok()?,
             ),
             _ => return None,
-        }
+        };
+        (
+            reference_at.checked_add(1)?,
+            transform_at,
+            transform,
+            crate::bytes::local_reference_target(bytes, reference_at, typed)?,
+        )
     } else {
         let reference_at = locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?;
         let transform_at = locator_at.checked_add(path_locator::TRANSFORM)?;
         (
-            reference_at,
+            reference_at.checked_add(1)?,
             transform_at,
             rigid_transform_at(bytes, transform_at)?,
+            marked_record_reference(bytes, reference_at)?,
         )
     };
     Some(DesignAssemblyOperandFrame {
-        reference_record_index: marked_record_reference(bytes, reference_at)?,
-        reference_offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
+        reference_record_index,
+        reference_offset: u64::try_from(reference_at).ok()?,
         transform,
         transform_offset: u64::try_from(transform_at).ok()?,
     })

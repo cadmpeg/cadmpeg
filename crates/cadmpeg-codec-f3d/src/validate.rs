@@ -12,6 +12,9 @@
 mod emboss;
 mod sheet_metal_settings;
 
+use crate::layout::assembly_compact_rigid_group_locator as compact_group_locator;
+use crate::layout::assembly_typed_rigid_group_identity_locator as typed_group_identity;
+use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_group_matrix;
 use cadmpeg_core::convert::f64_from_index;
 
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_distance_layout;
@@ -108,64 +111,126 @@ fn valid_component_insert_role(role: &str) -> bool {
 
 /// A rigid group whose operands were read keeps one member after its first
 /// two for each locator its frame stores, each taking the locator reference
-/// that follows the previous one, with the frame its wide locator carries. A
+/// that follows the previous one, with the frame its locator carries. A
 /// group whose operands were not read, and every other scope, has no further
 /// members.
 fn rigid_group_members_link(
     scope: &records::feature::scope::DesignParameterScope,
     alignment: &records::feature::assembly::DesignAssemblyAlignment,
     rigid_as_built: bool,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
 ) -> bool {
     if rigid_as_built && alignment.form.is_some() {
-        design::assembly::rigid_group_member_count(scope.frame_length())
-            == alignment.additional_members.len().checked_add(2)
-            && alignment.additional_members.iter().enumerate().all(
-                |(ordinal, member)| {
-                    use crate::layout::assembly_wide_operand_path_locator as wide;
-                    let records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } =
-                        &member.qualifier
-                    else {
-                        return false;
-                    };
-                    let Some(locator_offset) = ordinal
-                        .checked_add(2)
-                        .and_then(|member| member.checked_mul(11))
-                        .and_then(|offset| {
-                            offset.checked_add(
-                                crate::layout::assembly_rigid_as_built_scope::FIRST_LOCATOR_REFERENCE,
-                            )
-                        })
-                    else {
-                        return false;
-                    };
-                    let locator = path.link().locator_byte_offset;
-                    let identity = member.frame.transform.rows()
-                        == cadmpeg_ir::transform::Transform::identity().rows();
-                    let transform_at: &[usize] = if identity {
-                        &[wide::IDENTITY_FLAG, wide::TRANSFORM]
-                    } else {
-                        &[wide::TRANSFORM]
-                    };
-                    valid_assembly_operand_path_link(scope, path, locator_offset)
-                        && locator.checked_add(u64_from_index(
-                            wide::NONZERO_RECORD_REFERENCE + 1,
-                        )) == Some(member.frame.reference_offset)
-                        && transform_at.iter().any(|at| {
-                            locator.checked_add(u64_from_index(*at))
-                                == Some(member.frame.transform_offset)
-                        })
-                        && member.frame.reference_record_index != 0
-                },
-            )
+        let Some(layout) = design::assembly::RigidGroupLayout::for_scope(scope) else {
+            return false;
+        };
+        Some(layout.members) == alignment.additional_members.len().checked_add(2)
+            && alignment.additional_members.iter().enumerate().all(|(ordinal, member)| {
+                let records::feature::assembly::DesignAssemblyOperandQualifier::OccurrencePath { path } = &member.qualifier else {
+                    return false;
+                };
+                let Some(locator_offset) = ordinal.checked_add(2)
+                    .and_then(|member| member.checked_mul(layout.stride))
+                    .and_then(|offset| offset.checked_add(layout.first_reference)) else {
+                    return false;
+                };
+                valid_assembly_operand_path_link(scope, path, locator_offset, stream_types)
+                    && as_built_operand_frame_link(scope, path, &member.frame, stream_types)
+            })
     } else {
         alignment.additional_members.is_empty()
     }
+}
+
+fn as_built_operand_frame_link(
+    scope: &records::feature::scope::DesignParameterScope,
+    path: &records::feature::assembly::DesignAssemblyOperandPath,
+    frame: &records::feature::assembly::DesignAssemblyOperandFrame,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> bool {
+    use crate::layout::assembly_wide_operand_path_locator as wide_locator;
+    use design::assembly::RigidGroupLocatorLayout;
+    let locator = path.link().locator_byte_offset;
+    let identity = frame.transform.rows() == cadmpeg_ir::transform::Transform::identity().rows();
+    let length = path
+        .byte_offset()
+        .checked_sub(locator)
+        .and_then(|length| usize::try_from(length).ok());
+    let rigid = design::assembly::rigid_as_built_scope(scope);
+    let layout = rigid_group_locator_layout(path, stream_types);
+    let (reference, flag, matrix) = if rigid {
+        match layout {
+            Some(RigidGroupLocatorLayout::Compact) => (
+                crate::layout::indexed_design_record_header::RECORD_INDEX,
+                None,
+                compact_group_locator::TRANSFORM,
+            ),
+            Some(RigidGroupLocatorLayout::TypedIdentity | RigidGroupLocatorLayout::TypedMatrix) => {
+                (
+                    typed_group_identity::CONSTRUCTION_REFERENCE + 1,
+                    Some(typed_group_identity::IDENTITY_FLAG),
+                    typed_group_matrix::TRANSFORM,
+                )
+            }
+            Some(RigidGroupLocatorLayout::WideIdentity | RigidGroupLocatorLayout::WideMatrix) => (
+                wide_locator::NONZERO_RECORD_REFERENCE + 1,
+                Some(wide_locator::IDENTITY_FLAG),
+                wide_locator::TRANSFORM,
+            ),
+            None => return false,
+        }
+    } else if design::assembly::wide_as_built_scope(scope) {
+        if !matches!(
+            length,
+            Some(
+                crate::layout::assembly_wide_operand_path_identity_locator::LEN
+                    | crate::layout::assembly_wide_operand_path_matrix_locator::LEN
+            )
+        ) {
+            return false;
+        }
+        (
+            wide_locator::NONZERO_RECORD_REFERENCE + 1,
+            Some(wide_locator::IDENTITY_FLAG),
+            wide_locator::TRANSFORM,
+        )
+    } else {
+        (
+            path_locator::NONZERO_RECORD_REFERENCE + 1,
+            None,
+            path_locator::TRANSFORM,
+        )
+    };
+    locator.checked_add(u64_from_index(reference)) == Some(frame.reference_offset)
+        && (locator.checked_add(u64_from_index(matrix)) == Some(frame.transform_offset)
+            || identity
+                && flag.is_some_and(|flag| {
+                    locator.checked_add(u64_from_index(flag)) == Some(frame.transform_offset)
+                }))
+        && frame.reference_record_index != 0
+        && (!rigid
+            || !matches!(layout, Some(RigidGroupLocatorLayout::Compact))
+            || frame.reference_record_index == path.link().locator_record_index)
+}
+
+fn rigid_group_locator_layout(
+    path: &records::feature::assembly::DesignAssemblyOperandPath,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> Option<design::assembly::RigidGroupLocatorLayout> {
+    let link = path.link();
+    design::assembly::RigidGroupLocatorLayout::admit(
+        stream_types
+            .get(&u64::from(link.locator_record_index))
+            .copied(),
+        usize::try_from(path.byte_offset().checked_sub(link.locator_byte_offset)?).ok()?,
+    )
 }
 
 fn valid_assembly_operand_path_link(
     scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
     locator_marker_offset: usize,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
 ) -> bool {
     let link = &path.link();
     let Ok(locator_marker_offset) = u64::try_from(locator_marker_offset) else {
@@ -178,54 +243,59 @@ fn valid_assembly_operand_path_link(
     else {
         return false;
     };
-    let variable_reference = design::assembly::variable_reference_assembly_generation(
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-    );
-    let wide = design::assembly::AssemblyScopeGeneration::new(
-        scope.frame_length(),
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-    )
-    .operand_frame_variant()
-    .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
-        || design::assembly::wide_as_built_scope(
-            scope.frame_length(),
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+    let variable_reference = !design::assembly::rigid_as_built_scope(scope)
+        && design::assembly::variable_reference_assembly_generation(
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
         );
-    // A wide locator is 97 bytes without its transform and 225 with it; its
-    // backlink and wrapper reference are 28 and 17 bytes before its end.
-    let locator_length = if wide {
-        match path.byte_offset().checked_sub(link.locator_byte_offset) {
-            Some(length @ (97 | 225)) => length,
-            _ => return false,
-        }
-    } else {
-        let length = if variable_reference {
-            variable_path_locator::LEN
+    let wide = design::assembly::AssemblyScopeGeneration::for_scope(scope)
+        .operand_frame_variant()
+        .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
+        || design::assembly::wide_as_built_scope(scope);
+    let (locator_length, scope_backlink, wrapper_reference) =
+        if design::assembly::rigid_as_built_scope(scope) {
+            let Some(layout) = rigid_group_locator_layout(path, stream_types) else {
+                return false;
+            };
+            let (length, backlink, wrapper, _, _) = layout.offsets();
+            (
+                u64_from_index(length),
+                u64_from_index(backlink + 1),
+                u64_from_index(wrapper + 1),
+            )
+        } else if wide {
+            use crate::layout::assembly_wide_operand_path_identity_locator as identity;
+            use crate::layout::assembly_wide_operand_path_matrix_locator as matrix;
+            let layout = match path
+                .byte_offset()
+                .checked_sub(link.locator_byte_offset)
+                .and_then(|length| usize::try_from(length).ok())
+            {
+                Some(identity::LEN) => design::assembly::RigidGroupLocatorLayout::WideIdentity,
+                Some(matrix::LEN) => design::assembly::RigidGroupLocatorLayout::WideMatrix,
+                _ => return false,
+            };
+            let (length, backlink, wrapper, _, _) = layout.offsets();
+            (
+                u64_from_index(length),
+                u64_from_index(backlink + 1),
+                u64_from_index(wrapper + 1),
+            )
+        } else if variable_reference {
+            (
+                u64_from_index(variable_path_locator::LEN),
+                u64_from_index(variable_path_locator::SCOPE_BACKLINK + 1),
+                u64_from_index(variable_path_locator::WRAPPER_REFERENCE + 1),
+            )
         } else {
-            path_locator::LEN
+            (
+                u64_from_index(path_locator::LEN),
+                u64_from_index(path_locator::SCOPE_BACKLINK + 1),
+                u64_from_index(path_locator::WRAPPER_REFERENCE + 1),
+            )
         };
-        let Ok(length) = u64::try_from(length) else {
-            return false;
-        };
-        length
-    };
     let Some(path_byte_offset) = link.locator_byte_offset.checked_add(locator_length) else {
         return false;
-    };
-    let (scope_backlink, wrapper_reference) = if wide {
-        (locator_length - 28 + 1, locator_length - 17 + 1)
-    } else if variable_reference {
-        (
-            u64_from_index(variable_path_locator::SCOPE_BACKLINK + 1),
-            u64_from_index(variable_path_locator::WRAPPER_REFERENCE + 1),
-        )
-    } else {
-        (
-            u64_from_index(path_locator::SCOPE_BACKLINK + 1),
-            u64_from_index(path_locator::WRAPPER_REFERENCE + 1),
-        )
     };
     let Some(locator_scope_reference_offset) = link.locator_byte_offset.checked_add(scope_backlink)
     else {
@@ -1954,8 +2024,20 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
     let entities_by_suffix = &ctx.entities_by_suffix;
     let placements_by_scope = &ctx.placements_by_scope;
     let mut scope_indices = HashSet::new();
+    let mut stream_types_by_stream = std::collections::HashMap::new();
     for scope in &native.design_parameter_scopes {
         let native_stream = design_stream(&scope.id);
+        let stream_types = stream_types_by_stream
+            .entry(native_stream)
+            .or_insert_with(|| {
+                native_stream
+                    .strip_prefix("f3d:")
+                    .and_then(ids::decode_identity_key_component)
+                    .map(|entry| {
+                        design::decode::meta::stream_types_by_entity(&native.design_types, &entry)
+                    })
+                    .unwrap_or_default()
+            });
         let unique_index = scope_indices.insert((native_stream, scope.record_index));
         let entity_link = scope.sketch_entity().map(|binding| {
             entities_by_suffix
@@ -2298,10 +2380,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             Some(alignment) => {
                 let values = if alignment.owners.len() == 2 {
                     vec![alignment.angle(), alignment.offset()[2]]
-                } else if design::assembly::placement_ordered_as_built_scope(
-                    scope.frame_length(),
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                ) {
+                } else if design::assembly::placement_ordered_as_built_scope(scope) {
                     vec![
                         alignment.offset()[0],
                         alignment.offset()[1],
@@ -2316,16 +2395,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         alignment.offset()[2],
                     ]
                 };
-                let generation = design::assembly::AssemblyScopeGeneration::new(
-                    scope.frame_length(),
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                );
+                let generation = design::assembly::AssemblyScopeGeneration::for_scope(scope);
                 let operand_frame_variant = generation.operand_frame_variant();
-                let variable_reference = design::assembly::variable_reference_assembly_generation(
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                );
+                let variable_reference = !design::assembly::rigid_as_built_scope(scope)
+                    && design::assembly::variable_reference_assembly_generation(
+                        scope.class_tag.as_str(),
+                        scope.paired_class_tag.as_str(),
+                    );
                 let compact_frames = matches!(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::Compact)
@@ -2342,14 +2418,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::CompactWide)
                 );
-                let wide_as_built = design::assembly::wide_as_built_scope(
-                    scope.frame_length(),
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                );
-                let rigid_as_built = design::assembly::rigid_as_built_scope(
-                    scope.frame_length(),
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                );
+                let wide_as_built = design::assembly::wide_as_built_scope(scope);
+                let rigid_as_built = design::assembly::rigid_as_built_scope(scope);
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
                     && (scope.frame_length() == 399 || wide_as_built);
@@ -2422,35 +2492,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     alignment.operand_frames().is_none_or(|frames| {
                         frames[0].reference_record_index != frames[1].reference_record_index
                             && frames.iter().enumerate().all(|(ordinal, frame)| {
-                                // A wide locator's frame is its stored transform, or the
-                                // identity located at its identity flag.
-                                use crate::layout::assembly_wide_operand_path_locator as wide;
-                                let identity = frame.transform.rows()
-                                    == cadmpeg_ir::transform::Transform::identity().rows();
-                                let (reference_at, transform_at): (u64, &[u64]) = if wide_as_built {
-                                    (
-                                        u64_from_index(wide::NONZERO_RECORD_REFERENCE + 1),
-                                        if identity {
-                                            &[
-                                                u64_from_index(wide::IDENTITY_FLAG),
-                                                u64_from_index(wide::TRANSFORM),
-                                            ]
-                                        } else {
-                                            &[u64_from_index(wide::TRANSFORM)]
-                                        },
-                                    )
-                                } else {
-                                    (22, &[33])
-                                };
                                 let offsets_match = if as_built_frames {
                                     operand_paths.as_ref().is_some_and(|paths| {
-                                        let locator = paths[ordinal].link().locator_byte_offset;
-                                        locator.checked_add(reference_at)
-                                            == Some(frame.reference_offset)
-                                            && transform_at.iter().any(|at| {
-                                                locator.checked_add(*at)
-                                                    == Some(frame.transform_offset)
-                                            })
+                                        as_built_operand_frame_link(
+                                            scope,
+                                            paths[ordinal],
+                                            frame,
+                                            stream_types,
+                                        )
                                     })
                                 } else {
                                     Some(frame.reference_offset)
@@ -2522,7 +2571,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference
+                                    let continuation_count = if variable_reference || wide_as_built
                                         || operand_frame_variant.is_some_and(
                                             design::assembly::AssemblyOperandFrameVariant::is_wide_family,
                                         ) {
@@ -2533,9 +2582,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     } else {
                                         0
                                     };
-                                    u64::try_from(path_wrapper::LEN)
+                                    let stride = if rigid_as_built {
+                                        rigid_group_locator_layout(path, stream_types)?.reference_stride()
+                                    } else { 11 };
+                                    u64::try_from(path_wrapper::PATH_REFERENCE + stride)
                                         .ok()?
-                                        .checked_add(u64::from(continuation_count).checked_mul(11)?)
+                                        .checked_add(u64::from(continuation_count).checked_mul(u64_from_index(stride))?)
                                         .and_then(|length| {
                                             path.link().wrapper_byte_offset.checked_add(length)
                                         })
@@ -2543,7 +2595,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 !axial_frames
                                     && locator_offsets.is_some_and(|offsets| {
                                         paths.iter().zip(offsets).all(|(path, offset)| {
-                                            valid_assembly_operand_path_link(scope, path, offset)
+                                            valid_assembly_operand_path_link(scope, path, offset, stream_types)
                                         })
                                     })
                                     && paths[0].link().locator_record_index
@@ -2743,10 +2795,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .values()
                         .take(alignment.owners.len())
                         .eq(alignment.owners.iter().map(|owner| &owner.value))
-                } else if design::assembly::variable_reference_assembly_generation(
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                ) {
+                } else if !design::assembly::rigid_as_built_scope(scope)
+                    && design::assembly::variable_reference_assembly_generation(
+                        scope.class_tag.as_str(),
+                        scope.paired_class_tag.as_str(),
+                    )
+                {
                     (0..scope.reference_members().len())
                         .filter(|&start| {
                             scope
@@ -2758,10 +2812,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         })
                         .count()
                         == 1
-                } else if design::assembly::placement_ordered_as_built_scope(
-                    scope.frame_length(),
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                ) {
+                } else if design::assembly::placement_ordered_as_built_scope(scope) {
                     let mut owners = native
                         .design_parameter_owners
                         .iter()
@@ -2782,14 +2833,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .eq(alignment.owners.iter().map(|owner| &owner.value).rev())
                 };
                 let additional_members_link =
-                    rigid_group_members_link(scope, alignment, rigid_as_built);
+                    rigid_group_members_link(scope, alignment, rigid_as_built, stream_types);
                 operand_frames_link
                     && (alignment.additional_owner_run.is_none()
-                        || design::assembly::placement_ordered_as_built_scope(
-                            scope.frame_length(),
-                            scope.kind()
-                                == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                        ))
+                        || design::assembly::placement_ordered_as_built_scope(scope))
                     && solved_frame_link
                     && operand_qualifiers_link
                     && additional_members_link

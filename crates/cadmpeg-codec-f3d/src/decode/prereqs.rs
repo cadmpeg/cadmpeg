@@ -46,6 +46,7 @@ pub(super) struct ProductPrereqs {
     /// Scopes after history-bound variant admission, before design-intent
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
+    pub(super) design_parameter_scope_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
     /// Authored feature order, which tells top-level `Component Insert`
@@ -98,6 +99,7 @@ impl ProductPrereqs {
             design_parameter_owners,
             design_component_occurrences,
             design_parameter_scopes,
+            design_parameter_scope_losses: _,
             design_joint_motions,
             design_feature_timelines,
             design_component_naming_spaces,
@@ -171,19 +173,21 @@ pub(super) fn decode(
     )?;
     let design_component_occurrences =
         crate::design::decode::components::decode_component_occurrences(scan)?;
-    let mut design_parameter_scopes =
-        crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
-            ctx,
-            scan,
-            &crate::design::decode::scopes::parameter_scope::ParameterScopeSources {
-                entities: &design_entity_headers,
-                types: &design_types,
-                parameters: &design_parameters,
-                parameter_owners: &design_parameter_owners,
-                component_occurrences: &design_component_occurrences,
-                recipes: &construction_recipes,
-            },
-        )?;
+    let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
+        scopes: mut design_parameter_scopes,
+        losses: design_parameter_scope_losses,
+    } = crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
+        ctx,
+        scan,
+        &crate::design::decode::scopes::parameter_scope::ParameterScopeSources {
+            entities: &design_entity_headers,
+            types: &design_types,
+            parameters: &design_parameters,
+            parameter_owners: &design_parameter_owners,
+            component_occurrences: &design_component_occurrences,
+            recipes: &construction_recipes,
+        },
+    )?;
     let primary_frames =
         crate::design::decode::scopes::parameter_scope::design_primary_frame_offsets(scan)?;
     let design_superseded_scope_envelopes =
@@ -223,6 +227,7 @@ pub(super) fn decode(
         design_parameter_owners,
         design_component_occurrences,
         design_parameter_scopes,
+        design_parameter_scope_losses,
         design_joint_motions,
         design_feature_timelines,
         design_component_naming_spaces,

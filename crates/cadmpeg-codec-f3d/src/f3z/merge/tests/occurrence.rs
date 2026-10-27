@@ -966,3 +966,97 @@ fn shared_members_check_cycles_for_each_instance_path() {
         2
     );
 }
+
+#[test]
+fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operands() {
+    use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+    use cadmpeg_ir::products::JointId;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointOperand, Occurrence, OccurrenceParent,
+        OperandContainer, PairedJointKind, PrototypeReference,
+    };
+    let definition = ProductDefinitionId::mint("f3d:model:product-definition#shared").unwrap();
+    let child = OccurrenceId::mint("f3d:xref/first/model:occurrence#child").unwrap();
+    let native_ref = "f3d:xref/first/Design/BulkStream.dat:design-parameter-scope#10";
+    let mut joint = AssemblyJoint::paired(
+        JointId::mint("f3d:xref/first/model:joint#group").unwrap(),
+        PairedJointKind::Fixed {
+            angle: None,
+            translation_offset: None,
+            angular_limits: None,
+            linear_limits: None,
+        },
+        [
+            JointConnector {
+                operand: JointOperand::root("root", Vec::new()),
+                frame: Transform::identity(),
+                detached: false,
+            },
+            JointConnector {
+                operand: JointOperand::occurrence(child.clone(), "child", Vec::new()),
+                frame: Transform::identity(),
+                detached: false,
+            },
+        ],
+        None,
+    );
+    joint.native_ref = Some(native_ref.to_owned());
+    let member = crate::f3z::merge::MemberDefinition {
+        definition: definition.clone(),
+        scope: "first".into(),
+        occurrences: vec![Occurrence {
+            id: child,
+            prototype: PrototypeReference::Local {
+                definition: definition.clone(),
+            },
+            parent: OccurrenceParent::Root {},
+            ordinal: 0,
+            transform: Transform::identity(),
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        }],
+        joints: vec![joint],
+        table: crate::xref::XrefTable::default(),
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let first_parent = OccurrenceId::mint("f3d:model:occurrence#first").unwrap();
+    let second_parent = OccurrenceId::mint("f3d:model:occurrence#second").unwrap();
+    let first = member.instantiate(&ctx, "first", &first_parent).unwrap();
+    let second = member.instantiate(&ctx, "second", &second_parent).unwrap();
+    assert_ne!(first.assembly_joints[0].id, second.assembly_joints[0].id);
+    for (instance, parent) in [(&first, first_parent), (&second, second_parent)] {
+        assert!(instance.product_definitions.is_empty());
+        assert_eq!(
+            instance.occurrences[0].prototype,
+            PrototypeReference::Local {
+                definition: definition.clone()
+            }
+        );
+        assert_eq!(
+            instance.assembly_joints[0].native_ref.as_deref(),
+            Some(native_ref)
+        );
+        let connectors = instance.assembly_joints[0].connectors().collect::<Vec<_>>();
+        assert_eq!(
+            connectors[0].operand.container,
+            OperandContainer::Occurrence {
+                occurrence: parent,
+                occurrence_path: Vec::new()
+            }
+        );
+        assert_eq!(
+            connectors[1].operand.container,
+            OperandContainer::Occurrence {
+                occurrence: instance.occurrences[0].id.clone(),
+                occurrence_path: Vec::new()
+            }
+        );
+        assert!(connectors
+            .iter()
+            .all(|connector| connector.frame == Transform::identity()));
+    }
+}

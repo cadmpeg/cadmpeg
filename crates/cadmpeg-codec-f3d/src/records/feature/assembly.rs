@@ -1415,11 +1415,11 @@ struct DesignAssemblyOperandPathWire {
     type_guid: Option<DesignRelaxedGuidText>,
     /// Byte offset of the indexed header.
     byte_offset: u64,
-    /// Ordered occurrence GUIDs from the outermost occurrence to the selected occurrence.
+    /// Ordered occurrence keys, or the zero key of a document-root path.
     occurrence_guids: Vec<DesignOccurrenceKey>,
     /// Byte offsets of the UTF-16 GUID code units parallel to `occurrence_guids`.
     occurrence_guid_offsets: Vec<u64>,
-    /// Four ordered identity GUIDs following a class-390 occurrence path.
+    /// Ordered identity GUIDs of each path record; a root path has two.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     identity_guids: Vec<DesignRelaxedGuidText>,
     /// Byte offsets parallel to `identity_guids`.
@@ -1479,10 +1479,11 @@ impl DesignAssemblyOperandPath {
         if occurrence_guids.is_empty() || (legacy_pair && occurrence_guids.len() != 1) {
             return Err("occurrence_guids has invalid assembly path arity".into());
         }
-        // A typed path continued over further typed records keeps the four
-        // identity GUIDs of each record.
+        let root_path = occurrence_guids.len() == 1
+            && occurrence_guids[0].value.as_str() == "00000000-0000-0000-0000-000000000000"
+            && identity_guids.len() == 2;
         let identity_arity = if typed {
-            !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4)
+            root_path || !identity_guids.is_empty() && identity_guids.len().is_multiple_of(4)
         } else if legacy_pair {
             identity_guids.len() == 1
         } else {
@@ -1541,6 +1542,12 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn admitted_by_type(&self) -> bool {
         self.type_guid.is_some()
     }
+    pub(crate) fn is_root(&self) -> bool {
+        self.admitted_by_type()
+            && self.occurrence_guids.len() == 1
+            && self.occurrence_guids[0].value.as_str() == "00000000-0000-0000-0000-000000000000"
+            && self.identity_guids.len() == 2
+    }
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
@@ -1583,6 +1590,9 @@ impl DesignAssemblyOperandPath {
     /// This path continued by a further path record of its own form: two
     /// class-330 records, or two records admitted by the typed path type.
     pub(crate) fn try_append(self, continuation: Self) -> Option<Self> {
+        if self.is_root() || continuation.is_root() {
+            return None;
+        }
         let typed = self.admitted_by_type() && continuation.admitted_by_type();
         if !typed && (self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330")
         {
@@ -1730,7 +1740,7 @@ impl DesignAssemblyOperandQualifier {
 /// One operand frame embedded by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignAssemblyOperandFrame {
-    /// Construction record referenced by the operand.
+    /// Record that supplies or carries the operand frame.
     pub(crate) reference_record_index: u32,
     /// Byte offset of `reference_record_index`.
     pub(crate) reference_offset: u64,

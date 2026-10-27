@@ -1488,6 +1488,7 @@ Parsed by:
 | 21 | 11 | `first_reference` | `bytes[11]` | little | spec | Marked references occur at +21 and +33 |
 | 33 | 11 | `second_reference` | `bytes[11]` | little | spec | Marked references occur at +21 and +33 |
 | 44 | 76 | `identity_guid` | `bytes[76]` | little | spec | One 36-code-unit identity GUID starts at +44 |
+| 120 | 3 | `identity_separator` | `bytes[3]` | little | spec | A three-byte separator starts at +120 |
 | 123 | 4 | `reference_count` | `u32` | little | spec | A u32 reference count 12 at +123 · value `12` |
 | 127 | 132 | `reference_entries` | `bytes[132]` | little | spec | twelve marked references starting at +127 |
 | 259 | 4 | `reference_trailer` | `bytes[4]` | little | spec | Four FF bytes follow the reference table · value `[255, 255, 255, 255]` |
@@ -1499,7 +1500,6 @@ Unstated regions:
 
 - `11..21` (10 B): Fixed scope prefix.
 - `32..33` (1 B): Fixed separator.
-- `120..123` (3 B): Fixed separator before the reference table.
 - `293..366` (73 B): Fixed scope tail.
 
 ## `assembly_class_363_264_frame_363_carrier`
@@ -1543,6 +1543,7 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 23 | 128 | `transform` | `f64[16]` | little | spec | Its rigid transform starts at offset 23 |
+| 151 | 1 | `zero_separator` | `u8` | little | spec | one zero separator is at offset 151 |
 | 152 | 11 | `scope_backlink` | `bytes[11]` | little | spec | its owning-scope backlink is at offset 152 |
 | 163 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | its path-wrapper reference is at offset 163 |
 | 174 | 4 | `constant_two` | `u32` | little | spec | u32 value 2 is at offset 174 |
@@ -1551,7 +1552,6 @@ Parsed by:
 Unstated regions:
 
 - `0..23` (23 B): Indexed header and fixed zero prefix.
-- `151..152` (1 B): Fixed zero separator.
 
 ## `assembly_variable_reference_path_wrapper_continuation`
 
@@ -5870,26 +5870,116 @@ Unstated regions:
 
 ## `assembly_rigid_as_built_scope`
 
-Spec §Assembly operands · layout: byte offsets · size: not stated
+Spec §Assembly operands · layout: byte offsets · size: 257 B
 
-This size-less byte record describes the fixed prefix of the 269-byte rigid As-built scope through its empty reference table. Offsets are relative to the scope's primary indexed header.
+Offsets are relative to the primary indexed header.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After its indexed header it |
-| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | stores eleven zero bytes |
-| 22 | 11 | `pathless_locator_reference` | `bytes[11]` | little | spec | a marked reference at offset 22 to a wide |
-| 33 | 4 | `zero_run_33` | `bytes[4]` | little | spec | four zero bytes, u32 value 2 at offset 37 |
-| 37 | 4 | `locator_count` | `u32` | little | spec | u32 value 2 at offset 37 |
-| 41 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | the marked references to its two wide operand-path locators at offsets 41 and 52 |
-| 52 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | the marked references to its two wide operand-path locators at offsets 41 and 52 |
-| 63 | 11 | `joint_reference` | `bytes[11]` | little | spec | a marked reference to its joint record at offset 63 |
-| 74 | 76 | `guid` | `bytes[76]` | little | spec | LP-UTF16 GUID at offset 74 |
-| 150 | 3 | `zero_run_150` | `bytes[3]` | little | spec | three zero bytes, and an empty reference table |
-| 153 | 4 | `reference_count` | `u32` | little | spec | u32 count 0 immediately before the history state |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
+| 22 | 11 | `pathless_locator_reference` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
+| 33 | 4 | `zero_run_33` | `bytes[4]` | little | spec | The ordinary two-member rigid-group |
+| 37 | 4 | `locator_count` | `u32` | little | spec | The ordinary two-member rigid-group |
+| 41 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
+| 52 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
+| 63 | 11 | `joint_reference` | `bytes[11]` | little | spec | The ordinary two-member rigid-group |
+| 74 | 76 | `guid` | `bytes[76]` | little | spec | The ordinary two-member rigid-group |
+| 150 | 3 | `zero_run_150` | `bytes[3]` | little | spec | The ordinary two-member rigid-group |
+| 153 | 4 | `reference_count` | `u32` | little | spec | The ordinary two-member rigid-group |
+| 157 | 4 | `history_state` | `u32` | little | spec | The ordinary two-member rigid-group |
+| 161 | 20 | `kind` | `bytes[20]` | little | spec | The ordinary two-member rigid-group |
+| 181 | 76 | `scope_tail` | `bytes[76]` | little | spec | The ordinary two-member rigid-group |
+
+## `assembly_typed_rigid_group_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: 537 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 22 | 51 | `pathless_locator_reference` | `bytes[51]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 73 | 4 | `zero_run_73` | `bytes[4]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 77 | 4 | `locator_count` | `u32` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 81 | 51 | `first_locator_reference` | `bytes[51]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 132 | 51 | `second_locator_reference` | `bytes[51]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 183 | 51 | `joint_reference` | `bytes[51]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 234 | 76 | `guid` | `bytes[76]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 310 | 3 | `zero_run_310` | `bytes[3]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 313 | 4 | `reference_count` | `u32` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 317 | 4 | `history_state` | `u32` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 321 | 20 | `kind` | `bytes[20]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+| 341 | 196 | `scope_tail` | `bytes[196]` | little | spec | The typed two-member rigid-group scope is 537 bytes. |
+
+## `assembly_compact_rigid_group_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 180 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 11 | 12 | `zero_run_12` | `bytes[12]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 23 | 128 | `transform` | `f64[16]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 151 | 1 | `zero_151` | `u8` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 152 | 11 | `scope_backlink` | `bytes[11]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 163 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 174 | 4 | `discriminator` | `u32` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+| 178 | 2 | `zero_tail` | `bytes[2]` | little | spec | A version-3 compact rigid-group locator is 180 bytes in the admitted |
+
+## `assembly_typed_rigid_group_identity_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 181 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The identity form is 181 bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The identity form is 181 bytes |
+| 21 | 51 | `construction_reference` | `bytes[51]` | little | spec | The identity form is 181 bytes |
+| 72 | 1 | `identity_flag` | `u8` | little | spec | The identity form is 181 bytes |
+| 73 | 51 | `scope_backlink` | `bytes[51]` | little | spec | The identity form is 181 bytes |
+| 124 | 51 | `wrapper_reference` | `bytes[51]` | little | spec | The identity form is 181 bytes |
+| 175 | 4 | `discriminator` | `u32` | little | spec | The identity form is 181 bytes |
+| 179 | 2 | `zero_tail` | `bytes[2]` | little | spec | The identity form is 181 bytes |
+
+## `assembly_typed_rigid_group_matrix_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 309 B
+
+Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The matrix form is 309 bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The matrix form is 309 bytes |
+| 21 | 51 | `construction_reference` | `bytes[51]` | little | spec | The matrix form is 309 bytes |
+| 72 | 1 | `identity_flag` | `u8` | little | spec | The matrix form is 309 bytes |
+| 73 | 128 | `transform` | `f64[16]` | little | spec | The matrix form is 309 bytes |
+| 201 | 51 | `scope_backlink` | `bytes[51]` | little | spec | The matrix form is 309 bytes |
+| 252 | 51 | `wrapper_reference` | `bytes[51]` | little | spec | The matrix form is 309 bytes |
+| 303 | 4 | `discriminator` | `u32` | little | spec | The matrix form is 309 bytes |
+| 307 | 2 | `zero_tail` | `bytes[2]` | little | spec | The matrix form is 309 bytes |
 
 ## `rectangular_pattern_direction_record`
 
@@ -6399,6 +6489,188 @@ Parsed by:
 | 9 | 4 | `type_guid_length` | `u32` | little | spec | an additional u32 length `36` |
 | 13 | 36 | `type_guid` | `bytes[36]` | little | spec | 36 ASCII type-GUID bytes between the target and the flags |
 | 49 | 2 | `flags` | `bytes[2]` | little | spec | two zero flag bytes |
+
+## `assembly_root_operand_path`
+
+Spec §Assembly operands · layout: byte offsets · size: 277 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 15 | `indexed_header` | `bytes[15]` | little | spec | A typed root operand path is a 277-byte frame. |
+| 15 | 6 | `zero_prefix` | `bytes[6]` | little | spec | A typed root operand path is a 277-byte frame. |
+| 21 | 4 | `count` | `u32` | little | spec | A typed root operand path is a 277-byte frame. |
+| 25 | 76 | `root_key` | `bytes[76]` | little | spec | A typed root operand path is a 277-byte frame. |
+| 101 | 4 | `empty_reference` | `u32` | little | spec | A typed root operand path is a 277-byte frame. |
+| 105 | 8 | `constant_one` | `u64` | little | spec | A typed root operand path is a 277-byte frame. |
+| 113 | 76 | `first_identity` | `bytes[76]` | little | spec | A typed root operand path is a 277-byte frame. |
+| 189 | 76 | `second_identity` | `bytes[76]` | little | spec | A typed root operand path is a 277-byte frame. |
+| 265 | 4 | `constant_two` | `u32` | little | spec | A typed root operand path is a 277-byte frame. |
+| 269 | 8 | `zero_tail` | `bytes[8]` | little | spec | A typed root operand path is a 277-byte frame. |
+
+## `assembly_wide_operand_path_identity_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 97 B
+
+Offsets are relative to the locator indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 68 | 1 | `zero_separator` | `u8` | little | spec | The wide locator identity frame is 97 bytes. |
+| 69 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The wide locator identity frame is 97 bytes. |
+| 80 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | The wide locator identity frame is 97 bytes. |
+| 91 | 4 | `discriminator` | `u32` | little | spec | The wide locator identity frame is 97 bytes. |
+| 95 | 2 | `zero_tail` | `bytes[2]` | little | spec | The wide locator identity frame is 97 bytes. |
+
+Unstated regions:
+
+- `0..68` (68 B): The wide locator prefix precedes the optional matrix.
+
+## `assembly_wide_operand_path_matrix_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 225 B
+
+Offsets are relative to the locator indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 68 | 128 | `transform` | `f64[16]` | little | spec | The wide locator matrix frame is 225 bytes. |
+| 196 | 1 | `zero_separator` | `u8` | little | spec | The wide locator matrix frame is 225 bytes. |
+| 197 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The wide locator matrix frame is 225 bytes. |
+| 208 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | The wide locator matrix frame is 225 bytes. |
+| 219 | 4 | `discriminator` | `u32` | little | spec | The wide locator matrix frame is 225 bytes. |
+| 223 | 2 | `zero_tail` | `bytes[2]` | little | spec | The wide locator matrix frame is 225 bytes. |
+
+Unstated regions:
+
+- `0..68` (68 B): The wide locator prefix precedes the optional matrix.
+
+## `ordinary_rigid_group_tail_76`
+
+Spec §Assembly operands · layout: byte offsets · size: 76 B
+
+Offsets are relative to the end of the LP-UTF16 kind.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | The 76-byte tail |
+| 4 | 15 | `zero_run` | `bytes[15]` | little | spec | The 76-byte tail |
+| 19 | 11 | `first_reference` | `bytes[11]` | little | spec | The 76-byte tail |
+| 30 | 4 | `previous_history_state_id` | `u32` | little | spec | The 76-byte tail |
+| 34 | 4 | `first_lane` | `u32` | little | spec | The 76-byte tail |
+| 38 | 8 | `scalar` | `f64` | little | spec | The 76-byte tail |
+| 46 | 4 | `second_lane` | `u32` | little | spec | The 76-byte tail |
+| 50 | 11 | `second_reference` | `bytes[11]` | little | spec | The 76-byte tail |
+| 61 | 1 | `reference_prefix` | `u8` | little | spec | The 76-byte tail · value `0` |
+| 62 | 1 | `reference_prefix_payload` | `bytes[1]` | little | spec | The 76-byte tail |
+| 63 | 11 | `third_reference` | `bytes[11]` | little | spec | The 76-byte tail |
+| 74 | 2 | `zero_tail` | `bytes[2]` | little | spec | The 76-byte tail |
+
+## `ordinary_rigid_group_tail_88`
+
+Spec §Assembly operands · layout: byte offsets · size: 88 B
+
+Offsets are relative to the end of the LP-UTF16 kind.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | spec | The 88-byte tail |
+| 4 | 15 | `zero_run` | `bytes[15]` | little | spec | The 88-byte tail |
+| 19 | 11 | `first_reference` | `bytes[11]` | little | spec | The 88-byte tail |
+| 30 | 11 | `additional_reference` | `bytes[11]` | little | spec | The 88-byte tail |
+| 41 | 4 | `previous_history_state_id` | `u32` | little | spec | The 88-byte tail |
+| 45 | 4 | `first_lane` | `u32` | little | spec | The 88-byte tail |
+| 49 | 8 | `scalar` | `f64` | little | spec | The 88-byte tail |
+| 57 | 4 | `second_lane` | `u32` | little | spec | The 88-byte tail |
+| 61 | 11 | `second_reference` | `bytes[11]` | little | spec | The 88-byte tail |
+| 72 | 1 | `reference_prefix` | `u8` | little | spec | The 88-byte tail · value `1` |
+| 73 | 2 | `reference_prefix_payload` | `bytes[2]` | little | spec | The 88-byte tail |
+| 75 | 11 | `third_reference` | `bytes[11]` | little | spec | The 88-byte tail |
+| 86 | 2 | `zero_tail` | `bytes[2]` | little | spec | The 88-byte tail |
+
+## `ordinary_rigid_group_tail_77`
+
+Spec §Assembly operands · layout: byte offsets · size: 77 B
+
+Offsets are relative to the kind end; the optional reference and field tag select the 77-byte closure independently.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 4 | 15 | `zero_run` | `bytes[15]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 19 | 11 | `first_reference` | `bytes[11]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 30 | 4 | `previous_history_state_id` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 34 | 4 | `first_lane` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 38 | 8 | `scalar` | `f64` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 46 | 4 | `second_lane` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 50 | 11 | `second_reference` | `bytes[11]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 61 | 1 | `reference_prefix` | `u8` | little | derived | Apply the independent reference and field-width choices to the tail grammar. · value `1` |
+| 62 | 2 | `reference_prefix_payload` | `bytes[2]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 64 | 11 | `third_reference` | `bytes[11]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 75 | 2 | `zero_tail` | `bytes[2]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+
+## `ordinary_rigid_group_tail_87`
+
+Spec §Assembly operands · layout: byte offsets · size: 87 B
+
+Offsets are relative to the kind end; the optional reference and field tag select the 87-byte closure independently.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `ordinal` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 4 | 15 | `zero_run` | `bytes[15]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 19 | 11 | `first_reference` | `bytes[11]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 30 | 11 | `additional_reference` | `bytes[11]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 41 | 4 | `previous_history_state_id` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 45 | 4 | `first_lane` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 49 | 8 | `scalar` | `f64` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 57 | 4 | `second_lane` | `u32` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 61 | 11 | `second_reference` | `bytes[11]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 72 | 1 | `reference_prefix` | `u8` | little | derived | Apply the independent reference and field-width choices to the tail grammar. · value `0` |
+| 73 | 1 | `reference_prefix_payload` | `bytes[1]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 74 | 11 | `third_reference` | `bytes[11]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+| 85 | 2 | `zero_tail` | `bytes[2]` | little | derived | Apply the independent reference and field-width choices to the tail grammar. |
+
+## `assembly_alternate_rigid_group_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 67 B
+
+The alternate ordinary prologue through its first two member references. Offsets are relative to the primary indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 20 | 1 | `constant_one` | `u8` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed · value `1` |
+| 21 | 5 | `zero_run_5` | `bytes[5]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 26 | 11 | `pathless_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 37 | 4 | `zero_run_4` | `bytes[4]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 41 | 4 | `locator_count` | `u32` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 45 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
+| 56 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | An alternate ordinary prologue stores nine zero bytes after its indexed |
 
 ## Not tabulated
 

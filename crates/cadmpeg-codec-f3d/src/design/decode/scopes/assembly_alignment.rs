@@ -167,11 +167,7 @@ pub(super) fn exact_assembly_alignment_with_types(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
         );
-        let generation = crate::design::assembly::AssemblyScopeGeneration::new(
-            scope.frame_length(),
-            scope.class_tag.as_str(),
-            scope.paired_class_tag.as_str(),
-        );
+        let generation = crate::design::assembly::AssemblyScopeGeneration::for_scope(scope);
         let legacy_class_388 = matches!(
             generation.operand_frame_variant(),
             Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
@@ -214,10 +210,7 @@ pub(super) fn exact_assembly_alignment_with_types(
             }
             let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
             let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
-            let placement_ordered = crate::design::assembly::placement_ordered_as_built_scope(
-                scope.frame_length(),
-                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-            );
+            let placement_ordered = crate::design::assembly::placement_ordered_as_built_scope(scope);
             let (angle, offset) = match alignment_lanes {
                 [offset_x, offset_y, offset_z, angle] if placement_ordered => (
                     angle.evaluated_value().get(),
@@ -240,10 +233,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                     [0.0, 0.0, axial_offset.evaluated_value().get()],
                 ),
                 // A rigid as-built joint has no alignment owners.
-                [] if crate::design::assembly::rigid_as_built_scope(
-                    scope.frame_length(),
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                ) =>
+                [] if crate::design::assembly::rigid_as_built_scope(scope) =>
                 {
                     (0.0, [0.0; 3])
                 }
@@ -299,7 +289,8 @@ pub(super) fn exact_assembly_alignment_with_types(
                 {
                     return None;
                 }
-            } else if crate::design::assembly::variable_reference_assembly_generation(
+            } else if !crate::design::assembly::rigid_as_built_scope(scope)
+                && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
@@ -356,10 +347,7 @@ pub(super) fn exact_assembly_alignment_with_types(
             };
             // A rigid group's members after its first two tie to its first.
             if let Some(leading) = paths.as_ref().filter(|_| {
-                crate::design::assembly::rigid_as_built_scope(
-                    scope.frame_length(),
-                    scope.kind() == scope::DesignFeatureKind::AsBuilt,
-                )
+                crate::design::assembly::rigid_as_built_scope(scope)
             }) {
                 let member_paths = match super::assembly_operand_paths::exact_rigid_group_member_paths(
                     bytes,
@@ -387,10 +375,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                         frames: exact_as_built_operand_frames(
                             bytes,
                             &paths,
-                            crate::design::assembly::wide_as_built_scope(
-                                scope.frame_length(),
-                                scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-                            ),
+                            crate::design::assembly::wide_as_built_scope(scope),
                         ),
                         paths,
                     })
@@ -412,7 +397,8 @@ pub(super) fn exact_assembly_alignment_with_types(
                 paths.map(|paths| {
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                 })
-            } else if crate::design::assembly::variable_reference_assembly_generation(
+            } else if !crate::design::assembly::rigid_as_built_scope(scope)
+                && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
@@ -465,9 +451,7 @@ pub(super) fn exact_assembly_alignment_with_types(
                 Some(0) => Some(assembly::DesignJointFrameSense::Aligned),
                 _ => None,
             });
-        let additional_owner_run = if crate::design::assembly::placement_ordered_as_built_scope(
-            scope.frame_length(), scope.kind() == scope::DesignFeatureKind::AsBuilt,
-        ) {
+        let additional_owner_run = if crate::design::assembly::placement_ordered_as_built_scope(scope) {
             let start = usize::try_from(scope.byte_offset()).ok()?;
             let count_at = start + as_built::ADDITIONAL_OWNER_COUNT;
             let count = View::u32_le_at(bytes, count_at)?;

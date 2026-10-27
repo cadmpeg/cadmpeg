@@ -682,7 +682,7 @@ pub(super) fn typed_primary_frames<'a>(
 
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
-pub(super) fn stream_types_by_entity<'a>(
+pub(crate) fn stream_types_by_entity<'a>(
     types: &'a [SegmentType],
     bulk_entry_name: &str,
 ) -> HashMap<u64, (&'a str, u32)> {
