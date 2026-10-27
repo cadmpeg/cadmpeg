@@ -265,7 +265,11 @@ pub(crate) struct DesignComponentOccurrence {
     pub(crate) owner_entity: u64,
     /// The carrier frame form.
     frame: DesignComponentOccurrenceFrame,
+    pub(crate) path_discriminator: Option<NonZeroU32>,
+    pub(crate) owner_type_guid: Option<DesignRelaxedGuidText>,
 }
+
+pub(crate) const OCCURRENCE_OWNER_TYPE_GUID: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";
 
 /// The frame form of a local component-occurrence carrier.
 #[derive(Debug, Clone, PartialEq)]
@@ -340,6 +344,8 @@ impl Clone for DesignComponentOccurrence {
             placement: self.placement,
             owner_entity: self.owner_entity,
             frame: self.frame.clone(),
+            path_discriminator: self.path_discriminator,
+            owner_type_guid: self.owner_type_guid.clone(),
         }
     }
 }
@@ -408,6 +414,8 @@ impl DesignComponentOccurrence {
             placement: draft.placement,
             owner_entity: draft.owner_entity,
             frame: DesignComponentOccurrenceFrame::Fixed,
+            path_discriminator: None,
+            owner_type_guid: None,
         })
     }
 
@@ -430,6 +438,7 @@ impl DesignComponentOccurrence {
             .ok_or("component occurrence offsets overflow byte_offset")?;
         let mut record = Self::try_new(draft)?;
         record.frame = DesignComponentOccurrenceFrame::FixedTyped { separated };
+        record.owner_type_guid = Some(OCCURRENCE_OWNER_TYPE_GUID.to_owned().try_into()?);
         Ok(record)
     }
 
@@ -637,6 +646,18 @@ struct DesignComponentOccurrenceWire {
         deserialize_with = "deserialize_attributed_frame"
     )]
     attributed: Option<DesignAttributedOccurrenceWire>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_fixed_path_discriminator"
+    )]
+    path_discriminator: Option<NonZeroU32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_occurrence_owner_type_guid"
+    )]
+    owner_type_guid: Option<DesignRelaxedGuidText>,
 }
 
 /// Members of an attributed occurrence frame on the wire.
@@ -656,6 +677,17 @@ cadmpeg_core::named_optional_field!(
     deserialize_attributed_frame,
     DesignAttributedOccurrenceWire,
     "attributed"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_fixed_path_discriminator,
+    NonZeroU32,
+    "path_discriminator"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_occurrence_owner_type_guid,
+    DesignRelaxedGuidText,
+    "owner_type_guid"
 );
 
 impl Serialize for DesignComponentOccurrence {
@@ -680,6 +712,10 @@ impl Serialize for DesignComponentOccurrence {
             owner_entity_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
             attributed: Option<DesignAttributedOccurrenceWire>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            path_discriminator: Option<NonZeroU32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owner_type_guid: Option<&'a DesignRelaxedGuidText>,
         }
         let transform = self.transform();
         WireRef {
@@ -698,6 +734,8 @@ impl Serialize for DesignComponentOccurrence {
             owner_entity: self.owner_entity,
             owner_entity_offset: self.owner_entity_offset(),
             attributed: self.attributed_wire(),
+            path_discriminator: self.path_discriminator,
+            owner_type_guid: self.owner_type_guid.as_ref(),
         }
         .serialize(serializer)
     }
@@ -728,6 +766,8 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
             owner_entity: value.owner_entity,
             owner_entity_offset,
             attributed,
+            path_discriminator: value.path_discriminator,
+            owner_type_guid: value.owner_type_guid,
         }
     }
 }
@@ -735,6 +775,13 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
 impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
     type Error = String;
     fn try_from(value: DesignComponentOccurrenceWire) -> Result<Self, Self::Error> {
+        if value.owner_type_guid.as_ref().is_some_and(|guid| {
+            !guid
+                .as_str()
+                .eq_ignore_ascii_case(OCCURRENCE_OWNER_TYPE_GUID)
+        }) {
+            return Err("owner_type_guid disagrees with the occurrence owner type".into());
+        }
         let transform = Located::from_wire(value.transform, value.transform_offset, "transform")?;
         let placement = match (value.occurrence_ordinal, transform) {
             (1, None) => DesignComponentOccurrencePlacement::Base,
@@ -762,7 +809,10 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             owner_entity: value.owner_entity,
         };
         if let Some(attributed) = value.attributed {
-            return Self::try_new_attributed(
+            if value.path_discriminator.is_some() {
+                return Err("an attributed frame stores its discriminator in attributed".into());
+            }
+            let mut record = Self::try_new_attributed(
                 draft,
                 DesignAttributedOccurrenceFrame {
                     attributes: attributed.attributes,
@@ -775,9 +825,11 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
                     transform_offset: value.transform_offset,
                     owner_entity_offset: value.owner_entity_offset,
                 },
-            );
+            )?;
+            record.owner_type_guid = value.owner_type_guid;
+            return Ok(record);
         }
-        let record = if value.component_guid_offset.checked_sub(value.byte_offset)
+        let mut record = if value.component_guid_offset.checked_sub(value.byte_offset)
             == Some(cadmpeg_core::decode::u64_from_index(
                 crate::layout::local_component_occurrence_typed_prefix::CARRIER_GUID + 4,
             )) {
@@ -801,6 +853,10 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
         }
         if value.owner_entity_offset != record.owner_entity_offset() {
             return Err("owner_entity_offset disagrees with byte_offset".into());
+        }
+        record.path_discriminator = value.path_discriminator;
+        if value.owner_type_guid.is_some() {
+            record.owner_type_guid = value.owner_type_guid;
         }
         Ok(record)
     }

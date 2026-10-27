@@ -86,12 +86,14 @@ fn component_insert_native_retained_limit_refuses_before_record_clone() {
 }
 
 #[test]
-fn typed_component_occurrence_wire_retains_offsets_without_new_fields() {
+fn typed_component_occurrence_wire_retains_offsets_and_native_fields() {
     for (explicit, owner_offset) in [(false, 299_u64), (false, 298), (true, 426)] {
         let mut wire = serde_json::to_value(occurrence(explicit)).unwrap();
         wire["component_guid_offset"] = (10 + 88).into();
         wire["occurrence_guid_offset"] = (10 + 164).into();
         wire["owner_entity_offset"] = (10 + owner_offset).into();
+        wire["owner_type_guid"] = super::OCCURRENCE_OWNER_TYPE_GUID.into();
+        wire["path_discriminator"] = 3.into();
         if explicit {
             wire["transform_offset"] = (10 + 288).into();
         }

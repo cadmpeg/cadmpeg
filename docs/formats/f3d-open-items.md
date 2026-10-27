@@ -342,13 +342,13 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What binding does the path discriminator of a fixed typed local component occurrence select?
 
-**Known.** The u32 path discriminator follows the typed definition reference at offset 75. A zero attribute marker at offset 79 and the occurrence ordinal at offset 80 follow it. The definition references, owner, and stored placement identify the local occurrence independently of a neutral interpretation of this word.
+**Known.** The u32 path discriminator follows the typed definition reference at offset 75. The path terminator at offset 79 and the occurrence ordinal at offset 80 follow it. The definition references, owner, and stored placement identify the local occurrence independently of a neutral interpretation of this word.
 
 **Need.** The discriminator's target domain and binding rule are needed to retain its meaning in a component path.
 
 **Conflict.** An occurrence ordinal does not state a path-discriminator binding.
 
-**Note.** The fixed native occurrence record has no discriminator field. Nonzero values are listed by `assembly.local-occurrence-path-discriminator-unretained`; source bytes retain the complete field.
+**Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
 
 ### DR-104. ACT component-link root selection
 

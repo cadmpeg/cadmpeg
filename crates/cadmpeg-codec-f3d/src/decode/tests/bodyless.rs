@@ -132,20 +132,20 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
                 tessellations_by_scope: std::collections::HashMap::new(),
             },
         });
-        let bodies = path.component_bodies(&decoded.ir().model.bodies, &[], false);
+        let bodies = path.component_bodies(&decoded.ir().model.bodies, false);
         if model_body_maps_empty {
             assert!(bodies.unwrap().is_empty());
         } else {
             assert!(bodies.is_none());
         }
         assert!(path
-            .component_bodies(&decoded.ir().model.bodies, &[], true)
+            .component_bodies(&decoded.ir().model.bodies, true)
             .is_none());
     }
 }
 
 #[test]
-fn component_body_coverage_uses_native_wire_bodies_and_keeps_unbound_solids() {
+fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
     let bodies = [
@@ -153,6 +153,7 @@ fn component_body_coverage_uses_native_wire_bodies_and_keeps_unbound_solids() {
         ("f3d:brep:entity#2", BodyKind::Sheet),
         ("f3d:brep:entity#3", BodyKind::Wire),
         ("f3d:brep:saved-edge-body#4", BodyKind::Wire),
+        ("f3d:brep/part.smbh/brep:saved-edge-body#5", BodyKind::Wire),
     ]
     .into_iter()
     .map(|(id, kind)| Body {
@@ -165,16 +166,6 @@ fn component_body_coverage_uses_native_wire_bodies_and_keeps_unbound_solids() {
         visible: None,
     })
     .collect::<Vec<_>>();
-    let native_keys = [cadmpeg_asm::brep::records::BodyNativeKey {
-        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-            crate::ids::ID_FORMAT,
-        ),
-        body: bodies[2].id.clone(),
-        record_index: 3,
-        body_ordinal: 0,
-        source_brep: Some("BREP.source.smbh".to_owned()),
-        asm_body_key: None,
-    }];
     let path = super::super::FinalizePath::Geometry(super::super::GeometryIndex {
         primary_model_brep_name: "BREP.source.smbh".to_owned(),
         annotation_records: Vec::new(),
@@ -183,11 +174,31 @@ fn component_body_coverage_uses_native_wire_bodies_and_keeps_unbound_solids() {
             tessellations_by_scope: std::collections::HashMap::new(),
         },
     });
-    let required = path.component_bodies(&bodies, &native_keys, true).unwrap();
+    let required = path.component_bodies(&bodies, true).unwrap();
     let expected = bodies[..3]
         .iter()
         .map(|body| body.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(required, expected);
-    assert_eq!(bodies.len(), 4);
+    assert_eq!(bodies.len(), 5);
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.bodies.extend(bodies);
+    assert!(super::super::saved_free_edge_bodies_loss(&model).is_none());
+    let definition: cadmpeg_ir::products::ProductDefinition =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:design:product-definition#1", "kind": "part", "bodies": []
+        }))
+        .unwrap();
+    model.product_definitions.push(definition);
+    let loss = super::super::saved_free_edge_bodies_loss(&model).unwrap();
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::SavedFreeEdgeBodyUnowned.kind()
+    );
+    assert!(loss.message.starts_with("2 saved free-edge bodies"));
+    model.product_definitions[0].bodies = model.bodies[3..]
+        .iter()
+        .map(|body| body.id.clone())
+        .collect();
+    assert!(super::super::saved_free_edge_bodies_loss(&model).is_none());
 }

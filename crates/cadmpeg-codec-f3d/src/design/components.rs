@@ -1456,6 +1456,31 @@ mod tests {
     }
 
     #[test]
+    fn every_body_has_a_definition_counts_an_ordinary_body_without_a_native_key() {
+        let components = two_component_stream(Some(276));
+        let id = BodyId::mint(COMPONENT_BODY).unwrap();
+        let bodies = BTreeSet::from([id.clone()]);
+        let bindings = [binding(1000, 194, COMPONENT_BODY)];
+        let sources = super::LocalComponentSources {
+            scopes: &[],
+            occurrences: &[],
+            components: &components,
+            body_bindings: &bindings,
+            bodies: Some(&bodies),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        };
+        let projector = super::Projector::new(&sources);
+        assert_eq!(projector.cluster_bodies(STREAM, COMPONENT_ROOT), vec![id]);
+        assert!(projector.every_body_has_a_definition());
+        let sources = super::LocalComponentSources {
+            body_bindings: &[],
+            ..sources
+        };
+        assert!(!super::Projector::new(&sources).every_body_has_a_definition());
+    }
+
+    #[test]
     fn root_contained_carriers_are_placed_in_the_root_occurrence_at_their_transform() {
         const FIRST: &str = "9d257e32-3a1f-45da-bbec-cfc658b575dc";
         const SECOND: &str = "d8ea5386-bc3f-4eb1-93af-09024e6db29a";

@@ -16876,7 +16876,7 @@ name = "local_component_occurrence_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
 kind = "byte"
 section = "3.1"
-anchor = "A local component occurrence is an occurrence-placement record"
+anchor = "A local component occurrence uses the one-element path grammar"
 size = 209
 note = "Offsets are relative to the carrier's indexed header. The identity tail or the matrix tail follows at offset 209."
 
@@ -16917,8 +16917,23 @@ anchor = "Marked component-record references at offsets 24 and 197"
 
 [[record.gap]]
 offset = 33
-size = 7
-note = "Zero trailing field of the component-record reference."
+size = 2
+note = "Two zero trailing bytes of the local component reference."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "The u32 instance discriminator is at offset 35"
+
+[[record.field]]
+name = "path_terminator"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "the path terminator is at offset 39"
+value = 0
 
 [[record.field]]
 name = "occurrence_ordinal"
@@ -21648,7 +21663,7 @@ source = "spec"
 anchor = "Typed local component occurrences use local references with inline type GUIDs."
 
 [[record.field]]
-name = "attributes_marker"
+name = "path_terminator"
 offset = 79
 type = "u8"
 source = "spec"
@@ -21753,7 +21768,7 @@ source = "spec"
 anchor = "Typed local component occurrences use local references with inline type GUIDs."
 
 [[record.field]]
-name = "attributes_marker"
+name = "path_terminator"
 offset = 79
 type = "u8"
 source = "spec"

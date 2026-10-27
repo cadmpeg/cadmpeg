@@ -2381,30 +2381,43 @@ enum FinalizePath {
     Bodyless(DeferredBodylessInputs),
 }
 
+pub(crate) fn saved_free_edge_bodies_loss(
+    model: &cadmpeg_ir::document::Model,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if model.product_definitions.is_empty() {
+        return None;
+    }
+    let owned = model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.bodies)
+        .collect::<std::collections::BTreeSet<_>>();
+    let count = model
+        .bodies
+        .iter()
+        .filter(|body| {
+            cadmpeg_asm::brep::emit::is_saved_free_edge_body(&body.id) && !owned.contains(&body.id)
+        })
+        .count();
+    (count != 0).then(|| F3dLossCode::SavedFreeEdgeBodyUnowned.note(format!(
+        "{count} saved free-edge bodies have no product-definition owner; their component placement is not assigned."
+    )))
+}
+
 impl FinalizePath {
     fn component_bodies(
         &self,
         bodies: &[cadmpeg_ir::topology::Body],
-        native_keys: &[cadmpeg_asm::brep::records::BodyNativeKey],
         has_pending_body_source: bool,
     ) -> Option<std::collections::BTreeSet<cadmpeg_ir::ids::BodyId>> {
         match self {
-            Self::Geometry(_) => {
-                let native_bodies = native_keys
+            Self::Geometry(_) => Some(
+                bodies
                     .iter()
-                    .map(|key| &key.body)
-                    .collect::<std::collections::BTreeSet<_>>();
-                Some(
-                    bodies
-                        .iter()
-                        .filter(|body| {
-                            body.kind != cadmpeg_ir::topology::BodyKind::Wire
-                                || native_bodies.contains(&body.id)
-                        })
-                        .map(|body| body.id.clone())
-                        .collect(),
-                )
-            }
+                    .filter(|body| !cadmpeg_asm::brep::emit::is_saved_free_edge_body(&body.id))
+                    .map(|body| body.id.clone())
+                    .collect(),
+            ),
             Self::Bodyless(inputs) if inputs.model_body_maps_empty && !has_pending_body_source => {
                 Some(std::collections::BTreeSet::new())
             }
@@ -2585,11 +2598,6 @@ impl<'a> F3dDecodeSession<'a> {
         self.report.losses.extend(
             crate::design::decode::components::superseded_occurrences_loss(
                 prereqs.design_superseded_component_occurrences,
-            ),
-        );
-        self.report.losses.extend(
-            crate::design::decode::components::unretained_discriminators_loss(
-                &prereqs.design_occurrence_path_discriminators,
             ),
         );
         let path = self.decode_products(path, &prereqs)?;
@@ -2841,7 +2849,6 @@ impl<'a> F3dDecodeSession<'a> {
             ));
         let bodies = finalize_path.component_bodies(
             &self.ir.model.bodies,
-            &self.native.body_native_keys,
             !prereqs.design_body_members.is_empty()
                 || !prereqs.design_body_bindings.is_empty()
                 || container::text_brep_names(scan).next().is_some(),
@@ -4107,6 +4114,7 @@ fn decode_result(
         admitted_entities,
         "admit F3D entities",
     )?;
+    report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;

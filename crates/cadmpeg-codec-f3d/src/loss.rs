@@ -66,8 +66,8 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
-    /// Nonzero fixed occurrence path discriminators omitted from native records.
-    LocalOccurrencePathDiscriminatorUnretained,
+    /// Saved free-edge bodies without a product-definition owner.
+    SavedFreeEdgeBodyUnowned,
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
     /// project.
     AssemblyJointUnprojected,
@@ -315,7 +315,7 @@ impl F3dLossCode {
         Self::ComponentDefinitionRevised,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
-        Self::LocalOccurrencePathDiscriminatorUnretained,
+        Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
@@ -451,9 +451,7 @@ impl F3dLossCode {
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
-            Self::LocalOccurrencePathDiscriminatorUnretained => {
-                "assembly.local-occurrence-path-discriminator-unretained"
-            }
+            Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
@@ -610,7 +608,7 @@ impl F3dLossCode {
             | Self::SketchOwnerUnresolved
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
-            | Self::LocalOccurrencePathDiscriminatorUnretained
+            | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -788,7 +786,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceUnplaced
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
-            | Self::LocalOccurrencePathDiscriminatorUnretained
+            | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
@@ -904,7 +902,7 @@ mod tests {
                 "assembly.component-definition-revised",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
-                "assembly.local-occurrence-path-discriminator-unretained",
+                "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
