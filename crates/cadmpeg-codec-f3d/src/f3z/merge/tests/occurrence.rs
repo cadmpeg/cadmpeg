@@ -1165,6 +1165,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
 
     const FIRST: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const SECOND: &str = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const ROOT_KEY: &str = "11111111-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     let root = f3d_without_brep("assembly-design", "root.f3d", &[]);
     let bytes = f3z_archive("root.f3d", &[("root.f3d", &root)]);
     let arena = DecodeArena::new();
@@ -1181,9 +1182,10 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         references: vec![reference.clone()],
         ..Default::default()
     };
-    for (keys, duplicate, target, remaining) in [
+    for (keys, duplicate, keyed_root, target, remaining) in [
         (
             vec![FIRST.to_ascii_uppercase(), SECOND.into(), "face".into()],
+            false,
             false,
             Some("deep"),
             vec!["face"],
@@ -1191,16 +1193,28 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         (
             vec![FIRST.into(), SECOND.into()],
             true,
+            false,
             None,
             vec![FIRST, SECOND],
         ),
-        (vec!["missing".into()], false, None, vec!["missing"]),
+        (vec!["missing".into()], false, false, None, vec!["missing"]),
         (
             vec![FIRST.into(), "missing".into()],
+            false,
             false,
             Some("child"),
             vec!["missing"],
         ),
+        // A member root that has its own key is a keyed child, not a
+        // passthrough: its key is consumed.
+        (
+            vec![ROOT_KEY.into(), FIRST.into(), SECOND.into()],
+            false,
+            true,
+            Some("deep"),
+            Vec::new(),
+        ),
+        (vec![FIRST.into()], false, true, None, vec![FIRST]),
     ] {
         let connector = |operand| JointConnector {
             operand,
@@ -1234,9 +1248,28 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             occurrence
         };
         let mut carriers = Vec::new();
-        component
-            .occurrences
-            .push(occurrence("root", serde_json::json!({"kind":"root"}), None));
+        let root_native = "f3d:Design/BulkStream.dat:design-component-occurrence#4";
+        component.occurrences.push(occurrence(
+            "root",
+            serde_json::json!({"kind":"root"}),
+            keyed_root.then_some(root_native),
+        ));
+        if keyed_root {
+            carriers.push(
+                DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+                    id: root_native.to_owned(),
+                    class_tag: "292".to_owned().try_into().unwrap(),
+                    record_index: 4,
+                    byte_offset: 0,
+                    component_record_index: 1,
+                    component_guid: FIRST.to_owned().try_into().unwrap(),
+                    occurrence_guid: ROOT_KEY.to_owned().try_into().unwrap(),
+                    placement: DesignComponentOccurrencePlacement::Base,
+                    owner_entity: 1,
+                })
+                .unwrap(),
+            );
+        }
         for (index, name, parent, key) in [
             (1, "child", "root", FIRST),
             (2, "deep", "child", SECOND),
@@ -1344,7 +1377,10 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             || placing.clone(),
             |name| OccurrenceId::mint(format!("f3d:xref/{scope}/model:occurrence#{name}")).unwrap(),
         );
-        for joint in &ir.model.assembly_joints {
+        // A member joint's paths start below its member root, so the keyed
+        // root rows check only the placing document's joint.
+        let checked_joints = if keyed_root { 1 } else { 2 };
+        for joint in ir.model.assembly_joints.iter().take(checked_joints) {
             let operand = &joint.connectors().next().unwrap().operand;
             assert_eq!(
                 operand.container,

@@ -457,9 +457,18 @@ fn rebind_joint_descent(
         let joint_id = joint.id.clone();
         for connector in joint.connectors_mut() {
             let operand = &mut connector.operand;
-            let OperandContainer::Occurrence { occurrence, .. } = &operand.container else {
+            // An operand that already names a nested document path is not
+            // rebound: its path is relative to the current container.
+            let OperandContainer::Occurrence {
+                occurrence,
+                occurrence_path,
+            } = &operand.container
+            else {
                 continue;
             };
+            if !occurrence_path.is_empty() {
+                continue;
+            }
             let mut selected = occurrence;
             let mut consumed = 0;
             let mut ambiguous = false;
