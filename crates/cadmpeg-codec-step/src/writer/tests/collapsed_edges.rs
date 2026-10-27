@@ -280,3 +280,246 @@ fn writer_leaves_a_collapsed_edge_out_beside_a_closed_circle() {
         (plain.oriented_edges - 4 + 1, plain.faces, 0)
     );
 }
+
+/// Where [`cube_with_a_seam_ring`] puts its ring, and what its pole edge is.
+#[derive(Clone, Copy, PartialEq)]
+enum SeamRing {
+    /// The ring replaces the face's only loop.
+    Alone,
+    /// The ring is a second loop of the face.
+    BesideALoop,
+    /// As [`SeamRing::BesideALoop`], with the first loop's edges left without
+    /// carriers, so that loop is not written.
+    BesideAnUnwritableLoop,
+    /// As [`SeamRing::BesideALoop`], with a pole pcurve that runs a unit
+    /// length along the face: the pole edge has length and is no pole.
+    BesideALoopWithALongPole,
+}
+
+/// A ring of [`unit_cube`] that runs from one corner to another along a seam
+/// edge, through an edge with no 3D curve at the far corner, and back along
+/// the seam, as `OpenCASCADE` bounds a sphere face at its pole. The face's
+/// plane is moved to have its origin at that corner, and the pole edge's
+/// pcurve stays at the origin, so it lifts to the corner.
+fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use cadmpeg_ir::geometry::pcurve::{
+        Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
+    };
+    use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId, PcurveId};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::{
+        Coedge, Edge, EdgeCarrier, FaceLoops, Loop, LoopBoundary, LoopRing, PcurveUse, Sense,
+    };
+    let mut source = unit_cube().expect("unit cube fixture is admitted");
+    let loop_index = source
+        .model
+        .loops
+        .iter()
+        .position(|loop_| loop_.coedges().len() >= 3)
+        .expect("unit cube has an edge loop");
+    let first = source.model.loops[loop_index].coedges()[0].clone();
+    let line = {
+        let coedge = source.model.coedges.iter().find(|c| c.id == first).unwrap();
+        source
+            .model
+            .edges
+            .iter()
+            .find(|e| e.id == coedge.edge)
+            .unwrap()
+            .clone()
+    };
+    let face_id = source.model.loops[loop_index].face.clone();
+    let pole_position = {
+        let vertex = source
+            .model
+            .vertices
+            .iter()
+            .find(|v| v.id == line.end)
+            .unwrap();
+        source
+            .model
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap()
+            .position()
+    };
+    let surface_id = source
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id == face_id)
+        .unwrap()
+        .surface
+        .clone();
+    let surface = source
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .unwrap();
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface.geometry else {
+        panic!("a unit cube face is planar");
+    };
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+        pole_position,
+        *plane.frame(),
+    )));
+    let beside = case != SeamRing::Alone;
+    let loop_id = if beside {
+        LoopId::mint("test:model:loop#seam").unwrap()
+    } else {
+        source.model.loops[loop_index].id.clone()
+    };
+    let seam = EdgeId::mint("test:model:edge#seam").unwrap();
+    let pole = EdgeId::mint("test:model:edge#pole").unwrap();
+    source.model.edges.push(Edge {
+        id: seam.clone(),
+        carrier: EdgeCarrier::unbounded(line.curve().cloned()),
+        start: line.start.clone(),
+        end: line.end.clone(),
+        tolerance: None,
+    });
+    source.model.edges.push(Edge {
+        id: pole.clone(),
+        carrier: EdgeCarrier::unbounded(None),
+        start: line.end.clone(),
+        end: line.end,
+        tolerance: None,
+    });
+    let pole_end = if case == SeamRing::BesideALoopWithALongPole {
+        Point2::new(1.0, 0.0)
+    } else {
+        Point2::new(0.0, 0.0)
+    };
+    let pcurve = PcurveId::mint("test:model:pcurve#pole").unwrap();
+    source.model.pcurves.push(Pcurve {
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                PcurveNurbsPoles::Polynomial {
+                    points: vec![Point2::new(0.0, 0.0), pole_end],
+                },
+                false,
+            )
+            .unwrap(),
+        },
+        metadata: PcurveMetadata::default(),
+    });
+    let ring: Vec<CoedgeId> = [
+        ("up", &seam, Sense::Forward, None),
+        ("pole", &pole, Sense::Forward, Some(pcurve)),
+        ("down", &seam, Sense::Reversed, None),
+    ]
+    .into_iter()
+    .map(|(name, edge, sense, pcurve)| {
+        let id = CoedgeId::mint(format!("test:model:coedge#{name}")).unwrap();
+        source.model.coedges.push(Coedge {
+            id: id.clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge.clone(),
+            radial_next: id.clone(),
+            sense,
+            use_curve: None,
+            pcurves: pcurve
+                .map(|pcurve| PcurveUse {
+                    pcurve,
+                    isoparametric: None,
+                    parameter_range: Some(DirectedParameterRange::new([0.0, 1.0]).unwrap()),
+                })
+                .into_iter()
+                .collect(),
+        });
+        id
+    })
+    .collect();
+    if case == SeamRing::BesideAnUnwritableLoop {
+        let first_loop = source.model.loops[loop_index].coedges().to_vec();
+        let edges: Vec<EdgeId> = source
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| first_loop.contains(&coedge.id))
+            .map(|coedge| coedge.edge.clone())
+            .collect();
+        for edge in source
+            .model
+            .edges
+            .iter_mut()
+            .filter(|edge| edges.contains(&edge.id))
+        {
+            edge.carrier = EdgeCarrier::unbounded(None);
+        }
+    }
+    if beside {
+        source.model.loops.push(Loop {
+            id: loop_id.clone(),
+            face: face_id.clone(),
+            boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).unwrap()),
+        });
+        let face = source
+            .model
+            .faces
+            .iter_mut()
+            .find(|face| face.id == face_id)
+            .unwrap();
+        let mut loops = face.loops.to_vec();
+        loops.push(loop_id);
+        face.loops = FaceLoops::unspecified(loops);
+    } else {
+        source.model.loops[loop_index]
+            .replace_ring(ring, Vec::new())
+            .expect("the seam ring is valid");
+    }
+    source
+}
+
+/// Beside another bound, a ring of only a seam and a collapsed edge bounds
+/// no area: it is written as a `VERTEX_LOOP` at the pole, with no seam. Only
+/// the parameter range of the pole's pcurve use is reported.
+#[test]
+fn writer_writes_a_seam_ring_beside_another_bound_as_a_vertex_loop() {
+    let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
+    let seam = written(&cube_with_a_seam_ring(SeamRing::BesideALoop));
+    assert_eq!(
+        seam,
+        Written {
+            vertex_loops: 1,
+            losses: vec!["step/pcurve.use-native-metadata".to_owned()],
+            ..plain
+        }
+    );
+}
+
+/// As a face's only bound, the seam ring keeps its seam edges. The same
+/// holds when the face's other loop is not written.
+#[test]
+fn writer_keeps_a_seam_ring_that_is_the_only_bound() {
+    let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
+    let alone = written(&cube_with_a_seam_ring(SeamRing::Alone));
+    assert_eq!(
+        (alone.oriented_edges, alone.faces, alone.vertex_loops),
+        (plain.oriented_edges - 4 + 2, plain.faces, 0)
+    );
+    let unwritable = written(&cube_with_a_seam_ring(SeamRing::BesideAnUnwritableLoop));
+    assert_eq!(unwritable.vertex_loops, 0);
+    assert!(unwritable.oriented_edges >= 2);
+}
+
+/// An edge with no 3D curve whose pcurve has length on the face is not a
+/// pole: the ring keeps its seam, and the edge is reported as left out.
+#[test]
+fn writer_keeps_a_seam_ring_whose_curveless_edge_has_length() {
+    let long = written(&cube_with_a_seam_ring(SeamRing::BesideALoopWithALongPole));
+    assert_eq!(long.vertex_loops, 0);
+    assert!(
+        long.losses
+            .contains(&"step/topology.edge-no-3d-curve".to_owned()),
+        "{:?}",
+        long.losses
+    );
+}

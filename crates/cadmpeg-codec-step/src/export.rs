@@ -14,7 +14,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, OccurrenceId, ProductDefinitionId, ShellId,
+    AppearanceBindingId, AppearanceId, LoopId, OccurrenceId, ProductDefinitionId, ShellId, VertexId,
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
@@ -346,6 +346,13 @@ pub(crate) struct Builder<'a> {
     /// out of a loop that has edges with extent.
     point_loop_curves: BTreeSet<String>,
 
+    /// Points of poles that a seam ring written as a `VERTEX_LOOP` at another
+    /// pole leaves without a vertex.
+    point_loop_points: BTreeSet<String>,
+
+    /// Rings that are only a seam and edges collapsed at its poles, by loop.
+    seam_rings: HashMap<&'a str, SeamRing<'a>>,
+
     /// Faces skipped because their surface geometry is unknown (opaque), so no
     /// STEP surface exists to build an `ADVANCED_FACE` on. Deduplicated (a face
     /// is reached once per shell) and aggregated into a single counted loss.
@@ -564,6 +571,8 @@ impl<'a> Builder<'a> {
             written_analytic_surfaces: Vec::new(),
             curveless_edges: BTreeSet::new(),
             point_loop_curves: BTreeSet::new(),
+            point_loop_points: BTreeSet::new(),
+            seam_rings: HashMap::new(),
             unknown_surface_faces: BTreeSet::new(),
             topology_relation_losses: BTreeSet::new(),
             face_step_refs: HashMap::new(),
@@ -601,6 +610,7 @@ impl<'a> Builder<'a> {
         };
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
+        builder.seam_rings = builder.seam_rings()?;
         Ok(builder)
     }
 
@@ -2282,6 +2292,7 @@ impl<'a> Builder<'a> {
         }
         for point in &self.ir.model.points {
             if !self.point_refs.contains_key(point.id.as_str())
+                && !self.point_loop_points.contains(point.id.as_str())
                 && (owned_points.contains(point.id.as_str())
                     || ownership::is_support(
                         point.id.as_str(),
@@ -2750,18 +2761,31 @@ impl<'a> Builder<'a> {
             };
             bound_refs.push(bound);
         }
-        for loop_id in &face.loops {
+        // A seam ring becomes a vertex loop only beside a bound that is
+        // written, so the seam rings come after the other loops.
+        let loop_ids: Vec<&LoopId> = face.loops.iter().collect();
+        let seam_ring: Vec<bool> = loop_ids
+            .iter()
+            .map(|loop_id| self.seam_rings.contains_key(loop_id.as_str()))
+            .collect();
+        let mut face_bounds = vec![None; loop_ids.len()];
+        for index in (0..loop_ids.len())
+            .filter(|index| !seam_ring[*index])
+            .chain((0..loop_ids.len()).filter(|index| seam_ring[*index]))
+        {
+            let loop_id = loop_ids[index];
             let lid = loop_id.as_str();
-            if let Some(loop_ref) = self.emit_loop(lid) {
+            let beside_a_bound = !bound_refs.is_empty() || face_bounds.iter().any(Option::is_some);
+            if let Some(loop_ref) = self.emit_loop(lid, beside_a_bound) {
                 let kind = if face.loop_role(loop_id) == LoopBoundaryRole::Outer {
                     "FACE_OUTER_BOUND"
                 } else {
                     "FACE_BOUND"
                 };
-                let b = self
-                    .emitter
-                    .emit(kind, &format!("'',{loop_ref},{bound_flag}"));
-                bound_refs.push(b);
+                face_bounds[index] = Some(
+                    self.emitter
+                        .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
+                );
             } else {
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
@@ -2777,6 +2801,7 @@ impl<'a> Builder<'a> {
                 );
             }
         }
+        bound_refs.extend(face_bounds.into_iter().flatten());
         if bound_refs.is_empty() {
             self.topology_relation_loss(
                 format!("face:{face_id}:bound-list"),
@@ -2809,7 +2834,10 @@ impl<'a> Builder<'a> {
         );
     }
 
-    fn emit_loop(&mut self, loop_id: &str) -> Option<Ref> {
+    /// A seam ring is written as a `VERTEX_LOOP` only `beside_a_bound`. As a
+    /// face's only bound it keeps its seam edges, which bound the whole
+    /// closed surface.
+    fn emit_loop(&mut self, loop_id: &str, beside_a_bound: bool) -> Option<Ref> {
         let Some(lp) = self.loops.get(loop_id).copied() else {
             self.topology_relation_loss(
                 format!("loop:{loop_id}:record"),
@@ -2819,10 +2847,20 @@ impl<'a> Builder<'a> {
             return None;
         };
         let singular = match &lp.boundary {
-            cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } => Some((vertex, Vec::new())),
-            cadmpeg_ir::topology::LoopBoundary::Ring(_) => self.point_loop(lp),
+            cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } => {
+                Some((vertex, Vec::new(), Vec::new()))
+            }
+            cadmpeg_ir::topology::LoopBoundary::Ring(_) => self
+                .point_loop(lp)
+                .map(|(vertex, curves)| (vertex, curves, Vec::new()))
+                .or_else(|| {
+                    beside_a_bound
+                        .then(|| self.seam_rings.get(loop_id).cloned())
+                        .flatten()
+                        .map(|ring| (ring.pole, ring.curves, ring.other_points))
+                }),
         };
-        if let Some((vertex, point_curves)) = singular {
+        if let Some((vertex, point_curves, other_poles)) = singular {
             let vertex_id = vertex.as_str();
             let Some(vertex) = self.emit_vertex(vertex_id) else {
                 self.topology_relation_loss(
@@ -2834,6 +2872,8 @@ impl<'a> Builder<'a> {
             };
             self.point_loop_curves
                 .extend(point_curves.into_iter().map(str::to_owned));
+            self.point_loop_points
+                .extend(other_poles.into_iter().map(str::to_owned));
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
@@ -2905,6 +2945,155 @@ impl<'a> Builder<'a> {
             curves.push(curve.id.as_str());
         }
         Some((vertex?, curves))
+    }
+
+    /// The rings that are only a seam and edges collapsed at its poles.
+    fn seam_rings(
+        &self,
+    ) -> Result<HashMap<&'a str, SeamRing<'a>>, cadmpeg_core::decode::ResourceLimit> {
+        let mut rings = HashMap::new();
+        for (loop_id, lp) in &self.loops {
+            if matches!(lp.boundary, cadmpeg_ir::topology::LoopBoundary::Ring(_))
+                && self.point_loop(lp).is_none()
+            {
+                if let Some(ring) = self.seam_loop(lp)? {
+                    rings.insert(*loop_id, ring);
+                }
+            }
+        }
+        Ok(rings)
+    }
+
+    /// The pole, carriers, and other pole points of a ring made only of seam
+    /// edges, each used once in each direction, and edges collapsed at the
+    /// singular points of the surface, as on a sphere face that keeps its
+    /// poles. STEP writes it as a `VERTEX_LOOP` at the first pole: the seam
+    /// alone bounds no area.
+    fn seam_loop(
+        &self,
+        lp: &Loop,
+    ) -> Result<Option<SeamRing<'a>>, cadmpeg_core::decode::ResourceLimit> {
+        let mut poles: Vec<&'a VertexId> = Vec::new();
+        let mut uses: HashMap<&str, [usize; 2]> = HashMap::new();
+        let mut curves = Vec::new();
+        for coedge_id in lp.coedges() {
+            let Some(coedge) = self.coedges.get(coedge_id.as_str()).copied() else {
+                return Ok(None);
+            };
+            let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() else {
+                return Ok(None);
+            };
+            let curve = edge
+                .curve()
+                .and_then(|curve_id| self.curves.get(curve_id.as_str()).copied());
+            let degenerate = curve.is_some_and(|curve| {
+                matches!(
+                    curve.geometry.solved(),
+                    Some(SolvedCurveGeometry::Degenerate(_))
+                )
+            });
+            let collapsed = edge.start == edge.end
+                && (degenerate
+                    || (edge.curve().is_none() && self.pcurves_collapse_to(coedge, edge)?));
+            if collapsed {
+                if !poles.contains(&&edge.start) {
+                    poles.push(&edge.start);
+                }
+            } else {
+                let count = uses.entry(edge.id.as_str()).or_default();
+                count[usize::from(matches!(coedge.sense, Sense::Reversed))] += 1;
+            }
+            curves.extend(curve.map(|curve| curve.id.as_str()));
+        }
+        if uses.is_empty() || uses.values().any(|count| *count != [1, 1]) {
+            return Ok(None);
+        }
+        let Some((pole, others)) = poles.split_first() else {
+            return Ok(None);
+        };
+        let other_points = others
+            .iter()
+            .filter_map(|vertex| self.vertices.get(vertex.as_str()))
+            .map(|vertex| vertex.point.as_str())
+            .collect();
+        Ok(Some(SeamRing {
+            pole,
+            curves,
+            other_points,
+        }))
+    }
+
+    /// Whether every pcurve of `coedge` on its face lifts, at the middle of
+    /// its use interval or else its own interval, to `edge`'s one vertex: the
+    /// edge has no length.
+    fn pcurves_collapse_to(
+        &self,
+        coedge: &Coedge,
+        edge: &Edge,
+    ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+        use cadmpeg_ir::eval::admission::EvaluationAdmission;
+        use cadmpeg_ir::eval::finite_or_refusal;
+        let Some(surface) = self
+            .coedge_faces
+            .get(coedge.id.as_str())
+            .and_then(|(surface, _)| self.surfaces.get(surface))
+        else {
+            return Ok(false);
+        };
+        let Some(vertex) = self
+            .vertices
+            .get(edge.start.as_str())
+            .and_then(|vertex| self.points.get(vertex.point.as_str()))
+            .map(|point| point.position().get())
+        else {
+            return Ok(false);
+        };
+        let tolerance = edge
+            .tolerance
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+            .max(self.ir.tolerances.linear.get());
+        if coedge.pcurves.is_empty() {
+            return Ok(false);
+        }
+        for use_ in &coedge.pcurves {
+            let Some(pcurve) = self.pcurves.get(use_.pcurve.as_str()) else {
+                return Ok(false);
+            };
+            let Some([first, second]) = use_
+                .parameter_range
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+                .or_else(|| {
+                    pcurve
+                        .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get)
+                })
+            else {
+                return Ok(false);
+            };
+            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+                EvaluationAdmission::Standard,
+                &pcurve.geometry,
+                0.5 * (first + second),
+            ))?
+            else {
+                return Ok(false);
+            };
+            let uv = uv.get();
+            let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+                EvaluationAdmission::Standard,
+                self.ir,
+                &surface.geometry,
+                uv.u,
+                uv.v,
+            ))?
+            else {
+                return Ok(false);
+            };
+            if point.get().distance(vertex) > tolerance {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
@@ -5787,6 +5976,15 @@ mod accounting_tests;
 mod construction_tests;
 #[cfg(test)]
 mod non_manifold_tests;
+
+/// A seam ring written as a `VERTEX_LOOP`: its pole, the carriers it leaves
+/// out, and the points of its other poles.
+#[derive(Clone)]
+struct SeamRing<'a> {
+    pole: &'a VertexId,
+    curves: Vec<&'a str>,
+    other_points: Vec<&'a str>,
+}
 
 /// Why a helix B-spline fit failed, for the loss report.
 fn helix_fit_failure(error: &cadmpeg_ir::eval::helix_nurbs::HelixNurbsError) -> &'static str {
