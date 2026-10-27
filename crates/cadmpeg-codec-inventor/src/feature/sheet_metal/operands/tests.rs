@@ -8,6 +8,9 @@ fn projected(fixture: &Fixture) -> Option<PlateOperands> {
         &fixture.style,
         |reference| fixture.property(reference),
         Fixture::length,
+        Fixture::direction,
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        cadmpeg_ir::units::UnitVector3::X_AXIS,
     )
 }
 
@@ -93,22 +96,16 @@ fn equal_numeric_forms_in_different_domains_do_not_select_style_default() {
 }
 
 #[test]
-fn retained_relief_and_transition_booleans_do_not_change_explicit_lengths() {
-    for relief in [false, true] {
-        for transition in [false, true] {
-            let mut fixture = Fixture::new();
-            for (index, expected) in [(29, relief), (35, transition)] {
-                fixture.edit(index, |kind| {
-                    if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
-                        *value = expected;
-                    }
-                });
+fn relief_and_transition_booleans_require_the_pinned_true_value() {
+    assert!(projected(&Fixture::new()).is_some());
+    for index in [29, 35] {
+        let mut fixture = Fixture::new();
+        fixture.edit(index, |kind| {
+            if let PmDcFeaturePropertyKind::Boolean { value, .. } = kind {
+                *value = false;
             }
-            let value = projected(&fixture).expect("retained controls");
-            assert_eq!(value.relief.width.get(), 13.0);
-            assert_eq!(value.relief.depth.get(), 17.0);
-            assert_eq!(value.transition.radius.get(), 23.0);
-        }
+        });
+        assert!(projected(&fixture).is_none());
     }
 }
 
@@ -191,7 +188,10 @@ fn dimensions_require_resolved_lengths_and_their_ir_domains() {
                 Length::new(0.0)
             } else {
                 Fixture::length(r)
-            }
+            },
+            Fixture::direction,
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
         )
         .is_none());
     }
@@ -204,7 +204,10 @@ fn dimensions_require_resolved_lengths_and_their_ir_domains() {
                 None
             } else {
                 Fixture::length(r)
-            }
+            },
+            Fixture::direction,
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
         )
         .is_none());
         assert!(plate(
@@ -215,7 +218,10 @@ fn dimensions_require_resolved_lengths_and_their_ir_domains() {
                 Length::new(-1.0)
             } else {
                 Fixture::length(r)
-            }
+            },
+            Fixture::direction,
+            cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            cadmpeg_ir::units::UnitVector3::X_AXIS,
         )
         .is_none());
     }
@@ -246,4 +252,145 @@ fn bend_state_and_repeated_operand_mismatches_stay_native() {
         let source = crate::test_support::sheet_metal::feature(200, &slots);
         assert!(!bend(&fixture.plate, &source, |r| fixture.property(r)));
     }
+}
+
+#[test]
+fn slot_one_is_antiparallel_to_the_first_attachment_direction() {
+    use cadmpeg_ir::units::UnitVector3;
+    let fixture = Fixture::new();
+    assert!(projected(&fixture).is_some());
+    for stored in [UnitVector3::Z_AXIS, UnitVector3::X_AXIS] {
+        assert!(plate(
+            &fixture.plate,
+            &fixture.style,
+            |r| fixture.property(r),
+            Fixture::length,
+            |r| if r.index() == 2 {
+                Some(stored)
+            } else {
+                Fixture::direction(r)
+            },
+            UnitVector3::Z_AXIS,
+            UnitVector3::X_AXIS,
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn attachment_directions_admit_either_u_sign_without_a_side_flip() {
+    use cadmpeg_ir::units::UnitVector3;
+    let fixture = Fixture::new();
+    assert!(projected(&fixture).is_some());
+    let values = plate(
+        &fixture.plate,
+        &fixture.style,
+        |r| fixture.property(r),
+        Fixture::length,
+        |r| match r.index() {
+            2 => Some(UnitVector3::X_AXIS),
+            33 => Some(UnitVector3::X_AXIS.reversed()),
+            _ => Fixture::direction(r),
+        },
+        UnitVector3::Z_AXIS,
+        UnitVector3::X_AXIS,
+    )
+    .expect("negative attachment U");
+    assert_eq!(values.side, SheetMetalThicknessSide::Forward);
+    for (index, stored) in [
+        (34, UnitVector3::Z_AXIS),
+        (34, UnitVector3::Y_AXIS.reversed()),
+        (33, UnitVector3::Z_AXIS),
+    ] {
+        assert!(plate(
+            &fixture.plate,
+            &fixture.style,
+            |r| fixture.property(r),
+            Fixture::length,
+            |r| if r.index() == index {
+                Some(stored)
+            } else {
+                Fixture::direction(r)
+            },
+            UnitVector3::Z_AXIS,
+            UnitVector3::X_AXIS,
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn construction_wire_edge_collection_and_corner_controls_are_gated() {
+    use crate::test_support::sheet_metal::list;
+    assert!(projected(&Fixture::new()).is_some());
+    for index in [1, 6, 8] {
+        let mut fixture = Fixture::new();
+        fixture.edit(index, |kind| match kind {
+            PmDcFeaturePropertyKind::ProfileSelection { .. } => {
+                *kind = PmDcFeaturePropertyKind::SurfaceBody {
+                    body: crate::test_support::sheet_metal::reference(0),
+                }
+            }
+            PmDcFeaturePropertyKind::References { items, .. } => *items = list(&[99]),
+            PmDcFeaturePropertyKind::Boolean { value, .. } => *value = false,
+            PmDcFeaturePropertyKind::SheetMetal {
+                definition: SheetMetalProperty::Corner { value, .. },
+            } => *value = 1,
+            PmDcFeaturePropertyKind::SheetMetal {
+                definition: SheetMetalProperty::Enumeration { value, .. },
+            } => *value = 0,
+            _ => panic!("control"),
+        });
+        assert!(projected(&fixture).is_none());
+    }
+}
+
+#[test]
+fn corner_values_belong_to_the_corner_feature_and_only_their_types_are_gated() {
+    for index in [70, 73, 74, 75, 77] {
+        let mut fixture = Fixture::new();
+        fixture.edit(index, |kind| match kind {
+            PmDcFeaturePropertyKind::Boolean { value, .. } => *value = false,
+            PmDcFeaturePropertyKind::SheetMetal {
+                definition: SheetMetalProperty::Enumeration { value, .. },
+            } => *value = 0,
+            _ => panic!("corner value"),
+        });
+        assert!(projected(&fixture).is_some());
+        fixture.edit(index, |kind| {
+            *kind = PmDcFeaturePropertyKind::ProfileSelection {
+                entity_link: crate::test_support::sheet_metal::reference(0),
+                value: 0,
+            }
+        });
+        assert!(projected(&fixture).is_none());
+    }
+}
+
+#[test]
+fn flange_thickness_uses_the_positive_normal_for_zero_and_false_sides() {
+    let mut fixture = Fixture::new();
+    assert_eq!(
+        projected(&fixture).expect("false side").side,
+        SheetMetalThicknessSide::Forward
+    );
+    fixture.edit(3, |kind| {
+        *kind = PmDcFeaturePropertyKind::Enumeration {
+            family: PmDcFeatureEnumFamily::PlateSide,
+            type_value: 2,
+            value: 0,
+        };
+    });
+    assert_eq!(
+        projected(&fixture).expect("zero side").side,
+        SheetMetalThicknessSide::Forward
+    );
+    fixture.edit(3, |kind| {
+        *kind = PmDcFeaturePropertyKind::Boolean {
+            name: String::new(),
+            name_value: 0,
+            value: true,
+        };
+    });
+    assert!(projected(&fixture).is_none());
 }

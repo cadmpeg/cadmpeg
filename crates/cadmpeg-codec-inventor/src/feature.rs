@@ -2217,6 +2217,19 @@ pub(crate) fn project(
     });
     neutral -= sheet_metal::projection::reject_unresolved_inputs(ctx, &mut projected, inventory)?;
     neutral += sheet_metal::projection::project_bends(ctx, &mut projected, &index, inventory)?;
+    loop {
+        let rejected =
+            sheet_metal::projection::reject_incomplete_pairs(ctx, &mut projected, inventory)?
+                + sheet_metal::projection::reject_unresolved_inputs(
+                    ctx,
+                    &mut projected,
+                    inventory,
+                )?;
+        neutral -= rejected;
+        if rejected == 0 {
+            break;
+        }
+    }
     projected.sort_unstable_by_key(|item| item.feature.ordinal);
     let mut features = Vec::new();
     let mut result_topologies = Vec::new();

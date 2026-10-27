@@ -36,7 +36,7 @@ fn relief_and_transition_preserve_evaluated_lengths_and_default_forms() {
 
 #[test]
 fn plate_and_bend_are_separate_wire_operations() {
-    let common = json!({
+    let mut bend = json!({
         "attachment": {"kind": "unresolved"},
         "inside_radius": 0.75,
         "relief": {
@@ -45,16 +45,16 @@ fn plate_and_bend_are_separate_wire_operations() {
         },
         "transition": {"form": "style_default", "radius": 1.5}
     });
-    let mut plate = common.clone();
-    plate["definition"] = json!("sheet_metal_attached_plate");
-    plate["profile"] = json!({"kind": "sketch", "value": "test:model:sketch#profile"});
-    plate["thickness"] = json!(1.0);
-    plate["side"] = json!("forward");
-    plate["op"] = json!("join");
-    let mut bend = common;
+    let plate = json!({
+        "definition": "sheet_metal_attached_plate",
+        "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
+        "thickness": 1.0,
+        "side": "forward",
+        "attachment": {"kind": "unresolved"}
+    });
     bend["definition"] = json!("sheet_metal_bend");
     bend["plate"] = json!("test:model:feature#plate");
-    for wire in [plate, bend] {
+    for wire in [plate, bend.clone()] {
         let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
         assert!(operation.body_output_family().is_some());
@@ -66,9 +66,19 @@ fn plate_and_bend_are_separate_wire_operations() {
             let mut invalid_thickness = wire.clone();
             invalid_thickness["thickness"] = json!(0.0);
             assert!(serde_json::from_value::<FeatureOperation>(invalid_thickness).is_err());
+            for field in ["op", "inside_radius", "relief", "transition"] {
+                let mut invalid = wire.clone();
+                invalid[field] = if field == "op" {
+                    json!("join")
+                } else {
+                    bend[field].clone()
+                };
+                assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
+            }
+        } else {
+            let mut invalid = wire;
+            invalid["inside_radius"] = json!(0.0);
+            assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
         }
-        let mut invalid = wire;
-        invalid["inside_radius"] = json!(0.0);
-        assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
     }
 }

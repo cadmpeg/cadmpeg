@@ -2,12 +2,10 @@
 use super::*;
 use crate::feature::{PmDcFeaturePropertyKind as Kind, PmDcFeatureReferenceFamily as Family};
 use crate::test_support::sheet_metal::{list, property, reference, Fixture};
-use cadmpeg_ir::features::{
-    BooleanOp, FeatureContent, FeatureEvaluation, GeneratedEdgeRef, PlanarProfileRef,
-};
+use cadmpeg_ir::features::{FeatureContent, FeatureEvaluation, GeneratedEdgeRef, PlanarProfileRef};
 
 #[test]
-fn paired_inputs_have_equal_attachments_and_complete_independent_rows() {
+fn paired_inputs_select_their_own_complete_independent_rows() {
     let mut fixture = Fixture::new();
     fixture.properties.extend([
         property(
@@ -51,6 +49,9 @@ fn paired_inputs_have_equal_attachments_and_complete_independent_rows() {
         &fixture.style,
         |r| fixture.property(r),
         Fixture::length,
+        Fixture::direction,
+        cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        cadmpeg_ir::units::UnitVector3::X_AXIS,
     )
     .expect("operands");
     let selection = EdgeSelection::generated(
@@ -88,11 +89,7 @@ fn paired_inputs_have_equal_attachments_and_complete_independent_rows() {
             ),
             thickness: values.thickness,
             side: values.side,
-            op: BooleanOp::Join,
             attachment: selection.clone(),
-            inside_radius: values.inside_radius,
-            relief: values.relief.clone(),
-            transition: values.transition.clone(),
         },
     );
     let bend = make_feature(
@@ -150,8 +147,11 @@ fn paired_inputs_have_equal_attachments_and_complete_independent_rows() {
         ) => attachment.clone(),
         _ => panic!("feature"),
     };
-    assert_eq!(attachment(&features[0]), attachment(&features[1]));
+    assert_ne!(attachment(&features[0]), attachment(&features[1]));
     assert!(
-        matches!(attachment(&features[0]),EdgeSelection::Historical { state,.. } if state==inputs[1].id)
+        matches!(attachment(&features[0]),EdgeSelection::Historical { state,.. } if state==inputs[0].id)
+    );
+    assert!(
+        matches!(attachment(&features[1]), EdgeSelection::Historical { state, .. } if state == inputs[1].id)
     );
 }

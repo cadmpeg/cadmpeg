@@ -55,72 +55,27 @@ pub(super) fn check_profile(
     }
 }
 
-pub(super) fn shared_attachment_owner<'a>(
-    ir: &'a crate::CadIr,
+pub(super) fn check_pair(
     feature: &crate::features::Feature,
-    selection: &crate::features::EdgeSelection,
-) -> Option<&'a FeatureId> {
-    use crate::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
-        attachment, ..
-    }) = feature.evaluation.definition()
-    else {
-        return None;
-    };
-    if attachment != selection {
-        return None;
-    }
-    let EdgeSelection::Historical { state, edges, .. } = selection else {
-        return None;
-    };
-    let selected = ir
-        .model
-        .feature_input_topologies
+    features: &[crate::features::Feature],
+    findings: &mut Vec<Finding>,
+) {
+    use crate::features::{FeatureDefinition, FeatureOperation};
+    let count = features
         .iter()
-        .find(|input| input.id == *state)?;
-    let bend = ir
-        .model
-        .features
-        .iter()
-        .find(|bend| bend.id == selected.input_of)?;
-    let FeatureDefinition::Operation(FeatureOperation::SheetMetalBend {
-        plate, attachment, ..
-    }) = bend.evaluation.definition()
-    else {
-        return None;
-    };
-    if *plate != feature.id
-        || attachment != selection
-        || bend.ordinal <= feature.ordinal
-        || !bend.dependencies.contains(&feature.id)
-    {
-        return None;
-    }
-    let mut own_states = ir
-        .model
-        .feature_input_topologies
-        .iter()
-        .filter(|input| input.input_of == feature.id);
-    let own = own_states.next()?;
-    if own_states.next().is_some()
-        || own.bodies != selected.bodies
-        || own.faces != selected.faces
-        || own.edges != selected.edges
-        || own.vertices != selected.vertices
-        || own.edge_geometry != selected.edge_geometry
-        || own.native_ref != selected.native_ref
-        || edges.iter().any(|edge| {
-            !selected.edge_geometry.iter().any(|geometry| {
-                geometry.edge == *edge
-                    && geometry.start.is_some()
-                    && geometry.end.is_some()
-                    && geometry.tangent.is_some()
-            })
+        .filter(|bend| {
+            matches!(bend.evaluation.definition(), FeatureDefinition::Operation(
+            FeatureOperation::SheetMetalBend { plate, .. }
+        ) if *plate == feature.id)
         })
-    {
-        return None;
+        .count();
+    if count != 1 {
+        super::geometry_error(
+            findings,
+            feature.id.as_str(),
+            "attached plate requires exactly one bend",
+        );
     }
-    Some(&bend.id)
 }
 
 #[cfg(test)]
@@ -174,9 +129,8 @@ mod tests {
         check_profile(&owner, &profile, &ids, &mut findings);
         assert!(findings.is_empty());
     }
-
     #[test]
-    fn shared_plate_bend_input_requires_equal_selection_and_complete_matching_states() {
+    fn plate_and_bend_selections_require_their_own_input_topology() {
         use crate::{
             features::*,
             ids::{FeatureInputTopologyId, HistoricalEdgeId},
@@ -189,11 +143,17 @@ mod tests {
         let plate_state = FeatureInputTopologyId::mint("test:model:input#plate").expect("state");
         let bend_state = FeatureInputTopologyId::mint("test:model:input#bend").expect("state");
         let selection = EdgeSelection::historical(
-            bend_state.clone(),
+            plate_state.clone(),
             vec![edge.clone()],
             "test:attachment".into(),
         )
         .expect("selection");
+        let bend_selection = EdgeSelection::historical(
+            bend_state.clone(),
+            vec![edge.clone()],
+            "test:attachment".into(),
+        )
+        .expect("bend selection");
         let relief = SheetMetalRelief {
             form: SheetMetalReliefForm::StyleDefault,
             width: PositiveLength::new(1.0).expect("width"),
@@ -226,11 +186,7 @@ mod tests {
                     profile: PlanarProfileRef::Faces(vec![ir.model.faces[0].id.clone()]),
                     thickness: PositiveLength::new(1.0).expect("thickness"),
                     side: SheetMetalThicknessSide::Forward,
-                    op: BooleanOp::Join,
                     attachment: selection.clone(),
-                    inside_radius: PositiveLength::new(1.0).expect("radius"),
-                    relief: relief.clone(),
-                    transition: transition.clone(),
                 },
             ),
             feature(
@@ -238,7 +194,7 @@ mod tests {
                 1,
                 FeatureOperation::SheetMetalBend {
                     plate: plate_id.clone(),
-                    attachment: selection.clone(),
+                    attachment: bend_selection.clone(),
                     inside_radius: PositiveLength::new(1.0).expect("radius"),
                     relief,
                     transition,
@@ -268,41 +224,26 @@ mod tests {
             state(plate_state, plate_id),
             state(bend_state, bend_id.clone()),
         ];
-        assert_eq!(
-            shared_attachment_owner(&ir, &ir.model.features[0], &selection),
-            Some(&bend_id)
-        );
         let findings = crate::validate::validate_neutral(&ir, Vec::new())
             .expect("validate")
             .findings;
         assert!(!findings
             .iter()
             .any(|finding| finding.message.contains("another feature's input topology")));
-        for change in 0..5 {
-            let mut changed = ir.clone();
-            match change {
-                0 => {
-                    changed.model.feature_input_topologies.remove(0);
-                }
-                1 => {
-                    changed.model.feature_input_topologies[0].edge_geometry[0].start =
-                        FinitePoint3::new(Point3::new(3.0, 0.0, 0.0));
-                }
-                2 => changed.model.feature_input_topologies[0].edge_geometry[0].tangent = None,
-                3 => changed.model.features[1].dependencies = DistinctMembers::default(),
-                _ => changed.model.features[1].evaluation.edit(|definition, _| {
-                    if let FeatureDefinition::Operation(FeatureOperation::SheetMetalBend {
-                        attachment,
-                        ..
-                    }) = definition
-                    {
-                        *attachment = EdgeSelection::All;
-                    }
-                }),
+        ir.model.features[0].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
+                attachment,
+                ..
+            }) = definition
+            {
+                *attachment = bend_selection;
             }
-            assert!(
-                shared_attachment_owner(&changed, &changed.model.features[0], &selection).is_none()
-            );
-        }
+        });
+        let findings = crate::validate::validate_neutral(&ir, Vec::new())
+            .expect("validate")
+            .findings;
+        assert!(findings
+            .iter()
+            .any(|finding| finding.message.contains("another feature's input topology")));
     }
 }

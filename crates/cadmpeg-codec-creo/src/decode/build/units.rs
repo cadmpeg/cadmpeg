@@ -453,15 +453,8 @@ fn scale_feature_operation(
         FeatureOperation::SheetMetalBaseFlange { thickness, .. } => {
             scale_positive_length(thickness, scale)?;
         }
-        FeatureOperation::SheetMetalAttachedPlate {
-            thickness,
-            inside_radius,
-            relief,
-            transition,
-            ..
-        } => {
+        FeatureOperation::SheetMetalAttachedPlate { thickness, .. } => {
             scale_positive_length(thickness, scale)?;
-            scale_attached_sheet_metal(inside_radius, relief, transition, scale)?;
         }
         FeatureOperation::SheetMetalBend {
             inside_radius,

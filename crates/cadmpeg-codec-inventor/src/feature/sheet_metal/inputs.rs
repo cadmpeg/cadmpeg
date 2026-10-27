@@ -98,15 +98,6 @@ pub(in crate::feature) fn project(
         let targets = std::iter::once(position).chain(features.iter().enumerate().filter_map(|(index,feature)| {
             matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { plate,.. }) if plate==&plate_id).then_some(index)
         })).collect::<Vec<_>>();
-        let selected_source = targets
-            .last()
-            .and_then(|target| features[*target].native_ref.as_deref())
-            .and_then(|id| sources.get(id))
-            .and_then(Option::as_ref)
-            .ok_or_else(|| {
-                CodecError::malformed("Inventor attachment has no paired input owner")
-            })?;
-        let selected_state = state_id(selected_source)?;
         for target in targets {
             let source = features[target]
                 .native_ref
@@ -117,9 +108,8 @@ pub(in crate::feature) fn project(
                     CodecError::malformed("Inventor sheet-metal feature has no source")
                 })?;
             let id = state_id(source)?;
-            let selection =
-                EdgeSelection::historical(selected_state.clone(), edges.clone(), native.clone())
-                    .map_err(CodecError::malformed)?;
+            let selection = EdgeSelection::historical(id.clone(), edges.clone(), native.clone())
+                .map_err(CodecError::malformed)?;
             features[target].evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(
                     FeatureOperation::SheetMetalAttachedPlate { attachment, .. }
