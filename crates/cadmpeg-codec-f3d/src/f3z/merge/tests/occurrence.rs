@@ -1026,7 +1026,13 @@ fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operan
     let first_parent = OccurrenceId::mint("f3d:model:occurrence#first").unwrap();
     let second_parent = OccurrenceId::mint("f3d:model:occurrence#second").unwrap();
     let first = member.instantiate(&ctx, "first", &first_parent).unwrap();
-    let second = member.instantiate(&ctx, "second", &second_parent).unwrap();
+    let second = member
+        .instantiate(&ctx, "second/instance-child", &second_parent)
+        .unwrap();
+    assert_eq!(
+        second.occurrences[0].id.as_str(),
+        "f3d:xref/second/instance-child/model:occurrence#child"
+    );
     assert_ne!(first.assembly_joints[0].id, second.assembly_joints[0].id);
     for (instance, parent) in [(&first, first_parent), (&second, second_parent)] {
         assert!(instance.product_definitions.is_empty());

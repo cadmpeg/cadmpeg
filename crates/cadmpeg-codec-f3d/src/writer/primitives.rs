@@ -67,6 +67,7 @@ pub(crate) fn validate_assembly_projection(
         &native.design_joint_motions,
         &crate::design::components::paths::LocalOccurrencePaths::new(
             &native.design_component_occurrences,
+            &native.xref_references,
             &target.model.occurrences,
         ),
     );

@@ -43,6 +43,7 @@ mod history_transitions;
 mod operand_group_carrier;
 mod parameter_scope;
 mod timeline;
+mod xref;
 
 fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
     crate::records::dimensions::DesignRecipeReference {
