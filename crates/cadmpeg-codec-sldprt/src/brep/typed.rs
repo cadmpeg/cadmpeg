@@ -155,19 +155,31 @@ type OwnershipMaps = (
 );
 
 impl Facts {
+    /// The ownership class each transmit index is claimed for. A node whose
+    /// own reference fields leave the u16 identity space cannot be an XT node:
+    /// it is a byte-window match inside another record and claims no class, so
+    /// it cannot mask the genuine owner of the same index.
     fn topology_class_masks(&self) -> HashMap<u16, u8> {
         let mut classes = HashMap::new();
         for node in &self.bodies {
-            *classes.entry(node.attr).or_insert(0) |= 1;
+            if identity_refs(&node.topology_refs) {
+                *classes.entry(node.attr).or_insert(0) |= 1;
+            }
         }
         for node in &self.shells {
-            *classes.entry(node.attr).or_insert(0) |= 2;
+            if identity_refs(&node.refs) {
+                *classes.entry(node.attr).or_insert(0) |= 2;
+            }
         }
         for node in &self.regions {
-            *classes.entry(node.attr).or_insert(0) |= 4;
+            if identity_refs(&node.refs) {
+                *classes.entry(node.attr).or_insert(0) |= 4;
+            }
         }
         for node in &self.faces {
-            *classes.entry(node.attr).or_insert(0) |= 8;
+            if identity_refs(&node.refs) {
+                *classes.entry(node.attr).or_insert(0) |= 8;
+            }
         }
         classes
     }
@@ -578,6 +590,11 @@ where
 
 fn u16_from_ref(value: u32) -> Option<u16> {
     u16::try_from(value).ok()
+}
+
+/// Whether every reference names a transmit index in the u16 identity space.
+fn identity_refs(refs: &[u32]) -> bool {
+    refs.iter().all(|value| u16_from_ref(*value).is_some())
 }
 
 fn u16_from_ref_or_none(value: u32) -> Option<u16> {
@@ -1326,6 +1343,22 @@ mod tests {
         assert_eq!(facts.shells[0].attr, 3);
         assert!(!facts.bodies.iter().any(|node| node.offset == payload));
         assert_eq!(facts.topology_class_masks().get(&3), Some(&2));
+    }
+
+    #[test]
+    fn byte_window_shell_does_not_mask_the_body_of_its_index() {
+        // A SHELL tag inside another record, framed as index 3: its reference
+        // fields run past the u16 identity space, so it is no XT node.
+        let mut bytes = copied_schema(BODY_TAG, 23);
+        bytes.extend(body_node(3, 1006, 1));
+        bytes.extend([0, 0x0d, 0, 3, 0, 0, 0, 11]);
+        for value in [1536, 0, 263, 1_216_581_639, 2, 3, 4, 5] {
+            push_ref(&mut bytes, value);
+        }
+        let facts = scan(&bytes);
+        assert!(facts.shells.iter().any(|node| node.attr == 3));
+        assert_eq!(facts.topology_class_masks().get(&3), Some(&1));
+        assert!(facts.topology_owner_attrs().contains(&3));
     }
 
     #[test]

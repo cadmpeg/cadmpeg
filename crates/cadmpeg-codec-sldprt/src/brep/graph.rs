@@ -1079,6 +1079,12 @@ fn edge_parameter_range(
     } else {
         [range[1], range[0]]
     };
+    let range = match &carrier.geometry {
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
+            periodic_phase(range)
+        }
+        _ => range,
+    };
     let Some(endpoints) = endpoints else {
         return Ok(Some((range, false)));
     };
@@ -1103,6 +1109,21 @@ fn edge_parameter_range(
     } else {
         Ok(None)
     }
+}
+
+/// An angular range moved by whole turns so it starts within `[0, τ)`, the
+/// canonical phase of a circle or ellipse. A trim may store an arc on any
+/// equivalent branch, such as one ending at the seam from below as
+/// `[-1.47, 0]`; whole turns name the same points.
+fn periodic_phase([start, end]: [f64; 2]) -> [f64; 2] {
+    let tau = std::f64::consts::TAU;
+    let mut phase = start.rem_euclid(tau);
+    // `rem_euclid` can round a value just below zero up to exactly `τ`.
+    if phase >= tau {
+        phase = 0.0;
+    }
+    let shift = phase - start;
+    [phase, end + shift]
 }
 
 /// Resolve the coedge that defines an edge's stored direction.
@@ -7011,6 +7032,51 @@ mod tests {
             .unwrap(),
             Some(([-14.0, 16.5], true))
         );
+    }
+
+    #[test]
+    fn circle_edge_ranges_start_within_one_turn() {
+        // An arc stored as ending at the seam from below: [-1.47, 0].
+        let carrier = crate::brep::CurveCarrier {
+            runs_against_edges: false,
+            attr: 1,
+            offset: 0,
+            end: 0,
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    3.175,
+                )
+                .unwrap(),
+            )),
+            parameter_range: Some(
+                cadmpeg_ir::units::FiniteVector::new([-1.471_127_674_303_733_8, 0.0])
+                    .expect("finite fixture range"),
+            ),
+        };
+        let endpoints = [
+            cadmpeg_ir::math::Point3::new(0.0, -3.159_243_078_916_716, 0.315_924_307_891_68),
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 3.175),
+        ];
+        let (range, reversed) = super::edge_parameter_range(
+            &cadmpeg_test_support::service_decode_context(),
+            &carrier,
+            Some(endpoints),
+        )
+        .unwrap()
+        .expect("the arc's ends are its vertices");
+        let tau = std::f64::consts::TAU;
+        assert!(!reversed);
+        assert!((range[0] - (tau - 1.471_127_674_303_733_8)).abs() < 1e-12);
+        assert!((range[1] - tau).abs() < 1e-12);
+
+        assert_eq!(super::periodic_phase([0.5, 1.0]), [0.5, 1.0]);
+        let [start, end] = super::periodic_phase([7.0, 8.0]);
+        assert!((start - (7.0 - tau)).abs() < 1e-12 && (end - (8.0 - tau)).abs() < 1e-12);
+        // A start a hair below zero lands on zero, never on `τ`.
+        assert_eq!(super::periodic_phase([-1e-17, 1.0])[0], 0.0);
     }
 
     fn bridge_record(attr: u16, refs: [u16; 5]) -> Bridge {
