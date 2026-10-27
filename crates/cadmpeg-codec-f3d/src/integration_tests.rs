@@ -12,6 +12,7 @@ mod inconsistent_records;
 mod measured_geometry;
 mod optional_payloads;
 mod placement_history;
+mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 

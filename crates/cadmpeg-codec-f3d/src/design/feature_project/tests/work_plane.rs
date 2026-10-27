@@ -1,6 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn work_plane_projects_solved_frame_in_millimetres() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut plane =
+        DesignParameterScope::empty("f3d:test:scope#1", DesignFeatureKind::WorkPlane, 1);
+    let matrix = [
+        [0.0, 0.0, 1.0, 3.0],
+        [1.0, 0.0, 0.0, -4.0],
+        [0.0, 1.0, 0.0, 7.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    plane.with_work_plane_transform(matrix.try_into().unwrap());
+    let FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) =
+        super::super::project_work_plane(&plane, matrix)
+    else {
+        panic!("expected solved datum plane");
+    };
+    let expected = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        Point3::new(30.0, -40.0, 70.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+    )
+    .unwrap();
+    assert_eq!(frame, expected);
+}
+
+#[test]
 fn work_plane_projects_three_point_vertex_recipes() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     use crate::records::feature::work_geometry::{DesignVertexRecipe, DesignWorkPlaneConstruction};

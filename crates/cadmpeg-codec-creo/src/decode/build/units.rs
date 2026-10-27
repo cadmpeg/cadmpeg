@@ -462,6 +462,7 @@ fn scale_feature_operation(
             transition,
             ..
         } => scale_attached_sheet_metal(inside_radius, relief, transition, scale)?,
+        FeatureOperation::SheetMetalCorner { .. } => {}
         FeatureOperation::SheetMetalEdgeFlange {
             height,
             width,

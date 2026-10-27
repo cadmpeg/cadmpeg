@@ -3,6 +3,10 @@ use super::*;
 use crate::record_identity::{Located, RecordTypeId};
 use crate::test_support::test_fixtures::{content_at, parse};
 
+use crate::feature::FeatureInventory;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation};
+use std::collections::BTreeMap;
+
 fn header(version: u8) -> Vec<u8> {
     let stamps: &[i32] = match version {
         15..=22 => &[],
@@ -306,4 +310,66 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
     assert!(!valid_references(&located, |ordinal| types
         .get(usize::try_from(ordinal).expect("fixture ordinal"))
         .map(String::as_str)));
+}
+
+fn corner_loss_input() -> cadmpeg_ir::features::Feature {
+    serde_json::from_value(serde_json::json!({
+        "id": "test:model:feature#corner", "ordinal": 1, "suppressed": null,
+        "definition": {"definition": "native", "kind": "SheetMetalCorner"}
+    }))
+    .expect("synthetic corner feature")
+}
+
+#[test]
+fn native_corner_reports_the_missing_effect_proof() {
+    let mut corner = corner_loss_input();
+    corner.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: "SheetMetalCorner".into(),
+            parameters: BTreeMap::new(),
+        },
+    ));
+    let losses = native_kind_losses(&FeatureInventory::default(), &[corner]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::InventorLossCode::FeatureSheetMetalCornerEffectNative.kind()
+    );
+    assert!(losses[0]
+        .message
+        .contains("complete generated-name evidence"));
+}
+
+#[test]
+fn projected_unchanged_corner_reports_every_retained_control() {
+    let mut corner = corner_loss_input();
+    corner.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::SheetMetalCorner {
+            bend: FeatureId::mint("test:model:feature#bend").expect("bend identity"),
+            effect: cadmpeg_ir::features::SheetMetalCornerEffect::Unchanged,
+        },
+    ));
+    let losses = retained_control_losses([&corner]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::InventorLossCode::FeatureSheetMetalCornerControlsRetained.kind()
+    );
+    for control in [
+        "gap",
+        "size",
+        "Jacobi",
+        "relief-form",
+        "secondary-form",
+        "type-8",
+        "control",
+        "option",
+        "raw word",
+        "dimensions",
+        "profile",
+        "attachment",
+        "result",
+    ] {
+        assert!(losses[0].message.contains(control));
+    }
 }

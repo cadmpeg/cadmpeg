@@ -200,3 +200,5 @@ pub(crate) mod body_reference_tail_test;
 pub(crate) mod placement_construction;
 
 pub(crate) mod pipe;
+
+pub(crate) mod work_plane;

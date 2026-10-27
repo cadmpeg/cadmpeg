@@ -4310,6 +4310,16 @@ fn valid_work_plane_construction(
     let Some(frame) = scope.work_plane_frame() else {
         return true;
     };
+    let placements = &ctx.native.design_placement_constructions;
+    let typed_operand =
+        crate::design::decode::placement_construction::work_planes::has_operand(scope, placements);
+    if typed_operand {
+        return crate::design::decode::placement_construction::work_planes::solved_frame(
+            scope, placements,
+        )
+        .as_ref()
+            == Some(frame);
+    }
     let Some(construction) = &frame.work_plane_construction else {
         return true;
     };

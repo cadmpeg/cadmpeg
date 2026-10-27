@@ -2230,6 +2230,7 @@ pub(crate) fn project(
             break;
         }
     }
+    neutral += sheet_metal::corner::project(&mut projected, &index, inventory)?;
     projected.sort_unstable_by_key(|item| item.feature.ordinal);
     let mut features = Vec::new();
     let mut result_topologies = Vec::new();

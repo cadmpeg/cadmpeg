@@ -1916,3 +1916,5 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
 mod face_recipe_lengths;
 
 mod rigid_alignment;
+
+mod work_plane;
