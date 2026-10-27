@@ -649,7 +649,12 @@ pub(super) fn topology_scopes(buf: &[u8], prefixed: bool) -> TopologyScopes {
                 let start = p.checked_add(int_values::LEN)?;
                 let available = buf.len().checked_sub(start)?;
                 let count = cadmpeg_core::decode::bounded_len(u64::from(count), 4, available)?;
-                start.checked_add(count.checked_mul(4)?)
+                let end = start.checked_add(count.checked_mul(4)?)?;
+                // A node ends where the next node's tag begins. A `00 52` read
+                // inside another record's fields can state a count that fits the
+                // buffer; its extent then ends mid-record and would hide every
+                // real node it spans.
+                buf.get(end).is_none_or(|next| *next == 0).then_some(end)
             }),
             0x51 => (|| {
                 let flags = View::u32_be_at(buf, p + entity_hdr::FLAGS)?;
@@ -2898,6 +2903,26 @@ mod tests {
         let history = delta_topology(&vertex_frame(51, [0, 0, 0, 0, 61], 900, true), &tables);
         tables.merge_deltas(history, None);
         assert!(tables.vertex_is_unresolved(51));
+    }
+
+    #[test]
+    fn int_values_extent_ends_where_the_next_node_begins() {
+        // `00 52` read inside another record's fields: the stated count fits
+        // the buffer, but the extent ends mid-record, so it frames nothing.
+        let mut bytes = vec![0, 0x52];
+        bytes.extend(4u32.to_be_bytes());
+        bytes.extend(95u16.to_be_bytes());
+        bytes.extend([0; 16]);
+        let end = bytes.len();
+        let mut inside = bytes.clone();
+        inside.extend([0xb3, 0xc2, 0xbc, 0x92]);
+        assert!(super::topology_payload_ranges(&inside, false).is_empty());
+        // The same node followed by the next node's tag is a payload.
+        bytes.extend([0, 0x51]);
+        assert_eq!(
+            super::topology_payload_ranges(&bytes, false),
+            std::iter::once(0..end).collect::<Vec<_>>()
+        );
     }
 
     #[test]
