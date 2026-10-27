@@ -1388,6 +1388,7 @@ fn append_design_losses(
                 FeatureOperation::SheetMetalBend { attachment, .. } => {
                     incomplete_edge_selection(attachment)
                 }
+                FeatureOperation::SheetMetalCorner { .. } => false,
                 FeatureOperation::SheetMetalEdgeFlange { edges, .. } => {
                     incomplete_edge_selection(edges)
                 }

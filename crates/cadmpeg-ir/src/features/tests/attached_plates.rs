@@ -82,3 +82,44 @@ fn plate_and_bend_are_separate_wire_operations() {
         }
     }
 }
+
+#[test]
+fn unchanged_corner_requires_an_explicit_effect_and_preserves_its_bend() {
+    let wire = json!({
+        "definition": "sheet_metal_corner",
+        "bend": "test:model:feature#bend",
+        "effect": "unchanged"
+    });
+    let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+    for effect in [json!(null), json!("unknown"), json!("relief")] {
+        let mut invalid = wire.clone();
+        invalid["effect"] = effect;
+        assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
+    }
+    let mut missing = wire;
+    missing.as_object_mut().unwrap().remove("effect");
+    assert!(serde_json::from_value::<FeatureOperation>(missing).is_err());
+}
+
+#[test]
+#[cfg(feature = "schema")]
+fn corner_schema_requires_bend_and_effect() {
+    fn find_corner(value: &serde_json::Value) -> Option<&serde_json::Value> {
+        if value["properties"]["definition"]["const"] == "sheet_metal_corner"
+            || value["properties"]["definition"]["enum"] == json!(["sheet_metal_corner"])
+        {
+            return Some(value);
+        }
+        match value {
+            serde_json::Value::Object(fields) => fields.values().find_map(find_corner),
+            serde_json::Value::Array(values) => values.iter().find_map(find_corner),
+            _ => None,
+        }
+    }
+    let schema = serde_json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
+    let corner = find_corner(&schema).unwrap();
+    let required = corner["required"].as_array().unwrap();
+    assert!(required.contains(&json!("bend")));
+    assert!(required.contains(&json!("effect")));
+}

@@ -23,6 +23,7 @@ pub(crate) struct Members {
     pub(crate) sketch: u32,
     pub(crate) plate: u32,
     pub(crate) bend: u32,
+    pub(crate) corner: u32,
 }
 
 pub(crate) fn members(
@@ -86,6 +87,7 @@ pub(crate) fn members(
         sketch,
         plate,
         bend,
+        corner,
     })
 }
 

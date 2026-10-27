@@ -285,3 +285,57 @@ fn an_attached_plate_requires_one_bend() {
     ir.model.features.push(bend);
     assert!(missing_bend(&ir));
 }
+
+#[test]
+fn corner_requires_a_preceding_bend_dependency() {
+    use crate::features::*;
+    let bend_id = FeatureId::mint("test:model:feature#bend").unwrap();
+    let mut ir = crate::CadIr::empty();
+    ir.model.features.push(feature(
+        "test:model:feature#corner",
+        1,
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalCorner {
+            bend: bend_id.clone(),
+            effect: SheetMetalCornerEffect::Unchanged,
+        }),
+    ));
+    assert!(feature_reference_findings(&ir)
+        .iter()
+        .any(|finding| finding.message.contains("missing corner bend")));
+    ir.model.features.push(feature(
+        bend_id.as_str(),
+        0,
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+    ));
+    assert!(feature_reference_findings(&ir)
+        .iter()
+        .any(|finding| finding.message.contains("corner bend")));
+    let bend: FeatureOperation = serde_json::from_value(serde_json::json!({
+        "definition": "sheet_metal_bend", "plate": "test:model:feature#plate",
+        "attachment": {"kind": "all"}, "inside_radius": 1.0,
+        "relief": {"form": "style_default", "width": 1.0, "depth": 1.0,
+            "minimum_remnant": 0.0, "seam_gap": 0.0},
+        "transition": {"form": "style_default", "radius": 0.0}
+    }))
+    .unwrap();
+    ir.model.features[1].evaluation.edit(|definition, _| {
+        *definition = FeatureDefinition::Operation(bend);
+    });
+    ir.model.features[0].dependencies.insert(bend_id);
+    let corner_findings = |ir: &crate::CadIr| {
+        feature_reference_findings(ir)
+            .into_iter()
+            .filter(|finding| finding.entity.as_deref() == Some("test:model:feature#corner"))
+            .collect::<Vec<_>>()
+    };
+    assert!(corner_findings(&ir).is_empty());
+    ir.model.features[1].ordinal = 2;
+    assert!(corner_findings(&ir)
+        .iter()
+        .any(|finding| finding.message.contains("precede")));
+    ir.model.features[1].ordinal = 0;
+    ir.model.features[0].dependencies = DistinctMembers::default();
+    assert!(corner_findings(&ir)
+        .iter()
+        .any(|finding| finding.message.contains("dependencies")));
+}

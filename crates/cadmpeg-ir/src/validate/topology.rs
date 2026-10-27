@@ -3173,6 +3173,26 @@ fn check_feature_references(
                     }
                 }
             }
+            FeatureOperation::SheetMetalCorner { bend, .. } => {
+                let candidate = feature_records.get(bend.as_str());
+                if !candidate.is_some_and(|candidate| {
+                    matches!(
+                        candidate.evaluation.definition().operation(),
+                        FeatureOperation::SheetMetalBend { .. }
+                    )
+                }) {
+                    ref_error(findings, feature.id.as_str(), "corner bend", bend.as_str());
+                }
+                if candidate.is_some_and(|candidate| candidate.ordinal >= feature.ordinal)
+                    || !feature.dependencies.contains(bend)
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "corner bend must precede the corner and occur in its dependencies",
+                    );
+                }
+            }
             FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
             FeatureOperation::Revolve { construction, .. } => {
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
@@ -4310,6 +4330,9 @@ fn regeneration_references(
         }
         crate::features::FeatureOperation::SheetMetalBend {
             plate: reference, ..
+        }
+        | crate::features::FeatureOperation::SheetMetalCorner {
+            bend: reference, ..
         }
         | crate::features::FeatureOperation::DerivedGeometry { source: reference }
         | crate::features::FeatureOperation::SketchBlockInstance {

@@ -515,6 +515,12 @@ The fixed selector prefix after the content header contains `state:i32`, `enable
 
 In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body.
 
+In a schema-44 carrier, generated naming families `INV_NMX_GEN_TAG`, `INV_NMX_SWEEPGENERATED_TAG`, `INV_NMX_BLEND_TAG`, `INV_NMX_FLANGE_TAG`, and `INV_NMX_BEND_TAG` have the same five common attribute fields. Their family values start with 1, 44, 1, `feature_source_index`, and −1. The source index names the generating feature, including a plate, bend, or corner. The owning entity reference names the attributed face, edge, or vertex. The remaining integers are part of the generated name. A generated source index identifies a naming contribution; it does not identify a browser history position or a body revision.
+
+Family `INV_NMX_DUP` stores the integers 1 and 44, then four opaque integer key values. It has no feature-source field. Its owner also has a separate generated-name attribute, which supplies the feature source. The four key values form an ordered opaque tuple, separate from that source name.
+
+In schema-38, schema-40, and schema-42 carriers, the class chains `NMx_Generated_Brep_tag`, `NMx_Sweep_Generated_Brep_tag`, `NMx_flange_tag`, `NMx_blend_tag`, `NMx_bend_tag`, and `NMx_Hole_Brep_tag` continue with `NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib`. After the five common attribute fields they store the carrier schema, a positive source-name count, that many ordered `(feature_source_index, name_value)` integer pairs, and a family-specific integer tail. The tail lengths are 3, 10, 7, 7, 8, and 2 respectively, in the class order stated above. A source index in any pair names a feature in that generated entity name. `name_value` is a signed naming value. Its value can be −1. The source-name count bounds the pair vector; the tail is not part of that vector.
+
 A generated name on that same owning edge identifies the edge in the generating feature's result. Family `INV_NMX_GEN_TAG` stores 1, 44, 1, `feature_source_index`, −1, `associative_id`, 0, and `role`. Edge roles are 2, 10, and 18. Family `INV_NMX_SWEEPGENERATED_TAG` stores the same first seven integers followed by `role` and seven zero integers. Edge roles 10 and 18 are distinct names. `feature_source_index` equals the generator value in the selector. The associative identifier names an entity-style link in the sketch consumed by that feature. Role 18 uses a point link; roles 2 and 10 use a curve link. The family, associative identifier, qualifier, and role together form a feature-local persistent name. The name is scoped to the generating feature's result. The matching attribute selects the stored owning edge revision. Its start and end vertex references select the stored point revisions; its curve reference and parameter endpoints select its carrier interval. A straight carrier uses its stored origin and direction, with the edge sense applied to the parameters. The midpoint of the interval supplies an interior point, and the signed carrier direction supplies its unit tangent. These references identify geometry at the selected history input independently of the active body's edge records. The construction-history record framing and entity-revision namespace follow [asm.md §3.2](asm.md#32-delta_state-records).
 
 An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
@@ -779,7 +785,29 @@ For a plate owned by a `08dcddc3d311d0976000a7a99dccefb0` flange record, slot 1 
 
 The bend radius in slot 1 repeats the radius reference of the attachment control. The flange record owns ordered plate, bend, and corner children. Each child is a separate generic feature with its own source index, label owner, state, and history position. Sharing an attachment control identifies the plate and bend pair. The bend is not a property sub-record of the plate. The plate and bend refer to a common result-body wrapper; result identity alone does not select a history revision. Neither the attachment control nor the bend's property vector contains an angle parameter.
 
-Feature-label classes `7f588068b74378a0559515946f7a1c12`, `852f6bb0d411db6f60004daa9dccefb0`, and `aaf21093d344209a04cc799656cd7e09` identify a corner, a hem, and a flat-pattern definition respectively. The seven-property corner form uses slots 0 through 6 for corner control, null, feature dimensions, attachment selection list, plate profile selection, null, and result object collection. The corner shares the plate's corner control, attachment selection list, profile selection, and result collection.
+Feature-label classes `7f588068b74378a0559515946f7a1c12`, `852f6bb0d411db6f60004daa9dccefb0`, and `aaf21093d344209a04cc799656cd7e09` identify a corner, a hem, and a flat-pattern definition respectively. The corner has six or seven properties. Its slots are:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Corner control shared with plate slot 9 |
+| 1 | Surface-body property shared with plate slot 6 in the six-property form; null in the seven-property form |
+| 2 | Feature dimensions |
+| 3 | Attachment selection list shared with plate slot 12 |
+| 4 | Plate profile selection shared with plate slot 0 |
+| 5 | Null |
+| 6 | Result object collection; absent in the six-property form |
+
+Each attachment selection wrapper selects an edge collection. Each edge item in that collection stores its ordered edge-selector source indexes. One wrapper can select several edges. The flange owns one bend feature independently of the number of selected edges. The corner control and selections are shared operands, not references to the parent flange. The corner result collection has a distinct identity or repeats the plate result collection. Distinct collections can contain the same surface-body member. The ordered flange children and label participants identify the owning plate, bend, and corner.
+
+The single-edge unchanged corner form has one selected attachment edge and the shared plate/bend/corner operands above. Its edge selector resolves to one persistent generated edge of the preceding sheet through the naming join in section 13. The six-property form repeats plate slot 6 as its result-body property. The seven-property form repeats plate slot 15 as its result collection. Its corner form is type 8 value 3, its option is true, and its raw word is 0. Its control and relief enumerations are one of:
+
+| Control | Relief form | Secondary form |
+| --- | --- | --- |
+| true | 304:103 | 304:303 |
+| true | 501:103 | 501:303 |
+| false | 501:100 | 501:303 |
+
+The plate, bend, and corner occupy active positions in the document model history. The corner source index occurs in no generated-name attribute in the current carrier or its stored construction-history revisions. The record framing covers the carrier and archive, and each generated name uses a source-name prefix defined in this section or section 13. The corner leaves the input body geometry and topology unchanged. Its gap, size, Jacobi radius, and other control operands remain stored values. The selected edge count is one; the number of generic bend children alone does not identify this form.
 
 The ten-property hem form uses slots 0 through 9 for plate-profile selection, direction, thickness parameter, control `e5b810b3d411a37a600050aa9dccefb0`, edge collection, bend relief, body selector `83aadad54f4375dacd1003b260a8a422`, feature dimensions, transition, and bend scalar control. The hem is a separate labeled generic feature.
 

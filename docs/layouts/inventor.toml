@@ -2907,3 +2907,53 @@ offset = 0
 type = "u32[2]"
 source = "spec"
 anchor = "two u32 metadata words"
+
+[[record]]
+name = "pm_dc_sheet_metal_corner_property_slots"
+kind = "slot"
+section = "13.5"
+anchor = "The corner has six or seven properties. Its slots are:"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal/corner.rs"
+note = "Slot numbers index the property reference list. Slot 6 is absent in the six-property form."
+
+[[record.field]]
+name = "slot_0"
+type = "u32"
+source = "spec"
+anchor = "| 0 | Corner control shared with plate slot 9 |"
+
+[[record.field]]
+name = "slot_1"
+type = "u32"
+source = "spec"
+anchor = "| 1 | Surface-body property shared with plate slot 6 in the six-property form; null in the seven-property form |"
+
+[[record.field]]
+name = "slot_2"
+type = "u32"
+source = "spec"
+anchor = "| 2 | Feature dimensions |"
+
+[[record.field]]
+name = "slot_3"
+type = "u32"
+source = "spec"
+anchor = "| 3 | Attachment selection list shared with plate slot 12 |"
+
+[[record.field]]
+name = "slot_4"
+type = "u32"
+source = "spec"
+anchor = "| 4 | Plate profile selection shared with plate slot 0 |"
+
+[[record.field]]
+name = "slot_5"
+type = "u32"
+source = "spec"
+anchor = "| 5 | Null |"
+
+[[record.field]]
+name = "slot_6"
+type = "u32"
+source = "spec"
+anchor = "| 6 | Result object collection; absent in the six-property form |"

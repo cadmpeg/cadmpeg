@@ -75,6 +75,10 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalAttachmentControlsNative,
     /// Separate bends retain unresolved attachment and scalar controls.
     FeatureSheetMetalBendControlsNative,
+    /// Corner topology transitions and construction operands remain native.
+    FeatureSheetMetalCornerEffectNative,
+    /// Projected unchanged corners retain construction controls natively.
+    FeatureSheetMetalCornerControlsRetained,
     /// Projected attached plates retain construction controls in native records.
     FeatureSheetMetalAttachmentControlsRetained,
     /// Projected bends retain construction controls in native records.
@@ -174,6 +178,8 @@ impl InventorLossCode {
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
+        Self::FeatureSheetMetalCornerEffectNative,
+        Self::FeatureSheetMetalCornerControlsRetained,
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
@@ -241,6 +247,10 @@ impl InventorLossCode {
                 "feature.sheet-metal-attachment-controls-native"
             }
             Self::FeatureSheetMetalBendControlsNative => "feature.sheet-metal-bend-controls-native",
+            Self::FeatureSheetMetalCornerEffectNative => "feature.sheet-metal-corner-effect-native",
+            Self::FeatureSheetMetalCornerControlsRetained => {
+                "feature.sheet-metal-corner-controls-retained"
+            }
             Self::FeatureSheetMetalAttachmentControlsRetained => {
                 "feature.sheet-metal-attachment-controls-retained"
             }
@@ -323,6 +333,8 @@ impl InventorLossCode {
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
+            | Self::FeatureSheetMetalCornerEffectNative
+            | Self::FeatureSheetMetalCornerControlsRetained
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
@@ -418,6 +430,8 @@ mod tests {
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
+                "feature.sheet-metal-corner-effect-native",
+                "feature.sheet-metal-corner-controls-retained",
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",

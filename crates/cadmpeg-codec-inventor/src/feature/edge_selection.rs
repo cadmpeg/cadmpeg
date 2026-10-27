@@ -22,6 +22,154 @@ pub(in crate::feature) mod geometry;
 pub(super) struct EdgeInventory {
     pub(super) names: HashMap<(String, u32), Option<EdgeName>>,
     pub(super) geometry: HashMap<(String, u32), geometry::EdgeGeometry>,
+    pub(super) generated_sources: Option<HashMap<u32, SourceNames>>,
+    pub(super) generated_sources_complete: bool,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct SourceNames {
+    pub(super) face_revisions: usize,
+    pub(super) edge_revisions: usize,
+}
+
+fn generated_sources(records: &[Record], schema: u32) -> (HashMap<u32, SourceNames>, bool) {
+    let mut sources = HashMap::<u32, SourceNames>::new();
+    let mut complete = true;
+    let mut named_owners = HashSet::new();
+    let mut duplicate_owners = HashSet::new();
+    for record in records {
+        if !generated_candidate(record) {
+            continue;
+        }
+        let fields = values(record);
+        if let Some(owner) = duplicate_owner(record, &fields, schema) {
+            duplicate_owners.insert(owner);
+            continue;
+        }
+        let Some((owner, generators)) = source_names(record, &fields, schema) else {
+            complete = false;
+            continue;
+        };
+        named_owners.insert(owner);
+        for source in &generators {
+            sources.entry(*source).or_default();
+        }
+        let Some(owner) = usize::try_from(owner)
+            .ok()
+            .and_then(|owner| records.get(owner))
+        else {
+            continue;
+        };
+        for source in generators {
+            if owner.head() == "face" {
+                sources.entry(source).or_default().face_revisions += 1;
+            }
+            if is_edge(owner) {
+                sources.entry(source).or_default().edge_revisions += 1;
+            }
+        }
+    }
+    complete &= duplicate_owners.iter().all(|owner| {
+        named_owners.contains(owner)
+            && usize::try_from(*owner)
+                .ok()
+                .and_then(|owner| records.get(owner))
+                .is_some_and(|owner| matches!(owner.head(), "face" | "edge" | "tedge" | "vertex"))
+    });
+    (sources, complete)
+}
+
+fn duplicate_owner(record: &Record, fields: &[&Token], schema: u32) -> Option<i64> {
+    if !custom(record) || schema != 44 {
+        return None;
+    }
+    match fields {
+        [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(_), Token::Long(_), Token::Long(_), Token::Long(_)]
+            if family == "INV_NMX_DUP" =>
+        {
+            Some(*owner)
+        }
+        _ => None,
+    }
+}
+
+fn generated_candidate(record: &Record) -> bool {
+    if custom(record) {
+        return matches!(record.chunk(5), Some(Token::Str(family))
+            if family.starts_with("INV_NMX_") && family != "INV_NMX_MATCHED_ATTRIB");
+    }
+    record.name.contains("NMx_Brep_Name_tag")
+        || record
+            .tokens
+            .iter()
+            .any(|token| matches!(token, Token::SubIdent(name) if name == "NMx_Brep_Name_tag"))
+}
+
+fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64, HashSet<u32>)> {
+    let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), rest @ ..] =
+        fields
+    else {
+        return None;
+    };
+    if custom(record) {
+        if schema != 44 {
+            return None;
+        }
+        let [Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), ..] =
+            rest
+        else {
+            return None;
+        };
+        if !matches!(
+            family.as_str(),
+            "INV_NMX_GEN_TAG"
+                | "INV_NMX_SWEEPGENERATED_TAG"
+                | "INV_NMX_BLEND_TAG"
+                | "INV_NMX_FLANGE_TAG"
+                | "INV_NMX_BEND_TAG"
+        ) {
+            return None;
+        }
+        return Some((*owner, HashSet::from([u32::try_from(*source).ok()?])));
+    }
+    let family = if record.name == "End-of-ASM-History-Section" {
+        match record.tokens.first()? {
+            Token::SubIdent(family) => family.as_str(),
+            _ => return None,
+        }
+    } else {
+        record.name.split('-').next()?
+    };
+    let tail_len = match family {
+        "NMx_Generated_Brep_tag" => 3,
+        "NMx_Sweep_Generated_Brep_tag" => 10,
+        "NMx_flange_tag" | "NMx_blend_tag" => 7,
+        "NMx_bend_tag" => 8,
+        "NMx_Hole_Brep_tag" => 2,
+        _ => return None,
+    };
+    let [Token::Long(stored_schema), Token::Long(count), values @ ..] = rest else {
+        return None;
+    };
+    if !matches!(schema, 38 | 40 | 42) || *stored_schema != i64::from(schema) {
+        return None;
+    }
+    let count = usize::try_from(*count).ok()?;
+    let end = count.checked_mul(2)?;
+    if count == 0
+        || values.len() != end.checked_add(tail_len)?
+        || !values.iter().all(|value| matches!(value, Token::Long(_)))
+    {
+        return None;
+    }
+    let mut sources = HashSet::new();
+    for pair in values.get(..end)?.chunks_exact(2) {
+        let Token::Long(source) = pair[0] else {
+            return None;
+        };
+        sources.insert(u32::try_from(*source).ok()?);
+    }
+    Some((*owner, sources))
 }
 
 const SELECTOR_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d53);
@@ -195,6 +343,7 @@ pub(super) fn inventory(
     }
     let mut selectors = Vec::new();
     let mut sample_geometry = false;
+    let mut has_flange = false;
     let mut tokens = HashSet::new();
     for segment in &document.segments {
         if segment.kind != SegmentKind::PmDc {
@@ -214,6 +363,7 @@ pub(super) fn inventory(
             continue;
         };
         for record in &table.records {
+            has_flange |= record.type_id == super::sheet_metal::flange::TYPE;
             sample_geometry |= record.type_id == super::sheet_metal::flange::TYPE
                 && super::sheet_metal::style::prefix_len(version).is_some();
             if record.type_id != SELECTOR_TYPE {
@@ -227,10 +377,11 @@ pub(super) fn inventory(
     let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
         return Ok(EdgeInventory::default());
     };
-    if selectors.is_empty() || tokens.len() != 1 || carrier.schema != 44 {
+    let name_corners = has_flange && matches!(carrier.schema, 38 | 40 | 42 | 44);
+    if tokens.len() != 1 || ((selectors.is_empty() || carrier.schema != 44) && !name_corners) {
         return Ok(EdgeInventory::default());
     }
-    let records = match archive::records(ctx, carrier) {
+    let (records, archive_complete) = match archive::records(ctx, carrier) {
         Ok(records) => records,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(EdgeInventory::default()),
@@ -238,6 +389,19 @@ pub(super) fn inventory(
     let Some(token) = tokens.into_iter().next() else {
         return Ok(EdgeInventory::default());
     };
+    let (generated_sources, generated_sources_complete) = if name_corners {
+        let (sources, complete) = generated_sources(&records, carrier.schema);
+        (Some(sources), archive_complete && complete)
+    } else {
+        (None, false)
+    };
+    if selectors.is_empty() || carrier.schema != 44 {
+        return Ok(EdgeInventory {
+            generated_sources,
+            generated_sources_complete,
+            ..EdgeInventory::default()
+        });
+    }
     let names = names(&records, &selectors);
     let geometry = if sample_geometry {
         geometry::selected(&records, &selectors, &names)
@@ -248,6 +412,8 @@ pub(super) fn inventory(
         HashMap::new()
     };
     Ok(EdgeInventory {
+        generated_sources,
+        generated_sources_complete,
         names: names
             .into_iter()
             .map(|(source, name)| ((token.clone(), source), name))

@@ -972,3 +972,22 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 8 | `values` | `u32[2]` | little | spec | two u32 metadata words |
+
+## `pm_dc_sheet_metal_corner_property_slots`
+
+Spec §13.5 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Slot numbers index the property reference list. Slot 6 is absent in the six-property form.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/sheet_metal/corner.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `slot_0` | `u32` | little | spec | \| 0 \| Corner control shared with plate slot 9 \| |
+| 1 | `slot_1` | `u32` | little | spec | \| 1 \| Surface-body property shared with plate slot 6 in the six-property form; null in the seven-property form \| |
+| 2 | `slot_2` | `u32` | little | spec | \| 2 \| Feature dimensions \| |
+| 3 | `slot_3` | `u32` | little | spec | \| 3 \| Attachment selection list shared with plate slot 12 \| |
+| 4 | `slot_4` | `u32` | little | spec | \| 4 \| Plate profile selection shared with plate slot 0 \| |
+| 5 | `slot_5` | `u32` | little | spec | \| 5 \| Null \| |
+| 6 | `slot_6` | `u32` | little | spec | \| 6 \| Result object collection; absent in the six-property form \| |

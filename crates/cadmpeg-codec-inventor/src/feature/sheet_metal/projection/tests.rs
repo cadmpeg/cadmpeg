@@ -239,7 +239,8 @@ fn flange_profile_join_requires_unique_typed_children_and_matching_labels() {
         Some(Members {
             sketch: 50,
             plate: 100,
-            bend: 200
+            bend: 200,
+            corner: 300
         })
     );
     assert!(members(&flange(), &features, &labels, |_| false).is_none());

@@ -238,6 +238,8 @@ A sheet-metal base flange places its thickness along the profile plane's positiv
 
 `SheetMetalAttachedPlate` builds a flat plate from its profile, thickness, and side. Its attachment selects the existing sheet edge. It has no Boolean operation or bend dimensions. `SheetMetalBend` names that plate and selects the attachment edge in its own input topology. It builds the joining bend region with its inside radius, relief, and transition. Replay the plate first, then its bend. The pair transfers together; an unresolved member keeps both members native. Each historical attachment selection identifies its own feature's input topology row.
 
+A `sheet_metal_corner` operation names one preceding `sheet_metal_bend` feature through `bend`. The bend occurs in the corner's dependencies. Its explicit `effect: "unchanged"` states that the corner preserves the input body geometry and topology. It creates no faces, edges, or vertices. Source controls and dimensions remain in source properties and native records when they have no neutral construction meaning. An unchanged corner requires no generated result topology.
+
 Loft guidance is a guide-path list or one centerline path. An empty guide-path list means unguided. Guide paths and a centerline cannot coexist.
 
 A sketch native operand has a nonempty native kind and an optional field. A present field has a nonempty name and an optional role. A role exists only within its field.

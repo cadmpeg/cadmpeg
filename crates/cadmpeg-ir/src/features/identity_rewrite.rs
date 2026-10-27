@@ -79,6 +79,7 @@ rewrite_scalar!(RuledCurveOrientation);
 rewrite_scalar!(RuledSurfaceCorner);
 rewrite_scalar!(ScaleFactors);
 rewrite_scalar!(SheetMetalBendPosition);
+rewrite_scalar!(super::SheetMetalCornerEffect);
 rewrite_scalar!(SheetMetalHeightDatum);
 rewrite_scalar!(SheetMetalHemBendPosition);
 rewrite_scalar!(SheetMetalHemDirection);

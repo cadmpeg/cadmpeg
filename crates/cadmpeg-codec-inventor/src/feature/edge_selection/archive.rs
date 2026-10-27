@@ -64,9 +64,9 @@ fn snapshot_start(mut view: View<'_>, width: RefWidth) -> Result<usize, CodecErr
 pub(super) fn records(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
-) -> Result<Vec<sab::Record>, CodecError> {
+) -> Result<(Vec<sab::Record>, bool), CodecError> {
     if carrier.family != KernelFamily::Asm {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), false));
     }
     let header = carrier.header.as_deref().map_err(CodecError::malformed)?;
     let bytes = carrier.bytes.window();
@@ -78,7 +78,11 @@ pub(super) fn records(
         .last()
         .filter(|record| record.name == "Begin-of-ASM-History-Data")
     else {
-        return Ok(records);
+        let complete = !header.metadata.has_history_partition()
+            && records
+                .last()
+                .is_some_and(|record| record.offset.checked_add(record.len) == Some(bytes.len()));
+        return Ok((records, complete));
     };
     let mut view = carrier.bytes;
     view.seek(view.start() + preamble.offset + preamble.len)
@@ -104,7 +108,7 @@ pub(super) fn records(
         record.index += base;
     }
     records.extend(archive);
-    Ok(records)
+    Ok((records, true))
 }
 
 #[cfg(test)]

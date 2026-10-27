@@ -3221,6 +3221,13 @@ pub enum FeatureOperation {
         /// Transition form and evaluated radius.
         transition: SheetMetalTransition,
     },
+    /// Corner evaluation on a bend with an explicit geometric effect.
+    SheetMetalCorner {
+        /// Bend on which the corner is evaluated.
+        bend: FeatureId,
+        /// Effect on the input body.
+        effect: SheetMetalCornerEffect,
+    },
     /// Sheet-metal wall grown from selected edges of an existing sheet body.
     SheetMetalEdgeFlange {
         /// Edges the flange is grown from.
@@ -5864,6 +5871,16 @@ pub enum SheetMetalHeightDatum {
     InnerFaces,
     /// The height is measured from the outer faces of the sheet.
     OuterFaces,
+}
+
+/// Geometric effect of a sheet-metal corner evaluation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum SheetMetalCornerEffect {
+    /// The output body equals the input body, including its topology.
+    Unchanged,
 }
 
 /// Placement of a sheet-metal bend region against its selected edge.
