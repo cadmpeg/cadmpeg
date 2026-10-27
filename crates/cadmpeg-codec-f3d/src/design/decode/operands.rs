@@ -2100,10 +2100,7 @@ pub(crate) fn decode_fillet_radius_groups(
         scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
         let mut owned_parameters = owners
             .iter()
-            .filter(|owner| {
-                native_stream(owner.id()) == Some(stream)
-                    && owner.scope_record_index() == scope.record_index
-            })
+            .filter(|owner| native_stream(owner.id()) == Some(stream) && scope.names_owner(owner))
             .filter_map(|owner| {
                 Some((
                     owner.local_ordinal(),
@@ -2288,10 +2285,10 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        if owners.iter().any(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
-        }) {
+        if owners
+            .iter()
+            .any(|owner| native_stream(owner.id()) == Some(stream) && scope.names_owner(owner))
+        {
             if let crate::records::feature::scope::DesignScopePayloadMut::Fillet(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Conge(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Abrundung(slot)

@@ -601,7 +601,8 @@ fn member_run_sketch_scope<'a>(
             .is_some_and(|binding| binding.entity_id == entity.entity_id)
     });
     let mut interval_scopes = sketch_scopes().filter(|scope| {
-        scope.byte_offset() > entity.byte_offset
+        scope.sketch_entity().is_none()
+            && scope.byte_offset() > entity.byte_offset
             && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
     });
     match (bound_scopes.next(), bound_scopes.next()) {

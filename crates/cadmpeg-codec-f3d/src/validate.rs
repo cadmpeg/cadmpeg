@@ -5742,7 +5742,7 @@ fn validate_fillet_radius_groups<'a>(
         let assignment_parameter = |record_index: u32| {
             let parameter = *parameters_by_index.get(&(native_stream, record_index))?;
             let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index()?))?;
-            (owner.scope_record_index() == assignment.scope_record_index
+            (scope.is_some_and(|scope| scope.names_owner(owner))
                 && owner.parameter_record_index() == record_index)
                 .then_some(parameter)
         };
@@ -6018,8 +6018,29 @@ fn validate_fillet_operand_groups<'a>(
             scope_groups.sort_by_key(|candidate| candidate.scope_reference_ordinal);
             design::decode::operands::fillet_edge_and_face_groups(&scope_groups).is_some_and(
                 |pair| {
-                    pair.iter()
-                        .any(|candidate| candidate.record_index == group.record_index)
+                    let face_backed = pair
+                        .iter()
+                        .filter(|candidate| candidate.role() == DesignOperandRole::ROLE_0X10)
+                        .flat_map(|candidate| {
+                            candidate
+                                .members()
+                                .iter()
+                                .map(move |member| (candidate, member))
+                        })
+                        .all(|(candidate, member)| {
+                            native.design_face_operands.iter().any(|operand| {
+                                design_stream(&operand.id) == native_stream
+                                    && operand.scope_record_index == scope.record_index
+                                    && operand.group_record_index() == Some(candidate.record_index)
+                                    && operand.record_index() == member.value
+                                    && operand.recipe_kind
+                                        == records::recipes::ConstructionRecipeKind::BoundedFace
+                            })
+                        });
+                    face_backed
+                        && pair
+                            .iter()
+                            .any(|candidate| candidate.record_index == group.record_index)
                 },
             )
         });

@@ -76,6 +76,12 @@ fn add_radius_parameter(
     .unwrap();
     native.design_parameters.push(parameter);
     native.design_parameter_owners.push(owner);
+    let scope = native
+        .design_parameter_scopes
+        .iter_mut()
+        .find(|scope| scope.record_index == 10)
+        .expect("the Fillet scope fixture");
+    crate::design::test_support::name_scope_references(scope, [owner_index]);
 }
 
 fn radius_native(valid: bool) -> crate::native::F3dNative {

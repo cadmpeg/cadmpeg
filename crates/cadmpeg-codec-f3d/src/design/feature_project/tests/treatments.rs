@@ -392,7 +392,15 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
     .is_none());
 }
 
+/// A localized Fillet scope whose reference table names its two operand
+/// groups and the parameter owners `10, 20, ..., 150` of these tests.
 fn localized_fillet_scope() -> DesignParameterScope {
+    let mut scope = localized_fillet_scope_without_owners();
+    crate::design::test_support::name_scope_references(&mut scope, (10..=150).step_by(10));
+    scope
+}
+
+fn localized_fillet_scope_without_owners() -> DesignParameterScope {
     DesignParameterScope::try_new(
         DesignParameterScopeDraft {
             id: "f3d:native/BulkStream.dat:scope#12".into(),
@@ -597,7 +605,7 @@ fn fillet_edge_and_face_groups_share_the_scope_radius() {
         panic!("the shared radius projects a Fillet");
     };
     assert_eq!(groups.len(), 2);
-    for group in groups.iter() {
+    for group in groups {
         assert!(matches!(
             group.radius,
             cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant { radius }
@@ -610,6 +618,35 @@ fn fillet_edge_and_face_groups_share_the_scope_radius() {
             Some(1.0)
         );
     }
+}
+
+#[test]
+fn detached_fillet_owner_supplies_no_radius() {
+    let scope = localized_fillet_scope();
+    let operand_groups = [localized_fillet_group(100, 0, vec![200])];
+    let parameters = [
+        localized_fillet_parameter(20, 21, "Radius", Some("mm"), 0.3),
+        localized_fillet_parameter(170, 171, "Radius", Some("mm"), 0.9),
+    ];
+    let owners = [
+        localized_fillet_owner(20, 21, 1),
+        localized_fillet_owner(170, 171, 1),
+    ];
+    let assignments = decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups,
+        &owners,
+        &parameters,
+    );
+    assert_eq!(
+        assignments
+            .iter()
+            .map(|assignment| &assignment.law)
+            .collect::<Vec<_>>(),
+        [&DesignFilletRadiusLaw::Constant {
+            radius_parameter_record_index: 21,
+        }]
+    );
 }
 
 #[test]

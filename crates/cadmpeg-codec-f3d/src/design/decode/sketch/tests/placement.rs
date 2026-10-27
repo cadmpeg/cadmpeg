@@ -1243,9 +1243,18 @@ fn member_run_test_scope(
 fn member_run_sketch_scope_prefers_the_scope_bound_to_the_entity() {
     let entity = member_run_test_entity();
     let stream = "f3d:Design/BulkStream.dat";
+    let owner_before = |scopes: &[crate::records::feature::scope::DesignParameterScope],
+                        next_entity_offset| {
+        crate::design::decode::sketch::member_run_sketch_scope(
+            scopes,
+            stream,
+            &entity,
+            next_entity_offset,
+        )
+        .map(|scope| scope.record_index)
+    };
     let owner = |scopes: &[crate::records::feature::scope::DesignParameterScope]| {
-        crate::design::decode::sketch::member_run_sketch_scope(scopes, stream, &entity, None)
-            .map(|scope| scope.record_index)
+        owner_before(scopes, None)
     };
     assert_eq!(
         owner(&[
@@ -1262,11 +1271,21 @@ fn member_run_sketch_scope_prefers_the_scope_bound_to_the_entity() {
         None
     );
     assert_eq!(
-        owner(&[
-            member_run_test_scope(178, 1000, Some("0_999")),
-            member_run_test_scope(956, 5000, None),
-        ]),
+        owner_before(
+            &[member_run_test_scope(178, 1000, Some("0_999"))],
+            Some(2000)
+        ),
         None
+    );
+    assert_eq!(
+        owner_before(
+            &[
+                member_run_test_scope(178, 1000, Some("0_999")),
+                member_run_test_scope(956, 1500, None),
+            ],
+            Some(2000)
+        ),
+        Some(956)
     );
     assert_eq!(owner(&[member_run_test_scope(178, 1000, None)]), Some(178));
 }
