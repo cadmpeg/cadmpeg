@@ -207,6 +207,10 @@ pub(crate) enum F3dLossCode {
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
+    /// Legacy placement identities remain in their complete native frames.
+    XrefPlacementMetadataNative,
+    /// A legacy placement role has no containing reference-table entry.
+    XrefPlacementRoleUnbound,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
@@ -386,6 +390,8 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
+        Self::XrefPlacementMetadataNative,
+        Self::XrefPlacementRoleUnbound,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::XrefOwnerUnresolved,
@@ -529,6 +535,8 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
+            Self::XrefPlacementRoleUnbound => "xref.placement-role-unbound",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::XrefOwnerUnresolved => "xref.owner-unresolved",
@@ -580,6 +588,7 @@ impl F3dLossCode {
         match self {
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::BodylessDesignCarrier
+            | Self::XrefPlacementMetadataNative
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
@@ -680,6 +689,7 @@ impl F3dLossCode {
             | Self::MeshAttributeNotTransferred
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementRoleUnbound
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::XrefOwnerUnresolved
@@ -729,6 +739,7 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::DrawingDocumentOmitted
+            | Self::XrefPlacementMetadataNative
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -736,6 +747,7 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementRoleUnbound
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::JointPlacedOccurrenceUnsolved => LossTaxonomy::AssemblyComponentsExternal,
@@ -981,6 +993,8 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
+                "xref.placement-metadata-native",
+                "xref.placement-role-unbound",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "xref.owner-unresolved",

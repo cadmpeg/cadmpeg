@@ -103,9 +103,7 @@ fn xref_table_from_ir(
     Ok(XrefTable {
         designs: load_arena(ctx, namespace, "xref_designs")?,
         references: load_arena(ctx, namespace, "xref_references")?,
-        placement_failures: Vec::new(),
-        placement_overrides: Vec::new(),
-        placement_metadata_missing: false,
+        ..Default::default()
     })
 }
 

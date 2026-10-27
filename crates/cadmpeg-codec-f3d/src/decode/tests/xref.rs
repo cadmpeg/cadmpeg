@@ -24,6 +24,7 @@ fn placement_table() -> crate::xref::XrefTable {
             ordinal: 4,
             count: 2,
         }],
+        ..Default::default()
     }
 }
 

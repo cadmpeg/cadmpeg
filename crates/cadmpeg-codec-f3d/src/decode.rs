@@ -3883,6 +3883,29 @@ fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
+    for placement in &table.unbound_legacy_placements {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::XrefPlacementRoleUnbound,
+            format_args!(
+                "legacy external occurrence carrier {:?} has no container reference for roles {:?}",
+                placement.carrier_record_index, placement.link_names
+            ),
+        );
+    }
+    let native_metadata = table
+        .references
+        .iter()
+        .filter_map(|reference| reference.placement_source.as_ref())
+        .filter(|source| crate::xref::legacy_placement_metadata_native(source))
+        .count();
+    if native_metadata != 0 {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::XrefPlacementMetadataNative,
+            format_args!("{native_metadata} legacy external placement frame(s) retain their source occurrence identity, auxiliary metadata UUID, path discriminator, ordinal and cross-segment metadata reference only in native source frames"),
+        );
+    }
     if table.placement_metadata_missing && !table.references.is_empty() {
         push_loss_vec(
             &mut report.losses,

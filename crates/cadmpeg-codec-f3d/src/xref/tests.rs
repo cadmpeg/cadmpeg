@@ -211,6 +211,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         placement_failures: Vec::new(),
         placement_overrides: Vec::new(),
         placement_metadata_missing: false,
+        ..Default::default()
     };
 
     let occurrences = super::root_occurrences(&table).unwrap();
@@ -944,6 +945,218 @@ fn legacy_typed_placements_decode_identity_and_matrix_forms() {
         super::occurrence_transforms(&placements, role),
         vec![None, Some(matrix)]
     );
+}
+
+#[test]
+fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
+    use crate::test_support::legacy_attributed_external_placement;
+
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let matrix = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (attributes, transform, length) in [
+        (false, None, 420),
+        (false, Some(matrix), 548),
+        (true, None, 552),
+        (true, Some(matrix), 680),
+    ] {
+        let frame = legacy_attributed_external_placement(role, attributes, transform);
+        assert_eq!(frame.len(), length);
+        let document = document_with_placement(role, frame.clone());
+        let decoded = F3dCodec
+            .decode(&mut Cursor::new(document), &DecodeOptions::default())
+            .unwrap();
+        let native = f3d_native(decoded.ir());
+        let reference = &native.xref_references[0];
+        assert_eq!(
+            reference
+                .transform
+                .map(crate::records::xref::XrefPlacementTransform::rows),
+            transform
+        );
+        let source = reference.placement_source.as_ref().unwrap();
+        assert_eq!(source.carrier_record_index, 10);
+        assert_eq!(source.owner.as_ref().unwrap().target, 7);
+        assert_eq!(source.owner.as_ref().unwrap().type_guid, None);
+        assert_eq!(
+            source
+                .occurrence_guid
+                .as_ref()
+                .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
+            Some("66666666-7777-8888-9999-aaaaaaaaaaaa")
+        );
+        let mut expected_frame = frame;
+        expected_frame[4..7].copy_from_slice(b"256");
+        assert_eq!(source.frame_bytes, expected_frame);
+        assert!(super::placement_source_matches(reference).unwrap());
+        let occurrence = decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
+            .unwrap();
+        let expected = if transform.is_some() {
+            [
+                [0.0, -1.0, 0.0, 20.0],
+                [1.0, 0.0, 0.0, 30.0],
+                [0.0, 0.0, 1.0, 40.0],
+            ]
+        } else {
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ]
+        };
+        assert_eq!(occurrence.transform.affine_rows(), expected);
+        let losses = &decoded.report().losses;
+        assert!(!losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind()));
+        assert_eq!(
+            losses
+                .iter()
+                .filter(|loss| loss.code == F3dLossCode::XrefPlacementMetadataNative.kind())
+                .count(),
+            1
+        );
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::XrefOwnerUnresolved.kind()));
+    }
+}
+
+#[test]
+fn attributed_legacy_placement_without_a_container_role_reports_its_loss() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let other_role = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+    let frame = crate::test_support::legacy_attributed_external_placement(other_role, true, None);
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(document_with_placement(role, frame)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(f3d_native(decoded.ir()).xref_references[0]
+        .placement_source
+        .is_none());
+    let losses = &decoded.report().losses;
+    let unbound = losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::XrefPlacementRoleUnbound.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(unbound.len(), 1);
+    assert!(unbound[0].message.contains(other_role));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind()));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::XrefPlacementMetadataNative.kind()));
+}
+
+#[test]
+fn refused_attributed_legacy_placements_keep_a_placement_loss() {
+    use crate::layout::legacy_attributed_external_placement_attributes as attributes;
+    use crate::layout::legacy_attributed_external_placement_members as members;
+    use crate::layout::legacy_attributed_external_placement_prefix as prefix;
+    use crate::layout::legacy_occurrence_target_reference as target;
+    use crate::test_support::legacy_attributed_external_placement;
+
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let matrix = cadmpeg_ir::transform::Transform::identity().rows();
+    let valid = legacy_attributed_external_placement(role, true, Some(matrix));
+    let members_start = prefix::LEN + attributes::LEN;
+    let mut refused = Vec::new();
+    for field in [target::TARGET_ENTITY, target::SOURCE_OCCURRENCE_IDENTITY] {
+        let mut body = valid.clone();
+        for start in [
+            prefix::TARGET_REFERENCE,
+            members_start + members::REPEATED_TARGET_REFERENCE,
+        ] {
+            body[start + field..start + field + 8].copy_from_slice(&0_u64.to_le_bytes());
+        }
+        refused.push(body);
+    }
+    let mut unequal = valid.clone();
+    let repeated_entity =
+        members_start + members::REPEATED_TARGET_REFERENCE + target::TARGET_ENTITY;
+    unequal[repeated_entity..repeated_entity + 8].copy_from_slice(&4_u64.to_le_bytes());
+    refused.push(unequal);
+    for offset in [
+        prefix::LEN + attributes::COUNT,
+        prefix::LEN + attributes::PARENT_VALUE,
+        prefix::LEN + attributes::RESOLUTION_VALUE,
+        prefix::LEN + attributes::SELF_VALUE,
+        members_start + members::CONTROL,
+        members_start + members::ORDINAL,
+        members_start + members::METADATA_GUID_LENGTH,
+        members_start + members::METADATA_REFERENCE,
+        members_start + members::REFERENCE_SEPARATOR,
+        members_start + members::REPEATED_TARGET_REFERENCE,
+        members_start + members::IDENTITY_FLAG,
+    ] {
+        let mut body = valid.clone();
+        body[offset] = if [
+            prefix::LEN + attributes::PARENT_VALUE,
+            prefix::LEN + attributes::SELF_VALUE,
+        ]
+        .contains(&offset)
+        {
+            1
+        } else {
+            2
+        };
+        if offset == members_start + members::ORDINAL {
+            body[offset..offset + 4].copy_from_slice(&0_u32.to_le_bytes());
+        }
+        refused.push(body);
+    }
+    let mut extra = valid.clone();
+    extra.push(0);
+    refused.push(extra);
+    let mut truncated = valid;
+    truncated.pop();
+    refused.push(truncated);
+    let mut nonzero_control = legacy_attributed_external_placement(role, false, Some(matrix));
+    nonzero_control[prefix::LEN + super::legacy_empty_attributes::LEN + members::CONTROL] = 1;
+    refused.push(nonzero_control);
+    let mut reflection = matrix;
+    reflection[0][0] = -1.0;
+    refused.push(legacy_attributed_external_placement(
+        role,
+        true,
+        Some(reflection),
+    ));
+    for body in refused {
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(document_with_placement(role, body)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = f3d_native(decoded.ir());
+        assert!(native.xref_references[0].placement_source.is_none());
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == F3dLossCode::XrefPlacementUndecoded.kind())
+                .count(),
+            1
+        );
+        assert!(!decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::XrefPlacementMetadataNative.kind()));
+    }
 }
 
 #[test]

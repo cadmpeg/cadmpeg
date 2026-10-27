@@ -27,6 +27,12 @@ use crate::bytes::{
 use crate::container::ContainerScan;
 use crate::design::decode::components::ROOT_INSTANCE_NAME;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
+use crate::layout::legacy_attributed_external_placement_attributes as legacy_attributes;
+use crate::layout::legacy_attributed_external_placement_empty_attributes as legacy_empty_attributes;
+use crate::layout::legacy_attributed_external_placement_identity_tail as legacy_identity_tail;
+use crate::layout::legacy_attributed_external_placement_matrix_tail as legacy_matrix_tail;
+use crate::layout::legacy_attributed_external_placement_members as legacy_members;
+use crate::layout::legacy_attributed_external_placement_prefix as legacy_prefix;
 use crate::layout::root_instance_prefix as root_instance;
 use crate::records::{
     feature::{assembly_features::DesignComponentInsertConstruction, scope::DesignParameterScope},
@@ -52,6 +58,7 @@ pub(crate) struct XrefTable {
     pub(crate) references: Vec<XrefReference>,
     /// Type-admitted placements that do not close under their generation grammar.
     pub(crate) placement_failures: Vec<OccurrencePlacementFailure>,
+    pub(crate) unbound_legacy_placements: Vec<OccurrencePlacementFailure>,
     /// `(XREF ordinal, placement-record count)` pairs whose structured
     /// placements were superseded by scope-bound Component Insert carriers.
     pub(crate) placement_overrides: Vec<PlacementOverride>,
@@ -358,9 +365,7 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     Ok(XrefTable {
         designs,
         references: admitted_references,
-        placement_failures: Vec::new(),
-        placement_overrides: Vec::new(),
-        placement_metadata_missing: false,
+        ..Default::default()
     })
 }
 
@@ -729,6 +734,23 @@ fn bind_occurrences(
         .iter()
         .flat_map(|(_, failures, _)| failures.iter().cloned())
         .collect();
+    let unbound_legacy_placements = streams
+        .iter()
+        .flat_map(|(placements, _, _)| placements)
+        .filter(|placement| {
+            legacy_attributed_placement_details(&placement.frame_bytes).is_some()
+                && !table.references.iter().any(|reference| {
+                    placement
+                        .link_names
+                        .iter()
+                        .any(|name| name == reference.neutron_role.as_str())
+                })
+        })
+        .map(|placement| OccurrencePlacementFailure {
+            carrier_record_index: Some(placement.carrier_record_index),
+            link_names: placement.link_names.clone(),
+        })
+        .collect();
     let mut placement_overrides = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
@@ -789,6 +811,7 @@ fn bind_occurrences(
     }
     table.references = expanded;
     table.placement_failures = placement_failures;
+    table.unbound_legacy_placements = unbound_legacy_placements;
     table.placement_overrides = placement_overrides;
     Ok(())
 }
@@ -1066,6 +1089,19 @@ fn occurrence_placement(
     let Some(carrier_record_index) = View::u64_le_at(body, 7) else {
         return Ok(None);
     };
+    if let Some(details) = legacy_attributed_placement_details(body) {
+        return Ok(Some(OccurrencePlacement {
+            frame_bytes: body.to_vec(),
+            occurrence_guid: Some(details.occurrence_guid),
+            carrier_record_index: details.carrier_record_index,
+            owner: Some(XrefLocalOwner {
+                target: details.owner,
+                type_guid: None,
+            }),
+            link_names: vec![details.role.to_string()],
+            transform: details.transform,
+        }));
+    }
     if let Some((role, transform)) = legacy_occurrence_placement(body) {
         let role = role.to_string();
         let link_names = [role].into_iter().collect::<Vec<_>>();
@@ -1129,7 +1165,26 @@ struct RepeatedTargetPlacementDetails {
     transform: Option<(usize, [[f64; 4]; 4])>,
 }
 
-pub(crate) fn placement_source_matches(source: &XrefPlacementSource) -> Result<bool, CodecError> {
+pub(crate) fn placement_source_matches(reference: &XrefReference) -> Result<bool, CodecError> {
+    let Some(source) = &reference.placement_source else {
+        return Ok(true);
+    };
+    if let Some(details) = legacy_attributed_placement_details(&source.frame_bytes) {
+        return Ok(
+            source.occurrence_guid.as_ref() == Some(&details.occurrence_guid)
+                && details.role.eq_str(reference.neutron_role.as_str())
+                && reference.transform.map_or_else(
+                    || cadmpeg_ir::transform::Transform::identity().rows(),
+                    crate::records::xref::XrefPlacementTransform::rows,
+                ) == details
+                    .transform
+                    .unwrap_or_else(|| cadmpeg_ir::transform::Transform::identity().rows())
+                && source.carrier_record_index == details.carrier_record_index
+                && source.owner.as_ref().is_some_and(|owner| {
+                    owner.target == details.owner && owner.type_guid.is_none()
+                }),
+        );
+    }
     let Some(guid) = source.occurrence_guid.as_ref() else {
         return Ok(source.frame_bytes.is_empty());
     };
@@ -1140,6 +1195,199 @@ pub(crate) fn placement_source_matches(source: &XrefPlacementSource) -> Result<b
                 && source.owner.as_ref() == Some(&details.owner)
         }),
     )
+}
+
+pub(crate) fn legacy_placement_metadata_native(source: &XrefPlacementSource) -> bool {
+    legacy_attributed_placement_details(&source.frame_bytes).is_some()
+}
+
+struct LegacyAttributedPlacementDetails<'a> {
+    carrier_record_index: u64,
+    occurrence_guid: crate::records::mesh::DesignRelaxedGuidText,
+    owner: u64,
+    role: Utf16View<'a>,
+    transform: Option<[[f64; 4]; 4]>,
+}
+
+fn legacy_attributed_placement_details(
+    body: &[u8],
+) -> Option<LegacyAttributedPlacementDetails<'_>> {
+    let tag_units = usize::try_from(legacy_prefix::CLASS_TAG_LENGTH_VALUE).ok()?;
+    let (tag, _) = lp_ascii_strict(body, legacy_prefix::CLASS_TAG_LENGTH, tag_units..=tag_units)?;
+    if !tag.as_bytes().iter().all(u8::is_ascii_digit)
+        || View::u32_le_at(body, legacy_prefix::INSTANCE_NAME_LENGTH)?
+            != legacy_prefix::INSTANCE_NAME_LENGTH_VALUE
+        || body.get(legacy_prefix::PATH_MARKER) != Some(&legacy_prefix::PATH_MARKER_VALUE)
+        || View::u32_le_at(body, legacy_prefix::PATH_COUNT)? != legacy_prefix::PATH_COUNT_VALUE
+    {
+        return None;
+    }
+    let mut target_end = legacy_prefix::TARGET_REFERENCE;
+    let first = take_legacy_occurrence_reference(body, &mut target_end)?;
+    if target_end != legacy_prefix::PATH_DISCRIMINATOR
+        || first.entity == 0
+        || first.source_occurrence_identity == 0
+        || !first
+            .type_guid
+            .eq_ignore_ascii_case(crate::records::feature::occurrence_transfer::COMPONENT_TYPE)
+    {
+        return None;
+    }
+    View::u32_le_at(body, legacy_prefix::PATH_DISCRIMINATOR)?;
+    let attributes = body.get(legacy_prefix::LEN..)?;
+    let attributes_len = legacy_placement_attributes_len(attributes)?;
+    let members_start = legacy_prefix::LEN + attributes_len;
+    let members = body.get(members_start..members_start + legacy_members::LEN)?;
+    if View::u16_le_at(members, legacy_members::CONTROL)? != legacy_members::CONTROL_VALUE
+        || View::u32_le_at(members, legacy_members::ORDINAL)? == 0
+        || members.get(legacy_members::REFERENCE_SEPARATOR)
+            != Some(&legacy_members::REFERENCE_SEPARATOR_VALUE)
+    {
+        return None;
+    }
+    for (offset, units) in [
+        (
+            legacy_members::METADATA_GUID_LENGTH,
+            legacy_members::METADATA_GUID_LENGTH_VALUE,
+        ),
+        (
+            legacy_members::TRACKING_GUID_LENGTH,
+            legacy_members::TRACKING_GUID_LENGTH_VALUE,
+        ),
+    ] {
+        let units = usize::try_from(units).ok()?;
+        if !lp_utf16_bounded_view(members, offset, units..=units)?
+            .0
+            .is_guid_relaxed()
+        {
+            return None;
+        }
+    }
+    let mut reference_end = legacy_members::METADATA_REFERENCE;
+    if !matches!(
+        take_reference(members, &mut reference_end)?,
+        Reference::CrossSegment { target, inline_type_guid: None, .. } if target != 0
+    ) || reference_end != legacy_members::REFERENCE_SEPARATOR
+    {
+        return None;
+    }
+    let mut repeated_end = legacy_members::REPEATED_TARGET_REFERENCE;
+    let repeated = take_legacy_occurrence_reference(members, &mut repeated_end)?;
+    if repeated_end != legacy_members::IDENTITY_FLAG
+        || repeated.entity != first.entity
+        || repeated.source_occurrence_identity != first.source_occurrence_identity
+        || !repeated.type_guid.eq_ignore_ascii_case(first.type_guid)
+    {
+        return None;
+    }
+    let tail = body.get(members_start + legacy_members::LEN..)?;
+    let (tail, transform) = match *members.get(legacy_members::IDENTITY_FLAG)? {
+        1 => (tail, None),
+        0 if tail.len() == legacy_matrix_tail::LEN => (
+            tail.get(legacy_matrix_tail::ZERO..)?,
+            Some(decode_rigid_matrix(tail, legacy_matrix_tail::MATRIX)?),
+        ),
+        _ => return None,
+    };
+    if tail.len() != legacy_identity_tail::LEN
+        || View::u32_le_at(tail, legacy_identity_tail::ZERO)? != legacy_identity_tail::ZERO_VALUE
+        || tail.get(legacy_identity_tail::SEPARATOR) != Some(&legacy_identity_tail::SEPARATOR_VALUE)
+    {
+        return None;
+    }
+    let role_units = usize::try_from(legacy_identity_tail::ROLE_LENGTH_VALUE).ok()?;
+    let (role, _) = lp_utf16_bounded_view(
+        tail,
+        legacy_identity_tail::ROLE_LENGTH,
+        role_units..=role_units,
+    )?;
+    if !role.is_guid_relaxed() {
+        return None;
+    }
+    let mut owner_end = legacy_identity_tail::OWNER_MARKER;
+    let Reference::Local {
+        target: owner,
+        inline_type_guid: None,
+    } = take_reference(tail, &mut owner_end)?
+    else {
+        return None;
+    };
+    if owner == 0 || owner_end != tail.len() {
+        return None;
+    }
+    let tracking_units = usize::try_from(legacy_members::TRACKING_GUID_LENGTH_VALUE).ok()?;
+    Some(LegacyAttributedPlacementDetails {
+        carrier_record_index: View::u64_le_at(body, legacy_prefix::ENTITY)?,
+        occurrence_guid: lp_utf16_bounded_view(
+            members,
+            legacy_members::TRACKING_GUID_LENGTH,
+            tracking_units..=tracking_units,
+        )?
+        .0
+        .to_string()
+        .try_into()
+        .ok()?,
+        owner,
+        role,
+        transform,
+    })
+}
+
+fn legacy_placement_attributes_len(body: &[u8]) -> Option<usize> {
+    if body.get(legacy_empty_attributes::MARKER) != Some(&legacy_empty_attributes::MARKER_VALUE) {
+        return None;
+    }
+    match View::u32_le_at(body, legacy_empty_attributes::COUNT)? {
+        legacy_empty_attributes::COUNT_VALUE => Some(legacy_empty_attributes::LEN),
+        legacy_attributes::COUNT_VALUE => {
+            let body = body.get(..legacy_attributes::LEN)?;
+            for (offset, units, expected) in [
+                (
+                    legacy_attributes::PARENT_NAME_LENGTH,
+                    legacy_attributes::PARENT_NAME_LENGTH_VALUE,
+                    legacy_attributes::PARENT_NAME_VALUE.as_slice(),
+                ),
+                (
+                    legacy_attributes::PARENT_TYPE_LENGTH,
+                    legacy_attributes::PARENT_TYPE_LENGTH_VALUE,
+                    legacy_attributes::PARENT_TYPE_VALUE.as_slice(),
+                ),
+                (
+                    legacy_attributes::RESOLUTION_NAME_LENGTH,
+                    legacy_attributes::RESOLUTION_NAME_LENGTH_VALUE,
+                    legacy_attributes::RESOLUTION_NAME_VALUE.as_slice(),
+                ),
+                (
+                    legacy_attributes::RESOLUTION_TYPE_LENGTH,
+                    legacy_attributes::RESOLUTION_TYPE_LENGTH_VALUE,
+                    legacy_attributes::RESOLUTION_TYPE_VALUE.as_slice(),
+                ),
+                (
+                    legacy_attributes::SELF_NAME_LENGTH,
+                    legacy_attributes::SELF_NAME_LENGTH_VALUE,
+                    legacy_attributes::SELF_NAME_VALUE.as_slice(),
+                ),
+                (
+                    legacy_attributes::SELF_TYPE_LENGTH,
+                    legacy_attributes::SELF_TYPE_LENGTH_VALUE,
+                    legacy_attributes::SELF_TYPE_VALUE.as_slice(),
+                ),
+            ] {
+                let units = usize::try_from(units).ok()?;
+                if lp_ascii_strict(body, offset, units..=units)?.0.as_bytes() != expected {
+                    return None;
+                }
+            }
+            (body.get(legacy_attributes::PARENT_VALUE)
+                == Some(&legacy_attributes::PARENT_VALUE_VALUE)
+                && View::u32_le_at(body, legacy_attributes::RESOLUTION_VALUE)?
+                    == legacy_attributes::RESOLUTION_VALUE_VALUE
+                && body.get(legacy_attributes::SELF_VALUE)
+                    == Some(&legacy_attributes::SELF_VALUE_VALUE))
+            .then_some(legacy_attributes::LEN)
+        }
+        _ => None,
+    }
 }
 
 macro_rules! xref_some {

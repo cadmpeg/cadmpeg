@@ -374,6 +374,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** Retain the stored transform and native records.
 
+### DR-109. Legacy external placement control and extended envelopes
+
+**Question.** Which native object does the auxiliary placement UUID and cross-segment metadata reference identify? What does the nonzero control word select, and how do alternate member preludes and change-category lists delimit the placement?
+
+**Known.** The zero-control envelope has an auxiliary metadata UUID, a source occurrence key, a cross-segment reference, equal legacy targets, a stored transform or identity flag, an occurrence role, and a local owner. Other short envelopes have a different sequence between the attribute block and the repeated target. A separate envelope contains the ordered names `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`, local references, and a local occurrence name before further placement members.
+
+**Need.** A typed join through the metadata reference's segment namespace, the auxiliary UUID's relation to that target, the control word's effect on placement, and complete grammars for the alternate member preludes and change-category envelope.
+
+**Conflict.** None.
+
+**Note.** Auxiliary metadata remains in the complete source frame with `xref.placement-metadata-native`. The nonzero-control and alternate envelopes remain `xref.placement-undecoded` losses.
+
 ### DR-100. Rigid-group operand forms and root identities
 
 **Question.** Which native identities do the two identity GUIDs of a zero-count root operand path name? What does the payload of the two- or three-byte field before the final ordinary-tail reference mean? Is there a separate selector for the optional tail reference?

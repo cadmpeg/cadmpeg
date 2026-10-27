@@ -23201,6 +23201,462 @@ type = "bytes[2]"
 source = "spec"
 anchor = "The null-construction identity form"
 
+
+[[record]]
+name = "legacy_attributed_external_placement_prefix"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 88
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the primary indexed header."
+
+[[record.field]]
+name = "class_tag_length"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 3
+
+[[record.field]]
+name = "class_tag"
+offset = 4
+type = "bytes[3]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "entity"
+offset = 7
+type = "u64"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "instance_name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "target_reference"
+offset = 24
+type = "bytes[60]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "path_discriminator"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record]]
+name = "legacy_attributed_external_placement_empty_attributes"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 5
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the path discriminator."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record]]
+name = "legacy_attributed_external_placement_attributes"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 137
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the path discriminator. The resolution value is the zero UTF-16 code-unit count."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 3
+
+[[record.field]]
+name = "parent_name_length"
+offset = 5
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 13
+
+[[record.field]]
+name = "parent_name"
+offset = 9
+type = "bytes[13]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "GatedByParent"
+
+[[record.field]]
+name = "parent_type_length"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 21
+
+[[record.field]]
+name = "parent_type"
+offset = 26
+type = "bytes[21]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "IntrinsicMetaTypebool"
+
+[[record.field]]
+name = "parent_value"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "resolution_name_length"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 14
+
+[[record.field]]
+name = "resolution_name"
+offset = 52
+type = "bytes[14]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "ResolutionTime"
+
+[[record.field]]
+name = "resolution_type_length"
+offset = 66
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 24
+
+[[record.field]]
+name = "resolution_type"
+offset = 70
+type = "bytes[24]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "IntrinsicMetaTypeHString"
+
+[[record.field]]
+name = "resolution_value"
+offset = 94
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "self_name_length"
+offset = 98
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 9
+
+[[record.field]]
+name = "self_name"
+offset = 102
+type = "bytes[9]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "SelfGated"
+
+[[record.field]]
+name = "self_type_length"
+offset = 111
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 21
+
+[[record.field]]
+name = "self_type"
+offset = 115
+type = "bytes[21]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = "IntrinsicMetaTypebool"
+
+[[record.field]]
+name = "self_value"
+offset = 136
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record]]
+name = "legacy_attributed_external_placement_members"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 235
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the complete attribute block."
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "ordinal"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "metadata_guid_length"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "metadata_guid"
+offset = 10
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "tracking_guid_length"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "tracking_guid"
+offset = 86
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "metadata_reference"
+offset = 158
+type = "bytes[15]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "reference_separator"
+offset = 173
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "repeated_target_reference"
+offset = 174
+type = "bytes[60]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "identity_flag"
+offset = 234
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record]]
+name = "legacy_attributed_external_placement_identity_tail"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 92
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the identity flag."
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "role_length"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "role"
+offset = 8
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "separator"
+offset = 80
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "owner_marker"
+offset = 81
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "owner"
+offset = 82
+type = "u64"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "owner_tail"
+offset = 90
+type = "u16"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record]]
+name = "legacy_attributed_external_placement_matrix_tail"
+kind = "byte"
+section = "1.4"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+size = 220
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+note = "Offsets are relative to the byte after the identity flag."
+
+[[record.field]]
+name = "matrix"
+offset = 0
+type = "f64[16]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "zero"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "role_length"
+offset = 132
+type = "u32"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 36
+
+[[record.field]]
+name = "role"
+offset = 136
+type = "bytes[72]"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "separator"
+offset = 208
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
+[[record.field]]
+name = "owner_marker"
+offset = 209
+type = "u8"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 1
+
+[[record.field]]
+name = "owner"
+offset = 210
+type = "u64"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+
+[[record.field]]
+name = "owner_tail"
+offset = 218
+type = "u16"
+source = "spec"
+anchor = "An attributed legacy occurrence placement with a zero control word"
+value = 0
+
 [[record]]
 name = "edge_flange_corner_operation"
 kind = "byte"
