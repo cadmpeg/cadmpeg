@@ -2031,6 +2031,25 @@ fn project_work_point_construction(
     })
 }
 
+/// Millimetres per Design length unit (centimetre).
+const DESIGN_LENGTH_TO_MM: f64 = 10.0;
+
+/// The millimetre datum frame of a solved `WorkPlane` matrix: column 0 is the
+/// u-axis, column 2 the normal, and column 3 the origin in centimetres.
+pub(crate) fn work_plane_datum_frame(
+    transform: [[f64; 4]; 4],
+) -> Option<cadmpeg_ir::features::FeatureDatumPlaneFrame> {
+    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        Point3::new(
+            transform[0][3] * DESIGN_LENGTH_TO_MM,
+            transform[1][3] * DESIGN_LENGTH_TO_MM,
+            transform[2][3] * DESIGN_LENGTH_TO_MM,
+        ),
+        Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+        Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
+    )
+}
+
 fn project_work_plane(
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
@@ -2039,15 +2058,7 @@ fn project_work_plane(
         FeatureDefinition, FeatureOperation, UnresolvedFamily, VertexSelection,
     };
 
-    let origin = Point3::new(
-        transform[0][3] * 10.0,
-        transform[1][3] * 10.0,
-        transform[2][3] * 10.0,
-    );
-    let normal = Vector3::new(transform[0][2], transform[1][2], transform[2][2]);
-    let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
-    let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)
-    else {
+    let Some(frame) = work_plane_datum_frame(transform) else {
         return FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         });

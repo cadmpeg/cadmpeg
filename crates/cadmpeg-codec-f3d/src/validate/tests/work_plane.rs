@@ -50,3 +50,32 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
         }
     });
 }
+
+#[test]
+fn work_plane_validator_refuses_a_frame_whose_typed_placement_does_not_bind() {
+    use crate::design::decode::placement_construction::work_planes::bind;
+    use crate::test_support::work_plane::{placements, scope};
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let placement = placements().remove(0);
+        let mut scope = scope(&placement);
+        assert!(bind(
+            std::slice::from_mut(&mut scope),
+            std::slice::from_ref(&placement)
+        )
+        .is_empty());
+        assert!(scope.work_plane_frame().is_some());
+        let mut unbound = placement;
+        unbound.fields.z_flip.value = 1;
+        let native = crate::native::F3dNative {
+            design_placement_constructions: vec![unbound],
+            ..Default::default()
+        };
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        assert!(!super::super::valid_work_plane_construction(
+            &ctx,
+            &scope,
+            "f3d:Design/BulkStream.dat"
+        ));
+    });
+}
