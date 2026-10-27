@@ -346,17 +346,17 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The zero-count path selects the current document root. Its identity GUIDs remain native.
 
-### DR-102. First repeated-target placement metadata UUID
+### DR-102. Repeated-target metadata and unresolved class-294/299 identities
 
-**Question.** Which native identity does the first metadata UUID of a repeated-target placement name?
+**Question.** Which native identity does the first metadata UUID of a repeated-target placement name, and which namespace does the first identity GUID of an operand path admitted by class 294/299 name when its root occurrence key does not resolve?
 
 **Known.** The placement stores two ordered LP-UTF16 UUIDs after its positive stored word. The second UUID is the occurrence key used by assembly operand paths in the source Design stream.
 
-**Need.** An explicit join from the first UUID to its native identity and containing namespace.
+**Need.** An explicit join from the first metadata UUID to its native identity and containing namespace, and a document-identity join for unresolved class-294/299 paths.
 
-**Conflict.** The second UUID's occurrence binding does not establish an identity domain for the first UUID.
+**Conflict.** The second UUID's occurrence binding does not establish an identity domain for the first metadata UUID or the first class-294/299 identity GUID.
 
-**Note.** UUID equality alone does not identify a namespace.
+**Note.** UUID equality alone does not identify a namespace. An unresolved path admitted by class 294/299 remains native and its joint is refused with `assembly.joint-unprojected`. An ambiguous local occurrence key also refuses the joint with that loss; it does not state an external document.
 
 ### DR-82. Other joint freedom codes and the limit flags
 

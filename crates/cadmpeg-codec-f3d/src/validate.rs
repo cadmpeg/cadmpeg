@@ -11,6 +11,9 @@
 
 mod emboss;
 mod sheet_metal_settings;
+mod xref;
+
+use xref::validate_xref_placement_sources;
 
 use crate::layout::assembly_compact_rigid_group_locator as compact_group_locator;
 use crate::layout::assembly_typed_rigid_group_identity_locator as typed_group_identity;
@@ -1020,6 +1023,7 @@ fn validate_loaded(
     validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
+    validate_xref_placement_sources(&ctx, &mut findings)?;
     validate_configurations(&ctx, &mut findings);
     validate_design_intent_failures(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings)?;

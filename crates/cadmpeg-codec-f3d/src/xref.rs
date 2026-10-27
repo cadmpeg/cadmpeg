@@ -772,6 +772,7 @@ fn bind_occurrences(
                 id: occurrence_id,
                 occurrence_ordinal: ordinal_at(occurrence_ordinal)?,
                 placement_source: Some(XrefPlacementSource {
+                    frame_bytes: placement.frame_bytes.into(),
                     stream,
                     occurrence_guid: placement.occurrence_guid,
                     carrier_record_index: placement.carrier_record_index,
@@ -845,6 +846,7 @@ fn occurrence_transforms_with_precedence(
     for (carrier_record_index, transform) in direct {
         if overridden.insert(carrier_record_index) {
             selected.push(OccurrencePlacement {
+                frame_bytes: Vec::new(),
                 occurrence_guid: None,
                 carrier_record_index,
                 owner: None,
@@ -973,6 +975,7 @@ fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
 /// "**Placement.**").
 #[derive(Debug, Clone, PartialEq)]
 struct OccurrencePlacement {
+    frame_bytes: Vec<u8>,
     occurrence_guid: Option<crate::records::mesh::DesignRelaxedGuidText>,
     carrier_record_index: u64,
     owner: Option<XrefLocalOwner>,
@@ -1067,6 +1070,7 @@ fn occurrence_placement(
         let role = role.to_string();
         let link_names = [role].into_iter().collect::<Vec<_>>();
         return Ok(Some(OccurrencePlacement {
+            frame_bytes: Vec::new(),
             occurrence_guid: None,
             carrier_record_index,
             owner: None,
@@ -1089,6 +1093,7 @@ fn occurrence_placement(
     };
     let link_names = vec![link_name.to_string()];
     Ok(Some(OccurrencePlacement {
+        frame_bytes: Vec::new(),
         occurrence_guid: None,
         carrier_record_index: u64::from(record_index),
         owner: None,
@@ -1104,6 +1109,7 @@ fn repeated_target_occurrence_placement(
 ) -> Result<Option<OccurrencePlacement>, CodecError> {
     Ok(
         repeated_target_occurrence_placement_details(body)?.map(|details| OccurrencePlacement {
+            frame_bytes: body.to_vec(),
             carrier_record_index: details.carrier_record_index,
             occurrence_guid: Some(details.occurrence_guid),
             owner: Some(details.owner),
@@ -1121,6 +1127,19 @@ struct RepeatedTargetPlacementDetails {
     role: String,
     role_offset: usize,
     transform: Option<(usize, [[f64; 4]; 4])>,
+}
+
+pub(crate) fn placement_source_matches(source: &XrefPlacementSource) -> Result<bool, CodecError> {
+    let Some(guid) = source.occurrence_guid.as_ref() else {
+        return Ok(source.frame_bytes.is_empty());
+    };
+    Ok(
+        repeated_target_occurrence_placement_details(&source.frame_bytes)?.is_some_and(|details| {
+            details.occurrence_guid == *guid
+                && details.carrier_record_index == source.carrier_record_index
+                && source.owner.as_ref() == Some(&details.owner)
+        }),
+    )
 }
 
 macro_rules! xref_some {
@@ -1539,6 +1558,7 @@ fn modern_occurrence_placement(
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
             return Some(OccurrencePlacement {
+                frame_bytes: Vec::new(),
                 occurrence_guid: None,
                 carrier_record_index: View::u64_le_at(body, 7)?,
                 owner: None,

@@ -152,6 +152,8 @@ pub(crate) struct XrefLocalOwner {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct XrefPlacementSource {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) frame_bytes: cadmpeg_ir::native::bytes::NativeBytes,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

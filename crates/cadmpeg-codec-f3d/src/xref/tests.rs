@@ -744,6 +744,8 @@ fn malformed_repeated_frames_keep_losses_beside_valid_placements() {
     for end in [24, repeated_start, repeated_end, valid.len() - 1] {
         malformed.push(valid[..end].to_vec());
     }
+    let mut expected_frame = valid.clone();
+    expected_frame[4..7].copy_from_slice(b"256");
     for mut body in malformed {
         body[7..15].copy_from_slice(&11_u64.to_le_bytes());
         let mut records = valid.clone();
@@ -754,6 +756,14 @@ fn malformed_repeated_frames_keep_losses_beside_valid_placements() {
             .unwrap();
         let native = f3d_native(decoded.ir());
         assert_eq!(native.xref_references.len(), 1);
+        assert_eq!(
+            native.xref_references[0]
+                .placement_source
+                .as_ref()
+                .unwrap()
+                .frame_bytes,
+            expected_frame
+        );
         assert_eq!(
             native.xref_references[0]
                 .placement_source
@@ -837,6 +847,7 @@ fn grouped_identity_carriers_decode_as_identity_placements() {
     assert_eq!(
         placements,
         vec![OccurrencePlacement {
+            frame_bytes: bytes.clone(),
             occurrence_guid: Some(
                 "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
                     .to_owned()
@@ -1287,6 +1298,13 @@ fn exact_component_insert_carriers_precede_structured_placements() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let structured = OccurrencePlacement {
+        frame_bytes: {
+            let mut frame = repeated_target_occurrence_record("role", 23, 27, None);
+            let owner = local_reference(8);
+            let start = frame.len() - owner.len();
+            frame[start..].copy_from_slice(&owner);
+            frame
+        },
         occurrence_guid: Some(
             "bbbbbbbb-cccc-dddd-eeee-ffffffffffff"
                 .to_owned()
@@ -1308,6 +1326,7 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     };
 
     let other = OccurrencePlacement {
+        frame_bytes: Vec::new(),
         carrier_record_index: 24,
         transform: None,
         ..structured.clone()
@@ -1322,6 +1341,7 @@ fn exact_component_insert_carriers_precede_structured_placements() {
     assert_eq!(selected[0].carrier_record_index, 23);
     assert_eq!(selected[0].owner, structured.owner);
     assert_eq!(selected[0].occurrence_guid, structured.occurrence_guid);
+    assert_eq!(selected[0].frame_bytes, structured.frame_bytes);
     assert_eq!(selected[1], other);
     assert_eq!(
         super::superseded_placement_count(&[(23, direct)], &[structured, other], "role"),
@@ -1399,6 +1419,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
     .references
     .remove(0);
     reference.placement_source = Some(crate::records::xref::XrefPlacementSource {
+        frame_bytes: Vec::new().into(),
         occurrence_guid: None,
         stream: "stream".into(),
         carrier_record_index: 2,

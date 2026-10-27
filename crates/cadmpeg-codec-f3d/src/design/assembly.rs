@@ -1739,6 +1739,51 @@ mod tests {
                 cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
                 if occurrence == &occurrences[0].id)
         }));
+        for class_tag in ["294", "299"] {
+            let path = DesignAssemblyOperandPath::try_new(
+                typed_path.link().clone(),
+                11,
+                class_tag.to_owned().try_into().unwrap(),
+                typed_path.byte_offset(),
+                typed_path.occurrence_guids().to_vec(),
+                typed_path.identity_guids().to_vec(),
+            )
+            .unwrap();
+            let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path };
+            let mut unresolved = scopes(true, false);
+            unresolved[0]
+                .try_edit(|draft| {
+                    let DesignScopePayload::Assemble(Some(alignment)) = &mut draft.payload else {
+                        panic!("alignment");
+                    };
+                    alignment.form = Some(DesignAssemblyAlignmentForm::qualified(
+                        alignment.operand_frames().unwrap(),
+                        [qualifier.clone(), qualifier],
+                    ));
+                })
+                .unwrap();
+            let refused = super::project_assembly_joints(&unresolved, &[], &inserts, &[]);
+            assert!(refused.joints.is_empty(), "{class_tag}");
+            assert_eq!(refused.losses.len(), 1);
+            assert_eq!(
+                refused.losses[0].code,
+                crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
+            );
+            let bound = super::project_assembly_joints_with_paths(
+                &unresolved,
+                &[],
+                &inserts,
+                &[],
+                &bindings,
+            );
+            assert_eq!(bound.joints.len(), 1);
+            assert!(bound.losses.is_empty());
+            assert!(bound.joints[0].connectors().all(|connector| {
+                matches!(&connector.operand.container,
+                    cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                    if occurrence == &occurrences[0].id)
+            }));
+        }
         let bound = super::project_assembly_joints_with_paths(
             &scopes(true, false),
             &[],

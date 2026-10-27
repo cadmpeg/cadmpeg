@@ -1285,6 +1285,7 @@ mod tests {
                 ordinal: 0,
                 occurrence_ordinal: 0,
                 placement_source: Some(crate::records::xref::XrefPlacementSource {
+                    frame_bytes: Vec::new().into(),
                     occurrence_guid: None,
                     stream: STREAM.to_owned(),
                     carrier_record_index: 500,
@@ -2218,6 +2219,7 @@ mod tests {
             ordinal: 0,
             occurrence_ordinal: 0,
             placement_source: Some(crate::records::xref::XrefPlacementSource {
+                frame_bytes: Vec::new().into(),
                 occurrence_guid: None,
                 stream: STREAM.into(),
                 carrier_record_index: 52,
