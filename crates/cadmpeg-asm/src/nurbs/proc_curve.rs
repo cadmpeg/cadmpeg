@@ -2878,7 +2878,7 @@ pub(crate) fn analytic_support(
             let radius = cur.take_f64()? * LEN_TO_MM;
             let ref_direction = normalized(cur.take_vector3()?)?;
             let axis = normalized(cur.take_vector3()?)?;
-            let chart = SupportChart::sphere(cur.take_bool()?);
+            let chart = SupportChart::sphere(radius, cur.take_bool()?);
             let (center, frame) = admitted_placement(point, axis, ref_direction)?;
             Some((
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(SphereSurface::new(

@@ -215,8 +215,9 @@ fn sphere_case(radius: f64, reverse_v: bool) {
     let vertices = ends.map(|end| {
         let (latitude, longitude) = (end.u, v_sign * end.v);
         mm(Vector3::from(center)
-            + (x.scale(longitude.cos()) + y.scale(longitude.sin())).scale(radius * latitude.cos())
-            + z.scale(radius * latitude.sin()))
+            + (x.scale(longitude.cos()) + y.scale(longitude.sin()))
+                .scale(radius.abs() * latitude.cos())
+            + z.scale(radius.abs() * latitude.sin()))
     });
     assert_endpoints_hit_vertices(&surface, ends, vertices);
 }
@@ -225,6 +226,7 @@ fn sphere_case(radius: f64, reverse_v: bool) {
 fn sphere_pcurve_is_latitude_first() {
     sphere_case(2.5, false);
     sphere_case(-2.5, false);
+    sphere_case(-2.5, true);
 }
 
 #[test]

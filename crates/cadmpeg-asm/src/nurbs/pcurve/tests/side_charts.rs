@@ -173,8 +173,8 @@ impl Support {
                     (native.u, native.v * if reverse_v { -1.0 } else { 1.0 });
                 mm(Vector3::from(center)
                     + (x.scale(longitude.cos()) + y.scale(longitude.sin()))
-                        .scale(radius * latitude.cos())
-                    + z.scale(radius * latitude.sin()))
+                        .scale(radius.abs() * latitude.cos())
+                    + z.scale(radius.abs() * latitude.sin()))
             }
         }
     }
