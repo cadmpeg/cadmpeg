@@ -32,6 +32,17 @@
       "losses": [
         {
           "code": {
+            "code": "export.no-geometry-written",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "no geometry was written to a STEP representation",
+          "severity": "error"
+        },
+        {
+          "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
             "namespace": "step",
@@ -94,6 +105,17 @@
       "losses": [
         {
           "code": {
+            "code": "export.no-geometry-written",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "no geometry was written to a STEP representation",
+          "severity": "error"
+        },
+        {
+          "code": {
             "code": "native.passthrough-record-omitted",
             "kind": "passthrough_record_omitted",
             "namespace": "step",
@@ -154,6 +176,17 @@
         "target": "step:ap242-e2"
       },
       "losses": [
+        {
+          "code": {
+            "code": "export.no-geometry-written",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "no geometry was written to a STEP representation",
+          "severity": "error"
+        },
         {
           "code": {
             "code": "native.passthrough-record-omitted",

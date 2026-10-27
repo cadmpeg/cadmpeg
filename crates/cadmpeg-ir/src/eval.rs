@@ -4588,6 +4588,48 @@ fn model_curve_point_by_id_inner(
         ProceduralCurveDefinition::Helix(helix) => {
             helix_differential(helix, parameter).map(|differential| differential.point)
         }
+        ProceduralCurveDefinition::SurfaceCurve {
+            family: crate::geometry::SurfaceCurveFamily::Parametric { context, .. },
+        } if curve.geometry.solved_cache().is_none() => {
+            let mut sides = context
+                .sides()
+                .iter()
+                .filter_map(|side| Some((side.surface.as_ref()?, side.pcurve.as_ref()?)));
+            let (surface, pcurve) = sides.next().ok_or(EvaluationFailure::NoValue)?;
+            if sides.next().is_some() {
+                return Err(EvaluationFailure::NoValue);
+            }
+            let parameter = FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?;
+            let parameter = if let Some(range) = pcurve.parameter_range {
+                let source =
+                    IncreasingParameterInterval::new(context.parameter_range().endpoints())
+                        .ok_or(EvaluationFailure::NoValue)?;
+                let [first, last] = range.endpoints();
+                let target = IncreasingParameterInterval::new([first.min(last), first.max(last)])
+                    .ok_or(EvaluationFailure::NoValue)?;
+                target
+                    .map_from(source, parameter, first > last)
+                    .map_err(|_| EvaluationFailure::NonFinite(UNREACHED_POINT))?
+            } else {
+                parameter
+            };
+            let uv = match crate::eval::decode::pcurve_uv(
+                admission,
+                &pcurve.geometry,
+                parameter.get(),
+            ) {
+                Ok(uv) => uv.get(),
+                Err(EvaluationFailure::NonFinite(uv)) => uv,
+                Err(EvaluationFailure::NoValue) => return Err(EvaluationFailure::NoValue),
+                Err(EvaluationFailure::WorkExhausted) => {
+                    return Err(EvaluationFailure::WorkExhausted)
+                }
+                Err(EvaluationFailure::ResourceLimit(limit)) => {
+                    return Err(EvaluationFailure::ResourceLimit(limit))
+                }
+            };
+            model_surface_point_by_id(admission, index, surface, uv.u, uv.v)
+        }
         ProceduralCurveDefinition::TolerantIntersection {
             construction: intersection,
             parameterization: Some(parameterization),
@@ -8472,11 +8514,170 @@ fn pcurve_uv_differential(
     geometry: &PcurveGeometry,
     parameter: FiniteReal,
 ) -> Option<PcurveEvaluation> {
-    let evaluated = pcurve_uv_unsettled(scratch, geometry, parameter);
+    enum Wrapper<'a> {
+        Transform(crate::transform::Transform2),
+        Trimmed,
+        Offset(&'a crate::geometry::pcurve::OffsetPcurve),
+    }
+    let mut current = geometry;
+    let mut wrappers = Vec::new();
+    loop {
+        let (basis, wrapper) = match current {
+            PcurveGeometry::Transformed(placed) => {
+                (placed.basis(), Wrapper::Transform(*placed.transform()))
+            }
+            PcurveGeometry::Trimmed(trimmed) => (trimmed.basis(), Wrapper::Trimmed),
+            PcurveGeometry::Offset(offset) => (offset.basis(), Wrapper::Offset(offset)),
+            _ => break,
+        };
+        let Some(depth) = scratch.enter() else {
+            return scratch.refused().map(PcurveEvaluation::refused);
+        };
+        wrappers.push((wrapper, depth));
+        current = basis;
+    }
+    let mut evaluated = pcurve_uv_unsettled(scratch, current, parameter);
+    if let Some(refusal) = scratch.refused() {
+        return Some(PcurveEvaluation::refused(refusal));
+    }
+    while let Some((wrapper, depth)) = wrappers.pop() {
+        evaluated = match wrapper {
+            Wrapper::Transform(transform) => {
+                evaluated.map(|basis| transform_pcurve_evaluation(transform, basis))
+            }
+            Wrapper::Trimmed => evaluated,
+            Wrapper::Offset(offset) => {
+                evaluated.and_then(|basis| offset_pcurve_evaluation(offset, basis))
+            }
+        };
+        drop(depth);
+    }
     match scratch.refused() {
         Some(refusal) => Some(PcurveEvaluation::refused(refusal)),
         None => evaluated,
     }
+}
+
+fn transform_pcurve_evaluation(
+    transform: crate::transform::Transform2,
+    basis: PcurveEvaluation,
+) -> PcurveEvaluation {
+    if basis.refusal.is_some() {
+        return basis;
+    }
+    let point = transform.apply_point(basis.point.map_or_else(|point| point, FinitePoint2::get));
+    let tangent = match basis.tangent {
+        Ok(tangent) => admit_parameter_point(transform.apply_vector(tangent.get())),
+        Err(EvaluationFailure::NonFinite(tangent)) => Err(EvaluationFailure::NonFinite(
+            transform.apply_vector(tangent),
+        )),
+        Err(EvaluationFailure::NoValue) => Err(EvaluationFailure::NoValue),
+        Err(EvaluationFailure::WorkExhausted) => Err(EvaluationFailure::WorkExhausted),
+        Err(EvaluationFailure::ResourceLimit(limit)) => {
+            Err(EvaluationFailure::ResourceLimit(limit))
+        }
+    };
+    let acceleration = basis
+        .acceleration
+        .map(|acceleration| transform.apply_vector(acceleration.get()));
+    let basis_tangent_finite = match basis.tangent {
+        Ok(_) => true,
+        Err(EvaluationFailure::WorkExhausted) => {
+            return PcurveEvaluation::refused(EvaluationRefusal::WorkExhausted);
+        }
+        Err(EvaluationFailure::ResourceLimit(limit)) => return PcurveEvaluation::refused(limit),
+        Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => false,
+    };
+    let tangent_left_finite_range = match tangent {
+        Ok(_) => false,
+        Err(EvaluationFailure::WorkExhausted) => {
+            return PcurveEvaluation::refused(EvaluationRefusal::WorkExhausted);
+        }
+        Err(EvaluationFailure::ResourceLimit(limit)) => return PcurveEvaluation::refused(limit),
+        Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => true,
+    };
+    let derivative_left_range = basis_tangent_finite && tangent_left_finite_range
+        || acceleration.is_some_and(|acceleration| !acceleration.is_finite());
+    if basis.point.is_err() || derivative_left_range {
+        let tangent = match reached_value(tangent) {
+            Ok(value) => value,
+            Err(limit) => return PcurveEvaluation::refused(limit),
+        };
+        return PcurveEvaluation::left_finite_range(point, tangent);
+    }
+    PcurveEvaluation::evaluated(point, tangent, acceleration.and_then(FinitePoint2::new))
+}
+
+fn offset_pcurve_evaluation(
+    offset: &crate::geometry::pcurve::OffsetPcurve,
+    basis: PcurveEvaluation,
+) -> Option<PcurveEvaluation> {
+    if basis.refusal.is_some() {
+        return Some(basis);
+    }
+    let tangent = match basis.tangent {
+        Ok(tangent) => tangent,
+        Err(EvaluationFailure::NonFinite(_)) => {
+            return Some(PcurveEvaluation::left_finite_range(
+                Point2::new(f64::NAN, f64::NAN),
+                Point2::new(f64::NAN, f64::NAN),
+            ));
+        }
+        Err(EvaluationFailure::NoValue) if basis.point.is_err() => {
+            return Some(PcurveEvaluation::left_finite_range(
+                Point2::new(f64::NAN, f64::NAN),
+                Point2::new(f64::NAN, f64::NAN),
+            ));
+        }
+        Err(EvaluationFailure::NoValue) => return None,
+        Err(EvaluationFailure::WorkExhausted) => {
+            return Some(PcurveEvaluation::refused(EvaluationRefusal::WorkExhausted));
+        }
+        Err(EvaluationFailure::ResourceLimit(limit)) => {
+            return Some(PcurveEvaluation::refused(limit));
+        }
+    };
+    let speed = tangent.u.hypot(tangent.v);
+    if speed == 0.0 {
+        return None;
+    }
+    if !speed.is_finite() {
+        return Some(PcurveEvaluation::left_finite_range(
+            Point2::new(f64::NAN, f64::NAN),
+            Point2::new(f64::NAN, f64::NAN),
+        ));
+    }
+    let unit = Point2::new(tangent.u / speed, tangent.v / speed);
+    let basis_point = basis.point.map_or_else(|point| point, FinitePoint2::get);
+    let distance = offset.distance().get();
+    let point = Point2::new(
+        basis_point.u - distance * unit.v,
+        basis_point.v + distance * unit.u,
+    );
+    let tangent = basis.acceleration.map(|acceleration| {
+        let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
+        let unit_derivative = Point2::new(
+            (acceleration.u - tangential_acceleration * unit.u) / speed,
+            (acceleration.v - tangential_acceleration * unit.v) / speed,
+        );
+        Point2::new(
+            tangent.u - distance * unit_derivative.v,
+            tangent.v + distance * unit_derivative.u,
+        )
+    });
+    let tangent = match tangent {
+        Some(tangent) => admit_parameter_point(tangent),
+        None if states_pcurve_acceleration(offset.basis()) => Err(EvaluationFailure::NonFinite(
+            Point2::new(f64::NAN, f64::NAN),
+        )),
+        None => Err(EvaluationFailure::NoValue),
+    };
+    Some(PcurveEvaluation {
+        point: FinitePoint2::new(point).ok_or(point),
+        tangent,
+        acceleration: None,
+        refusal: None,
+    })
 }
 
 fn pcurve_uv_unsettled(
@@ -8980,149 +9181,16 @@ fn pcurve_uv_unsettled(
             };
         }
         PcurveGeometry::Transformed(placed) => {
-            let transform = placed.transform();
             let basis = pcurve_uv_differential(scratch, placed.basis(), parameter)?;
-            if basis.refusal.is_some() {
-                return Some(basis);
-            }
-            let point =
-                transform.apply_point(basis.point.map_or_else(|point| point, FinitePoint2::get));
-            let tangent = match basis.tangent {
-                Ok(tangent) => admit_parameter_point(transform.apply_vector(tangent.get())),
-                Err(EvaluationFailure::NonFinite(tangent)) => Err(EvaluationFailure::NonFinite(
-                    transform.apply_vector(tangent),
-                )),
-                Err(EvaluationFailure::NoValue) => Err(EvaluationFailure::NoValue),
-                Err(EvaluationFailure::WorkExhausted) => Err(EvaluationFailure::WorkExhausted),
-                Err(EvaluationFailure::ResourceLimit(limit)) => {
-                    Err(EvaluationFailure::ResourceLimit(limit))
-                }
-            };
-            let acceleration = basis
-                .acceleration
-                .map(|acceleration| transform.apply_vector(acceleration.get()));
-            // The placement evaluates its derivatives with its point: a basis
-            // tangent or acceleration the placement carries outside the finite
-            // range leaves the evaluation there.
-            let basis_tangent_finite = match basis.tangent {
-                Ok(_) => true,
-                Err(EvaluationFailure::WorkExhausted) => {
-                    return Some(PcurveEvaluation::refused(EvaluationRefusal::WorkExhausted));
-                }
-                Err(EvaluationFailure::ResourceLimit(limit)) => {
-                    return Some(PcurveEvaluation::refused(limit));
-                }
-                Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => false,
-            };
-            let tangent_left_finite_range = match tangent {
-                Ok(_) => false,
-                Err(EvaluationFailure::WorkExhausted) => {
-                    return Some(PcurveEvaluation::refused(EvaluationRefusal::WorkExhausted));
-                }
-                Err(EvaluationFailure::ResourceLimit(limit)) => {
-                    return Some(PcurveEvaluation::refused(limit));
-                }
-                Err(EvaluationFailure::NoValue | EvaluationFailure::NonFinite(_)) => true,
-            };
-            let derivative_left_range = basis_tangent_finite && tangent_left_finite_range
-                || acceleration.is_some_and(|acceleration| !acceleration.is_finite());
-            if basis.point.is_err() || derivative_left_range {
-                let tangent = match reached_value(tangent) {
-                    Ok(value) => value,
-                    Err(limit) => return Some(PcurveEvaluation::refused(limit)),
-                };
-                return Some(PcurveEvaluation::left_finite_range(point, tangent));
-            }
-            return Some(PcurveEvaluation::evaluated(
-                point,
-                tangent,
-                acceleration.and_then(FinitePoint2::new),
-            ));
+            return Some(transform_pcurve_evaluation(*placed.transform(), basis));
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let basis = trimmed_pcurve.basis();
             return pcurve_uv_differential(scratch, basis, parameter);
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let distance = offset_pcurve.distance();
-            let basis = offset_pcurve.basis();
-            let basis = pcurve_uv_differential(scratch, basis, parameter)?;
-            if basis.refusal.is_some() {
-                return Some(basis);
-            }
-            let tangent = match basis.tangent {
-                Ok(tangent) => tangent,
-                // The offset direction is the unit normal of the basis
-                // tangent, which a tangent outside the finite range does not
-                // reach; a basis without a tangent states no direction.
-                Err(EvaluationFailure::NonFinite(_)) => {
-                    return Some(PcurveEvaluation::left_finite_range(
-                        Point2::new(f64::NAN, f64::NAN),
-                        Point2::new(f64::NAN, f64::NAN),
-                    ));
-                }
-                Err(EvaluationFailure::NoValue) if basis.point.is_err() => {
-                    return Some(PcurveEvaluation::left_finite_range(
-                        Point2::new(f64::NAN, f64::NAN),
-                        Point2::new(f64::NAN, f64::NAN),
-                    ));
-                }
-                Err(EvaluationFailure::NoValue) => return None,
-                Err(EvaluationFailure::WorkExhausted) => {
-                    return Some(PcurveEvaluation::refused(EvaluationRefusal::WorkExhausted))
-                }
-                Err(EvaluationFailure::ResourceLimit(limit)) => {
-                    return Some(PcurveEvaluation::refused(limit))
-                }
-            };
-            let speed = tangent.u.hypot(tangent.v);
-            if speed == 0.0 {
-                return None;
-            }
-            if !speed.is_finite() {
-                // The unit normal of a tangent whose length overflows is not
-                // reached.
-                return Some(PcurveEvaluation::left_finite_range(
-                    Point2::new(f64::NAN, f64::NAN),
-                    Point2::new(f64::NAN, f64::NAN),
-                ));
-            }
-            let unit = Point2::new(tangent.u / speed, tangent.v / speed);
-            // The offset of a non-finite basis point is the non-finite point
-            // it reaches.
-            let basis_point = basis.point.map_or_else(|point| point, FinitePoint2::get);
-            let point = Point2::new(
-                basis_point.u - distance.get() * unit.v,
-                basis_point.v + distance.get() * unit.u,
-            );
-            let tangent = basis.acceleration.map(|acceleration| {
-                let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
-                let unit_derivative = Point2::new(
-                    (acceleration.u - tangential_acceleration * unit.u) / speed,
-                    (acceleration.v - tangential_acceleration * unit.v) / speed,
-                );
-                Point2::new(
-                    tangent.u - distance.get() * unit_derivative.v,
-                    tangent.v + distance.get() * unit_derivative.u,
-                )
-            });
-            // The offset tangent reads the basis acceleration. A basis that
-            // states one and has none at a finite point and tangent has an
-            // acceleration outside the finite range, which the offset tangent
-            // does not reach; an offset basis states none.
-            let tangent = match tangent {
-                Some(tangent) => admit_parameter_point(tangent),
-                None if states_pcurve_acceleration(offset_pcurve.basis()) => Err(
-                    EvaluationFailure::NonFinite(Point2::new(f64::NAN, f64::NAN)),
-                ),
-                None => Err(EvaluationFailure::NoValue),
-            };
-            return Some(PcurveEvaluation {
-                point: FinitePoint2::new(point).ok_or(point),
-                tangent,
-                acceleration: None,
-                refusal: None,
-            });
+            let basis = pcurve_uv_differential(scratch, offset_pcurve.basis(), parameter)?;
+            return offset_pcurve_evaluation(offset_pcurve, basis);
         }
     };
     Some(PcurveEvaluation::evaluated(
@@ -9136,11 +9204,14 @@ fn pcurve_uv_unsettled(
 /// does except an offset, whose evaluation forms no second derivative, and
 /// the trimmed and placed carriers over one.
 fn states_pcurve_acceleration(geometry: &PcurveGeometry) -> bool {
-    match geometry {
-        PcurveGeometry::Offset(_) => false,
-        PcurveGeometry::Trimmed(trimmed) => states_pcurve_acceleration(trimmed.basis()),
-        PcurveGeometry::Transformed(placed) => states_pcurve_acceleration(placed.basis()),
-        _ => true,
+    let mut current = geometry;
+    loop {
+        match current {
+            PcurveGeometry::Offset(_) => return false,
+            PcurveGeometry::Trimmed(trimmed) => current = trimmed.basis(),
+            PcurveGeometry::Transformed(placed) => current = placed.basis(),
+            _ => return true,
+        }
     }
 }
 

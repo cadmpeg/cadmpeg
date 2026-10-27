@@ -1826,6 +1826,7 @@ fn replica_written_with(
         &mut bytes,
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
+        std::collections::HashSet::new(),
     )?;
     Ok(String::from_utf8(bytes).expect("STEP output is UTF-8"))
 }

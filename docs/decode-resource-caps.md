@@ -237,10 +237,11 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph, roots included; child occurrences that close a cycle count toward it. At the limit expansion stops, and a path of `max_recursion_depth` definitions stops its branch; both report `structure.occurrence-expansion-truncated`. |
 | `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
 | `cadmpeg-codec-pvz`      | `src/brep/topology.rs`                             | `MAX_TOPOLOGY_WORK`                       | `1 << 24`                                               | 4    | Floor of the derived-search `WorkBudget` of one exact stream; the allowance is the larger of this floor and 1,024 times its face, loop, coedge and edge records. Face-region nesting charges one unit per polygon sample of each containment test, and coincident-edge pairing one unit per candidate test. A face whose nesting finds the budget empty keeps one unclassified region; pairing stops; each skip is reported as `exact.topology-work-exhausted`. |
-| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_PATCHES`                             | `1024`                                                  | N    | STEP writer: sampled B-spline patches along one parameter axis. A fit that needs more keeps the face or curve omitted; not a decode path.                                                                                                                                    |
-| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_POLES`                               | `1 << 20`                                               | N    | STEP writer: sampled approximation poles of one export. A carrier that does not fit keeps the face or curve omitted; not a decode path.                                                                                                                                      |
-| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | STEP writer: procedural point evaluations of one export for sampling and residual probes. Exhaustion keeps the face or curve omitted; not a decode path.                                                                                                                     |
-| `cadmpeg-codec-step`     | `src/export/approximation.rs`                      | `MAX_EVALUATION_WORK`                     | `1 << 26`                                               | N    | STEP writer: model evaluation work of one export's sampled carriers, trim checks included. Exhaustion keeps the face or curve omitted and does not fail the export; not a decode path.                                                                                       |
+| `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_PATCHES`                             | `1024`                                                  | N    | Export fitting: sampled B-spline patches along one parameter axis. A fit that needs more is not written; not a decode path. |
+| `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_POLES`                               | `1 << 20`                                               | N    | Export fitting: sampled approximation poles of one export. A carrier that does not fit is not written; not a decode path. |
+| `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | Export fitting: procedural point evaluations of one export for sampling and residual probes. Exhaustion leaves the carrier unwritten; not a decode path. |
+| `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_EVALUATION_WORK`                     | `1 << 26`                                               | N    | Export fitting: model evaluation work of one export's sampled carriers, trim checks included. Exhaustion leaves the carrier unwritten and does not fail the export; not a decode path. |
+| `cadmpeg-ir`             | `src/codec/write/edge_recovery.rs`                 | `MAX_RECOVERY_WORK`                       | `1 << 26`                                               | N    | Writer model-evaluation work for edge-curve recovery in one export. Exhaustion leaves the remaining candidate edges unrecovered; not a decode path. |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCES`                 | `100_000`                                               | 4    | Occurrence expansion output (`OccurrenceExpansion::expand`). At the limit expansion stops and `reader.rs` reports `occurrence.expansion-output-truncated`.                                                                                                                   |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCE_DEPTH`            | `64`                                                    | 4    | Occurrence path depth; `reader::decode` takes `min` with `max_recursion_depth`, and each level charges `enter_nested`. At the limit the branch stops and `occurrence.expansion-depth-truncated` is reported.                                                                 |
 | `cadmpeg-codec-iges`     | `src/binary.rs`                                    | `MAX_SEQUENCE`                            | `9_999_999`                                             | 1    | Seven-digit Fixed ASCII sequence and section-count field when binary IGES is normalized. Excess is `Malformed`.                                                                                                                                                              |
@@ -482,7 +483,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 267.
+Production `MAX_*` constants: 268.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -490,14 +491,14 @@ Production `MAX_*` constants: 267.
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 133   |
-| N    | Not a decode bound         | 28    |
-|      | Total                      | 267   |
+| N    | Not a decode bound         | 29    |
+|      | Total                      | 268   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 12, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 12,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
+`cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,

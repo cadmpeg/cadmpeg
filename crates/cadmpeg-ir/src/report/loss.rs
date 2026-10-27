@@ -85,6 +85,8 @@ pub enum LossTaxonomy {
     /// B-rep geometry was not transferred, though carriers or a container were
     /// decoded.
     GeometryNotTransferred,
+    /// Geometric agreement was checked at sampled parameters only.
+    GeometryAgreementSampled,
     /// A reference graph decoded but did not close into a consistent
     /// surface/pcurve/edge/vertex binding.
     ReferenceGraphNotClosed,
@@ -184,6 +186,7 @@ impl LossTaxonomy {
             Self::TopologyNotTransferred => "topology_not_transferred",
             Self::SourceTopologyInvalid => "source_topology_invalid",
             Self::GeometryNotTransferred => "geometry_not_transferred",
+            Self::GeometryAgreementSampled => "geometry_agreement_sampled",
             Self::ReferenceGraphNotClosed => "reference_graph_not_closed",
             Self::TopologyGaugeSubstituted => "topology_gauge_substituted",
             Self::CarrierAxisInferred => "carrier_axis_inferred",
@@ -253,6 +256,7 @@ impl LossTaxonomy {
             | Self::PreservedSourceUnavailable => LossCategory::Other,
             Self::MissingGeometryStream
             | Self::GeometryNotTransferred
+            | Self::GeometryAgreementSampled
             | Self::CarrierAxisInferred
             | Self::CarrierSummary
             | Self::MeshVertexPrecision
@@ -287,6 +291,7 @@ impl LossTaxonomy {
             Self::MissingGeometryStream
             | Self::TopologyNotTransferred
             | Self::GeometryNotTransferred
+            | Self::GeometryAgreementSampled
             | Self::ReferenceGraphNotClosed
             | Self::CurvelessEdgeOmitted
             | Self::UnknownSurfaceFaceOmitted

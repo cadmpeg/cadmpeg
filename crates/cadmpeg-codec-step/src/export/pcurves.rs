@@ -5,7 +5,9 @@
 use std::borrow::Cow;
 use std::f64::consts::{FRAC_PI_2, TAU};
 
-use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2};
+use cadmpeg_ir::geometry::pcurve::{
+    LinePcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2,
+};
 use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::topology::Edge;
@@ -20,6 +22,72 @@ const EPS_LOOP_JOIN: f64 = 1.0e-6;
 
 /// Relative slack on a conic use that spans one whole period.
 const EPS_CONIC_PERIOD: f64 = 1.0e-9;
+
+pub(super) fn align_line_to_edge(
+    line: &LinePcurve,
+    source_range: Option<[f64; 2]>,
+    edge: &Edge,
+) -> Option<PcurveGeometry> {
+    let (Some([source_start, source_end]), Some(target)) = (source_range, edge.param_range())
+    else {
+        return Some(PcurveGeometry::Line(*line));
+    };
+    let [target_start, target_end] = target.get();
+    if [source_start, source_end] == [target_start, target_end] {
+        return Some(PcurveGeometry::Line(*line));
+    }
+    let scale = (source_end - source_start) / (target_end - target_start);
+    let offset = source_start - scale * target_start;
+    let origin = line.origin().get();
+    let direction = *line.direction().as_raw();
+    LinePcurve::try_new(
+        Point2::new(
+            origin.u + offset * direction.u,
+            origin.v + offset * direction.v,
+        ),
+        Point2::new(scale * direction.u, scale * direction.v),
+    )
+    .ok()
+    .map(PcurveGeometry::Line)
+}
+
+pub(super) fn align_placed_line_to_edge(
+    geometry: &PcurveGeometry,
+    source_range: Option<[f64; 2]>,
+    edge: &Edge,
+) -> Option<PcurveGeometry> {
+    let mut transforms = Vec::new();
+    let mut basis = geometry;
+    while let PcurveGeometry::Transformed(placed) = basis {
+        transforms.push(*placed.transform());
+        basis = placed.basis();
+    }
+    let PcurveGeometry::Line(line) = basis else {
+        return None;
+    };
+    let mut aligned = align_line_to_edge(line, source_range, edge)?;
+    for transform in transforms.into_iter().rev() {
+        aligned = PcurveGeometry::Transformed(
+            cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(Box::new(aligned), transform)
+                .ok()?,
+        );
+    }
+    Some(aligned)
+}
+
+pub(super) fn ranges_match(source_range: Option<[f64; 2]>, edge: &Edge) -> bool {
+    let (Some([source_start, source_end]), Some(target)) = (source_range, edge.param_range())
+    else {
+        return true;
+    };
+    let [target_start, target_end] = target.get();
+    let tolerance = EPS_PARAMETER_RANGE_MATCH
+        * (source_end - source_start)
+            .abs()
+            .max((target_end - target_start).abs())
+            .max(1.0);
+    (source_start - target_start).abs() <= tolerance && (source_end - target_end).abs() <= tolerance
+}
 
 /// A circle or ellipse pcurve under a placement the conic writer cannot bake,
 /// such as the reflection that makes a circle run clockwise, has no plain STEP

@@ -83,8 +83,21 @@ fn synthesized_body(
 ) -> Result<ExportBody, CodecError> {
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
-    let synthesis = super::synthesize(input.ir, version)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let synthesis = super::synthesize(&recovered.document, version)?;
     losses.extend(synthesis.losses.clone());
+    if !recovered.sampled_agreements.is_empty() {
+        losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(
+            "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",
+            recovered.sampled_agreements.len()
+        )));
+    }
+    if !recovered.sampled_fits.is_empty() {
+        losses.push(IgesLossCode::EdgePcurveSampledToBspline.note(format!(
+            "{} recovered edge(s) were fitted as B-splines with sampled residual at most {} model length units",
+            recovered.sampled_fits.len(), recovered.residual_limit
+        )));
+    }
     Ok(super::body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },

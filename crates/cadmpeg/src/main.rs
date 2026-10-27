@@ -10,6 +10,8 @@ mod application;
 mod commands;
 mod input_format;
 mod inspect;
+#[cfg(test)]
+mod integration_tests;
 mod loader;
 mod measure;
 mod query;
@@ -178,9 +180,6 @@ enum Command {
         /// Write output even if the check finds errors in what the output writes. The check runs and prints every finding.
         #[arg(long)]
         allow_errors: bool,
-        /// Write output even if no geometry was decoded.
-        #[arg(long)]
-        allow_empty: bool,
         /// Decode the whole source, design intent included, even when the
         /// output format needs only its geometry.
         #[arg(long, conflicts_with = "container_only")]
@@ -512,7 +511,6 @@ fn main() -> ExitCode {
             format,
             destinations,
             allow_errors,
-            allow_empty,
             full_decode,
             reject_lossy,
             input_args,
@@ -521,7 +519,6 @@ fn main() -> ExitCode {
             let conversion_args = commands::ConversionArgs {
                 losses: reject_lossy.unwrap_or_default(),
                 allow_errors,
-                allow_empty,
                 full_decode,
                 destination: destinations.destination,
                 report: destinations.report,
