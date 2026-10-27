@@ -582,11 +582,6 @@ const MEMBER_RUN_HEAD_FRAME: usize = 162;
 /// inline type GUID: forty bytes longer than the plain frame.
 const TYPED_MEMBER_RUN_HEAD_FRAME: usize = MEMBER_RUN_HEAD_FRAME + 40;
 
-/// Parse a member-run head placement: the paired same-index record after the
-/// sketch's entity header opens with a marked
-/// reference naming a head record. A 34-byte head denotes the identity
-/// placement. A 162-byte head stores eleven zero bytes and the row-major 4×4
-/// local-to-model transform at offset 22.
 /// The Sketch scope that owns a member-run sketch entity.
 fn member_run_sketch_scope<'a>(
     scopes: &'a [DesignParameterScope],
@@ -619,6 +614,11 @@ fn member_run_sketch_scope<'a>(
     }
 }
 
+/// Parse a member-run head placement: the paired same-index record after the
+/// sketch's entity header opens with a marked
+/// reference naming a head record. A 34-byte head denotes the identity
+/// placement. A 162-byte head stores eleven zero bytes and the row-major 4×4
+/// local-to-model transform at offset 22.
 fn parse_member_run_head_placement(
     bytes: &[u8],
     entity_byte_offset: u64,

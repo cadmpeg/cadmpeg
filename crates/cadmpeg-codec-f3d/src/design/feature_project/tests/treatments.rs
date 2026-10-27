@@ -603,7 +603,12 @@ fn fillet_edge_and_face_groups_share_the_scope_radius() {
             cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant { radius }
                 if (radius.get() - 3.0).abs() < 1.0e-12
         ));
-        assert_eq!(group.tangency_weight.map(|weight| weight.get()), Some(1.0));
+        assert_eq!(
+            group
+                .tangency_weight
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            Some(1.0)
+        );
     }
 }
 
