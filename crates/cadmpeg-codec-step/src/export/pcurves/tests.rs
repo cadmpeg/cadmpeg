@@ -2,6 +2,7 @@
 //! Edge-range reparameterization preserves the spline locus and remains local to a use.
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::f64::consts::TAU;
 
 use cadmpeg_ir::geometry::analytic::CircleCurve;
@@ -46,6 +47,68 @@ fn edge(range: [f64; 2]) -> Edge {
         .remove(0);
     edge.set_param_range(Some(ParameterInterval::new(range).unwrap()));
     edge
+}
+
+#[test]
+fn line_pcurve_is_parameterized_on_the_edge_in_both_directions() {
+    let line = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+        Point2::new(0.0, 1.0),
+        Point2::new(2.0, 0.0),
+    )
+    .unwrap();
+    for source in [[2.0, 5.0], [5.0, 2.0]] {
+        let aligned = super::align_line_to_edge(&line, Some(source), &edge([10.0, 20.0])).unwrap();
+        for (target, source) in [(10.0, source[0]), (20.0, source[1])] {
+            let point = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &aligned,
+                target,
+            )
+            .unwrap()
+            .get();
+            assert!((point.u - 2.0 * source).abs() < EPS_KNOT);
+            assert!((point.v - 1.0).abs() < EPS_KNOT);
+        }
+    }
+}
+
+#[test]
+fn deeply_placed_line_pcurve_aligns_on_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            let mut geometry = PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    Point2::new(0.0, 1.0),
+                    Point2::new(2.0, 0.0),
+                )
+                .unwrap(),
+            );
+            for _ in 0..cadmpeg_ir::geometry::MAX_GEOMETRY_NESTING - 1 {
+                geometry = PcurveGeometry::Transformed(
+                    cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+                        Box::new(geometry),
+                        cadmpeg_ir::transform::Transform2::identity(),
+                    )
+                    .unwrap(),
+                );
+            }
+            let aligned =
+                super::align_placed_line_to_edge(&geometry, Some([2.0, 5.0]), &edge([10.0, 20.0]))
+                    .unwrap();
+            let point = cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &aligned,
+                20.0,
+            )
+            .unwrap()
+            .get();
+            assert!((point.u - 10.0).abs() < EPS_KNOT);
+            assert!((point.v - 1.0).abs() < EPS_KNOT);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
 }
 
 #[test]
@@ -191,7 +254,8 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
                 parameter_range: Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap()),
             });
         }
-        let mut builder = super::super::Builder::new(&ir, crate::StepSchema::Ap214).unwrap();
+        let mut builder =
+            super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
         if split {
             builder.split_non_manifold_edges(&ir.model.regions[0].shells);
         }
@@ -358,7 +422,8 @@ fn a_use_interval_is_directed_by_the_vertex_its_surface_image_reaches() {
         (1.0, 0.0, [1.0, 0.0], [1.0, 0.0]),
     ] {
         let (ir, pcurve, surface, edge) = cube_edge_with_pcurve(from, to);
-        let builder = super::super::Builder::new(&ir, crate::StepSchema::Ap214).unwrap();
+        let builder =
+            super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
         let directed = builder
             .directed_use_range(
                 &pcurve,
@@ -380,7 +445,8 @@ fn a_closed_edge_directs_only_an_increasing_use_interval() {
     let (mut ir, pcurve, surface, mut edge) = cube_edge_with_pcurve(0.0, 0.0);
     edge.end = edge.start.clone();
     ir.model.edges[0] = edge.clone();
-    let builder = super::super::Builder::new(&ir, crate::StepSchema::Ap214).unwrap();
+    let builder =
+        super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
     for (stored, expected) in [([0.0, 1.0], Some([0.0, 1.0])), ([1.0, 0.0], None)] {
         let directed = builder
             .directed_use_range(
@@ -430,7 +496,8 @@ fn reflected_conic_emission_uses_a_rational_spline() {
             parameter_range: Some(DirectedParameterRange::new([0.0, TAU]).unwrap()),
         });
     }
-    let mut builder = super::super::Builder::new(&ir, crate::StepSchema::Ap214).unwrap();
+    let mut builder =
+        super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
     for coedge in ir.model.coedges.iter().filter(|c| c.edge == edge_id) {
         let (start, end) = builder
             .coedge_pcurve_ends(coedge.id.as_str())

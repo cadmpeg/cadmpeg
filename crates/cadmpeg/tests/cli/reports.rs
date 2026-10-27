@@ -11,7 +11,7 @@ use tempfile::tempdir;
 use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
 
 #[test]
-fn artifact_reports_cover_success_and_semantic_refusal() {
+fn artifact_reports_cover_success_with_and_without_geometry() {
     let dir = tempdir().unwrap();
     let cube = fixture(
         dir.path(),
@@ -51,7 +51,7 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     assert!(value["export"]["notes"].is_array());
 
     let empty = geometryless_creo(dir.path(), "empty.prt");
-    let refusal_report = dir.path().join("refusal-report.json");
+    let empty_report = dir.path().join("empty-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -60,23 +60,18 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
             "-f",
             "step",
             "--report",
-            refusal_report.to_str().unwrap(),
+            empty_report.to_str().unwrap(),
         ])
         .assert()
-        .code(1);
+        .success();
     let value: serde_json::Value =
-        serde_json::from_slice(&fs::read(refusal_report).unwrap()).unwrap();
+        serde_json::from_slice(&fs::read(empty_report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
-    assert_eq!(value["status"], "refused");
-    assert_eq!(value["refusal"]["stage"], "plan");
-    assert_eq!(value["refusal"]["code"], "empty_geometry");
-    assert!(value["refusal"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("geometry"));
+    assert_eq!(value["status"], "ok");
+    assert!(value["refusal"].is_null());
     assert!(value["decode_report"].is_object());
     assert!(value["check_report"].is_object());
-    assert!(value["export"].is_null());
+    assert!(value["export"].is_object());
 }
 
 #[test]

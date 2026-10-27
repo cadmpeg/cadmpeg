@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR → STEP Part 21 builder.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::Write;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::codec::write::approximation;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
@@ -14,7 +15,8 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, LoopId, OccurrenceId, ProductDefinitionId, ShellId, VertexId,
+    AppearanceBindingId, AppearanceId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId, ShellId,
+    VertexId,
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
@@ -35,7 +37,6 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
 use crate::writer::{refs, string, Emitter, Ref};
 
-pub(crate) mod approximation;
 mod implicit_outer;
 mod non_manifold;
 mod ownership;
@@ -94,6 +95,7 @@ pub(crate) fn write_step_outcome(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
+    recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
     let definitions = ir
         .model
@@ -126,9 +128,12 @@ pub(crate) fn write_step_outcome(
             None => {}
         }
     }
-    let mut b = Builder::new(ir, schema)?;
+    let mut b = Builder::new(ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
+    if let Some(limit) = b.approximations.resource_limit() {
+        return Err(limit.into());
+    }
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines()?;
 
@@ -274,6 +279,7 @@ struct PcurveUse<'a> {
 pub(crate) struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
+    recovered_edges: HashSet<EdgeId>,
     model_name: &'a str,
     emitter: Emitter,
     losses: Vec<LossNote>,
@@ -433,7 +439,11 @@ fn distinct_names<'n>(entries: &[(&'n str, Option<&'n str>)]) -> Vec<&'n str> {
 }
 
 impl<'a> Builder<'a> {
-    pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Result<Self, cadmpeg_core::CodecError> {
+    pub(crate) fn new(
+        ir: &'a CadIr,
+        schema: StepSchema,
+        recovered_edges: HashSet<EdgeId>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let construction_supports = ownership::construction_supports(ir)?;
         let loop_faces = ir
             .model
@@ -477,6 +487,7 @@ impl<'a> Builder<'a> {
             approximations: approximation::Approximator::new(ir),
             ir,
             schema,
+            recovered_edges,
             model_name: "cadmpeg_model",
             emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
@@ -652,7 +663,7 @@ impl<'a> Builder<'a> {
         }
         if !wire_edges.is_empty() || !free_vertices.is_empty() {
             self.loss(StepLossCode::SurfaceShellWireTopologyOmitted, format!(
-                "{} wire edge record(s) and {} free vertex record(s) in solid or sheet shells are not written",
+                "{} wire edge record(s) and {} free vertex record(s) are not retained in their solid or sheet shells",
                 wire_edges.len(), free_vertices.len()
             ));
         }
@@ -661,14 +672,7 @@ impl<'a> Builder<'a> {
         let mut emitted_items = self.emit_shape_items(context);
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
-        if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
-            self.loss(
-                StepLossCode::NoExportableSolids,
-                "no exportable solids: the IR document contains no body/region/shell \
-                          geometry, so the STEP representation is empty"
-                    .to_string(),
-            );
-        }
+        let has_model_items = !emitted_items.is_empty();
         if self.ir.model.product_definitions.is_empty() {
             let origin = geometry::placement(
                 &mut self.emitter,
@@ -698,6 +702,18 @@ impl<'a> Builder<'a> {
 
         self.emit_visibility();
         self.emit_tessellations(context);
+        if !has_model_items && self.tessellation_step_refs.is_empty() {
+            if !self.ir.model.bodies.is_empty() {
+                self.loss(
+                    StepLossCode::NoExportableSolids,
+                    "no body geometry could be placed in a STEP representation".to_string(),
+                );
+            }
+            self.loss(
+                StepLossCode::NoGeometryWritten,
+                "no geometry was written to a STEP representation".to_string(),
+            );
+        }
         self.emit_presentation(context);
         self.emit_appearance_visibility();
         self.emit_pmi(context);
@@ -1880,7 +1896,7 @@ impl<'a> Builder<'a> {
             if body_kind == BodyKind::Wire
                 || (body_kind == BodyKind::General && !has_surface_topology)
             {
-                if let Some(item) = self.emit_wire_region(region) {
+                let wire_written = if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
@@ -1897,10 +1913,13 @@ impl<'a> Builder<'a> {
                     self.body_step_refs
                         .entry(region.body.as_str().to_owned())
                         .or_insert(item);
+                    true
                 } else {
                     self.empty_wire_regions
                         .insert(region.id.as_str().to_owned());
-                }
+                    false
+                };
+                self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
@@ -1911,14 +1930,14 @@ impl<'a> Builder<'a> {
             if closed {
                 self.split_non_manifold_edges(&region.shells);
             }
-            let Some(outer) = self.emit_shell(outer_id.as_str(), closed, false) else {
+            let outer = self.emit_shell(outer_id.as_str(), closed, false);
+            if outer.is_none() {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
                     StepLossCode::RegionNoWritableOuterShell,
                     format!("region {} has no writable outer shell", region.id),
                 );
-                continue;
-            };
+            }
             let mut voids = Vec::new();
             // A solid void is the base shell of an `ORIENTED_CLOSED_SHELL`
             // with orientation false, so its base faces carry the reverse of
@@ -1938,31 +1957,44 @@ impl<'a> Builder<'a> {
                     );
                 }
             }
-            let mut shell_refs = Vec::new();
-            shell_refs.push(outer);
-            shell_refs.extend_from_slice(&voids);
-            let item = if !closed {
+            let solid = closed
+                && outer.is_some_and(|(_, shell_closed)| shell_closed)
+                && voids.len() == void_ids.len()
+                && voids.iter().all(|(_, shell_closed)| *shell_closed);
+            let mut shell_refs = outer.iter().map(|(shell, _)| *shell).collect::<Vec<_>>();
+            shell_refs.extend(voids.iter().map(|(shell, _)| *shell));
+            let Some(first_shell) = shell_refs.first().copied() else {
+                self.emit_region_fallback_geometry(region, context, false, &mut items);
+                continue;
+            };
+            if closed && !solid {
+                self.loss(
+                    StepLossCode::RegionSolidReducedToSheet,
+                    format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
+                );
+            }
+            let item = if !solid {
                 self.emitter.emit(
                     "SHELL_BASED_SURFACE_MODEL",
                     &format!("'',{}", refs(&shell_refs)),
                 )
             } else if voids.is_empty() {
                 self.emitter
-                    .emit("MANIFOLD_SOLID_BREP", &format!("'',{outer}"))
+                    .emit("MANIFOLD_SOLID_BREP", &format!("'',{first_shell}"))
             } else {
                 let void_refs: Vec<Ref> = voids
                     .iter()
-                    .map(|s| {
+                    .map(|(s, _)| {
                         self.emitter
                             .emit("ORIENTED_CLOSED_SHELL", &format!("'',*,{s},.F."))
                     })
                     .collect();
                 self.emitter.emit(
                     "BREP_WITH_VOIDS",
-                    &format!("'',{outer},{}", refs(&void_refs)),
+                    &format!("'',{first_shell},{}", refs(&void_refs)),
                 )
             };
-            if closed {
+            if solid {
                 self.advanced_brep_items.insert(item);
             }
             let shape_item = self.place_body_item(&region.body, item, context);
@@ -1980,7 +2012,8 @@ impl<'a> Builder<'a> {
                 .push(item);
             self.body_step_refs
                 .entry(region.body.as_str().to_owned())
-                .or_insert(if closed { item } else { outer });
+                .or_insert(if solid { item } else { first_shell });
+            let mut wire_written = false;
             if mixed_wire {
                 if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
@@ -1999,13 +2032,175 @@ impl<'a> Builder<'a> {
                     self.body_step_refs
                         .entry(region.body.as_str().to_owned())
                         .or_insert(item);
+                    wire_written = true;
                 } else {
                     self.empty_wire_regions
                         .insert(region.id.as_str().to_owned());
                 }
             }
+            self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
         }
         items
+    }
+
+    fn emit_region_fallback_geometry(
+        &mut self,
+        region: &cadmpeg_ir::topology::Region,
+        context: Ref,
+        wire_written: bool,
+        items: &mut Vec<Ref>,
+    ) {
+        let mut missing = BTreeSet::new();
+        let mut retained = BTreeSet::new();
+        let mut missing_edges = BTreeSet::new();
+        let mut retained_edges = BTreeSet::new();
+        for shell_id in &region.shells {
+            let Some(shell) = self.shells.get(shell_id.as_str()) else {
+                continue;
+            };
+            missing.extend(shell.free_vertices().iter().cloned());
+            for edge_id in shell.wire_edges() {
+                if let Some(edge) = self.edges.get(edge_id.as_str()) {
+                    let vertices = if wire_written && self.edge_refs.contains_key(edge_id.as_str())
+                    {
+                        retained_edges.insert(edge_id.clone());
+                        &mut retained
+                    } else {
+                        missing_edges.insert(edge_id.clone());
+                        &mut missing
+                    };
+                    vertices.extend([edge.start.clone(), edge.end.clone()]);
+                }
+            }
+            for face_id in shell.faces() {
+                let Some(face) = self.faces.get(face_id.as_str()) else {
+                    continue;
+                };
+                for loop_id in &face.loops {
+                    let Some(lp) = self.loops.get(loop_id.as_str()) else {
+                        continue;
+                    };
+                    let written = self.face_step_refs.contains_key(face_id.as_str())
+                        && !self
+                            .topology_relation_losses
+                            .contains(&format!("face:{face_id}:loop:{loop_id}"));
+                    let vertices = if written { &mut retained } else { &mut missing };
+                    if let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } = &lp.boundary
+                    {
+                        vertices.insert(vertex.clone());
+                    }
+                    for coedge_id in lp.coedges() {
+                        if let Some(edge) = self
+                            .coedges
+                            .get(coedge_id.as_str())
+                            .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                        {
+                            if written {
+                                retained_edges.insert(edge.id.clone());
+                            } else {
+                                missing_edges.insert(edge.id.clone());
+                            }
+                            vertices.extend([edge.start.clone(), edge.end.clone()]);
+                        }
+                    }
+                }
+            }
+        }
+        let mut edges = Vec::new();
+        for edge_id in missing_edges.difference(&retained_edges) {
+            let Some(edge) = self.edges.get(edge_id.as_str()).copied() else {
+                continue;
+            };
+            if edge.curve().is_none() {
+                continue;
+            }
+            if let Some(reference) = self.emit_edge(edge_id.as_str()) {
+                retained.extend([edge.start.clone(), edge.end.clone()]);
+                edges.push((reference, edge));
+            }
+        }
+        if !edges.is_empty() {
+            self.loss(
+                StepLossCode::RegionEdgesRecovered,
+                format!(
+                    "region {} retained {} edges as wire geometry outside their original topology",
+                    region.id,
+                    edges.len()
+                ),
+            );
+            let mut components = Vec::new();
+            for component in wire::connected_components(&edges) {
+                components.push(
+                    self.emitter
+                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&component))),
+                );
+            }
+            let item = self.emitter.emit(
+                "EDGE_BASED_WIREFRAME_MODEL",
+                &format!("'',{}", refs(&components)),
+            );
+            self.push_region_recovery_item(region, context, item, items);
+        }
+        let mut points = Vec::new();
+        let mut point_set = std::collections::HashSet::new();
+        for vertex_id in missing.difference(&retained) {
+            let Some(point) = self
+                .vertices
+                .get(vertex_id.as_str())
+                .and_then(|vertex| self.points.get(vertex.point.as_str()))
+                .copied()
+            else {
+                continue;
+            };
+            let reference = if let Some(reference) = self.point_refs.get(point.id.as_str()) {
+                *reference
+            } else {
+                let reference = geometry::point(&mut self.emitter, point.position().get());
+                self.point_refs
+                    .insert(point.id.as_str().to_owned(), reference);
+                reference
+            };
+            if point_set.insert(reference) {
+                points.push(reference);
+            }
+        }
+        if points.is_empty() {
+            return;
+        }
+        self.loss(
+            StepLossCode::RegionVerticesRecovered,
+            format!(
+                "region {} retained {} vertices as points after their topology was omitted",
+                region.id,
+                points.len()
+            ),
+        );
+        let item = self
+            .emitter
+            .emit("GEOMETRIC_CURVE_SET", &format!("'',{}", refs(&points)));
+        self.push_region_recovery_item(region, context, item, items);
+    }
+
+    fn push_region_recovery_item(
+        &mut self,
+        region: &cadmpeg_ir::topology::Region,
+        context: Ref,
+        item: Ref,
+        items: &mut Vec<Ref>,
+    ) {
+        let shape_item = self.place_body_item(&region.body, item, context);
+        items.push(shape_item);
+        self.body_shape_refs
+            .entry(region.body.as_str().to_owned())
+            .or_insert(shape_item);
+        self.body_item_refs
+            .entry(region.body.as_str().to_owned())
+            .or_default()
+            .push(shape_item);
+        self.body_step_item_refs
+            .entry(region.body.as_str().to_owned())
+            .or_default()
+            .push(item);
     }
 
     fn place_body_item(
@@ -2516,7 +2711,10 @@ impl<'a> Builder<'a> {
                 .join(",");
             let linked_body = mesh.body.as_ref().and_then(|body| {
                 let link = self.body_step_refs.get(body.as_str()).copied()?;
-                let kind = self.bodies.get(body.as_str())?.kind;
+                let mut kind = self.bodies.get(body.as_str())?.kind;
+                if kind == BodyKind::Solid && !self.advanced_brep_items.contains(&link) {
+                    kind = BodyKind::Sheet;
+                }
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
             if let Some(body) = &mesh.body {
@@ -2665,7 +2863,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_shell(&mut self, shell_id: &str, closed: bool, reversed: bool) -> Option<Ref> {
+    fn emit_shell(&mut self, shell_id: &str, closed: bool, reversed: bool) -> Option<(Ref, bool)> {
         let shell = self.shells.get(shell_id).copied()?;
         let face_ids: Vec<String> = shell
             .faces()
@@ -2673,6 +2871,7 @@ impl<'a> Builder<'a> {
             .map(|f| f.as_str().to_owned())
             .collect();
         let mut face_refs = Vec::new();
+        let prior_losses = self.topology_relation_losses.len();
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
@@ -2695,10 +2894,57 @@ impl<'a> Builder<'a> {
         if face_refs.is_empty() {
             return None;
         }
-        Some(self.emitter.emit(
-            if closed { "CLOSED_SHELL" } else { "OPEN_SHELL" },
-            &format!("'',{}", refs(&face_refs)),
+        let closed = closed
+            && face_refs.len() == face_ids.len()
+            && self.topology_relation_losses.len() == prior_losses
+            && self.shell_is_closed(shell);
+        Some((
+            self.emitter.emit(
+                if closed { "CLOSED_SHELL" } else { "OPEN_SHELL" },
+                &format!("'',{}", refs(&face_refs)),
+            ),
+            closed,
         ))
+    }
+
+    fn shell_is_closed(&self, shell: &Shell) -> bool {
+        let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
+        for face_id in shell.faces() {
+            let Some(face) = self.faces.get(face_id.as_str()) else {
+                return false;
+            };
+            for loop_id in &face.loops {
+                let Some(lp) = self.loops.get(loop_id.as_str()) else {
+                    return false;
+                };
+                for coedge_id in lp.coedges() {
+                    let Some(coedge) = self.coedges.get(coedge_id.as_str()) else {
+                        return false;
+                    };
+                    let Some(edge) = self.edges.get(coedge.edge.as_str()) else {
+                        return false;
+                    };
+                    let degenerate = edge.start == edge.end
+                        && (self
+                            .collapsed_curveless_coedges
+                            .contains(coedge_id.as_str())
+                            || edge
+                                .curve()
+                                .and_then(|id| self.curves.get(id.as_str()))
+                                .is_some_and(|curve| {
+                                    matches!(
+                                        curve.geometry.solved(),
+                                        Some(SolvedCurveGeometry::Degenerate(_))
+                                    )
+                                }));
+                    if !degenerate {
+                        let count = uses.entry(edge.id.as_str()).or_default();
+                        count[usize::from(coedge.sense == Sense::Reversed)] += 1;
+                    }
+                }
+            }
+        }
+        !uses.is_empty() && uses.values().all(|[forward, reversed]| forward == reversed)
     }
 
     /// Writes the face use, or its reverse when `reversed` is set: the
@@ -2743,6 +2989,7 @@ impl<'a> Builder<'a> {
             .map(|loop_id| self.seam_rings.contains_key(loop_id.as_str()))
             .collect();
         let mut face_bounds = vec![None; loop_ids.len()];
+        let mut incomplete = false;
         for index in (0..loop_ids.len())
             .filter(|index| !seam_ring[*index])
             .chain((0..loop_ids.len()).filter(|index| seam_ring[*index]))
@@ -2761,6 +3008,7 @@ impl<'a> Builder<'a> {
                         .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
                 );
             } else {
+                incomplete = true;
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
                     LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
@@ -2781,6 +3029,14 @@ impl<'a> Builder<'a> {
                 format!("face:{face_id}:bound-list"),
                 StepLossCode::FaceNoWritableBounds,
                 format!("face {face_id} has no writable bounds"),
+            );
+            return None;
+        }
+        if incomplete {
+            self.topology_relation_loss(
+                format!("face:{face_id}:incomplete-bounds"),
+                StepLossCode::FaceIncompleteBounds,
+                format!("face {face_id} was omitted because a boundary could not be written"),
             );
             return None;
         }
@@ -3438,7 +3694,24 @@ impl<'a> Builder<'a> {
             .ok()
             .flatten();
         let lowered = pcurves::lower_placed_conic(&pcurve.geometry, use_.use_.parameter_range);
-        let aligned = pcurves::align_spline_to_edge(&lowered, range, edge);
+        let aligned = match lowered.as_ref() {
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line)
+                if self.recovered_edges.contains(&edge.id) =>
+            {
+                std::borrow::Cow::Owned(pcurves::align_line_to_edge(line, range, edge)?)
+            }
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. } => {
+                pcurves::align_spline_to_edge(&lowered, range, edge)
+            }
+            _ if !self.recovered_edges.contains(&edge.id) || pcurves::ranges_match(range, edge) => {
+                std::borrow::Cow::Borrowed(lowered.as_ref())
+            }
+            _ => std::borrow::Cow::Owned(pcurves::align_placed_line_to_edge(
+                lowered.as_ref(),
+                range,
+                edge,
+            )?),
+        };
         let shift = self
             .pcurve_period_shifts
             .get(use_.coedge)
@@ -5181,7 +5454,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::WireRegionNoConnectedEdgeSet,
                 format!(
-                    "{} wire region(s) had no writable connected edge set and were not written to STEP: {regions}",
+                    "{} wire region(s) had no writable connected edge set and were not written as wireframes: {regions}",
                     self.empty_wire_regions.len()
                 ),
             );

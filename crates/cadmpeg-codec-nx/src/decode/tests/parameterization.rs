@@ -500,6 +500,27 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
         Some(result.ir().model.faces[0].surface.clone())
     );
     assert!(context.sides()[0].pcurve.is_some());
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir());
+    let point = cadmpeg_ir::eval::model_curve_point_by_id(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &carrier.id,
+        0.5,
+    )
+    .expect("the decoded pcurve evaluates on its support surface")
+    .get();
+    let vertex = &result.ir().model.vertices[0];
+    let vertex_point = index
+        .points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
+        .expect("vertex point")
+        .position()
+        .get();
+    assert!(point.distance(vertex_point) < 1.0e-9);
+    let mut approximator = cadmpeg_ir::codec::write::approximation::Approximator::new(result.ir());
+    assert!(matches!(
+        approximator.curve(carrier.id.as_str()),
+        Some(SolvedCurveGeometry::Nurbs(_))
+    ));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

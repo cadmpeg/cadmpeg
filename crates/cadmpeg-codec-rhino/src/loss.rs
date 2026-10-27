@@ -217,6 +217,10 @@ pub(crate) enum RhinoLossCode {
     MeshNormalPrecisionReduced,
     /// Standalone support points and curves cannot keep their dependency.
     WriterSupportGeometryWithheld,
+    /// Different coedge pcurves were compared at discrete parameters.
+    EdgePcurveAgreementSampled,
+    /// A recovered edge was fitted at sampled parameters.
+    EdgePcurveSampledToBspline,
     /// A field was read under the legacy reading because the archive carries no
     /// openNURBS writer-version stamp to verify that record against.
     ///
@@ -289,6 +293,8 @@ impl RhinoLossCode {
         Self::MeshVertexPrecisionReduced,
         Self::MeshNormalPrecisionReduced,
         Self::WriterSupportGeometryWithheld,
+        Self::EdgePcurveAgreementSampled,
+        Self::EdgePcurveSampledToBspline,
         Self::SourceWriterStampUnverified,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
@@ -337,6 +343,8 @@ impl RhinoLossCode {
             Self::HistoryGeometryNotTransferred => "history.geometry-not-transferred",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::WriterSupportGeometryWithheld => "writer.support-geometry-withheld",
+            Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
+            Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::MeshNormalPrecisionReduced => "mesh.normal-precision-reduced",
             Self::SourceWriterStampUnverified => "source.writer-stamp-unverified",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -405,6 +413,9 @@ impl RhinoLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::WriterSupportGeometryWithheld => LossTaxonomy::GeometryNotTransferred,
+            Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
+                LossTaxonomy::GeometryAgreementSampled
+            }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
         }
@@ -500,6 +511,8 @@ mod tests {
                 "mesh.vertex-precision-reduced",
                 "mesh.normal-precision-reduced",
                 "writer.support-geometry-withheld",
+                "geometry.edge-pcurve-agreement-sampled",
+                "geometry.edge-pcurve-sampled-to-bspline",
                 "source.writer-stamp-unverified",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",

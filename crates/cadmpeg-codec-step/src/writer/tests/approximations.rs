@@ -27,10 +27,10 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::CadIr;
 
-use crate::export::approximation::Approximator;
 use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
+use cadmpeg_ir::codec::write::approximation::Approximator;
 
 const BOTTOM_RADIUS: f64 = 10.0;
 const TOP_RADIUS: f64 = 5.0;

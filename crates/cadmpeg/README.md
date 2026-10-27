@@ -89,10 +89,9 @@ pipe, `--binary-stdout`.
 Conversion stops before export if the check finds errors in what the output
 writes. An error in data the output format does not carry, for example
 feature history in a STEP export, stays in the report and does not stop the
-write. Conversion also refuses
-geometry output when decoding transfers no geometry. `--allow-errors` and
-`--allow-empty` write the current result anyway. They leave model data
-unchanged.
+write. `--allow-errors` writes the current result anyway. It leaves model data
+unchanged. Conversion writes the available output when decoding transfers no
+geometry and reports the decode and export losses.
 
 `convert` decodes a native source only as deeply as the output needs: STEP,
 IGES, and Rhino output decodes geometry and skips design intent, so the decode
@@ -138,8 +137,7 @@ checked. These findings do not change the exit status
 
 `--container-only` stops native decoding before geometry and records container
 depth. It is useful for container diagnostics. `convert` writes such a document
-to CADIR only: every other output refuses it (`insufficient_depth`, exit 1),
-and `--allow-empty` does not override that.
+to CADIR only: every other output refuses it (`insufficient_depth`, exit 1).
 
 ## Read raw bytes
 

@@ -1,24 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-preserving sampled carriers for finite procedural domains.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::convert::f64_from_index;
-use cadmpeg_core::decode::WorkBudget;
-use cadmpeg_ir::eval::{
+use crate::eval::{
     admission::EvaluationAdmission, decode::pcurve_uv, finite_or_refusal, model_curve_point_by_id,
-    model_surface_point_by_id, nurbs_curve_parameter_domain,
+    model_surface_point_by_id, nurbs_curve_parameter_domain, EvaluationFailure,
 };
-use cadmpeg_ir::geometry::{
+use crate::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
     pcurve::PcurveGeometry,
     ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
-use cadmpeg_ir::index::{ModelIndex, StandardIndex};
-use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::CadIr;
+use crate::ids::{CurveId, SurfaceId};
+use crate::index::{ModelIndex, StandardIndex};
+use crate::math::{Point2, Point3};
+use crate::CadIr;
+use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
 
 /// Largest patch count along one parameter axis.
 const MAX_PATCHES: usize = 1024;
@@ -41,16 +42,21 @@ const SEED_PATCHES: usize = 4;
 /// point there or a budget ran out.
 type Evaluate<'f> = dyn FnMut(f64, f64) -> Option<Point3> + 'f;
 
+struct FitEvaluation {
+    work: WorkBudget,
+    refusal: Cell<Option<ResourceLimit>>,
+}
+
 /// Lazily sampled carriers and the export-wide sampling budget.
 ///
 /// Helix curves and helix surfaces are not sampled here: the writer fits
-/// them through `cadmpeg_ir::eval::helix_nurbs`. A failed evaluation or an
-/// exhausted budget leaves the carrier unwritten, so the writer keeps its
-/// omission report; it never fails the export.
-pub(crate) struct Approximator<'a> {
+/// them through `crate::eval::helix_nurbs`. An evaluation without a value or
+/// an exhausted work slice leaves the carrier unwritten. A resource refusal
+/// is retained for the caller.
+pub struct Approximator<'a> {
     ir: &'a CadIr,
     index: Option<ModelIndex<'a>>,
-    work: WorkBudget,
+    evaluation: FitEvaluation,
     samples: usize,
     poles: usize,
     curves: HashMap<String, Option<SolvedCurveGeometry>>,
@@ -58,11 +64,15 @@ pub(crate) struct Approximator<'a> {
 }
 
 impl<'a> Approximator<'a> {
-    pub(crate) fn new(ir: &'a CadIr) -> Self {
+    /// Create an approximation budget for this document.
+    pub fn new(ir: &'a CadIr) -> Self {
         Self {
             ir,
             index: None,
-            work: WorkBudget::new(MAX_EVALUATION_WORK),
+            evaluation: FitEvaluation {
+                work: WorkBudget::new(MAX_EVALUATION_WORK),
+                refusal: Cell::new(None),
+            },
             samples: MAX_SAMPLES,
             poles: MAX_POLES,
             curves: HashMap::new(),
@@ -71,13 +81,18 @@ impl<'a> Approximator<'a> {
     }
 
     /// The sampled residual limit in model length units.
-    pub(crate) fn residual_limit(&self) -> f64 {
+    pub fn residual_limit(&self) -> f64 {
         self.ir.tolerances.linear.get() * TOLERANCE_FRACTION
+    }
+
+    /// The first resource refusal encountered while fitting.
+    pub fn resource_limit(&self) -> Option<ResourceLimit> {
+        self.evaluation.refusal.get()
     }
 
     /// A sampled B-spline carrier for a procedural surface. A surface whose
     /// fit failed is not sampled again.
-    pub(crate) fn surface(&mut self, surface: &str) -> Option<SolvedSurfaceGeometry> {
+    pub fn surface(&mut self, surface: &str) -> Option<SolvedSurfaceGeometry> {
         if self.failed_surfaces.contains(surface) {
             return None;
         }
@@ -115,18 +130,25 @@ impl<'a> Approximator<'a> {
             ),
             _ => (face_domain(ir, index, owner)?, [SEED_PATCHES; 2]),
         };
-        let work = &self.work;
+        let evaluation = &self.evaluation;
         let mut evaluate = |u: f64, v: f64| {
-            finite_or_refusal(
-                EvaluationAdmission::Standard.within_work_slice(work, |admission| {
+            keep_refusal(
+                &evaluation.refusal,
+                EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
                     model_surface_point_by_id(admission, index, owner, u, v)
                 }),
             )
-            .ok()
-            .flatten()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+            .map(crate::features::FinitePoint3::get)
         };
-        if !trims_meet_vertices(ir, index, owner, ranges, tolerance, work, &mut evaluate) {
+        if !trims_meet_vertices(
+            ir,
+            index,
+            owner,
+            ranges,
+            tolerance,
+            evaluation,
+            &mut evaluate,
+        ) {
             return None;
         }
         let grid = sample(
@@ -151,7 +173,7 @@ impl<'a> Approximator<'a> {
     }
 
     /// A sampled B-spline carrier for a procedural curve, sampled once.
-    pub(crate) fn curve(&mut self, curve: &str) -> Option<SolvedCurveGeometry> {
+    pub fn curve(&mut self, curve: &str) -> Option<SolvedCurveGeometry> {
         if let Some(sampled) = self.curves.get(curve) {
             return sampled.clone();
         }
@@ -180,23 +202,22 @@ impl<'a> Approximator<'a> {
             .edges
             .iter()
             .filter(|edge| edge.curve() == Some(owner))
-            .filter_map(|edge| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get))
+            .filter_map(|edge| edge.param_range().map(crate::units::FiniteVector::get))
             .all(|[start, end]| {
                 start.min(end) >= range[0] - slack && start.max(end) <= range[1] + slack
             });
         if !edges_inside {
             return None;
         }
-        let work = &self.work;
+        let evaluation = &self.evaluation;
         let mut evaluate = |u: f64, _: f64| {
-            finite_or_refusal(
-                EvaluationAdmission::Standard.within_work_slice(work, |admission| {
+            keep_refusal(
+                &evaluation.refusal,
+                EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
                     model_curve_point_by_id(admission, index, owner, u)
                 }),
             )
-            .ok()
-            .flatten()
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+            .map(crate::features::FinitePoint3::get)
         };
         let grid = sample(
             [range, [0.0, 1.0]],
@@ -225,6 +246,21 @@ impl<'a> Approximator<'a> {
     }
 }
 
+fn keep_refusal<T, R>(
+    refusal: &Cell<Option<ResourceLimit>>,
+    result: Result<T, EvaluationFailure<R>>,
+) -> Option<T> {
+    match finite_or_refusal(result) {
+        Ok(value) => value,
+        Err(limit) => {
+            if refusal.get().is_none() {
+                refusal.set(Some(limit));
+            }
+            None
+        }
+    }
+}
+
 /// Whether every trim endpoint of the faces on `surface` lies in the sampled
 /// domain and maps onto one of its edge vertices. A pcurve the evaluator
 /// cannot place at an endpoint, of any kind, fails the check.
@@ -234,7 +270,7 @@ fn trims_meet_vertices(
     surface: &SurfaceId,
     ranges: [[f64; 2]; 2],
     residual: f64,
-    work: &WorkBudget,
+    evaluation: &FitEvaluation,
     evaluate: &mut Evaluate<'_>,
 ) -> bool {
     let slack = ranges.map(|range| DOMAIN_SLACK_RELATIVE * (range[1] - range[0]).abs().max(1.0));
@@ -251,7 +287,7 @@ fn trims_meet_vertices(
             point.position().get(),
             vertex
                 .tolerance
-                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                .map_or(0.0, crate::scalar::PositiveReal::get),
         ))
     };
     for face in ir
@@ -279,8 +315,7 @@ fn trims_meet_vertices(
                 let allowance = [
                     start_tolerance,
                     end_tolerance,
-                    edge.tolerance
-                        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    edge.tolerance.map_or(0.0, crate::scalar::PositiveReal::get),
                 ]
                 .into_iter()
                 .fold(ir.tolerances.linear.get(), f64::max)
@@ -293,12 +328,14 @@ fn trims_meet_vertices(
                         return false;
                     };
                     for t in range.endpoints() {
-                        let uv = finite_or_refusal(
-                            EvaluationAdmission::Standard.within_work_slice(work, |admission| {
-                                pcurve_uv(admission, &pcurve.geometry, t)
-                            }),
+                        let uv = keep_refusal(
+                            &evaluation.refusal,
+                            EvaluationAdmission::Standard
+                                .within_work_slice(&evaluation.work, |admission| {
+                                    pcurve_uv(admission, &pcurve.geometry, t)
+                                }),
                         );
-                        let Ok(Some(uv)) = uv else {
+                        let Some(uv) = uv else {
                             return false;
                         };
                         let uv = uv.get();
@@ -393,13 +430,22 @@ fn curve_domain(ir: &CadIr, index: &ModelIndex<'_>, curve: &CurveId) -> Option<[
     }
     if let Some(SolvedCurveGeometry::Nurbs(nurbs)) = carrier.geometry.solved() {
         return nurbs_curve_parameter_domain(nurbs)
-            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
+            .map(crate::topology::IncreasingParameterInterval::endpoints);
+    }
+    if let Some(ProceduralCurveDefinition::SurfaceCurve {
+        family: crate::geometry::SurfaceCurveFamily::Parametric { context, .. },
+    }) = index
+        .procedural_curves_for_curve(curve.as_str(), StandardIndex)
+        .and_then(|curves| curves.first())
+        .map(|curve| curve.definition())
+    {
+        return Some(context.parameter_range().endpoints());
     }
     ir.model
         .edges
         .iter()
         .filter(|edge| edge.curve() == Some(curve))
-        .filter_map(|edge| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get))
+        .filter_map(|edge| edge.param_range().map(crate::units::FiniteVector::get))
         .reduce(|a, b| [a[0].min(b[0]), a[1].max(b[1])])
 }
 
@@ -580,3 +626,6 @@ fn sample(
     }
     None
 }
+
+#[cfg(test)]
+mod tests;

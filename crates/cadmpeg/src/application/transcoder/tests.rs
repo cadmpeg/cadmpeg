@@ -97,7 +97,6 @@ fn prepared(
         destination: ResolvedDestination::Stdout,
         loss_policy,
         allow_errors: false,
-        allow_empty: false,
     }
 }
 
@@ -498,7 +497,6 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
         &super::ConversionPolicy {
             losses: LossPolicy::Allow,
             allow_errors: false,
-            allow_empty: false,
             destination: DestinationPolicy::Stdout {
                 allow_binary: false,
             },
@@ -681,7 +679,6 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
             destination: ResolvedDestination::Stdout,
             loss_policy: LossPolicy::Allow,
             allow_errors: false,
-            allow_empty: false,
         };
         if inject_error {
             conversion.validation.findings.push(Finding {

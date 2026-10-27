@@ -308,7 +308,12 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));
-    let mut builder = Builder::new(&ir, StepSchema::Ap242Edition3).unwrap();
+    let mut builder = Builder::new(
+        &ir,
+        StepSchema::Ap242Edition3,
+        std::collections::HashSet::new(),
+    )
+    .unwrap();
     assert!(builder.emit_curve("composite").is_none());
     assert!(builder.active_curves.is_empty());
     assert!(builder.emit_curve("composite").is_none());

@@ -34,7 +34,8 @@ pub(crate) fn plan(
     };
     let version = RhinoArchiveVersion::ALL[index];
     let mut bytes = Vec::new();
-    super::write(input.ir, version, &mut bytes)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    super::write(&recovered.document, version, &mut bytes)?;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
             .ir
@@ -59,6 +60,18 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let mut losses = Vec::new();
+    if !recovered.sampled_agreements.is_empty() {
+        losses.push(RhinoLossCode::EdgePcurveAgreementSampled.note(format!(
+            "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",
+            recovered.sampled_agreements.len()
+        )));
+    }
+    if !recovered.sampled_fits.is_empty() {
+        losses.push(RhinoLossCode::EdgePcurveSampledToBspline.note(format!(
+            "{} recovered edge(s) were fitted as B-splines with sampled residual at most {} model length units",
+            recovered.sampled_fits.len(), recovered.residual_limit
+        )));
+    }
     let owned_points = input
         .ir
         .model

@@ -191,8 +191,6 @@ pub(crate) enum RefusalCode {
     DecodeLossRejected,
     /// Export planning reported losses under `--reject-lossy`.
     ExportLossRejected,
-    /// Geometry export with no transferred geometry.
-    EmptyGeometry,
     /// The encoder cannot write the dialect `--to` named.
     UnsupportedTarget,
     /// The document records less of its source than the encoder plans from.
@@ -213,10 +211,9 @@ impl RefusalCode {
             }
             Self::CheckFailed => (RefusalStage::Check, 1),
             Self::ExportLossRejected => (RefusalStage::Export, 1),
-            Self::EmptyGeometry
-            | Self::UnsupportedTarget
-            | Self::InsufficientDepth
-            | Self::UnsupportedOutputFormat => (RefusalStage::Plan, 1),
+            Self::UnsupportedTarget | Self::InsufficientDepth | Self::UnsupportedOutputFormat => {
+                (RefusalStage::Plan, 1)
+            }
             Self::BinaryStdoutRejected => (RefusalStage::Plan, 2),
         };
         RefusalDisposition { stage, exit_code }
@@ -233,7 +230,6 @@ impl fmt::Display for RefusalCode {
             Self::CheckFailed => "check_failed",
             Self::DecodeLossRejected => "decode_loss_rejected",
             Self::ExportLossRejected => "export_loss_rejected",
-            Self::EmptyGeometry => "empty_geometry",
             Self::UnsupportedTarget => "unsupported_target",
             Self::InsufficientDepth => "insufficient_depth",
             Self::UnsupportedOutputFormat => "unsupported_output_format",
@@ -347,15 +343,6 @@ pub(crate) enum ConversionRefusal {
         validation: ValidationReport,
         /// Export report computed by encoder planning before rejection.
         export_report: ExportReport,
-    },
-    /// Geometry export refused because decode transferred no geometry.
-    EmptyGeometry {
-        /// Requested output format.
-        format: Format,
-        /// Decode report available for an optional `--report`.
-        decode_report: Option<DecodeReport>,
-        /// Validation report available for an optional `--report`.
-        validation: ValidationReport,
     },
     /// The command-line target cannot select a writable output format.
     UnsupportedOutputFormat {
@@ -617,23 +604,6 @@ impl ConversionRefusal {
                     decode: decode_report.as_ref(),
                     check: Some(validation),
                     export: Some(export_report),
-                },
-            },
-            Self::EmptyGeometry {
-                format,
-                decode_report,
-                validation,
-            } => RefusalEvidence {
-                code: RefusalCode::EmptyGeometry,
-                message: Cow::Owned(format!(
-                    "decode transferred no geometry; refusing to write an empty {} (use --allow-empty to override)",
-                    format.name()
-                )),
-                detail: None,
-                reports: RefusalReports {
-                    decode: decode_report.as_ref(),
-                    check: Some(validation),
-                    export: None,
                 },
             },
             Self::UnsupportedOutputFormat { message } => RefusalEvidence {

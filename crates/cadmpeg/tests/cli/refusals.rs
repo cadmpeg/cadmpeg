@@ -64,7 +64,6 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
             lossy.to_str().unwrap(),
             "-f",
             "step",
-            "--allow-empty",
             "--reject-lossy",
         ])
         .assert()
@@ -79,7 +78,6 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
             lossy.to_str().unwrap(),
             "-f",
             "step",
-            "--allow-empty",
             "--reject-lossy",
             "--report",
             report.to_str().unwrap(),
@@ -92,13 +90,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args([
-            "convert",
-            lossy.to_str().unwrap(),
-            "-f",
-            "step",
-            "--allow-empty",
-        ])
+        .args(["convert", lossy.to_str().unwrap(), "-f", "step"])
         .assert()
         .success();
 }
@@ -143,15 +135,10 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
 }
 
 #[test]
-fn convert_rejects_empty_native_geometry_unless_allowed() {
+fn convert_writes_when_native_decode_has_no_geometry() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args(["convert", input.to_str().unwrap(), "-f", "step"])
-        .assert()
-        .code(1)
-        .stderr(predicate::str::contains("--allow-empty"));
+    let report = dir.path().join("empty-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -159,22 +146,29 @@ fn convert_rejects_empty_native_geometry_unless_allowed() {
             input.to_str().unwrap(),
             "-f",
             "step",
-            "--allow-empty",
+            "--report",
+            report.to_str().unwrap(),
         ])
         .assert()
         .success()
         .stdout(predicate::str::starts_with("ISO-10303-21"));
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(report["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| { loss["code"]["code"] == "export.no-geometry-written" }));
 }
 
-/// A container-only document is shallower than a geometry encoder plans from,
-/// so the refusal names the depth and `--allow-empty` does not override it.
+/// A container-only document is shallower than a geometry encoder plans from.
 #[test]
 fn convert_refuses_container_only_geometry_at_its_depth() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
-    for allow_empty in [false, true] {
-        let report = dir.path().join(format!("depth-{allow_empty}.json"));
-        let mut args = vec![
+    let report = dir.path().join("depth.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
             "convert",
             input.to_str().unwrap(),
             "-f",
@@ -182,25 +176,18 @@ fn convert_refuses_container_only_geometry_at_its_depth() {
             "--container-only",
             "--report",
             report.to_str().unwrap(),
-        ];
-        if allow_empty {
-            args.push("--allow-empty");
-        }
-        Command::cargo_bin("cadmpeg")
-            .unwrap()
-            .args(args)
-            .assert()
-            .code(1)
-            .stdout(predicate::str::is_empty())
-            .stderr(predicate::str::contains(
-                "the step encoder needs a geometry-depth decode, but the document records container depth",
-            ));
-        let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-        assert_eq!(value["refusal"]["stage"], "plan");
-        assert_eq!(value["refusal"]["code"], "insufficient_depth");
-        assert_eq!(value["refusal"]["depth"]["needed"], "geometry");
-        assert_eq!(value["refusal"]["depth"]["recorded"], "container");
-    }
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "the step encoder needs a geometry-depth decode, but the document records container depth",
+        ));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["stage"], "plan");
+    assert_eq!(value["refusal"]["code"], "insufficient_depth");
+    assert_eq!(value["refusal"]["depth"]["needed"], "geometry");
+    assert_eq!(value["refusal"]["depth"]["recorded"], "container");
 }
 
 /// The format half of `--to` is checked before the input is opened.
@@ -502,7 +489,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     ] {
         Command::cargo_bin("cadmpeg")
             .unwrap()
-            .args(["convert", path, "-f", "step", "--allow-empty", scope])
+            .args(["convert", path, "-f", "step", scope])
             .assert()
             .code(1)
             .stderr(predicate::str::contains("decode reported"));
@@ -515,7 +502,6 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
             path,
             "-f",
             "step",
-            "--allow-empty",
             "--reject-lossy=export",
             "--report",
             export_report.to_str().unwrap(),
@@ -523,7 +509,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .assert()
         .code(1)
         .stderr(
-            predicate::str::contains("export planning reported 1 loss(es)")
+            predicate::str::contains("export planning reported 2 loss(es)")
                 .and(predicate::str::contains(
                     "uninterpreted passthrough record(s)",
                 ))
@@ -534,7 +520,11 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert_eq!(report["refusal"]["code"], "export_loss_rejected");
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["payload"], "native");
-    assert_eq!(report["export"]["losses"].as_array().unwrap().len(), 1);
+    let losses = report["export"]["losses"].as_array().unwrap();
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .any(|loss| loss["code"]["code"] == "export.no-geometry-written"));
 
     let lossless = fixture(
         dir.path(),
@@ -555,14 +545,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
 
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args([
-            "convert",
-            path,
-            "-f",
-            "step",
-            "--allow-empty",
-            "--reject-lossy=nonesuch",
-        ])
+        .args(["convert", path, "-f", "step", "--reject-lossy=nonesuch"])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("invalid value"));

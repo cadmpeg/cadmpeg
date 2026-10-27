@@ -2,6 +2,7 @@
 //! Integration contracts over synthesized STEP Part 21 exchanges.
 
 mod assembly_bodies;
+mod partial_geometry;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 

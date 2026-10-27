@@ -64,8 +64,6 @@ pub(crate) struct ConversionArgs {
     pub(crate) losses: LossPolicy,
     /// Permit export when validation reports errors.
     pub(crate) allow_errors: bool,
-    /// Permit a geometry export when decode transferred no geometry.
-    pub(crate) allow_empty: bool,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -487,7 +485,6 @@ pub(crate) fn convert(
         let policy = ConversionPolicy {
             losses: conversion.losses,
             allow_errors: conversion.allow_errors,
-            allow_empty: conversion.allow_empty,
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;
