@@ -42,6 +42,8 @@ const MARKED_U64: usize = 9;
 pub(crate) struct DecodedComponentOccurrences {
     pub(crate) occurrences: Vec<DesignComponentOccurrence>,
     pub(crate) superseded: usize,
+    /// Occurrences that two or more component-path carriers name.
+    pub(crate) ambiguous_current_poses: usize,
 }
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
@@ -50,6 +52,7 @@ pub(crate) fn decode_component_occurrences(
 ) -> Result<DecodedComponentOccurrences, CodecError> {
     let mut occurrences = Vec::new();
     let mut superseded = 0;
+    let mut ambiguous_current_poses = 0;
     for entry in scan
         .entries
         .iter()
@@ -57,14 +60,24 @@ pub(crate) fn decode_component_occurrences(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        let (frames, typed_frames) =
+        let (frames, typed_frames, poses) =
             if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? {
+                let meta_name = format!(
+                    "{}MetaStream.dat",
+                    entry
+                        .name
+                        .strip_suffix("BulkStream.dat")
+                        .unwrap_or_default()
+                );
+                let magic =
+                    crate::metastream::serializer_magic(scan.entry_bytes(&meta_name)?, &meta_name)?;
                 (
                     crate::metastream::primary_record_frames(&meta, bytes.len())?,
                     occurrence_frames(bytes, &meta)?,
+                    crate::xref::local_component_path_poses(bytes, &meta, Some(magic))?,
                 )
             } else {
-                (Vec::new(), Vec::new())
+                (Vec::new(), Vec::new(), Vec::new())
             };
         let typed_primary = typed_frames
             .iter()
@@ -107,6 +120,7 @@ pub(crate) fn decode_component_occurrences(
             at = next_at;
         }
         superseded += admit_occurrence_envelopes(&mut stream_occurrences, &primary, &typed_primary);
+        ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
         occurrences.extend(stream_occurrences);
     }
     occurrences.sort_by(|a, b| a.id.cmp(&b.id));
@@ -114,7 +128,57 @@ pub(crate) fn decode_component_occurrences(
     Ok(DecodedComponentOccurrences {
         occurrences,
         superseded,
+        ambiguous_current_poses,
     })
+}
+
+/// Give each occurrence the pose of the one component-path carrier in its
+/// Design stream that names its component and carrier records; return how
+/// many occurrences two or more carriers name.
+pub(crate) fn bind_current_poses(
+    occurrences: &mut [DesignComponentOccurrence],
+    poses: &[crate::xref::LocalComponentPathPose],
+) -> usize {
+    let mut ambiguous = 0;
+    for occurrence in occurrences {
+        let matching = poses
+            .iter()
+            .filter(|pose| {
+                pose.component_record_index == occurrence.component_record_index
+                    && pose.occurrence_record_index == u64::from(occurrence.record_index)
+            })
+            .collect::<Vec<_>>();
+        let pose = match matching.as_slice() {
+            [] => continue,
+            [pose] => pose,
+            _ => {
+                ambiguous += 1;
+                continue;
+            }
+        };
+        let Ok(transform) = pose
+            .transform
+            .map(crate::records::xref::XrefPlacementTransform::try_from)
+            .transpose()
+        else {
+            continue;
+        };
+        occurrence.current_pose = Some(crate::records::xref::XrefCurrentPose {
+            carrier_record_index: pose.carrier_record_index,
+            frame_bytes: pose.frame_bytes.clone().into(),
+            transform,
+        });
+    }
+    ambiguous
+}
+
+/// The local occurrences that two or more component-path carriers name.
+pub(crate) fn ambiguous_current_poses_loss(
+    count: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| crate::loss::F3dLossCode::LocalOccurrenceCurrentPoseAmbiguous.note(format!(
+        "{count} local component occurrence(s) are named by two or more component-path carriers; they keep their stored placement"
+    )))
 }
 
 fn occurrence_frames(
@@ -864,6 +928,7 @@ fn root_instance_component(bytes: &[u8], start: usize, end: usize) -> Option<u64
 mod tests {
     #![allow(clippy::trivially_copy_pass_by_ref)]
 
+    mod current_pose;
     mod original;
 
     use super::{attributed_component_occurrence, root_instance_component};

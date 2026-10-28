@@ -2588,6 +2588,11 @@ impl<'a> F3dDecodeSession<'a> {
                 prereqs.design_superseded_component_occurrences,
             ),
         );
+        self.report.losses.extend(
+            crate::design::decode::components::ambiguous_current_poses_loss(
+                prereqs.design_ambiguous_current_poses,
+            ),
+        );
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)
