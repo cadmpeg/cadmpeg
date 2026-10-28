@@ -2035,6 +2035,89 @@ pub(crate) fn component_path_pose(
     })
 }
 
+/// The current pose that a `CommonData` component-path carrier stores for one
+/// local occurrence
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LocalComponentPathPose {
+    /// The carrier's own indexed record.
+    pub(crate) carrier_record_index: u64,
+    /// The component record that the path's first element names.
+    pub(crate) component_record_index: u64,
+    /// The local occurrence carrier that the path's second element names.
+    pub(crate) occurrence_record_index: u64,
+    /// `None` is the stored identity form.
+    pub(crate) transform: Option<[[f64; 4]; 4]>,
+    /// The complete carrier record, header included.
+    pub(crate) frame_bytes: Vec<u8>,
+}
+
+/// Parse a component-path carrier whose path is two local elements: a
+/// component record, then a local occurrence carrier of that component.
+pub(crate) fn local_component_path_pose(
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Option<LocalComponentPathPose> {
+    let (members, at) = occurrence_path_members(body)?;
+    let [(component, _), (occurrence, _)] = members.as_slice() else {
+        return None;
+    };
+    let ((component_record_index, None), (occurrence_record_index, None)) =
+        (component.local()?, occurrence.local()?)
+    else {
+        return None;
+    };
+    if component_record_index == 0 || occurrence_record_index == 0 || body.get(at) != Some(&0) {
+        return None;
+    }
+    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    Some(LocalComponentPathPose {
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        component_record_index,
+        occurrence_record_index,
+        transform,
+        frame_bytes: body.to_vec(),
+    })
+}
+
+/// The local component-path poses of one Design stream, from the records its
+/// type table registers as component paths.
+pub(crate) fn local_component_path_poses(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    serializer_magic: Option<u32>,
+) -> Result<Vec<LocalComponentPathPose>, CodecError> {
+    Ok(
+        typed_records(bytes, meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter_map(|body| local_component_path_pose(body, serializer_magic))
+            .collect(),
+    )
+}
+
+/// Re-read a local occurrence's retained current pose through the carrier
+/// parser and require it to name this occurrence's component and carrier.
+pub(crate) fn local_current_pose_matches(
+    occurrence: &crate::records::feature::assembly_features::DesignComponentOccurrence,
+) -> bool {
+    let Some(current) = &occurrence.current_pose else {
+        return true;
+    };
+    [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+        .into_iter()
+        .filter_map(|magic| local_component_path_pose(&current.frame_bytes, magic))
+        .any(|pose| {
+            pose.carrier_record_index == current.carrier_record_index
+                && pose.component_record_index == occurrence.component_record_index
+                && pose.occurrence_record_index == u64::from(occurrence.record_index)
+                && pose.transform
+                    == current
+                        .transform
+                        .map(crate::records::xref::XrefPlacementTransform::rows)
+        })
+}
+
 pub(crate) fn identity_component_insert_carrier(
     bytes: &[u8],
     carrier_at: usize,

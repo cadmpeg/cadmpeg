@@ -188,6 +188,8 @@ struct Projector<'a> {
     occurrences: BTreeMap<String, (Occurrence, Option<&'a DesignComponentOccurrence>)>,
     unplaced: BTreeMap<Unplaced, usize>,
     rejected: BTreeSet<&'a str>,
+    /// Root-contained carriers placed at their component-path pose.
+    current_poses: usize,
 }
 
 impl<'a> Projector<'a> {
@@ -220,6 +222,7 @@ impl<'a> Projector<'a> {
             occurrences: BTreeMap::new(),
             unplaced: BTreeMap::new(),
             rejected: BTreeSet::new(),
+            current_poses: 0,
         }
     }
 
@@ -388,13 +391,23 @@ impl<'a> Projector<'a> {
                 self.rejected.insert(carrier.id.as_str());
                 continue;
             }
+            // The root occurrence is the identity, so a root-contained
+            // occurrence takes its component-path pose as its own placement.
+            let transform = match &carrier.current_pose {
+                Some(pose) => {
+                    self.current_poses += 1;
+                    pose.transform
+                        .map_or(IDENTITY, crate::records::xref::XrefPlacementTransform::rows)
+                }
+                None => carrier
+                    .transform()
+                    .map_or(IDENTITY, |frame| frame.value.into()),
+            };
             self.place(
                 crate::ids::native_stream(&carrier.id).unwrap_or_default(),
                 &carrier.component_guid,
                 &carrier.occurrence_guid,
-                carrier
-                    .transform()
-                    .map_or(IDENTITY, |frame| frame.value.into()),
+                transform,
             )?;
         }
         Ok(())
@@ -710,7 +723,19 @@ impl<'a> Projector<'a> {
             .map(|(occurrence, _)| occurrence)
             .collect::<Vec<_>>();
         occurrences.sort_by(|left, right| left.id.cmp(&right.id));
-        let losses = self
+        let native_poses = self
+            .sources
+            .occurrences
+            .iter()
+            .filter(|carrier| carrier.current_pose.is_some())
+            .count()
+            .checked_sub(self.current_poses)
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "Fusion Design placed more current poses than its carriers hold",
+                )
+            })?;
+        let mut losses: Vec<LossNote> = self
             .unplaced
             .into_iter()
             .map(|(reason, count)| {
@@ -733,6 +758,17 @@ impl<'a> Projector<'a> {
                 })
             })
             .collect();
+        if self.current_poses != 0 {
+            losses.push(F3dLossCode::LocalOccurrenceCurrentPose.note(format!(
+                "{} local occurrence(s) in the root component take their current pose from a component-path carrier; their stored placements stay in the native frames",
+                self.current_poses
+            )));
+        }
+        if native_poses != 0 {
+            losses.push(F3dLossCode::LocalOccurrenceCurrentPoseNative.note(format!(
+                "{native_poses} local occurrence(s) keep their stored placement; the pose of their component-path carrier stays native"
+            )));
+        }
         Ok(LocalComponentProjection {
             definitions: self.definitions.into_values().collect(),
             occurrences,
@@ -1753,6 +1789,75 @@ mod tests {
             ],
             components,
         )
+    }
+
+    #[test]
+    fn a_root_contained_carrier_takes_its_component_path_pose() {
+        // The module's carrier stores a quarter turn at (3, 4) cm, and its
+        // component-path carrier the identity turn at 0.5 cm along x: the
+        // module is placed 5 mm along x. Its child's carrier pose stays native.
+        let (mut carriers, components) = nested_fixture();
+        let pose = |x: f64| {
+            let mut rows = super::IDENTITY;
+            rows[0][3] = x;
+            Some(crate::records::xref::XrefCurrentPose {
+                carrier_record_index: 900,
+                frame_bytes: Vec::new().into(),
+                transform: Some(rows.try_into().unwrap()),
+            })
+        };
+        carriers[0].current_pose = pose(0.5);
+        carriers[1].current_pose = pose(9.0);
+        let empty = BTreeSet::new();
+        let projection = super::project_local_components(&super::LocalComponentSources {
+            scopes: &[],
+            occurrences: &carriers,
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&empty),
+            root_ordinal_start: 0,
+            limits: cadmpeg_core::decode::ResourceLimits::default(),
+        })
+        .unwrap();
+        let parent = crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
+        let transform = |id: &cadmpeg_ir::ids::OccurrenceId| {
+            projection
+                .occurrences
+                .iter()
+                .find(|occurrence| &occurrence.id == id)
+                .unwrap()
+                .transform
+                .rows()
+        };
+        let rows = transform(&parent);
+        let expected = [
+            [1.0, 0.0, 0.0, 5.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ];
+        for (row, expected) in rows.iter().zip(expected) {
+            for (value, expected) in row.iter().zip(expected) {
+                assert!((value - expected).abs() < 1e-12, "{rows:?}");
+            }
+        }
+        let child =
+            crate::ids::nested_component_occurrence_id(&parent, &carriers[1].occurrence_guid);
+        assert_eq!(
+            transform(&child),
+            cadmpeg_ir::transform::Transform::identity().rows()
+        );
+        let codes = projection
+            .losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            [
+                crate::loss::F3dLossCode::LocalOccurrenceCurrentPose.kind(),
+                crate::loss::F3dLossCode::LocalOccurrenceCurrentPoseNative.kind(),
+            ]
+        );
     }
 
     #[test]

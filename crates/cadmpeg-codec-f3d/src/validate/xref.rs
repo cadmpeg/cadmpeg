@@ -25,5 +25,15 @@ pub(super) fn validate_xref_placement_sources(
             );
         }
     }
+    for occurrence in &ctx.native.design_component_occurrences {
+        if !crate::xref::local_current_pose_matches(occurrence) {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design component occurrence current pose does not match its component-path carrier",
+                Some(occurrence.id.clone()),
+            );
+        }
+    }
     Ok(())
 }
