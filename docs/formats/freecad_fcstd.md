@@ -344,8 +344,10 @@ retain their serialized root order as an occurrence discriminator; they do not s
 region, shell, face, loop, coedge, edge, vertex, or point identity.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
-location identities is two occurrences. A shell is closed when each non-degenerate edge occurrence of its faces' wires
-occurs exactly twice in the shell. The closed flag (the fifth of the `free,
+location identities is two occurrences. Each use of an edge occurrence by a face's wire is
+forward or reversed by the composed orientation of its face, wire, and edge uses. A shell is
+closed when each non-degenerate edge occurrence of its faces' wires has as many forward as
+reversed uses, and at least one of each. The closed flag (the fifth of the `free,
 modified, checked, orientable, closed, infinite, convex` flags) does not determine closure. A
 `Solid` whose children are all closed shells is a solid body. A `Solid` whose children are all
 shells, with at least one open shell, is a sheet body. A `Solid` with no child or with a child

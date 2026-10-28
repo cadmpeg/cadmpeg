@@ -1895,6 +1895,67 @@ Co 1001000 +2 1 +2 3 *
     );
 }
 
+fn body_kind_of_shell(shell_faces: &str) -> cadmpeg_ir::topology::BodyKind {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = format!(
+        "CASCADE Topology V1, (c) Matra-Datavision
+Locations 3
+1 1 0 0 10 0 1 0 0 0 0 1 0
+1 -2 0 0 0 0 2 0 5 0 0 2 0
+1 1 0 0 20 0 1 0 0 0 0 1 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 10
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +10 0 -9 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +9 0 -10 0 *
+Wi 1001000 +8 0 +7 0 *
+Fa 0 0.001 1 0 1001000 +6 0 *
+Fa 0 0.001 1 0 1001000 -6 0 *
+Sh 1001000 {shell_faces} *
+So 1001000 +3 0 *
+Co 1001000 +2 1 +2 3 *
++1 0 *"
+    );
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("Shape.brp", brep.as_bytes()),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("shell topology");
+    result.ir().model.bodies[0].kind
+}
+
+/// An edge where two parts of a closed boundary touch bounds four faces,
+/// two that use it forward and two reversed; the shell is still closed. An
+/// edge used more often one way than the other leaves it open, also when its
+/// use count is even.
+#[test]
+fn a_shell_whose_edges_are_each_used_as_often_forward_as_reversed_is_closed() {
+    use cadmpeg_ir::topology::BodyKind;
+    assert_eq!(body_kind_of_shell("+5 2 +4 2"), BodyKind::Solid);
+    assert_eq!(body_kind_of_shell("+5 2 +4 2 +5 2 +4 2"), BodyKind::Solid);
+    assert_eq!(body_kind_of_shell("+5 2 +4 2 +5 2"), BodyKind::Sheet);
+    assert_eq!(body_kind_of_shell("+5 2"), BodyKind::Sheet);
+    assert_eq!(body_kind_of_shell("+5 2 +5 2"), BodyKind::Sheet);
+    assert_eq!(body_kind_of_shell("+5 2 +5 2 +5 2 +4 2"), BodyKind::Sheet);
+    assert_eq!(body_kind_of_shell("+5 2 +5 2 +5 2 +5 2"), BodyKind::Sheet);
+}
+
 #[test]
 fn a_solid_with_a_non_shell_child_is_a_general_body() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
