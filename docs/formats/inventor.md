@@ -560,7 +560,7 @@ Type `fd24893dd211fa99000840ab0663dc09` is a termination flag. It adds one `valu
 
 Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
 
-Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
+Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes. A work plane that owns a feature label is a browser node. A browser work plane whose u and v axes are orthonormal is a datum plane with that origin, u axis, and normal. A browser work plane with other axes stays a native work-plane feature with the loss `feature.work-plane-frame-native`.
 
 A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, slot 11 for the fillet form, and slot 15 for the result object collection. Fillet form value 0 is an edge fillet. Each edge set identifies its edge collection and positive length parameter. Selection type 4 with value 0 lists the exact edge items. The edge set also carries its nullable continuity Boolean. For a sheet-metal corner round, a null continuity reference supplies no additional continuity condition; the edge collection, explicit selection mode, and constant radius still define the edge fillet.
 
@@ -684,11 +684,11 @@ A model root (§11) also owns the browser feature tree of its model. The root la
 
 The participant list of a root label is the ordered top level of the browser tree. Each participant is one tree member:
 
-- A feature, pattern-feature, or planar-sketch record is a history node.
+- A feature, pattern-feature, planar-sketch, or work-plane record is a history node.
 - The end-of-features record is the end-of-part marker. Top-level members after the marker are below the end of part.
 - Another record that owns a feature label is a group. The participants of its label are its nested members, in order.
 
-The participants of a feature label that are planar-sketch records are the sketches that the feature consumes. History order is the post-order of the tree: the consumed sketches of a feature precede it, and the nested members of a group take the position of the group. A record has one position; a repeated reference does not move it. The model history precedes the flat-pattern history.
+The participants of a feature label that are planar-sketch records are the sketches that the feature consumes. The participants of a work-plane label that are work-plane records are the work planes that it is built from. A work plane that only such a label lists takes its position immediately before the work plane that lists it. History order is the post-order of the tree: the consumed sketches of a feature precede it, and the nested members of a group take the position of the group. A record has one position; a repeated reference does not move it. The model history precedes the flat-pattern history.
 
 The participants of a pattern-feature record are its seed features.
 

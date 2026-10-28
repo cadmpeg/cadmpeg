@@ -856,6 +856,10 @@ fn decode_container<'a>(
         losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
         losses.extend(unresolved.mirror_losses);
+        losses.extend(crate::feature::work_plane::native_losses(
+            &feature_inventory.work_planes,
+            &ir.model.features,
+        ));
         losses.extend(crate::feature::pattern::native_losses(
             feature_inventory.pattern_features.iter(),
             &ir.model.features,
