@@ -3270,32 +3270,43 @@ fn derive_cylindrical_pcurves(
                     },
                 )
             }
-            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
-                if {
-                    let direction = *line_curve.direction().as_raw();
-                    (direction.x * axis.x + direction.y * axis.y + direction.z * axis.z).abs()
-                        > 1.0 - EPS_AXIS_ALIGNMENT
-                } =>
-            {
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+                let curve_origin = line_curve.origin().get();
                 let direction = *line_curve.direction().as_raw();
-                let Some(start) = position(&edge.start) else {
+                let axial_rate = dot([direction.x, direction.y, direction.z], *axis);
+                let transverse = [
+                    direction.x - axial_rate * axis.x,
+                    direction.y - axial_rate * axis.y,
+                    direction.z - axial_rate * axis.z,
+                ];
+                if dot(
+                    transverse,
+                    cadmpeg_ir::math::Vector3::new(transverse[0], transverse[1], transverse[2]),
+                ) > 2.0 * EPS_AXIS_ALIGNMENT
+                {
                     continue;
-                };
-                let d = [start.x - origin.x, start.y - origin.y, start.z - origin.z];
+                }
+                let d = [
+                    curve_origin.x - origin.x,
+                    curve_origin.y - origin.y,
+                    curve_origin.z - origin.z,
+                ];
                 let v = dot(d, *axis);
                 let radial = [d[0] - v * axis.x, d[1] - v * axis.y, d[2] - v * axis.z];
+                let radial_distance = dot(
+                    radial,
+                    cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
+                )
+                .sqrt();
+                let tolerance = EPS_RADIUS_ABSOLUTE.max(radius.abs() * EPS_RADIUS_RELATIVE);
+                if (radial_distance - radius.abs()).abs() > tolerance {
+                    continue;
+                }
                 let u = dot(radial, cross).atan2(dot(radial, *u_reference));
                 PcurveGeometry::Line(
                     match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                         cadmpeg_ir::math::Point2::new(u, v),
-                        cadmpeg_ir::math::Point2::new(
-                            0.0,
-                            if dot([direction.x, direction.y, direction.z], *axis) >= 0.0 {
-                                1.0
-                            } else {
-                                -1.0
-                            },
-                        ),
+                        cadmpeg_ir::math::Point2::new(0.0, axial_rate),
                     ) {
                         Ok(payload) => payload,
                         Err(_) => continue,
@@ -8671,6 +8682,9 @@ mod tests {
 
 #[cfg(test)]
 mod curve_orientation_tests;
+
+#[cfg(test)]
+mod cylindrical_pcurve_tests;
 
 #[cfg(test)]
 mod numerical_range_tests;
