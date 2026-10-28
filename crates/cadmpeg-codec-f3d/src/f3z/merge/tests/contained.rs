@@ -293,17 +293,19 @@ fn an_external_occurrence_takes_the_pose_its_contained_occurrences_give() {
     );
     assert_eq!(losses, [F3dLossCode::XrefContainedPose.kind()]);
 
-    // A carrier that lists no owner is in the owner's frame (5 mm along x):
-    // it gives the same pose as those that reach the root.
-    let mut shorter = poses();
-    shorter.push(retained(13, 496, &[], translation(22.5, 4.0, 0.0)));
-    let (transform, losses) = place(shorter);
-    assert!(
-        (transform.rows()[0][3] - 195.0).abs() < 1e-9,
-        "{:?}",
-        transform.rows()
-    );
-    assert_eq!(losses, [F3dLossCode::XrefContainedPose.kind()]);
+    // A carrier that lists fewer owners and agrees changes nothing; one that disagrees,
+    // as when it keeps a pose from before an owner moved, yields to those that list more.
+    for x in [23.0, 25.0] {
+        let mut shorter = poses();
+        shorter.push(retained(13, 496, &[], translation(x, 4.0, 0.0)));
+        let (transform, losses) = place(shorter);
+        assert!(
+            (transform.rows()[0][3] - 195.0).abs() < 1e-9,
+            "{:?}",
+            transform.rows()
+        );
+        assert_eq!(losses, [F3dLossCode::XrefContainedPose.kind()]);
+    }
 
     // Parts that give two poses leave the stored placement.
     let mut disagreeing = poses();
