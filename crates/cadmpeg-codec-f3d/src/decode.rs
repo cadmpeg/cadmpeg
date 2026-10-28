@@ -2593,6 +2593,11 @@ impl<'a> F3dDecodeSession<'a> {
                 prereqs.design_ambiguous_current_poses,
             ),
         );
+        self.report.losses.extend(
+            crate::design::decode::components::unbound_naming_spaces_loss(
+                prereqs.design_unbound_component_naming_spaces,
+            ),
+        );
         let path = self.decode_products(path, &prereqs)?;
         let design = self.decode_design_state(&path, &prereqs)?;
         self.finalize(path, prereqs, design)

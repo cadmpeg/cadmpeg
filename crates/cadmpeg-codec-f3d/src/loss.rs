@@ -64,6 +64,9 @@ pub(crate) enum F3dLossCode {
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
+    /// Registered component entities with no context-UUID binding in this
+    /// document; their naming spaces are dropped.
+    ComponentNamingSpaceUnbound,
     /// An empty-path root frame has no decoded component-definition reference.
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
@@ -342,6 +345,7 @@ impl F3dLossCode {
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
+        Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
         Self::SavedFreeEdgeBodyUnowned,
@@ -490,6 +494,7 @@ impl F3dLossCode {
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
+            Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
             Self::LocalOccurrenceEnvelopeSuperseded => {
@@ -672,6 +677,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
+            | Self::ComponentNamingSpaceUnbound
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -865,7 +871,8 @@ impl F3dLossCode {
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
-            | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            | Self::ComponentDefinitionRevised
+            | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
@@ -977,6 +984,7 @@ mod tests {
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
+                "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
                 "assembly.saved-free-edge-body-unowned",
