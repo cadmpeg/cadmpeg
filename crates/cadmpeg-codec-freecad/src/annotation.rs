@@ -944,7 +944,8 @@ pub(crate) mod tests {
                 dimension_document(r#"<String value="A" Value="B"/>"#),
             ),
         ];
-        for (case, document) in documents {
+        let [documents @ .., damaged_document_xml, duplicate_format_document] = documents;
+        for (case, document) in documents.into_iter().chain([duplicate_format_document]) {
             assert!(
                 matches!(
                     FcstdCodec.decode(
@@ -958,6 +959,81 @@ pub(crate) mod tests {
                 "{case}"
             );
         }
+
+        let (case, document) = damaged_document_xml;
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{case}: {error:?}"));
+        let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
+        let [unknown] = unknowns.as_slice() else {
+            panic!("{case}: one failed document XML part")
+        };
+        let fidelity = decoded.source_fidelity();
+        let part = &fidelity.parts()[&unknown.id];
+        let entries = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::EntryRecord>("entries")
+            .unwrap();
+        let [entry] = entries.as_slice() else {
+            panic!("{case}: one independently opened Document.xml member")
+        };
+        assert_eq!(entry.name(), "Document.xml", "{case}");
+        let entry_layout = &fidelity.record_layout()[entry.id()];
+        assert_eq!(part.stream(), entry_layout.stream(), "{case}");
+        assert_eq!(part.level().as_str(), "freecad.document_xml", "{case}");
+        assert_eq!(
+            part.state(),
+            &cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {},
+            "{case}"
+        );
+        assert_eq!(part.offset(), 0, "{case}");
+        assert_eq!(
+            part.byte_len(),
+            u64::try_from(document.len()).unwrap(),
+            "{case}"
+        );
+        assert_eq!(
+            fidelity
+                .retained_record(unknown.id.as_str())
+                .unwrap()
+                .data(),
+            Some(document.as_bytes()),
+            "{case}"
+        );
+        let errors = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect::<Vec<_>>();
+        let [error] = errors.as_slice() else {
+            panic!("{case}: one named unreadable-part error")
+        };
+        assert_eq!(
+            error.severity,
+            cadmpeg_ir::report::Severity::Error,
+            "{case}"
+        );
+        assert!(
+            error.message.contains(&format!(
+                "freecad.document_xml stream={} offset={} length={}",
+                part.stream(),
+                part.offset(),
+                part.byte_len()
+            )),
+            "{case}"
+        );
+        let provenance = error.provenance.as_ref().unwrap();
+        assert_eq!(provenance.stream_name(), Some(part.stream()), "{case}");
+        assert_eq!(provenance.offset, part.offset(), "{case}");
+        assert_eq!(provenance.byte_len(), Some(part.byte_len()), "{case}");
+        assert!(decoded.ir().model.semantic_annotations.is_empty(), "{case}");
     }
 
     #[test]

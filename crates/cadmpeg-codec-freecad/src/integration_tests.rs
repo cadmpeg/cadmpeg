@@ -776,3 +776,5 @@ mod document_value_parts;
 mod source_native_missing_values;
 
 mod nullable_attributes;
+
+mod annotation_carriers;
