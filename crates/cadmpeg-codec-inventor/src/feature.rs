@@ -3761,12 +3761,15 @@ fn project_hole(
     {
         return None;
     }
+    // Slot 16 is the owning sketch's direction record: the sketch-plane
+    // normal. With the slot-17 Boolean false the hole drills against it.
     let direction_record = resolve_direction(source, 16, index)?;
     let direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
         direction_record.direction[0].get(),
         direction_record.direction[1].get(),
         direction_record.direction[2].get(),
-    ))?;
+    ))?
+    .reversed();
     let placements = hole::placements(source, label, index, transform, direction)?;
     let shape = cadmpeg_ir::features::holes::HoleShape::new(
         cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -5850,7 +5853,7 @@ pub(crate) mod tests {
                     position: geometry_1,
                     direction: geometry_2
                 }])
-             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: -1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
+             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: 1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
     }
 
     #[test]
