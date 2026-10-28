@@ -98,7 +98,11 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
         .next()
         .expect("FCStd source ledgers")
         .physical_ledger;
-    assert!(physical.last().unwrap().span.end() < part.offset() + part.byte_len());
+    let last_identity = physical
+        .iter()
+        .max_by(|left, right| left.id.cmp(&right.id))
+        .unwrap();
+    assert!(last_identity.span.end() < part.offset() + part.byte_len());
     let archive_arena = DecodeArena::new();
     let (archive_ctx, archive_root) =
         DecodeContext::from_root_bytes(&changed, &archive_arena, &policy).unwrap();
