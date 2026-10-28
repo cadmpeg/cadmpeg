@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Inventor-native validation.
 
+mod mirror;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod base;
@@ -178,7 +180,7 @@ pub(crate) fn validate_native(
     validate_active_carrier(&data, &mut findings);
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
-    validate_features(ir, &data, &mut findings);
+    validate_features(ctx, ir, &data, &mut findings)?;
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -822,7 +824,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     }
 }
 
-fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_features(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: &NativeData,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let mirror_outputs = mirror::validate_mirrors(ctx, ir, data, findings)?;
     sheet_metal::records(data, findings);
     sheet_metal::definitions(ir, data, findings);
     let raw = data
@@ -1058,7 +1066,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 .into_iter()
                 .chain(option.map(crate::pmdc::PmDcReference::index)),
             ),
-            PmDcFeaturePropertyKind::Enumeration { .. }
+            PmDcFeaturePropertyKind::Mirror { .. }
+            | PmDcFeaturePropertyKind::Enumeration { .. }
             | PmDcFeaturePropertyKind::WideEnumeration { .. }
             | PmDcFeaturePropertyKind::Boolean { .. }
             | PmDcFeaturePropertyKind::RdxVariable { .. }
@@ -1606,13 +1615,17 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         }
     }
     for result in &ir.model.feature_result_topologies {
-        if ir.model.features.iter().any(|feature| {
-            feature.id == result.output_of
-                && matches!(
-                    crate::feature::FeatureFamily::from_definition(feature.evaluation.definition()),
-                    Some(crate::feature::FeatureFamily::Base)
-                )
-        }) {
+        if mirror_outputs.contains(&result.output_of)
+            || ir.model.features.iter().any(|feature| {
+                feature.id == result.output_of
+                    && matches!(
+                        crate::feature::FeatureFamily::from_definition(
+                            feature.evaluation.definition()
+                        ),
+                        Some(crate::feature::FeatureFamily::Base)
+                    )
+            })
+        {
             continue;
         }
         let Some(collection) = result
@@ -1690,6 +1703,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             Some(issue.id()),
         ));
     }
+    Ok(())
 }
 
 fn face_property_is_admitted<'a>(

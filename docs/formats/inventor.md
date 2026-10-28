@@ -587,6 +587,32 @@ Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` 
 
 For segment major versions 15 through 20, the rectangular-pattern suffix contains 20 more property references. From segment major version 21, it contains 26 more property references. From segment major version 29, eight u32 extension values follow the first 12 of these references, and from version 30 six more u32 extension values end the suffix. The mirror suffix contains five more property references, six u32 extension values from segment major version 21, and two final property references. From segment major version 29, eight u32 extension values separate the two final property references. The record ends after the applicable suffix.
 
+A feature label with class identifier `a326c2b6d211263660002cab01f31bb0` identifies a mirror. The 13 property slots have the same indices in each suffix form. Extension values do not take slot indices. The identity-frame, zero-option mirror has these operands:
+
+| Slot | Record | Value or role |
+| --- | --- | --- |
+| 0 | `184d8790d011f8d10008cabc0663dc09` | Identity operand placement matrix. |
+| 1 | `bef06e8d354cc7aad7c88db7ea9b0ffb` | Selection control `0x30000004`, value 0. |
+| 2 | `dfd51dbbd1116e72000817bd0663dc09` | Nominal and model values 0. |
+| 3 | Null | No auxiliary operand. |
+| 4 | `5a4a6899d2117fec6000b0abc8433cb0` | Nine zero option bytes. |
+| 5 | `71f23ed8d2115094a00049803603c8c9` | Empty feature-dimension list. |
+| 6 | `284d8790d011f8d10008cabc0663dc09` | False selects feature mode; true selects body mode. |
+| 7 | `284d8790d011f8d10008cabc0663dc09` | False. |
+| 8 | Null | No generated-instance map. |
+| 9 | Object collection in feature mode; null in body mode | Affected result surface-body records. |
+| 10 | Null in feature mode; object collection in body mode | Source surface-body records. |
+| 11 | Null or `284d8790d011f8d10008cabc0663dc09` | Null or false. |
+| 12 | `42df52ced011d0d20008ccbc0663dc09` | Reflection plane in part coordinates. |
+
+Mirror auxiliary payloads follow the versioned content header and stamps. In the empty-selection form, type `bef06e8d354cc7aad7c88db7ea9b0ffb` has an 8-byte payload: `control:u32` at offset 0 and `value:u32` at offset 4. In the zero-option form, type `5a4a6899d2117fec6000b0abc8433cb0` has nine zero bytes at offset 0. Offsets are relative to the end of the header and stamps. Each record ends after this payload.
+
+Boolean operands and the slot-2 variable have `name_value` 0. The pattern's property list is empty, `value` is 0, and `control` is 0. Through segment major version 20, no extension values occur. From version 21, extension value 0 references a false Boolean property, and extension values 1 through 5 are zero. From version 29, extension values 6 through 13 are `[0, 0, 0, 0, 0, 2, 0, 0]`.
+
+The slot-12 plane has zero entity flags, three zero u32 values through segment major version 21 or four thereafter, and no frame marker. Its u and v axes are perpendicular unit vectors. With plane origin `o` and unit normal `n = normalize(u × v)`, reflection is `p' = p - 2 n dot(n, p - o)`. Its linear part is `I - 2 n nᵀ`, and its translation is `2 n dot(n, o)`. The plane origin uses internal centimetres. The slot-0 matrix places the operands; it does not store the reflection.
+
+In feature mode, the nonempty pattern participant list gives distinct ordered seeds. Each seed is a generic feature or pattern feature that precedes the mirror under the same model root. Slot 9 gives a nonempty ordered collection of distinct result surface-body records. In body mode, the pattern participant list is empty. Slot 10 gives a nonempty ordered collection of distinct source surface-body records. With a null slot 8, the source and result use the same surface-body identities. In both modes, the mirror label's participant list is empty.
+
 ### 13.1 Feature history
 
 A model root (§11) also owns the browser feature tree of its model. The root label of a model root is the feature label whose owner reference selects the model root. The tree of the document model root is the part modeling history. The tree of a flat-pattern model root is the flat-pattern history. A segment has a history only when it has exactly one document model root.

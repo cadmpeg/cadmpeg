@@ -36,9 +36,10 @@ use crate::{design::DesignInventory, sketch::SketchInventory};
 
 pub(crate) mod base;
 mod edge_selection;
-mod history;
+pub(crate) mod history;
 mod hole;
 pub(crate) mod loft_sweep;
+pub(crate) mod mirror;
 pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
@@ -56,7 +57,7 @@ pub(crate) const BOOLEAN_TYPE: [u8; 16] = inventor_id(0x9087_4d28);
 const PLATE_SIDE_TYPE: [u8; 16] = [
     0x69, 0xb9, 0x50, 0x5e, 0xfb, 0x4b, 0xba, 0xa9, 0x25, 0xc3, 0xdf, 0xa8, 0x70, 0x81, 0x78, 0x10,
 ];
-const SURFACE_BODY_TYPE: [u8; 16] = inventor_id(0x9087_4d47);
+pub(crate) const SURFACE_BODY_TYPE: [u8; 16] = inventor_id(0x9087_4d47);
 const ENTITY_STYLE_LINK_TYPE: [u8; 16] = inventor_id(0x9087_4d15);
 const PART_OPERATION_TYPE: [u8; 16] = [
     0x28, 0xbe, 0x9a, 0x72, 0xd1, 0x11, 0x44, 0x09, 0x00, 0x08, 0x4e, 0xba, 0x32, 0xa3, 0xdc, 0x09,
@@ -70,16 +71,16 @@ pub(crate) const SELECTION_LIST_TYPE: [u8; 16] = [
 const EXTENT_TYPE: [u8; 16] = [
     0x29, 0x7d, 0x63, 0x92, 0xd1, 0x11, 0x3c, 0xb9, 0x00, 0x08, 0x31, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
-const FEATURE_DIMENSIONS_TYPE: [u8; 16] = [
+pub(crate) const FEATURE_DIMENSIONS_TYPE: [u8; 16] = [
     0x71, 0xf2, 0x3e, 0xd8, 0xd2, 0x11, 0x50, 0x94, 0xa0, 0x00, 0x49, 0x80, 0x36, 0x03, 0xc8, 0xc9,
 ];
-const RDX_VARIABLE_TYPE: [u8; 16] = [
+pub(crate) const RDX_VARIABLE_TYPE: [u8; 16] = [
     0xdf, 0xd5, 0x1d, 0xbb, 0xd1, 0x11, 0x6e, 0x72, 0x00, 0x08, 0x17, 0xbd, 0x06, 0x63, 0xdc, 0x09,
 ];
 const AUXILIARY_ENUM_TYPE: [u8; 16] = [
     0x73, 0x39, 0xfd, 0xce, 0x7a, 0x4e, 0x40, 0x11, 0xbe, 0xe3, 0x43, 0x89, 0x79, 0x08, 0xba, 0x92,
 ];
-const OBJECT_COLLECTION_TYPE: [u8; 16] = [
+pub(crate) const OBJECT_COLLECTION_TYPE: [u8; 16] = [
     0xae, 0x70, 0x68, 0x0e, 0xd1, 0x4a, 0x1e, 0x86, 0xd7, 0x62, 0x48, 0xb0, 0x3c, 0x2a, 0x96, 0xe1,
 ];
 pub(crate) const FACE_COLLECTION_TYPE: [u8; 16] = [
@@ -116,7 +117,7 @@ const FILLET_EDGE_SELECTION_TYPE: [u8; 16] = [
 const RECTANGULAR_PATTERN_FEATURE_TYPE: [u8; 16] = [
     0x44, 0x32, 0x67, 0x20, 0xd2, 0x11, 0xc5, 0x1d, 0x60, 0x00, 0x2a, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
 ];
-const MIRROR_FEATURE_TYPE: [u8; 16] = [
+pub(crate) const MIRROR_FEATURE_TYPE: [u8; 16] = [
     0xb5, 0xa9, 0xd9, 0xfa, 0xd2, 0x11, 0x05, 0x33, 0x60, 0x00, 0x2c, 0xab, 0x01, 0xf3, 0x1b, 0xb0,
 ];
 const PROFILE_SELECTION_TYPE: [u8; 16] = [
@@ -129,7 +130,7 @@ const PLATE_PROFILE_SELECTION_TYPE: [u8; 16] = [
 const KERNEL_ENTITY_LINK_TYPE: [u8; 16] = [
     0x21, 0x75, 0x0f, 0xcc, 0xd1, 0x11, 0x27, 0x80, 0xe3, 0x86, 0x19, 0x96, 0x22, 0x59, 0x01, 0x7a,
 ];
-const WORK_PLANE_TYPE: [u8; 16] = [
+pub(crate) const WORK_PLANE_TYPE: [u8; 16] = [
     0x42, 0xdf, 0x52, 0xce, 0xd0, 0x11, 0xd0, 0xd2, 0x00, 0x08, 0xcc, 0xbc, 0x06, 0x63, 0xdc, 0x09,
 ];
 const TERMINATION_FLAG_TYPE: [u8; 16] = [
@@ -177,6 +178,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) unresolved_features: usize,
     pub(crate) unresolved_states: usize,
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
     /// profile tables, by sketch id, in table order.
     pub(crate) added_profiles: HashMap<String, Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>>,
@@ -184,7 +186,7 @@ pub(crate) struct FeatureProjection {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcFeaturePropertyPayload {
-    save_version_major: u8,
+    pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) kind: PmDcFeaturePropertyKind,
 }
@@ -192,6 +194,9 @@ pub(crate) struct PmDcFeaturePropertyPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcFeaturePropertyKind {
+    Mirror {
+        definition: mirror::Property,
+    },
     SheetMetal {
         definition: sheet_metal::SheetMetalProperty,
     },
@@ -301,24 +306,24 @@ pub(crate) enum PmDcFeatureEnumFamily {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum PmDcPatternFamily {
+pub(crate) enum PmDcPatternFamily {
     Rectangular,
     Mirror,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct PmDcPatternFeaturePayload {
-    save_version_major: u8,
+    pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    state: i32,
-    outline_value: u32,
+    pub(crate) state: i32,
+    pub(crate) outline_value: u32,
     pub(crate) properties: PmDcReferenceList,
-    value: u32,
+    pub(crate) value: u32,
     pub(crate) participants: PmDcReferenceList,
-    family: PmDcPatternFamily,
+    pub(crate) family: PmDcPatternFamily,
     pub(crate) property_slots: Vec<crate::pmdc::PmDcReference>,
-    control: u8,
-    extension_values: Vec<u32>,
+    pub(crate) control: u8,
+    pub(crate) extension_values: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -543,11 +548,11 @@ pub(crate) struct PmDcKernelEntityLinkPayload {
 /// A planar work feature with its resolved frame in internal centimetres.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct PmDcWorkPlanePayload {
-    save_version_major: u8,
+    pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
-    entity_flags: u32,
-    values: Vec<u32>,
-    marker: bool,
+    pub(crate) entity_flags: u32,
+    pub(crate) values: Vec<u32>,
+    pub(crate) marker: bool,
     pub(crate) origin: [cadmpeg_ir::scalar::FiniteReal; 3],
     pub(crate) u_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
     pub(crate) v_axis: [cadmpeg_ir::scalar::FiniteReal; 3],
@@ -791,6 +796,7 @@ pub(crate) fn inventory(
             }
         }
     }
+    mirror::admit_operands(ctx, document, &mut inventory)?;
     Ok(inventory)
 }
 
@@ -1905,6 +1911,7 @@ pub(crate) fn project(
             unresolved_features: total,
             unresolved_states: 0,
             revolve_losses: Vec::new(),
+            mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
         });
     }
@@ -2159,19 +2166,63 @@ pub(crate) fn project(
             None => {}
         }
     }
+    let mirrors = inventory
+        .pattern_features
+        .iter()
+        .any(mirror::is_mirror_record)
+        .then(|| {
+            let index = mirror::MirrorIndex::new(
+                &inventory.properties,
+                &sketch.transforms,
+                &inventory.work_planes,
+            );
+            let seeds = unique_index(
+                inventory
+                    .features
+                    .iter()
+                    .map(|record| &record.identity)
+                    .chain(
+                        inventory
+                            .pattern_features
+                            .iter()
+                            .map(|record| &record.identity),
+                    )
+                    .map(|identity| (identity.record_ordinal, identity)),
+            );
+            (index, seeds)
+        });
     for pattern in &inventory.pattern_features {
         if history.placement(pattern.identity.record_ordinal).is_none() {
             continue;
         }
         let label = label_of(pattern.identity.record_ordinal);
+        let value = label
+            .and_then(|label| {
+                let (mirror_index, seed_records) = mirrors.as_ref()?;
+                mirror_index.project(ctx, pattern, label, |ordinal| {
+                    let seed = seed_records.get(&ordinal)?.as_ref()?;
+                    mirror::seed_feature_id(&history, pattern.identity.record_ordinal, seed)
+                })
+            })
+            .transpose()?;
+        let (feature, result) = match value {
+            Some((feature, result)) => {
+                neutral += 1;
+                (feature, Some(result))
+            }
+            None => (
+                native_feature(ctx, &pattern.identity, label, pattern.id())?,
+                None,
+            ),
+        };
         projected.push(HistoryItem {
             record: pattern.identity.record_ordinal,
             kind: history::HistoryNodeKind::Pattern,
             flags: pattern.header.flags,
             label,
-            feature: native_feature(ctx, &pattern.identity, label, pattern.id())?,
-            result: None,
-            neutral: false,
+            neutral: result.is_some(),
+            feature,
+            result,
         });
     }
     for record in &sketch.sketches {
@@ -2259,6 +2310,7 @@ pub(crate) fn project(
             })?,
         unresolved_states: unresolved_states.min(neutral),
         revolve_losses,
+        mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
         result_topologies,
         input_topologies,
@@ -2385,7 +2437,7 @@ fn insert_history_property(
     Ok(())
 }
 
-fn history_feature_id(
+pub(crate) fn history_feature_id(
     identity: &crate::record_identity::RecordIdentity,
 ) -> Result<FeatureId, CodecError> {
     Ok(FeatureId::compose(
@@ -4076,7 +4128,7 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     mod holes;
     mod sheet_metal;
     mod thicken;
@@ -4320,6 +4372,21 @@ mod tests {
     }
 
     #[test]
+    fn unreferenced_mirror_operand_types_keep_their_native_record_grammar() {
+        for (type_id, tail_len) in [
+            (super::mirror::SELECTION_TYPE, 24),
+            (super::mirror::OPTIONS_TYPE, 9),
+        ] {
+            let mut payload = content(0);
+            payload.resize(payload.len() + tail_len, 0);
+            let inventory = inventory_with_record(type_id, &payload, DecodePolicy::service())
+                .expect("unreferenced operand record");
+            assert!(inventory.properties.is_empty());
+            assert!(inventory.issues.is_empty());
+        }
+    }
+
+    #[test]
     fn feature_terminator_is_admitted() {
         let mut payload = content(0);
         payload.extend_from_slice(&0u32.to_le_bytes());
@@ -4362,7 +4429,7 @@ mod tests {
         );
     }
 
-    pub(super) fn segment() -> cadmpeg_ir::ids::IdentityKey {
+    pub(crate) fn segment() -> cadmpeg_ir::ids::IdentityKey {
         cadmpeg_ir::identity_key!("generated")
     }
 
@@ -4396,12 +4463,12 @@ mod tests {
         bytes
     }
 
-    pub(super) fn reference(index: u32) -> crate::pmdc::PmDcReference {
+    pub(crate) fn reference(index: u32) -> crate::pmdc::PmDcReference {
         crate::pmdc::PmDcReference::new(index, index != 0)
             .expect("test reference index fits 31 bits")
     }
 
-    pub(super) fn reference_list(values: &[u32]) -> PmDcReferenceList {
+    pub(crate) fn reference_list(values: &[u32]) -> PmDcReferenceList {
         PmDcReferenceList::new(
             2,
             (!values.is_empty()).then_some(crate::pmdc::PmDcListMetadata::U32([
@@ -4413,7 +4480,7 @@ mod tests {
         .expect("test list metadata matches length")
     }
 
-    pub(super) fn test_header() -> PmDcContentHeader {
+    pub(crate) fn test_header() -> PmDcContentHeader {
         PmDcContentHeader {
             header_value: 0,
             header_id: 0,
@@ -4464,7 +4531,7 @@ mod tests {
         )
     }
 
-    pub(super) fn test_feature(
+    pub(crate) fn test_feature(
         ordinal: u32,
         slot_count: usize,
         slots: &[(usize, u32)],
@@ -4525,7 +4592,7 @@ mod tests {
         assert!(serde_json::from_value::<PmDcFeatureLabel>(wire).is_err());
     }
 
-    pub(super) fn test_label(
+    pub(crate) fn test_label(
         owner_ordinal: u32,
         index: u32,
         class_id: ClassId,
@@ -4744,7 +4811,7 @@ mod tests {
         assert_eq!(parsed.state, -1);
     }
 
-    fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
+    pub(super) fn pattern_feature_bytes(version: u8, family: PmDcPatternFamily) -> Vec<u8> {
         let mut bytes = if version >= 23 {
             content_at(21, version, &[])
         } else {

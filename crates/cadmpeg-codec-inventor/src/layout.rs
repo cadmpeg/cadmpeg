@@ -9,11 +9,18 @@
 /// Spec §12. Record length 22 B.
 pub(crate) mod pm_dc_content_header {
     /// Record length in bytes. Spec §12.
-    #[cfg(test)]
     pub(crate) const LEN: usize = 22;
     /// Offset of `flags` (`u32`, little-endian). Spec §12.
     #[cfg(test)]
     pub(crate) const FLAGS: usize = 10;
+}
+
+/// Byte offsets for the `pm_dc_content_header_v28` record.
+///
+/// Spec §12. Record length 26 B.
+pub(crate) mod pm_dc_content_header_v28 {
+    /// Record length in bytes. Spec §12.
+    pub(crate) const LEN: usize = 26;
 }
 
 /// Byte offsets for the `bulk_envelope` record.
@@ -162,4 +169,35 @@ pub(crate) mod pm_dc_sheet_metal_style_operand_prefix_legacy {
 pub(crate) mod pm_dc_feature_dimension_tail {
     /// Record length in bytes. Spec §13.
     pub(crate) const LEN: usize = 9;
+}
+
+/// Byte offsets for the `pm_dc_mirror_selection_tail` record.
+///
+/// Spec §13. Record length 8 B.
+///
+/// ```text
+/// The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps.
+/// ```
+pub(crate) mod pm_dc_mirror_selection_tail {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 8;
+    /// Stated value of `control` (`u32`). Spec §13.
+    pub(crate) const CONTROL_VALUE: u32 = 0x3000_0004;
+    /// Stated value of `value` (`u32`). Spec §13.
+    pub(crate) const VALUE_VALUE: u32 = 0x0000_0000;
+}
+
+/// Byte offsets for the `pm_dc_mirror_options_tail` record.
+///
+/// Spec §13. Record length 9 B.
+///
+/// ```text
+/// The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps.
+/// ```
+pub(crate) mod pm_dc_mirror_options_tail {
+    /// Record length in bytes. Spec §13.
+    pub(crate) const LEN: usize = 9;
+    /// Stated value of `options` (`bytes[9]`). Spec §13.
+    pub(crate) const OPTIONS_VALUE: [u8; 9] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }

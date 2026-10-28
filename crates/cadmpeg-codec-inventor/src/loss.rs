@@ -87,6 +87,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFormsNative,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
+    /// Mirror operands differ from the identity-frame, zero-option construction.
+    FeatureMirrorOperandsNative,
     /// Revolve extents retain unresolved angular termination operands.
     FeatureRevolveExtentNative,
     /// Fixed-angle revolutions retain an unresolved direction control.
@@ -184,6 +186,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
+        Self::FeatureMirrorOperandsNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
         Self::FeatureRevolveControlUnresolved,
@@ -258,6 +261,7 @@ impl InventorLossCode {
                 "feature.sheet-metal-bend-controls-retained"
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
+            Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
@@ -338,6 +342,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
+            | Self::FeatureMirrorOperandsNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
@@ -436,6 +441,7 @@ mod tests {
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
+                "feature.mirror-operands-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",
                 "feature.revolve-control-unresolved",

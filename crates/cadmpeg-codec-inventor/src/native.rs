@@ -1169,7 +1169,7 @@ pub(crate) struct RseRecordRecord {
     type_index: u8,
     pub(crate) type_id: String,
     pub(crate) payload_offset: u64,
-    payload_len: u64,
+    pub(crate) payload_len: u64,
     payload_sha256: String,
     trailing_payload_len: u32,
     trailer_len: u64,

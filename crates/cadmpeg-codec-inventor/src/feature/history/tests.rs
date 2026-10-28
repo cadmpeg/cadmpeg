@@ -247,6 +247,25 @@ fn history_visits_a_repeated_member_once() {
 }
 
 #[test]
+fn history_keeps_distinct_flat_pattern_model_roots() {
+    let (mut inventory, sketches) = inventory();
+    let mut design = design();
+    design.model_roots.push(model_root(30, "MbBRepSegment"));
+    inventory.features.push(feature(31, 0));
+    inventory.labels.push(label(130, 30, "", EXTRUSION, &[31]));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("history context");
+    let history = build(&ctx, "generated", &inventory, &design, &sketches).expect("history");
+    let first = history.placement(21).expect("first flat-pattern feature");
+    let second = history.placement(31).expect("second flat-pattern feature");
+    assert!(!first.model_history);
+    assert!(!second.model_history);
+    assert_eq!(first.model_root, 20);
+    assert_eq!(second.model_root, 30);
+}
+
+#[test]
 fn projection_orders_history_and_marks_suppression() {
     let (inventory, sketches) = inventory();
     let design = design();

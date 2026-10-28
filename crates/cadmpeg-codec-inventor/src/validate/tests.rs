@@ -225,6 +225,12 @@ fn empty_data() -> super::NativeData {
 
 #[test]
 fn a_thread_annotation_cannot_use_a_sketch_as_its_native_feature() -> TestResult {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut data = empty_data();
     let null = PmDcReference::from_packed(0);
     let sketch = crate::record_identity::Located::new(
@@ -257,7 +263,7 @@ fn a_thread_annotation_cannot_use_a_sketch_as_its_native_feature() -> TestResult
     ir.model.features.push(annotation(sketch.id()));
     data.pm_dc_sketches.push(sketch);
     let mut findings = Vec::new();
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
     assert_eq!(
         findings[0].check,
@@ -407,19 +413,25 @@ fn thread_data() -> TestResult<super::NativeData> {
 
 #[test]
 fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() -> TestResult {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut data = thread_data()?;
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model
         .features
         .push(annotation(data.pm_dc_features[0].id()));
     let mut findings = Vec::new();
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert!(findings.is_empty(), "{findings:?}");
     let parameter = data
         .pm_dc_parameters
         .pop()
         .ok_or("missing parameter fixture")?;
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
     assert_eq!(
         findings[0].message,
@@ -430,7 +442,7 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
     label["class_id"] = serde_json::json!("00000000000000000000000000000000");
     data.pm_dc_feature_labels[0] = serde_json::from_value(label)?;
     findings.clear();
-    super::validate_features(&ir, &data, &mut findings);
+    super::validate_features(&ctx, &ir, &data, &mut findings)?;
     assert_eq!(findings.len(), 1);
     assert_eq!(
         findings[0].message,
@@ -464,6 +476,12 @@ fn fillet_continuity_is_nullable_and_rejects_a_resolved_non_boolean() {
 
 #[test]
 fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestResult {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     for class in [
         "05daba90d111386100080bbd0663dc09",
         "e0ef542fd111340900084eba32a3dc09",
@@ -489,7 +507,7 @@ fn native_loft_and_sweep_slots_are_checked_without_a_neutral_feature() -> TestRe
                 source.identity.record_ordinal,
             );
             let mut findings = Vec::new();
-            super::validate_features(&cadmpeg_ir::CadIr::empty(), &data, &mut findings);
+            super::validate_features(&ctx, &cadmpeg_ir::CadIr::empty(), &data, &mut findings)?;
             assert_eq!(findings.len(), usize::from(invalid));
             if invalid {
                 assert_eq!(

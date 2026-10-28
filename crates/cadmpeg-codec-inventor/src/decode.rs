@@ -811,6 +811,7 @@ fn decode_container<'a>(
             ir.model.features.iter(),
         ));
         losses.extend(unresolved.revolve_losses);
+        losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::loft_sweep::retained_control_losses(
             ir.model
                 .features
@@ -1330,6 +1331,7 @@ struct UnresolvedDesign {
     profile_bodies: usize,
     sketch_construction: usize,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Projects the design inventories into the document's design arenas.
@@ -1404,6 +1406,7 @@ fn project_design(
         profile_bodies: profile_bodies.undecoded,
         sketch_construction: sketches.unresolved_construction,
         revolve_losses: features.revolve_losses,
+        mirror_losses: features.mirror_losses,
     })
 }
 
