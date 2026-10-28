@@ -2957,3 +2957,45 @@ name = "slot_6"
 type = "u32"
 source = "spec"
 anchor = "| 6 | Result object collection; absent in the six-property form |"
+
+[[record]]
+name = "pm_dc_mirror_selection_tail"
+kind = "byte"
+section = "13"
+anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."
+size = 8
+note = "The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror.rs"
+
+[[record.field]]
+name = "control"
+offset = 0
+type = "u32"
+source = "spec"
+value = 0x30000004
+anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."
+
+[[record.field]]
+name = "value"
+offset = 4
+type = "u32"
+source = "spec"
+value = 0
+anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."
+
+[[record]]
+name = "pm_dc_mirror_options_tail"
+kind = "byte"
+section = "13"
+anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."
+size = 9
+note = "The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror.rs"
+
+[[record.field]]
+name = "options"
+offset = 0
+type = "bytes[9]"
+source = "spec"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."

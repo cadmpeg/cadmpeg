@@ -991,3 +991,30 @@ Parsed by:
 | 4 | `slot_4` | `u32` | little | spec | \| 4 \| Plate profile selection shared with plate slot 0 \| |
 | 5 | `slot_5` | `u32` | little | spec | \| 5 \| Null \| |
 | 6 | `slot_6` | `u32` | little | spec | \| 6 \| Result object collection; absent in the six-property form \| |
+
+## `pm_dc_mirror_selection_tail`
+
+Spec §13 · layout: byte offsets · size: 8 B
+
+The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/mirror.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `control` | `u32` | little | spec | Mirror auxiliary payloads follow the versioned content header and stamps. · value `805306372` |
+| 4 | 4 | `value` | `u32` | little | spec | Mirror auxiliary payloads follow the versioned content header and stamps. · value `0` |
+
+## `pm_dc_mirror_options_tail`
+
+Spec §13 · layout: byte offsets · size: 9 B
+
+The zero-option mirror form. Offsets are relative to the end of the versioned content header and stamps.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/mirror.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 9 | `options` | `bytes[9]` | little | spec | Mirror auxiliary payloads follow the versioned content header and stamps. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |

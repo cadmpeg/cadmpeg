@@ -53,7 +53,7 @@ const CIRCLE_STATE_FULL: u8 = 1;
 mod spline;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
-const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
+pub(crate) const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
 const POINT_TYPE: [u8; 16] = sketch_entity_id(0xce52_df35);
 const LINE_TYPE: [u8; 16] = sketch_entity_id(0xce52_df3a);
 const CIRCLE_TYPE: [u8; 16] = sketch_entity_id(0xce52_df3b);
