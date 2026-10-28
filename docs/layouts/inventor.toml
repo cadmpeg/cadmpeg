@@ -3636,3 +3636,267 @@ name = "transform"
 type = "u32"
 source = "spec"
 anchor = "Slot 12 is the model-space motion transform"
+
+[[record]]
+name = "pm_dc_pattern_selection_control_body"
+kind = "byte"
+section = "13.6"
+anchor = "After the content header it stores two record references and one u8 control"
+size = 9
+note = "Offsets are relative to the end of the versioned content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/pattern.rs"
+
+[[record.field]]
+name = "first_reference"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "After the content header it stores two record references and one u8 control"
+
+[[record.field]]
+name = "second_reference"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "After the content header it stores two record references and one u8 control"
+
+[[record.field]]
+name = "control"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "After the content header it stores two record references and one u8 control"
+
+[[record]]
+name = "pm_dc_pattern_cached_edge_body"
+kind = "byte"
+section = "13.6"
+anchor = "store cached line selections"
+size = 103
+note = "Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/pattern.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "reverse_reference"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "geometry_reference"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "selection_form"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+value = 1
+
+[[record.field]]
+name = "zero"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "store cached line selections"
+value = 0
+
+[[record.field]]
+name = "curve_form"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+value = 23
+
+[[record.field]]
+name = "origin"
+offset = 22
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "span"
+offset = 46
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "selection_point"
+offset = 70
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "line_state"
+offset = 94
+type = "u8"
+source = "spec"
+anchor = "store cached line selections"
+value = 1
+
+[[record.field]]
+name = "source_references"
+offset = 95
+type = "u32[2]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record]]
+name = "pm_dc_pattern_cached_line_body"
+kind = "byte"
+section = "13.6"
+anchor = "store cached line selections"
+size = 99
+note = "Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/pattern.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "reverse_reference"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "geometry_reference"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "selection_form"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+value = 1
+
+[[record.field]]
+name = "zero"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "store cached line selections"
+value = 0
+
+[[record.field]]
+name = "curve_form"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+value = 23
+
+[[record.field]]
+name = "origin"
+offset = 22
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "span"
+offset = 46
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "selection_point"
+offset = 70
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "line_state"
+offset = 94
+type = "u8"
+source = "spec"
+anchor = "store cached line selections"
+value = 1
+
+[[record.field]]
+name = "source_references"
+offset = 95
+type = "u32[1]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record]]
+name = "pm_dc_pattern_suppression_prefix"
+kind = "byte"
+section = "13.6"
+anchor = "stores the u16 pair `4, 0x3000` and a u32 count"
+size = 8
+note = "Offsets are relative to the end of the versioned content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/pattern.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "stores the u16 pair `4, 0x3000` and a u32 count"
+value = 4
+
+[[record.field]]
+name = "marker_kind"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "stores the u16 pair `4, 0x3000` and a u32 count"
+value = 0x3000
+
+[[record.field]]
+name = "count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "stores the u16 pair `4, 0x3000` and a u32 count"
+
+[[record]]
+name = "pm_dc_pattern_suppression_pair"
+kind = "byte"
+section = "13.6"
+anchor = "pairs of u32 coordinates"
+size = 8
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/pattern.rs"
+
+[[record.field]]
+name = "first"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "pairs of u32 coordinates"
+
+[[record.field]]
+name = "second"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "pairs of u32 coordinates"

@@ -948,6 +948,34 @@ The length operands reference the parameters `Thickness`, `BendRadius`, `BendRel
 
 The plate scalar control contains `value:u32` after its versioned content header and stamps. The base bend scalar control contains `value:u32` after that header and stamps. The extended bend scalar control contains `value:u32` and `state:u8`. Each record ends after its last stated field.
 
+### 13.6 Rectangular patterns
+
+Feature-label class `dac27a76d2110d2e60002aab01f31bb0` identifies a rectangular pattern. The participant list of the pattern record gives the seed feature records in seed order. Each seed is a distinct feature or pattern-feature record in the same segment and precedes the pattern in the same model history.
+
+The suffix property slots are numbered from zero, including the six references before `control`. Slot 0 is the pattern placement transform. Slot 1 is the instance-suppression record. Slot 2 is the computation-mode integer variable. Slot 4 is the auxiliary selection-control record. Slot 5 is the feature-dimension collection. Slot 6 selects the seed mode: false selects features from the participant list; true selects bodies from the object collection in slot 10 and has an empty participant list. Feature mode uses slot 9 for the result object collection. The result collection has the surface-body identity rule stated above.
+
+The direction-slot base is 12 in segment major versions 15 through 20, and 18 from version 21. For direction index `i` equal to 0 or 1, the slots are:
+
+| Slot | Meaning |
+| --- | --- |
+| `base + i` | Instance count, including the seed, in the integer variable's equal nominal and model values |
+| `base + 2 + i` | Spacing parameter, in internal centimetres |
+| `base + 4 + i` | Direction selection |
+| `base + 6 + i` | Direction control 0 Boolean |
+| `base + 8 + i` | Direction control 1 Boolean |
+| `base + 10 + i` | Direction control 2 Boolean |
+| `base + 12 + i` | Direction control 3 Boolean |
+
+A null second count selects one direction and requires null second spacing, direction, and control slots. A present second count selects two directions and requires its spacing, direction, and control records. Counts are positive u32 values. Their product is at least 2 and fits u32. The fixed-spacing feature branch has nominal and model computation-mode values zero and an identity placement transform. Its prefix property-reference list is empty, its `control` byte is zero, and its extension values are zero except extension value 5, which equals the product of the direction counts, with an absent second direction counted as 1. From segment major version 21, slots 12 through 17 are null in this branch. In this branch, the instance-suppression list is empty, the slot-6 and slot-11 Booleans are false, and all four controls of each present direction are false. The spacing is positive. The displacement of instance `(u, v)` is `u * spacing_0 * direction_0 + v * spacing_1 * direction_1`, with zero-based coordinates below the corresponding counts. A direction is normalized before its spacing is applied. The seed is at `(0, 0)`.
+
+Type `bef06e8d354cc7aad7c88db7ea9b0ffb` stores instance suppressions. After the content header, it stores the u16 pair `4, 0x3000` and a u32 count. A nonzero count adds two zero u32 metadata values, then that many pairs of u32 coordinates. The coordinates are one-based direction indices, including the seed. Each pair is unique, is inside the count rectangle, and is not `(1, 1)`. An empty list ends after its count. Feature suppression in the content-header flags is independent of these individual instance suppressions.
+
+Type `5a4a6899d2117fec6000b0abc8433cb0` stores auxiliary selection controls. After the content header it stores two record references and one u8 control. The fixed-spacing feature branch has zero references and a zero control in this record, a false slot-11 Boolean, and null slots 3, 7, 8, and 10. A body seed is a member of the slot-10 object collection, with the same surface-body reference grammar as a result collection.
+
+A direct direction selection names a direction record of type `40df52ced011d0d20008ccbc0663dc09`. This record has entity flags 0, parameter 0, and an absent or zero extension in the fixed-spacing feature branch. A work-axis geometry reference in a cached selection uses the work-axis grammar above, including its versioned content-header stamps. The fixed-spacing work-axis form has zero entity flags and u32 values, an empty reference list, no `0x203` marker, state 0 or 1, and a nonzero span.
+
+Types `7b4544a2ab4d9e16850c48a21edf9e3a` and `aa7b97a57045795897b51396ffc5d631` store cached line selections. Their content headers have no stamps. The single-line branch has selection form 1 and curve form 23. The header is followed by `state:i32`, a reversal-Boolean reference, a geometry reference, `selection_form:u32`, u16 value 0, and `curve_form:u32`. Selection form 1 with curve form 23 stores three finite f64 triples: a line origin, a nonzero line span, and a selection point. A u8 value 1 follows. Type `7b4544a2ab4d9e16850c48a21edf9e3a` ends with two source references; type `aa7b97a57045795897b51396ffc5d631` ends with one. The fixed-spacing feature branch has state 1 or 2 for type `7b4544a2ab4d9e16850c48a21edf9e3a`, state −1 for type `aa7b97a57045795897b51396ffc5d631`, and non-null geometry and source references that resolve in the same segment. The span supplies the direction. A geometry reference to a work axis has the same normalized span as that work axis. The referenced reversal Boolean negates the direction before the spacing is applied.
+
 ## 14. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.

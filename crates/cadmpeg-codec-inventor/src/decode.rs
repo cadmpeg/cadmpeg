@@ -480,6 +480,10 @@ fn decode_container<'a>(
         &sketch_inventory.constraints,
     )?;
     namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
+    let pattern_operands = feature_inventory.pattern_operands.native_records()?;
+    if !pattern_operands.is_empty() {
+        namespace.set_arena(ctx, "pm_dc_pattern_operands", &pattern_operands)?;
+    }
     namespace.set_arena(ctx, "pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena(
         ctx,
@@ -815,6 +819,10 @@ fn decode_container<'a>(
         ));
         losses.extend(unresolved.revolve_losses);
         losses.extend(unresolved.mirror_losses);
+        losses.extend(crate::feature::pattern::native_losses(
+            feature_inventory.pattern_features.iter(),
+            &ir.model.features,
+        ));
         losses.extend(crate::feature::loft_sweep::retained_control_losses(
             ir.model
                 .features

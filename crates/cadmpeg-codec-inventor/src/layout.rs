@@ -315,3 +315,71 @@ pub(crate) mod pm_dc_mirror_options_tail {
     pub(crate) const OPTIONS_VALUE: [u8; 9] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
+
+/// Byte offsets for the `pm_dc_pattern_selection_control_body` record.
+///
+/// Spec §13.6. Record length 9 B.
+///
+/// ```text
+/// Offsets are relative to the end of the versioned content header.
+/// ```
+pub(crate) mod pm_dc_pattern_selection_control_body {
+    /// Record length in bytes. Spec §13.6.
+    pub(crate) const LEN: usize = 9;
+}
+
+/// Byte offsets for the `pm_dc_pattern_cached_edge_body` record.
+///
+/// Spec §13.6. Record length 103 B.
+///
+/// ```text
+/// Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps.
+/// ```
+pub(crate) mod pm_dc_pattern_cached_edge_body {
+    /// Record length in bytes. Spec §13.6.
+    pub(crate) const LEN: usize = 103;
+    /// Stated value of `selection_form` (`u32`). Spec §13.6.
+    pub(crate) const SELECTION_FORM_VALUE: u32 = 0x0000_0001;
+    /// Stated value of `zero` (`u16`). Spec §13.6.
+    pub(crate) const ZERO_VALUE: u16 = 0x0000;
+    /// Stated value of `curve_form` (`u32`). Spec §13.6.
+    pub(crate) const CURVE_FORM_VALUE: u32 = 0x0000_0017;
+    /// Stated value of `line_state` (`u8`). Spec §13.6.
+    pub(crate) const LINE_STATE_VALUE: u8 = 1;
+}
+
+/// Byte offsets for the `pm_dc_pattern_cached_line_body` record.
+///
+/// Spec §13.6. Record length 99 B.
+///
+/// ```text
+/// Selection form 1 with curve form 23. Offsets are relative to the end of the content header without stamps.
+/// ```
+pub(crate) mod pm_dc_pattern_cached_line_body {
+    /// Record length in bytes. Spec §13.6.
+    pub(crate) const LEN: usize = 99;
+}
+
+/// Byte offsets for the `pm_dc_pattern_suppression_prefix` record.
+///
+/// Spec §13.6. Record length 8 B.
+///
+/// ```text
+/// Offsets are relative to the end of the versioned content header.
+/// ```
+pub(crate) mod pm_dc_pattern_suppression_prefix {
+    /// Record length in bytes. Spec §13.6.
+    pub(crate) const LEN: usize = 8;
+    /// Stated value of `marker` (`u16`). Spec §13.6.
+    pub(crate) const MARKER_VALUE: u16 = 0x0004;
+    /// Stated value of `marker_kind` (`u16`). Spec §13.6.
+    pub(crate) const MARKER_KIND_VALUE: u16 = 0x3000;
+}
+
+/// Byte offsets for the `pm_dc_pattern_suppression_pair` record.
+///
+/// Spec §13.6. Record length 8 B.
+pub(crate) mod pm_dc_pattern_suppression_pair {
+    /// Record length in bytes. Spec §13.6.
+    pub(crate) const LEN: usize = 8;
+}

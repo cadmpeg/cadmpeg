@@ -65,6 +65,8 @@ pub(crate) enum InventorLossCode {
     FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
+    /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
+    FeatureRectangularPatternOperandsNative,
     /// Thread annotations retain sizing and termination operands only natively.
     FeatureThreadDefinitionPartial,
     /// Thicken selections and thickness side remain native operands.
@@ -179,6 +181,7 @@ impl InventorLossCode {
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureShellDefinitionPartial,
@@ -248,6 +251,9 @@ impl InventorLossCode {
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::FeatureProfileBodyUndecoded => "feature.profile-body-undecoded",
             Self::FeatureLabelNameReplaced => "feature.label-name-replaced",
+            Self::FeatureRectangularPatternOperandsNative => {
+                "feature.rectangular-pattern-operands-native"
+            }
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
@@ -341,6 +347,7 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureShellDefinitionPartial
@@ -439,6 +446,7 @@ mod tests {
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.shell-definition-partial",
