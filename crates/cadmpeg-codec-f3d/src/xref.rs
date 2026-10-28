@@ -48,6 +48,8 @@ const COMPONENT_REFERENCE_ENTRY: &str = "ComponentReferenceData.json";
 
 /// Stable type-table identity of a Design occurrence-placement record.
 const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
+/// `CommonData` component-path carriers (spec §1.4).
+pub(crate) const COMPONENT_PATH_TYPE_GUID: &str = "3B6814F4-D87B-46BD-AD9D-0BE07880F7BB";
 
 /// The parsed `RedirectionsStream.dat` table.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -59,6 +61,9 @@ pub(crate) struct XrefTable {
     /// Type-admitted placements that do not close under their generation grammar.
     pub(crate) placement_failures: Vec<OccurrencePlacementFailure>,
     pub(crate) unbound_legacy_placements: Vec<OccurrencePlacementFailure>,
+    /// Placements named by two or more component-path carriers, as
+    /// `(placement record, carrier records)`; they keep their placement matrix.
+    pub(crate) ambiguous_current_poses: Vec<(u64, Vec<u64>)>,
     /// `(XREF ordinal, placement-record count)` pairs whose structured
     /// placements were superseded by scope-bound Component Insert carriers.
     pub(crate) placement_overrides: Vec<PlacementOverride>,
@@ -185,6 +190,7 @@ impl ReferenceJson {
         })?;
         let id = format!("f3d:xref:reference#{ordinal}");
         Ok(XrefReference {
+            current_pose: None,
             id,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
@@ -498,13 +504,33 @@ pub(crate) fn project_occurrences(
         occurrences: Vec::new(),
         losses: Vec::new(),
     };
+    // An occurrence at the document root takes its current pose: the world
+    // transform its component-path carrier stores.
+    let mut current_poses = 0usize;
+    let mut native_poses = 0usize;
+    let at_root = |mut occurrence: Occurrence,
+                   reference: &XrefReference,
+                   current_poses: &mut usize|
+     -> Result<Occurrence, CodecError> {
+        if let Some(pose) = &reference.current_pose {
+            occurrence.transform =
+                crate::design::components::neutral_transform(pose.transform.map_or(
+                    IDENTITY_ROWS,
+                    crate::records::xref::XrefPlacementTransform::rows,
+                ))?;
+            *current_poses += 1;
+        }
+        Ok(occurrence)
+    };
     for (reference, occurrence) in table.references.iter().zip(root_occurrences(table)?) {
         let owner = reference
             .placement_source
             .as_ref()
             .and_then(|source| source.owner.as_ref().map(|owner| (source, owner)));
         let Some((source, owner)) = owner else {
-            projection.occurrences.push(occurrence);
+            projection
+                .occurrences
+                .push(at_root(occurrence, reference, &mut current_poses)?);
             continue;
         };
         let components = sources.components.get(&source.stream);
@@ -514,7 +540,9 @@ pub(crate) fn project_occurrences(
                 .and_then(|record| components.roots.get(&record))
         });
         if root.is_some_and(|root| root.root_entity == owner.target) {
-            projection.occurrences.push(occurrence);
+            projection
+                .occurrences
+                .push(at_root(occurrence, reference, &mut current_poses)?);
             continue;
         }
         let unique = components.is_some_and(|components| {
@@ -533,9 +561,14 @@ pub(crate) fn project_occurrences(
                 "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; placement remains at the document root",
                 source.carrier_record_index, source.stream, owner.target
             )));
-            projection.occurrences.push(occurrence);
+            projection
+                .occurrences
+                .push(at_root(occurrence, reference, &mut current_poses)?);
             continue;
         };
+        if reference.current_pose.is_some() {
+            native_poses += 1;
+        }
         for parent in parents {
             let used = cadmpeg_core::decode::u64_from_index(local.len())
                 + cadmpeg_core::decode::u64_from_index(projection.occurrences.len());
@@ -567,8 +600,25 @@ pub(crate) fn project_occurrences(
             projection.occurrences.push(child);
         }
     }
+    if current_poses != 0 {
+        projection.losses.push(F3dLossCode::XrefPlacementCurrentPose.note(format!(
+            "{current_poses} external occurrence(s) at the document root take their current pose from a component-path carrier; their occurrence-placement matrices stay in the native frames"
+        )));
+    }
+    if native_poses != 0 {
+        projection.losses.push(F3dLossCode::XrefCurrentPoseNative.note(format!(
+            "{native_poses} external placement(s) below a local owner keep their occurrence-placement matrix in every projected instance; the world pose of their component-path carrier stays native"
+        )));
+    }
     Ok(projection)
 }
+
+const IDENTITY_ROWS: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
 
 /// Construct document-frame placements before local owner expansion.
 fn root_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
@@ -710,7 +760,7 @@ fn bind_occurrences(
                     .iter()
                     .find(|candidate| candidate.name.strip_prefix(prefix) == Some("MetaStream.dat"))
             });
-        let (serializer_magic, headers) = if let Some(meta_entry) = meta_entry {
+        let (serializer_magic, headers, carriers) = if let Some(meta_entry) = meta_entry {
             let meta = scan.parsed_metastream(&meta_entry.name)?;
             let meta_bytes = scan.entry_bytes(&meta_entry.name)?;
             (
@@ -719,24 +769,35 @@ fn bind_occurrences(
                     &meta_entry.name,
                 )?),
                 typed_occurrence_placement_records(bytes, &meta)?,
+                typed_records(bytes, &meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?,
             )
         } else {
             table.placement_metadata_missing = true;
-            (None, Vec::new())
+            (None, Vec::new(), Vec::new())
         };
         let (placements, failures) =
             occurrence_placements_with_failures(bytes, &headers, serializer_magic, None)?;
+        let poses = carriers
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter_map(|body| component_path_pose(body, serializer_magic))
+            .collect::<Vec<_>>();
 
-        streams.push((placements, failures, crate::ids::native_scope(&entry.name)));
+        streams.push((
+            placements,
+            failures,
+            crate::ids::native_scope(&entry.name),
+            poses,
+        ));
     }
     let mut expanded = Vec::new();
     let placement_failures = streams
         .iter()
-        .flat_map(|(_, failures, _)| failures.iter().cloned())
+        .flat_map(|(_, failures, _, _)| failures.iter().cloned())
         .collect();
     let unbound_legacy_placements = streams
         .iter()
-        .flat_map(|(placements, _, _)| placements)
+        .flat_map(|(placements, _, _, _)| placements)
         .filter(|placement| {
             legacy_attributed_placement_details(&placement.frame_bytes).is_some()
                 && !table.references.iter().any(|reference| {
@@ -752,9 +813,10 @@ fn bind_occurrences(
         })
         .collect();
     let mut placement_overrides = Vec::new();
+    let mut ambiguous_current_poses = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
-        for (placements, _, stream) in &streams {
+        for (placements, _, stream, poses) in &streams {
             let direct = select_component_insert_transforms(
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
@@ -775,17 +837,25 @@ fn bind_occurrences(
             let selected =
                 occurrence_transforms_with_precedence(direct, placements, &reference.neutron_role);
 
-            occurrences.extend(
-                selected
-                    .into_iter()
-                    .map(|placement| (placement, stream.clone())),
-            );
+            for placement in selected {
+                let pose = match current_pose(poses, &placement, &reference.neutron_role) {
+                    CurrentPose::One(pose) => Some(pose),
+                    CurrentPose::None => None,
+                    CurrentPose::Ambiguous(carriers) => {
+                        ambiguous_current_poses.push((placement.carrier_record_index, carriers));
+                        None
+                    }
+                };
+                occurrences.push((placement, stream.clone(), pose));
+            }
         }
         if occurrences.is_empty() {
             expanded.push(reference.clone());
             continue;
         }
-        for (occurrence_ordinal, (placement, stream)) in occurrences.into_iter().enumerate() {
+        for (occurrence_ordinal, (placement, stream, current_pose)) in
+            occurrences.into_iter().enumerate()
+        {
             let occurrence_id = format!(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                 reference.ordinal
@@ -805,6 +875,7 @@ fn bind_occurrences(
                     .map(crate::records::xref::XrefPlacementTransform::try_from)
                     .transpose()
                     .map_err(CodecError::NotImplemented)?,
+                current_pose,
                 ..reference.clone()
             });
         }
@@ -813,7 +884,52 @@ fn bind_occurrences(
     table.placement_failures = placement_failures;
     table.unbound_legacy_placements = unbound_legacy_placements;
     table.placement_overrides = placement_overrides;
+    table.ambiguous_current_poses = ambiguous_current_poses;
     Ok(())
+}
+
+/// The component-path carriers that name one placement.
+enum CurrentPose {
+    None,
+    One(crate::records::xref::XrefCurrentPose),
+    /// The carrier records of two or more matching carriers.
+    Ambiguous(Vec<u64>),
+}
+
+/// The current pose of one placement: the unique component-path carrier in the
+/// same Design stream whose path names this placement record and role.
+fn current_pose(
+    poses: &[ComponentPathPose],
+    placement: &OccurrencePlacement,
+    role: &str,
+) -> CurrentPose {
+    let matching = poses
+        .iter()
+        .filter(|pose| {
+            pose.placement_record_index == placement.carrier_record_index && pose.role == role
+        })
+        .collect::<Vec<_>>();
+    let pose = match matching.as_slice() {
+        [] => return CurrentPose::None,
+        [pose] => pose,
+        many => {
+            return CurrentPose::Ambiguous(
+                many.iter().map(|pose| pose.carrier_record_index).collect(),
+            )
+        }
+    };
+    let Ok(transform) = pose
+        .transform
+        .map(crate::records::xref::XrefPlacementTransform::try_from)
+        .transpose()
+    else {
+        return CurrentPose::None;
+    };
+    CurrentPose::One(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: pose.carrier_record_index,
+        frame_bytes: pose.frame_bytes.clone().into(),
+        transform,
+    })
 }
 
 /// Select the exact `Component Insert` constructions for one Design stream
@@ -905,13 +1021,24 @@ fn typed_occurrence_placement_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<IndexedRecord>, CodecError> {
+    typed_records(bytes, meta, "Component", OCCURRENCE_PLACEMENT_TYPE_GUID)
+}
+
+/// Return the `BulkStream` record extents registered to one type-table
+/// identity, checking each primary header against its registration.
+fn typed_records(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    module: &str,
+    type_guid: &str,
+) -> Result<Vec<IndexedRecord>, CodecError> {
     let mut placement_entities = std::collections::HashMap::new();
     for (ordinal, design_type) in meta.types.iter().enumerate().filter(|(_, design_type)| {
-        design_type.module == "Component"
+        design_type.module == module
             && design_type
                 .type_guid
                 .as_str()
-                .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
+                .eq_ignore_ascii_case(type_guid)
     }) {
         for &entity in design_type.entities.values() {
             placement_entities.insert(entity, ordinal);
@@ -923,16 +1050,18 @@ fn typed_occurrence_placement_records(
             continue;
         };
         let header = bytes.get(frame.start..frame.member_end).ok_or_else(|| {
-            CodecError::malformed("F3D occurrence-placement index is outside its BulkStream")
+            CodecError::malformed(format_args!(
+                "F3D {module} record index is outside its BulkStream"
+            ))
         })?;
         let class_matches = lp_ascii_strict(header, 0, 3..=3)
             .and_then(|(tag, _)| tag.parse::<usize>().ok())
             .and_then(|tag| tag.checked_sub(256))
             == Some(ordinal);
         if !class_matches || View::u64_le_at(header, 7) != Some(frame.entity_id) {
-            return Err(CodecError::malformed(
-                "F3D occurrence-placement header disagrees with its registered primary index",
-            ));
+            return Err(CodecError::malformed(format_args!(
+                "F3D {module} record header disagrees with its registered primary index"
+            )));
         }
         records.push(IndexedRecord {
             offset: frame.start,
@@ -1195,6 +1324,29 @@ pub(crate) fn placement_source_matches(reference: &XrefReference) -> Result<bool
                 && source.owner.as_ref() == Some(&details.owner)
         }),
     )
+}
+
+/// Re-read a retained current pose through the carrier parser and require it
+/// to name this reference's role and placement record.
+pub(crate) fn current_pose_matches(reference: &XrefReference) -> bool {
+    let Some(current) = &reference.current_pose else {
+        return true;
+    };
+    let Some(source) = &reference.placement_source else {
+        return false;
+    };
+    [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+        .into_iter()
+        .filter_map(|magic| component_path_pose(&current.frame_bytes, magic))
+        .any(|pose| {
+            pose.carrier_record_index == current.carrier_record_index
+                && pose.placement_record_index == source.carrier_record_index
+                && pose.role == reference.neutron_role.as_str()
+                && pose.transform
+                    == current
+                        .transform
+                        .map(crate::records::xref::XrefPlacementTransform::rows)
+        })
 }
 
 pub(crate) fn legacy_placement_metadata_native(source: &XrefPlacementSource) -> bool {
@@ -1779,6 +1931,30 @@ fn modern_occurrence_placement(
     serializer_magic: Option<u32>,
 ) -> Option<OccurrencePlacement> {
     let (link_names, at) = occurrence_path(body)?;
+    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at, serializer_magic)?;
+    Some(OccurrencePlacement {
+        frame_bytes: Vec::new(),
+        occurrence_guid: None,
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        owner: None,
+        link_names,
+        transform,
+    })
+}
+
+/// The transform of a placement body that closes at its record end.
+struct ClosedPlacement {
+    /// `None` is the stored identity form.
+    transform: Option<[[f64; 4]; 4]>,
+}
+
+/// Read the optional identity marker, the matrix it selects, and the closing
+/// reference runs, which must end at the record end.
+fn placement_matrix_and_tail(
+    body: &[u8],
+    at: usize,
+    serializer_magic: Option<u32>,
+) -> Option<ClosedPlacement> {
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
     // marker is present and the matrix follows, so the record end decides.
@@ -1805,18 +1981,58 @@ fn modern_occurrence_placement(
             cursor += 128;
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
-            return Some(OccurrencePlacement {
-                frame_bytes: Vec::new(),
-                occurrence_guid: None,
-                carrier_record_index: View::u64_le_at(body, 7)?,
-                owner: None,
-                link_names,
-
-                transform,
-            });
+            return Some(ClosedPlacement { transform });
         }
     }
     None
+}
+
+/// The current pose that a `CommonData` component-path carrier stores for one
+/// occurrence placed at the document root
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ComponentPathPose {
+    /// The carrier's own indexed record.
+    pub(crate) carrier_record_index: u64,
+    /// The occurrence-placement record that the path's local element names.
+    pub(crate) placement_record_index: u64,
+    /// The occurrence role of the path's cross-document element.
+    pub(crate) role: String,
+    /// `None` is the stored identity form.
+    pub(crate) transform: Option<[[f64; 4]; 4]>,
+    /// The complete carrier record, header included.
+    pub(crate) frame_bytes: Vec<u8>,
+}
+
+/// Parse a component-path carrier whose path is one cross-document element and
+/// one local element that names an occurrence-placement record, in either order.
+pub(crate) fn component_path_pose(
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Option<ComponentPathPose> {
+    let (members, at) = occurrence_path_members(body)?;
+    let [(first, _), (second, _)] = members.as_slice() else {
+        return None;
+    };
+    // Both element orders occur: the cross-document element can precede or
+    // follow the local element.
+    let (role, (placement_record_index, None)) = [(first, second), (second, first)]
+        .into_iter()
+        .find_map(|(document, placement)| Some((document.link_name()?, placement.local()?)))?
+    else {
+        return None;
+    };
+    if placement_record_index == 0 || body.get(at) != Some(&0) {
+        return None;
+    }
+    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    Some(ComponentPathPose {
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        placement_record_index,
+        role: role.to_owned(),
+        transform,
+        frame_bytes: body.to_vec(),
+    })
 }
 
 pub(crate) fn identity_component_insert_carrier(
@@ -2036,6 +2252,21 @@ fn occurrence_target_path(body: &[u8]) -> Option<OccurrenceTargetPath> {
 }
 
 fn occurrence_path_elements(body: &[u8]) -> Option<OccurrenceTargetPath> {
+    let (members, at) = occurrence_path_members(body)?;
+    let link_names = members
+        .iter()
+        .filter_map(|(element, _)| element.link_name().map(str::to_owned))
+        .collect();
+    let target = members.into_iter().last()?.0;
+    Some((link_names, target, at))
+}
+
+/// Read the counted path elements with their instance discriminators, ending
+/// before the path terminator.
+/// Path elements with their instance discriminators, in path order.
+type PathMembers = Vec<(Reference<String, String>, u32)>;
+
+fn occurrence_path_members(body: &[u8]) -> Option<(PathMembers, usize)> {
     let (_, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
     let mut at = after_tag.checked_add(8)?;
     at = lp_ascii_strict(body, at, 0..=256)?.1;
@@ -2048,18 +2279,14 @@ fn occurrence_path_elements(body: &[u8]) -> Option<OccurrenceTargetPath> {
         return None;
     }
     at += 4;
-    let mut link_names = Vec::new();
-    let mut target = None;
+    let mut members = Vec::new();
     for _ in 0..count {
         let element = take_owned_reference(body, &mut at)?;
-        if let Some(link_name) = element.link_name() {
-            link_names.push(link_name.to_owned());
-        }
-        target = Some(element);
-        View::u32_le_at(body, at)?;
+        let discriminator = View::u32_le_at(body, at)?;
         at += 4;
+        members.push((element, discriminator));
     }
-    Some((link_names, target?, at))
+    Some((members, at))
 }
 
 /// Consume the three reference runs that close a placement, returning `Some`

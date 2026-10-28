@@ -386,6 +386,18 @@ the native feature when a fixed lane carries a symmetric distance.
 
 ## 2. External references
 
+### DR-111. Component-path poses of nested occurrences
+
+**Question.** How does a component-path record with more than two path elements join to a nested occurrence, and does its world pose supersede that occurrence's own placement?
+
+**Known.** A two-element path of a cross-document element and a local element naming an occurrence-placement record stores the current world pose of that placed occurrence. Longer paths continue through further cross-document and local elements, each with an instance discriminator, and also store a world transform.
+
+**Need.** The join from each later path element to the placement record of the nested occurrence in its placed design, and the relation between that world pose and the nested occurrence's own placement and joints.
+
+**Conflict.** None.
+
+**Note.** Longer component-path records do not place occurrences; their bytes stay in the source stream.
+
 ### DR-113. Solved placement without a bound assembly operand
 
 **Question.** Which native relation, if any, selects the current solved pose of an inserted occurrence when no assembly operand path binds to it?
@@ -396,7 +408,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Conflict.** A stored placement can disagree with the checked assembly while no projected joint selects the occurrence. This does not distinguish an unbound constraint, an unread placement carrier, and a different saved assembly state.
 
-**Note.** Retain the stored transform and native records.
+**Note.** For an external occurrence at the document root, a two-element component-path record supplies the current pose (`f3d.md` §1.4). This item remains open for occurrences without such a record and for nested occurrences (DR-111). Retain the stored transform and native records.
 
 ### DR-109. Legacy external placement control and extended envelopes
 

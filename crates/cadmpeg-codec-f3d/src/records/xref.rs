@@ -5,6 +5,7 @@ use super::identity::DesignAffineTransform;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, XrefPlacementTransform, "transform");
+cadmpeg_core::named_optional_field!(deserialize_current_pose, XrefCurrentPose, "current_pose");
 cadmpeg_core::named_optional_field!(deserialize_type_guid, String, "type_guid");
 cadmpeg_core::named_optional_field!(deserialize_owner, XrefLocalOwner, "owner");
 cadmpeg_core::named_optional_field!(
@@ -170,6 +171,23 @@ pub(crate) struct XrefPlacementSource {
     pub(crate) owner: Option<XrefLocalOwner>,
 }
 
+/// The `CommonData` component-path carrier that stores the current pose of an
+/// external occurrence placed at the document root
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct XrefCurrentPose {
+    pub(crate) carrier_record_index: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) frame_bytes: cadmpeg_ir::native::bytes::NativeBytes,
+    /// Current pose in centimetres. `None` is the stored identity form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub(crate) transform: Option<XrefPlacementTransform>,
+}
+
 /// One outgoing XREF placement of the top-level `RedirectionsStream.dat` table
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -207,6 +225,14 @@ pub(crate) struct XrefReference {
         deserialize_with = "deserialize_transform"
     )]
     pub(crate) transform: Option<XrefPlacementTransform>,
+    /// Current pose from the occurrence's component-path carrier, when one
+    /// names this placement.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_current_pose"
+    )]
+    pub(crate) current_pose: Option<XrefCurrentPose>,
 }
 
 #[cfg(test)]

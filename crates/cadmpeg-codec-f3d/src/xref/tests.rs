@@ -198,6 +198,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     let table = super::XrefTable {
         designs: Vec::new(),
         references: vec![crate::records::xref::XrefReference {
+            current_pose: None,
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
@@ -1705,4 +1706,194 @@ fn identity_insert_carrier_requires_duplicate_targets_and_exact_closure() {
     }
     body.push(0);
     assert!(super::identity_component_insert_carrier(&body, 0, body.len(), 10).is_none());
+}
+
+/// A `CommonData` component-path carrier whose path is the occurrence's
+/// cross-document element followed by a local element naming its placement.
+fn component_path_carrier(
+    role: &str,
+    entity_id: u64,
+    placement_record: u64,
+    transform: [[f64; 4]; 4],
+    local_first: bool,
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"257");
+    bytes.extend_from_slice(&entity_id.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    let mut document = cross_document_reference(100, role);
+    document.extend_from_slice(&1_u32.to_le_bytes());
+    let mut placement = local_reference(placement_record);
+    placement.extend_from_slice(&0_u32.to_le_bytes());
+    if local_first {
+        bytes.extend(placement);
+        bytes.extend(document);
+    } else {
+        bytes.extend(document);
+        bytes.extend(placement);
+    }
+    bytes.push(0);
+    bytes.push(0);
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend(local_reference(7));
+    bytes.push(2);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&42_u32.to_le_bytes());
+    bytes.extend(local_reference(8));
+    bytes.extend(local_reference(3));
+    bytes.extend(local_reference(6));
+    bytes
+}
+
+#[test]
+fn a_component_path_carrier_supplies_the_current_root_pose() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let translation = |x: f64| {
+        [
+            [1.0, 0.0, 0.0, x],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    };
+    let decode = |carrier_names: u64, local_first: bool, second: Option<f64>| {
+        let mut placement = occurrence_record_with_serializer_magic(
+            role,
+            10,
+            &[1],
+            Some(translation(7.0)),
+            Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+        );
+        placement[4..7].copy_from_slice(b"256");
+        let carrier =
+            component_path_carrier(role, 11, carrier_names, translation(12.0), local_first);
+        let carrier_at = u64_from_index(placement.len());
+        let mut bulk = placement;
+        bulk.extend(carrier);
+        let second_at = u64_from_index(bulk.len());
+        if let Some(x) = second {
+            bulk.extend(component_path_carrier(role, 12, 10, translation(x), false));
+        }
+        let carriers: &[u64] = if second.is_some() { &[11, 12] } else { &[11] };
+        let carrier_records: Vec<(u64, u64)> = if second.is_some() {
+            vec![(10, 0), (11, carrier_at), (12, second_at)]
+        } else {
+            vec![(10, 0), (11, carrier_at)]
+        };
+        let properties =
+            br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("Properties.dat", stored).unwrap();
+        zip.write_all(&u32::try_from(properties.len()).unwrap().to_le_bytes())
+            .unwrap();
+        zip.write_all(properties).unwrap();
+        zip.start_file("RedirectionsStream.dat", stored).unwrap();
+        zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
+            .unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&design_metastream_with_records(
+            &[
+                (
+                    super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+                    "",
+                    2,
+                    "Component",
+                    &[10],
+                ),
+                (
+                    super::COMPONENT_PATH_TYPE_GUID,
+                    "",
+                    0,
+                    "CommonData",
+                    carriers,
+                ),
+            ],
+            &carrier_records,
+        ))
+        .unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&bulk).unwrap();
+        F3dCodec
+            .decode(
+                &mut Cursor::new(zip.finish().unwrap().into_inner()),
+                &DecodeOptions::default(),
+            )
+            .expect("synthetic XRef archive")
+    };
+
+    for local_first in [false, true] {
+        let decoded = decode(10, local_first, None);
+        let native = f3d_native(decoded.ir());
+        assert_eq!(
+            native.xref_references[0]
+                .current_pose
+                .as_ref()
+                .and_then(|pose| pose.transform)
+                .map(|transform| transform.rows()[0][3]),
+            Some(12.0),
+            "local element first: {local_first}"
+        );
+    }
+    let decoded = decode(10, false, None);
+    let native = f3d_native(decoded.ir());
+    let reference = &native.xref_references[0];
+    assert_eq!(reference.transform.unwrap().rows()[0][3], 7.0);
+    let current = reference.current_pose.as_ref().expect("current pose");
+    assert_eq!(current.carrier_record_index, 11);
+    assert_eq!(current.transform.unwrap().rows()[0][3], 12.0);
+    assert!(super::current_pose_matches(reference));
+    let occurrence = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
+        .expect("root occurrence");
+    assert!((occurrence.transform.rows()[0][3] - 120.0).abs() < EPS_PLACEMENT_TRANSLATION);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::XrefPlacementCurrentPose.kind()));
+
+    let mut changed = reference.clone();
+    let mut pose = changed.current_pose.clone().unwrap();
+    pose.transform = Some(translation(13.0).try_into().unwrap());
+    changed.current_pose = Some(pose);
+    assert!(!super::current_pose_matches(&changed));
+
+    let unbound = decode(99, false, None);
+    let native = f3d_native(unbound.ir());
+    assert!(native.xref_references[0].current_pose.is_none());
+    assert!(unbound
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::XrefPlacementCurrentPose.kind()));
+
+    let ambiguous = decode(10, false, Some(13.0));
+    let native = f3d_native(ambiguous.ir());
+    assert!(native.xref_references[0].current_pose.is_none());
+    assert_eq!(
+        native.xref_references[0].transform.unwrap().rows()[0][3],
+        7.0
+    );
+    let notes = ambiguous
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::XrefCurrentPoseAmbiguous.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].message.contains("[11, 12]"));
 }

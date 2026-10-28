@@ -213,6 +213,15 @@ pub(crate) enum F3dLossCode {
     XrefPlacementMetadataNative,
     /// A legacy placement role has no containing reference-table entry.
     XrefPlacementRoleUnbound,
+    /// Root external occurrences take their component-path carrier pose; the
+    /// placement matrix stays native.
+    XrefPlacementCurrentPose,
+    /// An owned external occurrence keeps its placement matrix; its
+    /// component-path carrier pose stays native.
+    XrefCurrentPoseNative,
+    /// Two or more component-path carriers name one placement; its placement
+    /// matrix stays in place.
+    XrefCurrentPoseAmbiguous,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
@@ -395,6 +404,9 @@ impl F3dLossCode {
         Self::XrefPlacementUndecoded,
         Self::XrefPlacementMetadataNative,
         Self::XrefPlacementRoleUnbound,
+        Self::XrefPlacementCurrentPose,
+        Self::XrefCurrentPoseNative,
+        Self::XrefCurrentPoseAmbiguous,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::XrefOwnerUnresolved,
@@ -541,6 +553,9 @@ impl F3dLossCode {
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
             Self::XrefPlacementRoleUnbound => "xref.placement-role-unbound",
+            Self::XrefPlacementCurrentPose => "xref.placement-current-pose",
+            Self::XrefCurrentPoseNative => "xref.current-pose-native",
+            Self::XrefCurrentPoseAmbiguous => "xref.current-pose-ambiguous",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::XrefOwnerUnresolved => "xref.owner-unresolved",
@@ -593,6 +608,8 @@ impl F3dLossCode {
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::BodylessDesignCarrier
             | Self::XrefPlacementMetadataNative
+            | Self::XrefPlacementCurrentPose
+            | Self::XrefCurrentPoseNative
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
@@ -695,6 +712,7 @@ impl F3dLossCode {
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementRoleUnbound
+            | Self::XrefCurrentPoseAmbiguous
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::XrefOwnerUnresolved
@@ -745,6 +763,9 @@ impl F3dLossCode {
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::DrawingDocumentOmitted
             | Self::XrefPlacementMetadataNative
+            | Self::XrefPlacementCurrentPose
+            | Self::XrefCurrentPoseNative
+            | Self::XrefCurrentPoseAmbiguous
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1002,6 +1023,9 @@ mod tests {
                 "xref.placement-undecoded",
                 "xref.placement-metadata-native",
                 "xref.placement-role-unbound",
+                "xref.placement-current-pose",
+                "xref.current-pose-native",
+                "xref.current-pose-ambiguous",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "xref.owner-unresolved",

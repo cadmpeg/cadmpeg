@@ -3883,6 +3883,15 @@ fn report_xref_parse_loss(report: &mut DecodeBody, error: &CodecError) {
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close.
 fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
+    for (placement, carriers) in &table.ambiguous_current_poses {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::XrefCurrentPoseAmbiguous,
+            format_args!(
+                "external occurrence placement {placement} is named by component-path carriers {carriers:?}; it keeps its occurrence-placement matrix"
+            ),
+        );
+    }
     for placement in &table.unbound_legacy_placements {
         push_loss_vec(
             &mut report.losses,
