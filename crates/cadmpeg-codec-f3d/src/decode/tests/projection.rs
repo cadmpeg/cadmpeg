@@ -1298,22 +1298,24 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: resolved_tool,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(resolved_tool),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: FaceSelection::Native("native:tool".into()),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
+                "native:tool".into()
+            )),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: BodySelection::Native("native:target".into()),
-            tools: FaceSelection::Resolved {
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Resolved {
                 faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
                 native: "native:tool".into(),
-            },
+            }),
         })
     ));
 }

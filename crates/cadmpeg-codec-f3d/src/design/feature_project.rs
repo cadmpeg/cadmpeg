@@ -7605,7 +7605,7 @@ pub(super) fn project_split(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::SplitBody {
             targets: BodySelection::Native(targets.id.clone()),
-            tools,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(tools),
         },
     )))
 }

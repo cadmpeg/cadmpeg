@@ -916,8 +916,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let replacements = operands.replacements();
             !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements)
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tools }) => {
-            !body_selection_is_resolved(targets) || !face_selection_is_resolved(tools)
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
+            !body_selection_is_resolved(targets)
+                || match tool {
+                    cadmpeg_ir::features::SplitBodyTool::Faces(faces) => {
+                        !face_selection_is_resolved(faces)
+                    }
+                    cadmpeg_ir::features::SplitBodyTool::Plane { .. } => false,
+                }
         }
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces, distance, ..
