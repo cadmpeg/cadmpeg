@@ -279,6 +279,32 @@ Native records retain typed references into the neutral model. Format-neutral co
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to topology entities or native source carriers. A binding's optional `visible` field is `None` when the source provides no binding-level visibility value and is `false` when that binding is explicitly hidden; binding visibility does not change visibility on a shared geometry carrier. Drawings preserve page, view, and annotation entities. A drawing's optional `visible` field is `None` when the source provides no drawing-level visibility value and is `false` when that drawing entity is explicitly hidden; drawing visibility does not change visibility on its relationships or contents. PMI annotations preserve semantic and graphical annotation entities. A PMI annotation's optional `visible` field is `None` when the source provides no annotation-level visibility value and is `false` when that annotation occurrence is explicitly hidden; annotation visibility does not change visibility on a shared geometry or tessellation carrier. Presentation layers group model or presentation items. A layer's optional `visible` field is `None` when the source provides no layer-level visibility value and is `false` when the layer is explicitly hidden; layer visibility does not change visibility on its assigned items. Attributes attach source-native values to supported targets.
 
+A drawing's `sheet` holds positive width and height in millimetres and ordered,
+uniquely named title-block fields. A page can obtain its sheet through its
+`template` identity. `curves` is an ordered collection in the owning view frame:
+X right, Y up, millimetres before view scale and rotation. Each curve has required
+`visible` or `hidden` visibility and `projected_model_edge`, `cosmetic`, or
+`center_line` source. Its optional `displayed` flag is independent presentation
+visibility. Geometry is a finite line, a positive-radius circle, or an arc with
+three distinct points on its circle within relative radial error 1e-9.
+
+`template_geometry` belongs only to templates and holds ordered curves and
+baseline-positioned texts in physical page millimetres, X right and Y up. It
+reuses `DrawingCurveGeometry` in this page frame. Each text has a resolved string,
+finite baseline position, and positive em height in millimetres. `x_direction`
+belongs only to view, projection, section, or detail drawings and gives their
+finite nonzero horizontal model direction.
+
+A semantic dimension has one `dimension_kind`, optional `value`, format,
+`text_override`, signed nonzero `upper_tolerance` and `lower_tolerance`, and text
+position. Linear values and tolerances are millimetres; angular values and
+tolerances are degrees. Its `reference_anchors` is empty or contains two ordered
+finite page-space reference points in millimetres. A nonempty pair requires a
+typed dimension owner. Anchors do not define dimension lines, arrows, or text
+orientation. Annotation `text_style` holds an optional positive physical em
+height and optional stored font family without substitution. No second dimension
+kind, unit selector, or sheet-size field exists.
+
 `Tessellation.triangles` preserves source winding. Each triangle index addresses
 `vertices`. `feature_edges` is the
 source-classified undirected feature-edge set. The list is lexicographically

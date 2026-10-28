@@ -56,10 +56,16 @@ pub struct SemanticAnnotation {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub references: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
-    /// Persisted numeric measurement, when explicitly carried.
+    /// Stored measurement or exact measurement from verified reference geometry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_value")]
     pub value: Option<crate::scalar::FiniteReal>,
+    /// Ordered page-space reference points, empty or one pair, in millimetres.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reference_anchors: Vec<crate::units::FiniteVector<2>>,
+    /// Stored physical text size and family.
+    #[serde(default, skip_serializing_if = "AnnotationTextStyle::is_empty")]
+    pub text_style: AnnotationTextStyle,
     /// Persisted formatting expression or visible dimension format.
     #[serde(
         default,
@@ -131,6 +137,8 @@ impl SemanticAnnotation {
             text: Vec::new(),
             references: BTreeMap::new(),
             value: None,
+            reference_anchors: Vec::new(),
+            text_style: AnnotationTextStyle::default(),
             format: None,
             position: None,
             dimension_kind: None,
@@ -200,6 +208,25 @@ mod tests {
     use super::SemanticAnnotation;
 
     #[test]
+    fn physical_text_style_roundtrips_and_names_invalid_height() {
+        let wire = serde_json::json!({"id":"test:model:annotation#text", "object":"source", "kind":"text", "runtime_type":"Text", "order":0, "native_ref":"native", "text_style":{"height":5.0,"font_family":"osifont"}});
+        let annotation: SemanticAnnotation = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(annotation).unwrap(), wire);
+        for height in [
+            serde_json::json!(0),
+            serde_json::json!(-1),
+            serde_json::Value::Null,
+        ] {
+            let mut rejected = wire.clone();
+            rejected["text_style"]["height"] = height;
+            assert!(serde_json::from_value::<SemanticAnnotation>(rejected)
+                .unwrap_err()
+                .to_string()
+                .contains("height"));
+        }
+    }
+
+    #[test]
     fn dimension_wire_admission_names_optional_fields() {
         let wire = serde_json::json!({"id": "synthetic:test:annotation#dimension", "object": "source", "kind": "dimension", "runtime_type": "Dimension", "order": 0, "native_ref": "native",
             "dimension_kind": {"kind": "radius"}, "value": 12.0, "format": "%.2f", "position": [4.0, 5.0, 0.0],
@@ -229,5 +256,51 @@ mod tests {
         other["dimension_kind"] = serde_json::json!({"kind": "other", "native_type": "extension"});
         let annotation: SemanticAnnotation = serde_json::from_value(other.clone()).unwrap();
         assert_eq!(serde_json::to_value(annotation).unwrap(), other);
+    }
+}
+
+/// Text style admitted with a stored physical font size.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct AnnotationTextStyle {
+    /// Font em size in millimetres.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_text_height"
+    )]
+    pub height: Option<crate::scalar::PositiveLength>,
+    /// Stored font family name, without a font substitution.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_font_family"
+    )]
+    pub font_family: Option<String>,
+}
+
+impl AnnotationTextStyle {
+    /// Whether no physical style is present.
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_text_height,
+    crate::scalar::PositiveLength,
+    "height"
+);
+cadmpeg_core::named_optional_field!(deserialize_font_family, String, "font_family");
+
+impl SemanticAnnotation {
+    /// Check reference-point population and dimension ownership.
+    #[must_use]
+    pub fn reference_anchors_are_valid(&self) -> bool {
+        self.reference_anchors.is_empty()
+            || (self.reference_anchors.len() == 2
+                && self.kind == SemanticAnnotationKind::Dimension
+                && self.dimension_kind.is_some())
     }
 }

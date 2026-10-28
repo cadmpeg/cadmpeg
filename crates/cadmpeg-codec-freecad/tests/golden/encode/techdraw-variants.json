@@ -1,0 +1,189 @@
+{
+  "entries": [
+    {
+      "name": "Document.xml",
+      "payload_len": 112286,
+      "payload_sha256": "6d1373fbf863a97c880c9aac7ce01ebc6297e788db599e94efb1e36c423fd1b8"
+    },
+    {
+      "name": "Box.Shape.brp",
+      "payload_len": 8938,
+      "payload_sha256": "ceb5cfaff996f825a51197daa9f3fc3ac747cd7391bfdd28911e240118ac43e6"
+    },
+    {
+      "name": "techdraw-template.svg",
+      "payload_len": 531,
+      "payload_sha256": "5a71b2965cf7374ff68e3d6fa2de719864f2cf4f2d5d0b9b694130a4c232d817"
+    },
+    {
+      "name": "BoxCorners",
+      "payload_len": 52,
+      "payload_sha256": "202751409a6b2e839734b1231f1b52a6a4a23203b3d79197e2297482966e1b96"
+    },
+    {
+      "name": "Length.SavedGeometry.0.brp",
+      "payload_len": 566,
+      "payload_sha256": "5d2adc9a7c36c0d07097f50e8fba1f046cef5f95b39ac17a44b7fc9e0acd57a9"
+    },
+    {
+      "name": "techdraw-template1.svg",
+      "payload_len": 462,
+      "payload_sha256": "72d5cf7f1b02f68d56ddd6a29b9f4fe443c45be385234abfa923fd724054ec9b"
+    },
+    {
+      "name": "BoxCorners1",
+      "payload_len": 52,
+      "payload_sha256": "202751409a6b2e839734b1231f1b52a6a4a23203b3d79197e2297482966e1b96"
+    },
+    {
+      "name": "Euclidean.SavedGeometry.0.brp",
+      "payload_len": 566,
+      "payload_sha256": "5d2adc9a7c36c0d07097f50e8fba1f046cef5f95b39ac17a44b7fc9e0acd57a9"
+    },
+    {
+      "name": "BoxCorners2",
+      "payload_len": 52,
+      "payload_sha256": "202751409a6b2e839734b1231f1b52a6a4a23203b3d79197e2297482966e1b96"
+    },
+    {
+      "name": "Vertical.SavedGeometry.0.brp",
+      "payload_len": 563,
+      "payload_sha256": "010b700c676498fcb99b9f48089ff12fb9fff8fabe5d62cf533765e913cfa066"
+    },
+    {
+      "name": "Triangle.Shape.brp",
+      "payload_len": 1346,
+      "payload_sha256": "565007594d07fbe394a8c9313107b8c641928467e1c657e574558d71a11bf783"
+    },
+    {
+      "name": "Cylinder.Shape.brp",
+      "payload_len": 2650,
+      "payload_sha256": "764aa35b5cdefc7fa29af4ebe4fc37f832367cde4baffdfc7ca9fdf31c149388"
+    },
+    {
+      "name": "BoxCorners3",
+      "payload_len": 52,
+      "payload_sha256": "fb814af8a2fe79404161530ace87ea74049a0f9df04ca3cc6852c16175fb278f"
+    },
+    {
+      "name": "Radius.SavedGeometry.0.brp",
+      "payload_len": 831,
+      "payload_sha256": "79a79da035d5c3559ae5e874e53b573f60d4ac3652f088e24f33e01bec0a7a0c"
+    },
+    {
+      "name": "BoxCorners4",
+      "payload_len": 52,
+      "payload_sha256": "fb814af8a2fe79404161530ace87ea74049a0f9df04ca3cc6852c16175fb278f"
+    },
+    {
+      "name": "Diameter.SavedGeometry.0.brp",
+      "payload_len": 831,
+      "payload_sha256": "79a79da035d5c3559ae5e874e53b573f60d4ac3652f088e24f33e01bec0a7a0c"
+    },
+    {
+      "name": "BoxCorners5",
+      "payload_len": 52,
+      "payload_sha256": "202751409a6b2e839734b1231f1b52a6a4a23203b3d79197e2297482966e1b96"
+    },
+    {
+      "name": "Angle.SavedGeometry.0.brp",
+      "payload_len": 563,
+      "payload_sha256": "010b700c676498fcb99b9f48089ff12fb9fff8fabe5d62cf533765e913cfa066"
+    },
+    {
+      "name": "Angle.SavedGeometry.1.brp",
+      "payload_len": 566,
+      "payload_sha256": "5d2adc9a7c36c0d07097f50e8fba1f046cef5f95b39ac17a44b7fc9e0acd57a9"
+    },
+    {
+      "name": "BoxCorners6",
+      "payload_len": 52,
+      "payload_sha256": "f2aa4e6c0019603dca16afb0b75599ab2a4f585ad4de39c96d5d4d06240a2f8c"
+    },
+    {
+      "name": "TriangleBase.SavedGeometry.0.brp",
+      "payload_len": 563,
+      "payload_sha256": "3b7fd7b7a2fedbe1963bd034c0765e2ebdfe4b404c08ec46e2c6961be5a2cc55"
+    }
+  ],
+  "report": {
+    "census": {
+      "basis": "ir_arenas",
+      "counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "assets": 0,
+        "attributes": 0,
+        "bodies": 3,
+        "coedges": 30,
+        "configurations": 0,
+        "curves": 18,
+        "drawings": 18,
+        "edges": 18,
+        "faces": 9,
+        "feature_input_topologies": 0,
+        "feature_result_topologies": 0,
+        "features": 3,
+        "loops": 9,
+        "native.fcstd.annotations": 8,
+        "native.fcstd.applications": 21,
+        "native.fcstd.attachments": 3,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 3,
+        "native.fcstd.design_census": 3,
+        "native.fcstd.document": 1,
+        "native.fcstd.drawings": 18,
+        "native.fcstd.entries": 21,
+        "native.fcstd.extensions": 10,
+        "native.fcstd.logical_ledger": 1203,
+        "native.fcstd.objects": 21,
+        "native.fcstd.physical_ledger": 148,
+        "native.fcstd.properties": 591,
+        "native.fcstd.shape_payloads": 3,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 3,
+        "pcurves": 29,
+        "pmi": 0,
+        "points": 13,
+        "presentation_documents": 0,
+        "presentation_layers": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "product_definitions": 0,
+        "regions": 3,
+        "semantic_annotations": 8,
+        "shells": 3,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spatial_sketch_constraints": 0,
+        "spatial_sketch_entities": 0,
+        "spatial_sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 9,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 13,
+        "view_presentations": 0
+      }
+    },
+    "identity": {
+      "payload": "native",
+      "target": "fcstd:schema-4"
+    },
+    "losses": [],
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "unsupported retained entries and unedited XML records were preserved"
+    ],
+    "write_path": {
+      "fidelity": {
+        "status": "not_consumed"
+      },
+      "path": "patched"
+    }
+  }
+}

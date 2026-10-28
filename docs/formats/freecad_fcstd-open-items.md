@@ -15,26 +15,20 @@ When an item is resolved, delete it in the same change that writes the answer in
 the specification. Do not keep a Resolved part. Neutral projection limits are
 listed in [the coverage document](freecad_fcstd-coverage.md).
 
-## TD-01. Dimension `Type` selectors other than 0
+## TD-01. Three-point angle selector without custom labels
 
-**Question.** Which dimension category does each `Type` selector other than 0 identify when the
-dimension has no `CustomEnumList`?
+**Question.** Which `Type` selector identifies a three-point angle without a `CustomEnumList`?
 
-**Known.** `Type` contains an `Integer` selector. Selector 0 identifies a distance. A
-`CustomEnumList` supplies ordered category labels indexed by the selector.
+**Known.** Without custom labels, selectors 0, 1, 2, 4, 5, and 6 identify distance,
+horizontal distance, vertical distance, radius, diameter, and angle. A
+`CustomEnumList` supplies ordered category labels indexed by the selector and
+has precedence over these defaults.
 
-**Need.** Saved horizontal, vertical, radius, diameter, angle, and three-point angle dimensions
-without a `CustomEnumList`, with their serialized selectors.
+**Need.** A stored three-point angle without a `CustomEnumList` and its selected `Integer`.
 
-## TD-02. Measurement from nonempty `SavedGeometry`
+**Conflict.** None.
 
-**Question.** How does a nonempty `SavedGeometry` shape list give the dimension measurement?
-
-**Known.** `SavedGeometry` names ordered BREP members. An empty shape with `TShapes 0` holds no
-measurement.
-
-**Need.** Nonempty saved shapes paired with a known dimension category, its reference geometry,
-and its displayed value.
+**Note.** The `Angle3Pt` custom label already identifies the three-point category.
 
 ## TD-03. Arc sweep and center-line adjustment
 
