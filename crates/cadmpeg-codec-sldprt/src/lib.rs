@@ -109,6 +109,7 @@ mod classification;
 mod container;
 mod decode;
 mod dialect;
+pub mod exact_ledger;
 mod feature_schema;
 #[doc(hidden)]
 pub mod fuzz;

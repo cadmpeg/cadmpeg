@@ -17,8 +17,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
+use std::io::SeekFrom;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -45,11 +46,55 @@ use crate::resolved_features::scalars::FeatureObjectNames;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 struct DecodedBrep {
-    /// Representative stream whose header is common to every merged site.
+    /// Representative stream header whose body is common to every merged site.
     /// This can be present for an unresolved merge without selecting a site.
     metadata_header: Option<StreamHeader>,
     brep: Brep,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+}
+
+impl crate::SldprtCodec {
+    /// Decode the source, then collect the exact-read ledger of every active
+    /// Parasolid body stream.
+    ///
+    /// The decode runs first through the standard path, so its result,
+    /// admission, and stream selection match the standard decode exactly.
+    /// Ledger collection then rewinds the reader and scans the
+    /// container again in a fresh session, so the decode session budget is
+    /// untouched. Ledger collection consumes its own session budget; a ledger
+    /// refusal fails the combined call without changing what the standard
+    /// path decodes.
+    pub fn decode_with_exact_read_ledger(
+        &self,
+        reader: &mut dyn cadmpeg_core::ReadSeek,
+        options: &cadmpeg_ir::DecodeOptions,
+    ) -> Result<
+        (
+            cadmpeg_ir::codec::DecodeResult,
+            Vec<crate::exact_ledger::ExactReadLedger>,
+        ),
+        cadmpeg_ir::codec::DecodeFailure,
+    > {
+        use cadmpeg_ir::Codec as _;
+        let result = self.decode(reader, options)?;
+        reader
+            .seek(SeekFrom::Start(0))
+            .map_err(cadmpeg_core::CodecError::from)?;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy, options.depth)?;
+        let scan = container::scan(&ctx, root)?;
+        let streams = active_body_streams(&scan);
+        let mut ledgers = Vec::new();
+        for stream in &streams {
+            let body = crate::brep::graph::header_body(stream.payload, stream.header)?;
+            ledgers.push(crate::exact_ledger::ExactReadLedger::collect(
+                &stream.site_key(),
+                body,
+            ));
+        }
+        ctx.finish_session()?;
+        Ok((result, ledgers))
+    }
 }
 
 struct EvaluatedFeatureState<'a> {
