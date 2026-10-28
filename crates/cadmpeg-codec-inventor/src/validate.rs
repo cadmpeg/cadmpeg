@@ -120,7 +120,14 @@ const ARENAS: &[&str] = &[
     "wire_topologies",
 ];
 
-const OPTIONAL_ARENAS: &[&str] = &["pm_dc_sheet_metal_styles", "pm_dc_sheet_metal_flanges"];
+const OPTIONAL_ARENAS: &[&str] = &[
+    "pm_dc_sheet_metal_styles",
+    "pm_dc_sheet_metal_flanges",
+    "drawing_records",
+    "drawing_metadata_references",
+    "drawing_reference_tables",
+    "drawing_record_issues",
+];
 
 pub(crate) fn validate_native(
     ctx: &DecodeContext<'_>,
@@ -177,6 +184,15 @@ pub(crate) fn validate_native(
     let mut findings = Vec::new();
     validate_databases(&data, &mut findings);
     validate_segments(&data, &mut findings);
+    crate::drawing::validate_native(
+        ctx,
+        namespace,
+        &data.records,
+        &data.metadata,
+        &data.registry,
+        &data.meta_sections,
+        &mut findings,
+    )?;
     validate_active_carrier(&data, &mut findings);
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);

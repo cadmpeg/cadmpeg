@@ -1,4 +1,4 @@
-# Autodesk Inventor IPT/IAM: Open Items
+# Autodesk Inventor IPT/IAM/IDW: Open Items
 
 This document lists unknown Inventor byte semantics. [inventor.md](inventor.md) contains the settled format model.
 
@@ -261,10 +261,68 @@ Visibility is a property of a design-view representation. `DesignViewSegment` st
 
 **Need.** Each governing variant requires a separate finite support envelope.
 
-### EN-02. Drawing and presentation documents
+### EN-02. Presentation documents
 
-**Question.** Which segment families and records authoritatively identify and define IDW and IPN document semantics?
+**Question.** Which segment families and records define IPN document semantics?
 
-**Known.** Property metadata can name drawing and presentation kinds. Their semantic decode is not part of the IPT/IAM envelope.
+**Known.** Property metadata can name presentation documents.
 
-**Need.** Future family support must extend the Inventor codec without treating these documents as parts or assemblies.
+**Need.** Presentation records require exact layouts and graph joins.
+
+## 6. Drawing documents
+
+### DI-01. Untyped drawing record classes
+
+**Question.** What are the payload layout and drawing role of each drawing record class that has no typed form in section 15?
+
+**Known.** RSe framing supplies each record's type identifier and exact payload boundary. The registry type of the owning segment gives its drawing family. Records of untyped classes are retained as native RSe records.
+
+**Need.** Each class requires its byte grammar, its reference address spaces, and its semantic role.
+
+### DI-02. Sheet paper and drawing-view placement
+
+**Question.** Which fields give the sheet paper size and orientation, and each drawing view's placement, scale, orientation, and label?
+
+**Known.** The sheet record stores a counted label, six property references, `controls:bytes[24]`, and the view-reference lists. The drawing view stores nineteen ordered operand references, `word:u16`, `values:u32[2]`, counted text, and an opaque tail.
+
+**Need.** Each of these values requires its field, unit, and coordinate frame.
+
+### DI-03. Cached drawing-view geometry
+
+**Question.** Which sheet-cache records store the 2D curves of a drawing view, and what are their curve forms and coordinate frame?
+
+**Known.** The cached-view record selects one drawing-view record through metadata sections 10, 8, and 7. The other sheet-cache and sheet-display classes are untyped.
+
+**Need.** Curve records require exact layouts, their owning view, and their frame relative to the sheet.
+
+### DI-04. Drawing dimensions
+
+**Question.** Which records store drawing dimensions, and how do they encode the dimension kind, value, text, and attachment geometry?
+
+**Known.** No dimension record class is typed.
+
+**Need.** Dimension records require exact layouts and joins to the views and curves they annotate.
+
+### DI-05. Title block and border
+
+**Question.** Which records store the sheet border, the title block, and their text?
+
+**Known.** The six sheet property references select one fixed class. Its role is not established.
+
+**Need.** Border and title-block records require exact layouts and their text fields.
+
+### DI-06. Drawing external-reference words
+
+**Question.** How do the nonzero high words in metadata section 10 select their reference address space, and how do the section-9 forms contribute to revision counts?
+
+**Known.** Section 9 has a u16 key, a u8 tag, and a tag-sized payload. Tags 1 and 2 have sixteen-byte payloads. Tag 3 has an eight-byte payload. Section 10 has eight-byte entries. A cached-view reference uses the zero-high-word, zero-key-extension form to select one drawing-view definition.
+
+**Need.** Each additional form requires an exact target and count rule.
+
+### DI-07. Drawing UFRx reference suffix
+
+**Question.** What is the schema-12 drawing suffix grammar, and which identities join its document references to the RSe view definitions?
+
+**Known.** The `UFRxDoc` prefix supplies schema and section versions, counted document text, and representation fields. The drawing view stores counted document-location text. The sheet supplies the main and alternate view-reference lists.
+
+**Need.** The suffix fields require exact boundaries, reference encodings, and identity joins.

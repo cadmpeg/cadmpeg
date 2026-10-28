@@ -379,6 +379,7 @@ fn decode_container<'a>(
     let meta_types = projection.meta_types;
     let segment_meta_issues = projection.segment_meta_issues;
     let rse_records = projection.rse_records;
+    let drawing_inventory = crate::drawing::inventory(ctx, container, &rse_records)?;
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
     let unpaired_segments = projection.unpaired_segments;
@@ -538,7 +539,9 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "unpaired_segments", &unpaired_segments)?;
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
+    drawing_inventory.write(ctx, namespace)?;
     let mut losses = crate::container::deviation_losses(&container.snapshot);
+    losses.extend(drawing_inventory.losses());
     let mut geometry_failure = None;
     let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
