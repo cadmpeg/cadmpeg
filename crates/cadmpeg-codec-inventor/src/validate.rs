@@ -1378,6 +1378,30 @@ fn validate_features(
             .iter()
             .map(|record| (record.id(), record)),
     );
+    let work_plane_records =
+        cadmpeg_core::decode::unique_index(data.pm_dc_work_planes.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record.id(),
+            )
+        }));
+    let datum_plane_features = cadmpeg_core::decode::unique_index(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::DatumPlane { .. }
+                    )
+                )
+            })
+            .filter_map(|feature| Some((feature.native_ref.as_deref()?, &feature.id))),
+    );
     let thicken_record_types =
         cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
             (
@@ -1782,6 +1806,30 @@ fn validate_features(
                 "Inventor Combine operands, operation, or keep-tools state differs from its PmDc properties".into(),
                 Some(feature.id.as_str().to_owned()),
             ));
+        }
+        if matches!(family, crate::feature::FeatureFamily::Split) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::split::definition(
+                raw_feature,
+                |reference| {
+                    let ordinal = reference.checked_sub(1)?;
+                    properties_by_record.get(&(token, ordinal)).copied()
+                },
+                |ordinal| {
+                    let native = work_plane_records.get(&(token, ordinal))?.as_ref()?;
+                    datum_plane_features
+                        .get(native.as_str())?
+                        .as_ref()
+                        .map(|id| (*id).clone())
+                },
+            );
+            if expected.as_ref() != Some(definition) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral split does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
         }
         let output_slot = family.output_slot(raw_feature);
         let expected_collection = raw_feature

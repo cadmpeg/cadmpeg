@@ -775,6 +775,8 @@ Slot | Record type
 
 The slot-3 enumeration selects the tool reference. Value 2 selects the work plane in slot 5. Value 3 selects the surface-body wrapper in slot 8. The unused tool reference is null. The work-plane frame follows the grammar and units in section 13.
 
+The slot-0 enumeration has type value 3. Value 3 is a solid split: the slot-1 Boolean is false, slot 2 is null, the slot-4 boundary-patch list is empty, the slot-7 selection has one surface-body wrapper, and the slot-9 collection has two distinct surface-body wrappers. The slot-7 wrapper is the body that the tool partitions. The slot-9 wrappers are the result bodies, one for each side of the tool. A work-plane tool is a work-plane browser node (section 13.1), and the split extends its plane through the body. A surface tool is a surface-body wrapper distinct from the slot-7 wrapper, and the split extends its faces through the body.
+
 ### 13.4 Stored-body base features
 
 Feature-label class `2d11a90cd0118b83000819b00524dc09` identifies a stored-body base feature. Its property vector has three slots. Slots 0 and 1 select surface-body wrappers of type `474d8790d011f8d10008cabc0663dc09`; slot 2 is null. Slot 0 is the stored source body. Its body reference is null or a qualified reference to a kernel-entity link in the same PmDc segment. The link selects a stored kernel-body record in that segment. Its entity identifier selects the unique body with that nonnegative ASM body key in the stored carrier. Slot 1 is the result-body identity. Its body reference is a non-null unqualified external reference. The two wrappers have distinct record identities. Their kernel-entity links have state 0 and `selection_source` equal to the referencing wrapper's `source_index`.
