@@ -215,6 +215,18 @@ pub(crate) fn project_feature_model(
                 } else {
                     None
                 };
+                let dependencies = project_feature_dependencies(feature, &by_source)?;
+                let mut source_properties = feature.properties.clone();
+                let states_references = FEATURE_REFERENCE_PROPERTIES
+                    .iter()
+                    .any(|name| source_properties.contains_key(*name));
+                if states_references && dependencies.is_empty() {
+                    if let Some(marker) =
+                        cadmpeg_core::text::NonBlankString::new("dependencies_decoded".to_owned())
+                    {
+                        source_properties.insert(marker, "false".to_owned());
+                    }
+                }
                 let projected = cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id)?,
                     ordinal: source_ordered
@@ -224,8 +236,8 @@ pub(crate) fn project_feature_model(
                         .unwrap_or(u64::from(feature.ordinal)),
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: Some(feature.suppressed),
-                    dependencies: project_feature_dependencies(feature, &by_source)?,
-                    source_properties: feature.properties.clone(),
+                    dependencies,
+                    source_properties,
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
                     source_content: project_feature_content(feature, &by_native)?,
@@ -1040,6 +1052,29 @@ pub(crate) fn incomplete_history_reference_features(
         }
     }
     Ok(incomplete)
+}
+
+/// Duplicate source identities with the source spans that state them.
+///
+/// Each entry names a restated native `id` and the byte spans of the records
+/// carrying it, as retained on the history properties during decode, so the
+/// diagnostic retains the evidence instead of counting it.
+pub(crate) fn duplicate_history_source_diagnostics(histories: &[FeatureHistory]) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    for history in histories {
+        if let Some(spans) = history
+            .properties
+            .iter()
+            .find(|(key, _)| key.as_str() == "duplicate_source_spans")
+            .map(|(_, value)| value.clone())
+        {
+            diagnostics.push(spans);
+            if diagnostics.len() >= 8 {
+                return diagnostics;
+            }
+        }
+    }
+    diagnostics
 }
 
 fn project_feature_content(
