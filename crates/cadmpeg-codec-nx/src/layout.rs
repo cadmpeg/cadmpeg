@@ -530,10 +530,10 @@ pub(crate) mod chart_s_preamble {
 
 /// Byte offsets for the `nurbs_surface_descriptor_prefix` record.
 ///
-/// Spec §6.2. Record length 28 B.
+/// Spec §6.2. Record length 34 B.
 ///
 /// ```text
-/// Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width.
+/// Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width.
 /// ```
 pub(crate) mod nurbs_surface_descriptor_prefix {
     /// Offset of `u_periodic` (`u8`). Spec §6.2.
@@ -556,6 +556,10 @@ pub(crate) mod nurbs_surface_descriptor_prefix {
     pub(crate) const U_DISTINCT_KNOT_COUNT: usize = 20;
     /// Offset of `v_distinct_knot_count` (`u32`, big-endian). Spec §6.2.
     pub(crate) const V_DISTINCT_KNOT_COUNT: usize = 24;
+    /// Offset of `rational` (`u8`). Spec §6.2.
+    pub(crate) const RATIONAL: usize = 28;
+    /// Offset of `dimension` (`u16`, big-endian). Spec §6.2.
+    pub(crate) const DIMENSION: usize = 32;
 }
 
 /// Byte offsets for the `nurbs_curve_descriptor_prefix` record.

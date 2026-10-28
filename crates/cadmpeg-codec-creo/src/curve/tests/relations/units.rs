@@ -8,6 +8,37 @@ use crate::curve::{
 use std::collections::BTreeMap;
 
 #[test]
+fn power_prefix_case_preserves_physical_scale() {
+    let values = BTreeMap::new();
+    for (source, expected) in [
+        ("1[mW]/(1[joule]/1[s])", 0.001),
+        ("1[MW]/(1[joule]/1[s])", 1_000_000.0),
+        ("1[MW]/1[mW]", 1_000_000_000.0),
+    ] {
+        let Some(CurveExpressionValue::Number(actual)) =
+            parse_relation_expression::<CurveExpressionValue>(
+                source,
+                &values,
+                RelationEvaluationContext::default(),
+            )
+        else {
+            panic!("dimensionless power ratio: {source}");
+        };
+        assert!((actual.get() - expected).abs() <= EPS_RELATION_VALUE * expected);
+    }
+    for source in ["1[mw]", "1[Mw]"] {
+        assert_eq!(
+            parse_relation_expression::<CurveExpressionValue>(
+                source,
+                &values,
+                RelationEvaluationContext::default(),
+            ),
+            None,
+        );
+    }
+}
+
+#[test]
 fn bracketed_relation_units_are_not_dependencies() {
     let lines = [
         CurveExpressionLine {

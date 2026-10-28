@@ -336,9 +336,30 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins
         )
         .unwrap(),
-        Some(SketchConstraintDefinitionInput::Parallel {
-            first: first.clone(),
-            second: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+        Some(SketchConstraintDefinitionInput::Native {
+            native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:7")
+                .unwrap(),
+            native_state: None,
+            native_flags: None,
+            native_properties: BTreeMap::new(),
+            entities: vec![first.clone(), second.clone()],
+            parameter: None,
+            operands: vec![
+                SketchNativeOperand {
+                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
+                        .unwrap(),
+                    field: None,
+                    object_index: Some(1),
+                    native_ref: Some("marker-a".into()),
+                },
+                SketchNativeOperand {
+                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
+                        .unwrap(),
+                    field: None,
+                    object_index: Some(3),
+                    native_ref: Some("marker-c".into()),
+                },
+            ],
         })
     );
     let mut symmetric = marker("symmetric", None);

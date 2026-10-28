@@ -274,6 +274,17 @@
       },
       {
         "code": {
+          "code": "topology.face-records-unread",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 framed FACE record(s) have no closed loop ring that the decoder reads, so no decoded face carries them.",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "feature.typed-operand-incomplete",
           "kind": "feature_history_retained",
           "namespace": "sldprt",

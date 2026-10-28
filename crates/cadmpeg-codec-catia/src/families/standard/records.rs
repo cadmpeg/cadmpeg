@@ -110,11 +110,11 @@ impl AnalyticSurfaceKind {
     }
     const fn bounds_offset(self) -> usize {
         match self {
-            Self::Plane => 3,
-            Self::Cylinder => 27,
-            Self::Cone => 27,
-            Self::Sphere => 19,
-            Self::Torus => 31,
+            Self::Plane => analytic_plane::BOUNDS - analytic_plane::MARKER,
+            Self::Cylinder => analytic_cylinder::BOUNDS - analytic_cylinder::MARKER,
+            Self::Cone => analytic_cone::BOUNDS - analytic_cone::MARKER,
+            Self::Sphere => analytic_sphere::BOUNDS - analytic_sphere::MARKER,
+            Self::Torus => analytic_torus::BOUNDS - analytic_torus::MARKER,
         }
     }
 }
@@ -244,18 +244,33 @@ struct StandardSurfaceRecordTable {
     successors: Vec<Option<usize>>,
 }
 
+fn analytic_record_fields_are_valid(brep: &[u8], prefix: &SurfacePrefix) -> bool {
+    (|| -> Option<()> {
+        let marker_length = analytic_plane::KIND + 1 - analytic_plane::MARKER;
+        let parameter_start = prefix.pos.checked_add(marker_length)?;
+        let bounds_start = prefix.pos.checked_add(prefix.kind.bounds_offset())?;
+        let parameter_bytes = bounds_start.checked_sub(parameter_start)?;
+        let mut view = View::over_retained(brep);
+        view.seek(parameter_start)?;
+        for _ in 0..parameter_bytes / std::mem::size_of::<f32>() {
+            if !view.f32_be()?.is_finite() {
+                return None;
+            }
+        }
+        face_bounds_at(brep, bounds_start)?;
+        Some(())
+    })()
+    .is_some()
+}
+
 fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
-    for prefix in surface_prefixes(brep) {
-        records.insert(
-            prefix.pos - analytic_plane::MARKER,
-            StandardSurfaceRecord::Analytic(prefix),
-        );
-    }
     let mut analytic_ranges = Vec::new();
-    for record in records.values() {
-        if let StandardSurfaceRecord::Analytic(prefix) = record {
-            analytic_ranges.push((prefix.pos - analytic_plane::MARKER, record.end()));
+    for prefix in surface_prefixes(brep) {
+        let record = StandardSurfaceRecord::Analytic(prefix);
+        analytic_ranges.push((record.pos(), record.end()));
+        if analytic_record_fields_are_valid(brep, &prefix) {
+            records.insert(record.pos(), record);
         }
     }
     let mut next_analytic = analytic_ranges.iter().copied().peekable();

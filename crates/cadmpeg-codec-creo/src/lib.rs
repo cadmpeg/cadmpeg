@@ -68,6 +68,7 @@ mod curve;
 mod datum;
 mod decode;
 mod dialect;
+mod double_xar;
 mod feature;
 mod identity;
 mod interpolation_grid;

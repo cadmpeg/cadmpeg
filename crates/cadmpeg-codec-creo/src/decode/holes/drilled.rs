@@ -818,19 +818,11 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
 }
 
 pub(in crate::decode) fn simple_drilled_hole_dimensions(
-    scan: &ContainerScan,
+    _scan: &ContainerScan,
     observed_envelope_spans: Option<[[Option<PositiveLength>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
 ) -> Option<(f64, f64, f64)> {
-    simple_drilled_hole_dimension_values(
-        scan.features
-            .definitions
-            .iter()
-            .filter(|definition| definition.identity.id() == 911)
-            .filter_map(|definition| definition.dimensions.as_ref()),
-        observed_envelope_spans,
-        family,
-    )
+    simple_drilled_hole_dimension_values(std::iter::empty(), observed_envelope_spans, family)
 }
 
 pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
@@ -967,6 +959,7 @@ mod tests {
                 ),
                 boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                 offset: 0,
+                type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
                 body_offset: 0,
             });
         let table = crate::feature::entity::FeatureEntityTable::new(

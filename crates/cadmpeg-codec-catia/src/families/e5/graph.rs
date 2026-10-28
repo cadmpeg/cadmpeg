@@ -835,7 +835,7 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
     }
 }
 
-const E5_NURBS_PCURVE_TAIL_BYTES: usize = 37;
+const E5_NURBS_PCURVE_TAIL_BYTES: usize = super::limit_program::CurveLimits::LEN;
 
 fn finite_f64_le(view: &mut View<'_>) -> Option<FiniteReal> {
     FiniteReal::new(view.f64_le()?)
@@ -887,21 +887,12 @@ fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E
         let point = (|| Some([finite_f64_le(&mut view)?, finite_f64_le(&mut view)?]))()?;
         control_points.push(point);
     }
-    if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES {
+    let program = super::limit_program::CurveLimits::read(&mut view)?;
+    if !program.is_disabled_identity() {
         return None;
     }
-    let (arcs, locals, coefficient, shift, extrapolation) = (|| {
-        Some((
-            [view.u16_le()?, view.u16_le()?],
-            [view.f64_le()?, view.f64_le()?],
-            view.f64_le()?,
-            view.f64_le()?,
-            view.u8()?,
-        ))
-    })()?;
-    if coefficient != 1.0 || shift != 0.0 || extrapolation != 0 {
-        return None;
-    }
+    let arcs = program.arcs();
+    let locals = program.locals();
     let range = super::parameters::current_limits(arcs, locals, |arc| {
         Some([knots.get(arc)?.get(), knots.get(arc.checked_add(1)?)?.get()])
     })?;
@@ -1309,9 +1300,76 @@ fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<bool, LoopSign
     Ok(outer == 1)
 }
 
-pub(super) fn parse_edge(payload: &[u8]) -> Option<E5Edge> {
-    use wire::bytes::AllocationReferenceEncoding;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "E5EdgeAllocationWire", into = "E5EdgeAllocationWire")]
+pub(crate) struct E5EdgeAllocationTerminal {
+    raw_byte: u8,
+    value: u32,
+    encoding: wire::bytes::AllocationReferenceEncoding,
+}
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct E5EdgeAllocationWire {
+    raw_byte: u8,
+    value: u32,
+    encoding: wire::bytes::AllocationReferenceEncoding,
+}
+
+impl E5EdgeAllocationTerminal {
+    fn read(payload: &[u8], position: &mut usize) -> Option<Self> {
+        use wire::bytes::AllocationReferenceEncoding;
+        let start = *position;
+        let raw_byte = *payload.get(start)?;
+        let reference = wire::bytes::allocation_reference(payload, position)?;
+        if *position != start.checked_add(1)?
+            || !matches!(
+                (reference.encoding, reference.value),
+                (
+                    AllocationReferenceEncoding::BackwardDistance,
+                    0 | 8 | 9 | 10
+                ) | (AllocationReferenceEncoding::Selector2, 0 | 8 | 10)
+            )
+        {
+            return None;
+        }
+        Some(Self {
+            raw_byte,
+            value: reference.value,
+            encoding: reference.encoding,
+        })
+    }
+}
+
+impl From<E5EdgeAllocationTerminal> for E5EdgeAllocationWire {
+    fn from(value: E5EdgeAllocationTerminal) -> Self {
+        Self {
+            raw_byte: value.raw_byte,
+            value: value.value,
+            encoding: value.encoding,
+        }
+    }
+}
+
+impl TryFrom<E5EdgeAllocationWire> for E5EdgeAllocationTerminal {
+    type Error = &'static str;
+    fn try_from(wire: E5EdgeAllocationWire) -> Result<Self, Self::Error> {
+        let parsed = Self::read(&[wire.raw_byte], &mut 0)
+            .ok_or("unsupported E5 edge allocation terminal")?;
+        if parsed.value != wire.value || parsed.encoding != wire.encoding {
+            return Err("E5 edge allocation terminal fields disagree");
+        }
+        Ok(parsed)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct E5EdgeRecord {
+    pub(crate) references: [u32; 5],
+    pub(crate) allocation_terminal: E5EdgeAllocationTerminal,
+}
+
+pub(crate) fn parse_edge_record(payload: &[u8]) -> Option<E5EdgeRecord> {
     if payload.first() != Some(&0x85) {
         return None;
     }
@@ -1326,18 +1384,19 @@ pub(super) fn parse_edge(payload: &[u8]) -> Option<E5Edge> {
             wire::tokens::object_ref(payload, &mut position, false)?
         };
     }
-    let terminal = wire::bytes::allocation_reference(payload, &mut position)?;
-    if position != payload.len()
-        || !matches!(
-            (terminal.encoding, terminal.value),
-            (
-                AllocationReferenceEncoding::BackwardDistance,
-                0 | 8 | 9 | 10
-            ) | (AllocationReferenceEncoding::Selector2, 0 | 8 | 10)
-        )
-    {
+    let allocation_terminal = E5EdgeAllocationTerminal::read(payload, &mut position)?;
+    if position != payload.len() {
         return None;
     }
+    Some(E5EdgeRecord {
+        references,
+        allocation_terminal,
+    })
+}
+
+pub(super) fn parse_edge(payload: &[u8]) -> Option<E5Edge> {
+    let parsed = parse_edge_record(payload)?;
+    let references = parsed.references;
     let [support, start_vertex, end_vertex, parameter_start, parameter_end] = references;
     Some(E5Edge {
         support,
@@ -2306,5 +2365,15 @@ mod tests {
         );
         let service = crate::test_support::with_service_context(|_ctx| parse_topology(&bytes));
         assert!(service.is_none());
+    }
+    #[test]
+    fn allocation_terminal_does_not_change_semantic_edge_equality() {
+        let first = [0x85, 0x8d, 0x8a, 0x90, 0x8e, 0x8f, 0x21];
+        let second = [0x85, 0x8d, 0x8a, 0x90, 0x8e, 0x8f, 0x22];
+        let a = super::parse_edge_record(&first).expect("complete wire edge");
+        let b = super::parse_edge_record(&second).expect("complete wire edge");
+        assert_eq!(a.references, b.references);
+        assert_ne!(a.allocation_terminal, b.allocation_terminal);
+        assert_eq!(super::parse_edge(&first), super::parse_edge(&second));
     }
 }

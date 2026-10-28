@@ -51,51 +51,21 @@ fn feature_affected_id_aggregation_collects_one_record() {
 }
 
 #[test]
-fn revolution_extent_aggregation_collects_one_extent() {
-    use crate::feature::definitions::{DefinitionIdentity, FeatureDefinition};
-    use crate::feature::operations::{
-        FeatureOperation, FeatureRecipe, OperationKind, OperationName, RecipeResolution,
-    };
+fn model_dimension_aggregation_reads_full_data_sections_at_file_offsets() {
+    let mut data = b"pad!".to_vec();
+    data.extend_from_slice(b"\xe0\x00dim_array\0\xf8\x02\xf7\x02\xfb\xe1");
+    let element = data.len();
+    data.extend_from_slice(b"\xe3\x08\x15\x82\x9b\x81\x81\x20\xe3\x2f\x76\x80");
+    let full = super::Section::scan("BasFullData".to_string(), 4, data.len(), None, &data)
+        .expect("bounded full-data section");
+    let other = super::Section::scan("FeatDefs".to_string(), 4, data.len(), None, &data)
+        .expect("bounded feature section");
 
-    let body = [
-        0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
-        0x00, 0x00,
-    ];
-    let definition = FeatureDefinition {
-        identity: DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(247),
-            owner_feature_id: Some(247),
-        },
-        body: body.to_vec(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
-    let operation = FeatureOperation {
-        feature_id: 247,
-        kind: OperationKind::Revolve,
-        name: OperationName::Derived,
-        recipe: RecipeResolution::Resolved(FeatureRecipe::ProtrudeRevolve),
-        display_state_conflict: false,
-        depdb: None,
-        offset: 0,
-        state_offset: 0,
-    };
-    let records = super::feature_revolution_extents(
-        &[],
-        std::slice::from_ref(&definition),
-        std::slice::from_ref(&operation),
-    );
-    assert_eq!(records.len(), 1);
+    let dimensions = super::model_dimensions(&[full, other]);
+
+    assert_eq!(dimensions.len(), 1);
+    assert_eq!(dimensions[0].feature_id, 667);
+    assert_eq!(dimensions[0].offset, element + 1);
 }
 
 #[test]
@@ -261,9 +231,11 @@ fn duplicate_primitive_section_namespace_is_refused() {
             compressed_length: 0,
             data: Vec::new(),
         };
-        let error = super::scan_primitives(&[section(1), section(2)])
-            .map(|scan| scan.scalar_arrays.len())
-            .expect_err("distinct sections cannot share primitive identity");
+        let error = crate::decode::with_service_context(|ctx| {
+            super::scan_primitives(ctx, &[section(1), section(2)])
+                .map(|scan| scan.scalar_arrays.len())
+        })
+        .expect_err("distinct sections cannot share primitive identity");
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed { .. }));
     };
 }

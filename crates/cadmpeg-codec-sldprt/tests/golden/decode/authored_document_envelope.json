@@ -26,27 +26,6 @@
           ]
         },
         {
-          "id": "sldprt:metadata:configuration_manager#348:300",
-          "name": "configuration_manager",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 17
-            },
-            {
-              "kind": "integer",
-              "value": 3
-            },
-            {
-              "kind": "integer",
-              "value": 132537600000000000
-            }
-          ]
-        },
-        {
           "id": "sldprt:metadata:default_reference_plane#348:54",
           "name": "default_reference_plane",
           "target": {
@@ -75,7 +54,7 @@
           ]
         },
         {
-          "id": "sldprt:metadata:part_record#348:279",
+          "id": "sldprt:metadata:part_record#1062:6",
           "name": "part_record",
           "target": {
             "kind": "document"
@@ -396,6 +375,9 @@
         "sketch_input_entities": [],
         "unknowns": [
           {
+            "id": "sldprt:file:block#1062"
+          },
+          {
             "id": "sldprt:file:block#12"
           },
           {
@@ -416,7 +398,7 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "5",
+        "block_count": "6",
         "bmp_thumbnail_count": "0",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "compound_stream_count": "0",
@@ -505,7 +487,7 @@
       }
     ],
     "notes": [
-      "outer version word: 0x00000004; 5 CRC-validated block(s), 5 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+      "outer version word: 0x00000004; 6 CRC-validated block(s), 6 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
       "active Parasolid B-rep candidate: Contents/Config-0-Partition (701 bytes, schema SCH_SW_33103_11000)",
       "Parasolid body streams supply the typed topology and analytic carriers used by decode"
     ],
@@ -615,6 +597,11 @@
           "stream": "Contents/Config-0-Partition",
           "tag": "00_12"
         },
+        "sldprt:file:block#1062": {
+          "offset": 1062,
+          "stream": "SWObjects/PartRoot",
+          "tag": "sw-objects"
+        },
         "sldprt:file:block#12": {
           "offset": 12,
           "stream": "Contents/Config-0-Partition",
@@ -660,19 +647,14 @@
           "stream": "SWObjects",
           "tag": "moBBoxCenterData_c"
         },
-        "sldprt:metadata:configuration_manager#348:300": {
-          "offset": 300,
-          "stream": "SWObjects",
-          "tag": "moConfigurationMgr_c"
-        },
         "sldprt:metadata:default_reference_plane#348:54": {
           "offset": 54,
           "stream": "SWObjects",
           "tag": "moDefaultRefPlnData_c"
         },
-        "sldprt:metadata:part_record#348:279": {
-          "offset": 279,
-          "stream": "SWObjects",
+        "sldprt:metadata:part_record#1062:6": {
+          "offset": 6,
+          "stream": "SWObjects/PartRoot",
           "tag": "moPart_c"
         },
         "sldprt:metadata:source_linear_unit_code#638:10": {
@@ -693,6 +675,14 @@
       }
     },
     "retained_records": {
+      "sldprt:file:block#1062": {
+        "bytes": {
+          "data": "//8BAAgAbW9QYXJ0X2MqAAAAAAAAAOoHAAD//wEADABtb05vZGVOYW1lX2M=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "SWObjects/PartRoot"
+      },
       "sldprt:file:block#12": {
         "bytes": {
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAOEABAAKQAAAAAAAMK8ko+ZbgAAAAAAAAAAAAAAAAAAA4QAEAAqAAAAAAAAwrySj5luAAAAAAAAAAAAAAAAAAADhAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAA4QAEgAzAAAAAAAAAAAAAAAAAD3CvJKPmW4AAAOEABIANAAAAAAAAAAAAAAAAAA+wrySj5luAAADhAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAM/wOEAAGKJAAFAAYAAQABAAEAAUCPQAAAAAAAPkV5juIwjDoAAQABAAEBAAIBAQOFAAEAAQABAAEAAQABA4YAAQABAAEADf8DhQADEMUAAQOEAAEAAQABAAEDhgABABP/A4YABJdmAAEDhAABAAEDhVMADv8ACgAGGooAAcK8ko+ZbgAAAAEAAQAAA4UAZCs=",
@@ -735,7 +725,7 @@
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAGSNFHwXAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaNkb1KA0EUhc84mkJ0TaKVsHELC5M0s04qSWJABEthC8tFWYQ0iUia9IlFEAM24rtYCb6IT+AbrHf37iY7+T/Dzs/57t17mbn1AFhP98+9dq/d7TgP3aAPFL2rG9+787V2lfZdVymFcwQwVMWGuvwz1zlZ2OXN99f7+LOTuEf0BdkiB7EVqRQnFGjlsBPqDjjjrgp0ZNuBprmc2k5il1CjucJ2ntNmaieSA+LlNbyykhfj1qaqp3Ex0wZrGKxmsGaG2ahjE9loZI9L799Gc5E9F78XUnExOsUOchA8WuMW93fdf/tVrxfsCmwJIYdpUDTkS7LbDwnI/A9ZAwMehrRsfzymQA49WCE9de54BDG53ygB9Iug+g9a2ciHFAAGAAgAQwAAAA479Pf7AAAA2AEAAAkAAAA1dfQmplY2RzelT89LAkEUfktB56Cu/QFduzehQgQZW+R5GpfZdcOZgdkRoiA81F9Qlzp06tKlqwrCnr0qeBS96kWvIo4/ZkQPCoIfvPe99/F+MpFIiKck5YrKFFEEew4AvBz9X3ae35DhT1Q+ee/dln9ik/8iJlLUJ4W8uqO+m+emcfQ3qKezLjL8gIavj1X1kUOwFv0NOoDWDhwDE/eS8Gi+gHC6vG1mughQvADAtsXZcDD6/pqhYrmGzuZoLPTY6rHVYzOuPX3QJVJh79Qu6B5MHRNJwf0wKEiiQsHTgcQe7IzDbQv3VuJs6bzVdJi4pjxQuUxEZYaHKsKeHuv9K7iBCVrZyIcUAAYACABEAAAAWs0rOUUAAABAAAAABQAAAFXmlkc3AUAAv/88TWV0YWRhdGE+PFByb3BlcnR5IE5hbWU9IlNXX1VuaXRzTGluZWFyIiBWYWx1ZT0iMCIvPjwvTWV0YWRhdGE+WtnIhxQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAANPbmR1bmRzfytFaXd/YnRjcBRAC7/zxLZXl3b3Jkcz48Q29uZmlndXJhdGlvbiBOYW1lPSJEZWZhdWx0IiBTb3VyY2VJbmRleD0iMCIvPjwvS2V5d29yZHM+WtnIhxQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAANPbmR1bmRzfyZFYWR1cnVjdtj7sOgkAQRX+FTC9LtDMsjViYiAUUxnIDi2zch2GGjJ+vS+VGu8mc3HtyS+QuWDNcw/zA7OWsRwkT0XMvBDPnGCFHmPfBCeRtUewE9pN2CqoSuQmDtpkZJLh4bQrIkA/Bj+a+zIpM8BfltIRaj2qxBCKGEn42SD/PT8mplrC2rYpWj4miCUit7rWnJCfhduyiRPy1iO+51RtFK34oAAAUAAYACAAgAAAAZI0UfBcBAAC9AgAAGwAAAAAAAAABAAAAAAAAAAAANPbmR1bmRzfyNPbmZpZ20gPSBRYnR5ZHlvbmRSt+KAAAFAAGAAgAQwAAAA479Pf7AAAA2AEAAAkAAAAAAAAAAQAAAAAAUAEAADV19CamVjZHN0UrfigAABQABgAIAEQAAABazSs5RQAAAEAAAAAFAAAAAAAAAAEAAAAAAHICAABV5pZHN0UrfigAABQABgAIAEIAAAAohzfjSQAAAEQAAAARAAAAAAAAAAEAAAAAANoCAAA09uZHVuZHN/K0Vpd39idGN0UrfigAABQABgAIAEMAAAB9tibjmQAAAP0AAAARAAAAAAAAAAEAAAAAAFIDAAA09uZHVuZHN/JkVhZHVydWN5+CXgIAAAAABQAFADEBAAAaBAAAAAA=",
+          "data": "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",
           "retention": "inline"
         },
         "offset": 0,

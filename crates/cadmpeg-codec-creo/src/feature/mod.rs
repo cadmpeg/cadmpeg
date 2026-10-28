@@ -7,6 +7,7 @@
 //! when its byte offset is bounded by that row's known feature-id header.
 
 pub(crate) mod definitions;
+pub(crate) mod dimensions;
 pub(crate) mod entity;
 mod helpers;
 pub(crate) mod operations;

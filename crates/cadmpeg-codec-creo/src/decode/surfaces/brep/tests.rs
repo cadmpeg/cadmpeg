@@ -94,6 +94,17 @@ fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
             side: crate::topology::Side::Zero,
         }],
     ));
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 0,
+            feature_id: 1,
+            directions: [1, 0xf6],
+            faces: [std::num::NonZeroU32::new(5), None],
+            next_edges: [10, 0],
+            offset: 0,
+        });
     scan
 }
 
@@ -1147,4 +1158,36 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
     assert_eq!(ir.model.shells[0].wire_edges().len(), 3);
+}
+
+#[test]
+fn brep_face_candidate_refuses_an_extra_original_incident_side() {
+    let mut scan = face_candidate_scan();
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 11,
+            type_byte: 0,
+            feature_id: 1,
+            directions: [1, 0xf6],
+            faces: [std::num::NonZeroU32::new(5), None],
+            next_edges: [99, 0],
+            offset: 0,
+        });
+    assert_eq!(scan.topology.loops.len(), 1);
+    let indexes = BrepFaceCandidateIndexes::from_scan(&scan, &NativeSurfaceNamespaces::new(&scan));
+    assert!(!indexes.loops_by_face.contains_key(&5));
+    assert!(indexes.boundary_curve_ids.is_empty());
+}
+
+#[test]
+fn brep_face_candidate_refuses_duplicated_original_curve_identity() {
+    let mut scan = face_candidate_scan();
+    scan.curves
+        .topology_rows
+        .push(scan.curves.topology_rows[0].clone());
+    assert_eq!(scan.topology.loops.len(), 1);
+    let indexes = BrepFaceCandidateIndexes::from_scan(&scan, &NativeSurfaceNamespaces::new(&scan));
+    assert!(!indexes.loops_by_face.contains_key(&5));
+    assert!(indexes.boundary_curve_ids.is_empty());
 }

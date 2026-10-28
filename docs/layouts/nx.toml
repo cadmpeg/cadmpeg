@@ -2282,9 +2282,9 @@ name = "nurbs_surface_descriptor_prefix"
 kind = "byte"
 section = "6.2"
 anchor = "`u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`"
-size = 28
+size = 34
 endianness = "big"
-note = "Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width."
+note = "Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width."
 
 [[record.field]]
 name = "u_periodic"
@@ -2355,6 +2355,25 @@ offset = 24
 type = "u32"
 source = "spec"
 anchor = "distinct-knot counts `+20/+24`"
+
+[[record.field]]
+name = "rational"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "rational `+28`"
+
+[[record.field]]
+name = "dimension"
+offset = 32
+type = "u16"
+source = "spec"
+anchor = "vertex dimension `+32`"
+
+[[record.gap]]
+offset = 29
+size = 3
+note = "U/V closed flags and surface form."
 
 [[record.gap]]
 offset = 0

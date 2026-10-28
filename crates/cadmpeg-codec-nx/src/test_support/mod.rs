@@ -56,3 +56,5 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
 }
 
 pub(crate) mod blend_history;
+
+pub(crate) mod sweep_history;

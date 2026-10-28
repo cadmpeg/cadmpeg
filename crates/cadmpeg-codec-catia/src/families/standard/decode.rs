@@ -2066,11 +2066,17 @@ fn try_decode_standard_population(
     for support in &curve_supports {
         edge_tags.insert(support.tag);
     }
+    let selected_face_tags = records.iter().map(|record| match record {
+        StandardSurfaceRecord::Analytic(prefix) => prefix.target,
+        StandardSurfaceRecord::Freeform { tag, .. } => *tag,
+    }).collect::<BTreeSet<_>>();
+    let selected_face_tags = (selected_face_tags.len() == records.len()).then_some(&selected_face_tags);
     let mut object_evidence = match standard_object_evidence(
         ctx,
         scan,
         &freeform_tags,
         &edge_tags,
+        selected_face_tags,
         &consolidated_records,
         refusal,
     ) {
@@ -2239,6 +2245,15 @@ fn try_decode_standard_population(
                     i, SurfaceId::mint));
                 if let Some(forward) = crate::families::standard::records::face_sense(brep, prefix)
                 {
+                    let forward = if prefix.kind == AnalyticSurfaceKind::Plane {
+                        object_evidence.shell_planes.get(&prefix.target).and_then(|selected| {
+                            let plane = planes.get(&prefix.target)?;
+                            let neutral_normal = unit_vector(Vector3::from(plane.normal.get()))?;
+                            selected.forward_on(neutral_normal, forward)
+                        }).unwrap_or(forward)
+                    } else {
+                        forward
+                    };
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
                 let (annotation_stream, annotation_offset, annotation_tag) =
@@ -2861,6 +2876,7 @@ pub(in crate::families::standard) struct StandardObjectEvidence {
     pub(super) procedural_surfaces: HashMap<u32, StandardSurfaceProcedure>,
     pub(super) edge_owner_faces: HashMap<u32, HashSet<u32>>,
     edge_supports: HashMap<u32, StandardEdgeSupport>,
+    shell_planes: BTreeMap<u32, crate::families::b5::graph::shell_orientation::SelectedShellPlane>,
     limit_curves: Vec<NurbsCurve>,
 }
 
@@ -3304,14 +3320,16 @@ fn standard_object_evidence(
     scan: &ContainerScan,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
+    selected_faces: Option<&BTreeSet<u32>>,
     consolidated_records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
-    let mut evidence = standard_object_evidence_from_streams(
+    let mut evidence = standard_object_evidence_with_selected_faces(
         ctx,
         &container::logical_record_streams(ctx, scan)?,
         tags,
         edge_tags,
+        selected_faces,
         refusal,
     )?;
     merge_standard_limit_curves_from_records(
@@ -3345,6 +3363,7 @@ fn merge_standard_limit_curves_from_records(
     }
 }
 
+#[cfg(test)]
 pub(super) fn standard_object_evidence_from_streams(
     ctx: &DecodeContext<'_>,
     streams: &[impl AsRef<[u8]>],
@@ -3352,7 +3371,19 @@ pub(super) fn standard_object_evidence_from_streams(
     edge_tags: &HashSet<u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
+    standard_object_evidence_with_selected_faces(ctx, streams, tags, edge_tags, None, refusal)
+}
+
+fn standard_object_evidence_with_selected_faces(
+    ctx: &DecodeContext<'_>,
+    streams: &[impl AsRef<[u8]>],
+    tags: &HashSet<u32>,
+    edge_tags: &HashSet<u32>,
+    selected_faces: Option<&BTreeSet<u32>>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let ordered_tags = tags.iter().copied().collect::<BTreeSet<_>>();
+    let mut shell_plane_candidates = Vec::new();
     let mut evidence_store = StandardEvidenceStore::default();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
@@ -3416,6 +3447,16 @@ pub(super) fn standard_object_evidence_from_streams(
     }
     for stream in populations {
         let frames = crate::families::b5::graph::collect_object_stream_frames(&stream);
+        if let Some(selected_faces) = selected_faces {
+            if let Some(planes) = crate::families::b5::graph::shell_orientation::from_frames(
+                ctx,
+                &stream,
+                &frames,
+                selected_faces,
+            )? {
+                shell_plane_candidates.push(planes);
+            }
+        }
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
         let mut surface_bindings = Vec::new();
@@ -3632,11 +3673,17 @@ pub(super) fn standard_object_evidence_from_streams(
             edge_supports.insert(edge, support);
         }
     }
+    let shell_planes = if shell_plane_candidates.len() == 1 {
+        shell_plane_candidates.pop().unwrap_or_default()
+    } else {
+        BTreeMap::new()
+    };
     Ok(StandardObjectEvidence {
         surface_geometries,
         procedural_surfaces,
         edge_owner_faces,
         edge_supports,
+        shell_planes,
         limit_curves,
     })
 }

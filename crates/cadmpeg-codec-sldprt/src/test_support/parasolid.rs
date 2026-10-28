@@ -90,13 +90,14 @@ pub(crate) fn offset_surface_carrier(attr: u16, support: u16, distance: f64) -> 
     be16(&mut bytes, attr);
     be32(&mut bytes, 0);
     for _ in 0..5 {
-        be16(&mut bytes, 0);
+        be16(&mut bytes, 1);
     }
     bytes.push(0x2b);
     bytes.push(b'V');
     bytes.push(1);
     be16(&mut bytes, support);
     bef64(&mut bytes, distance);
+    bef64(&mut bytes, 1.0);
     bytes
 }
 
@@ -1307,6 +1308,62 @@ pub(crate) fn triangle_body() -> Vec<u8> {
     b.extend(world_point(61, [1.0, 0.0, 0.0]));
     b.extend(world_point(62, [0.0, 1.0, 0.0]));
     typed_single_face_ownership(&mut b, 900, 901, 902, 10, 100, 1);
+    b
+}
+
+/// A bare `00 4f` KEY record naming an attribute family.
+pub(crate) fn attribute_name(node: u16, name: &str) -> Vec<u8> {
+    let mut b = vec![0x00, 0x4f];
+    b.extend(u32::try_from(name.len()).unwrap().to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(name.as_bytes());
+    b
+}
+
+/// A bare `00 50` `ATTRIB_DEF` record named by KEY `identifier`.
+pub(crate) fn attribute_definition(node: u16, identifier: u16, fields: &[u8]) -> Vec<u8> {
+    let mut b = vec![0x00, 0x50];
+    b.extend(u32::try_from(fields.len()).unwrap().to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(1_u16.to_be_bytes());
+    b.extend(identifier.to_be_bytes());
+    b.extend(9000_u32.to_be_bytes());
+    b.extend([0; 8]);
+    b.extend(1_u16.to_be_bytes());
+    b.extend([0; 14]);
+    b.extend(fields);
+    b
+}
+
+/// A bare `00 52` `INT_VALUES` record with one value.
+pub(crate) fn int_value(node: u16, value: u32) -> Vec<u8> {
+    let mut b = vec![0x00, 0x52];
+    b.extend(1_u32.to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(value.to_be_bytes());
+    b
+}
+
+/// A bare `00 51` ATTRIBUTE whose one field names `INT_VALUES` node `value_node`.
+pub(crate) fn int_attribute(node: u16, definition: u16, owner: u16, value_node: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x51];
+    b.extend(1_u32.to_be_bytes());
+    b.extend(node.to_be_bytes());
+    b.extend(u32::from(node).to_be_bytes());
+    b.extend(definition.to_be_bytes());
+    b.extend(owner.to_be_bytes());
+    for reference in [1_u16, 1, 1, 1, value_node] {
+        b.extend(reference.to_be_bytes());
+    }
+    b
+}
+
+/// An `SWEntUnchanged` family and one instance carrying face key `key` on `face_attr`.
+pub(crate) fn face_key_attribute(face_attr: u16, key: u32) -> Vec<u8> {
+    let mut b = attribute_name(701, "SWEntUnchanged");
+    b.extend(attribute_definition(702, 701, &[1]));
+    b.extend(int_value(703, key));
+    b.extend(int_attribute(704, 702, face_attr, 703));
     b
 }
 

@@ -19,7 +19,7 @@ use crate::loss::CreoLossCode;
 use crate::CreoCodec;
 
 #[test]
-fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
+fn decode_keeps_differing_complete_round_carriers_unresolved() {
     let geometry = |type_bytes: [u8; 2]| {
         let mut geometry = b"srf_array\0\xf8\x02".to_vec();
         for ((surface_id, next_surface, diameter, extent), type_byte) in
@@ -66,7 +66,7 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
             ref groups,
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
+                form: None
             },
             ..
         }])
@@ -299,8 +299,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
 
 #[test]
 fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
-    let mut payload =
-        b"feat_defs_40\0var_arr\0\xf8\x03\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+    let mut payload = b"feat_defs_40\0var_arr\0\xf8\x03\xf7\x01\xfb\xe2\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
     payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
     payload.extend_from_slice(&[3, 6, 0x46, 0x10, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 6, 0xe2]);
@@ -641,113 +640,73 @@ fn decode_transfers_decoded_dimensions_from_an_incomplete_table() {
 }
 
 #[test]
-fn decode_reports_unresolved_dimension_driven_solver_variables() {
-    let mut payload =
-        b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+fn decode_classifies_full_width_coordinate_and_opaque_variable_roles() {
+    let mut payload = b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[
         1, 7, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0xed, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 3, 0xe2,
     ]);
     payload.extend_from_slice(&[7, 8, 0xed, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f, 0, 1, 4, 0xe2]);
-    let data = build_prt("c", &[("FeatDefs", payload)]);
-
     let result = CreoCodec
-        .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode dimension-driven variable");
-    let coverage = result.report();
-
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("FeatDefs", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode full-width variable roles");
+    let report = result.report();
     assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
-        ),
+        wire::coverage_count(report, "decoded_feature_solver_variable_count"),
         2
     );
+    for key in [
+        "decoded_feature_dimension_driven_variable_count",
+        "decoded_feature_dimension_driven_coordinate_variable_count",
+        "decoded_feature_dimension_driven_other_variable_count",
+        "decoded_feature_dimension_driven_guess_count",
+        "resolved_feature_dimension_driven_variable_count",
+        "resolved_feature_dimension_driven_coordinate_variable_count",
+        "resolved_feature_dimension_driven_other_variable_count",
+        "unresolved_feature_dimension_driven_variable_count",
+        "unresolved_feature_dimension_driven_coordinate_variable_count",
+        "unresolved_feature_dimension_driven_other_variable_count",
+        "unresolved_feature_dimension_driven_guess_count",
+    ] {
+        assert_eq!(wire::coverage_count(report, key), 0, "{key}");
+    }
     assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
-        ),
+        wire::coverage_count(report, "opaque_section_variable_lane_count"),
         1
     );
+    let namespace = result.ir().native.namespace("creo").expect("native Creo");
+    let fields = namespace.arenas()["sketches"][0]
+        .fields()
+        .expect("sketch fields");
+    let variables = fields["variables"].as_array().expect("variables");
+    assert_eq!(variables.len(), 2);
+    assert_eq!(variables[0]["value"], 0.0);
     assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
-        ),
-        1
+        variables[0]["guess"].as_f64().map(f64::to_bits),
+        Some(0x0102_0304_0506_0708)
     );
+    assert_eq!(variables[0]["dimension_driven"], false);
+    assert_eq!(variables[0]["guess_dimension_driven"], false);
+    assert!(variables[1]["value"].is_null());
+    assert!(variables[1]["resolved_value"].is_null());
+    assert_eq!(variables[1]["dimension_driven"], false);
     assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
-        ),
-        1
+        crate::test_support::native_bytes(&variables[1]["value_body"]),
+        [0xed, 0, 0, 0, 0, 0, 0, 0, 0]
     );
-    assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
-        ),
-        0
-    );
-    assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT.as_str()
-        ),
-        0
-    );
-    assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
-        ),
-        0
-    );
-    assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT.as_str()
-        ),
-        2
-    );
-    assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            (crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT)
-                .as_str()
-        ),
-        1
-    );
-    assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT.as_str()
-        ),
-        1
-    );
-    assert_eq!(
-        wire::coverage_count(
-            &(coverage),
-            crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT.as_str()
-        ),
-        1
-    );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
-            && loss.message.contains(
-                "2 dimension-driven section solver variable(s) retain unresolved exact values: 1 \
-                 coordinate variable(s) lack a complete dimension equation and 1 variable(s) \
-                 have a non-coordinate family",
-            )
+    assert!(report.losses.iter().all(|loss| {
+        !matches!(
+            loss.code.local_code(),
+            "section.dimension-variable-unresolved" | "section.dimension-guess-unresolved"
+        )
     }));
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == CreoLossCode::SectionVariableScalarOpaque.kind()
+            && loss.code.category() == cadmpeg_ir::report::loss::LossCategory::DesignIntent
             && loss.severity == cadmpeg_ir::report::Severity::Warning
-            && loss.message.contains(
-                "1 section solver variable pre-solve estimate(s) use a dimension-driven sentinel",
-            )
+            && loss.message == "1 full-width section variable lane(s) retain exact bytes without independently established numeric roles."
     }));
 }
 

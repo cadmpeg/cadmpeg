@@ -2,7 +2,6 @@
 //! Tests: generated source.
 
 use super::{simple_drilled_recipe_surface_rows, simple_drilled_recipe_table, surface_row};
-use crate::decode::analytic::carriers::rowless_round_face_orientations;
 use crate::decode::feature_history::draft::schema_feature_definition;
 use crate::decode::feature_history::link::{
     analytic_surface_id_for_feature, generated_surface_id_for_feature,
@@ -23,8 +22,7 @@ use crate::decode::holes::drilled::{
     simple_drilled_hole_recipe, stepped_hole_form, SimpleDrilledDimensionFamily,
 };
 
-use crate::decode::sketch::equations_coordinate::approximately_equal;
-use crate::decode::surfaces::cylinders::rowless_round_cylinder_pairs;
+use crate::decode::surfaces::cylinders::rowless_round_table_candidates;
 
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
@@ -34,7 +32,6 @@ use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
 use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::{BTreeMap, BTreeSet};
@@ -818,7 +815,7 @@ fn drill_tip_cone_points_define_a_clipped_radial_coordinate() {
 }
 
 #[test]
-fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
+fn unowned_drilled_templates_do_not_supply_dimensions_or_hide_independent_geometry() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .entity_tables
@@ -870,33 +867,34 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             offset: 0,
         });
 
-    assert!(matches!(
-        crate::decode::with_service_context(|ctx| schema_feature_definition(ctx,
-            &scan,
-            &CadIr::empty(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            9,
-            Some(SchemaClass::Hole),
-            "Hole"
-        )).expect("valid test fixture"), IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
-            shape,
-
-            extent: Some(LinearTermination::Blind {
-                length: actual_length,
-            }),
-            bottom: None,
-            ..
-        }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
-                kind: HoleKind::SimpleDrilled {
-                    drill_point_angle: angle,
-                },
+    for replay_owner in [None, Some(9), Some(17)] {
+        scan.features.definitions[0].identity =
+            crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(911),
+                owner_feature_id: replay_owner,
+            };
+        assert!(matches!(
+            crate::decode::with_service_context(|ctx| schema_feature_definition(
+                ctx,
+                &scan,
+                &CadIr::empty(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                9,
+                Some(SchemaClass::Hole),
+                "Hole",
+            )).expect("valid test fixture"),
+            IrFeatureDefinition::Operation(IrFeatureOperation::Hole {
+                shape,
+                extent: None,
+                bottom: None,
+                placements: None,
                 ..
-            }, Some(actual_diameter),)
-                if ((FiniteReal::new(angle.get()))
-                    .zip(FiniteReal::new(drill_point_angle))
-                    .is_some_and(|(first, second)| approximately_equal(first, second)))
-                    && actual_diameter.get() == 8.4
-                    && actual_length.get() == 25.0)));
+            }) if matches!((shape.construction(), &shape.diameter()),
+                (cadmpeg_ir::features::holes::HoleConstruction::Form {
+                    kind: HoleKind::Unresolved(None), ..
+                }, None))
+        ));
+    }
 
     let compact_entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
@@ -1487,7 +1485,7 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
 }
 
 #[test]
-fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
+fn unresolved_round_diagnostic_requires_the_four_entry_layout() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         kind,
@@ -1497,7 +1495,7 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
         next_surface: 0,
         offset: 0,
     };
-    let mut rows = vec![
+    let rows = vec![
         row(10, crate::surface::SurfaceKind::Plane),
         row(11, crate::surface::SurfaceKind::Plane),
         row(13, crate::surface::SurfaceKind::Cylinder),
@@ -1516,34 +1514,17 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
     )
     .with_surface_ids([10, 11, 13]);
     assert_eq!(
-        rowless_round_cylinder_pairs(&BTreeSet::from([23]), std::slice::from_ref(&table), &rows),
+        rowless_round_table_candidates(&BTreeSet::from([23]), std::slice::from_ref(&table), &rows),
         vec![(12, 13, 47)]
     );
     assert!(
-        rowless_round_cylinder_pairs(&BTreeSet::new(), std::slice::from_ref(&table), &rows)
+        rowless_round_table_candidates(&BTreeSet::new(), std::slice::from_ref(&table), &rows)
             .is_empty()
     );
-    rows[2].reversed = true;
-    assert_eq!(
-        rowless_round_face_orientations(
-            &BTreeSet::from([23]),
-            std::slice::from_ref(&table),
-            &rows,
-            &BTreeSet::from([12])
-        ),
-        BTreeMap::from([(12, true)])
-    );
-    assert!(rowless_round_face_orientations(
-        &BTreeSet::from([23]),
-        std::slice::from_ref(&table),
-        &rows,
-        &BTreeSet::new()
-    )
-    .is_empty());
     let mut materialized_rowless = rows;
     materialized_rowless.push(row(12, crate::surface::SurfaceKind::Cylinder));
     assert!(
-        rowless_round_cylinder_pairs(&BTreeSet::from([23]), &[table], &materialized_rowless)
+        rowless_round_table_candidates(&BTreeSet::from([23]), &[table], &materialized_rowless)
             .is_empty()
     );
 }

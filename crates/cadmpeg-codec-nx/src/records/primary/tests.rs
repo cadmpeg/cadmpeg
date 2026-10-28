@@ -98,6 +98,41 @@ fn primary_group_projection_ends_at_its_last_pointer_without_status_bytes() {
 }
 
 #[test]
+fn primary_group_requires_a_part_owner_in_both_group_views() {
+    with_decode_context(|_ctx| {
+        for version in [11004, 13006] {
+            for embedded in [false, true] {
+                let mut source_group = group(embedded, 10, 9);
+                let owner_at = 10 + usize::from(embedded);
+                source_group[owner_at..owner_at + 2].copy_from_slice(&[0, 1]);
+                let mut bytes = header(version, embedded);
+                bytes.extend(source_group);
+                bytes.extend(END);
+                let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
+                assert_eq!(parsed.records.len(), 1);
+                assert!(parsed.groups().is_empty());
+                assert!(matches!(
+                    parsed.membership_records()[0].kind,
+                    crate::records::group::MembershipKind::Other
+                ));
+                let mut source_group = group(embedded, 10, 9);
+                let next_at = owner_at + 2;
+                source_group.splice(next_at..next_at + 4, [0, 1]);
+                let mut bytes = header(version, embedded);
+                bytes.extend(source_group);
+                bytes.extend(END);
+                let parsed = PrimaryRecords::read(&bytes).unwrap().unwrap();
+                assert_eq!(parsed.groups()[0].references, [1, 2, 1, 1, 1]);
+                assert!(matches!(
+                    parsed.membership_records()[0].kind,
+                    crate::records::group::MembershipKind::Group { .. }
+                ));
+            }
+        }
+    });
+}
+
+#[test]
 fn primary_versions_keep_full_node_ids_and_terminator_suffix() {
     with_decode_context(|_ctx| {
         for version in [11004, 13006] {

@@ -32,6 +32,8 @@ use offset_surface_state::OffsetSurfaceState;
 pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
 
+mod primary_edges;
+
 /// Type-38 first-use edit adding the support-UV `intersection_data` pointer.
 /// The terminal ASCII `Z` ends the declaration; index data follows it.
 pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
@@ -555,6 +557,7 @@ pub(crate) struct Graph {
     by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
     /// FACE identities grouped by their SHELL reference, in physical order.
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
+    primary_edge_refusals: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -872,8 +875,12 @@ impl Graph {
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
     pub(crate) fn parse(stream: &[u8]) -> Graph {
-        let baseline_records = Self::select_fixed_records(stream, false);
-        let full_records = Self::select_fixed_records(stream, true);
+        Self::parse_fixed(stream, None)
+    }
+
+    fn parse_fixed(stream: &[u8], source_edges: Option<&[crate::records::EdgeFrame]>) -> Graph {
+        let baseline_records = Self::select_fixed_records(stream, false, source_edges);
+        let full_records = Self::select_fixed_records(stream, true, source_edges);
         if full_records.matches_selection(&baseline_records) {
             return baseline_records.materialize(stream);
         }
@@ -978,7 +985,11 @@ impl Graph {
         }
     }
 
-    fn select_fixed_records(stream: &[u8], full_node_id_domain: bool) -> FixedRecordSelection {
+    fn select_fixed_records(
+        stream: &[u8],
+        full_node_id_domain: bool,
+        source_edges: Option<&[crate::records::EdgeFrame]>,
+    ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
         for pos in stream
@@ -993,10 +1004,21 @@ impl Graph {
             let Ok(kind) = NodeKind::try_from(stream[pos + 1]) else {
                 continue;
             };
+            if source_edges.is_some() && kind == NodeKind::Edge {
+                continue;
+            }
             for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
                 .into_iter()
                 .flatten()
             {
+                if source_edges.is_some_and(|frames| {
+                    let index = frames.partition_point(|frame| frame.range.end <= candidate.pos);
+                    frames
+                        .get(index)
+                        .is_some_and(|frame| frame.range.start < candidate.end)
+                }) {
+                    continue;
+                }
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
                     ownership_candidates.push(candidate);
                 } else {
@@ -1010,7 +1032,14 @@ impl Graph {
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
         let non_overlapping = Self::select_non_overlapping_candidates(stream, candidates);
-        let selected = Self::select_unique_candidates(non_overlapping);
+        let mut selected = Self::select_unique_candidates(non_overlapping);
+        if let Some(frames) = source_edges {
+            selected.extend(
+                frames
+                    .iter()
+                    .filter_map(|frame| Self::primary_edge_candidate(stream, frame)),
+            );
+        }
         // BODY and REGION carry ownership identity only. Their opaque fixed
         // payloads can contain complete-looking typed tags, so they are
         // admitted after typed topology/carrier selection and never veto a

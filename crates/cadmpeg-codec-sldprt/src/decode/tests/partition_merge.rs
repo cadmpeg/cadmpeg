@@ -919,7 +919,9 @@ fn decode_recovers_tripled_deltas_topology() {
 #[test]
 fn decode_resolves_prefixed_deltas_edge_curve() {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-    let mut cur = Cursor::new(sldprt_with_body(&prefixed_edge_triangle_body()));
+    let partition = prefixed_edge_triangle_body();
+    let deltas = &partition[tripled_triangle_body().len()..];
+    let mut cur = Cursor::new(sldprt_with_partition_and_deltas(&partition, deltas));
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
@@ -932,7 +934,9 @@ fn decode_resolves_prefixed_deltas_edge_curve() {
 #[test]
 fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-    let mut cur = Cursor::new(sldprt_with_body(&suffix_prefixed_edge_triangle_body()));
+    let partition = suffix_prefixed_edge_triangle_body();
+    let deltas = &partition[tripled_triangle_body().len()..];
+    let mut cur = Cursor::new(sldprt_with_partition_and_deltas(&partition, deltas));
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();

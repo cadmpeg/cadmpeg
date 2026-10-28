@@ -559,6 +559,26 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
 }
 
 #[test]
+fn owner_chart_rejects_owned_child_in_place_of_preceding_carrier() {
+    let mut bytes = b2_owner_chart_stream_with_extended_bridge();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let carrier_reference = records
+        .iter()
+        .find(|record| record.class() == 0x37)
+        .and_then(crate::wire::records::ConsolidatedRecord::payload)
+        .expect("complete extended bridge")
+        .start
+        + 1;
+    assert_eq!(bytes[carrier_reference], 0x05);
+    bytes[carrier_reference] = 0x07;
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(super::b2_owner_charts_from_records(&bytes, &records).is_empty());
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_owner_packets.len(), 1);
+    assert!(native.consolidated_owner_packets[0].owner_chart().is_none());
+}
+
+#[test]
 fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     let valid = b2_owner_chart_stream(0x2b);
     let records = crate::wire::records::consolidated_records(&valid);

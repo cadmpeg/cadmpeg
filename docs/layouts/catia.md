@@ -132,11 +132,8 @@ Record start is `marker_pos − 5`. Grammar: `tag:u24le <parameter_length:u16be>
 | 3 | 2 | `parameter_length` | `u16` | big | spec | \| plane \| `0x32` \| `0x0002` \| 49 \| start+48 \| |
 | 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
 | 7 | 1 | `kind` | `u8` | little | spec | \| plane \| `0x32` \| `0x0002` \| 49 \| start+48 \| |
+| 8 | 40 | `bounds` | `f32[10]` | little | spec | \| plane \| 0 \| `+8` \| |
 | 48 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
-
-Unstated regions:
-
-- `8..48` (40 B): Parameter payload. §5.8 states the BE f32 slot order per kind but no per-slot offsets; the bounds lane begins at marker-relative +3.
 
 Cross-checked against code:
 
@@ -155,11 +152,9 @@ Cylinder and cone share the parameter-length word and record length; the kind by
 | 3 | 2 | `parameter_length` | `u16` | big | spec | \| cylinder \| `0x33` \| `0x001a` \| 73 \| start+72 \| |
 | 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
 | 7 | 1 | `kind` | `u8` | little | spec | \| cylinder \| `0x33` \| `0x001a` \| 73 \| start+72 \| |
+| 8 | 24 | `carrier_parameters` | `f32[6]` | big | spec | Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32. |
+| 32 | 40 | `bounds` | `f32[10]` | little | spec | \| cylinder \| 6 \| `+32` \| |
 | 72 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
-
-Unstated regions:
-
-- `8..72` (64 B): Parameter payload `cylinder `00 1a 00 33 33 [px py pz ax ay radius]` as BE f32, plus the LE-f32 witness point. §5.8 gives the slot order and the marker-relative witness offset +27 but no per-slot record offsets, and §3.5 places the bounds lane at the same marker-relative +27.
 
 Cross-checked against code:
 
@@ -176,11 +171,9 @@ Spec §5.8 · layout: byte offsets · size: 73 B
 | 3 | 2 | `parameter_length` | `u16` | big | spec | \| cone \| `0x34` \| `0x001a` \| 73 \| start+72 \| |
 | 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
 | 7 | 1 | `kind` | `u8` | little | spec | \| cone \| `0x34` \| `0x001a` \| 73 \| start+72 \| |
+| 8 | 24 | `carrier_parameters` | `f32[6]` | big | spec | Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32. |
+| 32 | 40 | `bounds` | `f32[10]` | little | spec | \| cone \| 6 \| `+32` \| |
 | 72 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
-
-Unstated regions:
-
-- `8..72` (64 B): Parameter payload `[apex_x apex_y apex_z ax ay semi_angle]` as BE f32; §5.8 states the slot order but no per-slot offsets.
 
 ## `analytic_surface_sphere`
 
@@ -192,11 +185,9 @@ Spec §5.8 · layout: byte offsets · size: 65 B
 | 3 | 2 | `parameter_length` | `u16` | big | spec | \| sphere \| `0x35` \| `0x0012` \| 65 \| start+64 \| |
 | 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
 | 7 | 1 | `kind` | `u8` | little | spec | \| sphere \| `0x35` \| `0x0012` \| 65 \| start+64 \| |
+| 8 | 16 | `carrier_parameters` | `f32[4]` | big | spec | Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32. |
+| 24 | 40 | `bounds` | `f32[10]` | little | spec | \| sphere \| 4 \| `+24` \| |
 | 64 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
-
-Unstated regions:
-
-- `8..64` (56 B): Parameter payload `[cx cy cz radius]` as BE f32; §5.8 states the slot order but no per-slot offsets.
 
 ## `analytic_surface_torus`
 
@@ -208,11 +199,9 @@ Spec §5.8 · layout: byte offsets · size: 77 B
 | 3 | 2 | `parameter_length` | `u16` | big | spec | \| torus \| `0x38` \| `0x001e` \| 77 \| start+76 \| |
 | 5 | 2 | `marker` | `bytes[2]` | little | spec | `tag:u24le <parameter_length:u16be> 00 33 <kind> <payload> <sign:i8>` |
 | 7 | 1 | `kind` | `u8` | little | spec | \| torus \| `0x38` \| `0x001e` \| 77 \| start+76 \| |
+| 8 | 28 | `carrier_parameters` | `f32[7]` | big | spec | Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32. |
+| 36 | 40 | `bounds` | `f32[10]` | little | spec | \| torus \| 7 \| `+36` \| |
 | 76 | 1 | `sign` | `i8` | little | spec | The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. |
-
-Unstated regions:
-
-- `8..76` (68 B): Parameter payload `[cx cy cz ax ay major minor]` as BE f32, plus the LE-f32 witness point at marker-relative +31; §5.8 states the slot order but no per-slot offsets.
 
 ## `standard_spline_support_row_u8`
 
@@ -610,7 +599,7 @@ Parsed by:
 Spec §9 · layout: byte offsets · size: 37 B
 
 Parsed by:
-- `crates/cadmpeg-codec-catia/src/families/e5/graph.rs`
+- `crates/cadmpeg-codec-catia/src/families/e5/limit_program.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -627,7 +616,7 @@ Parsed by:
 Spec §9 · layout: byte offsets · size: 148 B
 
 Parsed by:
-- `crates/cadmpeg-codec-catia/src/families/e5/records.rs`
+- `crates/cadmpeg-codec-catia/src/families/e5/limit_program.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -1124,6 +1113,244 @@ Tail-relative offsets after five variable-width object references.
 | 12 | 8 | `zero` | `f64` | little | spec | \| `+12` \| `f64le` \| bit-exact positive zero \| |
 | 20 | 1 | `contact_order` | `u8` | little | spec | \| `+20` \| `u8` \| support contact order: |
 | 21 | 1 | `closure` | `u8` | little | spec | \| `+21` \| `u8` \| sphere pole closure, or `05` for a non-sphere result \| |
+
+## `b5_plane_payload`
+
+Spec §6.7 · layout: byte offsets · size: 121 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | For `b5 03 27`, the 121-byte payload |
+| 1 | 24 | `origin` | `f64[3]` | little | spec | For `b5 03 27`, the 121-byte payload |
+| 25 | 24 | `direction_u` | `f64[3]` | little | spec | For `b5 03 27`, the 121-byte payload |
+| 49 | 24 | `direction_v` | `f64[3]` | little | spec | For `b5 03 27`, the 121-byte payload |
+| 73 | 16 | `fixed_values` | `f64[2]` | little | spec | For `b5 03 27`, the 121-byte payload |
+| 89 | 16 | `u_range` | `f64[2]` | little | spec | For `b5 03 27`, the 121-byte payload |
+| 105 | 16 | `v_range` | `f64[2]` | little | spec | For `b5 03 27`, the 121-byte payload |
+
+## `b5_cylinder_payload`
+
+Spec §6.7 · layout: byte offsets · size: 137 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 1 | 24 | `origin` | `f64[3]` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 25 | 24 | `reference_x` | `f64[3]` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 49 | 24 | `stored_v` | `f64[3]` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 73 | 8 | `radius` | `f64` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 81 | 16 | `u_range` | `f64[2]` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 97 | 16 | `v_range` | `f64[2]` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 113 | 8 | `angular_factor` | `f64` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 121 | 8 | `one` | `f64` | little | spec | For `b5 03 28`, the 137-byte payload |
+| 129 | 8 | `chart_origin` | `f64` | little | spec | For `b5 03 28`, the 137-byte payload |
+
+## `b5_sphere_payload`
+
+Spec §6.7 · layout: byte offsets · size: 153 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 1 | 24 | `center` | `f64[3]` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 25 | 24 | `scaled_x` | `f64[3]` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 49 | 24 | `scaled_y` | `f64[3]` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 73 | 24 | `scaled_axis` | `f64[3]` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 97 | 8 | `radius` | `f64` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 105 | 16 | `azimuth_range` | `f64[2]` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 121 | 16 | `latitude_range` | `f64[2]` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 137 | 8 | `construction_radius` | `f64` | little | spec | For `b5 03 2a`, the 153-byte payload |
+| 145 | 8 | `chart_origin` | `f64` | little | spec | For `b5 03 2a`, the 153-byte payload |
+
+## `b5_torus_payload`
+
+Spec §6.7 · layout: byte offsets · size: 201 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 1 | 24 | `center` | `f64[3]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 25 | 24 | `direction_x` | `f64[3]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 49 | 24 | `direction_y` | `f64[3]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 73 | 24 | `axis` | `f64[3]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 97 | 8 | `major_radius` | `f64` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 105 | 8 | `minor_radius` | `f64` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 113 | 16 | `major_range` | `f64[2]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 129 | 16 | `major_domain` | `f64[2]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 145 | 16 | `minor_range` | `f64[2]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 161 | 16 | `minor_domain` | `f64[2]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 177 | 8 | `major_scale` | `f64` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 185 | 8 | `minor_scale` | `f64` | little | spec | For `b5 03 2b`, the 201-byte payload |
+| 193 | 8 | `reserved` | `bytes[8]` | little | spec | For `b5 03 2b`, the 201-byte payload |
+
+## `indexed_visualization_point_header`
+
+Spec §5.4.2 · layout: byte offsets · size: 19 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `marker` | `bytes[6]` | little | spec | ff ff 02 00 01 ff |
+| 6 | 4 | `entry_count` | `u32` | little | spec | entry_count:u32le |
+| 10 | 1 | `secondary_sentinel` | `u8` | little | spec | ff secondary_count:u32le · value `255` |
+| 11 | 4 | `secondary_count` | `u32` | little | spec | ff secondary_count:u32le |
+| 15 | 3 | `reserved` | `bytes[3]` | little | spec | 00 00 00 mode:u8 |
+| 18 | 1 | `mode` | `u8` | little | spec | 00 00 00 mode:u8 |
+
+## `indexed_visualization_point_row`
+
+Spec §5.4.2 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `x` | `f32` | little | spec | world-space XYZ coordinate of trim handle |
+| 4 | 4 | `y` | `f32` | little | spec | world-space XYZ coordinate of trim handle |
+| 8 | 4 | `z` | `f32` | little | spec | world-space XYZ coordinate of trim handle |
+
+## `indexed_visualization_scalar_prefix`
+
+Spec §5.4.2 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/solve/missing_edge.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `delimiter` | `u8` | little | spec | scalar_count:u32le · value `255` |
+| 1 | 4 | `scalar_count` | `u32` | little | spec | scalar_count:u32le |
+
+## `b_four_reference_edge_payload`
+
+Spec §6.3 · layout: byte offsets · size: 5 B
+
+Payload only; the surrounding B-family frame carries the independent width, flag and header token.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `operands` | `u8[4]` | little | spec | one-byte allocation references followed by one terminal |
+| 4 | 1 | `terminal` | `u8` | little | spec | one-byte allocation references followed by one terminal |
+
+## `rolling_ball_tail_scalar_branch`
+
+Spec §6.2 · layout: byte offsets · size: 2 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `branch` | `bytes[2]` | little | spec | `01 01`, then three finite `f64le[K]` lanes in value, first-derivative, and · value `[1, 1]` |
+
+## `e5_rolling_ball_tail`
+
+Spec §9 · layout: byte offsets · size: 63 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/e5/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 40 | `parameters` | `f64[5]` | little | spec | parameter_min:f64le parameter_max:f64le 0:f64le radius:f64le radius:f64le |
+| 40 | 4 | `sense` | `i32` | little | spec | sense:i32le |
+| 44 | 16 | `maximal_v` | `f64[2]` | little | spec | sense:i32le 0:f64le radius:f64le |
+| 60 | 3 | `terminal` | `bytes[3]` | little | spec | sense:i32le 0:f64le radius:f64le 01 00 00 · value `[1, 0, 0]` |
+
+## `b5_line_profile`
+
+Spec §6.7 · layout: byte offsets · size: 73 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | For `b5 03 0e`, the 73-byte payload is |
+| 1 | 24 | `point` | `f64[3]` | little | spec | For `b5 03 0e`, the 73-byte payload is |
+| 25 | 24 | `direction` | `f64[3]` | little | spec | For `b5 03 0e`, the 73-byte payload is |
+| 49 | 8 | `one` | `f64` | little | spec | For `b5 03 0e`, the 73-byte payload is |
+| 57 | 16 | `parameter_range` | `f64[2]` | little | spec | For `b5 03 0e`, the 73-byte payload is |
+
+## `b5_arc_profile`
+
+Spec §6.7 · layout: byte offsets · size: 113 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `lead` | `u8` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+| 1 | 24 | `center` | `f64[3]` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+| 25 | 24 | `direction_x` | `f64[3]` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+| 49 | 24 | `direction_y` | `f64[3]` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+| 73 | 8 | `radius` | `f64` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+| 81 | 16 | `parameter_range` | `f64[2]` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+| 97 | 8 | `one` | `f64` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+| 105 | 8 | `chart_origin` | `f64` | little | spec | For `b5 03 0f`, the 113-byte payload is |
+
+## `b5_revolution_carrier_tail`
+
+Spec §6.7 · layout: byte offsets · size: 171 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b5/graph.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `origin` | `f64[3]` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 24 | 24 | `reference_x` | `f64[3]` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 48 | 24 | `reference_y` | `f64[3]` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 72 | 24 | `axis` | `f64[3]` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 96 | 16 | `angular_range` | `f64[2]` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 112 | 16 | `profile_range` | `f64[2]` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 128 | 2 | `controls` | `bytes[2]` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 130 | 8 | `angular_scale` | `f64` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 138 | 8 | `one0` | `f64` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 146 | 8 | `one1` | `f64` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 154 | 8 | `zero` | `f64` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 162 | 1 | `terminal` | `u8` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+| 163 | 8 | `half_turn` | `f64` | little | spec | the payload has exactly 171 bytes after that variable-width reference |
+
+## `container_property_header`
+
+Spec §3.1 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container/declared_contents.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `total_size` | `u32` | big | spec | The metadata property table starts |
+| 4 | 4 | `identity` | `u32` | big | spec | The metadata property table starts |
+| 8 | 4 | `count` | `u32` | big | spec | The metadata property table starts |
+
+## `container_property_record`
+
+Spec §3.1 · layout: byte offsets · size: 14 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container/declared_contents.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `size` | `u32` | big | spec | Each counted record starts |
+| 4 | 4 | `identity` | `u32` | big | spec | Each counted record starts |
+| 8 | 2 | `value_type` | `u16` | big | spec | Each counted record starts |
+| 10 | 4 | `value_bytes` | `u32` | big | spec | Each counted record starts |
 
 ## Not tabulated
 

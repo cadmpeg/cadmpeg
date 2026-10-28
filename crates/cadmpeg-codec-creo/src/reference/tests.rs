@@ -27,7 +27,7 @@ mod images;
 const ADMITTED: &str = "reference collection is admitted";
 
 fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
-    super::positional_conics(payload).expect(ADMITTED)
+    super::positional_conics(payload, &mut false).expect(ADMITTED)
 }
 
 #[test]
@@ -685,3 +685,35 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
 }
 
 mod carrier_admission;
+
+#[test]
+fn positional_conic_rejects_control_in_typed_flip_slot() {
+    let body = include_bytes!("../../tests/fixtures/ftc07-conic-control-prefix.bin");
+    let section = include_bytes!("../../tests/fixtures/ftc07-conic-reference-section.bin");
+    let cache = ScalarCache::from_section(section);
+    assert!(super::positional_conic_body(body, 4167, 30, 493476, &cache).is_none());
+}
+
+#[test]
+fn positional_ellipse_flip_requires_a_complete_integer() {
+    for token in [&[0][..], &[1], &[0x80, 0x80]] {
+        let mut body = super::POSITIONAL_CONIC_GENERAL_INFO.to_vec();
+        body.extend_from_slice(token);
+        assert!(!super::unresolved_ellipse_flip_prefix(&body, 30));
+    }
+    for token in [&[][..], &[0xf7], &[0x80]] {
+        let mut body = super::POSITIONAL_CONIC_GENERAL_INFO.to_vec();
+        body.extend_from_slice(token);
+        assert!(super::unresolved_ellipse_flip_prefix(&body, 30));
+        assert!(!super::unresolved_ellipse_flip_prefix(&body, 15));
+    }
+}
+
+#[test]
+fn unresolved_source_ellipse_prefix_requests_section_retention() {
+    let section = include_bytes!("../../tests/fixtures/ftc07-conic-reference-section.bin");
+    let mut unresolved = false;
+    let decoded = super::positional_conics(section, &mut unresolved).expect(ADMITTED);
+    assert!(decoded.is_empty());
+    assert!(unresolved);
+}

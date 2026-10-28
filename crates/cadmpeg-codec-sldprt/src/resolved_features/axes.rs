@@ -12,6 +12,8 @@ use super::grid::quantize;
 use super::scalars::FeatureObjectNames;
 use super::transforms::{sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
+use crate::layout::temporary_axis_compact_boundary as axis_compact_end;
+use crate::layout::temporary_axis_declared_boundary_prefix as axis_declared_end;
 use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -823,8 +825,6 @@ pub(super) fn temporary_axis_reference(
                         + temporary_axis::ZERO_BEFORE_ADDRESS
                         + temporary_axis::ZERO_BEFORE_ADDRESS_VALUE.len(),
             ) != Some(&temporary_axis::ZERO_BEFORE_ADDRESS_VALUE)
-            || View::u32_le_at(payload, declaration + temporary_axis::STREAM_ADDRESS)
-                .is_none_or(|address| address == 0)
         {
             return None;
         }
@@ -838,22 +838,35 @@ pub(super) fn temporary_axis_reference(
             *scalar = value;
         }
         let origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-            frame[0] * NATIVE_TO_IR,
-            frame[1] * NATIVE_TO_IR,
-            frame[2] * NATIVE_TO_IR,
+            frame[3] * NATIVE_TO_IR,
+            frame[4] * NATIVE_TO_IR,
+            frame[5] * NATIVE_TO_IR,
         ))?;
         let direction = square_sum_unit_direction([frame[6], frame[7], frame[8]])?;
-        let record_end = declaration + temporary_axis::NEXT_CLASS_MARKER;
-        let last_next_class = end.checked_sub(temporary_axis::NEXT_CLASS_MARKER_VALUE.len())?;
-        let search_end = record_end.checked_add(24)?.min(last_next_class);
-        let next_class = (record_end..=search_end).find(|offset| {
-            payload.get(record_end..*offset).is_some_and(|padding| {
-                padding.iter().all(|byte| *byte == 0)
-                    && payload.get(*offset..*offset + temporary_axis::NEXT_CLASS_MARKER_VALUE.len())
-                        == Some(&temporary_axis::NEXT_CLASS_MARKER_VALUE)
-            })
-        })?;
-        (next_class < end).then_some((origin, direction))
+        let tail = payload.get(declaration + temporary_axis::LEN..end)?;
+        let compact = tail.get(axis_compact_end::ZERO..axis_compact_end::PROLOGUE)
+            == Some(axis_compact_end::ZERO_VALUE.as_slice())
+            && tail.get(axis_compact_end::PROLOGUE..axis_compact_end::LEN)
+                == Some(axis_compact_end::PROLOGUE_VALUE.as_slice());
+        let declared = (|| {
+            if tail.get(axis_declared_end::ZERO..axis_declared_end::CLASS_MARKER)
+                != Some(axis_declared_end::ZERO_VALUE.as_slice())
+                || tail.get(axis_declared_end::CLASS_MARKER..axis_declared_end::NAME_LENGTH)
+                    != Some(axis_declared_end::CLASS_MARKER_VALUE.as_slice())
+            {
+                return None;
+            }
+            let length = usize::from(View::u16_le_at(tail, axis_declared_end::NAME_LENGTH)?);
+            let name =
+                tail.get(axis_declared_end::LEN..axis_declared_end::LEN.checked_add(length)?)?;
+            (!name.is_empty()
+                && name
+                    .iter()
+                    .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
+            .then_some(())
+        })()
+        .is_some();
+        (compact != declared).then_some((origin, direction))
     });
     let first = candidates.next()?;
     candidates

@@ -10,7 +10,8 @@
 //!
 //! The `FACE_ID_2001` family binds a face to the history feature that produced
 //! it. The `LAST_BODY_MODIFYING_FEATURE_ID` family binds a body to the last
-//! modeling-history ordinal that wrote it. Deltas streams carry no attribute
+//! modeling-history ordinal that wrote it. The `SWEntUnchanged` family binds a
+//! face to the key of its `DisplayLists` table. Deltas streams carry no attribute
 //! dictionary, so a deltas body yields no bindings.
 
 use cadmpeg_core::decode::View;
@@ -28,8 +29,12 @@ const BODY_ID: &str = "ATOM_ID_2001";
 /// Attribute family carrying a body's last native feature source identity.
 const LAST_BODY_MODIFIER: &str = "LAST_BODY_MODIFYING_FEATURE_ID";
 
+/// Attribute family carrying a face's `DisplayLists` table key.
+const FACE_KEY: &str = "SWEntUnchanged";
+
 const FACE_FIELDS: &[u8] = &[9, 9, 1, 1];
 const BODY_FIELDS: &[u8] = &[9, 1];
+const FACE_KEY_FIELDS: &[u8] = &[1];
 
 /// Widths of an `FACE_ID_2001` payload list.
 const FACE_ID_WIDTHS: std::ops::RangeInclusive<usize> = 5..=7;
@@ -217,6 +222,7 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
             FACE_ID if family.fields == FACE_FIELDS => FACE_ID,
             LAST_BODY_MODIFIER if family.fields == BODY_FIELDS => LAST_BODY_MODIFIER,
             BODY_ID if family.fields == BODY_FIELDS => BODY_ID,
+            FACE_KEY if family.fields == FACE_KEY_FIELDS => FACE_KEY,
             _ => continue,
         };
         supported.insert(node, family);
@@ -461,6 +467,10 @@ pub(super) fn scan_body_payloads(buf: &[u8]) -> Vec<(u16, Vec<u32>)> {
     scan_identity_payloads(buf, BODY_ID, BODY_FIELDS)
 }
 
+pub(super) fn scan_face_keys(buf: &[u8]) -> Vec<(u16, Vec<u32>)> {
+    scan_identity_payloads(buf, FACE_KEY, FACE_KEY_FIELDS)
+}
+
 pub(super) fn unique_payloads(payloads: Vec<(u16, Vec<u32>)>) -> Vec<(u16, Vec<u32>)> {
     let mut found = HashMap::new();
     for (owner, values) in payloads {
@@ -535,8 +545,11 @@ pub(super) fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
 #[cfg(test)]
 mod tests {
     use super::{
-        definition_table, definitions, integer_lists, scan, scan_body_modifiers, FACE_ID,
-        LAST_BODY_MODIFIER,
+        definition_table, definitions, integer_lists, scan, scan_body_modifiers, scan_face_keys,
+        FACE_ID, LAST_BODY_MODIFIER,
+    };
+    use crate::test_support::parasolid::{
+        attribute_definition, attribute_name, int_attribute, int_value,
     };
 
     fn append_definition(out: &mut Vec<u8>, family: &str, name_node: u16, definition: u16) {
@@ -977,5 +990,27 @@ mod tests {
         assert!(scan_body_modifiers(&body_modifier_stream(&[&[u32::MAX]], 333)).is_empty());
         assert!(scan_body_modifiers(&body_modifier_stream(&[&[2, 3]], 333)).is_empty());
         assert!(scan_body_modifiers(&body_modifier_stream(&[&[2], &[3]], 333)).is_empty());
+    }
+
+    /// The KEY and definition order of a native dictionary: a KEY is followed
+    /// by the definition of another family.
+    fn face_key_dictionary(key_fields: &[u8], key: u32) -> Vec<u8> {
+        let mut bytes = attribute_name(25, "SDL/TYSA_DENSITY");
+        bytes.extend(attribute_definition(26, 29, key_fields));
+        bytes.extend(attribute_name(29, "SWEntUnchanged"));
+        bytes.extend(attribute_definition(22, 25, &[2, 3]));
+        bytes.extend(int_value(300, key));
+        bytes.extend(int_attribute(301, 26, 13, 300));
+        bytes
+    }
+
+    #[test]
+    fn face_key_family_is_named_by_identifier_not_by_the_next_definition() {
+        assert_eq!(
+            scan_face_keys(&face_key_dictionary(&[1], 0x4173_00a6)),
+            vec![(13, vec![0x4173_00a6])]
+        );
+        assert!(scan_face_keys(&face_key_dictionary(&[1], 0)).is_empty());
+        assert!(scan_face_keys(&face_key_dictionary(&[9, 1], 0x4173_00a6)).is_empty());
     }
 }

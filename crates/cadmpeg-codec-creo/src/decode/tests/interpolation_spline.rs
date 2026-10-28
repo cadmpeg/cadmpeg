@@ -505,7 +505,6 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
                 parent: 0,
             }),
             offset: 0,
-            state_offset: 0,
         });
 
     assert!(!feature_allows_linear_extrusion(&scan, 917));
@@ -524,7 +523,6 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: None,
             },
             recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
@@ -533,7 +531,6 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
                 parent: 0,
             }),
             offset: 0,
-            state_offset: 0,
         });
     scan.features
         .reference_names
@@ -605,7 +602,6 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: None,
             },
             recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
@@ -614,7 +610,6 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
                 parent: 0,
             }),
             offset: 0,
-            state_offset: 0,
         });
 
     assert!(matches!(
@@ -644,7 +639,6 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Surface id 942".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: None,
             },
             recipe: crate::feature::operations::RecipeResolution::None,
             display_state_conflict: false,
@@ -653,7 +647,6 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
                 parent: 0,
             }),
             offset: 0,
-            state_offset: 0,
         });
     scan.features
         .reference_names
@@ -1238,6 +1231,21 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
         offset: 0,
     };
     scan.surfaces.rows.extend([row(31), row(32)]);
+    // Cap equations establish the construction; an admitted recipe establishes
+    // the authored linear family independently of the generic material label.
+    scan.features
+        .operations
+        .push(crate::feature::operations::FeatureOperation {
+            feature_id: 7,
+            kind: crate::feature::operations::OperationKind::Stored("Protrusion".into()),
+            name: crate::feature::operations::OperationName::Derived,
+            recipe: crate::feature::operations::RecipeResolution::Resolved(
+                crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+            ),
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+        });
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1605,6 +1613,7 @@ fn datum_feature_uses_its_unique_complete_local_system() {
             parameter_frames: vec![
                 crate::feature::definitions::FeatureParameterFrame {
                     kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                    owner: crate::feature::definitions::FeatureParameterFrameOwner::PlacementRecord,
                     body: Vec::new(),
                     decoded_values: Some(finite_local_system([
                         1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0,
@@ -1613,6 +1622,7 @@ fn datum_feature_uses_its_unique_complete_local_system() {
                 },
                 crate::feature::definitions::FeatureParameterFrame {
                     kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                    owner: crate::feature::definitions::FeatureParameterFrameOwner::PlacementRecord,
                     body: vec![0xff],
                     decoded_values: None,
                     offset: 2,
@@ -1667,6 +1677,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
             parameter_frames: vec![
                 crate::feature::definitions::FeatureParameterFrame {
                     kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                    owner: crate::feature::definitions::FeatureParameterFrameOwner::PlacementRecord,
                     body: Vec::new(),
                     decoded_values: Some(finite_local_system([
                         0.0, 2.0, 0.0, -3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0, 7.0,
@@ -1675,6 +1686,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
                 },
                 crate::feature::definitions::FeatureParameterFrame {
                     kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                    owner: crate::feature::definitions::FeatureParameterFrameOwner::PlacementRecord,
                     body: vec![0xff],
                     decoded_values: None,
                     offset: 2,
@@ -1729,6 +1741,7 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
             body: Vec::new(),
             parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
                 kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                owner: crate::feature::definitions::FeatureParameterFrameOwner::PlacementRecord,
                 body: Vec::new(),
                 decoded_values: Some(finite_local_system([
                     1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0,
@@ -1778,6 +1791,7 @@ fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance
             body: Vec::new(),
             parameter_frames: vec![crate::feature::definitions::FeatureParameterFrame {
                 kind: crate::feature::definitions::FeatureParameterFrameKind::LocalSystem,
+                owner: crate::feature::definitions::FeatureParameterFrameOwner::PlacementRecord,
                 body: Vec::new(),
                 decoded_values: Some(finite_local_system([
                     1.0, 0.0, 0.0, 1.0e-10, 1.0, 0.0, 0.0, 0.0, 1.0, 5.0, 6.0, 7.0,
@@ -1919,7 +1933,6 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
                 parent: parent_feature_id,
             }),
             offset,
-            state_offset: offset,
         };
     let historical = operation(
         crate::feature::operations::FeatureRecipe::ProtrudeExtrude,

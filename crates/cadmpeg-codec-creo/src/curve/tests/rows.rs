@@ -184,6 +184,88 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
 }
 
 #[test]
+fn fc08_body_is_an_eight_sample_two_chart_count() {
+    let points = [
+        [0x0f, 0xe4, 0x0d, 0x18],
+        [0xe4, 0x0f, 0x18, 0x0d],
+        [0x0d, 0x18, 0xe4, 0x0f],
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 8]);
+    for point in points.iter().cycle().take(8) {
+        payload.extend_from_slice(point);
+    }
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    let [record] = decoded.as_slice() else {
+        panic!("one counted fc 08 body");
+    };
+    assert_eq!(record.samples.len(), 8);
+    assert_eq!(record.samples[0], [[0.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(record.samples[7], [[1.0, 0.0], [0.0, -1.0]]);
+}
+
+fn two_chart_body_payload(count: u8, first_row: &[u8]) -> Vec<u8> {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, count]);
+    payload.extend_from_slice(first_row);
+    for _ in 1..count {
+        payload.extend_from_slice(&[0x18; 4]);
+    }
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+    payload
+}
+
+#[test]
+fn counted_two_chart_bodies_read_2d_positive_and_46_negative() {
+    let mut first_row = vec![0x2d, 0x08, 0, 0, 0, 0, 0, 0];
+    first_row.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    first_row.extend_from_slice(&[0x46, 0x14, 0, 0, 0, 0, 0, 0]);
+    first_row.extend_from_slice(&[0x2d, 0x14, 0, 0, 0, 0, 0, 0]);
+    let face_ids = BTreeSet::from([10, 11]);
+
+    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+    let [record] = counted.as_slice() else {
+        panic!("one counted fc 03 body");
+    };
+    assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
+
+    let short_forms = [
+        0x2f, 0x08, 0x00, 0x48, 0x08, 0x00, 0x48, 0x14, 0x00, 0x2f, 0x14, 0x00,
+    ];
+    let counted =
+        two_chart_pcurve_samples(&two_chart_body_payload(3, &short_forms), Some(&face_ids));
+    let [record] = counted.as_slice() else {
+        panic!("one counted fc 03 body with short forms");
+    };
+    assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
+
+    let two_sample =
+        two_chart_pcurve_samples(&two_chart_body_payload(2, &first_row), Some(&face_ids));
+    let [record] = two_sample.as_slice() else {
+        panic!("one counted fc 02 body");
+    };
+    assert_eq!(record.samples[0], [[-3.0, 3.0], [5.0, -5.0]]);
+}
+
+#[test]
+fn counted_two_chart_first_coordinate_reads_positive_dict_prefixes() {
+    let mut first_row = vec![0x4b, 0x20, 0, 0, 0, 0, 0];
+    first_row.extend_from_slice(&[0x18, 0x18, 0x18]);
+    let face_ids = BTreeSet::from([10, 11]);
+
+    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+    let [record] = counted.as_slice() else {
+        panic!("one counted fc 03 body");
+    };
+    assert_eq!(
+        record.samples[0][0][0],
+        f64::from_be_bytes([0x3f, 0xc0, 0x20, 0, 0, 0, 0, 0])
+    );
+}
+
+#[test]
 fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 5]);
@@ -621,12 +703,15 @@ fn materialized_face_evidence_precedes_namespace_face_evidence() {
             Some(&materialized_face_ids),
             Some(&namespace_face_ids),
         ),
-        Some(TopologySuffixCandidate {
-            start: 0,
-            faces: [371, 369].map(NonZeroU32::new),
-            next_edges: [331, 297],
-            reference_geometry: [0, 0],
-        })
+        Some((
+            TopologySuffixCandidate {
+                start: 0,
+                faces: [371, 369].map(NonZeroU32::new),
+                next_edges: [331, 297],
+                reference_geometry: [0, 0],
+            },
+            false
+        ))
     );
 }
 
@@ -677,8 +762,16 @@ fn final_curve_row_uses_the_next_array_boundary() {
 }
 
 #[test]
-fn decodes_complete_depdb_one_sided_curve_array() {
+fn depdb_four_field_cross_section_array_withholds_rows() {
     let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
+    let rows = crate::decode::with_service_context(|ctx| depdb_cross_section_rows(ctx, payload))
+        .expect("DEPDB cross-section rows");
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn decodes_complete_depdb_one_sided_curve_array() {
+    let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x08\0\x09\x0a\0\xe1\xe0next_record\0";
 
     let rows = crate::decode::with_service_context(|ctx| depdb_cross_section_rows(ctx, payload))
         .expect("DEPDB cross-section rows");
@@ -687,12 +780,20 @@ fn decodes_complete_depdb_one_sided_curve_array() {
     assert_eq!(rows[0].type_byte, 8);
     assert_eq!(rows[0].feature_id, 4);
     assert_eq!(rows[0].directions, [1, 0xf6]);
-    assert_eq!(rows[0].suffix, DepdbCurveSuffix { x1: 9, face_id: 10 });
+    assert_eq!(
+        rows[0].suffix,
+        DepdbCurveSuffix {
+            section_plane: 8,
+            next_curve: 9,
+            reference_surface: 10
+        }
+    );
     assert_eq!(rows[0].body, [0xe4, 0xff]);
-    assert_eq!(rows[0].scalar_tokens.len(), 1);
-    assert_eq!(rows[0].scalar_tokens[0].value, 1.0);
+    assert!(rows[0].scalar_tokens.is_empty());
+    assert!(rows[0].references.is_empty());
     assert_eq!(rows[0].opaque_spans.len(), 1);
-    assert_eq!(rows[0].opaque_spans[0].raw, [0xff]);
+    assert_eq!(rows[0].opaque_spans[0].offset, 0);
+    assert_eq!(rows[0].opaque_spans[0].raw, [0xe4, 0xff]);
 }
 
 #[test]
@@ -986,4 +1087,133 @@ fn exact_helix_constructor_rejects_nonfinite_axial_coordinates() {
         .expect("finite signed coordinates");
     assert_eq!(helix.height.get(), -2.0);
     assert_eq!(helix.z_start.get(), 3.0);
+}
+
+#[test]
+fn cross_section_suffix_keeps_pointer_roles_out_of_parameters() {
+    let tail = [0, 0x85, 0x00, 0, 0x86, 0x00, 0x87, 0x00, 0];
+    let mut segment = vec![21, 0, 4, 1, 0xf6, 0xe4];
+    segment.extend(tail);
+    let row = crate::decode::with_service_context(|ctx| {
+        super::super::parse_depdb_curve_segment(ctx, &segment, 100)
+    })
+    .expect("cross-section row")
+    .expect("complete stored pointers");
+    assert_eq!(row.body, [0xe4]);
+    assert!(row.scalar_tokens.is_empty());
+    assert!(row.references.is_empty());
+    assert_eq!(row.opaque_spans.len(), 1);
+    assert_eq!(row.opaque_spans[0].raw, [0xe4]);
+    assert_eq!(
+        serde_json::to_value(row.suffix).expect("stored pointer tuple"),
+        serde_json::json!([0, 1280, 0, 1536, 1792, 0]),
+    );
+}
+
+#[test]
+fn cross_section_suffix_requires_six_complete_typed_references() {
+    for tail in [
+        vec![0, 9, 10, 0],
+        vec![0, 8, 0, 9, 0xe4, 0],
+        vec![0, 8, 0, 9, 0x80, 1, 0],
+        vec![0, 8, 0, 9, 10, 0x81],
+        vec![1, 8, 0, 9, 10, 0],
+        vec![0, 8, 1, 9, 10, 0],
+        vec![0, 8, 0, 9, 10, 1],
+    ] {
+        let mut segment = vec![21, 0, 4, 1, 0xf6, 0xff];
+        segment.extend(tail);
+        assert!(crate::decode::with_service_context(|ctx| {
+            super::super::parse_depdb_curve_segment(ctx, &segment, 0)
+        })
+        .expect("typed pointer validation")
+        .is_none());
+    }
+}
+
+#[test]
+fn cross_section_suffix_canonical_reference_widths() {
+    for (tail, expected) in [
+        (vec![0, 0, 0, 127, 127, 0], [0, 0, 0, 127, 127, 0]),
+        (
+            vec![0, 0x80, 0x80, 0, 0x80, 0x80, 0x80, 0x80, 0],
+            [0, 128, 0, 128, 128, 0],
+        ),
+        (
+            vec![0, 0xbf, 0xff, 0, 0xbf, 0xff, 0xbf, 0xff, 0],
+            [0, 16383, 0, 16383, 16383, 0],
+        ),
+    ] {
+        assert_eq!(
+            super::super::cross_section_suffix_fields(&tail, 0),
+            Some(expected)
+        );
+        for length in 0..tail.len() {
+            assert!(super::super::cross_section_suffix_fields(&tail[..length], 0).is_none());
+        }
+    }
+}
+
+#[test]
+fn cross_section_body_retains_terminal_byte_without_numeric_roles() {
+    let segment = [21, 0, 4, 1, 0xf6, 0x18, 0, 8, 0, 9, 10, 0];
+    let row = crate::decode::with_service_context(|ctx| {
+        super::super::parse_depdb_curve_segment(ctx, &segment, 0)
+    })
+    .expect("cross-section scalar lane")
+    .expect("complete six-reference tail");
+    assert_eq!(row.body, [0x18]);
+    assert!(row.scalar_tokens.is_empty());
+    assert!(row.references.is_empty());
+    assert_eq!(row.opaque_spans.len(), 1);
+    assert_eq!(row.opaque_spans[0].raw, [0x18]);
+}
+
+#[test]
+fn complete_count_body_precedes_materialized_face_suffix_preference() {
+    for count in [3_u8, 6, 11] {
+        let mut row = vec![7, 0, 3, 1, 0xf6, 0xfc, count];
+        for _ in 0..count {
+            row.extend_from_slice(&[0x18; 4]);
+        }
+        let suffix_start = row.len();
+        row.extend_from_slice(&[0x81, 0x2c, 0, 0x81, 0x2d, 0x81, 0x2e, 0, 7, 0xe3]);
+        let materialized = BTreeSet::from([44]);
+        let (suffix, counted_body) =
+            topology_suffix_with_face_ids(&row, Some(&materialized), Some(&materialized))
+                .expect("unique complete count body owns its exact end");
+        assert!(counted_body);
+        assert_eq!(suffix.start, suffix_start);
+        assert_eq!(suffix.faces, [300, 0].map(NonZeroU32::new));
+        assert_eq!(suffix.next_edges, [301, 302]);
+        assert_eq!(suffix.reference_geometry, [0, 7]);
+        assert!(!materialized.contains(&300));
+    }
+}
+
+#[test]
+fn count_selected_frames_keep_nonliteral_numeric_roles_opaque() {
+    let mut row = vec![7, 0, 3, 1, 0xf6, 0xfc, 2];
+    row.extend_from_slice(&[0x18, 0x77, 0x60, 0, 0, 0, 0, 0]);
+    row.extend_from_slice(&[0x18; 6]);
+    row.extend_from_slice(&[0x81, 0x2c, 0, 0x81, 0x2d, 0x81, 0x2e, 0, 7, 0xe3]);
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&row);
+    payload.extend_from_slice(&[0xe1, 0xe3]);
+    let faces = BTreeSet::from([44]);
+    let records = crate::decode::with_service_context(|ctx| {
+        parameter_records_with_face_ids(ctx, &payload, Some(&faces))
+    })
+    .expect("bounded counted record");
+    let [record] = records.as_slice() else {
+        panic!("one record");
+    };
+    assert_eq!(record.scalar_tokens.len(), 7);
+    assert!(record
+        .scalar_tokens
+        .iter()
+        .all(|token| token.value.to_bits() == 0.0_f64.to_bits() && token.raw == [0x18]));
+    assert_eq!(record.opaque_spans.len(), 2);
+    assert_eq!(record.opaque_spans[0].raw, [0xfc, 2]);
+    assert_eq!(record.opaque_spans[1].raw, [0x77, 0x60, 0, 0, 0, 0, 0]);
 }

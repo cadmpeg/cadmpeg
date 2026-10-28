@@ -28,6 +28,14 @@ relation applies when its explicit node key does not match a partition node?
 **Need.** Establish the deletion grammar in PS-28 and the target's partition
 and pmark scope before applying any unmatched key.
 
+**Conflict.** A six-byte deletion-shaped run can be a status/reference tuple
+inside a complete FACE. That pattern does not establish a separate deletion
+or justify an alternative target join.
+
+**Note.** Complete schema-bound BODY lengths and full enclosing-record
+ownership precede target lookup. Preserve unmatched keys without assigning a
+node or family fallback.
+
 ### PS-02. Terminal procedural-intersection branches
 
 **Question.** How does a terminal type-38 procedural intersection select a finite branch when it has no usable support-parameter lane or paired FIN-carried `SP_CURVE` witnesses?
@@ -50,9 +58,16 @@ and pmark scope before applying any unmatched key.
 
 **Question.** How does correction select terminal folds and multiple corrected branches for a degenerate support-0 array or a sentinel-truncated marker-4 plane-support array?
 
-**Known.** `siemens_nx.md` §6.3 "When independent support inversion still leaves a procedural support lane incomplete" and `siemens_nx.md` §6.3 "Each CHART_s point first maps independently through one support carrier's inverse parameterization." define predictor inversion and correction for complete supported procedural curves.
+**Known.** `siemens_nx.md` §6.3 "When independent support inversion still leaves a procedural support lane incomplete" and `siemens_nx.md` §6.3 "Each CHART_s point first maps independently through one support carrier's inverse parameterization." define predictor inversion and correction for complete supported procedural curves. The paragraph beginning "When completing a support lane" defines complete serialized-lane precedence and structural refusal of a constant pcurve for spatially distinct chart points.
 
 **Need.** We must know the correction rule to construct these curves without an arbitrary branch choice.
+
+**Conflict.** A loose cache tolerance can accept repeated UV samples at
+distinct chart points. That numerical acceptance does not supply a branch
+selector or certify the collapsed curve.
+
+**Note.** Retain raw values and established support associations. An unresolved
+inverse or indistinguishable corrected branches remain unassigned.
 
 ### PS-05. NURBS-offset spine support identity
 
@@ -70,15 +85,31 @@ and pmark scope before applying any unmatched key.
 
 **Need.** We must know each grammar to delimit and transfer the remaining deltas records as typed data.
 
+### PS-10. Compact NURBS descriptor roles and alias ownership
+
+**Question.** Which compact-header fields establish a control array's rational layout, and which declaration owns repeated descriptor identities?
+
+**Known.** Complete status-reference descriptors declare vertex dimension and rational state. Non-rational UV and XYZ use dimensions two and three; rational UVW and XYZW use three and four. Positive weights and the declared count product constrain each control grouping.
+
+**Need.** Establish the compact-field grammar and a shared declaration owner before treating compact and explicit descriptors as equivalent.
+
+**Conflict.** Unknown compact metadata does not equal an explicit rational state. Equal XMT values alone do not resolve repeated declaration ownership.
+
+**Note.** Retain raw descriptors and control arrays; withhold a typed selection when their declared roles cannot be reconciled.
+
 ### PS-13. Deltas type 90 `GROUP`
 
-**Question.** What change-state role does the final reference status of a status-framed type-90 GROUP carry?
+**Question.** What change-state role does the final reference status of a status-framed type-90 GROUP carry, and what semantic role does the integer in a type-91 MEMBER_OF_GROUP carry?
 
 **Known.** `siemens_nx.md` §4.2 defines the GROUP's five pointer roles, member-family enum 1 through 10, and separate primary and supported Deltas field framing. A primary GROUP ends after `first_member` without a status byte. Its source boundary follows the effective schema cursor.
 
-**Need.** Establish the reference-status semantics for section-owned GROUP instances. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the Deltas MEMBER_OF_GROUP label and status roles independently of the primary grammar.
+**Need.** Establish the reference-status semantics for section-owned GROUP instances. Determine whether a GROUP membership update addresses an XMT alone or a typed identity, and whether BODY revision boundaries limit its lifetime. Establish the change-state meaning of Deltas MEMBER_OF_GROUP reference statuses independently of its four-byte integer field and the primary grammar. Establish whether that integer is a label, state, or another control; its storage width does not assign its role.
 
 **Conflict.** Primary GROUP and MEMBER_OF_GROUP records have schema-owned boundaries and distinct member and entity chains. Those primary relations do not establish a Deltas update's identity key or revision lifetime. All Deltas selection is unresolved. GROUP membership remains the primary relation; no numerical BODY scope or typed-key replay applies Deltas updates.
+
+**Note.** Valid pointer domains alone do not establish a Deltas record start
+or update lifetime. Preserve unsupported layouts and unassigned status roles
+until their enclosing sequence is established.
 
 ### PS-18. Deltas tagged-reference lanes
 
@@ -116,6 +147,10 @@ extended deletion forms. Keep bounded rival interpretations separate from a
 certified deletion grammar. Neither six-byte nor eight-byte extent follows
 from the apparent tag and XMT alone.
 
+**Note.** Shape-only deletion admission is withheld; raw history remains
+retained in the exact suffix. This refusal does not supply the missing
+deletion grammar.
+
 ### PS-29. Aggregate pmark-edge selection
 
 **Question.** How does an aggregate deltas transmit bind each change's source
@@ -127,6 +162,15 @@ and target pmarks to the owning partition's current state?
 association, direction, source pmark, target pmark, and partition ownership. Apply only edges that lead to
 the selected current state, including branches, undone changes, and multiple
 bodies. Keep an unestablished edge selection unresolved. This includes repeated type-38 intersection states: first-use and subsequent record spelling must not select their chart or carrier relations.
+
+**Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
+pairing, and repeated carrier spellings cannot select an aggregate change.
+
+**Note.** The reader withholds unselected history across topology, semantic
+residuals, GROUP updates and derived appearance or operation-result bindings.
+It preserves the saved images and raw history separately. This resolves an
+unsafe replay fallback, not the unknown constituent grammar, pmark ownership,
+or regenerated current-design selection.
 
 ### PS-33. MESH FILE chart layout
 
@@ -462,11 +506,11 @@ assigns control geometry, continuity, or terminal semantics.
 
 ### OM-38. `SWP104` logical construction roles
 
-**Question.** Which logical fields assign authored construction roles to the four scalars, counted column sequence, and independent state lane?
+**Question.** Which logical fields assign authored construction roles and policy controls to the four scalars, counted column sequence, and independent state lane?
 
-**Known.** `siemens_nx.md` §7.1 "A bounded `SWP104` payload begins with one construction branch" defines one-based parameter and profile class indices. §7.1 "Member and successor references are non-null canonical payload object indices." defines the consecutive physical column sequence. Its block boundaries do not delimit logical fields. The witness count is independent of the member count.
+**Known.** `siemens_nx.md` §7.1 "A bounded `SWP104` payload begins with one construction branch" defines one-based parameter and profile class indices. §7.1 "Member and successor references are non-null canonical payload object indices." defines the consecutive physical column sequence. Its block boundaries do not delimit logical fields. The witness count is independent of the member count. The parameter classes distinguish revolved, swept, and cable constructions; the shared operation label does not select a sweep by itself.
 
-**Need.** Decode the logical rows across column boundaries and join their native endpoints to the profile, path, result mode, orientation, transition, transformation, twist, and scale fields required for a neutral feature.
+**Need.** Decode the logical rows across column boundaries and join their native endpoints to the profile, path, result mode, orientation, transition, transformation, tangent propagation, simplification, twist, and scale fields required for a neutral feature.
 
 **Conflict.** Parameter-class identity, physical adjacency, and equal scalar values do not identify the authored operands or distinguish dormant construction policies.
 

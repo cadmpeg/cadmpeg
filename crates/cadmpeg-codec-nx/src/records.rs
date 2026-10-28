@@ -11,7 +11,7 @@ pub(crate) mod group;
 mod primary;
 
 pub(crate) use deltas::DeltasRecords;
-pub(crate) use primary::PrimaryRecords;
+pub(crate) use primary::{EdgeFrame, PrimaryRecords};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BaseVersion {

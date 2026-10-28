@@ -737,6 +737,21 @@ pub(super) fn source_meta(
         crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT,
         missing_feature_solver_variable_count,
     );
+    let opaque_lanes = scan
+        .features
+        .definitions
+        .iter()
+        .filter_map(|definition| definition.variables.as_ref())
+        .flat_map(|table| &table.rows)
+        .map(|row| {
+            usize::from(row.value == ScalarLane::OpaqueFullWidth)
+                + usize::from(row.guess == ScalarLane::OpaqueFullWidth)
+        })
+        .sum();
+    coverage.record(
+        crate::coverage::OPAQUE_SECTION_VARIABLE_LANE_COUNT,
+        opaque_lanes,
+    );
     let (
         decoded_dimension_driven_variable_count,
         decoded_dimension_driven_coordinate_variable_count,

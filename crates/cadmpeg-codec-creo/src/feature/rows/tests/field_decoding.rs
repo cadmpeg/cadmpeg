@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{FeatureChoice, FeatureFieldValue, FeatureRow};
+use crate::feature::dimensions::{ModelDimension, ANGULAR_DIMENSION_TYPE};
 
 fn row() -> FeatureRow {
     let body = b"\xe0\x01blend_choice\0\x00".to_vec();
@@ -139,22 +140,77 @@ fn loop_restore_directions_decode_one_direction() {
     );
 }
 
-#[test]
-fn revolution_extents_decode_one_extent() {
-    let body = b"\xe3\xf6\x83\x95\xe1\x02\x83\xdf\xf6\xe3\
-        \x00\x00\xea\x44\x00\x00\xf6\xf6\xf6\x00\x00\x00\x00";
-    let row = FeatureRow {
+fn revolution_row(choices: &[u8]) -> FeatureRow {
+    let mut body = b"\xe3\xf6\x83\x95\xe1\x02\x83\xdf\xf6\xe3".to_vec();
+    body.extend_from_slice(choices);
+    FeatureRow {
         feature_id: 17,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 0,
-        body: body.to_vec().try_into().expect("two-byte revolution row"),
-        body_offset: 0,
-        offset: 0,
-    };
-    assert_eq!(
-        super::super::revolution_extents(std::slice::from_ref(&row)).len(),
-        1
+        body: body.try_into().expect("two-byte revolution row"),
+        body_offset: 100,
+        offset: 99,
+    }
+}
+
+fn angular_dimension(feature_id: u32, value: Option<f64>, offset: usize) -> ModelDimension {
+    ModelDimension {
+        dimension_type: ANGULAR_DIMENSION_TYPE,
+        feature_id,
+        value,
+        offset,
+    }
+}
+
+const TO_ANGLE_CHOICES: &[u8] = b"\x00\x00\xea\x44\x00\x00\xf6\xf6\xf6\x00\x00\x00\x00";
+
+#[test]
+fn to_angle_mode_with_one_360_degree_dimension_is_a_full_turn() {
+    let row = revolution_row(TO_ANGLE_CHOICES);
+    let extents = super::super::revolution_extents(
+        std::slice::from_ref(&row),
+        &[
+            angular_dimension(17, Some(360.0), 500),
+            ModelDimension {
+                dimension_type: 2,
+                feature_id: 17,
+                value: Some(67.0),
+                offset: 520,
+            },
+        ],
     );
+    assert_eq!(extents.len(), 1);
+    assert_eq!(extents[0].feature_id, 17);
+    assert_eq!(extents[0].offset, 112);
+}
+
+#[test]
+fn to_angle_mode_without_one_360_degree_dimension_has_no_extent() {
+    let row = revolution_row(TO_ANGLE_CHOICES);
+    for dimensions in [
+        Vec::new(),
+        vec![angular_dimension(18, Some(360.0), 500)],
+        vec![angular_dimension(17, Some(183.0), 500)],
+        vec![angular_dimension(17, None, 500)],
+        vec![
+            angular_dimension(17, Some(360.0), 500),
+            angular_dimension(17, Some(360.0), 540),
+        ],
+    ] {
+        assert!(
+            super::super::revolution_extents(std::slice::from_ref(&row), &dimensions).is_empty()
+        );
+    }
+}
+
+#[test]
+fn symmetric_mode_with_a_360_degree_dimension_has_no_extent() {
+    let row = revolution_row(b"\x00\x00\xeb\x20\x04\x00\x00\x83\xcf\xf6\xf6\x00\x00\x00\x00");
+    assert!(super::super::revolution_extents(
+        std::slice::from_ref(&row),
+        &[angular_dimension(17, Some(360.0), 500)],
+    )
+    .is_empty());
 }
 
 #[test]
@@ -232,7 +288,7 @@ fn surface_merge_replay_affected_ids_decode_one_record() {
 
 #[test]
 fn loop_history_roster_decodes_one_row() {
-    let body = [42, 1, 2, 3, 4, 0xe3];
+    let body = [42, 1, 2, 3, 4, 5, 0xe3];
     assert!(matches!(
         super::super::loop_history_roster(&body, 0, 1),
         Some(Ok(_))
@@ -242,7 +298,7 @@ fn loop_history_roster_decodes_one_row() {
 #[test]
 fn loop_history_entries_decode_one_result() {
     let body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x01\xf7\x60\xfb\xe3\
-                 \xe0\x01lo_hist\0\xf8\x06\x2a\x01\x02\x03\x04\xe3";
+                 \xe0\x01lo_hist\0\xf8\x06\x2a\x01\x02\x03\x04\x05\xe3";
     let row = FeatureRow {
         feature_id: 7,
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),

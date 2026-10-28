@@ -104,6 +104,7 @@ fn site_keys_use_outer_container_identity() {
         payload: Vec::new(),
         ps_streams: Vec::new(),
         ps_probe_capped: false,
+        ps_auxiliary_refusal: None,
     };
     let second = Block {
         offset: 200,
@@ -123,6 +124,7 @@ fn site_keys_use_outer_container_identity() {
         decoded_payload: None,
         ps_streams: Vec::new(),
         ps_probe_capped: false,
+        ps_auxiliary_refusal: None,
     };
     assert_eq!(Section::Compound(&compound).site_key(), "compound@300");
 }
@@ -344,7 +346,7 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
     source.extend(make_block(
         0x43,
         "Contents/Features",
-        br#"<?xml version="1.0"?><swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swID="0" swModelRef="model-0" swMostRecentConfiguration="NO"/><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
+        br#"<?xml version="1.0"?><swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swName="First" swID="0" swModelRef="model-0" swMostRecentConfiguration="NO" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="Second" swID="1" swModelRef="model-1" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swConfigurationList></swSolidWorks>"#,
     ));
     let scan = crate::test_support::container::scan(&source);
 
@@ -363,12 +365,17 @@ fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
 
 #[test]
 fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
-    let xml = r#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swConfigurationList><swConfiguration swID="1" swName="Second" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#;
+    let xml = r#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="second" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swID="1" swName="Second" swModelRef="second" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swConfigurationList></swSolidWorks>"#;
     let mut payload = vec![0xff, 0xfe];
     for unit in xml.encode_utf16() {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
     let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Second"/></Keywords>"#,
+    ));
     source.extend(make_block(0x43, "Contents/Features", &payload));
     let scan = crate::test_support::container::scan(&source);
 
@@ -378,7 +385,7 @@ fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
 }
 
 #[test]
-fn explicit_source_index_precedes_the_manifest_partition_id() {
+fn explicit_source_index_conflict_with_manifest_partition_is_unresolved() {
     let mut source = sldprt_with_colliding_sites();
     source.extend(make_block(
         0x42,
@@ -388,13 +395,13 @@ fn explicit_source_index_precedes_the_manifest_partition_id() {
     source.extend(make_block(
         0x43,
         "Contents/Features",
-        br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First"/><swModel id="model-1" swConfigurationName="Second"/><swConfigurationList><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
+        br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swName="Second" swID="1" swModelRef="model-1" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swConfigurationList></swSolidWorks>"#,
     ));
     let scan = crate::test_support::container::scan(&source);
 
-    assert_eq!(container::active_configuration_index(&scan), Some(0));
-    let site = container::select_active_parasolid_site(&scan).expect("explicit source index");
-    assert_eq!(site.name(), "Contents/Config-0-Partition");
+    assert_eq!(container::active_configuration_index(&scan), None);
+    assert!(container::active_configuration_name_ref(&scan).is_none());
+    assert!(container::select_active_parasolid_site(&scan).is_none());
 }
 
 #[test]
@@ -424,6 +431,105 @@ fn manifest_activity_is_read_only_from_the_features_stream() {
 
     assert_eq!(container::manifest_active_configuration(&scan), None);
     assert_eq!(container::active_configuration_index(&scan), None);
+    assert!(container::select_active_parasolid_site(&scan).is_none());
+}
+
+const COMPLETE_CONFIGURATION_MANIFEST: &[u8] = br#"<swSolidWorks><swModel id="model" swConfigurationName="Second" swConfigurationId="1"/><swConfiguration swName="Second" swID="1" swModelRef="model" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
+const COMPLETE_CONFIGURATION_KEYWORDS: &[u8] =
+    br#"<Keywords><Configuration Name="Second"/></Keywords>"#;
+
+#[test]
+fn modern_deflate_features_suffix_keeps_its_semantic_manifest_identity() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        COMPLETE_CONFIGURATION_KEYWORDS,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/Features__ZLB",
+        COMPLETE_CONFIGURATION_MANIFEST,
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    assert_eq!(container::active_configuration_index(&scan), Some(1));
+    assert_eq!(
+        container::select_active_parasolid_site(&scan)
+            .unwrap()
+            .name(),
+        "Contents/Config-1-Partition"
+    );
+}
+
+#[test]
+fn compound_features_suffix_requires_a_validated_wrapper_payload() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    for suffix in ["__ZLB", "__zlb"] {
+        for validated in [false, true] {
+            let features = container::compound_stream(
+                &ctx,
+                format!("swXmlContents/Features{suffix}"),
+                1,
+                0,
+                COMPLETE_CONFIGURATION_MANIFEST.to_vec(),
+                validated.then(|| COMPLETE_CONFIGURATION_MANIFEST.to_vec()),
+            )
+            .unwrap();
+            let keywords = container::compound_stream(
+                &ctx,
+                "swXmlContents/Keywords".into(),
+                2,
+                0,
+                COMPLETE_CONFIGURATION_KEYWORDS.to_vec(),
+                None,
+            )
+            .unwrap();
+            let scan = container::completed_scan(
+                &ctx,
+                &[],
+                0,
+                vec![],
+                vec![],
+                vec![],
+                vec![features, keywords],
+            )
+            .unwrap();
+            assert_eq!(
+                container::active_configuration_index(&scan),
+                validated.then_some(1)
+            );
+            assert_eq!(
+                container::active_configuration_name_ref(&scan),
+                validated.then_some("Second")
+            );
+        }
+    }
+}
+
+#[test]
+fn unresolved_manifest_does_not_select_a_single_partition_as_active() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x41,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        COMPLETE_CONFIGURATION_KEYWORDS,
+    ));
+    let conflicting = String::from_utf8(COMPLETE_CONFIGURATION_MANIFEST.to_vec())
+        .unwrap()
+        .replace("swConfigurationId=\"1\"", "swConfigurationId=\"0\"");
+    source.extend(make_block(
+        0x43,
+        "Contents/Features",
+        conflicting.as_bytes(),
+    ));
+    let scan = crate::test_support::container::scan(&source);
+    assert!(container::active_configuration_index(&scan).is_none());
     assert!(container::select_active_parasolid_site(&scan).is_none());
 }
 
@@ -635,3 +741,7 @@ fn present_unknown_native_version_preserves_declared_value() {
     assert_eq!(scan.version, 0x1234_5678);
     assert!(scan.blocks.is_empty());
 }
+
+mod weldment;
+
+mod auxiliary_refusal;

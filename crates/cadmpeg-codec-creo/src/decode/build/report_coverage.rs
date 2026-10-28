@@ -71,6 +71,17 @@ pub(super) fn push_coverage_drop_losses(
             ),
         );
     }
+    let cross_section_rows = coverage_count(coverage, "decoded_cross_section_curve_row_count");
+    if cross_section_rows != 0 {
+        push_report_loss(
+            losses,
+            CreoLossCode::CrossSectionCurveBodyOpaque,
+            format_args!(
+                "{cross_section_rows} cross-section curve row(s) retain complete parameter-body bytes \
+                 without independently established internal numeric roles."
+            ),
+        );
+    }
     let ambiguous_surface_rows = coverage_count(coverage, "ambiguous_visible_surface_row_count");
     if ambiguous_surface_rows != 0 {
         push_report_loss(
@@ -331,6 +342,11 @@ pub(super) fn push_coverage_drop_losses(
              explicitly unresolved model-space construction."
             ),
         );
+    }
+    let opaque_lanes = coverage_count(coverage, "opaque_section_variable_lane_count");
+    if opaque_lanes != 0 {
+        push_report_loss(losses, CreoLossCode::SectionVariableScalarOpaque,
+            format_args!("{opaque_lanes} full-width section variable lane(s) retain exact bytes without independently established numeric roles."));
     }
     let unresolved_dimension_driven_variables = coverage_count(
         coverage,

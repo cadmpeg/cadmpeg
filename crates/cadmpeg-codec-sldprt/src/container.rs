@@ -20,6 +20,7 @@ use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ContainerSummary;
 
+mod configuration_bindings;
 pub(crate) mod native_layout;
 
 use crate::layout::block_frame_header as block_hdr;
@@ -157,6 +158,8 @@ pub(crate) struct Block {
     pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
     /// The legacy zlib probe stopped at its work limit in this block.
     pub(crate) ps_probe_capped: bool,
+    /// Malformed optional auxiliary extraction retained without interpretation.
+    pub(crate) ps_auxiliary_refusal: Option<String>,
 }
 
 impl Block {
@@ -210,6 +213,8 @@ pub(crate) struct CompoundStream {
     pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
     /// The legacy zlib probe stopped at its work limit in this stream.
     pub(crate) ps_probe_capped: bool,
+    /// Malformed optional auxiliary extraction retained without interpretation.
+    pub(crate) ps_auxiliary_refusal: Option<String>,
 }
 
 /// Complete result of an outer-container scan.
@@ -289,10 +294,32 @@ impl<'a> Section<'a> {
         }
     }
 
+    pub(crate) fn xml_payload(self) -> Option<&'a [u8]> {
+        if let Self::Compound(stream) = self {
+            if stream
+                .path
+                .as_str()
+                .rsplit_once("__")
+                .is_some_and(|(_, suffix)| suffix.eq_ignore_ascii_case("ZLB"))
+                && stream.decoded_payload.is_none()
+            {
+                return None;
+            }
+        }
+        Some(self.payload())
+    }
+
     pub(crate) fn ps_streams(self) -> &'a [crate::parasolid::ExtractedStream] {
         match self {
             Self::Block(block) => &block.ps_streams,
             Self::Compound(stream) => &stream.ps_streams,
+        }
+    }
+
+    pub(crate) fn ps_auxiliary_refusal(self) -> Option<&'a str> {
+        match self {
+            Self::Block(block) => block.ps_auxiliary_refusal.as_deref(),
+            Self::Compound(stream) => stream.ps_auxiliary_refusal.as_deref(),
         }
     }
 
@@ -372,8 +399,11 @@ fn completed_scan<'a>(
         solidworks: SolidWorksEnvelopeScan::default(),
     };
     let solidworks = scan_solidworks_envelopes(
-        scan.sections()
-            .map(|section| (section.name(), section.payload())),
+        scan.sections().filter_map(|section| {
+            section
+                .xml_payload()
+                .map(|payload| (section.name(), payload))
+        }),
         &ScanAdmission::Decode(ctx),
     )?;
     scan.solidworks = solidworks;
@@ -449,6 +479,33 @@ fn walk_native_markers(
     })
 }
 
+fn extract_streams_for_owner(
+    payload: &[u8],
+    section: Option<&str>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(crate::parasolid::ExtractedStreams, Option<String>), CodecError> {
+    contain_optional_parasolid_refusal(
+        section,
+        crate::parasolid::extract_streams_in_section(payload, section, ctx),
+    )
+}
+
+fn contain_optional_parasolid_refusal(
+    section: Option<&str>,
+    result: Result<crate::parasolid::ExtractedStreams, CodecError>,
+) -> Result<(crate::parasolid::ExtractedStreams, Option<String>), CodecError> {
+    match result {
+        Err(CodecError::Malformed(reason)) if section == Some("ThirdPty/WELDMENT_STORAGE") => Ok((
+            crate::parasolid::ExtractedStreams {
+                streams: Vec::new(),
+                probe_capped: false,
+            },
+            Some(reason),
+        )),
+        result => result.map(|streams| (streams, None)),
+    }
+}
+
 fn compound_stream(
     ctx: &DecodeContext<'_>,
     path: String,
@@ -458,7 +515,8 @@ fn compound_stream(
     decoded_bytes: Option<Vec<u8>>,
 ) -> Result<CompoundStream, CodecError> {
     let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
-    let extracted = crate::parasolid::extract_streams_with_offsets(semantic_payload, ctx)?;
+    let (extracted, ps_auxiliary_refusal) =
+        extract_streams_for_owner(semantic_payload, Some(path.as_str()), ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
         Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
@@ -471,6 +529,7 @@ fn compound_stream(
         decoded_payload: decoded_bytes,
         ps_streams: extracted.streams,
         ps_probe_capped: extracted.probe_capped,
+        ps_auxiliary_refusal,
     })
 }
 
@@ -605,6 +664,7 @@ struct RawBlock {
     payload: Vec<u8>,
     ps_streams: Vec<crate::parasolid::ExtractedStream>,
     ps_probe_capped: bool,
+    ps_auxiliary_refusal: Option<String>,
 }
 
 impl RawBlock {
@@ -629,6 +689,7 @@ impl RawBlock {
             payload: self.payload,
             ps_streams: self.ps_streams,
             ps_probe_capped: self.ps_probe_capped,
+            ps_auxiliary_refusal: self.ps_auxiliary_refusal,
         }
     }
 }
@@ -693,7 +754,8 @@ fn block_from_inflated(
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let extracted = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
+    let (extracted, ps_auxiliary_refusal) =
+        extract_streams_for_owner(&inflated, section.as_deref(), ctx)?;
     let family = if extracted.streams.is_empty() {
         payload_family(&inflated)
     } else {
@@ -710,6 +772,7 @@ fn block_from_inflated(
         payload: inflated,
         ps_streams: extracted.streams,
         ps_probe_capped: extracted.probe_capped,
+        ps_auxiliary_refusal,
     }))
 }
 
@@ -981,6 +1044,9 @@ pub(crate) fn select_active_parasolid_site<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
+    if has_manifest_configuration_rows(scan) && active_configuration.is_none() {
+        return None;
+    }
     let mut selected = None;
     for section in scan.sections() {
         let name = section.name().unwrap_or("");
@@ -1042,12 +1108,42 @@ pub(crate) fn configuration_index(section: &str) -> Option<usize> {
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    explicit_active_configuration_index(scan).or_else(|| {
-        scan.solidworks
+    if has_manifest_configuration_rows(scan) {
+        return scan
+            .solidworks
             .manifest_active_configuration
             .unique_ref()
-            .map(|(index, _)| index)
-    })
+            .map(|(index, _)| index);
+    }
+    explicit_active_configuration_index(scan)
+}
+
+pub(crate) fn has_manifest_configuration_rows(scan: &ContainerScan) -> bool {
+    scan.solidworks.configuration_bindings.has_manifest_rows()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ManifestConfigurationIndex {
+    Absent,
+    Unresolved,
+    Resolved(usize),
+}
+
+pub(crate) fn manifest_configuration_index(
+    scan: &ContainerScan,
+    name: &str,
+) -> ManifestConfigurationIndex {
+    scan.solidworks.configuration_bindings.index_for(name)
+}
+
+pub(crate) fn manifest_configuration_name<'a>(
+    scan: &'a ContainerScan<'_>,
+    index: usize,
+) -> Option<&'a str> {
+    if !has_manifest_configuration_rows(scan) {
+        return None;
+    }
+    scan.solidworks.configuration_bindings.name_for(index)
 }
 
 /// Return the active configuration's unique manifest identity, when one
@@ -1060,36 +1156,9 @@ fn manifest_active_configuration(scan: &ContainerScan<'_>) -> Option<(usize, Opt
 
 fn is_features_manifest_name(name: Option<&str>) -> bool {
     name.and_then(|name| name.rsplit('/').next())
-        .is_some_and(|name| name.eq_ignore_ascii_case("Features"))
-}
-
-/// Resolve a manifest row to its configuration name without depending on XML
-/// namespace prefixes or on the order of the model rows.
-fn manifest_configuration_name(
-    document: &roxmltree::Document<'_>,
-    row: roxmltree::Node<'_, '_>,
-    id: &str,
-) -> Option<String> {
-    let direct = row.attribute("swName").filter(|value| !value.is_empty());
-    let model = row
-        .attribute("swModelRef")
-        .and_then(|reference| {
-            document.descendants().find(|node| {
-                node.tag_name().name() == "swModel" && node.attribute("id") == Some(reference)
-            })
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("Features") || name.eq_ignore_ascii_case("Features__ZLB")
         })
-        .or_else(|| {
-            document.descendants().find(|node| {
-                node.tag_name().name() == "swModel"
-                    && node.attribute("swConfigurationId") == Some(id)
-            })
-        });
-    let name = direct.or_else(|| {
-        model
-            .and_then(|node| node.attribute("swConfigurationName"))
-            .filter(|value| !value.is_empty())
-    });
-    name.map(str::to_owned)
 }
 
 fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
@@ -1104,7 +1173,10 @@ pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> 
         .unique_ref()
         .and_then(|(_, name)| name)
         .or_else(|| {
-            (scan.solidworks.configuration_names.len() == 1)
+            (matches!(
+                scan.solidworks.manifest_active_configuration,
+                ManifestActiveConfiguration::Absent
+            ) && scan.solidworks.configuration_names.len() == 1)
                 .then(|| {
                     scan.solidworks
                         .configuration_names
@@ -1148,6 +1220,7 @@ pub(crate) struct SolidWorksEnvelopeScan {
     configuration_names: BTreeSet<String>,
     manifest_active_configuration: ManifestActiveConfiguration,
     configuration_source_indices: BTreeMap<String, Vec<usize>>,
+    configuration_bindings: configuration_bindings::ConfigurationBindings,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1159,26 +1232,6 @@ enum ManifestActiveConfiguration {
 }
 
 impl ManifestActiveConfiguration {
-    fn merge(&mut self, current: Self) {
-        match (&mut *self, current) {
-            (_, Self::Absent) | (Self::Ambiguous, _) => {}
-            (_, Self::Ambiguous) => *self = Self::Ambiguous,
-            (Self::Absent, current @ Self::Unique(..)) => *self = current,
-            (Self::Unique(previous_index, previous_name), Self::Unique(index, mut name)) => {
-                if *previous_index != index
-                    || matches!(
-                        (previous_name.as_deref(), name.as_deref()),
-                        (Some(previous), Some(current)) if previous != current
-                    )
-                {
-                    *self = Self::Ambiguous;
-                } else if previous_name.is_none() {
-                    *previous_name = name.take();
-                }
-            }
-        }
-    }
-
     #[cfg(test)]
     fn unique(&self) -> Option<(usize, Option<String>)> {
         self.unique_ref()
@@ -1215,10 +1268,10 @@ fn scan_solidworks_envelopes<'a>(
         };
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
-            scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(&document));
+            scan.configuration_bindings.record_features(&document);
         }
         if root.tag_name().name().contains("Keywords") {
+            scan.configuration_bindings.record_keywords(&document);
             for configuration in document
                 .descendants()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
@@ -1301,42 +1354,9 @@ fn scan_solidworks_envelopes<'a>(
             configuration_attributes,
         });
     }
+    scan.configuration_bindings.finish();
+    scan.manifest_active_configuration = scan.configuration_bindings.active();
     Ok(scan)
-}
-
-fn manifest_active_configuration_in(
-    document: &roxmltree::Document<'_>,
-) -> ManifestActiveConfiguration {
-    let mut any_configuration = false;
-    let mut active = None;
-    for row in document
-        .descendants()
-        .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
-    {
-        any_configuration = true;
-        if row.attribute("swMostRecentConfiguration") == Some("YES") {
-            if active.is_some() {
-                return ManifestActiveConfiguration::Ambiguous;
-            }
-            active = Some(row);
-        }
-    }
-    if !any_configuration {
-        return ManifestActiveConfiguration::Absent;
-    }
-    let Some(row) = active else {
-        return ManifestActiveConfiguration::Ambiguous;
-    };
-    let Some(id) = row.attribute("swID") else {
-        return ManifestActiveConfiguration::Ambiguous;
-    };
-    let Some(index) = (!id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
-        .then(|| id.parse::<usize>().ok())
-        .flatten()
-    else {
-        return ManifestActiveConfiguration::Ambiguous;
-    };
-    ManifestActiveConfiguration::Unique(index, manifest_configuration_name(document, row, id))
 }
 
 /// Returns the first parsed `swSolidWorks` envelope even if an attribute is absent.

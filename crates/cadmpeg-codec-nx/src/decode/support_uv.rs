@@ -229,6 +229,64 @@ pub(super) fn validate_serialized_support_uv_with_index(
     Ok(admitted)
 }
 
+fn support_uv_spans_chart<T: PartialEq>(values: &[T], points: &[Point3]) -> bool {
+    values.len() == points.len()
+        && !values.is_empty()
+        && (points.windows(2).all(|pair| pair[0] == pair[1])
+            || values.windows(2).any(|pair| pair[0] != pair[1]))
+}
+
+fn constant_pcurve_contradicts_chart(pcurve: &PcurveGeometry, points: &[Point3]) -> bool {
+    if points.windows(2).all(|pair| pair[0] == pair[1]) {
+        return false;
+    }
+    let PcurveGeometry::Nurbs { nurbs } = pcurve else {
+        return false;
+    };
+    let controls = nurbs.control_points();
+    !controls.is_empty() && controls.windows(2).all(|pair| pair[0] == pair[1])
+}
+
+fn validated_serialized_values_lane_with_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    points: &[Point3],
+    fit_tolerance: f64,
+    values: Option<&SupportUvLane>,
+    geometry_budget: &GeometryWorkBudget<'_>,
+    support_budget: &WorkBudget,
+) -> Result<Option<Vec<Point2>>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(values) = values else {
+        return Ok(None);
+    };
+    if values.len() > MAX_SUPPORT_UV_SAMPLES
+        || !support_uv_spans_chart(values.as_slice(), points)
+        || !support_budget.charge_by(points.len())
+    {
+        return Ok(None);
+    }
+    if !support_uv_lane_matches_surface_with_budget(
+        index,
+        surface,
+        points,
+        fit_tolerance,
+        Some(values),
+        geometry_budget,
+    )? {
+        return Ok(None);
+    }
+    let Some(geometry) = index
+        .surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex)
+        .map(|surface| &surface.geometry)
+    else {
+        return Ok(None);
+    };
+    Ok(values
+        .iter()
+        .map(|uv| surface_parameters(geometry, **uv).map(FinitePoint2::get))
+        .collect())
+}
+
 fn support_uv_lane_matches_surface_with_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
@@ -240,7 +298,7 @@ fn support_uv_lane_matches_surface_with_budget(
     let Some(values) = values else {
         return Ok(false);
     };
-    if values.len() > MAX_SUPPORT_UV_SAMPLES {
+    if values.len() > MAX_SUPPORT_UV_SAMPLES || !support_uv_spans_chart(values.as_slice(), points) {
         return Ok(false);
     }
     let Some(geometry) = index
@@ -906,12 +964,6 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         for (procedural_id, samples, fit_tolerance, _) in pending {
             let points = &samples.points();
             let parameters = &samples.parameters();
-            if geometry_budget.exhausted() {
-                break;
-            }
-            if support_uv_budget_exhausted(support_budget) {
-                break;
-            }
             let Some(procedural) =
                 index.procedural_curves(procedural_id.as_str(), cadmpeg_ir::index::StandardIndex)
             else {
@@ -925,18 +977,19 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 continue;
             };
             for (side, support) in context.sides().iter().enumerate() {
-                if geometry_budget.exhausted() {
-                    break;
-                }
-                if support_uv_budget_exhausted(support_budget) {
-                    break;
+                let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
+                    continue;
+                };
+                if constant_pcurve_contradicts_chart(&pcurve.geometry, points) {
+                    invalid.push((procedural_id.clone(), side));
+                    continue;
                 }
                 if validated_lanes.contains(&(procedural_id.clone(), side)) {
                     continue;
                 }
-                let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
+                if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                     continue;
-                };
+                }
                 let Some(geometry) = index
                     .surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex)
                     .map(|surface| &surface.geometry)
@@ -1255,6 +1308,17 @@ fn complete_support_uv_wave(
                 let geometry_budget = &lane_geometry_budget;
                 let mut contact_seeds = BlendContactSeedCache::default();
                 let uv = (|| -> Result<Option<(Vec<Point2>, bool)>, cadmpeg_core::CodecError> {
+                    if let Some(values) = validated_serialized_values_lane_with_budget(
+                        &model_index,
+                        surface_id,
+                        points,
+                        effective_fit_tolerance,
+                        serialized.values[side].as_ref(),
+                        geometry_budget,
+                        support_budget,
+                    )? {
+                        return Ok(Some((values, true)));
+                    }
                     let mut uv = Vec::new();
                     let mut all_parameters_certified = true;
                     for (point_index, point) in points.iter().enumerate() {
@@ -1494,7 +1558,9 @@ fn complete_support_uv_wave(
                     }
                 }
                 let mut endpoint_values = [None, None];
-                let reproduces_chart = if all_parameters_certified {
+                let reproduces_chart = if !support_uv_spans_chart(&uv, points) {
+                    false
+                } else if all_parameters_certified {
                     true
                 } else {
                     let mut reproduces = true;
@@ -1930,6 +1996,9 @@ fn complete_coupled_support_uv(
         let mut lane_witnesses = Vec::new();
         for side in 0..2 {
             if missing[side] {
+                if !support_uv_spans_chart(&lanes[side], points) {
+                    continue;
+                }
                 let endpoint_values = if let Some(surface) =
                     model_index.surfaces(surfaces[side].as_str(), cadmpeg_ir::index::StandardIndex)
                 {
@@ -2670,6 +2739,146 @@ mod tests {
             super::serialized_support_uv_seed_for_side(&surface, &source, 0),
             Some(Point2::new(1000., 2000.))
         );
+    }
+
+    #[test]
+    fn distinct_chart_endpoints_reject_constant_uv_even_with_loose_fit() {
+        crate::test_support::with_decode_context(|ctx| {
+            let surface = SurfaceId::mint("test:model:entity#synthetic:cached-plane").unwrap();
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0., 0., 0.),
+                        cadmpeg_ir::math::Vector3::new(0., 0., 1.),
+                        cadmpeg_ir::math::Vector3::new(1., 0., 0.),
+                    )
+                    .unwrap(),
+                )),
+                source_object: None,
+            });
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+            let budget = GeometryWorkBudget::from_context(ctx, 10_000);
+            let support_budget = WorkBudget::new(100);
+            let chart = [Point3::new(0., 0., 0.), Point3::new(2., 0., 0.)];
+            let constant = SupportUvLane::new(vec![[0., 0.], [0., 0.]], 2).unwrap();
+            assert!(super::validated_serialized_values_lane_with_budget(
+                &index,
+                &surface,
+                &chart,
+                10.,
+                Some(&constant),
+                &budget,
+                &support_budget,
+            )
+            .unwrap()
+            .is_none());
+            let values = SupportUvLane::new(vec![[0., 0.], [0.002, 0.]], 2).unwrap();
+            let retained = values.clone();
+            let admitted = super::validated_serialized_values_lane_with_budget(
+                &index,
+                &surface,
+                &chart,
+                10.,
+                Some(&values),
+                &budget,
+                &support_budget,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(values, retained);
+            assert_eq!(admitted, [Point2::new(0., 0.), Point2::new(2., 0.)]);
+            assert!(!super::support_uv_spans_chart(&admitted[..1], &chart));
+            assert!(!super::support_uv_spans_chart(
+                &[Point2::new(1., 1.); 2],
+                &chart,
+            ));
+            assert!(super::support_uv_spans_chart(
+                &[Point2::new(1., 1.); 2],
+                &[chart[0], chart[0]],
+            ));
+            assert!(!super::support_uv_spans_chart(
+                &[Point2::new(1., 1.); 3],
+                &[chart[0], chart[1], chart[0]],
+            ));
+            assert!(super::support_uv_spans_chart(
+                &[Point2::new(1., 1.); 3],
+                &[chart[0]; 3],
+            ));
+            let exact_budget = WorkBudget::new(2);
+            assert!(super::validated_serialized_values_lane_with_budget(
+                &index,
+                &surface,
+                &chart,
+                10.,
+                Some(&values),
+                &budget,
+                &exact_budget,
+            )
+            .unwrap()
+            .is_some());
+            assert_eq!(exact_budget.remaining(), 0);
+            assert!(super::validated_serialized_values_lane_with_budget(
+                &index,
+                &surface,
+                &chart,
+                10.,
+                Some(&values),
+                &budget,
+                &exact_budget,
+            )
+            .unwrap()
+            .is_none());
+            let short_budget = WorkBudget::new(1);
+            assert!(super::validated_serialized_values_lane_with_budget(
+                &index,
+                &surface,
+                &chart,
+                10.,
+                Some(&values),
+                &budget,
+                &short_budget,
+            )
+            .unwrap()
+            .is_none());
+            assert!(short_budget.exhausted());
+            let constant_pcurve =
+                super::linear_pcurve_geometry(&[0., 1.], &[Point2::new(0., 0.); 2]).unwrap();
+            assert!(super::constant_pcurve_contradicts_chart(
+                &constant_pcurve,
+                &chart
+            ));
+            assert!(!super::constant_pcurve_contradicts_chart(
+                &constant_pcurve,
+                &[chart[0], chart[0]],
+            ));
+            let spanning_pcurve = super::linear_pcurve_geometry(
+                &[0., 1., 2.],
+                &[
+                    Point2::new(0., 0.),
+                    Point2::new(1., 0.),
+                    Point2::new(0., 0.),
+                ],
+            )
+            .unwrap();
+            assert!(!super::constant_pcurve_contradicts_chart(
+                &spanning_pcurve,
+                &chart
+            ));
+            let wrong = SupportUvLane::new(vec![[0., 1.], [0.002, 1.]], 2).unwrap();
+            assert!(super::validated_serialized_values_lane_with_budget(
+                &index,
+                &surface,
+                &chart,
+                0.001,
+                Some(&wrong),
+                &budget,
+                &support_budget,
+            )
+            .unwrap()
+            .is_none());
+        });
     }
 
     #[test]

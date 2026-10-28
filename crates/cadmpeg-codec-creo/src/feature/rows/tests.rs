@@ -321,6 +321,39 @@ fn final_class_2017_entry_may_terminate_at_the_table_separator() {
 }
 
 #[test]
+fn class_212_entry_reads_head_and_tail_before_its_close() {
+    let payload = [
+        0x88, 0xd4, 0x80, 0xd4, 0x93, 0xe3, 0x93, 0xd7, 0xe3, 0x88, 0xd5, 0x80, 0xd4, 0x93, 0xf9,
+        0x93, 0xe8, 0xe3,
+    ];
+    let entries = read_entries(&payload, 0, 2).expect("two class-212 entries");
+
+    assert_eq!(entries[0].entity_id, 2260);
+    assert_eq!(entries[0].class_id(), 212);
+    assert_eq!(entries[0].loop_head_id(), Some(0x13e3));
+    assert_eq!(entries[0].loop_tail_id(), Some(0x13d7));
+    assert_eq!(entries[0].end_offset, 9);
+    assert_eq!(entries[1].entity_id, 2261);
+    assert_eq!(entries[1].loop_head_id(), Some(0x13f9));
+    assert_eq!(entries[1].loop_tail_id(), Some(0x13e8));
+}
+
+#[test]
+fn class_2006_entry_body_opens_with_its_class_212_identifier() {
+    let payload = [
+        0x8a, 0xec, 0x87, 0xd6, 0x8a, 0xe3, 0xf6, 0xe3, 0x8a, 0xfb, 0x80, 0xd4, 0x98, 0x3b, 0x98,
+        0x34, 0xe3,
+    ];
+    let entries = read_entries(&payload, 0, 2).expect("class-2006 and class-212 entries");
+
+    assert_eq!(entries[0].entity_id, 0xaec);
+    assert_eq!(entries[0].class_id(), 2006);
+    assert_eq!(entries[0].end_offset, 8);
+    assert_eq!(entries[1].entity_id, 0xafb);
+    assert_eq!(entries[1].loop_head_id(), Some(0x183b));
+}
+
+#[test]
 fn class_210_generated_entry_retains_its_nonvisible_entity_link() {
     let payload = [0x85, 0xb7, 0x80, 0xd2, 0x85, 0x59, 0, 0xe3];
     let entries = read_entries(&payload, 0, 1).expect("class-210 generated entry");
@@ -431,6 +464,54 @@ fn positional_datum_table_replays_the_named_stream_schema() {
 }
 
 #[test]
+fn subtype_759_first_operand_names_one_earlier_type_700_loop() {
+    let row = |ordinal: u32, loop_id: u32, fields: [Option<u32>; 5]| {
+        let mut entry = crate::feature::rows::dummy_loop_history_entry();
+        entry.ordinal = ordinal;
+        entry.loop_id = loop_id;
+        entry.offset = 100 + 10 * usize::try_from(ordinal).unwrap();
+        entry.logical_fields = fields;
+        entry
+    };
+    let source = row(0, 80, [Some(752), None, Some(0), Some(0), Some(700)]);
+    let derived = row(1, 81, [Some(759), Some(80), Some(1), None, Some(701)]);
+    let entries = [source.clone(), derived.clone()];
+
+    assert_eq!(
+        crate::feature::rows::loop_history_prior_loop(&derived, &entries),
+        Some(80)
+    );
+    assert_eq!(
+        crate::feature::rows::loop_history_prior_loop(&source, &entries),
+        None
+    );
+    let mut wrong_type = source.clone();
+    wrong_type.logical_fields[4] = Some(701);
+    assert_eq!(
+        crate::feature::rows::loop_history_prior_loop(&derived, &[wrong_type, derived.clone()]),
+        None
+    );
+    let mut other_feature = source.clone();
+    other_feature.feature_id = 8;
+    assert_eq!(
+        crate::feature::rows::loop_history_prior_loop(&derived, &[other_feature, derived.clone()]),
+        None
+    );
+    let later = row(2, 80, [Some(752), None, Some(0), Some(0), Some(700)]);
+    assert_eq!(
+        crate::feature::rows::loop_history_prior_loop(&derived, &[derived.clone(), later]),
+        None
+    );
+    assert_eq!(
+        crate::feature::rows::loop_history_prior_loop(
+            &derived,
+            &[source.clone(), source, derived.clone()]
+        ),
+        None
+    );
+}
+
+#[test]
 fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
     let mut body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x03\xf7\x60\xfb\xe3\
                          \xe0\x01lo_hist\0\xf8\x06"
@@ -481,7 +562,7 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
     );
     assert_eq!(
         entries[0].field_bytes,
-        [vec![1], vec![0xf6], vec![0xe5], vec![2]]
+        vec![vec![1], vec![0xf6], vec![0xe5], vec![2]]
     );
     assert_eq!(
         entries[0].boundary,
@@ -493,11 +574,82 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
     );
     assert_eq!(entries[2].fields().count(), 5);
     assert_eq!(
-        entries[2].boundary,
-        FeatureLoopHistoryBoundary::NamedRecord {
-            trailing: Some(vec![7])
-        }
+        entries[0].logical_fields,
+        [Some(1), None, Some(0), Some(0), Some(2)]
     );
+    assert_eq!(
+        entries[2].logical_fields,
+        [Some(5), Some(6), Some(1), None, Some(7)]
+    );
+    assert_eq!(entries[2].boundary, FeatureLoopHistoryBoundary::NamedRecord);
+}
+
+/// The `lo_id_tab_ptr` table and six-record `lo_hist` roster of
+/// `nist_ctc_01_asme1_rd_cr4050_ra.prt.1`, followed by the next table's header.
+const TABLE_SEPARATED_ROSTER: &[u8] = b"\xe0\x00lo_id_tab_ptr\0\xf2\xf8\x06\xf7\x63\xfb\xe3\
+    \xe0\x01lo_hist\0\xf8\x06\
+    \x81\x40\x82\xef\xf6\xe5\x82\xbc\xf1\xf7\x63\xe3\
+    \x81\x41\x82\xee\xf6\xe5\x82\xbc\xe3\
+    \x81\x42\x82\xf0\xf6\xe5\x82\xbc\xe3\
+    \x81\x43\x82\xf3\xf6\xe5\x82\xbd\xe3\
+    \x81\x44\x82\xf2\xf6\xe5\x82\xbd\xe3\
+    \x81\x45\x82\xf7\x81\x42\xe4\xf6\x82\xbd\xf2\xf7\x4c\
+    \xf8\x01\xf7\x4c\xfb\xe2\xf7\x4d\x69\xf6\xe3";
+
+fn table_separated_rows(body: &[u8]) -> [FeatureRow; 1] {
+    [FeatureRow {
+        feature_id: 7,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+        stream_offset: 10,
+        body: body.to_vec().try_into().expect("row body"),
+        body_offset: 1_000,
+        offset: 998,
+    }]
+}
+
+#[test]
+fn final_loop_history_record_ends_at_a_table_separator() {
+    let rows = table_separated_rows(TABLE_SEPARATED_ROSTER);
+    let entries = loop_history_entries(&rows, &geometry_tables(&rows));
+
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| (entry.loop_id, entry.logical_fields))
+            .collect::<Vec<_>>(),
+        vec![
+            (320, [Some(751), None, Some(0), Some(0), Some(700)]),
+            (321, [Some(750), None, Some(0), Some(0), Some(700)]),
+            (322, [Some(752), None, Some(0), Some(0), Some(700)]),
+            (323, [Some(755), None, Some(0), Some(0), Some(701)]),
+            (324, [Some(754), None, Some(0), Some(0), Some(701)]),
+            (325, [Some(759), Some(322), Some(1), None, Some(701)]),
+        ]
+    );
+    let next_table = TABLE_SEPARATED_ROSTER.len() - 11;
+    assert_eq!(entries[5].end_offset, 1_000 + next_table);
+    assert_eq!(
+        entries[5].boundary,
+        FeatureLoopHistoryBoundary::TableSeparator(0x4c)
+    );
+}
+
+#[test]
+fn table_separator_bounds_only_a_final_record_before_an_array_header() {
+    let separator = TABLE_SEPARATED_ROSTER.len() - 14;
+    let final_record = &TABLE_SEPARATED_ROSTER[separator - 10..];
+    let parse = |body: &[u8], count| loop_history_roster(body, 0, count);
+
+    assert!(parse(final_record, 1).is_some());
+    let mut continue_marker = final_record.to_vec();
+    continue_marker[10] = 0xf1;
+    assert!(parse(&continue_marker, 1).is_none());
+    let mut no_array = final_record.to_vec();
+    no_array[13] = 0x00;
+    assert!(parse(&no_array, 1).is_none());
+    let mut nonfinal = final_record[..13].to_vec();
+    nonfinal.extend_from_slice(b"\xf8\x01\xf7\x4c\xfb\x2a\x02\xf6\xe5\x03\xe3");
+    assert!(parse(&nonfinal, 2).is_none());
 }
 
 #[test]
@@ -512,7 +664,7 @@ fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
     assert_eq!(direct_named[0].end_offset, 5);
     assert_eq!(
         direct_named[0].boundary,
-        FeatureLoopHistoryBoundary::NamedRecord { trailing: None }
+        FeatureLoopHistoryBoundary::NamedRecord
     );
 
     let body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x01\xf7\x60\xfb\xe3\
@@ -833,4 +985,41 @@ fn replay_ids_withholds_zero_count_past_end() {
     {
         assert!(super::replay_ids(&[], 0, 1).is_none());
     };
+}
+
+#[test]
+fn loop_history_requires_type_after_all_five_logical_fields() {
+    let missing_type = [71, 9, 31, 0xe4, 0xf6, 0xe3];
+    assert!(loop_history_roster(&missing_type, 0, 1).is_none());
+    let extra_after_type = b"\x47\x09\x1f\xe4\xf6\x0b\x0c\xe0\x00next\0";
+    assert!(loop_history_roster(extra_after_type, 0, 1).is_none());
+    let complete = b"\x47\x09\x1f\xe4\xf6\x0b\xe0\x00next\0";
+    let rows = loop_history_roster(complete, 0, 1).expect("complete logical row");
+    assert_eq!(
+        rows[0].logical_fields,
+        [Some(9), Some(31), Some(1), None, Some(11)]
+    );
+    assert_eq!(rows[0].field_bytes.concat(), complete[1..6]);
+    assert_eq!(rows[0].end_offset, 6);
+}
+
+#[test]
+fn loop_history_zero_runs_are_owned_by_operand_slots() {
+    for invalid in [
+        vec![71, 0xe5, 31, 0xf6, 11, 0xe3],
+        vec![71, 9, 31, 1, 0xe5, 11, 0xe3],
+        vec![71, 9, 31, 1, 0xf6, 0xe5, 0xe3],
+        vec![71, 9, 31, 0xe6, 0xf6, 11, 0xe3],
+        vec![71, 9, 0x80, 1, 0xe4, 0xf6, 11, 0xe3],
+        vec![71, 9, 31, 1, 0xf6, 0x80],
+    ] {
+        assert!(loop_history_roster(&invalid, 0, 1).is_none());
+    }
+    let body = [71, 9, 0xf6, 0xe5, 11, 0xe3];
+    let rows = loop_history_roster(&body, 0, 1).expect("owned zero run");
+    assert_eq!(
+        rows[0].logical_fields,
+        [Some(9), None, Some(0), Some(0), Some(11)]
+    );
+    assert_eq!(rows[0].field_bytes.concat(), body[1..5]);
 }

@@ -249,7 +249,6 @@ fn saved_spline_revolution_scan() -> crate::container::ContainerScan<'static> {
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     scan.features
         .revolution_extents

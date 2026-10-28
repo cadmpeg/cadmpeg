@@ -327,8 +327,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(profile) = profile_source {
                 properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile);
             }
-            if let Some(path) = path_source {
-                properties.insert(cadmpeg_core::nonblank_literal!("Path"), path);
+            if let Some(path_source) = path_source {
+                let retained_native_path = existing
+                    .is_some_and(|record| !record.properties.contains_key("Path"))
+                    && matches!(path, Some(cadmpeg_ir::features::PathRef::Native(reference))
+                        if reference.starts_with("sldprt:feature-input:component-reference-curve:"));
+                if !retained_native_path {
+                    properties.insert(cadmpeg_core::nonblank_literal!("Path"), path_source);
+                }
             }
             match shape.mode() {
                 SweepMode::Solid {

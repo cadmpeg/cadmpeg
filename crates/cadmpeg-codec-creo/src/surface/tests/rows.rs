@@ -16,6 +16,7 @@ use crate::surface::cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
+use crate::surface::paired_short_second_coordinate;
 use crate::surface::plane_envelopes_for_rows;
 use crate::surface::positional_body_start;
 use crate::surface::prototype_count;
@@ -1009,6 +1010,42 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
         .expect("compound-close scan is admitted"),
         Some(body.len() - 1)
     );
+}
+
+#[test]
+fn short_second_coordinate_takes_ieee_byte_one_from_its_unique_frame_partner() {
+    let frame_body = [
+        0x00, 0x0c, 0x9a, 0xd2, 0x71, 0xda, 0x6d, 0x2d, 0xc6, 0x00, 0x2d, 0x1e, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x65, 0xbc, 0x69, 0x5e, 0xa3, 0x07, 0x8e, 0x4c, 0xd0, 0xc3, 0xcc, 0x6b, 0x33,
+        0x33, 0x30, 0x2d, 0x1e, 0x66, 0x66, 0x66, 0x66, 0x66, 0xcb, 0x41, 0xb5, 0x15, 0x59, 0x20,
+        0x89, 0x1e, 0xb0,
+    ];
+    let (frame, _) = decode_tabulated_cylinder_frame(&frame_body, &scalar::ScalarCache::default())
+        .expect("complete tabulated-cylinder frame");
+    let point = [
+        0x2d, 0x3c, 0x13, 0xc3, 0x39, 0x4c, 0xcc, 0xcd, 0x4d, 0x15, 0x59, 0x20, 0x89, 0x1e, 0xb0,
+    ];
+    let paired = f64::from_be_bytes([0x3f, 0xb5, 0x15, 0x59, 0x20, 0x89, 0x1e, 0xb0]);
+
+    assert_eq!(
+        paired_short_second_coordinate(&point, 8, &frame),
+        Some((paired, point.len()))
+    );
+    let mut other_tail = point;
+    other_tail[14] = 0xb1;
+    assert_eq!(paired_short_second_coordinate(&other_tail, 8, &frame), None);
+    let mut unpaired_opener = point;
+    unpaired_opener[8] = 0x4c;
+    assert_eq!(
+        paired_short_second_coordinate(&unpaired_opener, 8, &frame),
+        None
+    );
+    let mut values = frame.values().get();
+    values[2] = paired;
+    let mut prefixes = frame.prefixes();
+    prefixes[2] = 0x41;
+    let repeated = TabulatedCylinderFrame::new(values, prefixes).expect("finite frame");
+    assert_eq!(paired_short_second_coordinate(&point, 8, &repeated), None);
 }
 
 #[test]

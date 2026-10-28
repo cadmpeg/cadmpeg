@@ -5,10 +5,11 @@ use super::super::selections::{compact_surface_selections, selection_vector_tail
 use super::{
     compact_body_component_path_at, compact_body_path_at, compact_combine_operation_at,
     compact_extrusion_blind_at, compact_extrusion_blind_through_all_second_at,
-    compact_extrusion_mid_plane_at, compact_extrusion_offset_from_face_at,
-    compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
-    compact_extrusion_through_next_at, compact_extrusion_to_face_at,
-    compact_extrusion_to_vertex_at, compact_single_face_reference_path_at,
+    compact_extrusion_dimension_child_at, compact_extrusion_mid_plane_at,
+    compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
+    compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
+    compact_extrusion_to_face_at, compact_extrusion_to_vertex_at,
+    compact_extrusion_two_direction_blind_at, compact_single_face_reference_path_at,
     compact_single_face_reference_record_at, enrich_history_combine_selections,
     enrich_history_extrusion_terminations, legacy_single_face_reference_path_at,
     CompactPointReferenceKind,
@@ -1049,6 +1050,185 @@ fn compact_extrusion_mid_plane_requires_the_dimension_child() {
 }
 
 #[test]
+fn compact_extrusion_mid_plane_ignores_the_stored_second_direction_code() {
+    let mut payload = vec![0; 26];
+    payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+    payload[4] = 1;
+    payload[18] = 6;
+    payload[22] = 6;
+    payload.extend_from_slice(&[0x6a, 0x81]);
+    let block = payload.len();
+    payload.resize(block + 16, 0);
+    payload[block + 9] = 0x20;
+    payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+    payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+    payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+    assert!(compact_extrusion_mid_plane_at(&payload, 0));
+    payload[4] = 0;
+    payload[12] = 1;
+    assert!(compact_extrusion_mid_plane_at(&payload, 0));
+    payload[4] = 2;
+    assert!(!compact_extrusion_mid_plane_at(&payload, 0));
+    payload[4] = 0;
+    payload[23] = 1;
+    assert!(!compact_extrusion_mid_plane_at(&payload, 0));
+}
+
+#[test]
+fn compact_extrusion_dimension_child_accepts_both_stored_f32_values() {
+    let mut payload = vec![0x6a, 0x81];
+    payload.resize(18, 0);
+    payload.extend_from_slice(&[0xff, 0xff, 0, 0, 1]);
+    payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+    payload.extend_from_slice(&[0, 0, 0, 0]);
+    let value = payload.len();
+    for (stored, accepted) in [(-1.0f32, true), (0.0, true), (1.0, false), (-0.5, false)] {
+        payload.truncate(value);
+        payload.extend_from_slice(&stored.to_le_bytes());
+        assert_eq!(
+            compact_extrusion_dimension_child_at(&payload, 0),
+            accepted.then_some(payload.len()),
+            "{stored}"
+        );
+    }
+}
+
+#[test]
+fn compact_extrusion_two_direction_blind_returns_the_second_code() {
+    let mut payload = vec![0; 26];
+    payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+    payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
+    let block = payload.len();
+    payload.resize(block + 16, 0);
+    payload[block + 9] = 0x20;
+    payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+    payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+    payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+
+    assert_eq!(
+        compact_extrusion_two_direction_blind_at(&payload, 0),
+        Some(0)
+    );
+    assert!(!compact_extrusion_blind_at(&payload, 0));
+    payload[22] = 1;
+    assert_eq!(
+        compact_extrusion_two_direction_blind_at(&payload, 0),
+        Some(1)
+    );
+    assert!(!compact_extrusion_blind_through_all_second_at(&payload, 0));
+    payload[22] = 0;
+    payload[4] = 1;
+    assert_eq!(compact_extrusion_two_direction_blind_at(&payload, 0), None);
+    assert!(compact_extrusion_blind_at(&payload, 0));
+    payload[4] = 0;
+    payload[18] = 1;
+    assert_eq!(compact_extrusion_two_direction_blind_at(&payload, 0), None);
+    payload[18] = 0;
+    let last = payload.len() - 1;
+    payload[last] = 0;
+    assert_eq!(compact_extrusion_two_direction_blind_at(&payload, 0), None);
+}
+
+#[test]
+fn two_direction_blind_end_spec_sets_the_second_termination() {
+    let anchor = 100;
+    let payload = |directions: u8, second: u8| {
+        let mut payload = vec![0; anchor + 26];
+        payload[anchor..anchor + 2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[anchor + 4] = directions;
+        payload[anchor + 22] = second;
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
+        let block = payload.len();
+        payload.resize(block + 16, 0);
+        payload[block + 9] = 0x20;
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+        payload.resize(anchor + 200, 0);
+        payload
+    };
+    let resolve = |native_payload: Vec<u8>| {
+        let mut histories = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![Feature {
+                id: "extrusion".into(),
+                parent: "history".into(),
+                xml_tag: "Feature".into(),
+                tree_parent: None,
+                source_id: FeatureSource::from_value(10),
+                ordinal: 10,
+                name: "extrusion".into(),
+                kind: "Boss-Extrude".into(),
+                input_class: Some("moICE_c".into()),
+                suppressed: false,
+                parameters: BTreeMap::from([
+                    (cadmpeg_core::nonblank_literal!("D1"), String::from("5mm")),
+                    (cadmpeg_core::nonblank_literal!("D2"), String::from("7mm")),
+                ]),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::new(),
+                text: None,
+                content: Vec::new(),
+            }],
+        }];
+        let lane = FeatureInputLane {
+            id: "lane#7".into(),
+            configuration: None,
+            native_payload: native_payload.into(),
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "extrusion-name".into(),
+                parent: "lane#7".into(),
+                ordinal: 0,
+                offset: 10,
+                value: "extrusion".into(),
+                object_id: ObjectId::from_value(10),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane))
+            .unwrap();
+        let properties = &histories[0].features[0].properties;
+        (
+            properties.get("EndCondition").cloned(),
+            properties.get("EndCondition2").cloned(),
+        )
+    };
+    let condition =
+        |first: &str, second: Option<&str>| (Some(first.to_owned()), second.map(str::to_owned));
+
+    assert_eq!(resolve(payload(0, 0)), condition("Blind", Some("Blind")));
+    assert_eq!(
+        resolve(payload(0, 1)),
+        condition("Blind", Some("ThroughAll"))
+    );
+    assert_eq!(
+        resolve(payload(0, 4)),
+        condition("Blind", Some("Unresolved"))
+    );
+    assert_eq!(resolve(payload(1, 0)), condition("Blind", None));
+}
+
+#[test]
 fn compact_extrusion_blind_requires_code_zero_and_the_dimension_child() {
     let mut payload = vec![0; 26];
     payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -1639,7 +1819,7 @@ fn compact_combine_operation_is_name_length_relative() {
 }
 
 #[test]
-fn sweep_path_enrichment_binds_the_general_curve_path() {
+fn sweep_section_enrichment_retains_the_general_curve_carrier() {
     let histories = [FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -1698,14 +1878,15 @@ fn sweep_path_enrichment_binds_the_general_curve_path() {
         sketch_entities: Vec::new(),
     }];
     let mut admitted = histories.clone();
-    super::enrich_history_sweep_paths(&mut admitted, &lanes);
+    super::enrich_history_sweep_profiles(&mut admitted, &lanes);
     assert_eq!(
         admitted[0].features[0]
             .properties
-            .get("Path")
+            .get("Profile")
             .map(String::as_str),
         Some("sldprt:feature-input:general-curve-ref:35:40")
     );
+    assert!(!admitted[0].features[0].properties.contains_key("Path"));
 }
 
 #[test]
@@ -1789,5 +1970,6 @@ fn combine_selection_enrichment_binds_target_and_tool_paths() {
 mod combine_projection;
 mod route_limits;
 mod surface_sweep_projection;
+mod sweep_operands;
 
 mod component_text;

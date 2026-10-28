@@ -17,6 +17,11 @@ use crate::families::standard::fbb::{
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopologyDraft};
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
+use crate::layout::{
+    indexed_visualization_point_header as point_header,
+    indexed_visualization_point_row as point_row,
+    indexed_visualization_scalar_prefix as scalar_prefix,
+};
 use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::union_find::UnionFind;
 use cadmpeg_core::CodecError;
@@ -40,8 +45,8 @@ pub(crate) fn standard_edge_rows(
 }
 
 const INDEXED_VISUALIZATION_POINT_MARKER: [u8; 6] = [0xff, 0xff, 0x02, 0x00, 0x01, 0xff];
-const INDEXED_VISUALIZATION_POINT_HEADER_LEN: usize = 19;
-const RAW_VISUALIZATION_POINT_STRIDE: usize = 12;
+const INDEXED_VISUALIZATION_POINT_HEADER_LEN: usize = point_header::LEN;
+const RAW_VISUALIZATION_POINT_STRIDE: usize = point_row::LEN;
 
 /// Bind trim-handle endpoints through the indexed visualization-point lane.
 ///
@@ -66,11 +71,22 @@ pub(crate) fn visualization_endpoint_pairs(
     }
     let (count, indexed_count, mode, marker_valid, table) = (|| {
         Some((
-            usize::try_from(View::u32_le_at(source, marker.checked_add(6)?)?).ok()?,
-            usize::try_from(View::u32_le_at(source, marker.checked_add(11)?)?).ok()?,
-            *source.get(marker.checked_add(18)?)?,
-            source.get(marker.checked_add(10)?)? == &0xff
-                && source.get(marker.checked_add(15)?..marker.checked_add(18)?)? == [0, 0, 0],
+            usize::try_from(View::u32_le_at(
+                source,
+                marker.checked_add(point_header::ENTRY_COUNT)?,
+            )?)
+            .ok()?,
+            usize::try_from(View::u32_le_at(
+                source,
+                marker.checked_add(point_header::SECONDARY_COUNT)?,
+            )?)
+            .ok()?,
+            *source.get(marker.checked_add(point_header::MODE)?)?,
+            source.get(marker.checked_add(point_header::SECONDARY_SENTINEL)?)? == &0xff
+                && source.get(
+                    marker.checked_add(point_header::RESERVED)?
+                        ..marker.checked_add(point_header::MODE)?,
+                )? == [0, 0, 0],
             marker.checked_add(INDEXED_VISUALIZATION_POINT_HEADER_LEN)?,
         ))
     })()?;
@@ -158,8 +174,8 @@ fn raw_visualization_point_bindings(
             let at = table.checked_add(index.checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?)?;
             Some([
                 View::f32_le_at(source, at)?.to_bits(),
-                View::f32_le_at(source, at.checked_add(4)?)?.to_bits(),
-                View::f32_le_at(source, at.checked_add(8)?)?.to_bits(),
+                View::f32_le_at(source, at.checked_add(point_row::Y)?)?.to_bits(),
+                View::f32_le_at(source, at.checked_add(point_row::Z)?)?.to_bits(),
             ])
         })()?;
         let &point = point_by_bits.get(&key)?;
@@ -181,9 +197,10 @@ fn compressed_visualization_point_bindings(
         if *source.get(delimiter)? != 0xff {
             return None;
         }
-        let scalar_count_at = delimiter.checked_add(1)?;
+        let scalar_count_at = delimiter.checked_add(scalar_prefix::SCALAR_COUNT)?;
         let scalar_count = usize::try_from(View::u32_le_at(source, scalar_count_at)?).ok()?;
-        let scalars = scalar_count_at.checked_add(4)?;
+        let scalars =
+            scalar_count_at.checked_add(scalar_prefix::LEN - scalar_prefix::SCALAR_COUNT)?;
         let scalar_extent = scalar_count.checked_mul(4)?.checked_add(scalars)?;
         source.get(controls..scalar_extent)?;
         Some((scalar_count, scalars))

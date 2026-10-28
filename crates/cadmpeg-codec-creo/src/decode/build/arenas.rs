@@ -927,13 +927,13 @@ pub(super) fn emit_geometry_arenas(
                 .framing
                 .sections
                 .iter()
-                .find(|section| section.contains(state.state_offset))
+                .find(|section| section.contains(state.offset))
                 .map_or("MdlStatus", |section| section.name());
             annotate(
                 annotations,
                 &state.id,
                 section,
-                cadmpeg_core::decode::u64_from_index(state.state_offset),
+                cadmpeg_core::decode::u64_from_index(state.offset),
                 "feature_operation_state",
                 Exactness::ByteExact,
             )?;

@@ -18,6 +18,150 @@ use cadmpeg_ir::{
 use std::collections::BTreeMap;
 
 #[test]
+fn missing_configuration_partition_does_not_establish_empty_membership() {
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("test:model:configuration#missing").expect("identity grammar"),
+        ordinal: 0,
+        active: false,
+        source_index: Some(8),
+        name: Some("Missing".to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    assign_configuration_bodies(&mut ir, Vec::new(), None).unwrap();
+    assert!(ir.model.configurations[0].bodies.is_none());
+}
+
+fn manifest_configuration_source(keywords: &[u8]) -> Vec<u8> {
+    use crate::test_support::container::{make_block, sldprt_with_colliding_sites};
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(0x42, "Contents/Keywords", keywords));
+    source.extend(make_block(0x43, "Contents/Features", br#"<swSolidWorks><swModel id="2" swConfigurationName="Default" swConfigurationId="0"/><swModel id="5" swConfigurationName="HI" swConfigurationId="1"/><swConfiguration swName="Default" swID="0" swModelRef="2" swMostRecentConfiguration="NO" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="HI" swID="1" swModelRef="5" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#));
+    source
+}
+
+fn named_configuration_ir() -> CadIr {
+    let mut ir = CadIr::empty();
+    for (ordinal, name) in [(0, "Default"), (1, "HI")] {
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId::mint(format!("test:model:configuration#{name}"))
+                .expect("identity grammar"),
+            ordinal,
+            active: false,
+            source_index: None,
+            name: Some(name.to_string()),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: Some(format!("native:{name}")),
+        });
+    }
+    ir
+}
+
+#[test]
+fn manifest_joins_bind_inactive_and_active_bodies_without_redundant_placeholders() {
+    let source = manifest_configuration_source(
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="HI"/></Keywords>"#,
+    );
+    let scan = crate::test_support::container::scan(&source);
+    let mut ir = named_configuration_ir();
+    let a = BodyId::mint("test:model:body#inactive").expect("identity grammar");
+    let b = BodyId::mint("test:model:body#active").expect("identity grammar");
+    assign_configuration_bodies(
+        &mut ir,
+        vec![(0, vec![a.clone()]), (1, vec![b.clone()])],
+        Some(&scan),
+    )
+    .unwrap();
+    assert_eq!(ir.model.configurations.len(), 2);
+    assert_eq!(ir.model.configurations[0].source_index, Some(0));
+    assert_eq!(
+        ir.model.configurations[0].bodies.as_deref(),
+        Some([a].as_slice())
+    );
+    assert_eq!(ir.model.configurations[1].source_index, Some(1));
+    assert_eq!(
+        ir.model.configurations[1].bodies.as_deref(),
+        Some([b].as_slice())
+    );
+}
+
+#[test]
+fn manifest_membership_distinguishes_missing_and_decoded_empty_snapshots() {
+    let source = manifest_configuration_source(
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="HI"/></Keywords>"#,
+    );
+    let scan = crate::test_support::container::scan(&source);
+    for decoded_empty in [false, true] {
+        let mut ir = named_configuration_ir();
+        let mut partitions = vec![(1, Vec::new())];
+        if decoded_empty {
+            partitions.push((0, Vec::new()));
+        }
+        assign_configuration_bodies(&mut ir, partitions, Some(&scan)).unwrap();
+        assert_eq!(ir.model.configurations.len(), 2);
+        assert_eq!(ir.model.configurations[0].bodies.is_some(), decoded_empty);
+        assert_eq!(
+            ir.model.configurations[0].source_index,
+            decoded_empty.then_some(0)
+        );
+        assert!(ir.model.configurations[1]
+            .bodies
+            .as_deref()
+            .is_some_and(<[_]>::is_empty));
+    }
+}
+
+#[test]
+fn conflicting_manifest_binding_cannot_be_resurrected_by_active_fallback() {
+    let source = manifest_configuration_source(br#"<Keywords><Configuration Name="Default" SourceIndex="1"/><Configuration Name="HI"/></Keywords>"#);
+    let scan = crate::test_support::container::scan(&source);
+    let mut ir = named_configuration_ir();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("sldprt:test"),
+        )),
+        BTreeMap::from([
+            (
+                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+                "Contents/Config-0-Partition".into(),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                "Default".into(),
+            ),
+        ]),
+    ));
+    let a = BodyId::mint("test:model:body#unbound").expect("identity grammar");
+    assign_configuration_bodies(
+        &mut ir,
+        vec![(0, vec![a.clone()]), (1, Vec::new())],
+        Some(&scan),
+    )
+    .unwrap();
+    assert!(ir.model.configurations[0].source_index.is_none());
+    assert!(ir.model.configurations[0].bodies.is_none());
+    let placeholder = ir
+        .model
+        .configurations
+        .iter()
+        .find(|c| c.source_index == Some(0))
+        .expect("unbound source partition");
+    assert!(placeholder.native_ref.is_none());
+    assert_eq!(placeholder.bodies.as_deref(), Some([a].as_slice()));
+}
+
+#[test]
 fn configuration_partitions_require_explicit_source_identity() {
     let mut ir = CadIr::empty();
     let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
@@ -53,7 +197,9 @@ fn configuration_partitions_require_explicit_source_identity() {
             (7, vec![third.clone()]),
             (5, vec![first.clone()]),
             (5, vec![second.clone()]),
+            (8, Vec::new()),
         ],
+        None,
     )
     .unwrap();
 
@@ -99,7 +245,7 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])]).unwrap();
+    assign_configuration_bodies(&mut ir, vec![(5, vec![body.clone()])], None).unwrap();
 
     assert!(ir.model.configurations[0].bodies.is_none());
     assert!(ir.model.configurations[1].bodies.is_none());
@@ -131,7 +277,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])]).unwrap();
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], None).unwrap();
     mark_active_configuration(&mut ir);
 
     assert_eq!(ir.model.configurations.len(), 1);
@@ -186,7 +332,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         native_ref: Some("native:configuration".into()),
     });
 
-    assign_configuration_bodies(&mut ir, Vec::new()).unwrap();
+    assign_configuration_bodies(&mut ir, Vec::new(), None).unwrap();
     mark_active_configuration(&mut ir);
 
     let configuration = &ir.model.configurations[0];

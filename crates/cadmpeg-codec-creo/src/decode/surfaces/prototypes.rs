@@ -339,6 +339,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         {
             continue;
         }
+        if scan
+            .surfaces
+            .withheld_cone_origin_surface_ids
+            .contains(&row.id)
+        {
+            continue;
+        }
         associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();

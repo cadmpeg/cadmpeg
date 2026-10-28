@@ -375,5 +375,7 @@ pub(crate) fn design_object(
         definition_chain_values: Vec::new(),
         relations: Vec::new(),
         parallel_reference_table: None,
+        sketch_membership: None,
+        local_point_pairs: Vec::new(),
     }
 }

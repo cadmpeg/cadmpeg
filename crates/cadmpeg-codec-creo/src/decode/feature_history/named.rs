@@ -16,7 +16,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
-    current_feature_operation, feature_recipe_effect, feature_revolution_extent,
+    current_feature_operation, feature_recipe, feature_recipe_effect, feature_revolution_extent,
     feature_section_sweep_semantics_conflict, FeatureSchemaClasses,
 };
 use crate::feature::schema::SchemaClass;
@@ -90,8 +90,8 @@ pub(in super::super) fn named_feature_definition_with(
     .map(Some)
 }
 
-/// The definition a feature name alone establishes, before the schema class
-/// is consulted.
+/// Resolve a named definition before consulting its schema class.
+/// Generic material labels also require an admitted procedural family.
 ///
 /// Every answer here comes from the name and the scan, so the function has no
 /// failure of its own; `None` means the name establishes nothing.
@@ -129,18 +129,31 @@ fn name_only_feature_definition(
         return Ok(Some(definition));
     }
     if matches!(kind, "Protrusion" | "Cut") {
-        return Ok(Some(extrude_feature_definition_with_profile(
-            scan,
-            ir,
-            source_carriers,
-            feature_id,
-            section_sweep_boolean_operation(
-                feature_recipe_effect(scan, feature_id),
-                kind,
-                false,
-                preceding_features_establish_body(ir),
-            ),
-        )?));
+        let Some(recipe) = feature_recipe(scan, feature_id) else {
+            return Ok(None);
+        };
+        let op = section_sweep_boolean_operation(
+            feature_recipe_effect(scan, feature_id),
+            kind,
+            false,
+            preceding_features_establish_body(ir),
+        );
+        return match recipe {
+            crate::feature::operations::FeatureRecipeKind::Extrude => {
+                extrude_feature_definition_with_profile(scan, ir, source_carriers, feature_id, op)
+            }
+            crate::feature::operations::FeatureRecipeKind::Revolve => {
+                revolve_feature_definition_with_profile(
+                    ctx,
+                    scan,
+                    ir,
+                    source_carriers,
+                    feature_id,
+                    op,
+                )
+            }
+        }
+        .map(Some);
     }
     let tree_node_role = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
@@ -579,3 +592,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod generic_sweep_tests;

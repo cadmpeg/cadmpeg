@@ -450,6 +450,7 @@
       "missing_feature_segment_row_count": 0,
       "missing_feature_skamp_row_count": 0,
       "missing_feature_solver_variable_count": 0,
+      "opaque_section_variable_lane_count": 0,
       "prohibited_active_curve_expression_kind_count": 0,
       "prohibited_active_curve_expression_record_count": 0,
       "resolved_feature_dimension_driven_coordinate_variable_count": 0,

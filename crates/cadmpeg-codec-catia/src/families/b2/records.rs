@@ -1134,7 +1134,11 @@ fn owner_chart_bridge(
             encoding: reference.encoding,
         });
     }
-    if references[0]?.value != 1 {
+    let carrier_reference = references[0]?;
+    if carrier_reference.value != 1
+        || (count == 8
+            && carrier_reference.encoding != AllocationReferenceEncoding::BackwardDistance)
+    {
         return None;
     }
     let carrier_selector = *data.get(at)?;

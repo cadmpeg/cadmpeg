@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::layout::parasolid_edited_type_header as header;
+use crate::parasolid::xt_integer;
 use cadmpeg_core::decode::View;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Class {
+pub(in crate::brep) enum Class {
     Body,
     Shell,
     Region,
     Face,
     World,
+    Intersection,
 }
 
 impl Class {
@@ -20,8 +22,20 @@ impl Class {
             Self::Region => 7,
             Self::Face => 14,
             Self::World => 11,
+            Self::Intersection => 11,
         }
     }
+}
+
+/// One complete edited first-of-type schema program.
+pub(in crate::brep) struct Program<'a> {
+    pub(in crate::brep) class: Class,
+    /// Offset of the first node's fields, after the `Z` terminator.
+    pub(in crate::brep) payload: usize,
+    /// Every base field is copied in order, with no deletion or insertion.
+    pub(in crate::brep) base_copied: bool,
+    /// Names of the fields appended after the base fields, in order.
+    pub(in crate::brep) appended: Vec<&'a str>,
 }
 
 struct Cursor<'a> {
@@ -42,23 +56,9 @@ impl<'a> Cursor<'a> {
         Some(value)
     }
 
+    /// An XT positive integer: one less than its stored code.
     fn positive(&mut self) -> Option<u32> {
-        let first = self.short()?;
-        if first == 0 {
-            return None;
-        }
-        if first <= 32767 {
-            return Some(u32::from(first) - 1);
-        }
-        let magnitude = u32::from((!first).checked_add(1)?);
-        let quotient = u32::from(self.short()?);
-        if magnitude > 32767 || quotient == 0 || quotient > 32767 {
-            return None;
-        }
-        quotient
-            .checked_mul(32767)?
-            .checked_add(magnitude)?
-            .checked_sub(1)
+        xt_integer::read_code(self.bytes, &mut self.at)?.checked_sub(1)
     }
 
     fn string(&mut self) -> Option<&'a str> {
@@ -69,8 +69,8 @@ impl<'a> Cursor<'a> {
         Some(value)
     }
 
-    fn field(&mut self) -> Option<()> {
-        (!self.string()?.is_empty()).then_some(())?;
+    fn field(&mut self) -> Option<&'a str> {
+        let name = self.string().filter(|name| !name.is_empty())?;
         let pointer = self.short()?;
         let elements = self.positive()?;
         if pointer == 0 {
@@ -83,16 +83,21 @@ impl<'a> Cursor<'a> {
         if elements == 1 {
             (self.byte()? <= 1).then_some(())?;
         }
-        Some(())
+        Some(name)
     }
 }
 
 pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> {
+    edited_program(bytes, at).map(|program| (program.class, program.payload))
+}
+
+pub(in crate::brep) fn edited_program(bytes: &[u8], at: usize) -> Option<Program<'_>> {
     let class = match View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)? {
         12 => Class::Body,
         13 => Class::Shell,
         14 => Class::Face,
         19 => Class::Region,
+        38 => Class::Intersection,
         101 => Class::World,
         _ => return None,
     };
@@ -106,23 +111,35 @@ pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> 
     }
     let mut base = 0;
     let mut current = 0;
+    let mut base_copied = true;
+    let mut appended = Vec::new();
     loop {
         match cursor.byte()? {
             b'Z' => {
-                return (base == class.base_fields() && current == current_fields)
-                    .then_some((class, cursor.at));
+                return (base == class.base_fields() && current == current_fields).then_some(
+                    Program {
+                        class,
+                        payload: cursor.at,
+                        base_copied,
+                        appended,
+                    },
+                );
             }
             b'C' if base < class.base_fields() && current < current_fields => {
                 base += 1;
                 current += 1;
             }
-            b'D' if base < class.base_fields() => base += 1,
+            b'D' if base < class.base_fields() => {
+                base += 1;
+                base_copied = false;
+            }
             b'I' if base < class.base_fields() && current < current_fields => {
                 cursor.field()?;
                 current += 1;
+                base_copied = false;
             }
             b'A' if base == class.base_fields() && current < current_fields => {
-                cursor.field()?;
+                appended.push(cursor.field()?);
                 current += 1;
             }
             _ => return None,

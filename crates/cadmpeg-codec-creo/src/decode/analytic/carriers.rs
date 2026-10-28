@@ -21,7 +21,6 @@ use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
 use super::super::sketch_transfer::recipe::FeatureSchemaClasses;
-use super::super::surfaces::cylinders::rowless_round_cylinder_pairs;
 use super::super::surfaces::NativeSurfaceNamespaces;
 
 use super::super::uniqueness::{exactly_one, UniqueById};
@@ -818,32 +817,7 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
     }
 }
 
-pub(in crate::decode) fn rowless_round_face_orientations(
-    round_feature_ids: &BTreeSet<u32>,
-    tables: &[crate::feature::entity::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
-    available_surfaces: &BTreeSet<u32>,
-) -> BTreeMap<u32, bool> {
-    let mut orientations = BTreeMap::new();
-    for (rowless_id, sibling_id, _) in rowless_round_cylinder_pairs(round_feature_ids, tables, rows)
-    {
-        if !available_surfaces.contains(&rowless_id) {
-            continue;
-        }
-        let Some(reversed) =
-            crate::surface::unique_surface_row(rows, sibling_id).map(|row| row.reversed)
-        else {
-            continue;
-        };
-        orientations.insert(rowless_id, reversed);
-    }
-    orientations
-}
-
-pub(in crate::decode) fn native_face_orientations(
-    scan: &ContainerScan,
-    ir: &CadIr,
-) -> BTreeMap<u32, bool> {
+pub(in crate::decode) fn native_face_orientations(scan: &ContainerScan) -> BTreeMap<u32, bool> {
     let mut source_ids = BTreeSet::new();
     for row in scan
         .surfaces
@@ -869,41 +843,12 @@ pub(in crate::decode) fn native_face_orientations(
     for datum in &scan.planes.datum_cylinders {
         orientations.insert(datum.id, datum.reversed);
     }
-    let mut round_feature_ids = BTreeSet::new();
-    for row in scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
-    {
-        round_feature_ids.insert(row.feature_id);
-    }
-    let mut available_surfaces = BTreeSet::new();
-    for surface in &ir.model.surfaces {
-        if let Some(id) = surface
-            .id
-            .as_str()
-            .strip_prefix("creo:visibgeom:surface#")
-            .and_then(|suffix| suffix.parse::<u32>().ok())
-        {
-            available_surfaces.insert(id);
-        }
-    }
-    for (id, reversed) in rowless_round_face_orientations(
-        &round_feature_ids,
-        &scan.features.entity_tables,
-        &scan.surfaces.rows,
-        &available_surfaces,
-    ) {
-        orientations.insert(id, reversed);
-    }
     orientations
 }
 
 #[cfg(test)]
 mod namespace_tests {
     use super::native_face_orientations;
-    use cadmpeg_ir::document::CadIr;
 
     #[test]
     fn native_face_orientations_reads_nonvisible_rows() {
@@ -920,7 +865,7 @@ mod namespace_tests {
                 offset: 0,
             });
 
-        let orientations = { native_face_orientations(&scan, &CadIr::empty()) };
+        let orientations = { native_face_orientations(&scan) };
 
         assert_eq!(orientations.get(&17), Some(&true));
     }

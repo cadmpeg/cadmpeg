@@ -177,6 +177,9 @@ impl TryFrom<GroupWire> for ParasolidGroupRecord {
             .references
             .try_into()
             .map_err(|_| "references: GROUP requires five entries")?;
+        if !crate::records::group::valid_group_references(&references) {
+            return Err("references: GROUP requires nonzero targets and a non-null part owner");
+        }
         Ok(Self {
             id: wire.id,
             origin,
@@ -223,6 +226,17 @@ mod tests {
                 let decoded = serde_json::from_value::<ParasolidGroupRecord>(value).unwrap();
                 assert_eq!(u8::from(decoded.selector), selector);
             }
+            for slot in 0..5 {
+                let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+                value["references"][slot] = serde_json::json!(0);
+                assert!(serde_json::from_value::<ParasolidGroupRecord>(value).is_err());
+            }
+            let mut null_owner: serde_json::Value = serde_json::from_str(&json).unwrap();
+            null_owner["references"][1] = serde_json::json!(1);
+            assert!(serde_json::from_value::<ParasolidGroupRecord>(null_owner).is_err());
+            let mut nullable_links: serde_json::Value = serde_json::from_str(&json).unwrap();
+            nullable_links["references"] = serde_json::json!([1, 3, 1, 1, 1]);
+            assert!(serde_json::from_value::<ParasolidGroupRecord>(nullable_links).is_ok());
             let mut null_status: serde_json::Value = serde_json::from_str(&json).unwrap();
             null_status["linked_reference_status"] = serde_json::Value::Null;
             assert!(serde_json::from_value::<ParasolidGroupRecord>(null_status)

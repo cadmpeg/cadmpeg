@@ -61,21 +61,35 @@ fn draft_operands(
     if classify(feature) != Some(FeatureClass::Draft) || object_start >= object_end {
         return Ok(None);
     }
-    if let Some(operands) = declared_draft_operands(lane, object_start, object_end) {
-        return Ok(Some(operands));
+    match declared_draft_operands(lane, object_start, object_end) {
+        DeclaredDraftOperands::Absent => {}
+        DeclaredDraftOperands::Unresolved => return Ok(None),
+        DeclaredDraftOperands::Resolved(operands) => return Ok(Some(operands)),
     }
     compact_parting_line_draft_operands(lane, object_start, object_end)
+}
+
+enum DeclaredDraftOperands {
+    Absent,
+    Unresolved,
+    Resolved(DraftOperands),
 }
 
 fn declared_draft_operands(
     lane: &FeatureInputLane,
     object_start: usize,
     object_end: usize,
-) -> Option<DraftOperands> {
-    let token = unique_declared_plane_reference_token(lane)?;
-    let end = super::DeclaredEnd::of(object_end, lane.native_payload.len())?;
+) -> DeclaredDraftOperands {
+    let Some(token) = unique_declared_plane_reference_token(lane) else {
+        return DeclaredDraftOperands::Absent;
+    };
+    let Some(end) = super::DeclaredEnd::of(object_end, lane.native_payload.len()) else {
+        return DeclaredDraftOperands::Absent;
+    };
     let end = end.get();
-    let final_record_start = end.checked_sub(draft_plane::LEN)?;
+    let Some(final_record_start) = end.checked_sub(draft_plane::LEN) else {
+        return DeclaredDraftOperands::Absent;
+    };
     let mut records = Vec::new();
     for offset in object_start..=final_record_start {
         if lane.native_payload.get(offset..offset + 2) != Some(token.as_slice()) {
@@ -85,27 +99,36 @@ fn declared_draft_operands(
             records.push(record);
         }
     }
-    let mut records = records.into_iter();
-    let (_, neutral_plane, neutral_end) = records.next()?;
-    let pull_direction = unique_draft_direction(
-        &lane.native_payload,
-        neutral_end,
-        records.as_slice().first().map_or(end, |record| record.0),
-    )?;
-    let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
-    for path in records.map(|(_, path, _)| path) {
-        if !faces
-            .iter()
-            .any(|existing| same_component_path_semantics(existing, &path))
-        {
-            faces.push(path);
-        }
+    if records.is_empty() {
+        return DeclaredDraftOperands::Absent;
     }
-    (!faces.is_empty()).then_some(DraftOperands {
-        anchor: DraftAnchor::NeutralPlane(neutral_plane),
-        faces,
-        pull_direction,
-    })
+    let operands = (|| {
+        let mut records = records.into_iter();
+        let (_, neutral_plane, neutral_end) = records.next()?;
+        let pull_direction = unique_declared_draft_direction(
+            &lane.native_payload,
+            neutral_end,
+            records.as_slice().first().map_or(end, |record| record.0),
+        )?;
+        let mut faces = Vec::<Vec<FeatureInputComponentPathEntry>>::new();
+        for path in records.map(|(_, path, _)| path) {
+            if !faces
+                .iter()
+                .any(|existing| same_component_path_semantics(existing, &path))
+            {
+                faces.push(path);
+            }
+        }
+        (!faces.is_empty()).then_some(DraftOperands {
+            anchor: DraftAnchor::NeutralPlane(neutral_plane),
+            faces,
+            pull_direction,
+        })
+    })();
+    operands.map_or(
+        DeclaredDraftOperands::Unresolved,
+        DeclaredDraftOperands::Resolved,
+    )
 }
 
 fn compact_parting_line_draft_operands(
@@ -349,6 +372,58 @@ fn draft_plane_reference_at(
     (path_start <= object_end).then_some((offset, components, path_start))
 }
 
+fn unique_declared_draft_direction(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureDirection3> {
+    use crate::layout::draft_declared_neutral_frame as neutral;
+    const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    let last = end
+        .checked_sub(HANDLES.len())
+        .filter(|last| *last >= start)?;
+    let mut direction = None;
+    for offset in start..=last {
+        if payload.get(offset..offset.checked_add(HANDLES.len())?) != Some(HANDLES.as_slice()) {
+            continue;
+        }
+        if direction.is_some() || offset.checked_add(neutral::LEN)? > end {
+            return None;
+        }
+        let frame = payload.get(offset..offset.checked_add(neutral::LEN)?)?;
+        if frame[neutral::ZERO_AT_8..neutral::ADDRESS] != [0; 4]
+            || View::u32_le_at(frame, neutral::ADDRESS)? == 0
+            || frame[neutral::PREFIX_ZERO..neutral::BOUNDS] != [0; 8]
+        {
+            return None;
+        }
+        for (relative, expected) in (neutral::BOUNDS..neutral::ORIGIN)
+            .step_by(8)
+            .zip([-1.0, 1.0, 1.0, -1.0])
+        {
+            if View::f64_le_at(frame, relative)? != expected {
+                return None;
+            }
+        }
+        if !(neutral::ORIGIN..neutral::PULL_DIRECTION)
+            .step_by(8)
+            .all(|relative| View::f64_le_at(frame, relative).is_some_and(f64::is_finite))
+            || frame[neutral::ZERO_TAIL..neutral::LEN] != [0; 16]
+        {
+            return None;
+        }
+        let vector = Vector3::new(
+            View::f64_le_at(frame, neutral::PULL_DIRECTION)?,
+            View::f64_le_at(frame, neutral::PULL_DIRECTION + 8)?,
+            View::f64_le_at(frame, neutral::PULL_DIRECTION + 16)?,
+        );
+        direction = Some(FeatureDirection3::from_unit_without_small_components(
+            UnitVector3::new(vector)?,
+        ));
+    }
+    direction
+}
+
 fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<FeatureDirection3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let final_frame_start = end
@@ -429,6 +504,8 @@ pub(super) fn draft_operand_candidates(
 
 #[cfg(test)]
 mod tests {
+    mod declared_neutral;
+
     use super::super::selections::COMPACT_EDGE_VECTOR_MARKER;
     use super::{
         compact_draft_selection_at, draft_operands, draft_plane_reference_at,
@@ -647,15 +724,8 @@ mod tests {
         let object_start = payload.len();
         payload.extend(plane_reference(token, [0x40, 0], 101, 3));
         payload.extend([0; 8]);
-        payload.extend([0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
-        payload.extend(0u32.to_le_bytes());
-        payload.extend(5000u32.to_le_bytes());
-        payload.extend([0; 8]);
-        for value in [
-            1.0f64, 1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ] {
-            payload.extend(value.to_le_bytes());
-        }
+        let declared_frame_start = payload.len();
+        payload.extend(declared_neutral::frame([0.0, 0.0, 1.0]));
         payload.extend([0; 16]);
         let first_face = payload.len();
         payload.extend(plane_reference(token, [0x40, 0], 102, 8));
@@ -697,7 +767,8 @@ mod tests {
         let neutral = draft_plane_reference_at(&lane.native_payload, object_start, class_offset)
             .expect("neutral-plane record");
         assert_eq!(
-            unique_draft_direction(&lane.native_payload, neutral.2, first_face),
+            super::unique_declared_draft_direction(&lane.native_payload, neutral.2, first_face)
+                .map(cadmpeg_ir::features::FeatureDirection3::get),
             Some(Vector3::new(0.0, 0.0, 1.0))
         );
         let operands = draft_operands(&feature, &lane, object_start, class_offset)
@@ -717,6 +788,19 @@ mod tests {
         assert!(
             draft_operands(&feature, &malformed, object_start, class_offset)
                 .expect("malformed draft parse")
+                .is_none()
+        );
+
+        let mut invalid_direction = lane.clone();
+        invalid_direction.native_payload[declared_frame_start + 80..declared_frame_start + 104]
+            .fill(0);
+        assert!(matches!(
+            super::declared_draft_operands(&invalid_direction, object_start, class_offset),
+            super::DeclaredDraftOperands::Unresolved
+        ));
+        assert!(
+            draft_operands(&feature, &invalid_direction, object_start, class_offset)
+                .expect("recognized declared draft")
                 .is_none()
         );
 

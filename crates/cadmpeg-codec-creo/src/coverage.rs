@@ -269,6 +269,8 @@ pub(crate) const MISSING_FEATURE_SEGMENT_ROW_COUNT: CoverageKey =
     CoverageKey::new("missing_feature_segment_row_count");
 pub(crate) const MISSING_FEATURE_SKAMP_ROW_COUNT: CoverageKey =
     CoverageKey::new("missing_feature_skamp_row_count");
+pub(crate) const OPAQUE_SECTION_VARIABLE_LANE_COUNT: CoverageKey =
+    CoverageKey::new("opaque_section_variable_lane_count");
 pub(crate) const MISSING_FEATURE_SOLVER_VARIABLE_COUNT: CoverageKey =
     CoverageKey::new("missing_feature_solver_variable_count");
 pub(crate) const PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT: CoverageKey =
@@ -1488,6 +1490,7 @@ const ALL: &[CoverageKey] = &[
     MISSING_FEATURE_SEGMENT_ROW_COUNT,
     MISSING_FEATURE_SKAMP_ROW_COUNT,
     MISSING_FEATURE_SOLVER_VARIABLE_COUNT,
+    OPAQUE_SECTION_VARIABLE_LANE_COUNT,
     PROHIBITED_ACTIVE_CURVE_EXPRESSION_KIND_COUNT,
     PROHIBITED_ACTIVE_CURVE_EXPRESSION_RECORD_COUNT,
     RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,

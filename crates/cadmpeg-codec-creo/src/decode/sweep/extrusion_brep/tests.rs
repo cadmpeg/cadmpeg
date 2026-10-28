@@ -59,7 +59,6 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(

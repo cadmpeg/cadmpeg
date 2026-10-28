@@ -758,7 +758,6 @@ pub(super) struct CreoFeatureOperationState<'a> {
     pub(super) root_schema_class: Option<u32>,
     pub(super) parent_feature_id: Option<u32>,
     pub(super) offset: usize,
-    pub(super) state_offset: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -767,7 +766,6 @@ pub(super) struct CreoOperationNameRecord<'a> {
     pub(super) stored_name: Option<String>,
     pub(super) stored_name_bytes: Option<NativeBytes<&'a [u8]>>,
     pub(super) identifier_keyword: Option<&'a str>,
-    pub(super) stored_name_prefix: Option<String>,
 }
 
 #[derive(Serialize)]

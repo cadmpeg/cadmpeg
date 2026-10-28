@@ -26,6 +26,8 @@ use crate::topology::{
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
 
+mod primary_edges;
+
 #[test]
 fn unique_candidate_filter_reuses_input_storage() {
     let candidates = [9, 7, 2, 7, 4, 7]

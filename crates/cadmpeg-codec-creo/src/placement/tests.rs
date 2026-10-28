@@ -18,7 +18,8 @@ use super::{
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
 use crate::feature::definitions::{
-    BinaryFlag, FeatureDefinition, FeatureParameterFrameKind, FeatureSegmentKind,
+    BinaryFlag, FeatureDefinition, FeatureParameterFrameKind, FeatureParameterFrameOwner,
+    FeatureSegmentKind,
 };
 use crate::feature::entity::FeatureEntityTable;
 use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureGeometryTable};
@@ -140,10 +141,43 @@ fn placement_without_reference_sources_resolves_nothing() {
 }
 
 #[test]
+fn only_the_section_location_frame_supplies_the_section_plane() {
+    let mut definition = blank_definition();
+    let placement_record = FeatureParameterFrame {
+        kind: FeatureParameterFrameKind::LocalSystem,
+        owner: FeatureParameterFrameOwner::PlacementRecord,
+        body: Vec::new(),
+        decoded_values: Some(finite_frame([
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+        ])),
+        offset: 1,
+    };
+    definition.parameter_frames = vec![placement_record.clone()];
+    assert_eq!(definition_local_plane_equation(&definition), None);
+
+    definition.parameter_frames.push(FeatureParameterFrame {
+        owner: FeatureParameterFrameOwner::SectionLocation,
+        decoded_values: Some(finite_frame([
+            0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0,
+        ])),
+        offset: 2,
+        ..placement_record
+    });
+    assert_eq!(
+        definition_local_plane_equation(&definition),
+        Some(SignedPlaneEquation {
+            normal: [1.0, 0.0, 0.0],
+            offset: 2.0
+        })
+    );
+}
+
+#[test]
 fn unique_complete_local_system_supplies_section_plane_equation() {
     let mut definition = blank_definition();
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
+        owner: FeatureParameterFrameOwner::SectionLocation,
         body: Vec::new(),
         decoded_values: Some(finite_frame([
             0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0,
@@ -161,6 +195,7 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
 
     definition.parameter_frames.push(FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
+        owner: FeatureParameterFrameOwner::SectionLocation,
         body: Vec::new(),
         decoded_values: None,
         offset: 2,
@@ -175,6 +210,7 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
 
     definition.parameter_frames.push(FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
+        owner: FeatureParameterFrameOwner::SectionLocation,
         body: Vec::new(),
         decoded_values: Some(finite_frame([0.0; 12])),
         offset: 3,
@@ -434,6 +470,7 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
     let mut definition = blank_definition();
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
+        owner: FeatureParameterFrameOwner::SectionLocation,
         body: Vec::new(),
         decoded_values: Some(finite_frame([
             0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0,
@@ -486,6 +523,7 @@ fn parallel_reference_uses_only_a_unique_valid_owned_local_frame() {
     };
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
+        owner: FeatureParameterFrameOwner::SectionLocation,
         body: Vec::new(),
         decoded_values: Some(finite_frame([
             0.0, 0.6, 0.8, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 7.0, -11.0, 13.0,
@@ -774,7 +812,7 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
             sketch_plane_entity_id: Some(799),
             sketch_plane_flip: None,
             reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![43]),
-            reference_plane_datum_geometry_id: None,
+            reference_plane_datum_geometry_id: Some(43),
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
             offset: 40,
@@ -1162,6 +1200,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: offset + 1,
     };
     let parameters = [
@@ -1448,7 +1487,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
     row_flipped_section.reference_planes =
         ReferencePlanes::Positional(vec![FeatureSectionReferencePlane {
             plane_entity_id: 1,
-            reference_type: None,
+            reference_type: Some(5),
             external_reference_id: None,
             segment_id: None,
             sub_index: None,
@@ -1652,4 +1691,90 @@ fn section_frame_refuses_a_non_finite_origin_or_axis() {
                 .is_none()
         );
     }
+}
+
+#[test]
+fn placement_reference_candidates_reject_foreign_namespaces_and_mixed_rows() {
+    let row = |reference_type| FeatureSectionReferencePlane {
+        plane_entity_id: 815,
+        reference_type,
+        external_reference_id: None,
+        segment_id: Some(21),
+        sub_index: None,
+        reference_flip: Some(BinaryFlag::Clear),
+    };
+    let mut section = FeatureSection3d {
+        sketch_plane_entity_id: None,
+        sketch_plane_flip: None,
+        reference_planes: ReferencePlanes::Positional(vec![row(Some(5))]),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 0,
+    };
+    assert_eq!(super::unique_carrier_reference_id(&section), Some(815));
+    for foreign in [Some(6), Some(21), Some(25), None] {
+        section.reference_planes = ReferencePlanes::Positional(vec![row(foreign)]);
+        assert_eq!(super::unique_carrier_reference_id(&section), None);
+        section.reference_planes = ReferencePlanes::Positional(vec![row(Some(5)), row(foreign)]);
+        assert_eq!(super::unique_carrier_reference_id(&section), None);
+    }
+}
+
+#[test]
+fn placement_reference_candidates_reject_unproved_qualifiers() {
+    let row = FeatureSectionReferencePlane {
+        plane_entity_id: 4,
+        reference_type: Some(5),
+        external_reference_id: None,
+        segment_id: Some(0),
+        sub_index: None,
+        reference_flip: Some(BinaryFlag::Clear),
+    };
+    let mut section = FeatureSection3d {
+        sketch_plane_entity_id: None,
+        sketch_plane_flip: None,
+        reference_planes: ReferencePlanes::Positional(Vec::new()),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 0,
+    };
+    for qualified in [
+        FeatureSectionReferencePlane {
+            external_reference_id: Some(0),
+            ..row.clone()
+        },
+        FeatureSectionReferencePlane {
+            sub_index: Some(0),
+            ..row.clone()
+        },
+    ] {
+        section.reference_planes = ReferencePlanes::Positional(vec![row.clone(), qualified]);
+        assert_eq!(super::unique_carrier_reference_id(&section), None);
+    }
+}
+
+#[test]
+fn placement_reference_candidates_keep_explicit_target_and_raw_class_identity_separate() {
+    let mut section = FeatureSection3d {
+        sketch_plane_entity_id: None,
+        sketch_plane_flip: None,
+        reference_planes: ReferencePlanes::Named(vec![173]),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 0,
+    };
+    assert_eq!(
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        vec![173]
+    );
+    assert_eq!(super::unique_carrier_reference_id(&section), None);
+    section.reference_plane_datum_geometry_id = Some(4);
+    assert_eq!(super::unique_carrier_reference_id(&section), Some(4));
+    assert_eq!(
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        vec![173]
+    );
 }

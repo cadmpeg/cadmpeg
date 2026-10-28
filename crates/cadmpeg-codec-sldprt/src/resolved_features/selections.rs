@@ -1,8 +1,8 @@
 //! Compact body, edge and surface selection decoding.
 
 use super::component_paths::{
-    component_feature_precedes, component_path_consumer, component_path_input_features,
-    component_path_terminal_feature, surface_selection_producer_features,
+    component_path_input_features, component_path_terminal_feature,
+    surface_selection_producer_features,
 };
 use super::endpoints::{
     legacy_wide_profile_roster_curve, marker_profile_curve_role,
@@ -41,11 +41,14 @@ use crate::layout::{
     component_face_compact_reference_prefix as compact_face,
     component_face_flagged_operation_prefix as flagged_face,
     component_face_nested_reference_prefix as nested_face,
+    component_source_three_handle_record as three, component_source_two_handle_record as two,
     cosmetic_thread_component_edge_wrapper_prefix as component_edge,
     cosmetic_thread_repeated_edge_ref_prefix as repeated_edge_ref,
 };
 use crate::records::ObjectId;
 use cadmpeg_core::decode::u64_from_index;
+
+pub(crate) mod edge_owners;
 
 const SELECTION_ORDINAL_OVERFLOW: &str = "SLDPRT feature-input selection ordinal overflows u32";
 
@@ -294,6 +297,7 @@ pub(super) fn compact_edge_selections(
 ) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
     let history_features = history_features_with_object_sources(histories, lane);
     let selection_features = FeatureSources::new(&history_features);
+    let mut owner_features = None;
     let objects = selection_objects(histories, lane);
     let lane_key = lane
         .id
@@ -354,6 +358,8 @@ pub(super) fn compact_edge_selections(
         selections.dedup_by_key(|selection| selection.0);
         let mut feature_selections = Vec::new();
         for (offset, local_edge_ids) in selections {
+            let owner_features = owner_features
+                .get_or_insert_with(|| edge_owners::OwnerFeatures::new(&selection_features));
             let references = compact_edge_reference_list_for_feature(
                 &lane.native_payload,
                 offset,
@@ -372,7 +378,7 @@ pub(super) fn compact_edge_selections(
                 &lane.native_payload,
                 offset,
                 &components,
-                &selection_features,
+                owner_features,
                 &feature.id,
             )?;
             let producer_feature_refs = compact_edge_producer_features_at(
@@ -381,6 +387,7 @@ pub(super) fn compact_edge_selections(
                 offset,
                 &components,
                 &selection_features,
+                owner_features,
                 &feature.id,
             )?;
             let id = format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}");
@@ -1955,6 +1962,7 @@ pub(super) fn is_component_vector_selector_for_role(selector: &[u8], role: u8) -
     matches!(role, 2 | 3) && selector.get(1) == Some(&role) && selector.get(2..4) == Some(&[0, 0])
 }
 
+#[cfg(test)]
 pub(super) fn mirror_pattern_component_path_at(
     payload: &[u8],
     marker: usize,
@@ -2970,40 +2978,13 @@ pub(crate) fn compact_edge_owner_feature_at(
     payload: &[u8],
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
-    features: &FeatureSources<'_>,
+    features: &edge_owners::OwnerFeatures<'_>,
     consumer_ref: &str,
 ) -> Result<Option<String>, CodecError> {
-    let count = marker
-        .checked_sub(12)
-        .and_then(|offset| View::u32_le_at(payload, offset))
-        .and_then(|count| usize::try_from(count).ok());
-    let Some(count) = count else {
-        return Ok(None);
-    };
-    let owner_source = if compact_component_reference_list_at(payload, marker).is_some() {
-        None
-    } else {
-        let Some(ComponentPathReference(_, owner)) =
-            compact_edge_component_path(ctx, payload, marker, count)?
-        else {
-            return Ok(None);
-        };
-        owner
-    };
-    if let Some(source) = owner_source {
-        for feature in features.iter() {
-            if feature.source_value() != Some(source) {
-                continue;
-            }
-            if let Some(consumer) = component_path_consumer(features, consumer_ref) {
-                if component_feature_precedes(feature, consumer) {
-                    return Ok(Some(feature.feature.id.clone()));
-                }
-            }
-            break;
-        }
-    }
-    Ok(component_path_input_features(components, features, consumer_ref).pop())
+    Ok(
+        edge_owners::resolve(ctx, payload, marker, components, features, consumer_ref)?
+            .into_feature(),
+    )
 }
 
 pub(crate) fn compact_edge_producer_features_at(
@@ -3012,11 +2993,12 @@ pub(crate) fn compact_edge_producer_features_at(
     marker: usize,
     components: &[FeatureInputComponentPathEntry],
     features: &FeatureSources<'_>,
+    owners: &edge_owners::OwnerFeatures<'_>,
     consumer_ref: &str,
 ) -> Result<Vec<String>, CodecError> {
     let mut producers = component_path_input_features(components, features, consumer_ref);
     if let Some(owner) =
-        compact_edge_owner_feature_at(ctx, payload, marker, components, features, consumer_ref)?
+        compact_edge_owner_feature_at(ctx, payload, marker, components, owners, consumer_ref)?
     {
         let mut duplicate = false;
         for producer in &producers {
@@ -3421,6 +3403,12 @@ pub(super) fn compact_profile_general_curve_ref_at(payload: &[u8], offset: usize
         && payload.get(offset + 6..offset + 16) == Some(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0])
 }
 
+/// The ten-byte child prefix after a component-source class declaration.
+fn component_child_prefix_at(payload: &[u8], prefix: usize) -> bool {
+    View::u16_le_at(payload, prefix).is_some_and(is_class_token)
+        && payload.get(prefix + 2..prefix + 10) == Some(&[0x02, 0, 0, 0, 0, 0, 0, 0])
+}
+
 pub(super) fn declared_general_curve_profile_prefix(
     payload: &[u8],
     offset: usize,
@@ -3431,43 +3419,45 @@ pub(super) fn declared_general_curve_profile_prefix(
         .windows(COMPONENT_PROFILE.len())
         .position(|bytes| bytes == COMPONENT_PROFILE)?;
     let prefix = offset.checked_add(name + COMPONENT_PROFILE.len())?;
-    (payload.get(prefix..prefix + 10) == Some(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]))
-        .then_some(prefix)
+    component_child_prefix_at(payload, prefix).then_some(prefix)
+}
+
+fn component_source_record_at(payload: &[u8], source: usize) -> Option<u32> {
+    const HANDLE: &[u8] = &[0xc7, 0xcf, 0xff, 0xff];
+    let id = View::u32_le_at(payload, source + two::FEATURE_ID)?;
+    let stamp = View::u32_le_at(payload, source + two::STAMP)?;
+    let reference = View::u32_le_at(payload, source + two::REFERENCE_WORD)?;
+    let zero_at = |offset: usize| View::u32_le_at(payload, source + offset) == Some(0);
+    let handle_at =
+        |offset: usize| payload.get(source + offset..source + offset + 4) == Some(HANDLE);
+    let header = id != 0
+        && stamp != 0
+        && zero_at(two::ZERO_AFTER_STAMP_WORD)
+        && zero_at(two::ZERO_AFTER_KIND)
+        && matches!(reference, 0 | u32::MAX)
+        && zero_at(two::ZERO_AFTER_REFERENCE)
+        && handle_at(two::FIRST_HANDLE)
+        && handle_at(two::SECOND_HANDLE);
+    let two_handles =
+        zero_at(two::HANDLE_END) && View::u32_le_at(payload, source + two::VERSION).is_some();
+    let three_handles = handle_at(three::THIRD_HANDLE)
+        && zero_at(three::HANDLE_END)
+        && View::u32_le_at(payload, source + three::VERSION).is_some();
+    (header && (two_handles || three_handles)).then_some(id)
 }
 
 pub(super) fn component_profile_source_at(payload: &[u8], prefix: usize) -> Option<u32> {
-    const PREFIX: &[u8] = &[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
-    const HANDLE: &[u8] = &[0xc7, 0xcf, 0xff, 0xff];
-    const RECORD_END: &[u8] = &[0xf8, 0x2a, 0, 0];
-    if payload.get(prefix..prefix + PREFIX.len()) != Some(PREFIX)
-        || payload.get(prefix + 45..prefix + 61) != Some(&[0xff; 16])
-    {
+    if !component_child_prefix_at(payload, prefix) {
         return None;
     }
-    let mut sources = [prefix + 69, prefix + 81].into_iter().filter_map(|source| {
-        let id = View::u32_le_at(payload, source)?;
-        let stamp = View::u32_le_at(payload, source + 4)?;
-        if id == 0 || stamp == 0 {
-            return None;
-        }
-        let older = payload.get(source + 12..source + 16) == Some(&[0; 4])
-            && payload.get(source + 20..source + 32) == Some(&[0; 12])
-            && payload.get(source + 32..source + 36) == Some(HANDLE)
-            && payload.get(source + 36..source + 40) == Some(HANDLE)
-            && payload.get(source + 40..source + 44) == Some(&[0; 4])
-            && payload.get(source + 44..source + 48) == Some(RECORD_END);
-        let newer = payload.get(source + 8..source + 16) == Some(&[0; 8])
-            && payload.get(source + 16..source + 20) == Some(&0x65u32.to_le_bytes())
-            && payload.get(source + 20..source + 24) == Some(&[0; 4])
-            && payload.get(source + 24..source + 28) == Some(&[0xff; 4])
-            && payload.get(source + 28..source + 32) == Some(&[0; 4])
-            && payload.get(source + 32..source + 36) == Some(HANDLE)
-            && payload.get(source + 36..source + 40) == Some(HANDLE)
-            && payload.get(source + 40..source + 44) == Some(HANDLE)
-            && payload.get(source + 44..source + 48) == Some(&[0; 4])
-            && payload.get(source + 48..source + 52) == Some(RECORD_END);
-        (older || newer).then_some(id)
-    });
+    let placements: &[usize] = if payload.get(prefix + 45..prefix + 61) == Some(&[0xff; 16]) {
+        &[69, 81]
+    } else {
+        &[45]
+    };
+    let mut sources = placements
+        .iter()
+        .filter_map(|placement| component_source_record_at(payload, prefix + placement));
     let source = sources.next()?;
     sources.next().is_none().then_some(source)
 }

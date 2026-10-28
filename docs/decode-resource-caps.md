@@ -366,6 +366,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-creo`     | `src/curve.rs`                                     | `MAX_RELATION_PROGRAM_TEXT_BYTES`         | `65_536`                                                | 4    | String bytes kept by the assigned values of one relation program. An assignment past it keeps no value and reports `curve-expression.text-capped`.                                                                                                                          |
 | `cadmpeg-codec-creo`     | `src/reference.rs`                                 | `MAX_FRAME_BYTES`                         | `12 * 9`                                                | 1    | Named conic frame: twelve scalar slots of at most nine bytes each.                                                                                                                                                                                                           |
 | `cadmpeg-codec-creo`     | `src/reference.rs`                                 | `MAX_FRAME_BYTES`                         | `12 * 9`                                                | 1    | Positional conic frame: the same twelve-slot width.                                                                                                                                                                                                                          |
+| `cadmpeg-codec-creo` | `src/scalar.rs` | `MAX_INLINE_EXPLICIT_FRAME_CANDIDATES` | `16` | 4 | Fixed slots for inline explicit local-frame alternatives. Enumeration stops when full; collected alternatives remain available. Nested-depth charging is separate. |
+| `cadmpeg-codec-creo` | `src/scalar.rs` | `MAX_INLINE_ORIGIN_CANDIDATES` | `8` | 4 | Fixed slots for compact inline origin alternatives. Enumeration stops when full; collected alternatives remain available. Nested-depth charging is separate. |
 | `cadmpeg-codec-creo`     | `src/scalar.rs`                                    | `MAX_PLANE_SUPPORT_LANE_VARIANTS`         | `64`                                                    | 4    | Fixed result array for plane-support decodings, beside `enter_nested`. When full the walk stops, the frame is not decoded, and `geometry.plane-support-variants-capped` is reported.                                                                                         |
 | `cadmpeg-codec-creo`     | `src/scalar.rs`                                    | `MAX_PLANE_SUPPORT_LANE_VISITS`           | `4096`                                                  | 4    | Steps of one plane-support lane search, which branches at each ambiguous slot. Exhaustion leaves the frame undecoded and reports `geometry.plane-support-variants-capped`.                                                                                                  |
 | `cadmpeg-codec-creo`     | `src/surface.rs`                                   | `MAX_INLINE_FRAME_CANDIDATES`             | `24`                                                    | 1    | Fixed arrays of inline-frame terminal closes and carriers. One local start yields at most one compact prefix with eight origins and sixteen explicit frames, each adding at most one entry, so the arrays cannot fill.                                                    |
@@ -483,16 +485,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 268.
+Production `MAX_*` constants: 270.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 35    |
 | 2    | Per-input bound            | 71    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 133   |
+| 4    | Local work cap             | 135   |
 | N    | Not a decode bound         | 29    |
-|      | Total                      | 268   |
+|      | Total                      | 270   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -501,7 +503,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 20, `cadmpeg-asm`
 `cadmpeg-protein` 3, `cadmpeg` 2, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 19,
-`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 17,
+`cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 17,
 `cadmpeg-codec-catia` 57, and `cadmpeg-codec-pvz` 3.
 
 ## Routing

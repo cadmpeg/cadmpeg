@@ -6,9 +6,9 @@
 use cadmpeg_core::container::ContainerRole;
 
 use super::{
-    identify_variant, outer_container_declarations, outer_container_for_extent,
-    parse_directory_region, reconstruct_logical_stream, scan_bytes, summarize, Census,
-    ContainerScan, Descriptor, Extent, InnerDir, EDGE_DELIMITER, OUTER_MAGIC,
+    identify_variant, outer_container_declarations, parse_directory_region,
+    reconstruct_logical_stream, scan_bytes, summarize, Census, ContainerScan, Descriptor, Extent,
+    InnerDir, EDGE_DELIMITER, OUTER_MAGIC,
 };
 use std::io::Cursor;
 
@@ -482,6 +482,21 @@ fn descriptor_name_is_anchored_to_the_descriptor_tail() {
 }
 
 #[test]
+fn descriptor_name_excludes_a_printable_length_cell() {
+    for name in ["4bbc295c_1048_62eb7b6f_1825", "MainDataStream"] {
+        let mut directory = vec![0u8; 0x80];
+        let ds = 0x60;
+        let name_start = ds - 3 - name.len() * 2;
+        let cell = u16::try_from(name.len() * 2 + 2).unwrap();
+        directory[name_start - 2..name_start].copy_from_slice(&cell.to_le_bytes());
+        for (index, byte) in name.bytes().enumerate() {
+            directory[name_start + index * 2] = byte;
+        }
+        assert_eq!(super::descriptor_name(&directory, ds), name);
+    }
+}
+
+#[test]
 fn descriptor_name_ignores_unrelated_utf16_runs_and_requires_the_tail() {
     let mut directory = vec![0u8; 0x80];
     for (index, byte) in b"UNRELATED_LONGER_RUN".iter().enumerate() {
@@ -666,6 +681,7 @@ fn container_summary_exposes_extent_words_in_logical_order() {
         external_references: Vec::new(),
         finjpl_segments: Vec::new(),
         outer_container_declarations: Vec::new(),
+        has_outer_container_declarations: false,
         census: Census::default(),
         variant: Variant::Unknown,
     };
@@ -677,7 +693,7 @@ fn container_summary_exposes_extent_words_in_logical_order() {
 }
 
 #[test]
-fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
+fn truncated_uuid_without_metadata_does_not_assign_graph_ownership() {
     let mut data = vec![0; 40];
     data[8..12].copy_from_slice(b"\x01\x00\x03\x00");
     data[12..16].copy_from_slice(&2u32.to_le_bytes());
@@ -715,79 +731,24 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
     };
     data.push(0);
 
-    let declarations = outer_container_declarations(&data, &outer);
-
-    assert_eq!(declarations.len(), 1);
-    assert_eq!(declarations[0].data_offset, 0);
-    assert_eq!(declarations[0].ordinal, 2);
-    assert_eq!(declarations[0].class_name, "CATPrtCont");
-    assert_eq!(declarations[0].base_class, "CATProdCont");
-    assert_eq!(declarations[0].stream_name, "1048_62eb7b6f_1825");
-    assert_eq!(
-        outer_container_for_extent(&outer, &declarations, u64::from(data_len), 1)
-            .map(|declaration| declaration.class_name.as_str()),
-        Some("CATPrtCont")
-    );
-    assert!(
-        outer_container_for_extent(&outer, &declarations, u64::from(data_len) - 1, 2).is_none()
-    );
-
+    // Preserve the original truncated UUID and absent metadata table as a negative.
+    let inventory = super::outer_container_inventory(&data, &outer);
+    assert!(inventory.has_declarations);
+    assert!(inventory.resolved.is_empty());
     let mut prefixed_outer = outer.clone();
-    prefixed_outer.descriptors[1].name = "_1048_62eb7b6f_1825".to_string();
-    let prefixed_declarations = outer_container_declarations(&data, &prefixed_outer);
-    assert_eq!(prefixed_declarations.len(), 1);
-    assert_eq!(prefixed_declarations[0].stream_name, "_1048_62eb7b6f_1825");
-    assert_eq!(
-        outer_container_for_extent(
-            &prefixed_outer,
-            &prefixed_declarations,
-            u64::from(data_len),
-            1
-        )
-        .map(|declaration| declaration.class_name.as_str()),
-        Some("CATPrtCont")
-    );
+    prefixed_outer.descriptors[1].name = "_1048_62eb7b6f_1825".to_owned();
+    assert!(outer_container_declarations(&data, &prefixed_outer).is_empty());
 
-    let mut ambiguous_outer = prefixed_outer;
-    ambiguous_outer.descriptors.push(Descriptor {
-        name: "1048_62eb7b6f_1825".to_string(),
-        desc_offset: 30,
-        extents: vec![Extent {
-            phys_off: data_len,
-            phys_len: 1,
-            trailing_word: 0,
-        }],
-    });
-    assert!(outer_container_declarations(&data, &ambiguous_outer).is_empty());
-
-    let scan = ContainerScan {
-        data: data.into(),
-        outer_dir_offset: 0,
-        outer_dir_length: 0,
-        outer: Some(outer),
-        inner: None,
-        brep: None,
-        main_data_stream: None,
-        e5_record_range: None,
-        previews: Vec::new(),
-        last_save_version: None,
-        external_references: Vec::new(),
-        finjpl_segments: Vec::new(),
-        outer_container_declarations: declarations,
-        census: Census::default(),
-        variant: Variant::Unknown,
-    };
-    let summary = summarize_service(&scan);
-    assert_eq!(
-        summary.entries[1].attributes["container_class"],
-        "CATPrtCont"
+    let incomplete = super::parse_outer_container_declarations(
+        &data[..usize::try_from(data_len).expect("bounded declaration") - 1],
+        |_| Some("content".to_owned()),
     );
-    assert_eq!(
-        summary.entries[1].attributes["container_base_class"],
-        "CATProdCont"
-    );
-    assert_eq!(summary.entries[1].attributes["container_ordinal"], "2");
-    assert_eq!(summary.entries[1].attributes["container_data_offset"], "0");
+    assert!(!incomplete.has_declarations);
+    let duplicated = data[..usize::try_from(data_len).expect("bounded declaration")].repeat(2);
+    let duplicated =
+        super::parse_outer_container_declarations(&duplicated, |_| Some("content".to_owned()));
+    assert!(duplicated.has_declarations);
+    assert!(duplicated.resolved.is_empty());
 }
 
 #[test]
@@ -831,7 +792,12 @@ fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
     };
     data.push(0);
 
-    let declarations = outer_container_declarations(&data, &outer);
+    assert!(outer_container_declarations(&data, &outer).is_empty());
+    let declarations = super::parse_outer_container_declarations(&data, |name| {
+        assert_eq!(name, "4bbc295c_1048_62eb7b6f_1825");
+        Some("resolved-content".to_owned())
+    })
+    .resolved;
 
     assert_eq!(declarations.len(), 1);
     assert_eq!(declarations[0].class_name, long_class);
@@ -1502,4 +1468,44 @@ fn outer_stream_directory_parses_one_descriptor() {
     let bytes = outer_directory_catpart();
     let parsed = super::parse_outer_stream_directory(&bytes).expect("valid directory");
     assert_eq!(parsed.descriptors.len(), 1);
+}
+
+#[test]
+fn e5_interstitial_owner_preceded_by_other_bytes_keeps_its_payload_private() {
+    for family in [0x13, 0x83] {
+        let mut fake = Vec::new();
+        crate::test_support::test_e5::append_e5_record(
+            &mut fake,
+            0xff,
+            7,
+            &[0x85, 0x8d, 0x8a, 0x90, 0x8e, 0x8f, 0x21],
+        );
+        let mut owner = Vec::new();
+        crate::test_support::test_e5::append_e5_record(&mut owner, 0xc0, 8, &fake);
+        owner[2] = family;
+        let mut bytes = vec![0x14, 0x27, 0x42];
+        bytes.extend(owner);
+        crate::test_support::test_e5::append_e5_record(
+            &mut bytes,
+            0xff,
+            9,
+            &[0x85, 0x8d, 0x8a, 0x90, 0x8e, 0x8f, 0x22],
+        );
+        assert_eq!(
+            super::all_e5_record_spans(&bytes).collect::<Vec<_>>(),
+            std::iter::once(36..56).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn absent_outer_declarations_do_not_create_modeling_scope() {
+    let inventory = super::parse_outer_container_declarations(&[0; 80], |_| None);
+    assert!(!inventory.has_declarations);
+    assert!(inventory.resolved.is_empty());
+    let mut class_strings = vec![0; 80];
+    class_strings.extend_from_slice(b"CATPrtCont\0CATFeatCont\0");
+    let inventory = super::parse_outer_container_declarations(&class_strings, |_| None);
+    assert!(!inventory.has_declarations);
+    assert!(inventory.resolved.is_empty());
 }

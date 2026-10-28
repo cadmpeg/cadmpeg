@@ -19,7 +19,9 @@ use crate::surface::{
 pub(super) mod double_xar;
 
 use crate::container::ContainerScan;
-use crate::feature::definitions::{FeatureRelationTable, VariableType};
+use crate::feature::definitions::{FeatureRelationTable, ScalarLane, VariableType};
+use crate::feature::entity::loop_boundary_surface;
+use crate::feature::rows::loop_history_prior_loop;
 use crate::feature::schema::SchemaClass;
 
 use super::coverage::{source_section_ref, surface_family, surface_variant};
@@ -181,6 +183,8 @@ struct CreoFeatureEntityTableEntryRecord {
     source_entity_id: Option<u32>,
     related_entity_id: Option<u32>,
     related_entity_state: Option<u8>,
+    loop_head_id: Option<u32>,
+    loop_tail_id: Option<u32>,
     prefixed: bool,
     offset: usize,
     end_offset: usize,
@@ -224,6 +228,11 @@ pub(super) struct CreoFeatureLoopHistoryEntryRecord<'a> {
     owner_feature_id: u32,
     ordinal: u32,
     loop_id: u32,
+    lo_subtype: Option<u32>,
+    operands: [Option<u32>; 3],
+    lo_type: Option<u32>,
+    boundary_surface_id: Option<u32>,
+    prior_loop_id: Option<u32>,
     #[serde(serialize_with = "serialize_loop_history_fields")]
     field_bytes: &'a crate::feature::rows::FeatureLoopHistoryEntry,
     #[serde(flatten, serialize_with = "serialize_loop_history_boundary")]
@@ -254,7 +263,10 @@ fn serialize_loop_history_boundary<S: serde::Serializer>(
         FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
             ("reference_final", Some(*reference))
         }
-        FeatureLoopHistoryBoundary::NamedRecord { .. } => ("named_record", None),
+        FeatureLoopHistoryBoundary::TableSeparator(reference) => {
+            ("table_separator", Some(*reference))
+        }
+        FeatureLoopHistoryBoundary::NamedRecord => ("named_record", None),
     };
     let mut map = serializer.serialize_map(Some(2))?;
     map.serialize_entry("boundary", &boundary)?;
@@ -402,7 +414,7 @@ pub(super) struct CreoLoopArrayRecord<'a> {
     lo_type: u32,
     lo_subtype: u32,
     feature_id: u32,
-    attributes: u8,
+    attributes: u32,
     direction: u32,
     next_lo_ptr: u32,
     body: cadmpeg_ir::native::bytes::NativeBytes<&'a [u8]>,
@@ -872,6 +884,8 @@ pub(super) fn feature_entity_table_records(
                 source_entity_id: entry.source_entity_id(),
                 related_entity_id: entry.related_entity_id(),
                 related_entity_state: entry.related_entity_state(),
+                loop_head_id: entry.loop_head_id(),
+                loop_tail_id: entry.loop_tail_id(),
                 prefixed: entry.prefixed,
                 offset: entry.offset,
                 end_offset: entry.end_offset,
@@ -958,6 +972,15 @@ pub(super) fn feature_loop_history_entry_records<'a>(
             owner_feature_id: entry.feature_id,
             ordinal: entry.ordinal,
             loop_id: entry.loop_id,
+            lo_subtype: entry.logical_fields[0],
+            operands: [
+                entry.logical_fields[1],
+                entry.logical_fields[2],
+                entry.logical_fields[3],
+            ],
+            lo_type: entry.logical_fields[4],
+            boundary_surface_id: loop_boundary_surface(entry, &scan.features.entity_tables),
+            prior_loop_id: loop_history_prior_loop(entry, &scan.features.loop_history_entries),
             field_bytes: entry,
             boundary: &entry.boundary,
             offset: entry.offset,
@@ -1162,7 +1185,7 @@ mod feature_projection_tests {
         assert_eq!(geometry["entry_ids"], serde_json::json!([4, 5]));
         assert_eq!(
             history["field_bytes"],
-            serde_json::json!(["01", "02", "03", "04"])
+            serde_json::json!(["01", "02", "03", "04", "05"])
         );
     }
 }
@@ -1864,11 +1887,39 @@ pub(super) struct CreoSurfacePrototypeRecord<'a> {
 #[derive(Serialize)]
 pub(super) struct CreoSurfaceNamedParameterRecord<'a> {
     pub(super) name: &'a str,
-    #[serde(flatten, serialize_with = "serialize_surface_named_value")]
-    pub(super) value: &'a crate::surface::SurfaceNamedValue,
+    #[serde(flatten, serialize_with = "serialize_projected_surface_named_value")]
+    value: SurfaceNamedValueProjection<'a>,
     pub(super) body: NativeBytes<&'a [u8]>,
     pub(super) offset: usize,
     pub(super) value_offset: usize,
+}
+
+enum SurfaceNamedValueProjection<'a> {
+    Generic(&'a crate::surface::SurfaceNamedValue),
+    CubicKnots([f64; 8]),
+}
+
+fn serialize_projected_surface_named_value<S: serde::Serializer>(
+    value: &SurfaceNamedValueProjection<'_>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    match value {
+        SurfaceNamedValueProjection::Generic(value) => {
+            serialize_surface_named_value(value, serializer)
+        }
+        SurfaceNamedValueProjection::CubicKnots(knots) => {
+            let mut map = serializer.serialize_map(Some(7))?;
+            map.serialize_entry("value_kind", "cubic_knots")?;
+            map.serialize_entry("compact_values", &CompactValues::Empty)?;
+            map.serialize_entry("scalar_dimensions", &Option::<u32>::None)?;
+            map.serialize_entry("scalar_count", &Some(8_u32))?;
+            map.serialize_entry("scalar_values", &ScalarValues::Sequence(knots))?;
+            map.serialize_entry("scalar_tokens", &ScalarTokens::Empty)?;
+            map.serialize_entry("opaque", &NativeBytes::from(&[][..]))?;
+            map.end()
+        }
+    }
 }
 
 enum CompactValues<'a> {
@@ -2208,6 +2259,17 @@ pub(super) fn surface_prototype_records<'a>(
     id_namespace: &str,
 ) -> Vec<CreoSurfacePrototypeRecord<'a>> {
     use crate::surface::SurfacePrototypeFamily;
+    let mut unique_knots = BTreeMap::new();
+    for record in prototypes {
+        match unique_knots.entry(record.offset) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(record.tabulated_cylinder_cubic_knots());
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
     let mut records = Vec::new();
     for record in prototypes {
         let id = format!("creo:{id_namespace}:surface_prototype#{}", record.offset);
@@ -2221,11 +2283,20 @@ pub(super) fn surface_prototype_records<'a>(
             SurfacePrototypeFamily::Extrusion(_) => std::borrow::Cow::Borrowed("extrusion"),
             SurfacePrototypeFamily::Other(name) => std::borrow::Cow::Owned(format!("other:{name}")),
         };
+        let knots = unique_knots.get(&record.offset).copied().flatten();
         let mut parameters = Vec::new();
         for parameter in &record.parameters {
+            let value = if parameter.name == "params" {
+                knots.map_or(
+                    SurfaceNamedValueProjection::Generic(&parameter.value),
+                    SurfaceNamedValueProjection::CubicKnots,
+                )
+            } else {
+                SurfaceNamedValueProjection::Generic(&parameter.value)
+            };
             parameters.push(CreoSurfaceNamedParameterRecord {
                 name: &parameter.name,
-                value: &parameter.value,
+                value,
                 body: (&parameter.body).into(),
                 offset: parameter.offset,
                 value_offset: parameter.value_offset,
@@ -2336,6 +2407,130 @@ mod surface_projection_tests {
                 offset: 11,
             });
         scan
+    }
+
+    fn owned_cubic_prototype() -> SurfacePrototypeRecord {
+        let values = [
+            ("type", SurfaceNamedValue::CompactInt(19), vec![19]),
+            ("degree", SurfaceNamedValue::CompactInt(3), vec![3]),
+            (
+                "params",
+                SurfaceNamedValue::CountedScalarArray(
+                    CountedScalars::empty(8).expect("generic diagnostic slots"),
+                ),
+                vec![0xf8, 8, 0x18, 0xe6, 0x0f, 0xe6],
+            ),
+            (
+                "c_pnts",
+                SurfaceNamedValue::ContiguousEntityReferences(vec![1, 2, 3, 4]),
+                vec![0xf8, 4, 0xf7, 1, 0xfb, 0xe2],
+            ),
+        ];
+        SurfacePrototypeRecord {
+            family: SurfacePrototypeFamily::Extrusion(
+                crate::surface::ExtrusionLabel::TabulatedCylinder,
+            ),
+            parameters: values
+                .into_iter()
+                .enumerate()
+                .map(|(offset, (name, value, body))| SurfaceNamedParameter {
+                    name: name.into(),
+                    value,
+                    body,
+                    offset,
+                    value_offset: offset + 1,
+                })
+                .collect(),
+            offset: 11,
+        }
+    }
+
+    #[test]
+    fn owned_cubic_params_project_knots_without_mutating_generic_diagnostics() {
+        let scan = crate::test_support::empty_container_scan();
+        let prototype = owned_cubic_prototype();
+        let unchanged = prototype.clone();
+        let records =
+            surface_prototype_records(&scan, std::slice::from_ref(&prototype), "visibgeom");
+        let value = serde_json::to_value(&records[0]).expect("owned parameter serializes");
+        let params = &value["parameters"][2];
+        assert_eq!(params["value_kind"], "cubic_knots");
+        assert_eq!(
+            params["scalar_values"],
+            serde_json::json!([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+        );
+        assert_eq!(params["scalar_count"], 8);
+        assert_eq!(params["scalar_tokens"], serde_json::json!([]));
+        assert_eq!(
+            crate::test_support::native_bytes(&params["body"]),
+            [0xf8, 8, 0x18, 0xe6, 0x0f, 0xe6]
+        );
+        assert_eq!(prototype, unchanged);
+        let SurfaceNamedValue::CountedScalarArray(generic) = &prototype.parameters[2].value else {
+            panic!("generic representation retained")
+        };
+        assert_eq!(generic.values(), &[None; 8]);
+    }
+
+    #[test]
+    fn owned_cubic_params_abstain_on_incomplete_or_conflicting_owners() {
+        let scan = crate::test_support::empty_container_scan();
+        let original = owned_cubic_prototype();
+        let mut cases = Vec::new();
+        let mut other = original.clone();
+        other.family = SurfacePrototypeFamily::Plane;
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters[0].value = SurfaceNamedValue::CompactInt(12);
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters[1].value = SurfaceNamedValue::CompactInt(2);
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters.remove(2);
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters.push(other.parameters[2].clone());
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters.push(other.parameters[0].clone());
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters[3].value = SurfaceNamedValue::ContiguousEntityReferences(vec![1, 2, 3]);
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters[3].value = SurfaceNamedValue::ContiguousEntityReferences(vec![1, 2, 2, 3]);
+        cases.push(other);
+        let mut other = original.clone();
+        other.parameters[3].value = SurfaceNamedValue::ContiguousEntityReferences(vec![1, 2, 4, 5]);
+        cases.push(other);
+        for body in [
+            vec![0xf8, 7, 0x18, 0xe6, 0x0f, 0xe6],
+            vec![0xf8, 8, 0x18, 0xe6, 0x18, 0xe6],
+            vec![0xf8, 8, 0x18, 0xe6, 0x0f, 0xe6, 0xe3],
+            vec![0xf8, 8, 0x18, 0xe6, 0x0f],
+        ] {
+            let mut other = original.clone();
+            other.parameters[2].body = body;
+            cases.push(other);
+        }
+        for prototype in cases {
+            assert!(prototype.tabulated_cylinder_cubic_knots().is_none());
+            let records =
+                surface_prototype_records(&scan, std::slice::from_ref(&prototype), "visibgeom");
+            let value =
+                serde_json::to_value(&records[0]).expect("unqualified parameter serializes");
+            assert!(value["parameters"]
+                .as_array()
+                .expect("parameters")
+                .iter()
+                .all(|p| p["value_kind"] != "cubic_knots"));
+        }
+        let duplicates = [original.clone(), original];
+        for record in surface_prototype_records(&scan, &duplicates, "visibgeom") {
+            let value = serde_json::to_value(record).expect("duplicate diagnostic record");
+            assert_eq!(value["parameters"][2]["value_kind"], "counted_scalar_array");
+        }
     }
 
     #[test]
@@ -2764,6 +2959,7 @@ mod surface_parameter_projection_tests {
             carrier: SurfaceParameterCarrier::Unresolved(SurfaceKind::Plane),
             boundary: SurfaceBodyBoundary::CompoundClose,
             offset: 3,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 4,
         });
         scan
@@ -2814,10 +3010,6 @@ pub(super) fn feature_operation_state_records<'a>(
                 .map(|bytes| String::from_utf8_lossy(bytes).into_owned()),
             stored_name_bytes: state.name.stored_name_bytes().map(NativeBytes::from),
             identifier_keyword: state.name.identifier_keyword(),
-            stored_name_prefix: state
-                .name
-                .stored_name_prefix()
-                .map(|prefix| format!("{}", char::from(prefix))),
         };
         let id = format!(
             "creo:mdlstatus:feature_state#{}:{state_ordinal}",
@@ -2839,7 +3031,6 @@ pub(super) fn feature_operation_state_records<'a>(
             root_schema_class: state.root_schema_class().map(SchemaClass::code),
             parent_feature_id: state.parent_feature_id(),
             offset: state.offset,
-            state_offset: state.state_offset,
         });
     }
     for record in &mut records {
@@ -3156,15 +3347,21 @@ pub(super) fn sketch_records<'a>(
                             known: row.known,
                             homogeneity: row.homogeneity,
                             uvar_id: row.uvar_id,
-                            resolved_value: match row.variable_type {
-                                VariableType::U => resolved_coordinates
-                                    .get(&row.key)
-                                    .and_then(|point| point[0]),
-                                VariableType::V => resolved_coordinates
-                                    .get(&row.key)
-                                    .and_then(|point| point[1]),
-                                VariableType::Radius => resolved_radii.get(&row.key).copied(),
-                                _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
+                            resolved_value: if row.value == ScalarLane::OpaqueFullWidth {
+                                None
+                            } else {
+                                match row.variable_type {
+                                    VariableType::U => resolved_coordinates
+                                        .get(&row.key)
+                                        .and_then(|point| point[0]),
+                                    VariableType::V => resolved_coordinates
+                                        .get(&row.key)
+                                        .and_then(|point| point[1]),
+                                    VariableType::Radius => resolved_radii.get(&row.key).copied(),
+                                    _ => {
+                                        resolved_scalars.get(&(row.variable_type, row.key)).copied()
+                                    }
+                                }
                             },
                             offset: row.offset,
                         })
@@ -3733,7 +3930,7 @@ mod feature_definition_projection_tests {
     use super::feature_definition_records;
     use crate::feature::definitions::{
         DecodedField, DefinitionIdentity, FeatureDefinition, FeatureOutline, FeatureParameterFrame,
-        FeatureParameterFrameKind, OutlinePhase,
+        FeatureParameterFrameKind, FeatureParameterFrameOwner, OutlinePhase,
     };
 
     fn scan() -> crate::container::ContainerScan<'static> {
@@ -3754,6 +3951,7 @@ mod feature_definition_projection_tests {
             body: vec![0xe3],
             parameter_frames: vec![FeatureParameterFrame {
                 kind: FeatureParameterFrameKind::Transform,
+                owner: FeatureParameterFrameOwner::PlacementRecord,
                 body: vec![0xf9],
                 decoded_values: None,
                 offset: 4,
@@ -3869,7 +4067,6 @@ mod tests {
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
         scan.features.operation_states.push(FeatureOperation {
             feature_id: 40,
@@ -3877,13 +4074,11 @@ mod tests {
             name: OperationName::Stored {
                 bytes: b"A\xff".to_vec(),
                 keyword: IdKeyword::Id,
-                prefix: Some(b'~'),
             },
             recipe: RecipeState::None,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
         scan
     }
@@ -3907,7 +4102,6 @@ mod tests {
             crate::test_support::native_bytes(&records[0]["stored_name_bytes"]),
             [65, 255]
         );
-        assert_eq!(records[0]["stored_name_prefix"], "~");
         assert_eq!(records[0]["identifier_keyword"], "id");
         assert_eq!(records[0]["family"], "Native Feature");
         assert_eq!(records[0]["current"], true);

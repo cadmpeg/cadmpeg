@@ -474,3 +474,5 @@ fn direct_parasolid_decode_route_emits_bodies() {
         .unwrap();
     assert!(!decoded.ir().model.bodies.is_empty());
 }
+
+mod weldment;

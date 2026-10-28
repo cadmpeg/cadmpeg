@@ -569,11 +569,8 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         let offset = declaration + temporary_axis::AXIS_FRAME + index * 8;
         payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    payload[declaration + temporary_axis::NEXT_CLASS_MARKER
-        ..declaration
-            + temporary_axis::NEXT_CLASS_MARKER
-            + temporary_axis::NEXT_CLASS_MARKER_VALUE.len()]
-        .copy_from_slice(&temporary_axis::NEXT_CLASS_MARKER_VALUE);
+    payload[declaration + 312..declaration + 318].copy_from_slice(&[0xff, 0xff, 1, 0, 11, 0]);
+    payload[declaration + 318..declaration + 329].copy_from_slice(b"AxisChild_c");
 
     let native_pattern = NativeFeature {
         id: "pattern-native".into(),
@@ -663,7 +660,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
                 axis_dir,
                 angle,
                 count,
-            } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
+            } if *axis_origin == Point3::new(100.0, 200.0, 300.0)
             && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
             && angle.get() == std::f64::consts::FRAC_PI_2
             && *count == 4)

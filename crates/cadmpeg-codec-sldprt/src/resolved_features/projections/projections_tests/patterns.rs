@@ -134,3 +134,53 @@ fn pattern_surface_seed_uses_generated_face_and_dependency() {
         &[features[0].id.clone()]
     );
 }
+
+#[test]
+fn linear_and_mirror_provenance_does_not_resurrect_missing_seeds() {
+    for class in ["moLPattern_c", "moMirrorPattern_c", "moMirrorSolid_c"] {
+        let (mut features, mut history, lane) = pattern_fixture();
+        history.features[1].input_class = Some(class.into());
+        let before = serde_json::to_value(&lane).unwrap();
+        crate::resolved_features::bindings::bind_pattern_inputs(
+            &mut features,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap();
+        project_compact_surface_selections(&mut features, &[history], std::slice::from_ref(&lane))
+            .expect("retained provenance");
+        assert!(matches!(features[1].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) if seeds.is_empty()));
+        assert!(features[1].dependencies.as_slice().is_empty());
+        assert_eq!(serde_json::to_value(&lane).unwrap(), before);
+    }
+}
+
+#[test]
+fn explicit_linear_and_mirror_seeds_survive_provenance_refusal() {
+    for class in ["moLPattern_c", "moMirrorPattern_c", "moMirrorSolid_c"] {
+        let (mut features, mut history, lane) = pattern_fixture();
+        history.features[1].input_class = Some(class.into());
+        let seed = PatternSeed::Feature(features[0].id.clone());
+        let dependency = features[0].id.clone();
+        features[1].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                definition
+            {
+                seeds.push(seed.clone());
+            }
+        });
+        features[1].dependencies.insert(dependency.clone());
+        crate::resolved_features::bindings::bind_pattern_inputs(
+            &mut features,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        )
+        .unwrap();
+        project_compact_surface_selections(&mut features, &[history], &[lane])
+            .expect("explicit seed survives");
+        assert!(matches!(features[1].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) if seeds.as_slice() == [seed]));
+        assert_eq!(features[1].dependencies.as_slice(), [dependency]);
+    }
+}

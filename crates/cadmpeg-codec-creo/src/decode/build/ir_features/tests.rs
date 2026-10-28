@@ -100,7 +100,6 @@ fn native_operation_feature_records_native_kind() {
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_service_context(|ctx| {
@@ -168,42 +167,6 @@ fn native_row_feature_derives_name() {
 }
 
 #[test]
-fn stored_operation_feature_name_strips_prefix() {
-    let mut scan = crate::test_support::empty_container_scan();
-    scan.features
-        .operations
-        .push(crate::feature::operations::FeatureOperation {
-            feature_id: 40,
-            kind: crate::feature::operations::OperationKind::Native,
-            name: crate::feature::operations::OperationName::Stored {
-                bytes: b"~Native Feature id 40".to_vec(),
-                keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: Some(b'~'),
-            },
-            recipe: crate::feature::operations::RecipeResolution::None,
-            display_state_conflict: false,
-            depdb: None,
-            offset: 0,
-            state_offset: 0,
-        });
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    crate::decode::with_service_context(|ctx| {
-        emit_model_features(
-            ctx,
-            &scan,
-            &mut ir,
-            &mut cadmpeg_ir::AnnotationBuilder::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        )
-    })
-    .expect("model features");
-    assert_eq!(
-        ir.model.features[0].name.as_deref(),
-        Some("Native Feature id 40")
-    );
-}
-
-#[test]
 fn recipe_source_tag_names_recipe() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features
@@ -218,7 +181,6 @@ fn recipe_source_tag_names_recipe() {
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::decode::with_service_context(|ctx| {

@@ -315,6 +315,21 @@ impl SurfacePrototypeRecord {
         fields.next().is_none().then_some(field)
     }
 
+    /// Project the knot vector from its complete named cubic curve owner.
+    pub(crate) fn tabulated_cylinder_cubic_knots(&self) -> Option<[f64; 8]> {
+        let controls = self.tabulated_cylinder_control_point_ids()?;
+        if controls
+            .windows(2)
+            .any(|pair| pair[0].checked_add(1) != Some(pair[1]))
+            || self.field("type")?.value != SurfaceNamedValue::CompactInt(19)
+            || self.field("degree")?.value != SurfaceNamedValue::CompactInt(3)
+            || self.field("params")?.body.as_slice() != [0xf8, 8, 0x18, 0xe6, 0x0f, 0xe6]
+        {
+            return None;
+        }
+        Some([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+    }
+
     /// Return the chart-origin vector carried by a `tab_cyl` local system.
     pub(crate) fn tabulated_cylinder_chart_origin(&self) -> Option<[f64; 3]> {
         if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
@@ -382,6 +397,7 @@ pub(crate) struct SurfaceParameterRecord {
     pub(crate) scalar_frames: Vec<SurfaceParameterScalarFrame>,
     /// Row kind and its decoded carrier, when available.
     pub(crate) carrier: SurfaceParameterCarrier,
+    pub(crate) type26_minor_radius: InlineType26MinorRadius,
     /// Structural form that bounded the body.
     pub(crate) boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
@@ -394,7 +410,43 @@ pub(crate) struct SurfaceParameterRecord {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum SurfaceParameterCarrier {
     Unresolved(SurfaceKind),
+    WithheldConeOrigin { suffix_start: usize },
     Resolved(InlineSurfaceCarrier),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) enum InlineType26MinorRadius {
+    #[default]
+    Absent,
+    Withheld,
+    Unique {
+        major: u64,
+        minor: u64,
+        start: usize,
+        end: usize,
+    },
+}
+
+impl InlineType26MinorRadius {
+    fn observe(&mut self, major: f64, minor: f64, start: usize, end: usize) {
+        let candidate = Self::Unique {
+            major: major.to_bits(),
+            minor: minor.to_bits(),
+            start,
+            end,
+        };
+        *self = match *self {
+            Self::Absent => candidate,
+            previous if previous == candidate => previous,
+            _ => Self::Withheld,
+        };
+    }
+
+    fn saturate(&mut self, count: usize, capacity: usize) {
+        if count >= capacity {
+            *self = Self::Withheld;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1242,10 +1294,42 @@ pub(crate) struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    pub(crate) fn unresolved_cone_origin_suffix(&self) -> Option<std::ops::Range<usize>> {
+        match self.carrier {
+            SurfaceParameterCarrier::WithheldConeOrigin { suffix_start } => {
+                Some(suffix_start..self.body.len())
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn withhold_unresolved_cone_origin(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        let Some(suffix) = self.unresolved_cone_origin_suffix() else {
+            return Ok(false);
+        };
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(self.body.len()),
+            "retain unresolved cone origin suffix",
+        )?;
+        self.scalar_tokens.retain(|token| {
+            token
+                .offset
+                .checked_add(token.raw.len())
+                .is_some_and(|end| end <= suffix.start)
+        });
+        self.scalar_frames = scalar_frames(&self.scalar_tokens);
+        self.opaque_spans = opaque_spans(&self.body, &self.scalar_tokens);
+        Ok(true)
+    }
+
     /// Declared surface family, retained even when no carrier is decoded.
     fn kind(&self) -> SurfaceKind {
         match self.carrier {
             SurfaceParameterCarrier::Unresolved(kind) => kind,
+            SurfaceParameterCarrier::WithheldConeOrigin { .. } => SurfaceKind::Cone,
             SurfaceParameterCarrier::Resolved(carrier) => match carrier {
                 InlineSurfaceCarrier::Cylinder { .. } | InlineSurfaceCarrier::CylinderBounds(_) => {
                     SurfaceKind::Cylinder
@@ -1396,6 +1480,20 @@ impl SurfaceParameterRecord {
             && prototype_minor_radius.is_finite()
             && prototype_minor_radius > 0.0)
             .then_some(())?;
+        match self.type26_minor_radius {
+            InlineType26MinorRadius::Unique { minor, .. } => {
+                return (minor == prototype_minor_radius.to_bits())
+                    .then_some(f64::from_bits(minor));
+            }
+            InlineType26MinorRadius::Withheld => return None,
+            InlineType26MinorRadius::Absent => {}
+        }
+        if let Some(frame) = self.positional_torus_frame() {
+            let minor = frame.minor_radius().get();
+            if minor.to_bits() == prototype_minor_radius.to_bits() {
+                return Some(minor);
+            }
+        }
         let frame = self.terminal_scalar_frame()?;
         let slot = frame.slots.last()?;
         let value = slot.value?;
@@ -4129,13 +4227,86 @@ pub(crate) enum InlineSurfaceCarrier {
 
 #[derive(Debug, Clone, Copy)]
 struct InlineSurfaceBody {
-    terminal_close: usize,
+    terminal_close: Option<usize>,
     carrier: Option<InlineSurfaceCarrier>,
+    type26_minor_radius: InlineType26MinorRadius,
+    withheld_cone_origin_start: Option<usize>,
+}
+
+fn withheld_inline_cone_origin(start: usize) -> InlineSurfaceBody {
+    InlineSurfaceBody {
+        terminal_close: None,
+        carrier: None,
+        type26_minor_radius: InlineType26MinorRadius::Absent,
+        withheld_cone_origin_start: Some(start),
+    }
+}
+
+fn merge_inline_layout(
+    sole: &mut Option<InlineSurfaceBody>,
+    ambiguous: &mut bool,
+    layout: InlineSurfaceBody,
+) {
+    match sole {
+        None => *sole = Some(layout),
+        Some(previous) => {
+            *ambiguous = true;
+            if let Some(start) = layout.withheld_cone_origin_start {
+                previous.withheld_cone_origin_start = Some(
+                    previous
+                        .withheld_cone_origin_start
+                        .map_or(start, |old| old.min(start)),
+                );
+            }
+        }
+    }
+}
+
+fn finish_inline_layout(
+    sole: Option<InlineSurfaceBody>,
+    ambiguous: bool,
+) -> Option<InlineSurfaceBody> {
+    let mut layout = sole?;
+    if ambiguous {
+        layout.withheld_cone_origin_start?;
+        layout.terminal_close = None;
+    }
+    if layout.withheld_cone_origin_start.is_some() {
+        layout.carrier = None;
+    }
+    Some(layout)
 }
 
 const EPS_INLINE_WITNESS: f64 = 1.0e-9;
 const EPS_INLINE_FRAME: f64 = 1.0e-8;
 const MAX_INLINE_FRAME_CANDIDATES: usize = 24;
+
+fn observe_inline_type26_radius(
+    evidence: &mut InlineType26MinorRadius,
+    kind: SurfaceKind,
+    local: &[u8],
+    local_start: usize,
+    frame: ResolvedInlineLocalSystemFrame,
+    cache: &scalar::ScalarCache,
+) {
+    if kind != SurfaceKind::TorusOrSphere || inline_suffix_frame_directions(frame).is_none() {
+        return;
+    }
+    let decode_radius = |cursor| scalar::decode_type26_radius_slot(local, cursor, cache);
+    let Some((major, cursor)) = decode_radius(frame.cursor) else {
+        return;
+    };
+    let Some((minor, end)) = decode_radius(cursor) else {
+        return;
+    };
+    if end == local.len() {
+        if major.is_finite() && major >= 0.0 && minor.is_finite() && minor > 0.0 {
+            evidence.observe(major, minor, local_start + frame.cursor, local_start + end);
+        } else {
+            *evidence = InlineType26MinorRadius::Withheld;
+        }
+    }
+}
 
 fn inline_surface_body(
     ctx: &DecodeContext<'_>,
@@ -4157,8 +4328,10 @@ fn inline_surface_body(
             terminal_close.filter(|close| body.get(*close) == Some(&psb::token::COMPOUND_CLOSE))
         {
             return Ok(Some(InlineSurfaceBody {
-                terminal_close,
+                terminal_close: Some(terminal_close),
                 carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
+                type26_minor_radius: InlineType26MinorRadius::Absent,
+                withheld_cone_origin_start: None,
             }));
         }
     }
@@ -4177,6 +4350,7 @@ fn inline_surface_body(
         return Ok(None);
     };
     let mut sole_layout = None;
+    let mut ambiguous_layout = false;
     for terminal_close in local_start..body.len() {
         if body.get(terminal_close) != Some(&psb::token::COMPOUND_CLOSE) {
             continue;
@@ -4184,10 +4358,13 @@ fn inline_surface_body(
         let Some(local) = body.get(local_start..terminal_close) else {
             return Ok(None);
         };
+        let mut type26_minor_radius = InlineType26MinorRadius::Absent;
+        let mut explicit_count = 0;
         let mut structurally_complete = false;
         let mut geometric_interpretation_count = 0;
         let mut first_carrier = None;
         let mut conflicting_carriers = false;
+        let mut withheld_cone_origin_start = None;
         if kind == SurfaceKind::Cone {
             if let Some(angle) = terminal_cone_half_angle_layout(local) {
                 if let Some(frame) =
@@ -4200,7 +4377,33 @@ fn inline_surface_body(
             }
         }
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+            explicit_count += usize::from(matches!(
+                prefix,
+                scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_)
+            ));
+            if kind == SurfaceKind::Cone
+                && unresolved_compact_cone_origin(local, prefix, cache).is_some_and(|cursor| {
+                    inline_surface_suffix(kind, local, cursor, cache).is_some()
+                })
+            {
+                withheld_cone_origin_start = Some(local_start);
+                structurally_complete = true;
+                geometric_interpretation_count += 1;
+                conflicting_carriers = true;
+                continue;
+            }
+            let mut frame_count = 0;
             for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+                frame_count += 1;
+                type26_minor_radius.saturate(frame_count, scalar::MAX_INLINE_ORIGIN_CANDIDATES);
+                observe_inline_type26_radius(
+                    &mut type26_minor_radius,
+                    kind,
+                    local,
+                    local_start,
+                    frame,
+                    cache,
+                );
                 if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                     continue;
                 }
@@ -4218,6 +4421,7 @@ fn inline_surface_body(
                 }
             }
         }
+        type26_minor_radius.saturate(explicit_count, scalar::MAX_INLINE_EXPLICIT_FRAME_CANDIDATES);
         if !structurally_complete || geometric_interpretation_count == 0 {
             continue;
         }
@@ -4227,15 +4431,18 @@ fn inline_surface_body(
             first_carrier
         };
         let layout = InlineSurfaceBody {
-            terminal_close,
+            terminal_close: Some(terminal_close),
             carrier,
+            type26_minor_radius,
+            withheld_cone_origin_start,
         };
-        if sole_layout.replace(layout).is_some() {
+        merge_inline_layout(&mut sole_layout, &mut ambiguous_layout, layout);
+        if ambiguous_layout && kind != SurfaceKind::Cone {
             return Ok(None);
         }
     }
     if sole_layout.is_some() {
-        Ok(sole_layout)
+        Ok(finish_inline_layout(sole_layout, ambiguous_layout))
     } else {
         inline_surface_suffix_body(ctx, kind, body, cache)
     }
@@ -4251,6 +4458,8 @@ fn inline_surface_suffix_body(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
     let mut sole_layout = None;
+    let mut ambiguous_layout = false;
+    let mut discovery_saturated = false;
     let local_starts =
         std::iter::once(0).chain(body.iter().enumerate().filter_map(|(offset, byte)| {
             (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
@@ -4261,21 +4470,53 @@ fn inline_surface_suffix_body(
         };
         let mut terminal_closes = [0usize; MAX_INLINE_FRAME_CANDIDATES];
         let mut close_count = 0;
+        let mut discovery_explicit_count = 0;
+        let mut discovery_withheld_origin = None;
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+            discovery_explicit_count += usize::from(matches!(
+                prefix,
+                scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_)
+            ));
+            if kind == SurfaceKind::Cone {
+                if let Some(cursor) = unresolved_compact_cone_origin(local, prefix, cache) {
+                    if let Some((_, end)) =
+                        decode_inline_surface_suffix_at(kind, local, cursor, cache)
+                            .filter(|(_, end)| local.get(*end) == Some(&psb::token::COMPOUND_CLOSE))
+                    {
+                        discovery_withheld_origin = Some(local_start);
+                        let Some(target) = terminal_closes.get_mut(close_count) else {
+                            return Ok(Some(withheld_inline_cone_origin(local_start)));
+                        };
+                        *target = end;
+                        close_count += 1;
+                        continue;
+                    }
+                }
+            }
+            let mut discovery_origin_count = 0;
             for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+                discovery_origin_count += 1;
+                discovery_saturated |=
+                    discovery_origin_count >= scalar::MAX_INLINE_ORIGIN_CANDIDATES;
                 if let Some((_, end)) =
                     decode_inline_surface_suffix_at(kind, local, frame.cursor, cache)
                 {
                     if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
                         *match terminal_closes.get_mut(close_count) {
                             Some(value) => value,
-                            None => return Ok(None),
+                            None => {
+                                return Ok(discovery_withheld_origin
+                                    .map(withheld_inline_cone_origin)
+                                    .or_else(|| finish_inline_layout(sole_layout, true)))
+                            }
                         } = end;
                         close_count += 1;
                     }
                 }
             }
         }
+        discovery_saturated |=
+            discovery_explicit_count >= scalar::MAX_INLINE_EXPLICIT_FRAME_CANDIDATES;
         terminal_closes[..close_count].sort_unstable_by(Ord::cmp);
         let mut previous_close = None;
         for relative_close in terminal_closes[..close_count].iter().copied() {
@@ -4287,12 +4528,40 @@ fn inline_surface_suffix_body(
             let Some(local) = body.get(local_start..terminal_close) else {
                 return Ok(None);
             };
+            let mut type26_minor_radius = InlineType26MinorRadius::Absent;
+            let mut explicit_count = 0;
             let mut structurally_complete = false;
             let mut geometric_interpretation_count = 0;
             let mut carriers = [None; MAX_INLINE_FRAME_CANDIDATES];
             let mut carrier_count = 0;
+            let mut withheld_cone_origin_start = None;
             for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+                explicit_count += usize::from(matches!(
+                    prefix,
+                    scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_)
+                ));
+                if kind == SurfaceKind::Cone
+                    && unresolved_compact_cone_origin(local, prefix, cache).is_some_and(|cursor| {
+                        inline_surface_suffix(kind, local, cursor, cache).is_some()
+                    })
+                {
+                    withheld_cone_origin_start = Some(local_start);
+                    structurally_complete = true;
+                    geometric_interpretation_count += 1;
+                    continue;
+                }
+                let mut frame_count = 0;
                 for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+                    frame_count += 1;
+                    type26_minor_radius.saturate(frame_count, scalar::MAX_INLINE_ORIGIN_CANDIDATES);
+                    observe_inline_type26_radius(
+                        &mut type26_minor_radius,
+                        kind,
+                        local,
+                        local_start,
+                        frame,
+                        cache,
+                    );
                     if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                         continue;
                     }
@@ -4311,6 +4580,8 @@ fn inline_surface_suffix_body(
                     }
                 }
             }
+            type26_minor_radius
+                .saturate(explicit_count, scalar::MAX_INLINE_EXPLICIT_FRAME_CANDIDATES);
             if !structurally_complete || geometric_interpretation_count == 0 {
                 continue;
             }
@@ -4332,15 +4603,27 @@ fn inline_surface_suffix_body(
                 None => carrier,
             };
             let layout = InlineSurfaceBody {
-                terminal_close,
-                carrier,
+                terminal_close: Some(terminal_close),
+                carrier: if withheld_cone_origin_start.is_some() {
+                    None
+                } else {
+                    carrier
+                },
+                type26_minor_radius,
+                withheld_cone_origin_start,
             };
-            if sole_layout.replace(layout).is_some() {
+            merge_inline_layout(&mut sole_layout, &mut ambiguous_layout, layout);
+            if ambiguous_layout && kind != SurfaceKind::Cone {
                 return Ok(None);
             }
         }
     }
-    Ok(sole_layout)
+    if discovery_saturated {
+        if let Some(layout) = &mut sole_layout {
+            layout.type26_minor_radius = InlineType26MinorRadius::Withheld;
+        }
+    }
+    Ok(finish_inline_layout(sole_layout, ambiguous_layout))
 }
 
 /// Recover a complete legacy analytic envelope immediately before an inline
@@ -5160,8 +5443,10 @@ fn parameter_records_for_rows(
             body_end = close;
             boundary = SurfaceBodyBoundary::CompoundClose;
         } else if let Some(layout) = inline {
-            body_end = body_start + layout.terminal_close;
-            boundary = SurfaceBodyBoundary::CompoundClose;
+            if let Some(close) = layout.terminal_close {
+                body_end = body_start + close;
+                boundary = SurfaceBodyBoundary::CompoundClose;
+            }
         } else {
             if let Some(relative) = surface_body_compound_close(
                 ctx,
@@ -5190,6 +5475,9 @@ fn parameter_records_for_rows(
             opaque_spans,
             scalar_frames,
             carrier: SurfaceParameterCarrier::Unresolved(row.kind),
+            type26_minor_radius: inline.map_or(InlineType26MinorRadius::Absent, |layout| {
+                layout.type26_minor_radius
+            }),
             body,
             boundary,
             offset: row.offset,
@@ -5236,7 +5524,9 @@ fn parameter_records_for_rows(
             }
             SurfaceKind::Plane | SurfaceKind::Spline | SurfaceKind::Fillet => None,
         };
-        if let Some(carrier) = carrier {
+        if let Some(suffix_start) = inline.and_then(|layout| layout.withheld_cone_origin_start) {
+            record.carrier = SurfaceParameterCarrier::WithheldConeOrigin { suffix_start };
+        } else if let Some(carrier) = carrier {
             record.carrier = SurfaceParameterCarrier::Resolved(carrier);
         }
         records.push(record);
@@ -5310,8 +5600,9 @@ fn contour_records_for_rows(
         } else if let Some(layout) =
             inline_surface_body(ctx, row.kind, &payload[body_start..row_end], &cache)?
         {
-            let Some(contour_start) = body_start
-                .checked_add(layout.terminal_close)
+            let Some(contour_start) = layout
+                .terminal_close
+                .and_then(|close| body_start.checked_add(close))
                 .and_then(|close| close.checked_add(1))
             else {
                 continue;
@@ -5605,6 +5896,26 @@ fn cone_operand_components(frame: PositionalConeFrame) -> [f64; 10] {
     ]
 }
 
+fn unresolved_compact_cone_origin(
+    local: &[u8],
+    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
+    let scalar::InlineNonPlaneLocalSystemPrefix::Compact(frame) = prefix else {
+        return None;
+    };
+    let origin = local.get(frame.cursor..)?;
+    if !matches!(origin, [0x18, 0x19 | 0x32, ..]) {
+        return None;
+    }
+    let (value, end) = scalar::decode_in_surface_row_lane(origin, 1 + 8, cache)?;
+    (value.is_finite() && end == 1 + 8 + 3).then_some(())?;
+    let cursor = frame.cursor.checked_add(end)?;
+    let (suffix, _) = decode_inline_surface_suffix_at(SurfaceKind::Cone, local, cursor, cache)?;
+    ApexConeHalfAngle::new(suffix[0])?;
+    Some(cursor)
+}
+
 fn decode_positional_cone_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
@@ -5856,6 +6167,35 @@ pub(crate) fn decode_tabulated_cylinder_frame(
     Some((TabulatedCylinderFrame::new(values, prefixes)?, cursor))
 }
 
+/// Decode a seven-byte `4d`, `50`, or `54` second directrix coordinate that
+/// omits IEEE byte one. Exactly one owner-frame `41 <byte 1> <tail>` scalar
+/// with the same six-byte tail supplies the value.
+fn paired_short_second_coordinate(
+    body: &[u8],
+    offset: usize,
+    frame: &TabulatedCylinderFrame,
+) -> Option<(f64, usize)> {
+    const PAIRED_SHORT_OPENERS: [u8; 3] = [0x4d, 0x50, 0x54];
+    const FULL_PARTNER_OPENER: u8 = 0x41;
+    const FULL_PARTNER_IEEE_BYTE_0: u8 = 0x3f;
+    PAIRED_SHORT_OPENERS
+        .contains(body.get(offset)?)
+        .then_some(())?;
+    let tail = body.get(offset + 1..offset + 7)?;
+    let mut partners = frame
+        .prefixes()
+        .into_iter()
+        .zip(frame.values().get())
+        .filter(|&(prefix, value)| {
+            let bytes = value.to_be_bytes();
+            prefix == FULL_PARTNER_OPENER
+                && bytes[0] == FULL_PARTNER_IEEE_BYTE_0
+                && bytes[2..] == *tail
+        });
+    let (_, value) = partners.next()?;
+    partners.next().is_none().then_some((value, offset + 7))
+}
+
 /// Decode the cubic curve replay owned by the preceding positional
 /// `geom_type = 2c` tabulated-cylinder row.
 pub(crate) fn tabulated_cylinder_curve_replays(
@@ -5955,15 +6295,6 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         if bodies.iter().any(|body| body.is_empty()) {
             continue;
         }
-        let decode_point = |body: &[u8]| {
-            let (first, after_first) =
-                scalar::decode_tabulated_cylinder_first_coordinate(body, 0, &cache)?;
-            let (second, end) =
-                scalar::decode_tabulated_cylinder_second_coordinate(body, after_first, &cache)?;
-            (end == body.len() && first.is_finite() && second.is_finite())
-                .then_some([first, second])
-        };
-        let control_points = std::array::from_fn(|index| decode_point(bodies[index]));
         let Some(owner) = surface_rows
             .iter()
             .rev()
@@ -5974,6 +6305,22 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         if owner.kind != SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder) {
             continue;
         }
+        let owner_frame =
+            decode_tabulated_cylinder_frame(&payload[owner.offset..replay_offset], &cache)
+                .map(|(frame, _)| frame);
+        let decode_point = |body: &[u8]| {
+            let (first, after_first) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, 0, &cache)?;
+            let (second, end) = owner_frame
+                .as_ref()
+                .and_then(|frame| paired_short_second_coordinate(body, after_first, frame))
+                .or_else(|| {
+                    scalar::decode_tabulated_cylinder_second_coordinate(body, after_first, &cache)
+                })?;
+            (end == body.len() && first.is_finite() && second.is_finite())
+                .then_some([first, second])
+        };
+        let control_points = std::array::from_fn(|index| decode_point(bodies[index]));
         let Some(last_control_point) = control_point_start.checked_add(3) else {
             continue;
         };

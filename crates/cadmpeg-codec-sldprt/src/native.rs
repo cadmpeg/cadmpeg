@@ -738,8 +738,19 @@ impl SldprtNative {
             lane.surface_selections = children(&surface_selections_by_parent, &lane.id);
             lane.surface_selections.sort_by_key(|left| left.ordinal);
             let lane_features = FeatureSources::for_lane(&features, lane);
+            let edge_owners =
+                crate::resolved_features::selections::edge_owners::OwnerFeatures::for_lane(
+                    &lane_features,
+                    lane,
+                );
             for record in &lane.edge_selections {
-                if edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)? {
+                if edge_selection_disagrees_with_payload(
+                    ctx,
+                    lane,
+                    record,
+                    &lane_features,
+                    &edge_owners,
+                )? {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input edge selection {} disagrees with its payload",
                         record.id
@@ -880,13 +891,24 @@ impl SldprtNative {
                 }
             }
             let lane_features = FeatureSources::for_lane_iter(features.iter().copied(), lane);
+            let edge_owners =
+                crate::resolved_features::selections::edge_owners::OwnerFeatures::for_lane(
+                    &lane_features,
+                    lane,
+                );
             for record in &lane.edge_selections {
                 let invalid = record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_edge_ids.is_empty();
                 if invalid
-                    || edge_selection_disagrees_with_payload(ctx, lane, record, &lane_features)?
+                    || edge_selection_disagrees_with_payload(
+                        ctx,
+                        lane,
+                        record,
+                        &lane_features,
+                        &edge_owners,
+                    )?
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "feature-input edge selection {} has inconsistent ownership",
@@ -1141,6 +1163,7 @@ fn edge_selection_disagrees_with_payload(
     lane: &FeatureInputLane,
     record: &FeatureInputEdgeSelection,
     edge_features: &FeatureSources<'_>,
+    edge_owners: &crate::resolved_features::selections::edge_owners::OwnerFeatures<'_>,
 ) -> Result<bool, cadmpeg_ir::NativeConvertError> {
     Ok(match usize::try_from(record.offset) {
         Ok(offset) => crate::resolved_features::selections::compact_edge_selection_at(
@@ -1169,6 +1192,7 @@ fn edge_selection_disagrees_with_payload(
                 offset,
                 &record.components,
                 edge_features,
+                edge_owners,
                 &record.feature_ref,
             )?,
             Err(_) => Vec::new(),
@@ -1179,7 +1203,7 @@ fn edge_selection_disagrees_with_payload(
                 &lane.native_payload,
                 offset,
                 &record.components,
-                edge_features,
+                edge_owners,
                 &record.feature_ref,
             )?,
             Err(_) => None,

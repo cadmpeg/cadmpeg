@@ -272,3 +272,5 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
 mod carrier_rejection;
 
 mod recovery;
+
+mod principal_units;

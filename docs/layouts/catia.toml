@@ -297,16 +297,20 @@ source = "spec"
 anchor = "| plane    | `0x32` | `0x0002` |     49 | start+48  |"
 
 [[record.field]]
+name = "bounds"
+offset = 8
+type = "f32[10]"
+endianness = "little"
+source = "spec"
+anchor = "| plane | 0 | `+8` |"
+
+[[record.field]]
 name = "sign"
 offset = 48
 type = "i8"
 source = "spec"
 anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
 
-[[record.gap]]
-offset = 8
-size = 40
-note = "Parameter payload. §5.8 states the BE f32 slot order per kind but no per-slot offsets; the bounds lane begins at marker-relative +3."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
@@ -356,16 +360,28 @@ source = "spec"
 anchor = "| cylinder | `0x33` | `0x001a` |     73 | start+72  |"
 
 [[record.field]]
+name = "carrier_parameters"
+offset = 8
+type = "f32[6]"
+endianness = "big"
+source = "spec"
+anchor = "Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32."
+
+[[record.field]]
+name = "bounds"
+offset = 32
+type = "f32[10]"
+endianness = "little"
+source = "spec"
+anchor = "| cylinder | 6 | `+32` |"
+
+[[record.field]]
 name = "sign"
 offset = 72
 type = "i8"
 source = "spec"
 anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
 
-[[record.gap]]
-offset = 8
-size = 64
-note = "Parameter payload `cylinder `00 1a 00 33 33 [px py pz ax ay radius]` as BE f32, plus the LE-f32 witness point. §5.8 gives the slot order and the marker-relative witness offset +27 but no per-slot record offsets, and §3.5 places the bounds lane at the same marker-relative +27."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/families/standard/records.rs"
@@ -414,16 +430,28 @@ source = "spec"
 anchor = "| cone     | `0x34` | `0x001a` |     73 | start+72  |"
 
 [[record.field]]
+name = "carrier_parameters"
+offset = 8
+type = "f32[6]"
+endianness = "big"
+source = "spec"
+anchor = "Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32."
+
+[[record.field]]
+name = "bounds"
+offset = 32
+type = "f32[10]"
+endianness = "little"
+source = "spec"
+anchor = "| cone | 6 | `+32` |"
+
+[[record.field]]
 name = "sign"
 offset = 72
 type = "i8"
 source = "spec"
 anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
 
-[[record.gap]]
-offset = 8
-size = 64
-note = "Parameter payload `[apex_x apex_y apex_z ax ay semi_angle]` as BE f32; §5.8 states the slot order but no per-slot offsets."
 
 [[record]]
 name = "analytic_surface_sphere"
@@ -462,16 +490,28 @@ source = "spec"
 anchor = "| sphere   | `0x35` | `0x0012` |     65 | start+64  |"
 
 [[record.field]]
+name = "carrier_parameters"
+offset = 8
+type = "f32[4]"
+endianness = "big"
+source = "spec"
+anchor = "Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32."
+
+[[record.field]]
+name = "bounds"
+offset = 24
+type = "f32[10]"
+endianness = "little"
+source = "spec"
+anchor = "| sphere | 4 | `+24` |"
+
+[[record.field]]
 name = "sign"
 offset = 64
 type = "i8"
 source = "spec"
 anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
 
-[[record.gap]]
-offset = 8
-size = 56
-note = "Parameter payload `[cx cy cz radius]` as BE f32; §5.8 states the slot order but no per-slot offsets."
 
 [[record]]
 name = "analytic_surface_torus"
@@ -510,16 +550,28 @@ source = "spec"
 anchor = "| torus    | `0x38` | `0x001e` |     77 | start+76  |"
 
 [[record.field]]
+name = "carrier_parameters"
+offset = 8
+type = "f32[7]"
+endianness = "big"
+source = "spec"
+anchor = "Carrier parameters start at record-relative `+8`. Each scalar uses big-endian f32."
+
+[[record.field]]
+name = "bounds"
+offset = 36
+type = "f32[10]"
+endianness = "little"
+source = "spec"
+anchor = "| torus | 7 | `+36` |"
+
+[[record.field]]
 name = "sign"
 offset = 76
 type = "i8"
 source = "spec"
 anchor = "The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`."
 
-[[record.gap]]
-offset = 8
-size = 68
-note = "Parameter payload `[cx cy cz ax ay major minor]` as BE f32, plus the LE-f32 witness point at marker-relative +31; §5.8 states the slot order but no per-slot offsets."
 
 # --- §5.5 Standard spline support row with one-byte face references --------
 
@@ -1665,7 +1717,7 @@ anchor = "the arc-number bits occupy bytes `8..12`"
 
 [[record]]
 name = "e5_nurbs_pcurve_limits"
-parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/graph.rs"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/limit_program.rs"
 kind = "byte"
 section = "9"
 anchor = "The E5 `0xaa` current-limit program"
@@ -1723,7 +1775,7 @@ anchor = "| `+36` | `u8` | extrapolation control |"
 
 [[record]]
 name = "e5_nurbs_surface_limits"
-parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/limit_program.rs"
 kind = "byte"
 section = "9"
 anchor = "The E5 `0xe7` current-limit program"
@@ -3117,3 +3169,781 @@ offset = 21
 type = "u8"
 source = "spec"
 anchor = "| `+21` | `u8` | sphere pole closure, or `05` for a non-sphere result |"
+
+[[record]]
+name = "b5_plane_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "For `b5 03 27`, the 121-byte payload"
+size = 121
+endianness = "little"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "For `b5 03 27`, the 121-byte payload"
+
+[[record.field]]
+name = "origin"
+offset = 1
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 27`, the 121-byte payload"
+
+[[record.field]]
+name = "direction_u"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 27`, the 121-byte payload"
+
+[[record.field]]
+name = "direction_v"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 27`, the 121-byte payload"
+
+[[record.field]]
+name = "fixed_values"
+offset = 73
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 27`, the 121-byte payload"
+
+[[record.field]]
+name = "u_range"
+offset = 89
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 27`, the 121-byte payload"
+
+[[record.field]]
+name = "v_range"
+offset = 105
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 27`, the 121-byte payload"
+
+
+[[record]]
+name = "b5_cylinder_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "For `b5 03 28`, the 137-byte payload"
+size = 137
+endianness = "little"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "origin"
+offset = 1
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "reference_x"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "stored_v"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "radius"
+offset = 73
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "u_range"
+offset = 81
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "v_range"
+offset = 97
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "angular_factor"
+offset = 113
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "one"
+offset = 121
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record.field]]
+name = "chart_origin"
+offset = 129
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 28`, the 137-byte payload"
+
+[[record]]
+name = "b5_sphere_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+size = 153
+endianness = "little"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "center"
+offset = 1
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "scaled_x"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "scaled_y"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "scaled_axis"
+offset = 73
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "radius"
+offset = 97
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "azimuth_range"
+offset = 105
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "latitude_range"
+offset = 121
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "construction_radius"
+offset = 137
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record.field]]
+name = "chart_origin"
+offset = 145
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 2a`, the 153-byte payload"
+
+[[record]]
+name = "b5_torus_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+size = 201
+endianness = "little"
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "center"
+offset = 1
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "direction_x"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "direction_y"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "axis"
+offset = 73
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "major_radius"
+offset = 97
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "minor_radius"
+offset = 105
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "major_range"
+offset = 113
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "major_domain"
+offset = 129
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "minor_range"
+offset = 145
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "minor_domain"
+offset = 161
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "major_scale"
+offset = 177
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "minor_scale"
+offset = 185
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record.field]]
+name = "reserved"
+offset = 193
+type = "bytes[8]"
+source = "spec"
+anchor = "For `b5 03 2b`, the 201-byte payload"
+
+[[record]]
+name = "indexed_visualization_point_header"
+parsed_by = "crates/cadmpeg-codec-catia/src/solve/missing_edge.rs"
+kind = "byte"
+section = "5.4.2"
+anchor = "The visualization lane can store a trim-handle-indexed coordinate table"
+size = 19
+endianness = "little"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[6]"
+source = "spec"
+anchor = "ff ff 02 00 01 ff"
+
+[[record.field]]
+name = "entry_count"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "entry_count:u32le"
+
+[[record.field]]
+name = "secondary_sentinel"
+offset = 10
+type = "u8"
+value = 255
+source = "spec"
+anchor = "ff secondary_count:u32le"
+
+[[record.field]]
+name = "secondary_count"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "ff secondary_count:u32le"
+
+[[record.field]]
+name = "reserved"
+offset = 15
+type = "bytes[3]"
+source = "spec"
+anchor = "00 00 00 mode:u8"
+
+[[record.field]]
+name = "mode"
+offset = 18
+type = "u8"
+source = "spec"
+anchor = "00 00 00 mode:u8"
+
+[[record]]
+name = "indexed_visualization_point_row"
+parsed_by = "crates/cadmpeg-codec-catia/src/solve/missing_edge.rs"
+kind = "byte"
+section = "5.4.2"
+anchor = "coordinate:f32le[entry_count][3]"
+size = 12
+endianness = "little"
+
+[[record.field]]
+name = "x"
+offset = 0
+type = "f32"
+source = "spec"
+anchor = "world-space XYZ coordinate of trim handle"
+
+[[record.field]]
+name = "y"
+offset = 4
+type = "f32"
+source = "spec"
+anchor = "world-space XYZ coordinate of trim handle"
+
+[[record.field]]
+name = "z"
+offset = 8
+type = "f32"
+source = "spec"
+anchor = "world-space XYZ coordinate of trim handle"
+
+[[record]]
+name = "indexed_visualization_scalar_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/solve/missing_edge.rs"
+kind = "byte"
+section = "5.4.2"
+anchor = "Mode `0` compresses repeated coordinate prefixes"
+size = 5
+endianness = "little"
+
+[[record.field]]
+name = "delimiter"
+offset = 0
+type = "u8"
+value = 255
+source = "spec"
+anchor = "scalar_count:u32le"
+
+[[record.field]]
+name = "scalar_count"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "scalar_count:u32le"
+
+[[record]]
+name = "b_four_reference_edge_payload"
+kind = "byte"
+section = "6.3"
+anchor = "A separate width-coded class-`5e` production has a five-byte payload: four"
+size = 5
+note = "Payload only; the surrounding B-family frame carries the independent width, flag and header token."
+
+[[record.field]]
+name = "operands"
+offset = 0
+type = "u8[4]"
+source = "spec"
+anchor = "one-byte allocation references followed by one terminal"
+
+[[record.field]]
+name = "terminal"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "one-byte allocation references followed by one terminal"
+
+[[record]]
+name = "rolling_ball_tail_scalar_branch"
+kind = "byte"
+section = "6.2"
+anchor = "`01 01`, then three finite `f64le[K]` lanes in value, first-derivative, and"
+size = 2
+
+[[record.field]]
+name = "branch"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "`01 01`, then three finite `f64le[K]` lanes in value, first-derivative, and"
+value = [1, 1]
+
+[[record]]
+name = "e5_rolling_ball_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/e5/records.rs"
+kind = "byte"
+section = "9"
+anchor = "The tail is `parameter_min:f64le parameter_max:f64le"
+size = 63
+endianness = "little"
+
+[[record.field]]
+name = "parameters"
+offset = 0
+type = "f64[5]"
+source = "spec"
+anchor = "parameter_min:f64le parameter_max:f64le 0:f64le radius:f64le radius:f64le"
+
+[[record.field]]
+name = "sense"
+offset = 40
+type = "i32"
+source = "spec"
+anchor = "sense:i32le"
+
+[[record.field]]
+name = "maximal_v"
+offset = 44
+type = "f64[2]"
+source = "spec"
+anchor = "sense:i32le 0:f64le radius:f64le"
+
+[[record.field]]
+name = "terminal"
+offset = 60
+type = "bytes[3]"
+source = "spec"
+anchor = "sense:i32le 0:f64le radius:f64le 01 00 00"
+value = [1, 0, 0]
+
+[[record]]
+name = "b5_line_profile"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "For `b5 03 0e`, the 73-byte payload is"
+size = 73
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "For `b5 03 0e`, the 73-byte payload is"
+
+[[record.field]]
+name = "point"
+offset = 1
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 0e`, the 73-byte payload is"
+
+[[record.field]]
+name = "direction"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 0e`, the 73-byte payload is"
+
+[[record.field]]
+name = "one"
+offset = 49
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 0e`, the 73-byte payload is"
+
+[[record.field]]
+name = "parameter_range"
+offset = 57
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 0e`, the 73-byte payload is"
+
+[[record]]
+name = "b5_arc_profile"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+size = 113
+
+[[record.field]]
+name = "lead"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record.field]]
+name = "center"
+offset = 1
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record.field]]
+name = "direction_x"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record.field]]
+name = "direction_y"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record.field]]
+name = "radius"
+offset = 73
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record.field]]
+name = "parameter_range"
+offset = 81
+type = "f64[2]"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record.field]]
+name = "one"
+offset = 97
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record.field]]
+name = "chart_origin"
+offset = 105
+type = "f64"
+source = "spec"
+anchor = "For `b5 03 0f`, the 113-byte payload is"
+
+[[record]]
+name = "b5_revolution_carrier_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/b5/graph.rs"
+kind = "byte"
+section = "6.7"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+size = 171
+
+[[record.field]]
+name = "origin"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "reference_x"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "reference_y"
+offset = 48
+type = "f64[3]"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "axis"
+offset = 72
+type = "f64[3]"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "angular_range"
+offset = 96
+type = "f64[2]"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "profile_range"
+offset = 112
+type = "f64[2]"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "controls"
+offset = 128
+type = "bytes[2]"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "angular_scale"
+offset = 130
+type = "f64"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "one0"
+offset = 138
+type = "f64"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "one1"
+offset = 146
+type = "f64"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "zero"
+offset = 154
+type = "f64"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "terminal"
+offset = 162
+type = "u8"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record.field]]
+name = "half_turn"
+offset = 163
+type = "f64"
+source = "spec"
+anchor = "the payload has exactly 171 bytes after that variable-width reference"
+
+[[record]]
+name = "container_property_header"
+parsed_by = "crates/cadmpeg-codec-catia/src/container/declared_contents.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The metadata property table starts"
+size = 12
+endianness = "big"
+
+[[record.field]]
+name = "total_size"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The metadata property table starts"
+
+[[record.field]]
+name = "identity"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The metadata property table starts"
+
+[[record.field]]
+name = "count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The metadata property table starts"
+
+[[record]]
+name = "container_property_record"
+parsed_by = "crates/cadmpeg-codec-catia/src/container/declared_contents.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Each counted record starts"
+size = 14
+endianness = "big"
+
+[[record.field]]
+name = "size"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Each counted record starts"
+
+[[record.field]]
+name = "identity"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "Each counted record starts"
+
+[[record.field]]
+name = "value_type"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "Each counted record starts"
+
+[[record.field]]
+name = "value_bytes"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "Each counted record starts"

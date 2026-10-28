@@ -466,7 +466,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         "c",
         &[(
             "MdlStatus",
-            b"noise\0xProtrusion id 40\0Round id 41\0Future Feature id 42\0Datum Plane id 43\0Draft id 44\0Hole id 40\0ySurface id 45\0"
+            b"noise\0\xe2\x27\x26\x08\x04\x0bxProtrusion id 40\0Round id 41\0Future Feature id 42\0Datum Plane id 43\0Draft id 44\0Hole id 40\0\xe2\x27\x26\x08\x04\x0bySurface id 45\0"
                 .to_vec(),
         )],
     );
@@ -479,15 +479,16 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     );
     assert_eq!(
         scan.features.operation_states[0].stored_name().as_deref(),
-        Some("xProtrusion id 40")
+        Some("Protrusion id 40")
     );
     assert_eq!(
         scan.features.operation_states[0].name.identifier_keyword(),
         Some("id")
     );
+    let name_offset = scan.features.operation_states[0].offset;
     assert_eq!(
-        scan.features.operation_states[0].state_offset + 1,
-        scan.features.operation_states[0].offset
+        data.get(name_offset..name_offset + 16),
+        Some(&b"Protrusion id 40"[..])
     );
     assert_eq!(scan.features.operation_states[5].feature_id, 40);
     assert_eq!(scan.features.operation_states[5].kind.as_str(), "Hole");
@@ -505,7 +506,6 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(scan.features.operations[2].kind.as_str(), "Datum Plane");
     assert_eq!(scan.features.operations[3].kind.as_str(), "Draft");
     assert_eq!(scan.features.operations[4].kind.as_str(), "Surface");
-    assert_eq!(scan.features.operations[4].stored_name_prefix(), Some(b'y'));
 
     let result = EditableDecodeResult::from(
         CreoCodec
@@ -524,11 +524,11 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     assert_eq!(feature_40[0].fields().unwrap()["current"], false);
     assert_eq!(
         feature_40[0].fields().unwrap()["stored_name"],
-        "xProtrusion id 40"
+        "Protrusion id 40"
     );
     assert_eq!(
         crate::test_support::native_bytes(&feature_40[0].fields().unwrap()["stored_name_bytes"]),
-        b"xProtrusion id 40"
+        b"Protrusion id 40"
     );
     assert_eq!(feature_40[0].fields().unwrap()["identifier_keyword"], "id");
     assert_eq!(
@@ -580,11 +580,10 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
             .features
             .iter()
             .find(|feature| feature.id.as_str() == "creo:model:feature#45")
-            .expect("state-prefixed feature")
-            .source_properties
-            .get("mdl_stored_name_prefix")
-            .map(String::as_str),
-        Some("y")
+            .expect("timestamped feature")
+            .name
+            .as_deref(),
+        Some("Surface id 45")
     );
     assert_annotation(
         &result.source_fidelity().annotations,
@@ -618,7 +617,7 @@ fn disagreeing_operation_states_do_not_fall_back_to_schema_operations() {
 
 #[test]
 fn decode_preserves_stored_feature_identifier_keyword() {
-    let data = build_prt("c", &[("MdlStatus", b"ySurface ID 45\0".to_vec())]);
+    let data = build_prt("c", &[("MdlStatus", b"Surface ID 45\0".to_vec())]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -632,13 +631,6 @@ fn decode_preserves_stored_feature_identifier_keyword() {
         .expect("surface feature");
 
     assert_eq!(feature.name.as_deref(), Some("Surface ID 45"));
-    assert_eq!(
-        feature
-            .source_properties
-            .get("mdl_stored_name_prefix")
-            .map(String::as_str),
-        Some("y")
-    );
 }
 
 #[test]
@@ -761,4 +753,71 @@ fn container_only_preserves_sections_without_transferring_entities() {
         .losses
         .iter()
         .all(|loss| !loss.message.starts_with("Transferred ")));
+}
+
+#[test]
+fn saved_display_metadata_is_retained_without_appearance_guesses() {
+    for payload in [
+        Vec::new(),
+        b"\xe0\x00color_tab\0\xf8\x01\x0a\0\x0c\x9a\xf7\xe3\xe0\0element_colors\0".to_vec(),
+    ] {
+        let data = build_prt("c", &[("NeuPrtSld", payload)]);
+        let scan = container::scan_bytes_ok(data.clone());
+        let section = scan
+            .framing
+            .sections
+            .iter()
+            .find(|section| section.name() == "NeuPrtSld")
+            .expect("physical display owner");
+        let expected = container::section_region(&scan.framing.data, section)
+            .expect("complete physical section");
+        let result = EditableDecodeResult::from(
+            CreoCodec
+                .decode(&mut Cursor::new(data), &DecodeOptions::default())
+                .expect("opaque display retention"),
+        );
+        assert!(result.ir().model.appearances.is_empty());
+        assert!(result.ir().model.appearance_bindings.is_empty());
+        let unknowns = result
+            .ir()
+            .native_unknowns("creo")
+            .expect("retained metadata");
+        assert_eq!(unknowns.len(), 1);
+        assert_eq!(
+            result
+                .source_fidelity()
+                .retained_record(unknowns[0].id.as_str())
+                .expect("physical bytes")
+                .data(),
+            Some(expected)
+        );
+        assert_annotation(
+            &result.source_fidelity().annotations,
+            unknowns[0].id.as_str(),
+            "creo:NeuPrtSld",
+            u64::try_from(section.offset()).expect("small fixture"),
+            "opaque_metadata_section",
+            Exactness::ByteExact,
+        );
+    }
+}
+
+#[test]
+fn display_metadata_retention_does_not_select_other_metadata_names() {
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt(
+                "c",
+                &[("NotNeuPrtSld", b"color_tab\0\x0a".to_vec())],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("unrelated metadata");
+    assert!(result
+        .ir()
+        .native_unknowns("creo")
+        .expect("valid unknown arena")
+        .iter()
+        .all(|record| !record.id.as_str().starts_with("creo:NeuPrtSld:")));
+    assert!(result.ir().model.appearances.is_empty());
 }

@@ -1616,3 +1616,67 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
 mod dynamic_angles;
 mod physical_loci;
 mod repeated_circle_dimensions;
+
+#[test]
+fn authoritative_line_distance_requires_defined_parallel_supports() {
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let markers = [
+        marker("first-marker", 0, 0, SketchInputKind::LineOrCircle, None),
+        marker("second-marker", 1, 1, SketchInputKind::LineOrCircle, None),
+    ];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id(), marker))
+        .collect::<HashMap<_, _>>();
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [0, 1]);
+    for (operand, marker) in relation.operands.iter_mut().zip(&markers) {
+        operand.kind = FeatureInputOperandKind::E1;
+        operand.entity_ref = Some(marker.id().to_owned());
+    }
+    let first = line_entity(
+        "synthetic:test:id#first",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    for (second_end, expected, admitted) in [
+        (Point2::new(10.0, 6.0), 5.0, false),
+        (Point2::new(10.0, 5.0), 5.0, true),
+        (Point2::new(10.0, 5.0), 6.0, true),
+    ] {
+        let second = line_entity(
+            "synthetic:test:id#second",
+            &sketch,
+            Point2::new(0.0, 5.0),
+            second_end,
+        );
+        let loci = HashMap::from([
+            (
+                markers[0].id().to_owned(),
+                vec![SketchLocus::Entity(first.id().clone())],
+            ),
+            (
+                markers[1].id().to_owned(),
+                vec![SketchLocus::Entity(second.id().clone())],
+            ),
+        ]);
+        let result = typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            Some(&length_parameter(expected)),
+            &sketch,
+            &[first.clone(), second.clone()],
+            &markers_by_id,
+            &loci,
+        )
+        .unwrap();
+        if admitted {
+            assert!(
+                matches!(result, Some(SketchConstraintDefinitionInput::Distance { entities, .. })
+                if entities == vec![first.id().clone(), second.id().clone()])
+            );
+        } else {
+            assert_eq!(result, None);
+        }
+    }
+}

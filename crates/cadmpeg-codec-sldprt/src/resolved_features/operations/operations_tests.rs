@@ -298,13 +298,14 @@ fn extrusion_form_codes_are_scoped_to_their_native_classes() {
             Some(BooleanOp::Join)
         );
     }
-    for code in [0, 1, 2, 5, 7, 10, 14, 15, 22_993, u32::MAX] {
+    for code in [0, 1, 2, 5, 7, 10, 14, 15, 22_993] {
         assert_eq!(
             extrusion_operation(Some("moICE_c"), code),
             Some(BooleanOp::Cut)
         );
     }
     assert_eq!(extrusion_operation(Some("moICE_c"), 11), None);
+    assert_eq!(extrusion_operation(Some("moICE_c"), u32::MAX), None);
     assert_eq!(extrusion_operation(Some("moExtrusion_c"), 11), None);
     assert_eq!(extrusion_operation(Some("moExtrusion_c"), u32::MAX), None);
 }
@@ -885,3 +886,258 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
         );
     }
 }
+
+#[test]
+fn inline_long_zero_tail_requires_all_twelve_zeros_and_final_token() {
+    let source = [
+        0x00, 0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0xc0, 0x79, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0xff, 0x7f, 0xf1, 0xb8, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x55, 0x45,
+    ];
+    let name = FeatureInputName {
+        id: "name".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        value: "F".into(),
+        object_id: ObjectId::from_value(1401),
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 8].into(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    lane.native_payload.extend(source);
+    assert_eq!(
+        feature_inline_operation_fields(&lane, &name),
+        Some((0x0140, 0))
+    );
+    assert_eq!(
+        feature_inline_operation(&lane, &name),
+        Some(BooleanOp::Join)
+    );
+    for length in 0..source.len() {
+        let mut truncated = lane.clone();
+        truncated.native_payload.truncate(8 + length);
+        assert_eq!(feature_inline_operation_fields(&truncated, &name), None);
+    }
+    for offset in [0, 8, 12, 16, 22, 24, 30, 42] {
+        let mut bad = lane.clone();
+        if offset == 24 || offset == 42 {
+            bad.native_payload[8 + offset..10 + offset].fill(0);
+        } else {
+            bad.native_payload[8 + offset] ^= 2;
+        }
+        assert_eq!(feature_inline_operation_fields(&bad, &name), None);
+    }
+    lane.native_payload[12..14].copy_from_slice(&0x01cau16.to_le_bytes());
+    lane.native_payload[14] = 2;
+    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+}
+
+fn trailer_lane(object_id: u32, trailer: &[u8]) -> (FeatureInputLane, FeatureInputName) {
+    let name = FeatureInputName {
+        id: "name".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 2,
+        value: "F".into(),
+        object_id: ObjectId::from_value(object_id),
+    };
+    let mut payload = vec![0; 2];
+    payload.extend([0x4b, 0x87, 0xff, 0xfe, 0xff, 0x01, b'F', 0]);
+    payload.extend(trailer);
+    payload.extend([b'S', 0, 0, 0, 0, 0, 0, 0]);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: Vec::new(),
+        names: vec![name.clone()],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    (lane, name)
+}
+
+#[test]
+fn boundary_trailers_end_at_the_next_object() {
+    let wide = [
+        0x00, 0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0xc0, 0x4e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x83, 0x88, 0x4b, 0x87, 0xff, 0xfe,
+        0xff, 0x0a,
+    ];
+    let narrow = [
+        0x00, 0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0xc0, 0x54, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x81, 0x4b, 0x87, 0xff, 0xfe, 0xff, 0x06,
+    ];
+    for (object_id, trailer, marker, next) in
+        [(0x4e, &wide[..], 22, 24), (0x54, &narrow[..], 18, 20)]
+    {
+        let (lane, name) = trailer_lane(object_id, trailer);
+        assert_eq!(
+            feature_inline_operation_fields(&lane, &name),
+            Some((0x0140, 0))
+        );
+        assert_eq!(
+            feature_inline_operation(&lane, &name),
+            Some(BooleanOp::Join)
+        );
+        let mut cut = trailer.to_vec();
+        cut[4..7].copy_from_slice(&[0xca, 0x01, 0x02]);
+        let (lane, name) = trailer_lane(object_id, &cut);
+        assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+
+        let mut no_marker = trailer.to_vec();
+        no_marker[marker] = 2;
+        let mut low_token = trailer.to_vec();
+        low_token[next + 1] = 0x08;
+        let mut no_name = trailer.to_vec();
+        no_name[next + 4] = 0;
+        let mut other_name_token = trailer.to_vec();
+        other_name_token[next + 2] = 0x4c;
+        let mut nonzero_prefix = trailer.to_vec();
+        nonzero_prefix[16] = 1;
+        for bad in [
+            no_marker,
+            low_token,
+            no_name,
+            other_name_token,
+            nonzero_prefix,
+        ] {
+            let (lane, name) = trailer_lane(object_id, &bad);
+            assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+        }
+    }
+}
+
+#[test]
+fn inline_trailer_replaces_the_classless_extrusion_default_join() {
+    use cadmpeg_ir::features::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FeatureDefinition,
+        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    };
+    use cadmpeg_ir::sketches::SketchId;
+
+    let sparse = |family: u16, operation: u8| {
+        let mut trailer = vec![0; 40];
+        trailer[4..6].copy_from_slice(&family.to_le_bytes());
+        trailer[6] = operation;
+        trailer[7] = 0xc0;
+        trailer[8..12].copy_from_slice(&7u32.to_le_bytes());
+        trailer[22] = 1;
+        trailer[24..26].copy_from_slice(&0x0240u16.to_le_bytes());
+        trailer[38..40].copy_from_slice(&0x0114u16.to_le_bytes());
+        trailer
+    };
+    let classless = |kind: &str| Feature {
+        id: "native".into(),
+        parent: "history".into(),
+        xml_tag: "Extrusion".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(7),
+        ordinal: 0,
+        name: "F".into(),
+        kind: kind.into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::from([(cadmpeg_core::nonblank_literal!("D1"), "2".into())]),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: vec![crate::records::FeatureContent::Dimension("D1".into())],
+    };
+    let bind = |native: Feature, lane: &FeatureInputLane| {
+        let mut features = [cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrude").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            native_ref: Some("native".into()),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
+                        SketchId::mint("synthetic:test:id#sketch").unwrap(),
+                    )),
+                    direction: ExtrudeDirection::ProfileNormal {},
+                    start: ExtrudeStart::ProfilePlane {},
+                    extent: ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: LinearTermination::Blind {
+                                length: cadmpeg_ir::scalar::NonZeroLength::new(2.0).unwrap(),
+                            },
+                            draft: None,
+                        },
+                    },
+                    op: BooleanOp::Join,
+                    solid: Some(true),
+                    face_maker: None,
+                    inner_wire_taper: None,
+                    length_along_profile_normal: None,
+                    allow_multi_profile_faces: None,
+                }),
+            ),
+        }];
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native],
+        }];
+        super::bind_extrusion_operations(
+            &mut features,
+            &histories,
+            std::slice::from_ref(lane),
+            None,
+        );
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
+            features[0].evaluation.definition()
+        else {
+            panic!("Extrude feature")
+        };
+        *op
+    };
+    let (cut_lane, _) = trailer_lane(7, &sparse(0x01ca, 2));
+    let (join_lane, _) = trailer_lane(7, &sparse(0x0140, 0));
+    let (bare_lane, _) = trailer_lane(7, &[0; 40]);
+
+    assert_eq!(bind(classless("Extrusion"), &cut_lane), BooleanOp::Cut);
+    assert_eq!(bind(classless("Extrusion"), &join_lane), BooleanOp::Join);
+    assert_eq!(bind(classless("Extrusion"), &bare_lane), BooleanOp::Join);
+    assert_eq!(bind(classless("BossExtrude"), &cut_lane), BooleanOp::Join);
+    let mut explicit = classless("Extrusion");
+    explicit
+        .properties
+        .insert(cadmpeg_core::nonblank_literal!("Operation"), "Join".into());
+    assert_eq!(bind(explicit, &cut_lane), BooleanOp::Join);
+    let mut classed = classless("Extrusion");
+    classed.input_class = Some("moExtrusion_c".into());
+    assert_eq!(bind(classed, &cut_lane), BooleanOp::Join);
+}
+
+mod sweep_consensus;

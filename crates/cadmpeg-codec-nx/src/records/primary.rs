@@ -8,6 +8,9 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::rc::Rc;
 
+mod edges;
+pub(crate) use edges::EdgeFrame;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PrimaryEnd {
     Terminated {

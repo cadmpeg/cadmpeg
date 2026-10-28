@@ -5,11 +5,11 @@ use crate::classification::{
     classify, classify_type_token, classify_xml_element, native_object_class,
     principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
-use crate::records::Feature;
+use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{BooleanOp, FeatureTreeNodeRole};
 use std::collections::HashMap;
 
-use crate::history::literals::parse_dimension_length_mm;
+use crate::history::literals::{parse_boolean_op, parse_dimension_length_mm};
 use crate::records::FeatureSource;
 
 pub(super) fn is_custom_property(feature: &Feature) -> bool {
@@ -364,6 +364,37 @@ pub(super) fn is_chamfer(feature: &Feature) -> bool {
 
 pub(super) fn is_extrude(feature: &Feature) -> bool {
     classify(feature) == Some(FeatureClass::Extrude)
+}
+
+/// The sole distinct Keywords dimension of a feature.
+pub(super) fn source_depth(feature: &Feature) -> Option<&str> {
+    let mut source_dimensions = feature.content.iter().filter_map(|content| match content {
+        FeatureContent::Dimension(name) => Some(name.as_str()),
+        FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+    });
+    source_dimensions
+        .next()
+        .filter(|first| source_dimensions.all(|name| name == *first))
+}
+
+/// The classless Keywords `Extrusion` element.
+pub(super) fn is_legacy_history_extrusion(feature: &Feature) -> bool {
+    feature.input_class.is_none()
+        && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+        && source_depth(feature).is_some()
+}
+
+/// A classless Keywords `Extrusion` element whose Boolean operation no
+/// `Operation` property, Keywords type token, or class establishes. Its join
+/// is a default that a complete inline operation trailer replaces.
+pub(crate) fn has_default_extrusion_operation(feature: &Feature) -> bool {
+    is_legacy_history_extrusion(feature)
+        && feature
+            .properties
+            .get("Operation")
+            .and_then(|value| parse_boolean_op(value))
+            .is_none()
+        && extrude_feature_op(feature).is_none()
 }
 
 pub(super) fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {

@@ -184,6 +184,29 @@ fn markers_by_owner(markers: &[SketchInputEntity]) -> HashMap<&str, Vec<&SketchI
     }
     owned
 }
+
+fn enclosed_general_curve_profile(
+    native: &str,
+    lane: &FeatureInputLane,
+    start: u64,
+    end: Option<u64>,
+) -> bool {
+    let Some((owner, offset)) = native
+        .strip_prefix("sldprt:feature-input:general-curve-ref:")
+        .and_then(|reference| reference.rsplit_once(':'))
+    else {
+        return false;
+    };
+    let lane_key = lane
+        .id
+        .rsplit_once('#')
+        .map_or(lane.id.as_str(), |(_, key)| key);
+    owner == lane_key
+        && offset.parse::<u64>().is_ok_and(|offset| {
+            offset > start
+                && offset < end.unwrap_or_else(|| u64_from_index(lane.native_payload.len()))
+        })
+}
 /// Reconcile profile streams with uniquely enclosing sketch feature records.
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -257,7 +280,11 @@ pub(crate) fn bind_sketch_profiles(
             let replace = match feature.evaluation.definition() {
                 FeatureDefinition::Operation(FeatureOperation::Sketch { .. }) => true,
                 FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                    shape.section_is_unresolved()
+                    lanes.iter().all(|candidate| candidate.id == lane.id)
+                        && (shape.section_is_unresolved()
+                            || matches!(shape.referenced_profile(),
+                                Some(cadmpeg_ir::features::PlanarProfileRef::Native(native))
+                                    if enclosed_general_curve_profile(native, lane, start, end)))
                 }
                 FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                     matches!(profile,
@@ -285,13 +312,13 @@ pub(crate) fn bind_sketch_profiles(
                         *feature_sketch =
                             cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                     }
-                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
-                        shape.set_referenced_profile(sketch_id.into());
-                    }
                     FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                         *profile = cadmpeg_ir::features::ProfileRef::Planar(
                             cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id),
                         );
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
+                        shape.set_referenced_profile(sketch_id.into());
                     }
                     _ => {}
                 });

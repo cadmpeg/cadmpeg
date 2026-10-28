@@ -11,7 +11,9 @@ use cadmpeg_ir::scalar::FiniteReal;
 use crate::psb;
 use crate::scalar;
 
+use super::dimensions::{ModelDimension, ANGULAR_DIMENSION_TYPE};
 use super::helpers::decode_exact_scalars;
+use super::operations::FeatureRecipe;
 use super::schema::SchemaClass;
 
 /// One byte-bounded positional `AllFeatur` row for a known model feature.
@@ -31,6 +33,43 @@ pub(crate) struct FeatureRow {
     pub(crate) body_offset: usize,
     /// Byte offset of the feature identifier in the original stream.
     pub(crate) offset: usize,
+}
+
+impl FeatureRow {
+    /// Offset in `body` immediately after the fixed `e3 f6 <class> e1` prefix.
+    fn schema_prefix_end(&self) -> Option<usize> {
+        (0..self.body.len().min(20)).find_map(|offset| {
+            if self.body.get(offset..offset + 2) != Some(&[0xe3, 0xf6]) {
+                return None;
+            }
+            let (schema_class, after) = psb::compact_int(&self.body, offset + 2);
+            (Some(SchemaClass::from(schema_class)) == self.root_schema_class
+                && self.body.get(after) == Some(&0xe1))
+            .then_some(after + 1)
+        })
+    }
+
+    /// Stored `feat_type_ptr.form`.
+    pub(crate) fn feature_form(&self) -> Option<u32> {
+        psb::complete_compact_int(&self.body, self.schema_prefix_end()?).map(|(form, _)| form)
+    }
+
+    /// Section-sweep recipe that a class-916 or class-917 row states through
+    /// its feature form: `1` is a linear sweep and `2` a rotational sweep.
+    pub(crate) fn section_sweep_form_recipe(&self) -> Option<FeatureRecipe> {
+        let rotational = match self.feature_form()? {
+            1 => false,
+            2 => true,
+            _ => return None,
+        };
+        match (self.root_schema_class?, rotational) {
+            (SchemaClass::Protrusion, false) => Some(FeatureRecipe::ProtrudeExtrude),
+            (SchemaClass::Protrusion, true) => Some(FeatureRecipe::ProtrudeRevolve),
+            (SchemaClass::Cut, false) => Some(FeatureRecipe::CutExtrude),
+            (SchemaClass::Cut, true) => Some(FeatureRecipe::CutRevolve),
+            _ => None,
+        }
+    }
 }
 
 /// Row bytes with a complete two-byte header.
@@ -293,8 +332,10 @@ pub(crate) struct FeatureLoopHistoryEntry {
     pub(crate) ordinal: u32,
     /// Feature-local loop identifier.
     pub(crate) loop_id: u32,
-    /// Four required row fields, in stored order.
-    pub(super) field_bytes: [Vec<u8>; 4],
+    /// Physical tokens after the loop identifier, in stored order.
+    pub(super) field_bytes: Vec<Vec<u8>>,
+    /// Subtype, three operands, and type after logical zero-run expansion.
+    pub(crate) logical_fields: [Option<u32>; 5],
     /// Stored row boundary form.
     pub(crate) boundary: FeatureLoopHistoryBoundary,
     /// Byte offset of the loop identifier in the original stream.
@@ -304,13 +345,8 @@ pub(crate) struct FeatureLoopHistoryEntry {
 }
 
 impl FeatureLoopHistoryEntry {
-    /// Required fields followed by the optional named-boundary field.
     pub(crate) fn fields(&self) -> impl Iterator<Item = &[u8]> {
-        let trailing = match &self.boundary {
-            FeatureLoopHistoryBoundary::NamedRecord { trailing } => trailing.as_ref(),
-            _ => None,
-        };
-        self.field_bytes.iter().chain(trailing).map(Vec::as_slice)
+        self.field_bytes.iter().map(Vec::as_slice)
     }
 }
 
@@ -320,10 +356,11 @@ pub(crate) fn dummy_loop_history_entry() -> FeatureLoopHistoryEntry {
         feature_id: 7,
         ordinal: 0,
         loop_id: 11,
-        field_bytes: [vec![1], vec![2], vec![3], vec![4]],
+        field_bytes: vec![vec![1], vec![2], vec![3], vec![4], vec![5]],
+        logical_fields: [Some(1), Some(2), Some(3), Some(4), Some(5)],
         boundary: FeatureLoopHistoryBoundary::CompoundClose,
         offset: 23,
-        end_offset: 27,
+        end_offset: 30,
     }
 }
 
@@ -336,13 +373,15 @@ pub(crate) enum FeatureLoopHistoryBoundary {
     ReferenceContinue(u32),
     /// `f2 f7 <reference> e3` terminator.
     ReferenceFinal(u32),
+    /// `f2 f7 <reference>` table separator directly before the next array
+    /// header bounds the final row.
+    TableSeparator(u32),
     /// The next named-record header bounds the final row.
-    NamedRecord { trailing: Option<Vec<u8>> },
+    NamedRecord,
 }
 
-/// One resolved rotational extent from an `AllFeatur` feature row.
-///
-/// The stored choice is a full turn; native CADIR still emits `kind: "full_turn"`.
+/// One full-turn rotational extent from an `AllFeatur` feature row and its
+/// model angular dimension.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureRevolutionExtent {
     /// Owning feature identifier.
@@ -1472,6 +1511,29 @@ pub(crate) fn loop_restore_directions(rows: &[FeatureRow]) -> Vec<FeatureLoopRes
     result
 }
 
+/// Earlier type-700 loop named by the first operand of a subtype-759
+/// `lo_hist` record in the same feature's loop history.
+pub(crate) fn loop_history_prior_loop(
+    entry: &FeatureLoopHistoryEntry,
+    entries: &[FeatureLoopHistoryEntry],
+) -> Option<u32> {
+    const PRIOR_LOOP_SUBTYPE: u32 = 759;
+    const PRIOR_LOOP_TYPE: u32 = 700;
+    if entry.logical_fields[0] != Some(PRIOR_LOOP_SUBTYPE) {
+        return None;
+    }
+    let operand = entry.logical_fields[1]?;
+    let mut prior = entries.iter().filter(|candidate| {
+        candidate.feature_id == entry.feature_id
+            && candidate.ordinal < entry.ordinal
+            && candidate.offset < entry.offset
+            && candidate.loop_id == operand
+    });
+    let found = prior.next()?;
+    (prior.next().is_none() && found.logical_fields[4] == Some(PRIOR_LOOP_TYPE))
+        .then_some(found.loop_id)
+}
+
 /// Decode complete ordered `lo_hist` rosters paired with named loop tables.
 pub(crate) fn loop_history_entries(
     rows: &[FeatureRow],
@@ -1528,6 +1590,7 @@ pub(crate) fn loop_history_entries(
                 ordinal,
                 loop_id: entry.loop_id,
                 field_bytes: entry.field_bytes,
+                logical_fields: entry.logical_fields,
                 boundary: entry.boundary,
                 offset: row.body_offset + entry.offset,
                 end_offset: row.body_offset + entry.end_offset,
@@ -1547,20 +1610,38 @@ fn loop_history_roster(
     let mut entries = Vec::new();
     for index in 0..count {
         let offset = cursor;
-        let (loop_id, after_id) = psb::compact_int(body, cursor);
-        (after_id > cursor && body[cursor] <= 0xbf).then_some(())?;
+        let (loop_id, after_id) = psb::reference_id(body, cursor).ok()?;
         cursor = after_id;
-        let mut field_bytes = std::array::from_fn(|_| Vec::new());
-        for field in &mut field_bytes {
-            let token = psb::token_at(body, cursor)?;
-            (!matches!(
-                token.kind,
-                psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
-            ))
-            .then_some(())?;
-            let bytes = body.get(cursor..cursor.checked_add(token.length)?)?;
-            *field = bytes.to_vec();
-            cursor = cursor.checked_add(token.length)?;
+        let mut field_bytes = Vec::new();
+        let mut logical_fields = [None; 5];
+        let mut slot = 0;
+        while slot < logical_fields.len() {
+            let start = cursor;
+            match body.get(cursor).copied()? {
+                0xe5 if (1..=2).contains(&slot) => {
+                    logical_fields[slot] = Some(0);
+                    logical_fields[slot + 1] = Some(0);
+                    slot += 2;
+                    cursor += 1;
+                }
+                0xe4 if (1..=3).contains(&slot) => {
+                    logical_fields[slot] = Some(1);
+                    slot += 1;
+                    cursor += 1;
+                }
+                0xf6 if (1..=3).contains(&slot) => {
+                    slot += 1;
+                    cursor += 1;
+                }
+                0x00..=0xbf => {
+                    let (value, after) = psb::reference_id(body, cursor).ok()?;
+                    logical_fields[slot] = Some(value);
+                    slot += 1;
+                    cursor = after;
+                }
+                _ => return None,
+            }
+            field_bytes.push(body.get(start..cursor)?.to_vec());
         }
         let boundary = if body.get(cursor) == Some(&0xe3) {
             cursor += 1;
@@ -1572,39 +1653,32 @@ fn loop_history_roster(
             let marker = body[cursor];
             (body.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
             let (reference, after_reference) = psb::reference_id(body, cursor + 2).ok()?;
-            (body.get(after_reference) == Some(&0xe3)).then_some(())?;
-            cursor = after_reference + 1;
-            if marker == 0xf1 {
-                FeatureLoopHistoryBoundary::ReferenceContinue(reference)
+            if body.get(after_reference) == Some(&0xe3) {
+                cursor = after_reference + 1;
+                if marker == 0xf1 {
+                    FeatureLoopHistoryBoundary::ReferenceContinue(reference)
+                } else {
+                    FeatureLoopHistoryBoundary::ReferenceFinal(reference)
+                }
             } else {
-                FeatureLoopHistoryBoundary::ReferenceFinal(reference)
+                (marker == 0xf2 && index + 1 == count && array_header_at(body, after_reference))
+                    .then_some(())?;
+                cursor = after_reference;
+                FeatureLoopHistoryBoundary::TableSeparator(reference)
             }
         } else {
             (index + 1 == count).then_some(())?;
-            let token = psb::token_at(body, cursor)?;
-            let trailing = if token.kind == psb::TokenKind::NamedRecord {
-                None
-            } else {
-                (!matches!(
-                    token.kind,
-                    psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
-                ))
-                .then_some(())?;
-                let bytes = body.get(cursor..cursor.checked_add(token.length)?)?;
-                let bytes = bytes.to_vec();
-                cursor = cursor.checked_add(token.length)?;
-                matches!(
-                    psb::token_at(body, cursor).map(|token| token.kind),
-                    Some(psb::TokenKind::NamedRecord)
-                )
-                .then_some(())?;
-                Some(bytes)
-            };
-            FeatureLoopHistoryBoundary::NamedRecord { trailing }
+            matches!(
+                psb::token_at(body, cursor).map(|token| token.kind),
+                Some(psb::TokenKind::NamedRecord)
+            )
+            .then_some(())?;
+            FeatureLoopHistoryBoundary::NamedRecord
         };
         entries.push(ParsedLoopHistoryEntry {
             loop_id,
             field_bytes,
+            logical_fields,
             boundary,
             offset,
             end_offset: cursor,
@@ -1613,21 +1687,43 @@ fn loop_history_roster(
     Some(Ok(entries))
 }
 
+/// Whether a complete `f8 <count> f7 <class> fb` array header starts at `cursor`.
+fn array_header_at(body: &[u8], cursor: usize) -> bool {
+    if body.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return false;
+    }
+    let Some((_, after_count)) = psb::complete_compact_int(body, cursor + 1) else {
+        return false;
+    };
+    if body.get(after_count) != Some(&psb::token::ENTITY_REF) {
+        return false;
+    }
+    psb::reference_id(body, after_count + 1)
+        .is_ok_and(|(_, after_class)| body.get(after_class) == Some(&psb::token::ARRAY_CLOSE))
+}
+
 struct ParsedLoopHistoryEntry {
     pub(super) loop_id: u32,
-    field_bytes: [Vec<u8>; 4],
+    field_bytes: Vec<Vec<u8>>,
+    logical_fields: [Option<u32>; 5],
     pub(super) boundary: FeatureLoopHistoryBoundary,
     pub(super) offset: usize,
     pub(super) end_offset: usize,
 }
 
-/// Decode full-turn rotational termination from the positional
-/// `param_choice_ptr` body of section-sweep feature rows.
-pub(crate) fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
+/// Decode full-turn rotational termination from section-sweep feature rows.
+///
+/// The positional `param_choice_ptr` body must select `FROM_NONE | TO_ANGLE`,
+/// and the model must store exactly one angular dimension for the feature,
+/// with value 360 degrees.
+pub(crate) fn revolution_extents(
+    rows: &[FeatureRow],
+    dimensions: &[ModelDimension],
+) -> Vec<FeatureRevolutionExtent> {
     const PARAMETER_CHOICE_PREFIX: &[u8] = &[0x83, 0xdf, 0xf6, 0xe3];
-    const FULL_TURN_CHOICES: &[u8] = &[
-        0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00, 0x00, 0x00,
-    ];
+    const INACTIVE_BLEND_AND_DEPTH: &[u8] = &[0x00, 0x00];
+    const TO_ANGLE_MODE: &[u8] = &[0xea, 0x44, 0x00, 0x00];
+    const FULL_TURN_DEGREES: f64 = 360.0;
     let mut result = Vec::new();
     for row in rows {
         if !matches!(
@@ -1636,18 +1732,10 @@ pub(crate) fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionEx
         ) {
             continue;
         }
-        let Some(schema_end) = (0..row.body.len().min(20)).find_map(|offset| {
-            if row.body.get(offset..offset + 2) != Some(&[0xe3, 0xf6]) {
-                return None;
-            }
-            let (schema_class, after) = psb::compact_int(&row.body, offset + 2);
-            (Some(SchemaClass::from(schema_class)) == row.root_schema_class
-                && row.body.get(after) == Some(&0xe1))
-            .then_some(after + 1)
-        }) else {
+        let Some(schema_end) = row.schema_prefix_end() else {
             continue;
         };
-        if row.body.get(schema_end) != Some(&2) {
+        if row.feature_form() != Some(2) {
             continue;
         }
         let Some(choice_start) = find_in(
@@ -1659,16 +1747,25 @@ pub(crate) fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionEx
         .map(|at| at + PARAMETER_CHOICE_PREFIX.len()) else {
             continue;
         };
-        if row
-            .body
-            .get(choice_start..choice_start + FULL_TURN_CHOICES.len())
-            != Some(FULL_TURN_CHOICES)
+        let angle_start = choice_start + INACTIVE_BLEND_AND_DEPTH.len();
+        if row.body.get(choice_start..angle_start) != Some(INACTIVE_BLEND_AND_DEPTH)
+            || row.body.get(angle_start..angle_start + TO_ANGLE_MODE.len()) != Some(TO_ANGLE_MODE)
         {
+            continue;
+        }
+        let mut angles = dimensions.iter().filter(|dimension| {
+            dimension.feature_id == row.feature_id
+                && dimension.dimension_type == ANGULAR_DIMENSION_TYPE
+        });
+        let (Some(angle), None) = (angles.next(), angles.next()) else {
+            continue;
+        };
+        if angle.value != Some(FULL_TURN_DEGREES) {
             continue;
         }
         result.push(FeatureRevolutionExtent {
             feature_id: row.feature_id,
-            offset: row.body_offset + choice_start + 2,
+            offset: row.body_offset + angle_start,
         });
     }
     result.as_mut_slice().sort_by_key(|left| left.offset);

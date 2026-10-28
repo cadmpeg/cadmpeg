@@ -36,53 +36,37 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 2. Geometry carriers
 
-### GC-02. Missing intersection witnesses
+### GC-04. Offset-surface admission
 
-**Question.** Where are the authoritative chart and terminator replacements when an intersection composite references an absent witness record?
+**Question.** Which complete support and selected-set relation validates an unchecked offset for exact transfer, including negative support sense and full canonical indexes?
 
-**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. The referenced terminators select the unique chart stride with the least endpoint displacement and replace the approximate chart endpoints. A complete width-4 support-UV record supplies the two solved pcurve caches. An absent or structurally inconsistent optional support-UV record does not invalidate the curve. Tolerance-bounded inversion constructs its pcurves on analytic and positive-weight NURBS supports. Consecutive inverses select one continuous parameter branch, the terminators supply the exact endpoint parameters, and analytic derivative bounds or rational Bézier residual control hulls certify the complete mapped segments against the chart tolerance.
+**Known.** `sldprt.md` §7.5 defines the complete status, unused logical, support, distance and scale fields. The current short grammar requires the scale lane and withholds invalid, unchecked and zero-distance offsets while retaining their raw source and index claims. Scale does not multiply distance; FACE sense does not change its sign.
 
-**Need.** We must locate an authoritative replacement when the referenced chart or terminator record is absent.
+**Need.** Exact unchecked admission needs a selected typed support, equal carrier/support senses, nonzero distance outside modeller resolution, an acyclic support graph and a valid selected surface set. Wide identities and pointers need one canonical index domain across every dependent carrier.
 
-### GC-03. Surface-owned edge curve attributes
+### GC-05. Variable-radius law and result parameterization
 
-**Question.** What grammar and role do untyped edge curve attributes have when a surface record owns them instead of a curve carrier?
+**Question.** How does a complete variable-radius law, including intermediate controls, map to the parameterization and individual faces of every result patch?
 
-**Known.** `sldprt.md` §7.1 "Stream-scope" defines `00 86` as a B-spline or list curve carrier. `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," defines the intersection curve carriers. An edge selects its support curve through `00 10.refs[3]`.
+**Known.** The design law and evaluated result have separate carriers. An owned generated-surface identity joins a typed FACE through its complete `FACE_ID_2001` identity; the FACE's surface reference selects the stored NURBS carrier. Resolve the attribute definition's identifier, not an adjacent KEY name. Two independently checked joins retain ordered endpoint radii of 5–50 mm and 50–4 mm, and four rational NURBS endpoint sections reproduce those radii. The existing reader retains both laws and the generated identities. These bounded observations do not establish a corpus census or a general interpolation rule.
 
-**Need.** We must know the grammar to construct the edge curve.
-
-### GC-04. Offset-surface carriers
-
-**Question.** Which carrier and field semantics identify an offset surface, including the discriminator and flag in its native record?
-
-**Known.** `sldprt.md` §7.4 defines the supported offset carrier and its signed normal-offset construction over an analytic, B-spline, or procedural support surface.
-
-**Need.** We must know the carrier grammar and field semantics to construct the exact offset surface and preserve its orientation.
-
-### GC-05. Variable-radius blend carriers
-
-**Question.** Which native carrier stores the result and radius law of a variable-radius blend, and how does it bind to the feature history?
-
-**Known.** `sldprt.md` §7.4 defines the generic `00 7c` B-spline surface-use wrapper and NURBS carrier. Feature history separately carries variable-radius design intent.
-
-**Need.** We must define the native relation that binds one variable-radius history feature and its radius law to one result carrier.
+**Need.** Prove intermediate-control parameterization, complete selector-tail and collision behavior, and the explicit per-feature result-face association across arbitrary patches. Missing or nonunique complete identities must remain unresolved; geometric resemblance and history order cannot choose a result.
 
 ### GC-08. Duplicate geometry carrier identities
 
 **Question.** Which occurrence is authoritative when one stream contains multiple valid geometry carriers with the same stream-local attribute?
 
-**Known.** Geometry carriers are indexed by stream-local attribute. The specification does not define a duplicate-identity rule or a precedence field.
+**Known.** Geometry carriers are indexed by stream-local attribute. Analytic decode refuses a uniquely parsed carrier whose header framing disagrees with the Partition/Deltas role selected from the stream header. The role filter cannot recover a record rejected by the role-unknown parser, and the writer retains that conservative role-unknown path. Stream role does not prove chronology or duplicate authority.
 
 **Need.** We must select the authoritative carrier without silently changing geometry when a duplicate record is present.
 
 ### GC-09. Conflicting surface carrier families
 
-**Question.** Which surface carrier family owns a face when analytic, offset, blend, or sweep candidates are all structurally valid for the same surface attribute?
+**Question.** Which complete physical node occurrence is authoritative when several source occurrences claim one face-support index?
 
-**Known.** `sldprt.md` §7 defines analytic and procedural surface carriers, but does not define a conflict rule between valid carrier families.
+**Known.** A face-support pointer selects one typed XT node, as defined in `sldprt.md` §7. Decode withholds typed surfaces when several existing surface, offset, blend, or sweep map categories claim the same index, including after stream merging. Analytic and B-surface records share one map, and swept and spun records share another; conflicts inside those maps remain outside this veto.
 
-**Need.** We must define the native family discriminator or ownership relation that selects one exact face support when several carrier families are structurally valid.
+**Need.** A complete site-local node table must preserve physical candidates, common fields and full canonical indexes before duplicate resolution. Same-category duplicates, opaque targets and source-state precedence need independent ownership rules.
 
 ### GC-10. Normal sense of non-compact surface carriers
 
@@ -152,33 +136,46 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** Retained prologue bytes can be preserved without assigning a generation rule.
 
-### CM-10. Parasolid stream boundary
+### CM-10. Complete effective-schema stream cursor
 
-**Question.** What fixes the end of a Parasolid stream inside one block payload?
+**Question.** Which base schemas and first-use field sequences establish every XT node boundary in unframed carriers?
 
-**Known.** `sldprt.md` §3.1 gives the stream header: the `PS 00 00` signature, `desc_len u16 BE`, the description, the padding, `schema_len u8`, and the schema. The header has no total-length field. `sldprt.md` §3.2 states that a block can hold a partition stream and a deltas stream, and gives no delimiter between them.
+**Known.** `sldprt.md` §3.1.1 defines the terminal node and the direct `ThirdPty/WELDMENT_STORAGE` length prefix. The chained wrapper section length bounds its concatenated frame outputs. Header-shaped signatures and terminal-shaped field bytes do not define an intrinsic boundary. The complete base-schema node cursor is separate from outer-extent and endpoint-wire checks.
 
-A later `PS\0\0` is a boundary only when the bytes from that position contain a complete stream header with a bounded description and schema token. An unframed signature in coordinate or string data remains part of the current stream.
+A complete candidate header establishes its local description and schema
+token. It does not establish an intrinsic endpoint of the preceding stream.
+An interior header in coordinate or string data remains part of that stream.
 
-**Need.** We must know the authoritative boundary to distinguish a real following stream from payload bytes that happen to contain a complete header-shaped sequence.
+**Need.** Complete selected base-schema field tables and Source-backed traversal of each effective field edit, fixed field, and variable count must establish the node cursor before intrinsic endpoints can be admitted without a carrier extent.
 
-### CM-14. Configuration body membership
+**Conflict.** The generic direct extractor ends an unframed stream at the next
+syntactically complete header. It does not check that the preceding stream's
+effective-schema node cursor reaches that position. A complete header-shaped
+image in field data can therefore be classified as a new stream.
 
-**Question.** Which field binds an inactive configuration without `SourceIndex` to its bodies?
+**Note.** Outer framing does not establish physical occurrence policy or permit salvage of an invalid CFB extent.
 
-**Known.** Decimal `SourceIndex=N` binds a Keywords configuration to `Config-N-Partition`. The Keywords decimal `id` selects `Config-N-ResolvedFeatures` and is independent of the partition identity. Element order and regeneration ordinal do not bind a partition. A uniquely named active configuration can use the active geometry partition. `crates/cadmpeg-ir/src/features.rs:57` defines `ConfigurationBodies::Unresolved` for every remaining configuration whose body membership is not established.
+### CM-14. Configuration identity carriers
 
-**Need.** We must know whether another stored field binds an inactive source-less configuration. The body membership stays `Unresolved`.
+**Question.** Which carrier controls membership when Keywords `id` differs from manifest `swID`, or a native explicit `SourceIndex` conflicts with the complete manifest join?
+
+**Known.** `sldprt.md` §2 defines the complete manifest-row, referenced-model, and decimal `swID` join for saved inactive and active configurations. A readable Keywords name must agree with that join. A missing or unreadable Keywords definition does not erase a complete saved identity. Missing partitions leave membership unresolved; decoded empty partitions establish empty membership. An update-required row can have a decoded partition: `140489.sldprt` has `NeedsUpdate="YES"` and a complete active partition-0 identity. The reader retains that saved identity without asserting regeneration freshness. Keywords `id` and `swID` coincide in the available paired witnesses, so their covariance does not establish interchangeable authority. Conflicting explicit `SourceIndex` values remain unresolved.
+
+**Need.** A producer save or export must distinguish unequal Keywords `id` and manifest `swID`. A native dual-carrier witness must test explicit `SourceIndex` disagreement with the full manifest join.
+
+**Note.** Saved partition membership does not establish current feature definitions or regenerated geometry. A manifest name and body set do not supply an unreadable Keywords definition or its feature states.
 
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges
 
-**Question.** How does a B-rep face attribute select its triangle range in a DisplayLists block?
+**Question.** How does a B-rep face select its triangle range in a DisplayLists block when no face key joins them?
 
-**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §4 "Primary ownership chain:" defines the B-rep face topology. `sldprt.md` §8 defines the complete persistent identity path carried by matching B-rep attributes and DisplayLists references, as well as unambiguous ownership from incidence with one analytic or NURBS face support and from complete bounded planar, cylindrical, and conical trims. Procedural, polygonal, opaque, and non-exact NURBS supports, other coincident trims, and tables without a complete matching identity do not supply the stored face-range mapping.
+**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §4 "Primary ownership chain:" defines the B-rep face topology. `sldprt.md` §8 "The FACE owner of an `SWEntUnchanged` ATTRIBUTE" defines the face-key join: the integer field of an `SWEntUnchanged` ATTRIBUTE on a FACE equals the u32 at `M+0x64` of the table that face owns, when `M+0x60` is `1` and exactly one table and one current FACE carry the key. `sldprt.md` §5 "`SWEntUnchanged` has definition field codes `[1]`." defines the key family. `sldprt.md` §8 also defines the complete persistent identity path carried by matching B-rep attributes and DisplayLists references, as well as unambiguous ownership from incidence with one analytic or NURBS face support and from complete bounded planar, cylindrical, and conical trims. Procedural, polygonal, opaque, and non-exact NURBS supports, other coincident trims, and tables without a key or a complete matching identity do not supply the stored face-range mapping.
 
-**Need.** We must know the stored mapping to attach tables whose support is ambiguous or unsupported, including non-exact NURBS caches, and carry no complete matching persistent identity.
+**Need.** We must know the stored mapping to attach tables that carry no unique face key, whose support is ambiguous or unsupported, including non-exact NURBS caches, and that carry no complete matching persistent identity.
+
+**Note.** In native dictionaries the `SDL/TYSA_DENSITY` KEY can precede the `SWEntUnchanged` definition. The definition `identifier`, not adjacency, names the family (`sldprt.md` §5 "A definition is named by its `identifier`").
 
 ### AL-03. DisplayLists renderer flag meanings
 
@@ -230,37 +227,53 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Need.** We must distinguish the remaining binders, comments, body folders, materials, notes, sensors, favorites, history, selection sets, and markups.
 
-### DI-02. Equation angular-unit mode
+### DI-02. Relation-manager settings boundary
 
-**Question.** Which native field stores the equation manager's angular-unit mode?
+**Question.** What complete relation-list and intervening-text grammar identifies the post-relation settings boundary for each supported relation-manager layout?
 
-**Known.** `sldprt.md` §2 "A bare integer Keywords dimension bound to a unique driving angular scalar denotes milliradians" through `sldprt.md` §2 "A nonempty Keywords parameter value with no scalar literal, operator, grouping delimiter," define expression identifiers and unit-bearing literals. An explicit angular unit determines the interpretation of a trigonometric operand.
+**Known.** `sldprt.md` §2 "The equation angular-unit mode is the byte" defines the settings-relative field and native Degrees/Radians encoding. The relation list contains a declared count of variable-length objects. Nested expressions and drafting-standard strings change the displacement of the settings prefix from the manager declaration. Display-angle units do not establish the equation mode.
 
-**Need.** We must know the document mode to evaluate a bare numeric trigonometric operand.
+**Need.** A counted parser must consume each complete relation and its nested expression objects, then frame any intervening text before it returns the settings prefix. It must distinguish unsupported manager layouts and missing configuration copies. Numeric signatures inside unparsed relation bytes do not establish that boundary.
 
-### DI-03. Default document properties
+**Conflict.** None.
 
-**Question.** Which native carrier stores the default document-property namespace used by equations?
+**Note.** A field-relative layout does not define the preceding variable-length grammar. A mode value does not prove that a relation evaluator applied it to a bare angular operand.
 
-**Known.** `sldprt.md` §2 "When exactly one line-distance operand identifies a profile line, the other operand identifies" through `sldprt.md` §2 "A bare `0` or `1` Keywords dimension bound to a unique driving distance" define configuration records, configuration-local properties, and equation evaluation. They do not bind a default document-property carrier.
+### DI-03. Calculated default-property caches
 
-**Need.** We must find the carrier to resolve an equation that references a default file property.
+**Question.** Which native state establishes that a saved calculated default-property cache is current for the requested property operand?
 
-### DI-04. Configuration property lookup
+**Known.** `sldprt.md` §8.1 "The document default-property namespace is owned by" defines the complete carrier, FMTID, PID and alias identity. It distinguishes saved values from formula companions and live calculation. Configuration-qualified property namespace lookup is DI-04.
 
-**Question.** How does a `property@configuration@part` operand select its property namespace?
+**Need.** A source-level freshness rule and an independently validated cache-owner relation before a stored calculated snapshot can supply a live value. Saved scalar and dictionary identity alone do not establish either relation.
 
-**Known.** `sldprt.md` §2 "When exactly one line-distance operand identifies a profile line, the other operand identifies" through `sldprt.md` §2 "A bare `0` or `1` Keywords dimension bound to a unique driving distance" define independently evaluated configuration snapshots and configuration-local properties.
+### DI-04. Configured-property resolver and legacy ownership
 
-**Need.** We must know the lookup rule to evaluate a configuration-qualified property operand.
+**Question.** What complete model/configuration/property resolver and legacy carrier grammar admit a configured property operand without borrowing another namespace or stale calculated value?
 
-### DI-05. Offset-edge relation invariant with an external operand
+**Known.** `sldprt.md` §8.1 "Modern configuration custom properties use" defines the exact modern configuration-name/stored-ID/carrier join and its UserDefinedProperties section. `sldprt.md` §8.1 "A compound file without `id` values" defines the owner of the legacy `Config-0-Properties` stream when the configuration has no `id`. Stored IDs differ from element positions. Default, document custom and configuration custom properties are separate namespaces.
 
-**Question.** What neutral geometric invariant does an offset-edge relation impose when one operand is an external-reference record?
+**Need.** Independent legacy configuration-property dictionary/FMTID ownership inside the `Config-N-Properties` stream, complete operand binding, and strict retained-writer behavior for configuration-local property edits. A saved formula does not establish currentness or override carrier ownership.
 
-**Known.** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the invariant for two local operands: two parallel lines or two concentric arcs. An external-reference record stores backed-up points in the frame of its source sketch, so a comparison in the frame of the owning sketch does not apply.
+**Conflict.** The current configuration projection retains Keywords fields but does not incorporate the modern configuration-property namespace. The saved default-property reader has a separate document owner and does not resolve configured custom properties.
 
-**Need.** We must know the invariant to project the native relation as a neutral sketch constraint.
+**Note.** Read-only `saved_configuration_property` source attributes carry document-level carrier facts in the order `(member, namespace index, FMTID, PID, property name, VT type, optional literal)`. Literal `IsEquation="False"` string records and explicit empty/null records retain their distinct types; a blank string has a literal value, while empty/null has none. These facts do not bind a named configuration or evaluate a property reference. Other values and `FPVals` caches remain retained in the complete source carrier. Semantic writes require the recorded facts and carrier bytes to remain unchanged. Modern name/ID evidence does not establish property-cache freshness or complete evaluator execution.
+
+### DI-05. Compact offset framing and complete operand ownership
+
+**Question.** What complete compact/current marker framing and source/result/driver/orientation graph admits an offset-edge relation, and what neutral geometric invariant does it impose when one operand is an external-reference record?
+
+**Known.** `sldprt.md` §2 "An offset-edge marker relation retains native handles" distinguishes raw marker operands from a complete offset constraint. Line supports can be parallel at one positive separation while their bounded lengths differ. Repeated handles, state and sentinel values do not supply a positive offset magnitude or a complete owner join.
+
+**Known (external operand).** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the invariant for two local operands: two parallel lines or two concentric arcs. An external-reference record stores backed-up points in the frame of its source sketch, so a comparison in the frame of the owning sketch does not apply.
+
+**Need.** An independently established compact discriminator and record boundary, shape-specific local-ID handling, all source/result curve pairs, one shared positive driving magnitude, source direction and chain membership. General-curve offsets and nonlocal source projection require independent ownership and regularization evidence.
+
+**Need (external operand).** We must know the invariant to project the native relation as a neutral sketch constraint.
+
+**Conflict.** The current link parser uses the current marker layout and misses the compact pair. Its local-ID caller assumes the current record extent when links parse successfully; adding a shorter link form without changing that caller can read the following record. A whole copied compact header does not establish the role or allowed domain of each header word.
+
+**Note.** Retain raw markers and do not infer a compact local ID, a generic fixed header word, or a neutral offset from geometric coincidence.
 
 ### DI-06. Arc-cardinal relation invariants
 
@@ -310,19 +323,25 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Need.** We must select one entity to bind the reference operand.
 
-### DI-12. Omitted dimensioned circles
+### DI-12. Auxiliary radial framing and diameter ownership
 
-**Question.** Which native field marks dimensioned circular geometry as construction geometry when absent from the selected profile stream?
+**Question.** What complete auxiliary-record discriminator and source relation bind a radial reference, its center, diameter and construction state?
 
 **Known.** The exact compact legacy and extended radial layouts, their native code and role fields, the `sgSlot` relation, and the current-prefix geometry-locus `sgArcHandle` point carrier identify supported dimensioned-circle records. A declared `sgEntHandle` operand that references the exact point carrier supplies its center even when no radial record is present. Tags `d4 80` and `d5 80` directly carry a finite same-feature point or constrained-point center whose local identifier equals the operand address; their explicit identity takes precedence over pair and radius searches. Other native `sgCircleDim` tags use that same explicit point identity only after no declared pair, child, geometry-locus, or unique circular-witness carrier resolves. The reference must resolve in the unique declaring `sgEntHandle` lane to a finite same-feature point or constrained-point marker whose local identifier equals the operand address. A point that is the radial member of a declared pair cannot supply this fallback center; an invalid or ambiguous identity remains native. A declared `sgEntHandle` operand also accepts an adjacent center/radial point pair when the center local identifier equals the radial object index; the radial local identifier is either absent or zero in the ordinary form, or nonzero in the indexed point form. Tag `6e 83` uses an unreferenced lane-local `sgEntHandle` to select an indexed adjacent point pair from an even coordinate-bearing roster; every pair must carry the center-local-to-radial-object join and a nonzero radial local identifier. A declared `sgEntHandle` operand with an explicit `sgSlot_c` marker accepts one unique scoped `sgSlotHandle` class with exactly two current `e7 88` cells: the first cell identifies the slot and the second identifies one of the slot's selected center points. That form carries a construction circle centered at the selected point. A coordinate-less `line_or_circle` marker before the operand with exactly two identical links to one earlier same-feature `Arc` marker is also an arc carrier when both local identifiers match and the arc passes its endpoint or unique-later-radial-witness validation. Multiple, mismatched, or invalid linked carriers remain native. The selected profile stream can omit construction circles.
 
-**Need.** We must know the discriminator for dimensioned-circle operands that have no radial record, do not reference the exact geometry-locus `sgArcHandle` carrier, and do not use the settled point, pair, slot, or duplicate-link arc identities.
+Two omitted owner-qualified construction circles have separate current/extended auxiliary envelopes with repeated words that match feature-local point object indices. One matched object index is `7` while its coordinate-roster ordinal is `5`. These address spaces cannot be interchanged. The API circle and stored diameter agree numerically, but that agreement does not establish the auxiliary-to-diameter/center ownership graph.
+
+**Need.** Independently established framing with opaque header words left opaque, the repeated field's address domain, and an explicit owned diameter/center association or a separately qualified owner rule. Preserve unique raw records and refuse ambiguous center, radial or diameter joins.
+
+**Conflict.** A whole copied auxiliary header fixes an unassigned word as a discriminator. A specimen-supplied diameter followed by a unique radius match does not prove that the record names that diameter or center. The current Native marker collector and circle projection omit the two auxiliary records and owner circles; this remains an implementation gap.
+
+**Note.** A construction observation does not establish a generic byte discriminator. Missing supported radial records do not imply construction. The reported historical construction/absence census remains outside the bounded evidence.
 
 ### DI-13. Marker-only profile placement
 
 **Question.** How is a marker-only profile placed in model space when it has no local, contextual, or unique lane-wide compact reference-plane record?
 
-**Known.** `sldprt.md` §2 "Point-reference cells address feature-local object indices within the owning feature object" defines model-space recovery from a planar sketch placement. `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That" through `sldprt.md` §2 "Among classless, parameterless, propertyless history records, `Feature` source ID `1` is the" define the supported reference-plane frames.
+**Known.** `sldprt.md` §2 "Point-reference cells address feature-local object indices within the owning feature object" defines model-space recovery from a planar sketch placement. `sldprt.md` §2 "When no data-class anchor selects a reference-plane frame layout, every structurally valid encoding" define the supported reference-plane frames.
 
 **Need.** We must know the placement to transfer the profile from planar coordinates to model coordinates.
 
@@ -342,37 +361,17 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
-### DI-16. Point-reference codes above `9`
+### DI-17. Second-direction codes without a defined second side
 
-**Question.** What point-reference form does each code above `9` identify?
+**Question.** Does a nonzero second-direction code take effect when the direction count at anchor +4 is `1`? What second side does a second-direction code other than `0` or `1` define when anchor +4 is `0`, and what do first-direction codes `2` through `5` define with `0` at anchor +4?
 
-**Known.** Point-reference codes through `9` have defined native forms and neutral projections.
+**Known.** `sldprt.md` §2 "A compact extrusion end-spec child carries its class" defines the direction count at anchor +4, the blind first direction with an enabled second direction, and blind and through-all second sides. A blind or through-all child with `1` at +4 and second-direction code `1` has a through-all second side. `sldprt.md` §2 "Termination code `6` is mid-plane" defines a mid-plane child that ignores its second-direction word.
 
-**Need.** We must know the forms to project their selected geometry.
+**Need.** We must know whether the second-direction word has an effect in a one-direction end spec, and the remaining second sides, to construct both extrusion extents.
 
-### DI-17. Other second-direction termination codes
+**Conflict.** The SolidWorks API record of each feature with `1` at +4 gives one direction, also when the second-direction code is `1`; the decoder projects a through-all second side for those children. The STEP geometry of these parts does not decide, because each second direction exits the part and both extents give the same solid. The to-face rule in `sldprt.md` §2 "Termination code `4` is to-face" reads +22 as a Boolean reference-side flag, not as a second-direction code.
 
-**Question.** What termination does each second-direction end-spec code other than `0` and `1` represent?
-
-**Known.** `sldprt.md` §2 "A named feature-input object bound to a classless history `Sketch` record with a nonzero source" defines second-direction code `0` as absent and code `1` as through-all.
-
-**Need.** We must know the other codes to construct the second extrusion extent.
-
-### DI-18. Other first- and second-direction combinations
-
-**Question.** What semantics apply when a nonzero second-direction code occurs with a first-direction code other than `0`, `1`, or `9`?
-
-**Known.** `sldprt.md` §2 "A named feature-input object bound to a classless history `Sketch` record with a nonzero source" defines the supported one-direction and two-direction combinations.
-
-**Need.** We must know the combination semantics to construct both extrusion extents.
-
-### DI-19. Reference-bearing end-spec shapes
-
-**Question.** What record uses the end-spec shape when the word at `+18` is a reference child instead of a termination code?
-
-**Known.** `sldprt.md` §2 "A named feature-input object bound to a classless history `Sketch` record with a nonzero source" defines the end-spec anchor and the termination words at `+18` and `+22` for valid end-spec children.
-
-**Need.** We must distinguish the other record family from an extrusion end specification.
+**Note.** A blind second side without a `D2` dimension stays unresolved; the decoder does not use the first-direction depth for it.
 
 ### DI-20. Feature-local face reconciliation
 
@@ -406,6 +405,10 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Need.** We must know the mapping to bind the Boolean target and tool bodies.
 
+**Conflict.** The count-based component-path reader can accept a prefix whose last local identifier also has the form of a following typed-entry tag. It does not check the returned end for this continuation. This prefix does not establish the complete path or its dependency roster.
+
+**Note.** Retaining dependencies independently of generated-body admission requires a proven complete vector boundary and unique history-feature ownership. A rejected terminal does not authorize an earlier component as a replacement body producer.
+
 ### DI-24. Delete-body reconciliation
 
 **Question.** How does an `moDeleteBody_c` regeneration-input-local body identity map to a body in the final B-rep?
@@ -430,45 +433,47 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Need.** We must define the topology join from the retained compact edge identity to the final B-rep edge before projecting the selected edge.
 
-### DI-28. Unbound general-curve references
+### DI-28. Sweep reference child versions
 
-**Question.** How does a general-curve-reference form select geometry when it has no component-profile source record and no immediately preceding unique profile feature?
+**Question.** Which placement grammar selects a component source record that follows a u32 version word, and which source-less forms establish an operand owner?
 
-**Known.** `sldprt.md` §2 "An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile unless" defines ownership for a unique enclosed sweep profile. The supported general-curve-reference forms bind through a component-profile source or an adjacent profile feature.
+**Known.** `sldprt.md` §2 defines the ten-byte child prefix, the source-record placements at prefix +45, +69, and +81, and the two-handle and three-handle source records. A general-curve reference identifies the sweep cross-section. A component-reference curve identifies its path. An unresolved reference does not establish a sketch or a final B-rep curve. In a further form, prefix +45 through +60 is `ff` and prefix +81 stores a u32 equal to the version word of a complete three-handle record at prefix +85. A component profile of this form names a planar sketch, and a component-reference curve of this form names a composite curve.
 
-**Need.** We must know the other binding rule to select sketch or B-rep geometry.
+**Need.** We must identify each version before reading its source field and prove the reference namespace before selecting geometry.
 
-### DI-29. Unbound composite sweep profiles
+**Conflict.** In the version-word form, the named sketch has no decoded profile, and its decoded plane differs from the plane of the three-edge compressed-body profile in the same feature-input lane that otherwise binds as the cross-section. A neighboring sketch does not replace an explicit reference whose child form is unsupported.
 
-**Question.** How does a composite sweep-profile form select its profile when it has no unique enclosed planar profile stream and no immediately following unique profile feature?
+### DI-29. Composite sweep path identity
 
-**Known.** `sldprt.md` §2 "An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile unless" defines the enclosed planar profile rule. The supported composite form can also bind to an adjacent profile feature.
+**Question.** How do the complete ordered component instances and persistent identifiers select the curves in an earlier feature result?
 
-**Need.** We must know the other binding rule to construct the sweep profile.
+**Known.** The component-reference curve is the path operand. Its type signatures, instances, identifiers, and order are separate parts of the reference. Repeated local identifiers do not establish repeated curve instances. A resolved producer does not establish a final B-rep edge.
+
+**Need.** We must bind the complete producer-result identity before representing individual generated path curves. Preserve the reference record when that join is unavailable.
 
 ### DI-30. Other compact sweep Boolean codes
 
-**Question.** What Boolean operation does each compact sweep code other than join code `15` represent?
+**Question.** Which serialized carrier establishes the solid-sweep Merge Boolean independently of the compact class-form word?
 
-**Known.** Compact sweep code `15` joins the sweep result.
+**Known.** The Merge property is Boolean. An unrecognized compact word does not establish NewBody, Cut, or Intersect. A missing carrier does not establish Merge false. An owned unknown, malformed, or ambiguous operation cannot corroborate another lane.
 
-**Need.** We must know the other codes to construct the sweep result operation.
+**Need.** Bind the complete Merge carrier to its owning feature with independent true and false controls. Retain unresolved operations when the carrier is unavailable.
 
-### DI-31. Native neutral-plane Draft outward flag
+### DI-31. Native neutral-plane Draft direction reversal and outward flag
 
-**Question.** Which native field identifies the outward flag of a neutral-plane Draft when Keywords omits it?
+**Question.** Which native fields identify direction reversal and an independent outward flag of a neutral-plane Draft when Keywords omits them?
 
 **Known.** `sldprt.md` §2 "A Draft feature-input interval uses the lane-scoped `moPlaneRef_w` token" defines neutral-plane Draft operands. `sldprt.md` §2 "A compact parting-line Draft uses direct duplicated component-vector records" defines the parting-line form, which has no outward operand. Keywords independently retains an explicit `Outward` Boolean for a neutral-plane Draft.
 
-**Need.** We must recover the native outward flag of a neutral-plane Draft when Keywords omits it.
+**Need.** We must recover the native outward flag of a neutral-plane Draft when Keywords omits it. The signed plane normal does not establish an independent pull reversal, an unflipped neutral-plane orientation, or the outward Boolean. Establish reversal with independent unflipped-plane and reversed-operation controls. Compact parting-line frame direction semantics require separate Source controls; they do not share the declared +80 field.
 
-### DI-32. Compact line-reference width
+### DI-32. Other compact line-reference widths and owned pattern units
 
-**Question.** Which compact line-reference width and trailer layout are authoritative when more than one valid direction triple occurs in a record?
+**Question.** Which complete enclosing grammars select additional compact line-reference directions, and which owned metric fields establish the corresponding pattern spacings?
 
-**Known.** `sldprt.md` §2 defines the supported compact line-reference layouts and requires an exact trailer for each layout. A final ambiguous layout with distinct valid directions remains unresolved.
+**Known.** The complete 136-byte token-terminated eight-scalar form stores its unit vector at +64. Its trailer and next-object boundary select the width. An overlapping unit triple does not select another width. The raw display-spacing fields and bare history literals are separate carriers; a new direction does not establish the literals' length unit.
 
-**Need.** We must know the record width and direction field to decode each line reference without choosing a candidate by plausibility.
+**Need.** Bind the complete dimension-record framing, feature owner, role and unit before enabling a pattern extent. Preserve unknown directions or spacing semantics when those joins are unavailable. Do not apply a document-wide scale from numeric agreement.
 
 ### DI-34. SWIFT implicit nominal construction
 
@@ -476,15 +481,15 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Known.** `sldprt.md` §2.1 defines zero as an omitted nominal sentinel when `Dimension` is absent or zero. It defines diameter and depth nominal recovery from the rendered literal, declared decimal places, pattern or compound-feature traversal, and cylindrical or spherical nominal geometry. The rendered literal, not the unrounded geometry, supplies the labeled value. It defines width and length from named slot-geometry fields and radius from the named radius field of fillet, cylindrical, or spherical geometry. It defines counterbore diameter from the direct nominal cylinder and countersink diameter and angle from the direct nominal cone. An empty applied-feature graph and empty CAD identifiers supply no direct geometry and do not bind an unrelated rendered literal; an empty `GdtPattern` can additionally use the exact `Hole PatternN` to `LPatternN` history join when one seed has exactly one later consuming Hole with a positive diameter. Directional distance annotations recover plane, axis, compound-hole, and closed-slot feature-of-size locations from their named geometry.
 
-**Need.** The empty-pattern history join is settled by `sldprt.md` §2.1. We must still define nonidentity `NominalTransform` semantics and the other `ComputeAnswerBy`, `Direction`, and `NormalTo` modes before those forms can supply a nominal.
+**Need.** The empty-pattern history join is settled by `sldprt.md` §2.1. We must still define nonidentity `NominalTransform` semantics and the other `ComputeAnswerBy`, `Direction`, and `NormalTo` modes before those forms can supply a nominal. A zero direct-cylinder `ThreadDepth` does not establish an evaluated thread depth. Recovering that form requires a source-owned association between the annotation and its rendered depth, and a rule that distinguishes an omitted thread depth from an authored zero. A file-wide matching hole-depth literal and ordinary cylindrical extent do not establish that association.
 
-### DI-35. Endpoint-less variable-fillet edge groups
+### DI-35. Variable-fillet endpoint grouping and control ownership
 
-**Question.** How does a selected-edge reference-list vector without `8083` endpoint references select its radius profile when the same `VarFillet_c` object contains more than one ordered endpoint-radius pair?
+**Question.** Which complete repeated dimension-object grammar separates the selected-edge roster from radius controls, and how do intermediate controls bind to the full radius law?
 
-**Known.** `sldprt.md` §2 defines the reference-list grammar, including count-framed adjacent references, the variable-fillet input-edge boundary, the vertex-control join, and grouping of endpoint-bearing selected edges by their ordered endpoint radii. A legacy three-edge control vector with `D0`/`D1` supplies one feature-wide ordered pair, which applies to endpoint-less selected-edge vectors. A single ordered pair is likewise the feature-wide profile when all endpoint-bearing selected edges agree.
+**Known.** Within one owned variable-fillet object, two proper reference subsets associate the final two selected references with their retained-endpoint radii. The full ordered component identity distinguishes references. A control equal to the whole selected vector does not identify an endpoint. Endpoint associations and complete radius-law controls are separate relations.
 
-**Need.** We must identify the native association between an endpoint-less selected-edge vector and one of several distinct radius profiles.
+**Need.** Prove the complete counted and typed repeated-object boundary in every selected/control caller. A marker sequence alone does not establish that boundary. Bind each scalar through its owned named dimension record, preserve intermediate and exact-equal controls, and establish their parameter positions before constructing the full law. Preserve the existing explicit-endpoint and legacy contracts without inventing endpoint knots or a final B-rep mapping.
 
 ### DI-36. SurfaceCut discarded side
 
@@ -494,13 +499,13 @@ A later `PS\0\0` is a boundary only when the bytes from that position contain a 
 
 **Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
 
-### DI-39. `moTempAxisRef_w` carrier end and middle triple
+### DI-39. Temporary-axis ownership in revolution features
 
-**Question.** What fixes the end of a `moTempAxisRef_w` nine-scalar carrier, and what do its scalars at `+263`, `+271`, and `+279` hold?
+**Question.** Which owned revolution input identifies the temporary-axis carrier when a profile-source join or another line-reference candidate is also present?
 
-**Known.** `sldprt.md` §2 "An `moCirPattern_c` interval retains its repeated seed" gives the carrier at offsets `+0` through `+311`, the axis origin at `+239`, the axis direction at `+287`, and zero padding of at most 24 bytes before the next class declaration. The specification gives no stored field that fixes the padding length or binds the three scalars between the origin and the direction.
+**Known.** `sldprt.md` §2 "An `moCirPattern_c` interval retains its repeated seed" defines the nine-scalar carrier through `+311`, its middle xyz triple at `+263` as the axis point, its final xyz triple at `+287` as the unit axis direction, its exact compact or declared boundary, and its valid zero stream address. The carrier fields do not establish which feature owns the axis or whether another independent source selects a different axis.
 
-**Need.** We must know the field that ends the carrier, so the record does not need a tuned search window, and the middle triple, so the complete axis frame is decoded.
+**Need.** A complete profile and axis ownership relation must connect the carrier to the revolution. Competing complete source operands must agree before the axis is admitted; source order and fallback priority do not establish agreement.
 
 ### DI-40. Extrusion profile identity without an explicit profile relation
 
@@ -516,11 +521,7 @@ input.
 **Need.** We must decode the profile dependency before projecting the extrusion
 with a neutral sketch profile.
 
-**Conflict.** `project_extrude` in `src/history/project/solid.rs` selects the
-non-origin sketch with the greatest source identifier smaller than the
-extrusion's source identifier for the supported profile-less forms. An
-unrelated intervening sketch can therefore be projected as the extrusion
-profile solely because it is nearest in source order.
+**Note.** A unique unused earlier sketch does not establish a universal no-reuse rule. Profile ownership and configuration-scoped absence or conflict require independent source relations; an unsupported provisional choice must not block an earned relation.
 
 ### DI-41. Pattern seed identity without a resolved seed relation
 
@@ -528,19 +529,9 @@ profile solely because it is nearest in source order.
 when its component vectors and persistent generated-surface identities do not
 resolve a seed feature?
 
-**Known.** Complete component paths and generated-surface identities can bind a
-pattern seed directly. A derived cosmetic-thread output identifies a generated
-child, not by itself the input feature that the pattern repeats. Feature order
-does not establish seed ownership.
+**Known.** Complete component paths and generated-surface identities retain provenance, but do not certify a complete selected-feature roster. Independent authored selections include a two-seed mirror whose paths mention only one seed. A derived cosmetic-thread output identifies a generated child, not its input seed. Feature order does not establish ownership. The reader withholds nearest-thread, preceding-object and mirror-provenance seed guesses while preserving explicit seed relations, dimensions, directions, mirror planes and Native records.
 
-**Need.** We must decode the seed relation before assigning a preceding history
-feature as the repeated neutral feature.
-
-**Conflict.** `bind_pattern_inputs` in `src/resolved_features/bindings.rs`
-uses the nearest preceding sibling `moCosmeticThread_c` feature when a pattern
-has a derived cosmetic-thread output and no resolved seed. Another fallback
-uses the immediately preceding feature-input object. Either rule can assign an
-unrelated preceding feature as the pattern seed.
+**Need.** Decode the complete manager/instance-holder ownership and selected-list grammar, including configuration-scoped absence and conflicts. A bounded search witness or unique provenance candidate cannot establish complete selection cardinality. Circular and curve-driven seed families require their own independent selection proofs.
 
 ### DI-42. A configuration stream that holds the active configuration's values
 
@@ -550,13 +541,17 @@ unrelated preceding feature as the pattern seed.
 
 **Need.** We must know this to report the configuration's values as not established. Without it, the decode keeps the active values and reports them as the configuration's.
 
-### DI-43. Where the document stores its Angular Equation Units
+### DI-43. Angular Equation Units in trigonometric evaluation
 
-**Question.** Which field of a SLDPRT file stores the Equations dialog's Angular Equation Units setting, degrees or radians, which sets the unit the equation manager's trigonometric functions take and give?
+**Question.** Does the equation angular-unit mode set the unit that the equation manager's trigonometric functions take and give, and does `int()` truncate or floor a negative argument?
 
-**Known.** SolidWorks documents the setting in the Equations dialog; its default is degrees. In the only part sampled with trigonometric lines, an `atn` that gives radians reproduces the value a later line stores as its input in every configuration, and one that gives degrees reproduces none, while the same lines read their angle dimensions in degrees. After the last relation's lowercase name and value table, where a section holds the relation count minus one as a u32 followed by `00 00 ff ff ff ff`, the u32 before it is 0 in that part and in 31 others without trigonometric lines, and 1 in the parametric biped's parts, whose equations come from an external file, and in the two FRC rail parts (5 sections); 129 of 222 manager sections have no such anchor. No other field was compared. `int()` truncation was the other half of this item: it truncates the manager's value, and a value a few ulps short of a whole number is that whole number (`sldprt.md` §2). Whether it truncates or floors a negative argument is not established: none occurs in the dataset.
+**Known.** `sldprt.md` §2 "The equation angular-unit mode is the byte" defines the mode field, with native value `0` for Degrees and `1` for Radians. SolidWorks documents the setting in the Equations dialog; its default is degrees. In the only part sampled with trigonometric lines, an `atn` that gives radians reproduces the value a later line stores as its input in every configuration, and one that gives degrees reproduces none, while the same lines read their angle dimensions in degrees. `int()` truncates the manager's value, and a value a few ulps short of a whole number is that whole number (`sldprt.md` §2). No negative argument occurs in the dataset.
 
-**Need.** We must know the field to evaluate a line that calls a trigonometric function. Without it, the decode gives such a line no value, and its parameter keeps its literal.
+**Need.** We must know the unit to evaluate a line that calls a trigonometric function. Without it, the decode gives such a line no value, and its parameter keeps its literal.
+
+**Conflict.** After the last relation's lowercase name and value table, where a section holds the relation count minus one as a u32 followed by `00 00 ff ff ff ff`, the u32 before it is 0 in the part whose `atn` gives radians and in 31 others without trigonometric lines, and 1 in the parametric biped's parts, whose equations come from an external file, and in the two FRC rail parts (5 sections); 129 of 222 manager sections have no such anchor. If that u32 holds the mode field, value 0 in the radians part disagrees with the native Degrees value `0`. No comparison places that u32 relative to the settings boundary `H`.
+
+**Note.** DI-02 holds the relation-list grammar that locates `H`.
 
 ### DI-44. Sign of an integer scalar value
 
@@ -597,7 +592,7 @@ unrelated preceding feature as the pattern seed.
 
 **Question.** What fields and relations occupy the unresolved bytes of each `SWObjects` metadata record?
 
-**Known.** Configuration-manager values occur at offsets `+66`, `+107`, and `+117`; `moPart_c` has two defined fields; and `moVisualProperties_c` defines colour and name fields. The remaining bytes, the complete record lengths, and the role of `0x00c0_c0c0` in material records are undefined.
+**Known.** The supported section-root Part scalar forms are four or twelve bytes with an exact class-specific continuation; a class string in opaque data does not establish a Part. Configuration-manager prefixes are versioned and own child graphs, so the former fixed offsets do not establish scalar meanings or a record end. The reader retains these manager bytes without editable fields, and both writer paths refuse the unsupported scalar attribute. Appearance tails remain versioned; public color APIs alone do not prove the serialized nonprimary color or material-field assignments.
 
 **Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
 ### EV-05. Leading word of a compound-file `ResolvedFeatures` stream

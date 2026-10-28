@@ -409,6 +409,61 @@ pub(crate) fn standard_catpart_with_schema_configuration_row_chain() -> Vec<u8> 
     file
 }
 
+pub(crate) fn standard_catpart_with_schema_field_roles(
+    value_selectors: &[u32],
+    assignments: &[(u32, u32)],
+    target_class: &str,
+) -> Vec<u8> {
+    let definition = [0x00, 0x08, 0x32, 8, 0, 0, 0, 0x32, 8, 0, 0, 0];
+    let mut value = Vec::new();
+    for selector in value_selectors {
+        value.push(0x32);
+        value.extend_from_slice(&selector.to_le_bytes());
+    }
+    value.push(0xfe);
+    let mut source_payload = Vec::new();
+    for (selector, target) in assignments {
+        source_payload.push(0x32);
+        source_payload.extend_from_slice(&selector.to_le_bytes());
+        source_payload.push(0x80);
+        source_payload.extend_from_slice(&target.to_le_bytes());
+    }
+    source_payload.push(0xfe);
+    let mut row_payload = vec![0x80];
+    row_payload.extend_from_slice(&250_u32.to_le_bytes());
+    row_payload.push(0x80);
+    row_payload.extend_from_slice(&7_u32.to_le_bytes());
+    row_payload.push(0xfe);
+    let mut stream = entity_table_record_with_definition_and_value(4, &definition, &value);
+    for identity in 5..=7 {
+        stream.extend(entity_table_record(identity));
+    }
+    stream.push(0xde);
+    stream.extend(object_graph_from_records(&[
+        object_graph_record(&[0x12, 0x84, 0x84], &source_payload),
+        object_graph_record(&[0x12, 0x84, 0x85], &row_payload),
+        object_graph_record(&[0x12, 0x84, 0x86], &[0xfe]),
+        object_graph_record(&[0x12, 0x84, 0x87], &[0xfe]),
+    ]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "body",
+        "configrow",
+        target_class,
+        "body",
+        "_FirstRole",
+        "_SecondRole",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 pub(crate) fn standard_catpart_with_parameter_value(suffix: &[u8]) -> Vec<u8> {
     standard_catpart_with_two_selector_value("Thickness", "#1_ /2", suffix)
 }

@@ -132,4 +132,42 @@ fn combine_projection_binds_generated_target_and_tool_bodies() {
         admitted[2].dependencies.iter().collect::<Vec<_>>(),
         [&admitted[0].id, &admitted[1].id]
     );
+    for source in [44u32, 45] {
+        let mut invalid_lane = lane.clone();
+        invalid_lane.native_payload[38..42].copy_from_slice(&source.to_le_bytes());
+        let mut invalid_history = history.clone();
+        invalid_history.features.push(feature("future", 45));
+        let mut invalid_model = features.clone();
+        invalid_model.push(model("future", 3, producer()));
+        invalid_model[2].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+                definition
+            else {
+                panic!("Combine feature");
+            };
+            *operands = CombineOperands::new(
+                BodySelection::Native("sldprt:feature-input:body-path:7:12".into()),
+                BodySelection::Native("sldprt:feature-input:body-path:7:112".into()),
+            )
+            .unwrap();
+        });
+        project_compact_combine_paths(
+            &mut invalid_model,
+            std::slice::from_ref(&invalid_history),
+            std::slice::from_ref(&invalid_lane),
+        )
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+            invalid_model[2].evaluation.definition()
+        else {
+            panic!("Combine feature");
+        };
+        assert!(
+            matches!(operands.target(), BodySelection::Native(native) if native == "sldprt:feature-input:body-path:7:12")
+        );
+        assert!(
+            matches!(operands.tools(), BodySelection::Native(native) if native == "sldprt:feature-input:body-path:7:112")
+        );
+        assert!(invalid_model[2].dependencies.is_empty());
+    }
 }

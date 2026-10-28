@@ -279,10 +279,22 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         .blocks
         .iter()
         .any(|block| { block.section.name() == Some("Contents/Config-0-Partition") }));
-    assert!(!scan
+    assert!(scan
         .blocks
         .iter()
         .any(|block| { block.section.name() == Some("Contents/Config-1-Partition") }));
+    let empty = scan
+        .blocks
+        .iter()
+        .find(|block| block.section.name() == Some("Contents/Config-1-Partition"))
+        .unwrap();
+    assert_eq!(empty.ps_streams.len(), 2);
+    assert_eq!(empty.ps_streams[0].header.description, "partition body");
+    assert_eq!(empty.ps_streams[1].header.description, "deltas body");
+    assert!(empty
+        .ps_streams
+        .iter()
+        .all(|stream| stream.header.body_offset == stream.payload.len()));
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -1969,4 +1981,14 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     );
     assert_eq!(parameter.properties["Value"], "36mm");
     assert_eq!(parameter.properties["EquationId"], "D1@Boss");
+}
+
+#[test]
+fn active_metadata_edit_does_not_patch_only_one_field_of_a_structured_manifest() {
+    for payload in [
+        br#"<swSolidWorks><swModel id="m" swConfigurationName="Old" swConfigurationId="0"/><swConfiguration swName="Old" swID="0" swModelRef="m" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#.as_slice(),
+        br#"<swSolidWorks><swModel swConfigurationName="First"/><swModel swConfigurationName="Second"/></swSolidWorks>"#.as_slice(),
+    ] {
+        assert!(matches!(super::super::patch_active_configuration_xml(payload, "New"), Err(cadmpeg_core::CodecError::NotImplemented(_))));
+    }
 }

@@ -76,15 +76,12 @@
         },
         {
           "definition": {
-            "definition": "tree_node",
-            "role": "surface_bodies"
+            "definition": "native",
+            "kind": "ySurface"
           },
           "id": "creo:model:feature#45",
-          "name": "Surface id 45",
+          "name": "ySurface id 45",
           "ordinal": 4,
-          "source_properties": {
-            "mdl_stored_name_prefix": "y"
-          },
           "suppressed": false
         }
       ],
@@ -121,19 +118,17 @@
             "current": false,
             "display_name_stored": true,
             "display_state_conflict": true,
-            "family": "Protrusion",
+            "family": "xProtrusion",
             "feature_id": 40,
             "id": "creo:mdlstatus:feature_state#40:0",
             "identifier_keyword": "id",
-            "offset": 94,
+            "offset": 93,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 93,
             "state_ordinal": 0,
             "stored_name": "xProtrusion id 40",
-            "stored_name_bytes": "7850726f74727573696f6e206964203430",
-            "stored_name_prefix": "x"
+            "stored_name_bytes": "7850726f74727573696f6e206964203430"
           },
           {
             "current": false,
@@ -147,11 +142,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 174,
             "state_ordinal": 1,
             "stored_name": "Hole id 40",
-            "stored_name_bytes": "486f6c65206964203430",
-            "stored_name_prefix": null
+            "stored_name_bytes": "486f6c65206964203430"
           },
           {
             "current": true,
@@ -164,11 +157,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 111,
             "state_ordinal": 0,
             "stored_name": "Round id 41",
-            "stored_name_bytes": "526f756e64206964203431",
-            "stored_name_prefix": null
+            "stored_name_bytes": "526f756e64206964203431"
           },
           {
             "current": true,
@@ -181,11 +172,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 123,
             "state_ordinal": 0,
             "stored_name": "Future Feature id 42",
-            "stored_name_bytes": "4675747572652046656174757265206964203432",
-            "stored_name_prefix": null
+            "stored_name_bytes": "4675747572652046656174757265206964203432"
           },
           {
             "current": true,
@@ -198,11 +187,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 144,
             "state_ordinal": 0,
             "stored_name": "Datum Plane id 43",
-            "stored_name_bytes": "446174756d20506c616e65206964203433",
-            "stored_name_prefix": null
+            "stored_name_bytes": "446174756d20506c616e65206964203433"
           },
           {
             "current": true,
@@ -215,28 +202,24 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 162,
             "state_ordinal": 0,
             "stored_name": "Draft id 44",
-            "stored_name_bytes": "4472616674206964203434",
-            "stored_name_prefix": null
+            "stored_name_bytes": "4472616674206964203434"
           },
           {
             "current": true,
             "display_name_stored": true,
-            "family": "Surface",
+            "family": "ySurface",
             "feature_id": 45,
             "id": "creo:mdlstatus:feature_state#45:0",
             "identifier_keyword": "id",
-            "offset": 186,
+            "offset": 185,
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 185,
             "state_ordinal": 0,
             "stored_name": "ySurface id 45",
-            "stored_name_bytes": "7953757266616365206964203435",
-            "stored_name_prefix": "y"
+            "stored_name_bytes": "7953757266616365206964203435"
           }
         ]
       }
@@ -453,6 +436,7 @@
       "missing_feature_segment_row_count": 0,
       "missing_feature_skamp_row_count": 0,
       "missing_feature_solver_variable_count": 0,
+      "opaque_section_variable_lane_count": 0,
       "prohibited_active_curve_expression_kind_count": 0,
       "prohibited_active_curve_expression_record_count": 0,
       "resolved_feature_dimension_driven_coordinate_variable_count": 0,
@@ -536,7 +520,7 @@
       "transferred_native_draft_face_selection_feature_count": 0,
       "transferred_native_draft_neutral_plane_feature_count": 0,
       "transferred_native_extrude_profile_feature_count": 0,
-      "transferred_native_feature_count": 1,
+      "transferred_native_feature_count": 2,
       "transferred_native_feature_relation_constraint_count": 0,
       "transferred_native_feature_skamp_constraint_count": 0,
       "transferred_native_fillet_edge_selection_feature_count": 0,
@@ -565,7 +549,7 @@
       "transferred_thicken_feature_count": 0,
       "transferred_topological_point_count": 0,
       "transferred_topology_bound_plane_surface_count": 0,
-      "transferred_typed_feature_count": 4,
+      "transferred_typed_feature_count": 3,
       "transferred_typed_feature_relation_constraint_count": 0,
       "transferred_typed_feature_skamp_constraint_count": 0,
       "transferred_unresolved_boundary_surface_feature_count": 0,
@@ -737,7 +721,7 @@
           "namespace": "creo",
           "scope": "namespaced"
         },
-        "message": "1 history feature definition(s) retain only source-native semantics.",
+        "message": "2 history feature definition(s) retain only source-native semantics.",
         "severity": "warning"
       },
       {
@@ -831,7 +815,7 @@
           "tag": "feature_operation_name"
         },
         "creo:model:feature#45": {
-          "offset": 186,
+          "offset": 185,
           "stream": "creo:MdlStatus",
           "tag": "feature_operation_name"
         }

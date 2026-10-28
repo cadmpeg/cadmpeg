@@ -38,14 +38,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The 79-file reference population has no required legacy catalog opener and therefore no legacy role-selector population. The selector bytes in constructed framing tests remain unnamed; their following field codes do not supply a role mapping.
 
-### DI-03. Part-container object-graph ownership
-
-**Question.** How does an outer `Data` declaration's 16-byte identifier select the physical stream containing the part's design-history object graph?
-
-**Known.** `catia.md` §3.1 "The outer logical stream named `Data`" defines concrete/base class declarations and their identifiers. `CATFeatCont` names a base class of `CATPrtCont`, directly or through `CATProdCont`. This class ancestry does not join object graphs. `catia.md` §7.3 "An object graph is preceded by" defines object-graph framing, entity identity, structural owner groups, and source-schema selection. Class names, structural owner groups, and physical stream ownership are distinct incidences.
-
-**Need.** We must know the identifier-to-stream mapping across directory name forms and establish unique complete graph-extent containment before assigning the part's modeling scope.
-
 ### DI-04. Opaque inline values and head-slot namespaces
 
 **Question.** What roles do the values in opaque childless `7C09` bodies have, and which complete productions establish the namespace of the second reference in compact lead-`12` and lead-`52` heads?
@@ -192,7 +184,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the terminal byte of a `b2`, `b3`, or `b4 03 5e` record control?
 
-**Known.** The width-coded terminal is a single-byte `allocation_ref` with the seven admitted value/form pairs `(0,backward_distance)`, `(0,selector2)`, `(8,backward_distance)`, `(8,selector2)`, `(9,backward_distance)`, `(10,backward_distance)`, and `(10,selector2)`, encoded as `01`, `02`, `21`, `22`, `25`, `29`, and `2a`. The object-stream record additionally admits `(9,selector2)`, encoded as `26`. The raw byte and decoded value/form are retained independently of the endpoint identities, and the terminal exhausts the payload after the five references.
+**Known.** The width-coded terminal is a single-byte `allocation_ref` with the seven admitted value/form pairs `(0,backward_distance)`, `(0,selector2)`, `(8,backward_distance)`, `(8,selector2)`, `(9,backward_distance)`, `(10,backward_distance)`, and `(10,selector2)`, encoded as `01`, `02`, `21`, `22`, `25`, `29`, and `2a`. The object-stream record additionally admits `(9,selector2)`, encoded as `26`. The raw byte and decoded value/form are retained independently of the endpoint identities. The terminal exhausts the payload after either four or five complete references. The separate four-reference native record retains its complete source frame without assigning operand roles or neutral topology.
 
 **Need.** We must determine what the decoded value means, whether it has any writer-level relation to a successor definition or carrier construction, and whether the four-reference width-coded variant has the same role. Do not use the local successor-layout correlation as a universal endpoint-orientation rule.
 
@@ -244,7 +236,7 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Question.** Which serialized relation identifies a consolidated pcurve's geometry factory and binds its remaining persistent support tags to identity-bearing records?
 
-**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding, the unique embedded type-`3` cylinder binding, and the unique standard `00 33` carrier binding. Before the standard-carrier lookup, §7.5 outer alias rows canonicalize a raw `op1` tag only when exactly one retained alias row supplies one canonical surface-roster tag. Direct surface-support rows preserve their tag; grouped non-surface rows require one direct row in the same exact group. Duplicate raw tags, duplicate group targets, missing group targets, unknown geometry, and failed endpoint lifts remain unresolved. B5 object-stream references and allocation operands remain separate namespaces.
+**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding, the unique cylinder compact-header operand binding, and the unique standard `00 33` carrier binding. Before the standard-carrier lookup, §7.5 outer alias rows canonicalize a raw `op1` tag only when exactly one retained alias row supplies one canonical surface-roster tag. Direct surface-support rows preserve their tag; grouped non-surface rows require one direct row in the same exact group. Duplicate raw tags, duplicate group targets, missing group targets, unknown geometry, and failed endpoint lifts remain unresolved. B5 object-stream references and allocation operands remain separate namespaces.
 
 `catia.md` §6.3 "The compact tag is separate" defines factory-local tag scope and the separate addressing forms. Complete consolidated analytic and freeform carrier payloads without their own persistent surface tag supply geometry through independent construction or geometric witnesses.
 
@@ -354,11 +346,32 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 ### OS-05. Object-stream outward-shell sign
 
-**Question.** Which source field gives the outward-shell sign?
+**Question.** Which source ownership and chart relations assign absolute
+face-to-carrier orientation, and how do loop controls and signed shell members
+participate in that relation?
 
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" defines the radial orientation equations used to select a consistent neutral shell gauge.
+**Known.** `catia.md` §6.7 defines the separate loop-location controls,
+source-closed ownership payloads, and the bounded selected-plane signed-member
+and chart composition. A loop's first control alone does not establish
+outward face sense. Native outer-cylinder and negative-X-cap records supply
+counterexamples to a universal primary-control rule. A raw loop control,
+chart handedness, face occurrence, and outward shell orientation are distinct
+relations. The selected standard-plane rule does not establish a universal
+member-sign rule for other carriers or owners.
 
-**Need.** We must know the source sign to preserve native shell orientation.
+**Need.** Establish the complete selected owner, occurrence, and chart
+composition for each supported domain. Preserve the bounded standard-plane
+mapping. Determine an independent absolute orientation before transferring
+B5 face sense; do not invert all primary controls or replace them with an
+unqualified signed-member rule.
+
+**Conflict.** B5 `native_carrier_face_sense` still assigns neutral face sense
+from the unique outer loop's first control across its admitted carriers,
+with an additional cone chart-parity factor. That positive rule lacks a
+complete outward-orientation contract. The authored cylinder, NURBS,
+revolution, and torus controls exercise the implementation hypothesis; they
+do not prove it as a native format law. Standard-family topology can use a
+different, independently constrained orientation route.
 
 ### OS-06. Object-stream edge terminal controls
 
@@ -368,15 +381,13 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** We must determine the terminal's selection rule and the allocation context that selects its value and form. Equal edge geometry and endpoint incidences do not supply that rule. A fresh native writer needs evidence for the terminal; existing records retain their exact byte.
 
-## 5. Zero-entity `a9 03`
+### OS-16. Binary64 values in inline entity bodies
 
-### ZE-05. Zero-entity ownership-root selection
+**Question.** Which inline entity-body bytes are `E6 <bits:u64le>` binary64 fields, so that an `EA` among their value bytes is not an identity delimiter?
 
-**Question.** How does a zero-entity stream select its ownership root when more than one face-roster/shell/body triple is structurally valid?
+**Known.** `catia.md` §7.3 "An object graph is preceded by" defines the entity-table run, its `DE` separator, and the unique strictly increasing identity path. Inside an inline body, only `32` five-byte atoms and `FE F6` fixed frames hide `EA` bytes from the path. In a NIST part, a complete 432-record run is followed by `DE`, a 432-record `7C08` graph, a `7C0B` value block, and its `7C02` catalog in the declared `CATPrtCont` content stream. The final inline record has two `EA` candidates above the previous identity: the identity at body offset 7 and an `EA` that is the eighth byte of `E6 5f 66 99 cb a9 13 ea bf`. The path is not unique, so the graph is not detected and the part has no modeling scope. When every inline `E6` begins a nine-byte field, four other complete graph runs lose identities, because some inline bodies have an `E6` byte that is not a binary64 tag before their identity.
 
-**Known.** `zero_entity_ownership_roots` recognizes every contiguous `[0x6142, 0x6006, 0x6508]` triple with checked fields and retains the candidates in source order. The neutral zero-entity route binds ownership only when exactly one candidate exists. Multiple candidates remain native and do not select a body or shell.
-
-**Need.** We must know the terminal/root identity rule or reject multiple valid ownership triples before transferring body and shell ownership.
+**Need.** We must know the inline-body production that starts a binary64 field. Without it, the identity path stays ambiguous and the graph remains outside the modeling scope.
 
 ## 6. E5 `0D 03`
 

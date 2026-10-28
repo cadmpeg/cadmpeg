@@ -34,6 +34,8 @@ use crate::layout::stream_descriptor_header as stream_desc;
 use crate::variant::Variant;
 use crate::wire::records::SourceExtent;
 
+mod declared_contents;
+
 /// The outer and inner container magic.
 pub(crate) const OUTER_MAGIC: &[u8; 8] = &outer_hdr::MAGIC_VALUE;
 /// The nested-container stream-directory magic.
@@ -110,6 +112,12 @@ pub(crate) struct ExternalReference {
     pub(crate) offset: usize,
     /// Referenced CATIA document name or path.
     pub(crate) target: String,
+}
+
+#[derive(Debug, Default)]
+struct OuterContainerInventory {
+    has_declarations: bool,
+    resolved: Vec<OuterContainerDeclaration>,
 }
 
 /// One model-container declaration from the outer `Data` logical stream.
@@ -707,22 +715,18 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
         if search >= data.len() {
             return None;
         }
-        // Interstitial frames begin at the previous record's exact end.
-        // Their payloads cannot contribute geometry records.
-        if let Some(end) = e5_frame_end(data, search).filter(|_| data[search + 2] != 0x03) {
-            search = end;
-            continue;
-        }
-        let relative = data[search..]
-            .windows(E5_MARKER.len())
-            .position(|bytes| bytes == E5_MARKER)?;
+        let relative = data[search..].windows(E5_MARKER.len()).position(|bytes| {
+            bytes[..2] == [0xe5, 0x0d] && matches!(bytes[2], 0x03 | 0x13 | 0x83)
+        })?;
         let start = search + relative;
         let Some(end) = e5_frame_end(data, start) else {
             search = start + 1;
             continue;
         };
         search = end;
-        return Some(start..end);
+        if data[start + 2] == 0x03 {
+            return Some(start..end);
+        }
     })
 }
 
@@ -879,8 +883,10 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) external_references: Vec<ExternalReference>,
     /// Every bounded outer FINJPL block in source order.
     pub(crate) finjpl_segments: Vec<FinjplSegment>,
-    /// Exact model-container declarations from the outer `Data` stream.
+    /// Declarations whose identifiers select a unique outer stream.
     pub(crate) outer_container_declarations: Vec<OuterContainerDeclaration>,
+    /// Complete declaration presence before stream-name resolution.
+    pub(crate) has_outer_container_declarations: bool,
     /// Record-family census.
     pub(crate) census: Census,
     /// Identified storage variant.
@@ -1365,7 +1371,9 @@ fn read_extent_fields(dirbuf: &[u8], o: usize, index: usize) -> Option<(Extent, 
 /// The descriptor tail is a two-byte UTF-16LE terminator followed by one zero
 /// padding byte. The name is the complete run of printable ASCII code units
 /// immediately before that tail. This end anchor keeps unrelated UTF-16 text
-/// elsewhere in the descriptor from becoming the stream name.
+/// elsewhere in the descriptor from becoming the stream name. A `u16le` length
+/// cell counting the name and its terminator can precede the name; a cell
+/// whose value is itself a printable code unit is not part of the name.
 fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
     struct Utf16Ascii<'a>(&'a [u8]);
     impl std::fmt::Display for Utf16Ascii<'_> {
@@ -1386,6 +1394,12 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
                 } else {
                     break;
                 }
+            }
+            if name_start < tail_start
+                && View::u16_le_at(dirbuf, name_start)
+                    .is_some_and(|cell| usize::from(cell) == tail_start - name_start)
+            {
+                name_start += 2;
             }
             let name_bytes = &dirbuf[name_start..tail_start];
             if name_bytes.len() >= 6 {
@@ -1463,21 +1477,34 @@ pub(crate) fn outer_container_declarations(
     data: &[u8],
     outer: &InnerDir,
 ) -> Vec<OuterContainerDeclaration> {
+    outer_container_inventory(data, outer).resolved
+}
+
+fn outer_container_inventory(data: &[u8], outer: &InnerDir) -> OuterContainerInventory {
     let mut data_descriptors = outer
         .descriptors
         .iter()
         .filter(|descriptor| descriptor.name == "Data");
     let Some(data_descriptor) = data_descriptors.next() else {
-        return Vec::new();
+        return OuterContainerInventory::default();
     };
     if data_descriptors.next().is_some() {
-        return Vec::new();
+        return OuterContainerInventory::default();
     }
+    let names = declared_contents::DirectoryNames::new(data, outer);
     if let Some(range) = contiguous_descriptor_range(data_descriptor, outer.inner, data.len()) {
-        return parse_outer_container_declarations(&data[range], &outer.descriptors);
+        return parse_outer_container_declarations(&data[range], |name| {
+            names
+                .as_ref()
+                .and_then(|names| declared_contents::resolve(data, outer, names, name))
+        });
     }
     let logical = reconstruct_logical_stream(data, data_descriptor, outer.inner);
-    parse_outer_container_declarations(&logical, &outer.descriptors)
+    parse_outer_container_declarations(&logical, |name| {
+        names
+            .as_ref()
+            .and_then(|names| declared_contents::resolve(data, outer, names, name))
+    })
 }
 
 /// Select the unique declared outer container whose physical extent contains
@@ -1513,16 +1540,16 @@ pub(crate) fn outer_container_for_extent<'a>(
 
 fn parse_outer_container_declarations(
     data: &[u8],
-    descriptors: &[Descriptor],
-) -> Vec<OuterContainerDeclaration> {
+    resolve: impl Fn(&str) -> Option<String>,
+) -> OuterContainerInventory {
     const HEADER: &[u8] = b"\x01\x00\x03\x00";
     const PREFIX: &[u8] = b"\x01\x00\x6c\x00\x02\x00\x00\x00";
     const CLASS_BLOCK: &[u8] = b"\x02\x00\x81\x20";
     const TERMINAL: &[u8] = b"\x03\x00\xf7\x00\x03\x00\x00\x00";
 
-    let mut declarations = Vec::new();
+    let mut inventory = OuterContainerInventory::default();
     if data.len() < 64 {
-        return declarations;
+        return inventory;
     }
 
     for start in 0..data.len() - 64 {
@@ -1545,33 +1572,25 @@ fn parse_outer_container_declarations(
         let Some(uuid) = data.get(terminal + TERMINAL.len()..terminal + TERMINAL.len() + 16) else {
             continue;
         };
-        let Some((first, middle, last)) = View::u32_be_at(uuid, 4)
+        let Some((word0, first, middle, last)) = View::u32_be_at(uuid, 0)
+            .zip(View::u32_be_at(uuid, 4))
             .zip(View::u32_be_at(uuid, 8))
             .zip(View::u32_be_at(uuid, 12))
-            .map(|((first, middle), last)| (first, middle, last))
+            .map(|(((word0, first), middle), last)| (word0, first, middle, last))
         else {
             continue;
         };
-        let canonical_stream_name = format!("{first:x}_{middle:08x}_{last:x}");
-        let prefixed_stream_name = format!("_{canonical_stream_name}");
-        let stream_name = match (
-            descriptors
-                .iter()
-                .any(|descriptor| descriptor.name == canonical_stream_name),
-            descriptors
-                .iter()
-                .any(|descriptor| descriptor.name == prefixed_stream_name),
-        ) {
-            (true, false) => canonical_stream_name,
-            (false, true) => prefixed_stream_name,
-            (false, false) | (true, true) => continue,
+        inventory.has_declarations = true;
+        let canonical_stream_name = format!("{word0:x}_{first:x}_{middle:08x}_{last:x}");
+        let Some(stream_name) = resolve(&canonical_stream_name) else {
+            continue;
         };
         let Some(ordinal) = View::u32_le_at(data, start + 12) else {
             continue;
         };
         let class_name = class_name.to_owned();
         let base_class = base_class.to_owned();
-        declarations.push(OuterContainerDeclaration {
+        inventory.resolved.push(OuterContainerDeclaration {
             data_offset: start,
             ordinal,
             class_name,
@@ -1579,14 +1598,15 @@ fn parse_outer_container_declarations(
             stream_name,
         });
     }
-    let selected_streams = declarations
+    let selected_streams = inventory
+        .resolved
         .iter()
         .map(|declaration| declaration.stream_name.as_str())
         .collect::<std::collections::HashSet<_>>();
-    if selected_streams.len() != declarations.len() {
-        return Vec::new();
+    if selected_streams.len() != inventory.resolved.len() {
+        inventory.resolved.clear();
     }
-    declarations
+    inventory
 }
 
 fn declaration_class_pair(data: &[u8]) -> Option<(&str, &str)> {
@@ -1786,9 +1806,9 @@ pub(crate) fn scan_bytes<'a>(
     let previews = preview_images_in_segments(&data, &finjpl_segments);
     let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
     let external_references = external_references_in_segments(&data, &finjpl_segments);
-    let outer_container_declarations = match outer.as_ref() {
-        Some(directory) => outer_container_declarations(&data, directory),
-        None => Vec::new(),
+    let outer_container_inventory = match outer.as_ref() {
+        Some(directory) => outer_container_inventory(&data, directory),
+        None => OuterContainerInventory::default(),
     };
 
     let a9_records = match outer_preamble_range(&data) {
@@ -1843,7 +1863,8 @@ pub(crate) fn scan_bytes<'a>(
         last_save_version,
         external_references,
         finjpl_segments,
-        outer_container_declarations,
+        outer_container_declarations: outer_container_inventory.resolved,
+        has_outer_container_declarations: outer_container_inventory.has_declarations,
         census,
         variant,
         e5_record_range,

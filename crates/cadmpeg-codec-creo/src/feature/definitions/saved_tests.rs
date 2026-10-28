@@ -780,40 +780,6 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
 }
 
 #[test]
-fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
-    let payload = b"\xe3oExtrude id 7\0\xe3xExtrude id 7\0\xe3yExtrude id 7\0\xe3zExtrude ID 7\0";
-
-    let states = operation_states(payload);
-    assert_eq!(states.len(), 4);
-    for (state, (prefix, expected_name)) in states.iter().zip([
-        (b'o', "oExtrude id 7"),
-        (b'x', "xExtrude id 7"),
-        (b'y', "yExtrude id 7"),
-        (b'z', "zExtrude ID 7"),
-    ]) {
-        assert_eq!(state.feature_id, 7);
-        assert_eq!(state.kind.as_str(), "Extrude");
-        assert_eq!(state.stored_name_prefix(), Some(prefix));
-        assert!(state.display_state_conflict);
-        assert_eq!(state.state_offset + 1, state.offset);
-        assert_eq!(state.stored_name().as_deref(), Some(expected_name));
-    }
-    assert_eq!(states[3].name.identifier_keyword(), Some("ID"));
-
-    let current_operations = operations(payload);
-    let [current] = current_operations.as_slice() else {
-        panic!("one current operation");
-    };
-    assert_eq!(current.kind.as_str(), "Extrude");
-    assert!(!current.display_name_stored());
-    assert_eq!(current.stored_name(), None);
-    assert_eq!(current.name.stored_name_bytes(), None);
-    assert_eq!(current.name.identifier_keyword(), None);
-    assert_eq!(current.stored_name_prefix(), None);
-    assert!(current.display_state_conflict);
-}
-
-#[test]
 fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
     let payload = b"\xe3protextrude\0Extrude id 7\0\xe3cutextrude\0Extrude id 7\0";
 
@@ -1206,3 +1172,82 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
 }
 
 mod variable_coordinates;
+
+fn generated_header_row(
+    kind: FeatureSegmentKind,
+    vertical_horizontal: Option<u32>,
+    header: &[u8],
+) -> Vec<FeatureSavedEntity> {
+    let mut payload = vec![0xe3, 7];
+    payload.extend(header);
+    payload.extend([0x0f; 12]);
+    payload.push(0xe3);
+    let order = FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureOrderRow {
+            external_id: 42,
+            internal_id: 7,
+            bitmask: 0,
+            offset: 0,
+        }],
+        offset: 0,
+    };
+    let segments = FeatureSegmentTable {
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureSegment {
+            kind,
+            directions: [None; 3],
+            center_id: Some(3),
+            arc_orientation: Some(0),
+            vertical_horizontal,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 42,
+            body: Vec::new(),
+            offset: 0,
+        }]
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
+        offset: 0,
+    };
+    saved_positional_generated_entities(
+        &payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        Some(&order),
+        Some(&segments),
+    )
+}
+
+#[test]
+fn saved_generated_header_refuses_nearby_terminator_and_unproved_counted_forms() {
+    for header in [
+        vec![0, 0xe2],
+        vec![0xf7, 0x80, 0x96, 0, 0xe2],
+        vec![0xf8, 1, 0xf7, 7, 0xfb, 0xe2],
+    ] {
+        assert!(generated_header_row(FeatureSegmentKind::Arc([1, 2]), None, &header).is_empty());
+    }
+}
+
+#[test]
+fn saved_generated_header_keeps_immediate_and_single_reference_controls() {
+    for header in [
+        vec![0xe2],
+        vec![0xf7, 0x80, 0x96, 0xe2],
+        vec![0xf7, 0x80, 0xe3, 0xe2],
+    ] {
+        let rows = generated_header_row(FeatureSegmentKind::Arc([1, 2]), None, &header);
+        let [FeatureSavedEntity::Arc(arc)] = rows.as_slice() else {
+            panic!("exact supported saved header");
+        };
+        assert_eq!(arc.center, [Some(0.0); 3]);
+        assert_eq!(arc.radius, Some(0.0));
+    }
+}

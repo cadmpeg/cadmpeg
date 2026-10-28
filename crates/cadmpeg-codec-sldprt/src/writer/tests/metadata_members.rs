@@ -289,7 +289,7 @@ fn the_actual_owned_stream_is_required_even_if_a_lookalike_member_exists() {
 }
 
 #[test]
-fn configuration_manager_and_feature_metadata_keep_their_separate_owners() {
+fn unsupported_manager_fields_cannot_patch_a_retained_member() {
     use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
     let (decoded, _) = shared_member();
     let mut ir = decoded.ir().clone();
@@ -339,14 +339,13 @@ fn configuration_manager_and_feature_metadata_keep_their_separate_owners() {
             .collect::<Vec<_>>(),
         vec!["Contents/CMgr", MEMBER]
     );
-    edit_radius(&mut ir);
-    crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 0.001)
-        .unwrap();
-    assert_eq!(sections[0].1, payload);
-    assert_eq!(
-        &sections[1].1[sections[1].1.len() - 8..],
-        &0.041f64.to_le_bytes()
-    );
+    let before = sections.clone();
+    let error =
+        crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 0.001)
+            .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(error.to_string().contains("configuration-manager"));
+    assert_eq!(sections, before);
 }
 
 #[test]
@@ -777,7 +776,7 @@ fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
 fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
     let history: &[u8] = br#"<Keywords Name="Authored"><Configuration Name="Saved"/><Feature Name="NativeTree" Type="Origin" id="11"/></Keywords>"#;
     let ordinary: &[u8] = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swConfigurationName = 'Saved'/></swSolidWorks>"#;
-    let stale: &[u8] = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swConfigurationName="Stale"/><swConfiguration swID="0" swName="Saved" swMostRecentConfiguration="YES"/></swSolidWorks>"#;
+    let stale: &[u8] = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel id="stale" swConfigurationName="Stale" swConfigurationId="1"/><swModel id="saved" swConfigurationName="Saved" swConfigurationId="0"/><swConfiguration swID="0" swName="Saved" swModelRef="saved" swMostRecentConfiguration="YES" swConfigurationNeedsUpdate="NO"/></swSolidWorks>"#;
     for (xml, indexed, rename) in [
         (ordinary, false, false),
         (stale, true, false),

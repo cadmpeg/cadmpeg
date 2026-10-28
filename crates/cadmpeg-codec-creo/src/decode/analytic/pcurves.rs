@@ -255,6 +255,7 @@ impl TwoChartEndpointSets {
 #[derive(Debug)]
 enum TwoChartMapping {
     NoSamples,
+    Withheld,
     Mapped {
         endpoint_sets: Option<TwoChartEndpointSets>,
         missing_surface_paths: usize,
@@ -270,6 +271,17 @@ fn map_two_chart_endpoint_sets(
     pcurve: &crate::curve::TwoChartPcurveSamples,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<TwoChartMapping, cadmpeg_core::CodecError> {
+    if scan
+        .surfaces
+        .withheld_cap_curve_ids
+        .contains(&pcurve.curve_id)
+        || scan
+            .surfaces
+            .withheld_cone_origin_curve_ids
+            .contains(&pcurve.curve_id)
+    {
+        return Ok(TwoChartMapping::Withheld);
+    }
     let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
         return Ok(TwoChartMapping::NoSamples);
     };
@@ -349,6 +361,7 @@ pub(in crate::decode) fn mapped_two_chart_endpoint_sets(
                 ..
             } => endpoint_sets,
             TwoChartMapping::NoSamples
+            | TwoChartMapping::Withheld
             | TwoChartMapping::Mapped {
                 surface_mismatch: true,
                 ..
@@ -1057,6 +1070,15 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                              authoritative: bool,
                              endpoint_carrier_proof: bool|
      -> Result<(), cadmpeg_core::CodecError> {
+        if scan.surfaces.withheld_cap_curve_ids.contains(&curve_id)
+            || scan
+                .surfaces
+                .withheld_cone_origin_curve_ids
+                .contains(&curve_id)
+        {
+            diagnostics.unmapped_records += 1;
+            return Ok(());
+        }
         let mut mapped_paths = Vec::new();
         let mut carrier_mapped_paths = Vec::new();
         let mut carrier_proof_available = false;
@@ -1213,6 +1235,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let mapping =
             map_two_chart_endpoint_sets(ctx, scan, &model_surfaces, pcurve, source_carriers)?;
         let (endpoint_sets, surface_mismatch) = match mapping {
+            TwoChartMapping::Withheld => (None, false),
             TwoChartMapping::NoSamples => {
                 diagnostics.two_chart_no_sample_records += 1;
                 (None, false)
@@ -1632,6 +1655,14 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                                endpoints: [[f64; 2]; 2],
                                offset: usize|
          -> Result<(), cadmpeg_core::CodecError> {
+            if scan.surfaces.withheld_cap_curve_ids.contains(&curve_id)
+                || scan
+                    .surfaces
+                    .withheld_cone_origin_curve_ids
+                    .contains(&curve_id)
+            {
+                return Ok(());
+            }
             let Some(face_id) = face_id.map(NonZeroU32::get) else {
                 return Ok(());
             };
@@ -2367,6 +2398,126 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn cap_envelope_withholding_blocks_single_chart_pcurve_promotion() {
+        let mut scan = crate::test_support::empty_container_scan();
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("creo:visibgeom:surface#8".to_owned()).expect("surface identity"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("plane chart"),
+            )),
+            source_object: None,
+        });
+        let pcurve = crate::curve::TwoChartPcurveSamples {
+            curve_id: 9,
+            faces: [7, 8],
+            samples: vec![[[0.0, 0.0], [0.0, 0.0]], [[0.0, 1.0], [0.0, 1.0]]],
+            offset: 0,
+        };
+        crate::decode::with_service_context(|ctx| {
+            let surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+            let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+            assert!(matches!(
+                mapped_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
+                    .expect("ordinary missing chart"),
+                Some(TwoChartEndpointSets::Second(_))
+            ));
+            scan.surfaces.withheld_cap_curve_ids.insert(9);
+            assert!(matches!(
+                map_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
+                    .expect("explicitly withheld chart"),
+                TwoChartMapping::Withheld
+            ));
+            assert!(
+                mapped_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
+                    .expect("withheld endpoint sets")
+                    .is_none()
+            );
+            scan.curves.two_chart_pcurves.push(pcurve);
+            let (evidence, _) =
+                pcurve_edge_endpoint_evidence_with_diagnostics(ctx, &scan, &ir, &carriers)
+                    .expect("bounded pcurve evidence");
+            assert!(evidence.is_empty());
+            assert!(transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default()
+            )
+            .expect("withheld carrier")
+            .is_empty());
+        });
+        assert!(ir.model.curves.is_empty());
+        assert!(ir.model.points.is_empty());
+    }
+
+    #[test]
+    fn compact_cone_origin_withholding_blocks_single_chart_pcurve_promotion() {
+        let mut scan = crate::test_support::empty_container_scan();
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("creo:visibgeom:surface#8".to_owned()).expect("surface identity"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("plane chart"),
+            )),
+            source_object: None,
+        });
+        let pcurve = crate::curve::TwoChartPcurveSamples {
+            curve_id: 9,
+            faces: [7, 8],
+            samples: vec![[[0.0, 0.0], [0.0, 0.0]], [[0.0, 1.0], [0.0, 1.0]]],
+            offset: 0,
+        };
+        crate::decode::with_service_context(|ctx| {
+            let surfaces = ModelSurfaceIndex::new(&ir.model.surfaces);
+            let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+            assert!(matches!(
+                mapped_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
+                    .expect("ordinary missing chart"),
+                Some(TwoChartEndpointSets::Second(_))
+            ));
+            scan.surfaces.withheld_cone_origin_curve_ids.insert(9);
+            assert!(matches!(
+                map_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
+                    .expect("explicitly withheld chart"),
+                TwoChartMapping::Withheld
+            ));
+            assert!(
+                mapped_two_chart_endpoint_sets(ctx, &scan, &surfaces, &pcurve, &carriers)
+                    .expect("withheld endpoint sets")
+                    .is_none()
+            );
+            scan.curves.two_chart_pcurves.push(pcurve);
+            let (evidence, _) =
+                pcurve_edge_endpoint_evidence_with_diagnostics(ctx, &scan, &ir, &carriers)
+                    .expect("bounded pcurve evidence");
+            assert!(evidence.is_empty());
+            assert!(transfer_analytic_pcurve_carriers(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default()
+            )
+            .expect("withheld carrier")
+            .is_empty());
+        });
+        assert!(ir.model.curves.is_empty());
+        assert!(ir.model.points.is_empty());
+    }
 
     #[test]
     fn legacy_spline_topology_filter_is_layout_scoped() {

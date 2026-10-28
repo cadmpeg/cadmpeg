@@ -116,11 +116,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 101,
             "state_ordinal": 0,
             "stored_name": "Körper ID 8051",
-            "stored_name_bytes": "4bc3b6727065722049442038303531",
-            "stored_name_prefix": null
+            "stored_name_bytes": "4bc3b6727065722049442038303531"
           },
           {
             "current": true,
@@ -133,11 +131,9 @@
             "parent_feature_id": 8051,
             "recipe": "protextrude",
             "root_schema_class": 917,
-            "state_offset": 118,
             "state_ordinal": 0,
             "stored_name": null,
-            "stored_name_bytes": null,
-            "stored_name_prefix": null
+            "stored_name_bytes": null
           }
         ]
       }
@@ -354,6 +350,7 @@
       "missing_feature_segment_row_count": 0,
       "missing_feature_skamp_row_count": 0,
       "missing_feature_solver_variable_count": 0,
+      "opaque_section_variable_lane_count": 0,
       "prohibited_active_curve_expression_kind_count": 0,
       "prohibited_active_curve_expression_record_count": 0,
       "resolved_feature_dimension_driven_coordinate_variable_count": 0,

@@ -11,31 +11,125 @@ pub(in super::super) fn feature_recipe(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::operations::FeatureRecipeKind> {
-    current_feature_recipe(&scan.features.operations, feature_id)
-        .map(crate::feature::operations::FeatureRecipe::kind)
+    admitted_feature_recipe(scan, feature_id).map(crate::feature::operations::FeatureRecipe::kind)
 }
 
 pub(in super::super) fn feature_recipe_effect(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::operations::FeatureRecipeEffect> {
-    current_feature_recipe(&scan.features.operations, feature_id)
-        .map(crate::feature::operations::FeatureRecipe::effect)
+    admitted_feature_recipe(scan, feature_id).map(crate::feature::operations::FeatureRecipe::effect)
 }
 
 pub(in super::super) fn feature_section_sweep_semantics_conflict(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> bool {
-    current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
-        operation.recipe.is_conflicting()
-            || (operation.display_state_conflict
-                && matches!(
-                    operation.recipe,
-                    crate::feature::operations::RecipeResolution::None
-                )
-                && operation.kind == crate::feature::operations::OperationKind::Native)
-    })
+    feature_recipe_schema_conflict(scan, feature_id)
+        || current_feature_operation(&scan.features.operations, feature_id).is_some_and(
+            |operation| {
+                operation.recipe.is_conflicting()
+                    || (operation.display_state_conflict
+                        && matches!(
+                            operation.recipe,
+                            crate::feature::operations::RecipeResolution::None
+                        )
+                        && operation.kind == crate::feature::operations::OperationKind::Native)
+            },
+        )
+}
+
+pub(in super::super) fn admitted_feature_recipe(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<crate::feature::operations::FeatureRecipe> {
+    if feature_recipe_schema_conflict(scan, feature_id) {
+        return None;
+    }
+    let stored = current_feature_recipe(&scan.features.operations, feature_id);
+    match (stored, row_form_recipe(scan, feature_id)) {
+        (Some(stored), Some(formed)) => (stored == formed).then_some(stored),
+        (stored, formed) => stored.or(formed),
+    }
+}
+
+/// The section-sweep recipe that every `AllFeatur` row of the feature states
+/// through its feature form.
+fn row_form_recipe(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<crate::feature::operations::FeatureRecipe> {
+    let mut recipes = scan
+        .features
+        .rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .map(crate::feature::rows::FeatureRow::section_sweep_form_recipe);
+    let first = recipes.next()??;
+    recipes.all(|recipe| recipe == Some(first)).then_some(first)
+}
+
+pub(in super::super) fn admitted_feature_recipe_parent(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<u32> {
+    admitted_feature_recipe(scan, feature_id)?;
+    current_feature_recipe_parent(&scan.features.operations, feature_id)
+}
+
+fn feature_recipe_schema_conflict(scan: &ContainerScan, feature_id: u32) -> bool {
+    let Some(operation) = current_feature_operation(&scan.features.operations, feature_id) else {
+        return false;
+    };
+    let Some(recipe) = operation.recipe.resolved() else {
+        return false;
+    };
+    let expected = match recipe.effect() {
+        crate::feature::operations::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
+        crate::feature::operations::FeatureRecipeEffect::Cut => SchemaClass::Cut,
+    };
+    operation
+        .root_schema_class()
+        .is_some_and(|class| class != expected)
+        || scan
+            .features
+            .rows
+            .iter()
+            .chain(scan.features.depdb_recipe_rows.iter())
+            .filter(|row| row.feature_id == feature_id)
+            .filter_map(|row| row.root_schema_class)
+            .any(|class| class != expected)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RowClass {
+    Missing,
+    Conflicting,
+    Known(SchemaClass),
+}
+
+impl RowClass {
+    fn from_consensus(class: Option<SchemaClass>) -> Self {
+        class.map_or(Self::Conflicting, Self::Known)
+    }
+
+    fn class(self) -> Option<SchemaClass> {
+        match self {
+            Self::Known(class) => Some(class),
+            Self::Missing | Self::Conflicting => None,
+        }
+    }
+}
+
+fn material_schema_disagreement(operation_class: Option<SchemaClass>, row_class: RowClass) -> bool {
+    matches!(
+        operation_class,
+        Some(SchemaClass::Cut | SchemaClass::Protrusion)
+    ) && match row_class {
+        RowClass::Missing => false,
+        RowClass::Conflicting => true,
+        RowClass::Known(class) => Some(class) != operation_class,
+    }
 }
 
 pub(in super::super) fn current_additive_feature_recipe(
@@ -166,6 +260,13 @@ pub(in super::super) fn feature_schema_class(
         feature_id,
     )
     .or_else(|| {
+        if matches!(
+            current_feature_operation(&scan.features.operations, feature_id)
+                .and_then(crate::feature::operations::FeatureOperation::root_schema_class),
+            Some(SchemaClass::Cut | SchemaClass::Protrusion)
+        ) {
+            return None;
+        }
         scan.features
             .legacy_rounds
             .iter()
@@ -223,15 +324,23 @@ impl<'a> FeatureSchemaClasses<'a> {
     }
 
     pub(in super::super) fn get(&self, feature_id: u32) -> Option<SchemaClass> {
-        self.operations
+        let operation_class = self
+            .operations
             .get(feature_id)
-            .and_then(crate::feature::operations::FeatureOperation::root_schema_class)
-            .or_else(|| self.row_classes.get(&feature_id).copied().flatten())
-            .or_else(|| {
-                self.legacy_rounds
-                    .contains(&feature_id)
-                    .then_some(SchemaClass::Round)
-            })
+            .and_then(crate::feature::operations::FeatureOperation::root_schema_class);
+        let row_class = self
+            .row_classes
+            .get(&feature_id)
+            .copied()
+            .map_or(RowClass::Missing, RowClass::from_consensus);
+        if material_schema_disagreement(operation_class, row_class) {
+            return None;
+        }
+        operation_class.or_else(|| row_class.class()).or_else(|| {
+            self.legacy_rounds
+                .contains(&feature_id)
+                .then_some(SchemaClass::Round)
+        })
     }
 }
 
@@ -240,19 +349,20 @@ pub(in super::super) fn resolved_feature_schema_class_from_classes(
     classes: impl IntoIterator<Item = SchemaClass>,
     feature_id: u32,
 ) -> Option<SchemaClass> {
-    if let Some(schema_class) = current_feature_operation(operations, feature_id)
-        .and_then(crate::feature::operations::FeatureOperation::root_schema_class)
-    {
-        return Some(schema_class);
+    let operation_class = current_feature_operation(operations, feature_id)
+        .and_then(crate::feature::operations::FeatureOperation::root_schema_class);
+    let mut row_class = RowClass::Missing;
+    for class in classes {
+        row_class = match row_class {
+            RowClass::Missing => RowClass::Known(class),
+            RowClass::Known(previous) if previous == class => RowClass::Known(class),
+            _ => RowClass::Conflicting,
+        };
     }
-    let mut selected = None;
-    for schema_class in classes {
-        if selected.is_some_and(|previous| previous != schema_class) {
-            return None;
-        }
-        selected = Some(schema_class);
+    if material_schema_disagreement(operation_class, row_class) {
+        return None;
     }
-    selected
+    operation_class.or_else(|| row_class.class())
 }
 
 pub(in super::super) fn feature_row_schema_classes(

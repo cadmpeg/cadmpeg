@@ -33,6 +33,7 @@ fn round_sample_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 7,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 7,
         });
     scan
@@ -83,6 +84,7 @@ fn mixed_round_sample_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 8,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 8,
         });
     scan
@@ -267,6 +269,7 @@ fn chamfer_uses_transferred_model_plane_carrier() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 11,
         });
     scan.features
@@ -447,6 +450,7 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 11,
         });
     scan.features
@@ -932,6 +936,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
                 ),
                 boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                 offset: usize::try_from(id).expect("fixture index fits usize"),
+                type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
                 body_offset: usize::try_from(id).expect("fixture index fits usize") + 1,
             });
     }
@@ -1060,6 +1065,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: offset + 1,
         }
     };
@@ -1158,6 +1164,7 @@ fn torus_radius_samples_read_the_torus_radius() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 6,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 7,
         });
     let rows = [&scan.surfaces.rows[0]];

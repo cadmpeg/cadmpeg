@@ -103,8 +103,7 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter_map(|equation| {
             if equation.function_id != 6 {
                 return None;
@@ -284,8 +283,7 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
     }
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
         .filter_map(|equation| {
             let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
@@ -365,8 +363,7 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
     }
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
         .filter_map(|equation| {
             let [Some(first), Some(second)] = equation.arguments.as_slice() else {
@@ -467,9 +464,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
         return Vec::new();
     }
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    equations
-        .rows
-        .iter()
+    equations.rows_without_opaque_values(variables)
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let [
@@ -582,9 +577,7 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
         return Vec::new();
     }
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    equations
-        .rows
-        .iter()
+    equations.rows_without_opaque_values(variables)
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let rows: [Option<&crate::feature::definitions::FeatureVariableRow>; 9] =

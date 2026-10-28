@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::loss::SldprtLossCode;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::bridge;
 use crate::test_support::parasolid::coedge;
@@ -210,6 +211,66 @@ fn false_later_loop_candidate_does_not_replace_owned_loop() {
         result.ir().model.loops[0].id.as_str(),
         "sldprt:brep:loop#20"
     );
+}
+
+#[test]
+fn claimed_face_without_a_closed_ring_is_a_face_records_unread_loss() {
+    let mut body = triangle_body();
+    let last_fin = body
+        .windows(4)
+        .position(|window| window == [0x00, 0x11, 0x00, 32])
+        .expect("FIN 32");
+    // `refs[3]` is the next FIN; 33 names no record, so the ring stays open.
+    body[last_fin + 10..last_fin + 12].copy_from_slice(&33u16.to_be_bytes());
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.faces.is_empty());
+    let unread: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::TopologyFaceRecordsUnread.kind())
+        .collect();
+    assert_eq!(unread.len(), 1);
+    assert!(unread[0].message.starts_with("1 framed FACE record(s)"));
+}
+
+#[test]
+fn tolerant_edge_without_its_fin_curve_is_a_tolerant_edge_loss() {
+    let mut body = triangle_body();
+    let edge = body
+        .windows(4)
+        .position(|window| window == [0x00, 0x10, 0x00, 40])
+        .expect("EDGE 40")
+        + 2;
+    body[edge + 8..edge + 16].copy_from_slice(&2e-8_f64.to_be_bytes());
+    body[edge + 22..edge + 24].copy_from_slice(&1u16.to_be_bytes());
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let model = &result.ir().model;
+    assert_eq!(model.faces.len(), 1);
+    assert_eq!(model.edges.len(), 3);
+    assert!(model.edges.iter().all(|edge| edge.curve().is_none()));
+    let tolerant: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::GeometryTolerantEdgeCurveUnread.kind())
+        .collect();
+    assert_eq!(tolerant.len(), 1);
+    assert!(tolerant[0].message.starts_with("1 tolerant edge(s)"));
 }
 
 #[test]

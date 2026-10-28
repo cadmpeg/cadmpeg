@@ -445,10 +445,6 @@ pub(in super::super) fn round_constant_radius(
     if let Some(radius) = round_replay_radius(scan, ir, source_carriers, feature_id) {
         return Ok(Some(radius));
     }
-    // Unequal decoded rolling-radius samples identify a variable-radius
-    // round even when another generated row has no radius proof. A support
-    // plane fallback must not turn that incomplete, unequal sample set into
-    // a false constant radius.
     if differing_positive_lengths(&round_observed_radii(scan, feature_id)) {
         return Ok(None);
     }

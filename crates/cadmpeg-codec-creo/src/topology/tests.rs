@@ -917,3 +917,81 @@ fn build_matches_the_linear_scan_walk_on_random_successor_graphs() {
 }
 
 mod components;
+
+#[test]
+fn complete_face_coverage_keeps_every_incident_side() {
+    let rows = [row(1, 1)];
+    let (_, loops) = build(&rows);
+    assert_eq!(
+        super::completely_covered_faces(&rows, &loops, |_| true),
+        BTreeSet::from([10, 20])
+    );
+    assert!(super::completely_covered_faces(&[], &loops, |_| true).is_empty());
+}
+
+#[test]
+fn complete_face_coverage_refuses_open_incident_fragment() {
+    let mut open = row(2, 99);
+    open.faces[1] = std::num::NonZeroU32::new(30);
+    let rows = [row(1, 1), open];
+    let (edges, loops) = build(&rows);
+    assert!(loops
+        .iter()
+        .any(|lp| lp.face_id() == std::num::NonZeroU32::new(10)));
+    assert!(edges
+        .iter()
+        .any(|edge| edge.id.curve_id == 2 && edge.next.is_none()));
+    assert_eq!(
+        super::completely_covered_faces(&rows, &loops, |_| true),
+        BTreeSet::from([20])
+    );
+}
+
+#[test]
+fn complete_face_coverage_refuses_all_faces_on_duplicate_curve_occurrences() {
+    let mut duplicate = row(2, 2);
+    duplicate.faces[1] = std::num::NonZeroU32::new(30);
+    let rows = [row(1, 1), duplicate.clone(), duplicate];
+    let (_, loops) = build(&rows);
+    assert!(loops
+        .iter()
+        .any(|lp| lp.face_id() == std::num::NonZeroU32::new(10)));
+    assert_eq!(
+        super::completely_covered_faces(&rows, &loops, |_| true),
+        BTreeSet::from([20])
+    );
+}
+
+#[test]
+fn complete_face_coverage_refuses_repeated_loop_uses() {
+    let rows = [row(1, 1)];
+    let (_, loops) = build(&rows);
+    let repeated = loops.iter().chain(&loops).cloned().collect::<Vec<_>>();
+    assert!(super::completely_covered_faces(&rows, &repeated, |_| true).is_empty());
+}
+
+#[test]
+fn complete_face_coverage_requires_only_sides_the_predicate_requires() {
+    let modern = |partner: Option<u32>| partner.is_none_or(|face| face != 30);
+    let legacy = |partner: Option<u32>| partner.is_some_and(|face| face != 30);
+    let mut stale = row(2, 99);
+    stale.faces[1] = std::num::NonZeroU32::new(30);
+    let rows = [row(1, 1), stale];
+    let (_, loops) = build(&rows);
+    assert_eq!(
+        super::completely_covered_faces(&rows, &loops, modern),
+        BTreeSet::from([10, 20])
+    );
+    let mut open = row(2, 99);
+    open.faces[1] = None;
+    let rows = [row(1, 1), open];
+    let (_, loops) = build(&rows);
+    assert_eq!(
+        super::completely_covered_faces(&rows, &loops, modern),
+        BTreeSet::from([20])
+    );
+    assert_eq!(
+        super::completely_covered_faces(&rows, &loops, legacy),
+        BTreeSet::from([10, 20])
+    );
+}

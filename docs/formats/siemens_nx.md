@@ -1145,8 +1145,10 @@ identity. Each Hvec consumes its complete eleven-double carrier. The two
 character fields and the count remain independent; they are not a fixed
 `4c3f` marker followed by an uncounted numeric tail.
 
-The TRANSFORM list is `node_id, owner, next, previous, rotation_matrix[9],
-translation_vector, scale, flag, perspective_vector, precision`.
+The base TRANSFORM list has nine transmitted fields: `node_id, owner, next,
+previous, rotation_matrix[9], translation_vector, scale, flag,
+perspective_vector`. The base `max_scale` field is not transmitted.
+An appended `precision` pointer produces a ten-field list.
 `translation_vector` and `perspective_vector` are three-double vectors.
 `precision` is a status-framed pointer. Neither a constant matrix nor a
 sentinel perspective vector changes those field roles.
@@ -1157,6 +1159,10 @@ list_length, block_length, finger_index, finger_block, list_block`.
 list is `n_entries, index_map_offset, next_block, entries[count]`. Its
 variable count precedes the XMT identity; `next_block` is independent of the
 counted entries. These node names correspond to types 70 and 74.
+
+The SWEPT_SURF (type 67) `owner` targets the SURFACE_OWNER union, pointer
+class 1007; it is not a fixed BODY reference. Its `sense` is positive `2b` or
+negative `2d`.
 
 The fifteen-field WORLD list is `assembly, attribute, body, transform,
 surface, curve, point, alive, attrib_def, attdef_list, highest_id, current_id,
@@ -1188,6 +1194,17 @@ node. A member's `owning_group` points back to the group, and its `owner`
 references the member entity. The member-chain directions and the entity's
 attribute-chain directions are distinct pointer fields.
 
+Each GROUP pointer has a nonzero biased index token. The owning-part pointer
+is non-null; the other four pointers permit null XMT 1.
+
+Type 91 is `MEMBER_OF_GROUP`, named `MEMBER_OF_FEATURE` in schemas 11004 and
+13006. Its fields are `dummy_node_id:u32 BE`, `owning_group`, `owner`, `next`,
+`previous`, `next_member`, and `previous_member`. The integer occupies four
+bytes and is separate from the six pointer fields. The
+`owning_group` and `owner` pointers are non-null; the four chain pointers
+permit null XMT 1. A primary record uses six plain biased pointers and ends
+immediately after `previous_member`.
+
 The GROUP `type` names its allowed member family:
 
 | Value | Family |
@@ -1218,6 +1235,8 @@ are outside the member union.
 `kind, xmt, 00 01` shape does not establish a deletion event. A deletion needs
 an independently established node frame, target identity, byte extent, and
 owning change. No deletion or numerical BODY scope selects a current state.
+Neither a short nor an extended apparent XMT in this shape certifies a
+deletion endpoint.
 
 ---
 
@@ -1407,7 +1426,7 @@ B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+
 | Type | Tag    | Role                                                                                                                                                        |
 | ---: | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 |  125 | `007d` | B-surface control-grid payload (`double_count` near `+91`, then values)                                                                                     |
-|  126 | `007e` | B-surface descriptor: `u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`, `u_pole_count +10`, `v_pole_count +14`, U/V knot types `+18/+19`, distinct-knot counts `+20/+24`, mult/knot refs |
+|  126 | `007e` | B-surface descriptor: `u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`, `u_pole_count +10`, `v_pole_count +14`, U/V knot types `+18/+19`, distinct-knot counts `+20/+24`, rational `+28`, U/V closed `+29/+30`, form `+31`, vertex dimension `+32`, mult/knot refs |
 |  127 | `007f` | multiplicity arrays (`alloc`, ref, `alloc × u16`)                                                                                                           |
 |  128 | `0080` | knot arrays (`alloc`, ref, `alloc × f64`)                                                                                                                   |
 |  135 | `0087` | B-curve control payload                                                                                                                                     |
@@ -1428,9 +1447,9 @@ does not select reference cardinality. The status-framed form has three
 non-null and may use compact or extended XMT encoding. The complete form ends
 after the knot-reference status.
 
-Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional knot types, distinct-knot counts, and multiplicity and knot references agree. A payload reference present in either equivalent representation supplies the shared payload identity; two different payload identities or any differing basis field reject the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
+Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. A complete status-reference descriptor's declared vertex dimension and rational logical must agree with that stride. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional knot types, distinct-knot counts, and multiplicity and knot references agree. A payload reference present in either equivalent representation supplies the shared payload identity; two different payload identities or any differing basis field reject the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
 
-The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4` and `+5`, after the optional envelope/index shift. The bytes at `+18` and `+19` are U/V knot-type values, not periodicity flags. Type 136 stores its knot type at `+16` and its periodic logical flag at `+17`. A type-136 dimension-2 carrier is a pcurve and uses the same periodic flag. Knot types use the Parasolid values `1` = unset, `2` = non-uniform, `3` = uniform, `4` = quasi-uniform, `5` = piecewise Bézier, and `6` = Bézier ends. Knot type is admission metadata only; it does not determine rationality, periodicity, parameter direction, or control-grid stride. Rationality comes from the control-grid stride.
+The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4` and `+5`, after the optional envelope/index shift. The bytes at `+18` and `+19` are U/V knot-type values, not periodicity flags. Type 136 stores its knot type at `+16` and its periodic logical flag at `+17`. A type-136 dimension-2 carrier is a pcurve and uses the same periodic flag. Knot types use the Parasolid values `1` = unset, `2` = non-uniform, `3` = uniform, `4` = quasi-uniform, `5` = piecewise Bézier, and `6` = Bézier ends. Knot type is admission metadata only; it does not determine rationality, periodicity, parameter direction, or control-grid stride. Rationality comes from the declared rational logical when the descriptor carries one, and otherwise from the control-grid stride.
 
 Degree, pole-count, and distinct-knot-count fields have no additional numeric ceiling beyond their encoded integer widths. The basis cardinality and the complete counted control, multiplicity, and knot lanes are the validity bounds. Every distinct knot has a positive multiplicity, and the expanded knot count is exactly `pole_count + degree + 1` in each direction.
 
@@ -1518,6 +1537,15 @@ the second surface.
 Without one unique values array, the construction retains its serialized
 reference order. Missing or repeated arrays do not supply a selector.
 Sentinel-bearing or unevaluable lanes do not establish a validated pcurve.
+
+When completing a support lane, a complete finite serialized values lane for
+the same established support precedes inverse candidates when its sample count
+matches the chart and every sample forward-evaluates within the effective
+chart and cache fit tolerance. A constant UV curve cannot represent spatially
+distinct chart points. Refuse that derived lane before approximate numerical
+acceptance, including when numerical work is exhausted. Native values retain
+their raw identity. A sample certificate does not establish a continuous
+inverse or resolve indistinguishable branches.
 
 When exactly one serialized support is null, an edge using the construction
 supplies the missing support if its incident face surfaces contain exactly one
@@ -2539,7 +2567,7 @@ An `EXTRACT_STRING` operation with four null operation-label object-index fields
 
 The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.
 
-The `SWP104` operation label identifies a sweep-family construction. Its profile, path, result mode, orientation, transition, transformation, twist, and scale remain unresolved until their serialized construction fields are assigned.
+The `SWP104` operation label is shared by revolved, swept, and cable constructions. The owning parameter-class declaration distinguishes these families. Its profile, path, result mode, orientation, transition, transformation, tangent propagation, simplification, twist, and scale remain unresolved until their serialized construction fields are assigned.
 
 A bounded `SWP104` payload begins with one construction branch: `parameter-class-index, 00 00 01 00, shifted-f64[4], optional-zero, profile-class-index, 01, declared-count, member-reference[declared-count - 1], count-witness?, state-lane, ff 01 02, successor-reference, 00`. Both class indices are one-based declaration indices in the owning OM section. The parameter class is `UGS::SWEEP_revolved_parms_mbf`, `UGS::SWEEP_swept_parms`, or `UGS::SWEEP_cable_parms`. The profile class is `UGS::CM_profile`. These class identities do not assign authored profile, path, orientation, twist, or scale values.
 
@@ -3041,6 +3069,16 @@ replaces that node; a previously absent key adds a node. Equal numeric XMT
 values in separate partition namespaces do not identify one node. An
 unestablished change boundary supplies no current-state selection.
 
+**Reader policy:** no supported aggregate parser establishes an owned, directed
+pmark edge and its input state. Physical stream pairing remains provenance.
+Aggregate records do not replace saved Partition or Plain image geometry,
+become standalone neutral geometry or semantic residuals, update primary
+GROUP membership, or establish appearance and operation-result bindings to
+those images. Raw history records and streams remain retained natively. The
+`deltas.selection-unresolved` warning reports withheld replay alongside transferred
+geometry. A saved image is not a certificate of regenerated current design;
+a future replay reader must establish the constituent frame and pmark edge.
+
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table contains a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 
 An object-id word whose decoded value occurs exactly once in this table has an order-independent value witness scoped by the table identity. Duplicate values retain their serialized members and ordinal identities but have no value witness. The value witness does not replace the ordinal identity used by table-indexed target fields.
@@ -3120,7 +3158,7 @@ Type 127 stores `00 7f [ff], count:u32 BE, xmt, value[count]:u16 BE`. Type 128 u
 
 Degrees and individual knot multiplicities use 16-bit fields. Pole counts, distinct-knot counts, and variable-node element counts use 32-bit fields. The declared count determines the complete value-lane length in units of the element width. The complete lane lies within its owning stream.
 
-The B-spline knot type does not determine whether a control grid is rational or periodic. The control-grid stride determines the representation: stride 3 stores xyz and stride 4 stores xyzw.
+The B-spline knot type does not determine whether a control grid is rational or periodic. A complete status-reference descriptor's vertex dimension and rational logical select its control representation. Non-rational dimensions 2 and 3 store UV and XYZ respectively. Rational dimensions 3 and 4 store UVW and XYZW respectively, with a positive final weight. The declared control-array count equals the pole count times the complete vertex dimension; a surface uses the product of its U and V pole counts. A contradictory count, dimension, or rational flag has no neutral control grouping.
 
 The knot-type byte is `SCH_knot_type_t` metadata. The order is the degree plus one.
 

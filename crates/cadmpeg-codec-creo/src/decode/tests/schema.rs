@@ -15,10 +15,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container::{self};
 use crate::CreoCodec;
-
-const EPS_FULL_TURN_REVOLUTION: f64 = 1.0e-12;
 
 #[test]
 fn decode_types_class_911_as_unresolved_hole() {
@@ -551,7 +548,13 @@ fn decode_types_named_draft_with_unresolved_operands() {
 
 #[test]
 fn decode_types_named_mirror_with_unresolved_operands() {
-    let data = build_prt("c", &[("MdlStatus", b"oMirror id 4\0".to_vec())]);
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"\xe2\x27\x26\x08\x04\x0boMirror id 4\0".to_vec(),
+        )],
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -600,18 +603,18 @@ fn decode_types_named_mirror_with_unresolved_operands() {
         ),
         1
     );
-    assert_eq!(
-        feature
-            .source_properties
-            .get("mdl_stored_name_prefix")
-            .map(String::as_str),
-        Some("o")
-    );
+    assert_eq!(feature.name.as_deref(), Some("Mirror id 4"));
 }
 
 #[test]
-fn decode_types_z_prefixed_round_with_unresolved_operands() {
-    let data = build_prt("c", &[("MdlStatus", b"zRound id 4\0".to_vec())]);
+fn decode_types_timestamped_round_with_unresolved_operands() {
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"\xe2\x27\x26\x08\x04\x0bzRound id 4\0".to_vec(),
+        )],
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -639,13 +642,7 @@ fn decode_types_z_prefixed_round_with_unresolved_operands() {
             }
         )
     );
-    assert_eq!(
-        feature
-            .source_properties
-            .get("mdl_stored_name_prefix")
-            .map(String::as_str),
-        Some("z")
-    );
+    assert_eq!(feature.name.as_deref(), Some("Round id 4"));
 }
 
 #[test]
@@ -668,19 +665,7 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
-                ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
-                        ..
-                    }
-                },
-                ..
-            }
+            cadmpeg_ir::features::FeatureOperation::Native { .. }
         )
     ));
     assert_eq!(
@@ -699,7 +684,7 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
 }
 
 #[test]
-fn decode_types_row_only_class_916_as_subtractive_extrusion() {
+fn decode_keeps_row_only_class_916_native_without_a_recipe() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = vec![
@@ -722,20 +707,7 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
-                ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
-                        ..
-                    }
-                },
-                op: cadmpeg_ir::features::BooleanOp::Cut,
-                ..
-            }
+            cadmpeg_ir::features::FeatureOperation::Native { .. }
         )
     ));
     assert_eq!(
@@ -743,63 +715,8 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
             result.report(),
             crate::coverage::TRANSFERRED_EXTRUDE_FEATURE_COUNT.as_str()
         ),
-        1
-    );
-    assert_eq!(
-        wire::coverage_count(
-            result.report(),
-            crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_PROFILE_FEATURE_COUNT.as_str()
-        ),
-        1
-    );
-    assert_eq!(
-        wire::coverage_count(
-            result.report(),
-            crate::coverage::TRANSFERRED_NATIVE_EXTRUDE_PROFILE_FEATURE_COUNT.as_str()
-        ),
         0
     );
-    assert_eq!(
-        wire::coverage_count(
-            result.report(),
-            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_START_FEATURE_COUNT.as_str()
-        ),
-        0
-    );
-    assert_eq!(
-        wire::coverage_count(
-            result.report(),
-            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_TERMINATION_FEATURE_COUNT.as_str()
-        ),
-        1
-    );
-    assert_eq!(
-        wire::coverage_count(
-            result.report(),
-            (crate::coverage::TRANSFERRED_UNRESOLVED_EXTRUDE_BOOLEAN_OPERATION_FEATURE_COUNT)
-                .as_str()
-        ),
-        0
-    );
-    assert_eq!(
-        wire::coverage_count(
-            result.report(),
-            crate::coverage::TRANSFERRED_INCOMPLETE_EXTRUDE_FEATURE_COUNT.as_str()
-        ),
-        1
-    );
-    assert_eq!(
-        wire::coverage_count(
-            result.report(),
-            crate::coverage::TRANSFERRED_INCOMPLETE_SWEEP_FEATURE_COUNT.as_str()
-        ),
-        1
-    );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("profile sweep history feature")));
 }
 
 #[test]
@@ -819,20 +736,7 @@ fn decode_types_named_base_protrusion_as_new_body() {
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
-                ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
-                        ..
-                    }
-                },
-                op: cadmpeg_ir::features::BooleanOp::NewBody,
-                ..
-            }
+            cadmpeg_ir::features::FeatureOperation::Native { .. }
         )
     ));
 }
@@ -890,20 +794,7 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
     assert!(matches!(
         feature("creo:model:feature#6").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Extrude {
-                profile: cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)
-                ),
-                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-                extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                    side: cadmpeg_ir::features::ExtrudeSide {
-                        termination: cadmpeg_ir::features::LinearTermination::Unresolved {},
-                        ..
-                    }
-                },
-                op: cadmpeg_ir::features::BooleanOp::Cut,
-                ..
-            }
+            cadmpeg_ir::features::FeatureOperation::Native { .. }
         )
     ));
     assert_eq!(
@@ -1250,53 +1141,87 @@ fn decode_types_round_with_labeled_edge_selection() {
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
-#[test]
-fn decode_types_full_turn_revolution_from_positional_angle_choice() {
+fn revolution_decode(choices: &[u8], angle: Option<&[u8]>) -> cadmpeg_ir::codec::DecodeResult {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 40, 0x01, 0, 0]);
-    let allfeatur = vec![
-        40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0x02, 0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00,
-        0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00, 0x00, 0x00,
+    let mut allfeatur = b"\x28\xeb\x04\xe3\xf6\x83\x95\xe1\x02\x83\xdf\xf6\xe3".to_vec();
+    allfeatur.extend_from_slice(choices);
+    let mut sections = vec![
+        ("VisibGeom", geometry),
+        ("AllFeatur", allfeatur),
+        (
+            "DEPDB_DATA",
+            b"\xe3icon\0protrevolve\0Revolve id 40\0".to_vec(),
+        ),
     ];
-    let mdlstatus = b"\xe3icon\0protrevolve\0Revolve id 40\0".to_vec();
-    let data = build_prt(
-        "c",
-        &[
-            ("VisibGeom", geometry),
-            ("AllFeatur", allfeatur),
-            ("MdlStatus", mdlstatus),
-        ],
-    );
-    let scan = container::scan_bytes_ok(data.clone());
-
-    assert_eq!(scan.features.revolution_extents.len(), 1);
-    assert_eq!(scan.features.revolution_extents[0].feature_id, 40);
-    let result = CreoCodec
+    if let Some(angle) = angle {
+        let mut dimensions =
+            b"\xe0\x00dim_array\0\xf8\x02\xf7\x02\xfb\xe1\xe3\x08\x15\x28\x81\x81\x20\xe3".to_vec();
+        dimensions.extend_from_slice(angle);
+        dimensions.extend_from_slice(angle);
+        sections.push(("BasFullData", dimensions));
+    }
+    let data = build_prt("c", &sections);
+    CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("decode");
+        .expect("decode")
+}
+
+fn revolve_extent(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> Option<cadmpeg_ir::features::RevolveExtent> {
     let feature = result
         .ir()
         .model
         .features
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#40")
-        .expect("revolution feature");
+        .expect("revolve feature");
+    match feature.evaluation.definition() {
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Revolve { construction, .. },
+        ) => construction.extent().cloned(),
+        other => panic!("expected a revolve, got {other:?}"),
+    }
+}
+
+const TO_ANGLE_CHOICES: &[u8] = b"\x00\x00\xea\x44\x00\x00\xf6\xf6\xf6\x00\x00\x00\x00";
+const FULL_TURN_DEGREES: &[u8] = b"\x2f\x76\x80";
+
+#[test]
+fn to_angle_revolution_with_a_360_degree_dimension_decodes_a_full_turn() {
+    let result = revolution_decode(TO_ANGLE_CHOICES, Some(FULL_TURN_DEGREES));
     assert!(matches!(
-        feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Revolve {
-            construction,
-            op: cadmpeg_ir::features::BooleanOp::NewBody,
-        }) if construction.profile().is_none()
-            && construction.axis().is_none()
-            && matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
-                    termination: cadmpeg_ir::features::AngularTermination::Angle {
-                        angle
-                    }
-                }) if (angle.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
+        revolve_extent(&result),
+        Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+            termination: cadmpeg_ir::features::AngularTermination::Angle { angle }
+        }) if angle == cadmpeg_ir::scalar::PositiveAngle::FULL_TURN
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_revolution_extents"];
+    assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields().unwrap()["kind"], "full_turn");
+}
+
+#[test]
+fn revolution_without_a_360_degree_to_angle_dimension_has_no_extent() {
+    let symmetric = b"\x00\x00\xeb\x20\x04\x00\x00\x83\xcf\xf6\xf6\x00\x00\x00\x00";
+    for (choices, angle) in [
+        (TO_ANGLE_CHOICES, None),
+        (TO_ANGLE_CHOICES, Some(b"\x2f\x66\xe0".as_slice())),
+        (symmetric.as_slice(), Some(FULL_TURN_DEGREES)),
+    ] {
+        let result = revolution_decode(choices, angle);
+        assert_eq!(revolve_extent(&result), None);
+        assert!(result
+            .ir()
+            .native
+            .namespace("creo")
+            .expect("Native namespace")
+            .arenas()
+            .get("feature_revolution_extents")
+            .is_none_or(Vec::is_empty));
+    }
 }
 
 #[test]

@@ -793,13 +793,10 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             None,
             HoleProjection::default(),
             std::collections::BTreeMap::new(),
-        ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
-            shape,
-            path: None,
-
-            ..
-        }) if shape.section_is_unresolved()
-            && matches!((shape.mode(),), (cadmpeg_ir::features::SweepMode::Unresolved {},))));
+        ).unwrap(), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Native {
+            kind,
+            parameters,
+        }) if kind.as_str() == "SWP104" && parameters.is_empty()));
     let duplicate_expressions = vec![
         expression("expression-a", "p1_length", "1"),
         expression("expression-b", "p1_length", "2"),

@@ -473,16 +473,27 @@ impl CurvePrototypeTopology {
     }
 }
 
-/// One-sided DEPDB suffix, serialized as `[0, X1, F1, 0]`.
+/// One-sided cross-section pointers in stored field order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DepdbCurveSuffix {
-    x1: u32,
-    face_id: u32,
+    section_plane: u32,
+    next_curve: u32,
+    reference_surface: u32,
 }
 
 impl serde::Serialize for DepdbCurveSuffix {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serde::Serialize::serialize(&[0, self.x1, self.face_id, 0], serializer)
+        serde::Serialize::serialize(
+            &[
+                0,
+                self.section_plane,
+                0,
+                self.next_curve,
+                self.reference_surface,
+                0,
+            ],
+            serializer,
+        )
     }
 }
 
@@ -497,7 +508,7 @@ pub(crate) struct DepdbCurveRow {
     pub(crate) feature_id: u32,
     /// Stored per-side direction flags.
     pub(crate) directions: [u8; 2],
-    /// The `[0, X1, F1, 0]` one-sided suffix.
+    /// Stored face, successor, and reference-geometry pointer pairs.
     pub(crate) suffix: DepdbCurveSuffix,
     /// Exact bytes between the fixed prefix and one-sided suffix.
     pub(crate) body: Vec<u8>,
@@ -2560,7 +2571,13 @@ fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDim
                 .combine(RelationDimension::LENGTH, false)?
                 .combine(RelationDimension::TIME, true)?,
         ),
-        _ if symbol.eq_ignore_ascii_case("mw") => (
+        "mW" => (
+            1_000.0,
+            RelationDimension::FORCE
+                .combine(RelationDimension::LENGTH, false)?
+                .combine(RelationDimension::TIME, true)?,
+        ),
+        "MW" => (
             1_000_000_000_000.0,
             RelationDimension::FORCE
                 .combine(RelationDimension::LENGTH, false)?
@@ -6780,7 +6797,6 @@ pub(crate) fn depdb_cross_section_rows(
         return Ok(Vec::new());
     };
     let mut cursor = topology + b"topol_ref_data\0".len();
-    let cache = scalar::ScalarCache::from_section_checked(payload);
     let positional_count = count - 1;
     // Each row consumes at least one payload byte past the topology cursor
     // before its terminator, so the row count cannot exceed the unread bytes.
@@ -6806,15 +6822,19 @@ pub(crate) fn depdb_cross_section_rows(
             search = offset + marker.len();
         }
     }
+    // This close is owned by the end of the supplied cross-section payload;
+    // an interior image does not establish a curve-row boundary.
+    let section_terminal = b"\xe1\xf4\x04";
+    if let Some(before_close) = payload.strip_suffix(section_terminal) {
+        boundaries.push((before_close.len(), section_terminal.len()));
+    }
     boundaries.sort_unstable_by(Ord::cmp);
     boundaries.dedup();
     while rows.len() < positional_count {
         let first_candidate = boundaries.partition_point(|(end, _)| *end < cursor);
         let mut selected = None;
         for (end, length) in boundaries[first_candidate..].iter().copied() {
-            if let Some(row) =
-                parse_depdb_curve_segment(ctx, &payload[cursor..end], cursor, &cache)?
-            {
+            if let Some(row) = parse_depdb_curve_segment(ctx, &payload[cursor..end], cursor)? {
                 selected = Some((row, end, length));
                 break;
             }
@@ -6832,27 +6852,35 @@ pub(crate) fn depdb_cross_section_rows(
     }
 }
 
+fn cross_section_suffix_fields(segment: &[u8], start: usize) -> Option<[u32; 6]> {
+    let mut fields = [0; 6];
+    let mut cursor = start;
+    for field in &mut fields {
+        let (value, next) = psb::reference_id(segment, cursor).ok()?;
+        *field = value;
+        cursor = next;
+    }
+    (cursor == segment.len() && fields[0] == 0 && fields[2] == 0 && fields[5] == 0)
+        .then_some(fields)
+}
+
 fn parse_depdb_curve_segment(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &[u8],
     absolute_offset: usize,
-    cache: &scalar::ScalarCache,
 ) -> Result<Option<DepdbCurveRow>, cadmpeg_core::CodecError> {
     let mut suffix_candidate = None;
-    for suffix_length in 4..=11 {
+    for suffix_length in 6..=9 {
         let Some(start) = segment.len().checked_sub(suffix_length) else {
             continue;
         };
-        let (zero0, p1) = compact_int(segment, start);
-        let (x1, p2) = compact_int(segment, p1);
-        let (f1, p3) = compact_int(segment, p2);
-        let (zero1, end) = compact_int(segment, p3);
-        if p1 > start && p2 > p1 && p3 > p2 && end == segment.len() && zero0 == 0 && zero1 == 0 {
-            if suffix_candidate.is_some() {
-                return Ok(None);
-            }
-            suffix_candidate = Some((start, [zero0, x1, f1, zero1]));
+        let Some(fields) = cross_section_suffix_fields(segment, start) else {
+            continue;
+        };
+        if suffix_candidate.is_some() {
+            return Ok(None);
         }
+        suffix_candidate = Some((start, fields));
     }
     let Some((suffix_start, suffix)) = suffix_candidate else {
         return Ok(None);
@@ -6874,24 +6902,35 @@ fn parse_depdb_curve_segment(
     let Some((row_start, prefix)) = prefix_candidate else {
         return Ok(None);
     };
-    let body = segment[prefix.end..suffix_start].to_vec();
-    let CurveScalarLane {
-        scalar_tokens,
-        references,
-        opaque_spans,
-    } = curve_scalar_lane(ctx, &body, prefix.type_byte, cache)?;
+    let source_body = &segment[prefix.end..suffix_start];
+    let mut body = ctx.alloc_filled(source_body.len(), 0, "creo cross-section body bytes")?;
+    body.copy_from_slice(source_body);
+    // Prefix and pointer ownership do not establish the body's internal
+    // scalar grammar. Do not resynchronize into unowned coordinate images.
+    let opaque_spans = if body.is_empty() {
+        Vec::new()
+    } else {
+        let mut raw = ctx.alloc_filled(body.len(), 0, "creo cross-section opaque bytes")?;
+        raw.copy_from_slice(&body);
+        ctx.alloc_filled(
+            1,
+            CurveParameterOpaqueSpan { raw, offset: 0 },
+            "creo cross-section opaque body",
+        )?
+    };
     Ok(Some(DepdbCurveRow {
         id: prefix.id,
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
         directions: prefix.directions,
         suffix: DepdbCurveSuffix {
-            x1: suffix[1],
-            face_id: suffix[2],
+            section_plane: suffix[1],
+            next_curve: suffix[3],
+            reference_surface: suffix[4],
         },
         body,
-        scalar_tokens,
-        references,
+        scalar_tokens: Vec::new(),
+        references: Vec::new(),
         opaque_spans,
         offset: absolute_offset + row_start,
     }))
@@ -6905,6 +6944,7 @@ struct FramedRow {
     suffix_start: usize,
     suffix: [u32; 4],
     reference_geometry: [u32; 2],
+    counted_body: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -7057,7 +7097,7 @@ fn framed_segment_with_face_ids(
         if !complete_curve_row_linkage(&segment[row_end..]) {
             continue;
         }
-        let Some(candidate) = topology_suffix_with_face_ids(
+        let Some((candidate, counted_body)) = topology_suffix_with_face_ids(
             &segment[..row_end],
             materialized_face_ids,
             known_face_ids,
@@ -7077,6 +7117,7 @@ fn framed_segment_with_face_ids(
                 suffix_start,
                 suffix,
                 reference_geometry,
+                counted_body,
             });
         }
         let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
@@ -7088,6 +7129,7 @@ fn framed_segment_with_face_ids(
                 suffix_start: suffix_start - prefixes[0].0,
                 suffix,
                 reference_geometry,
+                counted_body,
             });
         }
     }
@@ -7208,6 +7250,15 @@ fn curve_scalar_lane(
             cursor += 1;
         }
     }
+    let opaque_spans = curve_opaque_spans(body, &claimed);
+    Ok(CurveScalarLane {
+        scalar_tokens: scalars,
+        references,
+        opaque_spans,
+    })
+}
+
+fn curve_opaque_spans(body: &[u8], claimed: &[bool]) -> Vec<CurveParameterOpaqueSpan> {
     let mut opaque_spans = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
@@ -7222,10 +7273,59 @@ fn curve_scalar_lane(
         let raw = body[start..cursor].to_vec();
         opaque_spans.push(CurveParameterOpaqueSpan { raw, offset: start });
     }
+    opaque_spans
+}
+
+fn counted_curve_scalar_lane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    body: &[u8],
+) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
+    let mut claimed = ctx.alloc_filled(body.len(), false, "creo counted curve scalar claims")?;
+    let mut scalars = Vec::new();
+    let layout = (|| {
+        (body.first() == Some(&0xfc)).then_some(())?;
+        let (count, start) = compact_int(body, 1);
+        (start > 1).then_some(())?;
+        let count = bounded_len(u64::from(count), 4, body.len().checked_sub(start)?)?;
+        (count >= 2).then_some(())?;
+        Some((start, count.checked_mul(4)?))
+    })();
+    let mut complete = false;
+    if let Some((mut cursor, slot_count)) = layout {
+        let cache = scalar::ScalarCache::default();
+        let mut slots = 0;
+        for slot in 0..slot_count {
+            let Some((_, next)) = decode_two_chart_scalar(
+                body,
+                cursor,
+                slot % 2 == 0,
+                slot_count >= 4 * MIN_COUNTED_LANE_SAMPLES,
+                &cache,
+            )
+            .filter(|(value, next)| value.is_finite() && *next > cursor && *next <= body.len()) else {
+                break;
+            };
+            if body[cursor] == 0x18 {
+                scalars.push(CurveParameterScalar {
+                    value: 0.0,
+                    raw: vec![0x18],
+                    offset: cursor,
+                });
+                claimed[cursor..next].fill(true);
+            }
+            cursor = next;
+            slots += 1;
+        }
+        complete = slots == slot_count && cursor == body.len();
+    }
+    if !complete {
+        scalars.clear();
+        claimed.fill(false);
+    }
     Ok(CurveScalarLane {
         scalar_tokens: scalars,
-        references,
-        opaque_spans,
+        references: Vec::new(),
+        opaque_spans: curve_opaque_spans(body, &claimed),
     })
 }
 
@@ -7270,7 +7370,11 @@ pub(crate) fn parameter_records_with_face_ids(
             scalar_tokens,
             references,
             opaque_spans,
-        } = curve_scalar_lane(ctx, &body, type_byte, &cache)?;
+        } = if framed.counted_body {
+            counted_curve_scalar_lane(ctx, &body)?
+        } else {
+            curve_scalar_lane(ctx, &body, type_byte, &cache)?
+        };
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
@@ -7366,17 +7470,22 @@ fn decode_two_chart_scalar(
     body: &[u8],
     cursor: usize,
     first_coordinate: bool,
+    counted: bool,
     cache: &scalar::ScalarCache,
 ) -> Option<(f64, usize)> {
     if body.get(cursor) == Some(&0x18) {
         return Some((0.0, cursor + 1));
     }
-    if first_coordinate {
-        scalar::decode_two_chart_first_coordinate(body, cursor, cache)
-    } else {
-        scalar::decode_two_chart_second_coordinate(body, cursor, cache)
+    match (first_coordinate, counted) {
+        (true, true) => scalar::decode_counted_two_chart_first_coordinate(body, cursor, cache),
+        (true, false) => scalar::decode_two_chart_first_coordinate(body, cursor, cache),
+        (false, true) => scalar::decode_counted_two_chart_second_coordinate(body, cursor, cache),
+        (false, false) => scalar::decode_two_chart_second_coordinate(body, cursor, cache),
     }
 }
+
+/// Smallest sample count whose body uses the counted two-chart coordinate lanes.
+const MIN_COUNTED_LANE_SAMPLES: usize = 3;
 
 fn complete_two_chart_samples(
     body: &[u8],
@@ -7394,7 +7503,13 @@ fn complete_two_chart_samples(
     for _ in 0..sample_count {
         let mut sample = [[0.0; 2]; 2];
         for (slot, value) in sample.iter_mut().flatten().enumerate() {
-            let (decoded, next) = decode_two_chart_scalar(body, cursor, slot % 2 == 0, cache)?;
+            let (decoded, next) = decode_two_chart_scalar(
+                body,
+                cursor,
+                slot % 2 == 0,
+                sample_count >= MIN_COUNTED_LANE_SAMPLES,
+                cache,
+            )?;
             if next <= cursor || !decoded.is_finite() {
                 return None;
             }
@@ -8140,12 +8255,38 @@ fn topology_suffix_with_face_ids(
     row: &[u8],
     materialized_face_ids: Option<&BTreeSet<u32>>,
     known_face_ids: Option<&BTreeSet<u32>>,
-) -> Option<TopologySuffixCandidate> {
+) -> Option<(TopologySuffixCandidate, bool)> {
     let candidates = topology_suffix_candidates(row)?;
     let mut initial = candidates.iter().flatten().copied();
     if let (Some(candidate), None) = (initial.next(), initial.next()) {
-        return Some(candidate);
+        return Some((candidate, false));
     }
+    let legacy = topology_suffix_by_face_ids(&candidates, materialized_face_ids, known_face_ids);
+    let cache = scalar::ScalarCache::default();
+    let mut complete_counts = candidates.iter().flatten().filter(|candidate| {
+        let Some(prefix) = topology_prefix(row, 0, candidate.start) else {
+            return false;
+        };
+        let body = &row[prefix.end..candidate.start];
+        if body.first() != Some(&0xfc) {
+            return false;
+        }
+        let (count, start) = compact_int(body, 1);
+        start > 1 && complete_two_chart_samples(body, start, count, &cache).is_some()
+    });
+    match (complete_counts.next(), complete_counts.next()) {
+        (Some(candidate), None) => return Some((*candidate, legacy != Some(*candidate))),
+        (Some(_), Some(_)) => return None,
+        _ => {}
+    }
+    legacy.map(|candidate| (candidate, false))
+}
+
+fn topology_suffix_by_face_ids(
+    candidates: &[Option<TopologySuffixCandidate>],
+    materialized_face_ids: Option<&BTreeSet<u32>>,
+    known_face_ids: Option<&BTreeSet<u32>>,
+) -> Option<TopologySuffixCandidate> {
     if let Some(ids) = materialized_face_ids.filter(|ids| !ids.is_empty()) {
         let mut role_matches = candidates
             .iter()
@@ -8165,7 +8306,7 @@ fn topology_suffix_with_face_ids(
         }
     }
     let ids = known_face_ids.filter(|ids| !ids.is_empty())?;
-    let mut role_matches = candidates.into_iter().flatten().filter(|candidate| {
+    let mut role_matches = candidates.iter().flatten().copied().filter(|candidate| {
         candidate
             .faces
             .iter()

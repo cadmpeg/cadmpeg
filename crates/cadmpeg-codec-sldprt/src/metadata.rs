@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed SW Objects document metadata.
 
+mod configuration_properties;
+pub(crate) mod default_properties;
+pub(crate) mod part;
+
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -18,6 +22,7 @@ pub(crate) fn attributes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SourceAttribute>, CodecError> {
     let mut out = Vec::new();
     for section in scan.sections() {
@@ -45,13 +50,23 @@ pub(crate) fn attributes(
             &mut out,
             annotations,
         )?;
-        scan_part(section, &mut out, annotations)?;
-        scan_configuration_manager(section, &mut out, annotations)?;
+        scan_part(section, &mut out, annotations, losses)?;
+        note_configuration_manager(section, losses);
         scan_transformed_reference_plane(section, &mut out, annotations)?;
         scan_units_xml(ctx, section, &mut out, annotations)?;
         scan_length_user_units(ctx, section, &mut out, annotations)?;
     }
+    default_properties::append(ctx, scan, &mut out, annotations, losses)?;
+    configuration_properties::append(ctx, scan, &mut out, annotations, losses)?;
     Ok(out)
+}
+
+pub(crate) fn is_saved_property_attribute(attribute: &SourceAttribute) -> bool {
+    default_properties::is_attribute(attribute) || configuration_properties::is_attribute(attribute)
+}
+
+pub(crate) fn is_saved_property_owner(owner: Section<'_>) -> bool {
+    default_properties::is_owner(owner) || configuration_properties::is_owner(owner)
 }
 
 fn scan_transformed_reference_plane(
@@ -276,73 +291,45 @@ fn scan_part(
     section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    const TOKEN: &[u8] = b"moPart_c";
-    let payload = section.payload();
-    for offset in payload
-        .windows(TOKEN.len())
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
-    {
-        let start = offset + TOKEN.len();
-        let (Some(id), Some(version)) = (
-            View::u32_le_at(payload, start),
-            View::u32_le_at(payload, start + 8),
-        ) else {
-            continue;
-        };
-        out.push(attribute(
-            section,
-            offset,
-            &cadmpeg_ir::identity_component!("part_record"),
-            TOKEN,
-            vec![
-                AttributeValue::Integer(i64::from(id)),
-                AttributeValue::Integer(i64::from(version)),
-            ],
-            annotations,
-        )?);
+    match part::parse(section.payload()) {
+        part::Root::Absent => {}
+        part::Root::Unsupported => losses.push(
+            crate::loss::SldprtLossCode::MetadataPartRootUnsupported.note(format!(
+                "Part root in {} has an unsupported scalar prefix or continuation",
+                section.source_stream().as_str()
+            )),
+        ),
+        part::Root::Supported(prefix) => {
+            let mut values = vec![AttributeValue::Integer(i64::from(prefix.first_word))];
+            if let Some(word) = prefix.trailing_word {
+                values.push(AttributeValue::Integer(i64::from(word)));
+            }
+            out.push(attribute(
+                section,
+                prefix.token_offset,
+                &cadmpeg_ir::identity_component!("part_record"),
+                part::TOKEN,
+                values,
+                annotations,
+            )?);
+        }
     }
     Ok(())
 }
 
-fn scan_configuration_manager(
+fn note_configuration_manager(
     section: Section<'_>,
-    out: &mut Vec<SourceAttribute>,
-    annotations: &mut Annotations,
-) -> Result<(), CodecError> {
-    const TOKEN: &[u8] = b"moConfigurationMgr_c";
-    let payload = section.payload();
-    for offset in payload
-        .windows(TOKEN.len())
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    if part::declaration(section.payload(), 0)
+        .is_some_and(|(_, name, _)| name == b"moConfigurationMgr_c")
     {
-        let start = offset + TOKEN.len();
-        let (Some(minor), Some(states), Some(filetime)) = (
-            View::u32_le_at(payload, start + 66),
-            payload.get(start + 107),
-            View::u64_le_at(payload, start + 117),
-        ) else {
-            continue;
-        };
-        let Ok(filetime) = i64::try_from(filetime) else {
-            continue;
-        };
-        out.push(attribute(
-            section,
-            offset,
-            &cadmpeg_ir::identity_component!("configuration_manager"),
-            TOKEN,
-            vec![
-                AttributeValue::Integer(i64::from(minor)),
-                AttributeValue::Integer(i64::from(*states)),
-                AttributeValue::Integer(filetime),
-            ],
-            annotations,
-        )?);
+        losses.push(crate::loss::SldprtLossCode::MetadataConfigurationManagerOpaque.note(
+            "Configuration-manager fields and serializer bounds are unresolved; retained bytes are preserved without editable scalar metadata.",
+        ));
     }
-    Ok(())
 }
 
 /// Source lengths in metres as a millimetre vector, or `None` when a value

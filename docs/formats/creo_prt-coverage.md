@@ -361,6 +361,15 @@ that gate.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.
+- The complete physical `NeuPrtSld` section is retained byte-exact as opaque
+  metadata. It does not create typed appearances or material bindings. Failed
+  compressed expansions retain their existing unresolved classification.
+- Count-selected curve frames retain their exact parameter bodies and literal
+  topology references. When count evidence is necessary to fix a boundary, the
+  generic Native scalar view exposes only literal zero slots as numeric tokens.
+  The separate complete two-chart path decodes its scalar slots and can supply
+  numeric samples to the ordinary carrier checks. Counted framing alone does
+  not establish scalar meanings or geometry.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
 - A round with a complete placed set of generated cylinder carriers transfers
@@ -842,6 +851,17 @@ that gate.
 
 The current public score remains L1. Capabilities above L1 are extras
 until every cumulative gate through their level passes for a closed envelope.
+
+- Class-932 positional cylinders with a complete cap-envelope body retain the
+  entire body as opaque Native data. Generic scalar and terminal-support frame
+  interpretations are withheld before Native and neutral construction. The
+  gate requires unique row ownership, a resolved feature class, and complete
+  body consumption; a short prefix alone does not select it. This does not
+  promote an axis, radius, chart direction, or face binding. Every curve whose
+  topology row references a withheld visible chart is excluded from pcurve
+  carrier and endpoint promotion, including its other chart. An ordinary
+  missing chart remains a separate case. Independent carrier recovery and
+  finite endpoint authority remain separate open questions in GS-17.
 
 Same-ID operation candidates project only when the family, recipe, root schema
 class, and parent identifier agree. Disagreement retains the native candidates

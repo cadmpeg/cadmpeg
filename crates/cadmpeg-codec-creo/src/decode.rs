@@ -54,7 +54,9 @@ pub(crate) fn with_service_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// container, the returned IR contains source metadata and preserved geometry
 /// sections but no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let scan = container::scan_bytes(ctx, root.window())?;
+    let mut scan = container::scan_bytes(ctx, root.window())?;
+    surfaces::cap_envelopes::withhold_unresolved_cap_envelopes(ctx, &mut scan)?;
+    surfaces::cone_origins::withhold_unresolved_cone_origins(ctx, &mut scan)?;
     let classification = crate::dialect::classify(&scan)?;
     // Admit section identities before model construction.
     ctx.charge_entities(

@@ -86,6 +86,7 @@ fn chamfer_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 11,
         });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {

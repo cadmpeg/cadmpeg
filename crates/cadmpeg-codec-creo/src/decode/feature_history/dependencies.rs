@@ -4,7 +4,9 @@
 use super::super::surfaces::prototypes::unique_surface_prototype_associations;
 use super::knit::surface_transition_dependencies;
 use crate::container::ContainerScan;
-use crate::decode::sketch_transfer::recipe::current_feature_recipe_parent;
+use crate::decode::sketch_transfer::recipe::{
+    admitted_feature_recipe, admitted_feature_recipe_parent, current_feature_recipe_parent,
+};
 use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -22,7 +24,7 @@ pub(in super::super) fn feature_dependencies(
 ) -> Result<Vec<IrFeatureId>, CodecError> {
     let native = native_feature_dependency_ids(
         &scan.features.affected_ids,
-        &scan.features.operations,
+        admitted_recipe_operations(scan, feature_id),
         &scan.features.entity_tables,
         &scan.features.surface_merge_replay_affected_ids,
         &scan.surfaces.rows,
@@ -43,6 +45,17 @@ pub(in super::super) fn feature_dependencies(
         }
     }
     Ok(dependencies)
+}
+
+fn admitted_recipe_operations<'a>(
+    scan: &'a ContainerScan<'_>,
+    feature_id: u32,
+) -> &'a [crate::feature::operations::FeatureOperation] {
+    if admitted_feature_recipe(scan, feature_id).is_some() {
+        &scan.features.operations
+    } else {
+        &[]
+    }
 }
 
 pub(in super::super) fn native_feature_dependency_ids(
@@ -449,7 +462,7 @@ pub(in super::super) fn reconcile_feature_links(
         let mut native_dependencies = Vec::new();
         for dependency in native_feature_dependency_ids(
             &scan.features.affected_ids,
-            &scan.features.operations,
+            admitted_recipe_operations(scan, feature_id),
             &scan.features.entity_tables,
             &scan.features.surface_merge_replay_affected_ids,
             &scan.surfaces.rows,
@@ -482,9 +495,7 @@ pub(in super::super) fn reconcile_feature_links(
                 &emitted,
             )?)
             .map_err(cadmpeg_core::CodecError::from)?;
-        if let Some(parent_id) =
-            current_feature_recipe_parent(&scan.features.operations, feature_id)
-        {
+        if let Some(parent_id) = admitted_feature_recipe_parent(scan, feature_id) {
             let text = format!("creo:model:feature#{parent_id}");
             let parent = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if parent != feature.id && emitted.contains(&parent) {

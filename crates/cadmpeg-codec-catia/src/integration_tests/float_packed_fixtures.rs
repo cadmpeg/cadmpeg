@@ -145,3 +145,23 @@ fn frozen_native_plane_hole_uses_location_controls_with_nurbs_boundaries() {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
     )));
 }
+
+#[test]
+fn reflected_native_plane_fixture_retains_negative_exterior_orientation() {
+    let result = assert_native_fixture(
+        include_bytes!("../../tests/fixtures/float_packed_native_plane_negative.catpart"),
+        &[[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]],
+        1,
+    );
+    assert_eq!(
+        result.ir().model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
+    ) = &result.ir().model.surfaces[0].geometry
+    else {
+        panic!("unchanged XY plane");
+    };
+    assert_eq!(plane.frame().axis().as_raw().z, 1.0);
+}

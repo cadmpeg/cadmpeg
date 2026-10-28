@@ -186,3 +186,46 @@ fn loop_array_framing_reads_one_frame_and_row() {
     assert_eq!(parsed.frames.len(), 1);
     assert_eq!(parsed.records.len(), 1);
 }
+
+#[test]
+fn compact_attributes_keep_the_owned_source_prefix_aligned() {
+    // headset-hook-holder.prt, 0xc183: seven fields following the named prototype.
+    let bytes = [
+        0x80, 0xc3, 0x82, 0xbc, 0x83, 0xe8, 0x53, 0x82, 0x01, 0x54, 0x80, 0xc4,
+    ];
+    let prefix = super::row_prefix(&bytes, 0, bytes.len()).expect("complete Source prefix");
+    assert_eq!(prefix.lo_id, 195);
+    assert_eq!(prefix.lo_type, 700);
+    assert_eq!(prefix.lo_subtype, 1000);
+    assert_eq!(prefix.feature_id, 83);
+    assert_eq!(u64::from(prefix.attributes), 513);
+    assert_eq!(prefix.direction, 84);
+    assert_eq!(prefix.next_lo_ptr, 196);
+    assert_eq!(prefix.body_offset, bytes.len());
+}
+
+#[test]
+fn compact_attributes_preserve_the_following_bounded_row() {
+    let first = [1, 2, 3, 4, 0x82, 0x01, 6, 7, 0xe2, 0x10, 0xe3];
+    let second = row(8, &[0xe2, 0x11]);
+    let parsed = scan(&frame(2, &[first.as_slice(), &second].concat()));
+    assert_eq!(parsed.records.len(), 2);
+    assert_eq!(u64::from(parsed.records[0].attributes), 513);
+    assert_eq!(parsed.records[0].direction, 6);
+    assert_eq!(parsed.records[0].next_lo_ptr, 7);
+    assert_eq!(parsed.records[0].body, [0xe2, 0x10, 0xe3]);
+    assert_eq!(parsed.records[1].lo_id, 8);
+}
+
+#[test]
+fn compact_attributes_require_a_complete_prefix_within_its_bound() {
+    let bytes = [1, 2, 3, 4, 0xbf, 0xff, 6, 7];
+    for end in 0..bytes.len() {
+        assert!(super::row_prefix(&bytes[..end], 0, end).is_none());
+    }
+    assert!(super::row_prefix(&[1, 2, 3, 4, 0xe3, 6, 7], 0, 7).is_none());
+    assert!(super::row_prefix(&bytes, 0, 5).is_none());
+    let rows = [1, 2, 3, 4, 0xbf, 0xff, 6, 7, 0xe3];
+    let parsed = scan(&frame(1, &rows));
+    assert_eq!(u64::from(parsed.records[0].attributes), 16383);
+}

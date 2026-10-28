@@ -187,7 +187,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
 }
 
 #[test]
-fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
+fn legacy_history_extrusion_keeps_depth_without_guessing_a_profile() {
     let mut profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
     profile.xml_tag = "Sketch".into();
     profile.kind = "Sketch".into();
@@ -230,7 +230,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile_ref)),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -239,12 +239,12 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
             },
             op: BooleanOp::Join,
             ..
-        }) if (profile_ref == &profile.id) && actual_length.get() == 6.8
+        }) if actual_length.get() == 6.8
     ));
 }
 
 #[test]
-fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
+fn root_history_extrusion_keeps_cut_without_guessing_a_profile() {
     let mut early_profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
     early_profile.xml_tag = "Sketch".into();
     early_profile.kind = "Sketch".into();
@@ -294,10 +294,11 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:2"))
         .expect("preceding extrusion profile");
 
+    assert!(profile.ordinal < extrusion.ordinal);
     assert!(matches!(
         extrusion.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
-            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Feature(profile_ref)),
+            profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)),
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind { length: actual_length },
@@ -306,7 +307,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
             },
             op: BooleanOp::Cut,
             ..
-        }) if (profile_ref == &profile.id) && actual_length.get() == 4.2
+        }) if actual_length.get() == 4.2
     ));
 }
 
@@ -1353,4 +1354,57 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
     assert!(hole_sketch_construction(&profile)
         .expect("read the hole sketch construction")
         .is_none());
+}
+
+#[test]
+fn extrusion_profile_does_not_follow_source_identifier_order() {
+    let mut older = feature("sketch-one", Some("11"), 0);
+    older.xml_tag = "Sketch".into();
+    older.kind = "Sketch".into();
+    older.input_class = Some("moProfileFeature_c".into());
+    let mut newer = older.clone();
+    newer.id = "sketch-two".into();
+    newer.source_id = crate::records::FeatureSource::from_value(37);
+    let candidates = [older, newer];
+    let sources = candidates
+        .iter()
+        .map(|candidate| (candidate.source_id.unwrap(), candidate))
+        .collect::<HashMap<_, _>>();
+    let names = HashMap::from([
+        ("11".to_owned(), "sketch-one"),
+        ("37".to_owned(), "sketch-two"),
+    ]);
+    for root in [false, true] {
+        let mut extrusion = feature("extrusion", Some("64"), 2);
+        extrusion.xml_tag = "Extrusion".into();
+        extrusion.kind = "Extrusion".into();
+        extrusion.content = vec![FeatureContent::Dimension("D1".into())];
+        extrusion
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("D1"), "12mm".into());
+        if root {
+            extrusion.input_class = Some("moICE_c".into());
+            extrusion.properties.insert(
+                cadmpeg_core::nonblank_literal!("DissectableRoot"),
+                "true".into(),
+            );
+        }
+        let projected =
+            project_definition(&extrusion, &HashMap::new(), &names, &sources, &candidates).unwrap();
+        assert!(matches!(
+            projected,
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(_)),
+                ..
+            })
+        ));
+        extrusion
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Profile"), "11".into());
+        let projected =
+            project_definition(&extrusion, &HashMap::new(), &names, &sources, &candidates).unwrap();
+        assert!(
+            matches!(projected, FeatureDefinition::Operation(FeatureOperation::Extrude { profile: ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(ref native)), .. }) if native == "sketch-one")
+        );
+    }
 }

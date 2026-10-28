@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{DataType, PrimaryRecord, PrimaryRecords};
-use crate::records::group::{GroupSelector, MembershipKind, MembershipRecord};
+use crate::records::group::{MembershipKind, MembershipRecord};
 
 impl PrimaryRecords<'_> {
     pub(crate) fn membership_records(&self) -> Vec<MembershipRecord> {
@@ -16,11 +16,14 @@ impl PrimaryRecords<'_> {
 
     fn membership_kind(&self, record: &PrimaryRecord) -> Option<MembershipKind> {
         match record.definition.kind {
-            90 if self.matches_base(record) => Some(MembershipKind::Group {
-                node_id: self.field(record, 0)?.u32_be()?,
-                selector: GroupSelector::try_from(self.field(record, 5)?.u8()?).ok()?,
-                first_member: self.pointer(record, 6)?,
-            }),
+            90 if self.matches_base(record) => {
+                let group = self.group_record(record)?;
+                Some(MembershipKind::Group {
+                    node_id: group.node_id,
+                    selector: group.selector,
+                    first_member: group.references[4],
+                })
+            }
             91 if self.matches_base(record) => Some(MembershipKind::Member {
                 owning_group: self.pointer(record, 1)?,
                 owner: self.pointer(record, 2)?,

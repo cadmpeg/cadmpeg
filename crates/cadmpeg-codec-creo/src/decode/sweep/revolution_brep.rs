@@ -16,7 +16,8 @@ use super::surfaces::revolved_section_circle;
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::{
     current_additive_feature_recipe, feature_is_first_material_operation,
-    feature_revolution_extent, unique_feature_revolution_extent,
+    feature_revolution_extent, feature_section_sweep_semantics_conflict,
+    unique_feature_revolution_extent,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, Surface};
@@ -97,8 +98,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if current_additive_feature_recipe(&scan.features.operations, feature_id)
-            != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
+        if feature_section_sweep_semantics_conflict(scan, feature_id)
+            || current_additive_feature_recipe(&scan.features.operations, feature_id)
+                != Some(crate::feature::operations::FeatureRecipeKind::Revolve)
             || !feature_is_first_material_operation(scan, feature_id)
             || unique_feature_revolution_extent(&scan.features.revolution_extents, feature_id)
                 .is_none()

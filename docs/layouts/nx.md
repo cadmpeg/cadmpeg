@@ -770,9 +770,9 @@ Cross-checked against code:
 
 ## `nurbs_surface_descriptor_prefix`
 
-Spec §6.2 · layout: byte offsets · size: 28 B
+Spec §6.2 · layout: byte offsets · size: 34 B
 
-Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width.
+Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -786,9 +786,12 @@ Offsets are relative to the type tag after the optional envelope and large-index
 | 19 | 1 | `v_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
 | 20 | 4 | `u_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
 | 24 | 4 | `v_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
+| 28 | 1 | `rational` | `u8` | big | spec | rational `+28` |
+| 32 | 2 | `dimension` | `u16` | big | spec | vertex dimension `+32` |
 
 Unstated regions:
 
+- `29..32` (3 B): U/V closed flags and surface form.
 - `0..4` (4 B): Type tag and the encoded XMT identity.
 
 ## `nurbs_knot_array_count_prefix`

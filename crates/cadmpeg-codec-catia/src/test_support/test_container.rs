@@ -253,32 +253,64 @@ pub(crate) fn outer_container_catpart(stream: &[u8]) -> (Vec<u8>, u64) {
     declaration.extend_from_slice(&0x62eb_7b6fu32.to_be_bytes());
     declaration.extend_from_slice(&0x0000_1825u32.to_be_bytes());
 
+    let uuid = "4bbc295c_1048_62eb7b6f_1825";
+    let contents = format!("Cont_{uuid}");
+    let mut metadata = vec![0; 12];
+    metadata[4..8].copy_from_slice(&15u32.to_be_bytes());
+    metadata[8..12].copy_from_slice(&3u32.to_be_bytes());
+    for (identity, prefix, name) in [
+        (18u32, true, "CATPropertySets"),
+        (17, true, "CATStorageProperty"),
+        (16, false, contents.as_str()),
+    ] {
+        let mut value = Vec::new();
+        if prefix {
+            value.extend_from_slice(&3u16.to_be_bytes());
+        }
+        for unit in name.encode_utf16().chain(std::iter::once(0)) {
+            value.extend_from_slice(&unit.to_be_bytes());
+        }
+        metadata.extend_from_slice(&u32::try_from(14 + value.len()).unwrap().to_be_bytes());
+        metadata.extend_from_slice(&identity.to_be_bytes());
+        metadata.extend_from_slice(&2u16.to_be_bytes());
+        metadata.extend_from_slice(&u32::try_from(value.len()).unwrap().to_be_bytes());
+        metadata.extend(value);
+    }
+    let metadata_len = u32::try_from(metadata.len()).unwrap();
+    metadata[..4].copy_from_slice(&metadata_len.to_be_bytes());
     let data_offset = 16u32;
-    let graph_offset =
-        data_offset + u32::try_from(declaration.len()).expect("fixture value fits u32");
-    let mut dir = Vec::new();
-    dir.extend_from_slice(DIR_MAGIC);
-    dir.extend_from_slice(&descriptor(
-        "Data",
-        data_offset,
-        u32::try_from(declaration.len()).expect("fixture value fits u32"),
-    ));
-    dir.extend_from_slice(&descriptor(
-        "1048_62eb7b6f_1825",
-        graph_offset,
-        u32::try_from(stream.len()).expect("fixture value fits u32"),
-    ));
+    let metadata_offset = data_offset + u32::try_from(declaration.len()).unwrap();
+    let graph_offset = metadata_offset + metadata_len;
+    let mut dir = DIR_MAGIC.to_vec();
+    for (name, offset, size) in [
+        (
+            "Data",
+            data_offset,
+            u32::try_from(declaration.len()).unwrap(),
+        ),
+        (uuid, metadata_offset, metadata_len),
+        (
+            contents.as_str(),
+            graph_offset,
+            u32::try_from(stream.len()).unwrap(),
+        ),
+    ] {
+        dir.extend_from_slice(&u16::try_from(name.len() * 2 + 2).unwrap().to_le_bytes());
+        for unit in name.encode_utf16() {
+            dir.extend_from_slice(&unit.to_le_bytes());
+        }
+        dir.extend_from_slice(&[0, 0, 0]);
+        let mut frame = descriptor("", offset, size);
+        frame[16..80].fill(0);
+        dir.extend(frame);
+    }
     dir.extend_from_slice(b"CB__END");
-
-    let directory_offset =
-        graph_offset + u32::try_from(stream.len()).expect("fixture value fits u32");
-    let mut file = Vec::new();
-    file.extend_from_slice(OUTER_MAGIC);
+    let directory_offset = graph_offset + u32::try_from(stream.len()).unwrap();
+    let mut file = OUTER_MAGIC.to_vec();
     file.extend_from_slice(&be32(directory_offset));
-    file.extend_from_slice(&be32(
-        u32::try_from(dir.len()).expect("fixture value fits u32"),
-    ));
+    file.extend_from_slice(&be32(u32::try_from(dir.len()).unwrap()));
     file.extend(declaration);
+    file.extend(metadata);
     file.extend(stream);
     file.extend(dir);
     (file, u64::from(graph_offset))

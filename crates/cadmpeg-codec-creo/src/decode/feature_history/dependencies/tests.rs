@@ -27,6 +27,61 @@ fn feature_dependency_fixture_retains_source_order() {
 }
 
 #[test]
+fn conflicting_creation_recipe_keeps_independent_parent_evidence() {
+    use crate::feature::operations::{
+        DepdbPrefix, FeatureOperation, FeatureRecipe, OperationKind, OperationName,
+        RecipeResolution,
+    };
+    use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureRow};
+    use crate::feature::schema::SchemaClass;
+
+    let mut scan = crate::test_support::empty_container_scan();
+    let audit = FeatureOperation {
+        feature_id: 17,
+        kind: OperationKind::Extrude,
+        name: OperationName::Derived,
+        recipe: RecipeResolution::Resolved(FeatureRecipe::ProtrudeExtrude),
+        display_state_conflict: false,
+        depdb: Some(DepdbPrefix {
+            schema: SchemaClass::Protrusion,
+            parent: 3,
+        }),
+        offset: 0,
+    };
+    scan.features.operations.push(audit.clone());
+    scan.features.rows.push(FeatureRow {
+        feature_id: 17,
+        root_schema_class: Some(SchemaClass::Cut),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row header"),
+        body_offset: 0,
+        offset: 0,
+    });
+    let ir = reconciliation_ir_with_emitted_parent();
+    assert!(feature_dependencies(&scan, &ir, 17, &BTreeMap::new())
+        .expect("dependencies")
+        .is_empty());
+    scan.features.affected_ids.push(FeatureAffectedIds {
+        feature_id: 17,
+        kind: AffectedIdKind::Parents,
+        ids: vec![3],
+        offset: 0,
+    });
+    let expected = vec![IrFeatureId::mint("creo:model:feature#3").expect("parent")];
+    assert_eq!(
+        feature_dependencies(&scan, &ir, 17, &BTreeMap::new()).expect("dependencies"),
+        expected
+    );
+    scan.features.affected_ids.clear();
+    assert_eq!(
+        feature_dependencies(&scan, &ir, 17, &BTreeMap::from([(17, vec![3])]))
+            .expect("dependencies"),
+        expected
+    );
+    assert_eq!(scan.features.operations[0], audit);
+}
+
+#[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
     let mut dependencies = BTreeMap::new();
     add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);
@@ -184,7 +239,6 @@ fn regeneration_scan() -> crate::container::ContainerScan<'static> {
                 parent: 3,
             }),
             offset: 100,
-            state_offset: 100,
         });
     scan
 }

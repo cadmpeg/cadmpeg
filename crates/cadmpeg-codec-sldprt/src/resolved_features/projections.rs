@@ -1345,6 +1345,19 @@ pub(crate) fn project_compact_surface_selections(
                     if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
                         definition
                     {
+                        let class = history_features
+                            .iter()
+                            .find(|record| record.id == native_ref)
+                            .and_then(|record| record.input_class.as_deref())
+                            .map(crate::classification::native_object_class);
+                        if matches!(class, Some(crate::classification::NativeClassKind::LinearPattern
+                            | crate::classification::NativeClassKind::MirrorPattern))
+                        {
+                            // These paths may describe generated provenance and
+                            // omit authored seeds. Retain the Native selection;
+                            // a typed seed needs an independent complete roster.
+                            break 'feature_edit;
+                        }
                         if seeds
                             .iter()
                             .any(|seed| matches!(seed, PatternSeed::Feature(_)))

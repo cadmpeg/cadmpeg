@@ -2,10 +2,12 @@
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::analytic_surface_residual;
+use super::assign_face_key_owners;
 use super::assign_persistent_owners;
 use super::circle_overlaps_polygon;
 use super::circular_interval;
 use super::circular_interval_contains;
+use super::display_face_key;
 use super::persistent_surface_references;
 use super::planar_boundary_samples;
 use super::plane_frame;
@@ -13,6 +15,7 @@ use super::shortest_arc_span;
 use super::ByteRange;
 use super::CircularHole;
 use super::DisplayFace;
+use super::FaceKeyBinding;
 use super::Mesh;
 use super::PersistentFaceBinding;
 use super::PersistentSurfaceReference;
@@ -43,11 +46,15 @@ use crate::SldprtCodec;
 
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
+use crate::test_support::parasolid::face_key_attribute;
 use crate::test_support::parasolid::triangle_body;
 use crate::test_support::tessellation::descriptor;
 use crate::test_support::tessellation::display_list_payload;
+use crate::test_support::tessellation::display_list_payload_with_positions;
 use crate::test_support::tessellation::extended_display_list_payload;
+use crate::test_support::tessellation::face_key_metadata;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
+use crate::test_support::tessellation::sldprt_with_body_and_display_payload;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, Curve, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
@@ -807,6 +814,133 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
         vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![second]);
+}
+
+fn key_binding(mesh: &str, key: u32) -> FaceKeyBinding {
+    FaceKeyBinding {
+        tessellation: mesh.into(),
+        key,
+    }
+}
+
+#[test]
+fn face_key_binds_one_table_to_one_face_and_body() {
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-key", 0.0);
+    let second = add_square_face(&mut model, "second-key", 0.0);
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_keys = vec![(first, 0x4173_00a6), (second.clone(), 0x4173_00a7)];
+
+    assert_eq!(
+        assign_face_key_owners(
+            &mut model,
+            &face_keys,
+            &[key_binding("synthetic:test:tessellation#mesh", 0x4173_00a7)],
+        ),
+        vec!["synthetic:test:tessellation#mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![second]);
+    assert_eq!(
+        model.tessellations[0].body,
+        Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
+    );
+}
+
+#[test]
+fn repeated_face_key_on_two_faces_or_two_tables_binds_nothing() {
+    let mut model = model_with_body();
+    let first = add_square_face(&mut model, "first-repeat", 0.0);
+    let second = add_square_face(&mut model, "second-repeat", 3.0);
+    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_keys = vec![(first.clone(), 7), (second.clone(), 7)];
+    assert!(assign_face_key_owners(
+        &mut model,
+        &face_keys,
+        &[key_binding("synthetic:test:tessellation#mesh", 7)],
+    )
+    .is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#other"));
+    let face_keys = vec![(first, 7), (second, 8)];
+    let bindings = [
+        key_binding("synthetic:test:tessellation#mesh", 7),
+        key_binding("synthetic:test:tessellation#other", 7),
+    ];
+    assert!(assign_face_key_owners(&mut model, &face_keys, &bindings).is_empty());
+    assert!(model.tessellations.iter().all(|mesh| mesh.faces.is_empty()));
+}
+
+#[test]
+fn display_face_key_reads_the_one_cell_and_the_key_inside_the_table_metadata() {
+    let key_table = |one: u32, key: u32| {
+        let mut payload = vec![0; 0x100];
+        payload[0x60..0x64].copy_from_slice(&one.to_le_bytes());
+        payload[0x64..0x68].copy_from_slice(&key.to_le_bytes());
+        payload
+    };
+    let face = |start: usize, end: usize| DisplayFace {
+        mesh: Mesh::default(),
+        table: ByteRange::new(0, start).expect("ordered range"),
+        metadata: ByteRange::new(start, end).expect("ordered range"),
+        surface_references: Vec::new(),
+    };
+    let alone = [face(0, 0x100)];
+    assert_eq!(
+        display_face_key(&key_table(1, 0x4173_00a6), &alone, 0),
+        Some(0x4173_00a6)
+    );
+    assert_eq!(display_face_key(&key_table(1, 0), &alone, 0), None);
+    assert_eq!(
+        display_face_key(&key_table(2, 0x4173_00a6), &alone, 0),
+        None
+    );
+
+    let next = DisplayFace {
+        table: ByteRange::new(0x66, 0x80).expect("ordered range"),
+        ..face(0x80, 0x100)
+    };
+    assert_eq!(
+        display_face_key(&key_table(1, 0x4173_00a6), &[face(0, 0x100), next], 0),
+        None
+    );
+}
+
+#[test]
+fn face_key_attribute_binds_a_display_table_off_its_face_support() {
+    let key = 0x4173_00a6;
+    let lifted = [0.0, 0.0, 0.5, 1.0, 0.0, 0.5, 0.0, 1.0, 0.5];
+    let mut keyed_display = display_list_payload_with_positions(lifted);
+    keyed_display.extend(face_key_metadata(key));
+    let decode = |body: &[u8], display: &[u8]| {
+        EditableDecodeResult::from(
+            SldprtCodec
+                .decode(
+                    &mut Cursor::new(sldprt_with_body_and_display_payload(body, display)),
+                    &DecodeOptions::default(),
+                )
+                .unwrap(),
+        )
+    };
+
+    let unkeyed = decode(&triangle_body(), &keyed_display);
+    assert!(unkeyed.ir().model.tessellations[0].faces.is_empty());
+
+    let mut body = triangle_body();
+    body.extend(face_key_attribute(10, key));
+    let keyed = decode(&body, &keyed_display);
+    let face = keyed.ir().model.faces[0].id.clone();
+    assert!(face.as_str().ends_with("face#10"));
+    assert_eq!(keyed.ir().model.tessellations[0].faces, vec![face]);
+    assert!(keyed.ir().model.tessellations[0].body.is_some());
 }
 
 #[test]

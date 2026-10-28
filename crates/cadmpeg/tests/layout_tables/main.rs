@@ -1363,6 +1363,39 @@ fn layout_validator_rejects_broken_tables() {
     }
 }
 
+fn write_if_changed(path: &Path, rendered: &str) -> std::io::Result<()> {
+    match std::fs::read(path) {
+        Ok(current) if current == rendered.as_bytes() => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    std::fs::write(path, rendered)
+}
+
+#[test]
+fn unchanged_layout_outputs_keep_their_modified_time() {
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("generated.rs");
+    write_if_changed(&target, "first").unwrap();
+    let fixed_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1);
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&target)
+        .unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(fixed_time))
+        .unwrap();
+    let before = std::fs::metadata(&target).unwrap().modified().unwrap();
+    write_if_changed(&target, "first").unwrap();
+    assert_eq!(
+        std::fs::metadata(&target).unwrap().modified().unwrap(),
+        before
+    );
+    assert_eq!(std::fs::read(&target).unwrap(), b"first");
+    write_if_changed(&target, "second").unwrap();
+    assert_eq!(std::fs::read(&target).unwrap(), b"second");
+}
+
 #[test]
 fn rendered_layout_pages_match_the_tables() {
     let root = repo_root();
@@ -1373,7 +1406,7 @@ fn rendered_layout_pages_match_the_tables() {
         let rendered = render(&file);
         let target = path.with_extension("md");
         if update {
-            std::fs::write(&target, &rendered).unwrap();
+            write_if_changed(&target, &rendered).unwrap();
             continue;
         }
         let current = read_text(&target).unwrap_or_default();
@@ -1446,19 +1479,19 @@ fn generated_layout_code_matches_the_tables() {
                 continue;
             }
         };
-        if *format == "sldprt" {
+        if *format == "asm" {
             assert!(
-                rendered.contains("`chart_00_28`"),
-                "sldprt layout.rs must list the discrepant chart record as omitted"
+                rendered.contains("`coedge`"),
+                "asm layout.rs must list the discrepant coedge record as omitted"
             );
             assert!(
-                !rendered.contains("mod chart_00_28"),
-                "sldprt layout.rs must not emit constants for a discrepant record"
+                !rendered.contains("mod coedge"),
+                "asm layout.rs must not emit constants for a discrepant record"
             );
         }
         let target = root.join(relative);
         if update {
-            std::fs::write(&target, &rendered).unwrap();
+            write_if_changed(&target, &rendered).unwrap();
             continue;
         }
         let current = read_text(&target).unwrap_or_default();

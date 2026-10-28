@@ -130,6 +130,16 @@ pub(in super::super) fn build_report(
         );
     }
     losses.extend(scan.framing.local_work_cap_losses.iter().cloned());
+    for offset in &scan.framing.unowned_physical_geometry {
+        push_report_loss(
+            &mut losses,
+            CreoLossCode::PhysicalGeometryOwnerUnresolved,
+            format_args!(
+                "Physical DEPDB_DATA section at byte {offset} contains geometry-looking labels \
+                 without a proven visible-geometry namespace owner; its complete bytes are retained."
+            ),
+        );
+    }
 
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in

@@ -70,6 +70,8 @@ loss_codes! {
     CarrierTessellationCensus => ("carrier.tessellation-census", Info, CarrierSummary),
     /// B-rep topology graph was not reconstructed from surviving typed records.
     TopologyGraphNotReconstructed => ("topology.graph-not-reconstructed", Blocking, TopologyNotTransferred),
+    /// A complete primary EDGE has no admitted typed projection.
+    PrimaryEdgeUnresolved => ("topology.primary-edge-unresolved", Warning, TopologyNotTransferred),
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
     IntersectionRecordsOpaque => ("intersection.records-opaque", Warning, ObjectRecordsUntransferred),
     /// Geometric completion reached a declared work bound before all
@@ -194,6 +196,7 @@ mod tests {
                 "carrier.analytic-census",
                 "carrier.tessellation-census",
                 "topology.graph-not-reconstructed",
+                "topology.primary-edge-unresolved",
                 "intersection.records-opaque",
                 "intersection.pcurve-completion-bounded",
                 "geometry.adaptive-work-bounded",

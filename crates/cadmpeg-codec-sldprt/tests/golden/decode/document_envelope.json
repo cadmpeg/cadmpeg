@@ -26,27 +26,6 @@
           ]
         },
         {
-          "id": "sldprt:metadata:configuration_manager#247:269",
-          "name": "configuration_manager",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 17
-            },
-            {
-              "kind": "integer",
-              "value": 3
-            },
-            {
-              "kind": "integer",
-              "value": 132537600000000000
-            }
-          ]
-        },
-        {
           "id": "sldprt:metadata:default_reference_plane#247:54",
           "name": "default_reference_plane",
           "target": {
@@ -71,23 +50,6 @@
                 0.0,
                 0.0
               ]
-            }
-          ]
-        },
-        {
-          "id": "sldprt:metadata:part_record#247:248",
-          "name": "part_record",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 42
-            },
-            {
-              "kind": "integer",
-              "value": 2026
             }
           ]
         },
@@ -302,6 +264,17 @@
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "topology.face-records-unread",
+          "kind": "topology_not_transferred",
+          "namespace": "sldprt",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "1 framed FACE record(s) have no closed loop ring that the decoder reads, so no decoded face carries them.",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -338,20 +311,10 @@
           "stream": "SWObjects",
           "tag": "moBBoxCenterData_c"
         },
-        "sldprt:metadata:configuration_manager#247:269": {
-          "offset": 269,
-          "stream": "SWObjects",
-          "tag": "moConfigurationMgr_c"
-        },
         "sldprt:metadata:default_reference_plane#247:54": {
           "offset": 54,
           "stream": "SWObjects",
           "tag": "moDefaultRefPlnData_c"
-        },
-        "sldprt:metadata:part_record#247:248": {
-          "offset": 248,
-          "stream": "SWObjects",
-          "tag": "moPart_c"
         },
         "sldprt:metadata:source_linear_unit_code#492:10": {
           "offset": 10,

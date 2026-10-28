@@ -10,6 +10,7 @@ use super::{
 use crate::native::CatiaOuterContainerBinding;
 use std::collections::BTreeMap;
 
+mod definition_chain_ownership;
 mod evaluate;
 mod expression_admission;
 mod legacy_admission;

@@ -12,8 +12,8 @@ use crate::scalar;
 
 use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
 use super::helpers::find_bytes;
-use super::operations::{FeatureOperation, FeatureRecipeKind};
-use super::rows::{FeatureGeometryTable, FeatureRevolutionExtent};
+use super::operations::FeatureOperation;
+use super::rows::FeatureGeometryTable;
 use super::segment_rows::{SegmentRow, SegmentRows};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
@@ -33,11 +33,24 @@ pub(crate) enum FeatureParameterFrameKind {
     Transform,
 }
 
+/// Record that owns a definition-space parameter frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FeatureParameterFrameOwner {
+    /// First field of the feature's `place_rec_ptr` placement record.
+    PlacementRecord,
+    /// `gsec2d_ptr` section-location field, followed by `rigid_data`.
+    SectionLocation,
+    /// Any other owning record.
+    Other,
+}
+
 /// One `f9 04 03` definition-space parameter frame.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FeatureParameterFrame {
     /// Frame field kind.
     pub(crate) kind: FeatureParameterFrameKind,
+    /// Record that owns the frame field.
+    pub(crate) owner: FeatureParameterFrameOwner,
     /// Exact scalar-body bytes after `f9 04 03`.
     pub(crate) body: Vec<u8>,
     /// Twelve values when the body consists entirely of defined scalar tokens.
@@ -123,6 +136,7 @@ fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField
 pub(crate) enum ScalarLane {
     Value(f64),
     DimensionDriven,
+    OpaqueFullWidth,
     Undefined,
 }
 
@@ -130,7 +144,7 @@ impl ScalarLane {
     pub(crate) fn value(self) -> Option<f64> {
         match self {
             Self::Value(value) => Some(value),
-            Self::DimensionDriven | Self::Undefined => None,
+            Self::DimensionDriven | Self::OpaqueFullWidth | Self::Undefined => None,
         }
     }
 }
@@ -296,7 +310,11 @@ impl FeatureVariableTable {
         let mut ambiguous = BTreeSet::new();
         for point_id in point_ids {
             let mut point = [None; 2];
-            let mut conflict = false;
+            let mut conflict = self.rows.iter().any(|row| {
+                row.key == point_id
+                    && matches!(row.variable_type, VariableType::U | VariableType::V)
+                    && row.value == ScalarLane::OpaqueFullWidth
+            });
             for coordinate in 0..2 {
                 let variable_type = [VariableType::U, VariableType::V][coordinate];
                 let values = || {
@@ -364,6 +382,33 @@ pub(crate) struct FeatureEquationTable {
     pub(crate) rows: Vec<FeatureEquation>,
     /// Byte offset of the `eqtn_arr` label in the original stream.
     pub(crate) offset: usize,
+}
+
+impl FeatureVariableTable {
+    pub(crate) fn opaque_value_keys(&self) -> BTreeSet<(VariableType, u32)> {
+        self.rows
+            .iter()
+            .filter(|row| row.value == ScalarLane::OpaqueFullWidth)
+            .map(|row| (row.variable_type, row.key))
+            .collect()
+    }
+}
+
+impl FeatureEquationTable {
+    pub(crate) fn rows_without_opaque_values<'a>(
+        &'a self,
+        variables: &'a FeatureVariableTable,
+    ) -> impl Iterator<Item = &'a FeatureEquation> {
+        let opaque = variables.opaque_value_keys();
+        self.rows.iter().filter(move |equation| {
+            equation.arguments.iter().flatten().all(|ordinal| {
+                variables
+                    .rows
+                    .get(index_from_u32(*ordinal))
+                    .is_none_or(|row| !opaque.contains(&(row.variable_type, row.key)))
+            })
+        })
+    }
 }
 
 /// Defined positional segment family.
@@ -1632,11 +1677,39 @@ fn decode_section_coordinate_scalar(
     decode_variable_scalar(payload, offset, end, cache)
 }
 
+fn decode_typed_variable_field(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+    variable_type: VariableType,
+) -> (ScalarLane, usize) {
+    if payload.get(offset) == Some(&0xed) {
+        return payload
+            .get(..end)
+            .and_then(|bounded| scalar::decode_section_full_width_scalar(bounded, offset))
+            .map_or((ScalarLane::Undefined, offset), |(value, next)| {
+                (
+                    if matches!(variable_type, VariableType::U | VariableType::V)
+                        && value.is_finite()
+                    {
+                        ScalarLane::Value(value)
+                    } else {
+                        ScalarLane::OpaqueFullWidth
+                    },
+                    next,
+                )
+            });
+    }
+    decode_section_coordinate_scalar(payload, offset, end, cache)
+}
+
 fn decode_variable_guess(
     payload: &[u8],
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
+    variable_type: VariableType,
 ) -> (ScalarLane, usize) {
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
@@ -1660,7 +1733,12 @@ fn decode_variable_guess(
             return (ScalarLane::Value(0.0), offset + 1);
         }
     }
-    let decoded = decode_section_coordinate_scalar(payload, offset, end, cache);
+    let decoded = decode_typed_variable_field(payload, offset, end, cache, variable_type);
+    // A full-width opener owns exactly nine bytes. A short image cannot use
+    // the legacy opaque-guess suffix search to borrow its delimiter bytes.
+    if payload.get(offset) == Some(&0xed) {
+        return decoded;
+    }
     if decoded.0 == ScalarLane::Undefined {
         if let Some(next) = unresolved_variable_guess_end(payload, offset, end) {
             return (ScalarLane::Undefined, next);
@@ -1669,67 +1747,107 @@ fn decode_variable_guess(
     decoded
 }
 
+fn variable_named_field(payload: &[u8], cursor: usize, name: &[u8]) -> Option<usize> {
+    let field = psb::token_at(payload, cursor)?;
+    let end = cursor.checked_add(field.length)?;
+    (field.kind == psb::TokenKind::NamedRecord && payload.get(cursor + 2..end) == Some(name))
+        .then_some(end)
+}
+
+fn named_variable_prototype(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(Option<FeatureVariableRow>, usize)> {
+    let payload = payload.get(..end)?;
+    if payload.get(start..start.checked_add(2)?) != Some(&[0xfb, 0xe2]) {
+        return None;
+    }
+    let mut cursor = start + 2;
+    if payload.get(cursor..cursor + 2) == Some(&[0xf1, psb::token::ENTITY_REF]) {
+        return Some((None, cursor));
+    }
+    let offset = cursor;
+    cursor = variable_named_field(payload, cursor, b"type\0")?;
+    let (variable_type, next) = psb::complete_compact_int(payload, cursor)?;
+    cursor = variable_named_field(payload, next, b"key\0")?;
+    let (key, next) = psb::complete_compact_int(payload, cursor)?;
+    let value_start = variable_named_field(payload, next, b"value\0")?;
+    let (value, value_end) =
+        decode_typed_variable_field(payload, value_start, end, cache, variable_type.into());
+    if value_end <= value_start {
+        return None;
+    }
+    let guess_start = variable_named_field(payload, value_end, b"guess\0")?;
+    let (guess, guess_end) =
+        decode_typed_variable_field(payload, guess_start, end, cache, variable_type.into());
+    if guess_end <= guess_start {
+        return None;
+    }
+    cursor = guess_end;
+    let mut states = [None; 3];
+    for (state, name) in
+        states
+            .iter_mut()
+            .zip([b"known\0".as_slice(), b"homogeneity\0", b"uvar_id\0"])
+    {
+        cursor = variable_named_field(payload, cursor, name)?;
+        let (value, next) = psb::complete_compact_int(payload, cursor)?;
+        *state = Some(value);
+        cursor = next;
+    }
+    if payload.get(cursor..cursor + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
+        return None;
+    }
+    Some((
+        Some(FeatureVariableRow {
+            variable_type: variable_type.into(),
+            key,
+            value,
+            value_body: payload[value_start..value_end].to_vec(),
+            guess,
+            guess_body: payload[guess_start..guess_end].to_vec(),
+            known: states[0],
+            homogeneity: states[1],
+            uvar_id: states[2],
+            offset,
+        }),
+        cursor,
+    ))
+}
+
 fn variable_table(
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureVariableTable> {
+    let payload = payload.get(..end)?;
     let table = find_bytes(payload, b"var_arr\0", start, end)?;
     let mut cursor = table + b"var_arr\0".len();
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
         return None;
     }
-    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+    let (declared_count, after_count) = psb::complete_compact_int(payload, cursor + 1)?;
     cursor = after_count;
-    let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-        let (value, next) = psb::compact_int(payload, cursor + 1);
-        cursor = next;
-        Some(value)
-    } else {
-        None
-    };
-    let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
-    let named_row = (|| {
-        let type_label = find_bytes(payload, b"type\0", cursor, close)?;
-        let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
-        let key = named_compact_int(payload, b"key\0", cursor, close)?;
-        let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
-        let (value, value_end) =
-            decode_section_coordinate_scalar(payload, value_label, close, cache);
-        let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
-        let (guess, guess_end) =
-            decode_section_coordinate_scalar(payload, guess_label, close, cache);
-        Some((
-            FeatureVariableRow {
-                variable_type: variable_type.into(),
-                key,
-                value,
-                value_body: Vec::new(),
-                guess,
-                guess_body: Vec::new(),
-                known: named_compact_int(payload, b"known\0", cursor, close),
-                homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
-                uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
-                // The row header is the two bytes before its type label. A label
-                // below offset 2 states a header outside the payload and refuses
-                // the row; the label sits at or after the table opener plus eight,
-                // so the bound holds for every table this scanner reaches.
-                offset: type_label.checked_sub(2)?,
-            },
-            (value_label, value_end),
-            (guess_label, guess_end),
-        ))
-    })();
-    let (_, after_close_ref) = psb::compact_int(payload, close + 2);
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return None;
+    }
+    let (row_class, next) = psb::reference_id(payload, cursor + 1).ok()?;
+    cursor = next;
+    let entity_ref = Some(row_class);
+    let (named_row, close) = named_variable_prototype(payload, cursor, end, cache)?;
+    let (closed_class, after_close_ref) = psb::reference_id(payload, close + 2).ok()?;
+    if closed_class != row_class {
+        return None;
+    }
     cursor = after_close_ref;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
     let mut rows = Vec::new();
-    if let Some((mut row, (value_start, value_end), (guess_start, guess_end))) = named_row {
-        row.value_body = payload[value_start..value_end].to_vec();
-        row.guess_body = payload[guess_start..guess_end].to_vec();
+    if let Some(row) = named_row {
         rows.push(row);
     }
     // Each row consumes at least one byte, so the declared count cannot admit
@@ -1753,11 +1871,19 @@ fn variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) =
+            decode_typed_variable_field(payload, cursor, end, cache, variable_type.into());
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
-        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) =
+            decode_variable_guess(payload, cursor, end, cache, variable_type.into());
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -1846,11 +1972,19 @@ fn positional_variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) =
+            decode_typed_variable_field(payload, cursor, end, cache, variable_type.into());
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let value_end = cursor;
         let guess_start = cursor;
-        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) =
+            decode_variable_guess(payload, cursor, end, cache, variable_type.into());
+        if next <= cursor {
+            break;
+        }
         cursor = next;
         let guess_end = cursor;
         let mut trailing = [None; 3];
@@ -4132,12 +4266,14 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
     };
     result.orientation.section_flip = BinaryFlag::decode(section_flip);
     cursor += 1;
-    for _ in 0..3 {
-        let (_, next) = segment_int(payload, cursor);
-        if next <= cursor {
-            return Some(result);
-        }
-        cursor = next;
+    if next_nullable_segment_int(payload, &mut cursor).is_err()
+        || payload.get(cursor) != Some(&0xe1)
+    {
+        return Some(result);
+    }
+    cursor += 1;
+    if next_nullable_segment_int(payload, &mut cursor).is_err() {
+        return Some(result);
     }
     let (sketch_plane_entity_id, next) = segment_int(payload, cursor);
     if next <= cursor {
@@ -5321,6 +5457,27 @@ fn positional_relation_triples(
     rows
 }
 
+fn owned_relation_operand_vectors(
+    bytes: &[u8],
+    relation_type: u32,
+) -> Option<[[Option<u32>; 4]; 3]> {
+    if let Some(vectors) = relation_operand_vectors(bytes) {
+        return Some(vectors);
+    }
+    if !matches!(relation_type, 9 | 21) {
+        return None;
+    }
+    let vectors = relation_operand_vectors(bytes.strip_suffix(&[0xf5])?)?;
+    let [a, b, c] = vectors;
+    (a[0] == a[2]
+        && a[1] == a[3]
+        && a[0].is_some()
+        && a[1].is_some()
+        && b == [Some(0), Some(1), Some(1), Some(1)]
+        && c == [Some(15), Some(16), Some(1), Some(15)])
+    .then_some(vectors)
+}
+
 fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
     let mut values = [None; 14];
     let mut filled = 0;
@@ -5508,7 +5665,7 @@ fn positional_relation_rows(
         rows.push(FeatureRelation {
             relation_id,
             used,
-            operand_vectors: relation_operand_vectors(&operands),
+            operand_vectors: owned_relation_operand_vectors(&operands, relation_type),
             operands,
             sign,
             dimension_id,
@@ -5978,6 +6135,20 @@ fn saved_arc_scalar(
     decoded
 }
 
+/// Start the scalar body only after a complete supported saved-row header.
+/// Local validation does not establish the enclosing candidate boundary.
+fn saved_generated_scalar_start(payload: &[u8], start: usize, end: usize) -> Option<usize> {
+    let payload = payload.get(..end)?;
+    match payload.get(start)? {
+        0xe2 => start.checked_add(1),
+        0xf7 => {
+            let (_, after_reference) = psb::reference_id(payload, start.checked_add(1)?).ok()?;
+            (payload.get(after_reference) == Some(&0xe2)).then_some(after_reference.checked_add(1)?)
+        }
+        _ => None,
+    }
+}
+
 fn saved_positional_generated_entities(
     payload: &[u8],
     start: usize,
@@ -6049,13 +6220,9 @@ fn saved_positional_generated_entities(
         if after_id > row_end {
             continue;
         }
-        let Some(header_size) = payload[after_id..row_end]
-            .iter()
-            .position(|byte| *byte == 0xe2)
-        else {
+        let Some(mut cursor) = saved_generated_scalar_start(payload, after_id, row_end) else {
             continue;
         };
-        let mut cursor = after_id + header_size + 1;
         let mut values = [None; 14];
         let mut filled = 0;
         while cursor < row_end && filled < value_count {
@@ -6568,43 +6735,22 @@ fn positional_saved_section(
     Some(FeatureSavedSection { entities, offset })
 }
 
-/// Decode full-turn termination stored inside an owned DEPDB section
-/// definition. The owning current-state recipe must independently select a
-/// rotational sweep.
-pub(crate) fn definition_revolution_extents(
-    definitions: &[FeatureDefinition],
-    operations: &[FeatureOperation],
-) -> Vec<FeatureRevolutionExtent> {
-    const FULL_TURN: &[u8] = &[
-        0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
-        0x00, 0x00,
-    ];
-    let mut result = Vec::new();
-    for definition in definitions {
-        let Some(feature_id) = definition.identity.owner_feature_id() else {
-            continue;
-        };
-        let recipe_matches = operations.iter().any(|operation| {
-            operation.feature_id == feature_id
-                && operation
-                    .recipe
-                    .resolved()
-                    .is_some_and(|recipe| recipe.kind() == FeatureRecipeKind::Revolve)
-        });
-        if !recipe_matches {
-            continue;
-        }
-        for (offset, window) in definition.body.windows(FULL_TURN.len()).enumerate() {
-            if window == FULL_TURN {
-                result.push(FeatureRevolutionExtent {
-                    feature_id,
-                    offset: definition.offset + offset + 6,
-                });
-            }
-        }
+/// Owner of the frame field whose label starts at `label` and whose bounded
+/// body ends at `body_end`.
+fn parameter_frame_owner(
+    payload: &[u8],
+    label: usize,
+    body_end: usize,
+) -> FeatureParameterFrameOwner {
+    const PLACEMENT_RECORD_OPEN: &[u8] = b"\xe0\x00place_rec_ptr\0\xe3\xe0\x02";
+    const SECTION_LOCATION_SUCCESSOR: &[u8] = b"\xe0\x00rigid_data\0";
+    if payload[..label].ends_with(PLACEMENT_RECORD_OPEN) {
+        FeatureParameterFrameOwner::PlacementRecord
+    } else if payload[body_end..].starts_with(SECTION_LOCATION_SUCCESSOR) {
+        FeatureParameterFrameOwner::SectionLocation
+    } else {
+        FeatureParameterFrameOwner::Other
     }
-    result.as_mut_slice().sort_by_key(|left| left.offset);
-    result
 }
 
 fn definitions_in_ranges(
@@ -6661,6 +6807,7 @@ fn definitions_in_ranges(
                 let body = payload[body_start..body_end].to_vec();
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
+                    owner: parameter_frame_owner(payload, field_offset, body_end),
                     decoded_values: scalar::decode_feature_local_system_slots(&body, &cache),
                     body,
                     offset: field_offset,
@@ -7492,6 +7639,9 @@ pub(crate) mod test_support;
 mod owners_tests;
 
 #[cfg(test)]
+mod section_pointer_tests;
+
+#[cfg(test)]
 mod saved_tests;
 
 #[cfg(test)]
@@ -7499,6 +7649,38 @@ mod tables_tests;
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn local_system_frame_owner_follows_its_enclosing_record() {
+        use super::{parameter_frame_owner, FeatureParameterFrameOwner};
+        const BODY: &[u8] = b"\xf9\x04\x03\x0f\x18\xe5\x0f\x18\xe5\x0f\x18\xe5";
+        let frame = |prefix: &[u8], suffix: &[u8]| {
+            let mut payload = prefix.to_vec();
+            payload.extend_from_slice(b"\xe0\x02");
+            let label = payload.len();
+            payload.extend_from_slice(b"local_sys\0");
+            payload.extend_from_slice(BODY);
+            let body_end = payload.len();
+            payload.extend_from_slice(suffix);
+            parameter_frame_owner(&payload, label, body_end)
+        };
+
+        assert_eq!(
+            frame(b"\xe0\x00place_rec_ptr\0\xe3", b"\xe0\x01own_ref_id\0"),
+            FeatureParameterFrameOwner::PlacementRecord
+        );
+        assert_eq!(
+            frame(b"\xe0\x00p_saved_result\0\xe3", b"\xe0\x00rigid_data\0"),
+            FeatureParameterFrameOwner::SectionLocation
+        );
+        assert_eq!(
+            frame(
+                b"\xe0\x00p_saved_result\0\xe3",
+                b"\xe0\x01entities_to_hide\0"
+            ),
+            FeatureParameterFrameOwner::Other
+        );
+    }
 
     #[test]
     fn trim_endpoint_radius_preserves_missing_agreement_and_refusal() {

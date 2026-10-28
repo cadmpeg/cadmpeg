@@ -40,7 +40,7 @@ use super::entity;
 use super::evaluation::{
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
 };
-use super::index::{scan_carriers, CarrierIndex, IndexedCurve};
+use super::index::{scan_carriers_for_role, CarrierIndex, IndexedCurve};
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
@@ -99,6 +99,8 @@ pub(crate) struct Brep {
     /// Per-face producing-feature identities resolved from Parasolid attributes.
     pub(crate) face_atoms: Vec<attrib::FaceAtom>,
     pub(crate) native_face_identities: Vec<attrib::NativeIdentity<FaceId>>,
+    /// Per-face `DisplayLists` table keys resolved from Parasolid attributes.
+    pub(crate) face_keys: Vec<(FaceId, u32)>,
     pub(crate) native_body_identities: Vec<attrib::NativeIdentity<BodyId>>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
@@ -353,6 +355,9 @@ impl Brep {
         for identity in &mut self.native_face_identities {
             identity.target = qualified(&identity.target, &tail)?;
         }
+        for (face, _) in &mut self.face_keys {
+            *face = qualified(face, &tail)?;
+        }
         for identity in &mut self.native_body_identities {
             identity.target = qualified(&identity.target, &tail)?;
         }
@@ -479,6 +484,8 @@ pub(crate) struct Stats {
     pub(crate) unresolved_topology_vertices: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
+    /// Framed FACE records without a closed loop ring, so no decoded face carries them.
+    pub(crate) unread_face_records: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
     pub(crate) unknown_surface_faces: usize,
@@ -486,6 +493,8 @@ pub(crate) struct Stats {
     pub(crate) unknown_procedural_supports: usize,
     /// Edges whose support curve is an untyped carrier (emitted with no curve).
     pub(crate) unknown_curve_edges: usize,
+    /// Tolerant edges emitted with no curve, because their fin geometry is not read.
+    pub(crate) tolerant_edges_without_curve: usize,
     /// Pcurves withheld because geometric inverse selection was ambiguous.
     pub(crate) ambiguous_pcurve_parameters: usize,
     /// NURBS edge carriers whose vertex range is off their bound surface.
@@ -1206,7 +1215,12 @@ pub(crate) fn decode(
     header: &StreamHeader,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    decode_body(ctx, header_body(payload, header)?, stream)
+    decode_body(
+        ctx,
+        header_body(payload, header)?,
+        stream,
+        is_deltas_stream(header),
+    )
 }
 
 fn is_deltas_stream(header: &StreamHeader) -> bool {
@@ -1217,21 +1231,6 @@ fn is_deltas_stream(header: &StreamHeader) -> bool {
         .any(|window| window.eq_ignore_ascii_case(b"deltas"))
 }
 
-fn selected_typed_face_offsets(
-    facts: &typed::Facts,
-    attrs: Option<&HashSet<u16>>,
-) -> HashSet<usize> {
-    let mut offsets = HashSet::new();
-    if let Some(attrs) = attrs {
-        for face in &facts.faces {
-            if attrs.contains(&face.attr) {
-                offsets.insert(face.offset);
-            }
-        }
-    }
-    offsets
-}
-
 fn append_entity_facts(target: &mut entity::Facts, mut source: entity::Facts) {
     target.face_colors.append(&mut source.face_colors);
     target
@@ -1240,6 +1239,7 @@ fn append_entity_facts(target: &mut entity::Facts, mut source: entity::Facts) {
     target.face_atoms.append(&mut source.face_atoms);
     target.face_payloads.append(&mut source.face_payloads);
     target.body_payloads.append(&mut source.body_payloads);
+    target.face_keys.append(&mut source.face_keys);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.entity_count += source.entity_count;
     target.unresolved_face_colors += source.unresolved_face_colors;
@@ -1288,8 +1288,8 @@ pub(crate) fn decode_bodies(
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
         let typed_face_offsets =
-            selected_typed_face_offsets(&stream_typed_facts, typed_bridge_attrs.as_ref());
-        carriers.merge_missing(scan_carriers(ctx, body)?);
+            stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
+        carriers.merge_missing(scan_carriers_for_role(ctx, body, is_deltas)?);
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
             topology::scan_deltas_with_owner_attrs(
@@ -1330,13 +1330,14 @@ fn decode_body(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
+    deltas: bool,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    let mut carriers = scan_carriers(ctx, body)?;
+    let mut carriers = scan_carriers_for_role(ctx, body, deltas)?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
     let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, body, false)]);
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
-    let typed_face_offsets = selected_typed_face_offsets(&typed_facts, typed_face_attrs.as_ref());
+    let typed_face_offsets = typed_facts.selected_face_offsets(typed_face_attrs.as_ref());
     let t = topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs);
     let entity_facts = entity::scan_metadata(body, false);
     decode_graph(ctx, &mut carriers, &t, entity_facts, &typed_facts, stream)
@@ -1623,6 +1624,16 @@ fn decode_graph(
         },
         ..Brep::default()
     };
+    if carriers.has_unvalidated_offset() {
+        out.losses.push(crate::loss::SldprtLossCode::GeometryOffsetValidityUnresolved.note(
+            "Invalid, unchecked, or zero-distance offset records retain opaque geometry until their exact construction is validated.",
+        ));
+    }
+    if carriers.has_surface_category_conflict() {
+        out.losses.push(crate::loss::SldprtLossCode::GeometrySurfaceCarrierAmbiguous.note(
+            "Multiple surface carrier categories claim one node index; conflicting typed surfaces remain untransferred.",
+        ));
+    }
     let mut annotations = AnnotationBuilder::new();
     let source_stream = StreamHandle::new(stream.clone());
     if t.bridges().is_empty() {
@@ -1683,6 +1694,7 @@ fn decode_graph(
     let mut kept_points: HashSet<u16> = HashSet::new();
     // Edge attr -> (canonical start vuse, canonical end vuse, curve carrier attr).
     let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
+    let mut tolerant_edges: HashSet<EdgeId> = HashSet::new();
 
     let mut unresolved_points = HashSet::new();
     for (edge_attr, incidences) in edge_incidence {
@@ -1698,9 +1710,12 @@ fn decode_graph(
             continue;
         };
         let end_vuse = edge_end_vuse(canonical, *ring_end_vuse, t.coedges());
-        let curve_attr = t
-            .edge_uses()
-            .get(&edge_attr)
+        let edge_use = t.edge_uses().get(&edge_attr);
+        if edge_use.is_some_and(|edge_use| edge_use.references.tolerant()) {
+            tolerant_edges.insert(id_edge(edge_attr));
+        }
+        let curve_attr = edge_use
+            .filter(|edge_use| !edge_use.references.tolerant())
             .map_or(0, |edge_use| edge_use.references.curve());
         edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
         for vuse in [*start_vuse, end_vuse] {
@@ -2041,9 +2056,10 @@ fn decode_graph(
                         else {
                             return Ok(None);
                         };
-                        let Ok(fit_tolerance) = cadmpeg_ir::geometry::FitTolerance::try_new(
-                            support_data.fit_tolerance_mm,
-                        ) else {
+                        let Some(Ok(fit_tolerance)) = support_data
+                            .fit_tolerance_mm
+                            .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+                        else {
                             return Ok(None);
                         };
                         let id = PcurveId::compose(
@@ -2221,6 +2237,7 @@ fn decode_graph(
             }
         }
         if loops.is_empty() {
+            out.stats.unread_face_records += 1;
             continue;
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
@@ -2527,6 +2544,14 @@ fn decode_graph(
             });
         }
     }
+    for (owner, values) in attrib::unique_payloads(entity_facts.face_keys) {
+        if let (Some(face), [key]) = (
+            emitted_faces.get(id_face(owner).as_str()),
+            values.as_slice(),
+        ) {
+            out.face_keys.push(((*face).clone(), *key));
+        }
+    }
     let mut bound_faces = HashSet::new();
     for atom in entity_facts.face_atoms {
         let Some(identity) = atom.identity else {
@@ -2551,6 +2576,11 @@ fn decode_graph(
     derive_spherical_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_nurbs_isoparametric_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
     prune_rejected_topology(&mut out);
+    out.stats.tolerant_edges_without_curve = out
+        .edges
+        .iter()
+        .filter(|edge| edge.curve().is_none() && tolerant_edges.contains(&edge.id))
+        .count();
 
     if out.faces.is_empty() {
         return Ok(Brep {
@@ -4570,11 +4600,12 @@ fn intersection_support_pcurve(
         };
     }
     (|| -> Result<Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)>, cadmpeg_core::CodecError> {
+        let fit_tolerance_mm = some_or_none!(support_data
+            .fit_tolerance_mm
+            .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0));
         if chart.degree() != 1
             || matches!(chart.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. })
             || chart.periodic()
-            || !support_data.fit_tolerance_mm.is_finite()
-            || support_data.fit_tolerance_mm <= 0.0
         {
             return Ok(None);
         }
@@ -4638,7 +4669,7 @@ fn intersection_support_pcurve(
                             surface,
                             point.get(),
                             control_points.last().copied(),
-                            support_data.fit_tolerance_mm,
+                            fit_tolerance_mm,
                             sinks.solver_capped,
                         ) {
                             Ok(Some(parameters)) => parameters,
@@ -4778,7 +4809,7 @@ fn intersection_support_pcurve(
         }));
         if control_errors
             .iter()
-            .any(|error| !error.is_finite() || *error > support_data.fit_tolerance_mm)
+            .any(|error| !error.is_finite() || *error > fit_tolerance_mm)
         {
             return Ok(None);
         }
@@ -4796,12 +4827,12 @@ fn intersection_support_pcurve(
                         [chord[0].get(), chord[1].get()],
                         sinks.solver_capped,
                     )?;
-                    error.is_none_or(|error| error > support_data.fit_tolerance_mm)
+                    error.is_none_or(|error| error > fit_tolerance_mm)
                 }
                 _ => analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
                     |curvature_error| {
                         curvature_error + endpoint_errors[0].max(endpoint_errors[1])
-                            > support_data.fit_tolerance_mm
+                            > fit_tolerance_mm
                     },
                 ),
             };
@@ -6790,7 +6821,7 @@ mod tests {
         let body = [0x00, 0x1e, 0x00];
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-        let carriers = super::scan_carriers(&ctx, &body).unwrap();
+        let carriers = super::super::index::scan_carriers(&ctx, &body).unwrap();
         assert!(carriers.curve_attrs().is_empty());
         let tables = super::topology::scan(&body);
         assert!(tables.points().is_empty());
@@ -6799,9 +6830,13 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-        let decoded =
-            super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("incomplete-marker"))
-                .unwrap();
+        let decoded = super::decode_body(
+            &ctx,
+            &body,
+            &cadmpeg_ir::stream_name!("incomplete-marker"),
+            false,
+        )
+        .unwrap();
         assert!(decoded.points.is_empty());
         assert!(decoded.loops.is_empty());
         ctx.finish_session().unwrap();
@@ -7258,7 +7293,7 @@ mod tests {
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
-            fit_tolerance_mm: 0.2,
+            fit_tolerance_mm: Some(0.2),
             support_uv: Some([
                 vec![
                     cadmpeg_ir::math::Point2::new(0.0, 0.0029),
@@ -7358,7 +7393,7 @@ mod tests {
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
-            fit_tolerance_mm: 0.2,
+            fit_tolerance_mm: Some(0.2),
             support_uv: Some([
                 vec![
                     cadmpeg_ir::math::Point2::new(0.0, 0.0029),
@@ -7410,7 +7445,7 @@ mod tests {
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
-            fit_tolerance_mm: 0.011,
+            fit_tolerance_mm: Some(0.011),
             support_uv: None,
         };
 
@@ -7439,7 +7474,7 @@ mod tests {
         assert_eq!(source, super::IntersectionPcurveSource::AnalyticInverse);
 
         let under_toleranced = super::super::intersection::IntersectionSupportData {
-            fit_tolerance_mm: 0.009,
+            fit_tolerance_mm: Some(0.009),
             ..support_data
         };
         assert!(intersection_support_pcurve(
@@ -7483,7 +7518,7 @@ mod tests {
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
-            fit_tolerance_mm: 0.08,
+            fit_tolerance_mm: Some(0.08),
             support_uv: None,
         };
 
@@ -7543,7 +7578,7 @@ mod tests {
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
         let support_data = super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
-            fit_tolerance_mm: 1.0e-9,
+            fit_tolerance_mm: Some(1.0e-9),
             support_uv: None,
         };
 
@@ -7593,7 +7628,7 @@ mod tests {
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = |fit_tolerance_mm| super::super::intersection::IntersectionSupportData {
             supports: [10, 11],
-            fit_tolerance_mm,
+            fit_tolerance_mm: Some(fit_tolerance_mm),
             support_uv: None,
         };
 
@@ -7858,7 +7893,7 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        let decoded = super::decode_body(&ctx, &[], &cadmpeg_ir::stream_name!("empty"))
+        let decoded = super::decode_body(&ctx, &[], &cadmpeg_ir::stream_name!("empty"), false)
             .expect("valid exactness fields");
 
         assert!(decoded.faces.is_empty());
@@ -7877,6 +7912,7 @@ mod tests {
             &ctx,
             &body,
             &cadmpeg_ir::stream_name!("candidate-admission"),
+            false,
         )
         .expect("decode body");
     }
@@ -7976,6 +8012,7 @@ mod tests {
             &ctx,
             &body,
             &cadmpeg_ir::stream_name!("shared-metadata-head"),
+            false,
         )
         .expect("valid exactness fields");
 

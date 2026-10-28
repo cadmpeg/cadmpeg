@@ -83,3 +83,75 @@ pub(crate) mod type24_segmented_first_coordinate_bounded_round {
     /// Offset of `trailer` (`bytes[2]`). Spec §3.3.
     pub(crate) const TRAILER: usize = 54;
 }
+
+/// Byte offsets for the `model_double_xar_metric_scale` record.
+///
+/// Spec §Constants and cache references. Record length 4 B.
+pub(crate) mod model_double_xar_metric_scale {
+    /// Record length in bytes. Spec §Constants and cache references.
+    pub(crate) const LEN: usize = 4;
+    /// Stated value of `image` (`bytes[4]`). Spec §Constants and cache references.
+    pub(crate) const IMAGE_VALUE: [u8; 4] = [0x07, 0x23, 0x11, 0x2e];
+}
+
+/// Byte offsets for the `model_double_xar_imperial_scale` record.
+///
+/// Spec §Constants and cache references. Record length 11 B.
+pub(crate) mod model_double_xar_imperial_scale {
+    /// Record length in bytes. Spec §Constants and cache references.
+    pub(crate) const LEN: usize = 11;
+    /// Stated value of `opener` (`u8`). Spec §Constants and cache references.
+    pub(crate) const OPENER_VALUE: u8 = 40;
+    /// Offset of `trailer` (`bytes[3]`). Spec §Constants and cache references.
+    pub(crate) const TRAILER: usize = 8;
+    /// Stated value of `trailer` (`bytes[3]`). Spec §Constants and cache references.
+    pub(crate) const TRAILER_VALUE: [u8; 3] = [0x23, 0x11, 0x2e];
+}
+
+/// Byte offsets for the `model_double_xar_control` record.
+///
+/// Spec §Constants and cache references. Record length 4 B.
+pub(crate) mod model_double_xar_control {
+    /// Record length in bytes. Spec §Constants and cache references.
+    pub(crate) const LEN: usize = 4;
+    /// Stated value of `image` (`bytes[4]`). Spec §Constants and cache references.
+    pub(crate) const IMAGE_VALUE: [u8; 4] = [0xe8, 0x26, 0xd6, 0x95];
+}
+
+/// Byte offsets for the `section_full_width_scalar` record.
+///
+/// Spec §5. Record length 9 B.
+///
+/// ```text
+/// The complete owning scalar field supplies the boundary. Only supported coordinate roles interpret the payload as big-endian binary64; other roles retain opaque bytes.
+/// ```
+pub(crate) mod section_full_width_scalar {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 9;
+    /// Stated value of `opener` (`bytes[1]`). Spec §5.
+    pub(crate) const OPENER_VALUE: [u8; 1] = [0xed];
+    /// Offset of `payload` (`bytes[8]`). Spec §5.
+    pub(crate) const PAYLOAD: usize = 1;
+}
+
+/// Byte offsets for the `type24_cap_envelope_control_prefix` record.
+///
+/// Spec §3.2. Record length 22 B.
+///
+/// ```text
+/// Physical scalar images remain opaque; no numeric role or carrier chart follows from this prefix.
+/// ```
+pub(crate) mod type24_cap_envelope_control_prefix {
+    /// Record length in bytes. Spec §3.2.
+    pub(crate) const LEN: usize = 22;
+    /// Offset of `first_control` (`bytes[7]`). Spec §3.2.
+    pub(crate) const FIRST_CONTROL: usize = 0;
+    /// Offset of `separator` (`u8`). Spec §3.2.
+    pub(crate) const SEPARATOR: usize = 7;
+    /// Stated value of `separator` (`u8`). Spec §3.2.
+    pub(crate) const SEPARATOR_VALUE: u8 = 24;
+    /// Offset of `second_control` (`bytes[7]`). Spec §3.2.
+    pub(crate) const SECOND_CONTROL: usize = 8;
+    /// Offset of `third_control` (`bytes[7]`). Spec §3.2.
+    pub(crate) const THIRD_CONTROL: usize = 15;
+}

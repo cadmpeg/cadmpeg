@@ -332,6 +332,8 @@ mod tests {
                 section_name: "Body".to_string(),
                 section_source_offset: 0,
                 expanded_offset: 0,
+                body_offset: 0,
+                logical_count: 0,
                 entries: Vec::new(),
             });
         scan.primitives

@@ -85,11 +85,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 144,
             "state_ordinal": 0,
             "stored_name": "Round id 3",
-            "stored_name_bytes": "526f756e642069642033",
-            "stored_name_prefix": null
+            "stored_name_bytes": "526f756e642069642033"
           },
           {
             "current": true,
@@ -102,11 +100,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 155,
             "state_ordinal": 0,
             "stored_name": "Datum Plane id 4",
-            "stored_name_bytes": "446174756d20506c616e652069642034",
-            "stored_name_prefix": null
+            "stored_name_bytes": "446174756d20506c616e652069642034"
           }
         ],
         "unknowns": [
@@ -333,6 +329,7 @@
       "missing_feature_segment_row_count": 0,
       "missing_feature_skamp_row_count": 0,
       "missing_feature_solver_variable_count": 0,
+      "opaque_section_variable_lane_count": 0,
       "prohibited_active_curve_expression_kind_count": 0,
       "prohibited_active_curve_expression_record_count": 0,
       "resolved_feature_dimension_driven_coordinate_variable_count": 0,

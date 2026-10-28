@@ -13,7 +13,9 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 
-mod schema;
+use crate::parasolid::xt_integer::{read_code as read_ref, read_key};
+
+pub(super) mod schema;
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];
@@ -220,6 +222,19 @@ impl Facts {
     pub(super) fn valid_ownership_face_attrs(&self) -> Option<HashSet<u16>> {
         self.valid_ownership_maps()
             .map(|(_, _, _, faces)| faces.into_keys().collect())
+    }
+
+    /// Physical FACE records selected by a closed typed ownership set.
+    pub(super) fn selected_face_offsets(&self, attrs: Option<&HashSet<u16>>) -> HashSet<usize> {
+        let mut offsets = HashSet::new();
+        if let Some(attrs) = attrs {
+            for face in &self.faces {
+                if attrs.contains(&face.attr) {
+                    offsets.insert(face.offset);
+                }
+            }
+        }
+        offsets
     }
 
     /// Return body hierarchies only when the typed ownership graph is complete
@@ -605,17 +620,6 @@ fn null_like_or_existing<T>(value: u32, nodes: &HashMap<u16, T>) -> bool {
     value <= 1 || u16_from_ref(value).is_some_and(|value| nodes.contains_key(&value))
 }
 
-fn read_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
-    let first = View::u16_be_at(bytes, *at)?;
-    *at = at.checked_add(2)?;
-    if first <= 0x7ffe {
-        return Some(u32::from(first));
-    }
-    let second = View::u16_be_at(bytes, *at)?;
-    *at = at.checked_add(2)?;
-    Some(u32::from(first & 0x7fff) | (u32::from(second) << 15))
-}
-
 fn read_refs<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u32; N]> {
     let mut refs = [0; N];
     for reference in &mut refs {
@@ -624,18 +628,26 @@ fn read_refs<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u32; N]> {
     Some(refs)
 }
 
-fn read_prefix(bytes: &[u8], at: usize, tag: [u8; 2]) -> Option<(usize, u16, u32)> {
-    if bytes.get(at..at + 2) != Some(&tag) {
-        return None;
-    }
-    let mut cursor = at + 2;
-    if bytes.get(cursor) == Some(&0xff) {
-        cursor += 1;
-    }
-    let attr = View::u16_be_at(bytes, cursor)?;
-    let node_id = View::u32_be_at(bytes, cursor + 2)?;
+/// The node attr, the node id, and the offset of the first field after them.
+fn read_header(bytes: &[u8], payload: usize) -> Option<(u16, u32, usize)> {
+    let mut at = payload;
+    let attr = read_key(bytes, &mut at)?;
+    let node_id = View::u32_be_at(bytes, at)?;
     (attr > 1 && node_id != 0).then_some(())?;
-    Some((cursor + 6, attr, node_id))
+    Some((attr, node_id, at.checked_add(4)?))
+}
+
+/// The node payload offsets after `tag`: after an optional first-of-type
+/// `0xff` byte, and at that byte, which also opens a two-word attr cell.
+fn tagged_payloads(bytes: &[u8], at: usize, tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {
+    let start = (bytes.get(at..at + 2) == Some(&tag)).then_some(at + 2);
+    let after_marker = start
+        .filter(|start| bytes.get(*start) == Some(&0xff))
+        .map(|start| start + 1);
+    after_marker
+        .into_iter()
+        .chain(start)
+        .filter(move |payload| read_header(bytes, *payload).is_some())
 }
 
 fn valid_resolution(size: f64, linear: f64) -> bool {
@@ -649,12 +661,9 @@ fn parse_body_fields(
     bytes: &[u8],
     offset: usize,
     payload: usize,
-    mut at: usize,
     header_ref_count: usize,
 ) -> Option<BodyCandidate> {
-    let attr = View::u16_be_at(bytes, payload)?;
-    let node_id = View::u32_be_at(bytes, payload + 2)?;
-    (attr > 1 && node_id != 0).then_some(())?;
+    let (attr, node_id, mut at) = read_header(bytes, payload)?;
     for _ in 0..header_ref_count {
         read_ref(bytes, &mut at)?;
     }
@@ -709,10 +718,9 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
     // The embedded schema can add or remove leading reference fields, so the
     // field count is selected only when exactly one complete interpretation
     // passes the resolution, state, kind, and topology guards.
-    let fields = payload.checked_add(6)?;
     let mut candidate = None;
     for header_ref_count in 0..=BODY_HEADER_REF_MAX {
-        if let Some(body) = parse_body_fields(bytes, offset, payload, fields, header_ref_count) {
+        if let Some(body) = parse_body_fields(bytes, offset, payload, header_ref_count) {
             if candidate.is_some() {
                 return None;
             }
@@ -723,15 +731,12 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
 }
 
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
-    let (payload, _, _) = read_prefix(bytes, offset, BODY_TAG)?;
-    parse_body_layout(bytes, offset, payload.checked_sub(6)?)
+    tagged_payloads(bytes, offset, BODY_TAG)
+        .find_map(|payload| parse_body_layout(bytes, offset, payload))
 }
 
 fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<ShellNode> {
-    let attr = View::u16_be_at(bytes, payload)?;
-    let node_id = View::u32_be_at(bytes, payload + 2)?;
-    (attr > 1 && node_id != 0).then_some(())?;
-    let mut at = payload + 6;
+    let (attr, node_id, mut at) = read_header(bytes, payload)?;
     let refs = read_refs::<8>(bytes, &mut at)?;
     (refs[6] > 1).then_some(())?;
     Some(ShellNode {
@@ -744,15 +749,12 @@ fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<She
 }
 
 fn parse_shell(bytes: &[u8], offset: usize) -> Option<ShellNode> {
-    let (payload, _, _) = read_prefix(bytes, offset, SHELL_TAG)?;
-    parse_shell_fields(bytes, offset, payload.checked_sub(6)?)
+    tagged_payloads(bytes, offset, SHELL_TAG)
+        .find_map(|payload| parse_shell_fields(bytes, offset, payload))
 }
 
 fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<RegionNode> {
-    let attr = View::u16_be_at(bytes, payload)?;
-    let node_id = View::u32_be_at(bytes, payload + 2)?;
-    (attr > 1 && node_id != 0).then_some(())?;
-    let mut at = payload + 6;
+    let (attr, node_id, mut at) = read_header(bytes, payload)?;
     let refs = read_refs::<5>(bytes, &mut at)?;
     // A schema edit may retain one additional reference before the semantic
     // kind byte.  It is not part of the ownership tuple, but it must be
@@ -776,15 +778,12 @@ fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Re
 }
 
 fn parse_region(bytes: &[u8], offset: usize) -> Option<RegionNode> {
-    let (payload, _, _) = read_prefix(bytes, offset, REGION_TAG)?;
-    parse_region_fields(bytes, offset, payload.checked_sub(6)?)
+    tagged_payloads(bytes, offset, REGION_TAG)
+        .find_map(|payload| parse_region_fields(bytes, offset, payload))
 }
 
 fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<FaceNode> {
-    let attr = View::u16_be_at(bytes, payload)?;
-    let node_id = View::u32_be_at(bytes, payload + 2)?;
-    (attr > 1 && node_id != 0).then_some(())?;
-    let mut at = payload + 6;
+    let (attr, node_id, mut at) = read_header(bytes, payload)?;
     read_ref(bytes, &mut at)?;
     let tolerance = bytes.get(at..at + 8)?;
     let tolerance_is_sentinel = tolerance == MAGIC;
@@ -814,8 +813,8 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
 }
 
 fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
-    let (payload, _, _) = read_prefix(bytes, offset, FACE_TAG)?;
-    parse_face_fields(bytes, offset, payload.checked_sub(6)?)
+    tagged_payloads(bytes, offset, FACE_TAG)
+        .find_map(|payload| parse_face_fields(bytes, offset, payload))
 }
 
 /// Add one framed typed node and its source offset to the scan result.
@@ -1025,9 +1024,10 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
 #[cfg(test)]
 mod tests {
     use super::{
-        read_ref, region_chain, scan, BodyNode, FaceNode, Facts, RegionNode, ShellNode, BODY_TAG,
-        FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
+        region_chain, scan, BodyNode, FaceNode, Facts, RegionNode, ShellNode, BODY_TAG, FACE_TAG,
+        MAGIC, REGION_TAG, SHELL_TAG,
     };
+    use crate::parasolid::xt_integer::encode;
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::parasolid::triangle_body;
     use crate::SldprtCodec;
@@ -1139,22 +1139,9 @@ mod tests {
     }
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {
-        if value <= 0x7ffe {
-            bytes.extend_from_slice(
-                &u16::try_from(value)
-                    .expect("reference fits u16")
-                    .to_be_bytes(),
-            );
-        } else {
-            bytes.extend_from_slice(
-                &((0x8000 | u16::try_from(value & 0x7fff).expect("masked reference fits u16"))
-                    .to_be_bytes()),
-            );
-            bytes.extend_from_slice(
-                &u16::try_from(value >> 15)
-                    .expect("high reference bits fit u16")
-                    .to_be_bytes(),
-            );
+        let (words, count) = encode(value).expect("reference in the two-word range");
+        for word in &words[..count] {
+            bytes.extend_from_slice(&word.to_be_bytes());
         }
     }
 
@@ -1186,7 +1173,7 @@ mod tests {
         topology: [u32; 7],
     ) -> Vec<u8> {
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(&attr.to_be_bytes());
+        push_ref(&mut bytes, u32::from(attr));
         bytes.extend_from_slice(&node_id.to_be_bytes());
         bytes.extend(body_fields::<N>(header, body_type, topology));
         bytes
@@ -1219,7 +1206,7 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&tag);
         bytes.push(0xff);
-        bytes.extend_from_slice(&attr.to_be_bytes());
+        push_ref(&mut bytes, u32::from(attr));
         bytes.extend_from_slice(&node_id.to_be_bytes());
         bytes
     }
@@ -1273,14 +1260,21 @@ mod tests {
     }
 
     #[test]
-    fn extended_reference_decodes_at_the_boundary() {
-        for value in [0, 1, 0x7ffe, 0x7fff, 0x8000, 0x1_0000] {
-            let mut bytes = Vec::new();
+    fn two_word_attr_cell_moves_the_typed_face_fields() {
+        let mut bytes = FACE_TAG.to_vec();
+        bytes.extend_from_slice(&[0xf2, 0x7e, 0x00, 0x01]);
+        bytes.extend_from_slice(&0x51_u32.to_be_bytes());
+        push_ref(&mut bytes, 1);
+        bytes.extend_from_slice(&MAGIC);
+        for value in [1, 2, 3, 40_000, 5] {
             push_ref(&mut bytes, value);
-            let mut at = 0;
-            assert_eq!(read_ref(&bytes, &mut at), Some(value));
-            assert_eq!(at, if value <= 0x7ffe { 2 } else { 4 });
         }
+        bytes.push(0x2d);
+        let face = super::parse_face(&bytes, 0).expect("FACE frames");
+        assert_eq!(face.attr, 36_225);
+        assert_eq!(face.node_id, 0x51);
+        assert_eq!(face.refs, [1, 2, 3, 40_000, 5]);
+        assert_eq!(face.sense, Sense::Reversed);
     }
 
     #[test]
@@ -1352,7 +1346,7 @@ mod tests {
         let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node(3, 1006, 1));
         bytes.extend([0, 0x0d, 0, 3, 0, 0, 0, 11]);
-        for value in [1536, 0, 263, 1_216_581_639, 2, 3, 4, 5] {
+        for value in [1536, 0, 263, 1_073_709_056, 2, 3, 4, 5] {
             push_ref(&mut bytes, value);
         }
         let facts = scan(&bytes);

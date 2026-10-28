@@ -79,22 +79,19 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
-    assert!(matches!(
-        feature.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
-        )
-    ));
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Native { parameters, .. },
+    ) = feature.evaluation.definition()
+    else {
+        panic!("native feature");
+    };
     assert_eq!(
-        feature.source_properties["native_parameter.generated_entity.7.source_section_entity_id"],
+        parameters["generated_entity.7.source_section_entity_id"],
         "1"
     );
+    assert_eq!(parameters["generated_entity.7.entry_class"], "200");
     assert_eq!(
-        feature.source_properties["native_parameter.generated_entity.7.entry_class"],
-        "200"
-    );
-    assert_eq!(
-        feature.source_properties["native_parameter.generated_entity.9.source_section_entity_id"],
+        parameters["generated_entity.9.source_section_entity_id"],
         "2"
     );
     let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_entity_tables"];
@@ -584,6 +581,18 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         5
     );
     assert_eq!(records[1].fields().unwrap()["boundary"], "named_record");
+    assert_eq!(records[0].fields().unwrap()["lo_subtype"], 1);
+    assert_eq!(
+        records[0].fields().unwrap()["operands"],
+        serde_json::json!([null, 0, 0])
+    );
+    assert_eq!(records[0].fields().unwrap()["lo_type"], 2);
+    assert_eq!(records[1].fields().unwrap()["lo_subtype"], 3);
+    assert_eq!(
+        records[1].fields().unwrap()["operands"],
+        serde_json::json!([4, 1, null])
+    );
+    assert_eq!(records[1].fields().unwrap()["lo_type"], 5);
     assert_annotation(
         &result.source_fidelity().annotations,
         records[0].id(),
@@ -793,7 +802,7 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
 #[test]
 fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     let mut depdb = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
-        var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2"
+        var_arr\0\xf8\x02\xf7\x01\xfb\xe2\xf1\xf7\x01\xe2"
         .to_vec();
     depdb.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
     depdb.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);

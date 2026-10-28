@@ -1105,3 +1105,179 @@ fn retains_a_structurally_complete_inline_row_when_center_sign_is_ambiguous() {
         .any(|window| { window == INLINE_TEST_LOCAL_SYSTEM_Z }));
     assert_eq!(record.boundary, SurfaceBodyBoundary::CompoundClose);
 }
+
+fn owned_radius_test_record(major: u8, minor: u8) -> SurfaceParameterRecord {
+    let mut frame = Vec::new();
+    for value in [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0] {
+        push_inline_test_scalar(&mut frame, value);
+    }
+    parameter_records(&local_system_suffix_row(0x26, &frame, &[major, minor])).remove(0)
+}
+
+#[test]
+fn owned_type26_radius_replay_preserves_generic_and_carrier_lanes() {
+    let cache = scalar::ScalarCache::default();
+    assert_eq!(
+        scalar::decode_inline_surface_suffix_scalar(&[0x0d], 0, &cache),
+        Some((-1.0, 1))
+    );
+    assert_eq!(
+        scalar::decode_in_surface_row_lane(&[0x0e], 0, &cache),
+        Some((-0.5, 1))
+    );
+    for (token, radius) in [(0x0d, 0.25), (0x0e, 0.5), (0x0f, 1.0)] {
+        let record = owned_radius_test_record(0x0e, token);
+        assert_eq!(record.type26_replayed_minor_radius(radius), Some(radius));
+        assert_eq!(record.type26_replayed_minor_radius(radius + 0.01), None);
+        for invalid in [0.0, -1.0, f64::INFINITY, f64::NAN] {
+            assert_eq!(record.type26_replayed_minor_radius(invalid), None);
+        }
+        if token == 0x0d {
+            assert!(matches!(
+                record.carrier,
+                crate::surface::SurfaceParameterCarrier::Unresolved(_)
+            ));
+        }
+    }
+    assert_eq!(
+        owned_radius_test_record(0x18, 0x0d).type26_replayed_minor_radius(0.25),
+        Some(0.25)
+    );
+    assert_eq!(
+        owned_radius_test_record(0x0e, 0x18).type26_replayed_minor_radius(0.25),
+        None
+    );
+}
+
+#[test]
+fn type26_radius_slot_reads_the_full_width_2d_form_as_positive() {
+    let cache = scalar::ScalarCache::default();
+    let major = [0x2d, 0x20, 0, 0, 0, 0, 0, 0x34];
+    let expected = f64::from_be_bytes([0x40, 0x20, 0, 0, 0, 0, 0, 0x34]);
+    assert_eq!(
+        scalar::decode_type26_radius_slot(&major, 0, &cache),
+        Some((expected, major.len()))
+    );
+    let mut frame = Vec::new();
+    for value in [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0] {
+        push_inline_test_scalar(&mut frame, value);
+    }
+    let mut suffix = major.to_vec();
+    suffix.extend_from_slice(&[0x2f, 0x14, 0x00]);
+    let record = parameter_records(&local_system_suffix_row(0x26, &frame, &suffix)).remove(0);
+    assert_eq!(record.type26_replayed_minor_radius(5.0), Some(5.0));
+    assert_eq!(record.type26_replayed_minor_radius(4.0), None);
+}
+
+#[test]
+fn owned_type26_radius_requires_complete_owned_frame_and_suffix() {
+    for body in [vec![0x0d], vec![0x0e, 0x0d], vec![0xe4, 0x0f, 0x0d]] {
+        let record = parameter_records(&local_system_suffix_row(0x26, &body, &[])).remove(0);
+        assert_eq!(record.type26_replayed_minor_radius(0.25), None);
+    }
+    let record = owned_radius_test_record(0x0e, 0x0d);
+    let wrong_kind = SurfaceParameterRecord {
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(SurfaceKind::Cone),
+        ..record.clone()
+    };
+    assert_eq!(wrong_kind.type26_replayed_minor_radius(0.25), None);
+    let mut trailing = record.body.clone();
+    trailing.push(0x18);
+    let record = parameter_records(&local_system_suffix_row(0x26, &trailing, &[])).remove(0);
+    assert_eq!(record.type26_replayed_minor_radius(0.25), None);
+}
+
+#[test]
+fn owned_radius_consensus_withholds_conflicting_pair_offsets_and_saturation() {
+    use crate::surface::InlineType26MinorRadius;
+    let mut coherent = InlineType26MinorRadius::Absent;
+    coherent.observe(0.5, 0.25, 20, 22);
+    coherent.observe(0.5, 0.25, 20, 22);
+    assert!(matches!(coherent, InlineType26MinorRadius::Unique { .. }));
+    for (major, minor, start, end) in [
+        (1.0, 0.25, 20, 22),
+        (0.5, 0.5, 20, 22),
+        (0.5, 0.25, 19, 22),
+        (0.5, 0.25, 20, 23),
+    ] {
+        let mut evidence = coherent;
+        evidence.observe(major, minor, start, end);
+        evidence.observe(0.5, 0.25, 20, 22);
+        assert_eq!(evidence, InlineType26MinorRadius::Withheld);
+    }
+    for capacity in [
+        scalar::MAX_INLINE_EXPLICIT_FRAME_CANDIDATES,
+        scalar::MAX_INLINE_ORIGIN_CANDIDATES,
+    ] {
+        let mut evidence = coherent;
+        evidence.saturate(capacity - 1, capacity);
+        assert_eq!(evidence, coherent);
+        evidence.saturate(capacity, capacity);
+        evidence.observe(0.5, 0.25, 20, 22);
+        assert_eq!(evidence, InlineType26MinorRadius::Withheld);
+    }
+}
+
+#[test]
+fn compact_cone_origin_selected_prefix_retains_unresolved_and_ambiguous_state() {
+    let make = |reference| {
+        vec![
+            0x18, 0x10, 0x18, 0x10, 0x18, 0xe6, 0x10, 0x18, reference, 0xc6, 0x0f, 0xaf, 0xbf,
+            0xd9, 0x73, 0x04, 0x2f, 0x34, 0x00, 0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x19, 0xe3,
+        ]
+    };
+    crate::decode::with_service_context(|ctx| {
+        let cache = scalar::ScalarCache::default();
+        for reference in [0x19, 0x32] {
+            let mut bytes = make(reference);
+            for payload_close in [false, true] {
+                if payload_close {
+                    bytes[11] = 0xe3;
+                }
+                let layout = inline_surface_body(ctx, SurfaceKind::Cone, &bytes, &cache)
+                    .expect("bounded scan")
+                    .expect("owned suffix");
+                assert_eq!(layout.terminal_close, Some(bytes.len() - 1));
+                assert_eq!(layout.withheld_cone_origin_start, Some(0));
+                assert!(layout.carrier.is_none());
+            }
+        }
+        let full = make(0x19);
+        let mut nonreference = full.clone();
+        nonreference[8] = 0x28;
+        let mut missing_zero = full.clone();
+        missing_zero[7] = 0x10;
+        for bytes in [
+            full[..full.len() - 1].to_vec(),
+            full[..12].to_vec(),
+            nonreference,
+            missing_zero,
+        ] {
+            let layout =
+                inline_surface_body(ctx, SurfaceKind::Cone, &bytes, &cache).expect("bounded scan");
+            assert!(layout
+                .and_then(|layout| layout.withheld_cone_origin_start)
+                .is_none());
+        }
+        let mut known = full[..7].to_vec();
+        known.extend([0x18, 0x18, 0x18]);
+        known.extend(&full[19..]);
+        let layout = inline_surface_body(ctx, SurfaceKind::Cone, &known, &cache)
+            .expect("known scan")
+            .expect("known suffix");
+        assert!(layout.carrier.is_some());
+        assert!(layout.withheld_cone_origin_start.is_none());
+        for parts in [
+            vec![full.clone(), known.clone()],
+            vec![known.clone(), known.clone(), full.clone()],
+        ] {
+            let bytes = parts.concat();
+            let layout = inline_surface_body(ctx, SurfaceKind::Cone, &bytes, &cache)
+                .expect("ambiguous scan")
+                .expect("veto survives ambiguity");
+            assert!(layout.carrier.is_none());
+            assert!(layout.withheld_cone_origin_start.is_some());
+            assert!(layout.terminal_close.is_none());
+        }
+    });
+}

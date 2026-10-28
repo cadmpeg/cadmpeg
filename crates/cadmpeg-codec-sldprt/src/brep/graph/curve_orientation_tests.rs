@@ -16,8 +16,13 @@ fn decode_marked_edge(mut carrier: Vec<u8>, marker: u8) -> (String, String, Sens
     let policy = DecodePolicy::service();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
-    let brep =
-        super::decode_body(&ctx, &body, &cadmpeg_ir::stream_name!("curve-orientation")).unwrap();
+    let brep = super::decode_body(
+        &ctx,
+        &body,
+        &cadmpeg_ir::stream_name!("curve-orientation"),
+        false,
+    )
+    .unwrap();
     let edge = brep
         .edges
         .iter()

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::document::CadIr;
-
 use super::super::native_face_orientations;
 
 fn one_surface_row() -> crate::surface::SurfaceRow {
@@ -32,6 +30,6 @@ fn native_face_orientation_indexes_preserve_service_values() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.surfaces.rows.push(one_surface_row());
     scan.features.rows.push(one_round_feature());
-    let orientations = native_face_orientations(&scan, &CadIr::empty());
+    let orientations = native_face_orientations(&scan);
     assert_eq!(orientations.get(&17), Some(&true));
 }

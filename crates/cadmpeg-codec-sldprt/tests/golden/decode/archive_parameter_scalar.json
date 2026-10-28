@@ -6,25 +6,7 @@
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [
-        {
-          "id": "sldprt:metadata:part_record#8:32",
-          "name": "part_record",
-          "target": {
-            "kind": "document"
-          },
-          "values": [
-            {
-              "kind": "integer",
-              "value": 4294901760
-            },
-            {
-              "kind": "integer",
-              "value": 1867411309
-            }
-          ]
-        }
-      ],
+      "attributes": [],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -133,10 +115,7 @@
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_material_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_swobjects_metadata_identity_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
       "identity": {
         "classification": "classified",
@@ -261,11 +240,6 @@
           "offset": 0,
           "stream": "source",
           "tag": "source_image"
-        },
-        "sldprt:metadata:part_record#8:32": {
-          "offset": 32,
-          "stream": "Contents/Config-0",
-          "tag": "moPart_c"
         }
       }
     },

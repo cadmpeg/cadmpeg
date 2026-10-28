@@ -220,6 +220,7 @@ fn carrier_pcurve_branch_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 2,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 2,
         });
     scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
@@ -499,6 +500,7 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 2,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 2,
         });
     scan

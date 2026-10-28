@@ -716,7 +716,7 @@ fn operation_schema_buckets_stay_native_without_feature_ownership() {
 }
 
 #[test]
-fn parameters_without_feature_aggregation_stay_document_scoped() {
+fn scoped_standalone_definition_chains_stay_native() {
     use crate::test_support::test_container::outer_container_catpart;
     use crate::test_support::test_object_graph::{
         catalog_stream, entity_table_record, entity_table_record_with_definition_and_value,
@@ -758,21 +758,7 @@ fn parameters_without_feature_aggregation_stay_document_scoped() {
     let result = decode(outer_container_catpart(&stream).0);
     assert_eq!(result.ir().model.sketches.len(), 1);
     assert_eq!(result.ir().model.features.len(), 1);
-    assert_eq!(result.ir().model.parameters.len(), 1);
-    let parameter = &result.ir().model.parameters[0];
-    assert_eq!(parameter.name, "Angle");
-    assert_eq!(parameter.ordinal, 0);
-    assert!(
-        matches!(&parameter.value, Some(cadmpeg_ir::features::ParameterValue::Real(value)) if value.get() == 3.25)
-    );
-    assert!(
-        parameter.owner.is_none(),
-        "structural sketch ancestry does not declare parameter aggregation"
-    );
-    let native_ref = parameter
-        .native_ref
-        .as_deref()
-        .expect("parameter native identity");
+    assert!(result.ir().model.parameters.is_empty());
     let namespace = result
         .ir()
         .native
@@ -783,9 +769,8 @@ fn parameters_without_feature_aggregation_stay_document_scoped() {
         .expect("native entities");
     let entity = entities
         .iter()
-        .find(|entity| entity.id == native_ref)
-        .expect("native parameter entity");
-    assert_eq!(entity.entity_id, 3);
+        .find(|entity| entity.entity_id == 3)
+        .expect("native definition-chain entity");
     assert!(entity.definition_chain_value().is_some());
     assert_valid(&result);
 }
@@ -834,3 +819,7 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
 }
 
 mod float_packed_fixtures;
+
+mod selected_shell_plane;
+
+mod native_curved_face_orientation;

@@ -80,6 +80,10 @@ impl From<GroupSelector> for u8 {
     }
 }
 
+pub(crate) fn valid_group_references(references: &[u32; 5]) -> bool {
+    references.iter().all(|reference| *reference != 0) && references[1] > 1
+}
+
 #[cfg(test)]
 mod tests {
     use super::GroupSelector;

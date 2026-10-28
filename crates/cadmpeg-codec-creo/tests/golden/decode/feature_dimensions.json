@@ -247,11 +247,9 @@
             "parent_feature_id": null,
             "recipe": null,
             "root_schema_class": null,
-            "state_offset": 227,
             "state_ordinal": 0,
             "stored_name": "Extrude id 40",
-            "stored_name_bytes": "45787472756465206964203430",
-            "stored_name_prefix": null
+            "stored_name_bytes": "45787472756465206964203430"
           }
         ],
         "sketches": [
@@ -544,6 +542,7 @@
       "missing_feature_segment_row_count": 0,
       "missing_feature_skamp_row_count": 0,
       "missing_feature_solver_variable_count": 0,
+      "opaque_section_variable_lane_count": 0,
       "prohibited_active_curve_expression_kind_count": 0,
       "prohibited_active_curve_expression_record_count": 0,
       "resolved_feature_bounded_curve_segment_geometry_count": 0,

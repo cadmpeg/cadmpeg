@@ -24,6 +24,25 @@ use cadmpeg_ir::report::{
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum SldprtLossCode {
+    /// Part root scalar prefix has no supported class-specific reading.
+    MetadataPartRootUnsupported,
+    /// Configuration-manager class has no proven scalar roles or serializer.
+    MetadataConfigurationManagerOpaque,
+    /// Default-property carrier has no complete supported reading.
+    MetadataDefaultCarrierUnsupported,
+    /// Default properties have multiple physical namespace owners.
+    MetadataDefaultOwnerAmbiguous,
+    /// Saved alias or value identifiers are not unique.
+    MetadataDefaultAliasAmbiguous,
+    /// Saved property has no represented usable scalar value.
+    MetadataDefaultValueUnsupported,
+    /// Configuration-property namespace has multiple physical owners.
+    MetadataConfigurationPropertyOwnerAmbiguous,
+    /// Configuration-property XML has no complete unambiguous reading.
+    MetadataConfigurationPropertyCarrierUnsupported,
+    /// Configuration-property record has no supported literal scalar fact.
+    MetadataConfigurationPropertyValueUnsupported,
+
     /// Active configuration identity does not resolve to exactly one record.
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
@@ -92,12 +111,20 @@ pub(crate) enum SldprtLossCode {
     FeatureTypedOperandIncomplete,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
+    /// Native edge selection has a refused terminal feature owner.
+    FeatureEdgeTerminalUnresolved,
     /// Body delete/keep feature retains native selection without a decoded mode.
     FeatureBodyRetentionUnresolved,
     /// Face or procedural construction references an untyped support surface.
     GeometryFaceSupportSurfaceUntyped,
+    /// Different surface carrier categories claim one node index.
+    GeometrySurfaceCarrierAmbiguous,
+    /// Offset validity does not establish an exact construction.
+    GeometryOffsetValidityUnresolved,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
+    /// Tolerant edge has no curve because its fin geometry is not read.
+    GeometryTolerantEdgeCurveUnread,
     /// Referenced POINT records have conflicting complete frames.
     GeometryPointRecordAmbiguous,
     /// A derived pcurve parameter has multiple geometric candidates.
@@ -125,6 +152,8 @@ pub(crate) enum SldprtLossCode {
     TopologyFaceSenseConflict,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
+    /// Framed FACE records that no decoded face carries.
+    TopologyFaceRecordsUnread,
     /// Referenced FIN records have conflicting complete frames.
     TopologyFinRecordAmbiguous,
     /// Referenced LOOP records have conflicting complete frames.
@@ -143,6 +172,8 @@ pub(crate) enum SldprtLossCode {
     ContainerNoParasolidStream,
     /// The legacy Parasolid zlib probe stopped at its work limit in a section.
     ContainerParasolidProbeCapped,
+    /// An optional weldment owner was retained after a malformed extraction refusal.
+    ContainerAuxiliaryParasolidRefused,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
     /// The document carries no usable `swVersion`, so no declared identity was
@@ -187,6 +218,15 @@ impl SldprtLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [SldprtLossCode] = &[
+        Self::MetadataPartRootUnsupported,
+        Self::MetadataConfigurationManagerOpaque,
+        Self::MetadataDefaultCarrierUnsupported,
+        Self::MetadataDefaultOwnerAmbiguous,
+        Self::MetadataDefaultAliasAmbiguous,
+        Self::MetadataDefaultValueUnsupported,
+        Self::MetadataConfigurationPropertyOwnerAmbiguous,
+        Self::MetadataConfigurationPropertyCarrierUnsupported,
+        Self::MetadataConfigurationPropertyValueUnsupported,
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
         Self::ConfigInferredWithoutNative,
@@ -219,9 +259,13 @@ impl SldprtLossCode {
         Self::FeatureInputArchiveWalkStopped,
         Self::FeatureTypedOperandIncomplete,
         Self::FeatureThinOperationAmbiguous,
+        Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyRetentionUnresolved,
         Self::GeometryFaceSupportSurfaceUntyped,
+        Self::GeometrySurfaceCarrierAmbiguous,
+        Self::GeometryOffsetValidityUnresolved,
         Self::GeometryEdgeSupportCurveUntyped,
+        Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
@@ -235,6 +279,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
+        Self::TopologyFaceRecordsUnread,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyLoopRecordAmbiguous,
         Self::TopologyVertexRecordUnresolved,
@@ -244,6 +289,7 @@ impl SldprtLossCode {
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
         Self::ContainerParasolidProbeCapped,
+        Self::ContainerAuxiliaryParasolidRefused,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
@@ -296,9 +342,13 @@ impl SldprtLossCode {
             Self::FeatureInputArchiveWalkStopped => "feature.input-archive-walk-stopped",
             Self::FeatureTypedOperandIncomplete => "feature.typed-operand-incomplete",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
+            Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
+            Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
+            Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
+            Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
@@ -312,6 +362,7 @@ impl SldprtLossCode {
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
+            Self::TopologyFaceRecordsUnread => "topology.face-records-unread",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
@@ -321,6 +372,7 @@ impl SldprtLossCode {
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
             Self::ContainerParasolidProbeCapped => "container.parasolid-probe-capped",
+            Self::ContainerAuxiliaryParasolidRefused => "container.auxiliary-parasolid-refused",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
@@ -337,6 +389,21 @@ impl SldprtLossCode {
             }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
+            Self::MetadataPartRootUnsupported => "metadata.part-root-unsupported",
+            Self::MetadataConfigurationManagerOpaque => "metadata.configuration-manager-opaque",
+            Self::MetadataDefaultCarrierUnsupported => "metadata.default-carrier-unsupported",
+            Self::MetadataDefaultOwnerAmbiguous => "metadata.default-owner-ambiguous",
+            Self::MetadataDefaultAliasAmbiguous => "metadata.default-alias-ambiguous",
+            Self::MetadataDefaultValueUnsupported => "metadata.default-value-unsupported",
+            Self::MetadataConfigurationPropertyOwnerAmbiguous => {
+                "metadata.configuration-property-owner-ambiguous"
+            }
+            Self::MetadataConfigurationPropertyCarrierUnsupported => {
+                "metadata.configuration-property-carrier-unsupported"
+            }
+            Self::MetadataConfigurationPropertyValueUnsupported => {
+                "metadata.configuration-property-value-unsupported"
+            }
         }
     }
 
@@ -388,9 +455,13 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureThinOperationAmbiguous
+            | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyRetentionUnresolved
             | Self::GeometryFaceSupportSurfaceUntyped
+            | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryTolerantEdgeCurveUnread
             | Self::GeometryPointRecordAmbiguous
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
@@ -404,17 +475,28 @@ impl SldprtLossCode {
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
+            | Self::TopologyFaceRecordsUnread
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
+            | Self::ContainerAuxiliaryParasolidRefused
             | Self::ContainerParasolidProbeCapped
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
             | Self::DialectLayerCollision
             | Self::SourceDialectDisplaced
-            | Self::SourcePropertyKeyBlank => Severity::Warning,
+            | Self::SourcePropertyKeyBlank
+            | Self::MetadataPartRootUnsupported
+            | Self::MetadataConfigurationManagerOpaque
+            | Self::MetadataDefaultCarrierUnsupported
+            | Self::MetadataDefaultOwnerAmbiguous
+            | Self::MetadataDefaultAliasAmbiguous
+            | Self::MetadataConfigurationPropertyOwnerAmbiguous
+            | Self::MetadataConfigurationPropertyCarrierUnsupported
+            | Self::MetadataConfigurationPropertyValueUnsupported
+            | Self::MetadataDefaultValueUnsupported => Severity::Warning,
         }
     }
 
@@ -435,21 +517,35 @@ impl SldprtLossCode {
             }
             Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
-            Self::SourcePropertyKeyBlank => LossTaxonomy::AttributesNotTransferred,
+            Self::SourcePropertyKeyBlank
+            | Self::MetadataPartRootUnsupported
+            | Self::MetadataConfigurationManagerOpaque
+            | Self::MetadataDefaultCarrierUnsupported
+            | Self::MetadataDefaultOwnerAmbiguous
+            | Self::MetadataDefaultAliasAmbiguous
+            | Self::MetadataConfigurationPropertyOwnerAmbiguous
+            | Self::MetadataConfigurationPropertyCarrierUnsupported
+            | Self::MetadataConfigurationPropertyValueUnsupported
+            | Self::MetadataDefaultValueUnsupported => LossTaxonomy::AttributesNotTransferred,
             Self::TopologyBodyHierarchyDerived | Self::TopologyFaceSenseConflict => {
                 LossTaxonomy::TopologyGaugeSubstituted
             }
             Self::TopologyFaceUnclaimed
+            | Self::TopologyFaceRecordsUnread
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
+            | Self::GeometrySurfaceCarrierAmbiguous
+            | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
+            | Self::GeometryTolerantEdgeCurveUnread
             | Self::GeometryPointRecordAmbiguous
             | Self::GeometrySplineLanesUnpaired
             | Self::GeometryParasolidNotTransferred
+            | Self::ContainerAuxiliaryParasolidRefused
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
                 LossTaxonomy::PcurveOmitted
@@ -493,6 +589,7 @@ impl SldprtLossCode {
             | Self::FeatureInputArchiveWalkStopped
             | Self::FeatureTypedOperandIncomplete
             | Self::FeatureThinOperationAmbiguous
+            | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyRetentionUnresolved => LossTaxonomy::FeatureHistoryRetained,
         }
     }
@@ -635,6 +732,15 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "metadata.part-root-unsupported",
+                "metadata.configuration-manager-opaque",
+                "metadata.default-carrier-unsupported",
+                "metadata.default-owner-ambiguous",
+                "metadata.default-alias-ambiguous",
+                "metadata.default-value-unsupported",
+                "metadata.configuration-property-owner-ambiguous",
+                "metadata.configuration-property-carrier-unsupported",
+                "metadata.configuration-property-value-unsupported",
                 "config.active-identity-unresolved",
                 "config.active-partition-mismatch",
                 "config.inferred-without-native",
@@ -667,9 +773,13 @@ mod tests {
                 "feature.input-archive-walk-stopped",
                 "feature.typed-operand-incomplete",
                 "feature.thin-operation-ambiguous",
+                "feature.edge-terminal-unresolved",
                 "feature.body-retention-unresolved",
                 "geometry.face-support-surface-untyped",
+                "geometry.surface-carrier-ambiguous",
+                "geometry.offset-validity-unresolved",
                 "geometry.edge-support-curve-untyped",
+                "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
@@ -683,6 +793,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.face-sense-conflict",
                 "topology.face-unclaimed",
+                "topology.face-records-unread",
                 "topology.fin-record-ambiguous",
                 "topology.loop-record-ambiguous",
                 "topology.vertex-record-unresolved",
@@ -692,6 +803,7 @@ mod tests {
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
                 "container.parasolid-probe-capped",
+                "container.auxiliary-parasolid-refused",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",

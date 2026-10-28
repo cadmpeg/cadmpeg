@@ -562,3 +562,72 @@ fn numerical_followup_membership_preserves_large_finite_geometry() {
 }
 
 mod endpoint_probes;
+
+#[test]
+fn binary_curve_relation_does_not_replace_point_handles_by_incident_curves() {
+    use crate::records::{SketchInputLinks, SketchRelationKind};
+    use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
+    let context = cadmpeg_test_support::service_decode_context();
+    let mut relation = SketchInputEntity::new(
+        "relation",
+        "lane",
+        0,
+        0,
+        SketchInputKind::Relation(SketchRelationKind::Tangent),
+    );
+    relation.links = SketchInputLinks::new(
+        0,
+        vec![
+            SketchInputLink {
+                local_id: 8,
+                entity_ref: "first".into(),
+            },
+            SketchInputLink {
+                local_id: 10,
+                entity_ref: "second".into(),
+            },
+        ],
+    );
+    let first_curve = SketchEntityId::mint("synthetic:test:curve#first").unwrap();
+    let second_curve = SketchEntityId::mint("synthetic:test:curve#second").unwrap();
+    let loci = HashMap::from([
+        (
+            "first".into(),
+            vec![SketchLocus::Start(first_curve.clone())],
+        ),
+        (
+            "second".into(),
+            vec![SketchLocus::End(second_curve.clone())],
+        ),
+    ]);
+    for point_kind in [SketchInputKind::Point, SketchInputKind::ConstrainedPoint] {
+        let first = SketchInputEntity::new("first", "lane", 1, 1, point_kind);
+        let second = SketchInputEntity::new("second", "lane", 2, 2, point_kind);
+        let markers = HashMap::from([
+            (relation.id(), &relation),
+            (first.id(), &first),
+            (second.id(), &second),
+        ]);
+        let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
+            typed_marker_relation_definition(&context, &relation, &markers, &loci).unwrap()
+        else {
+            panic!("point operands remain native");
+        };
+        assert_eq!(
+            operands.iter().map(|x| x.object_index).collect::<Vec<_>>(),
+            vec![Some(8), Some(10)]
+        );
+    }
+    let first = SketchInputEntity::new("first", "lane", 1, 1, SketchInputKind::LineOrCircle);
+    let second = SketchInputEntity::new("second", "lane", 2, 2, SketchInputKind::LineOrCircle);
+    let markers = HashMap::from([
+        (relation.id(), &relation),
+        (first.id(), &first),
+        (second.id(), &second),
+    ]);
+    assert!(
+        matches!(typed_marker_relation_definition(&context, &relation, &markers, &loci).unwrap(),
+        Some(SketchConstraintDefinitionInput::Tangent { first, second })
+            if first == first_curve && second == second_curve)
+    );
+}

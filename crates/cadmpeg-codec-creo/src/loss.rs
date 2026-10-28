@@ -45,6 +45,10 @@ pub(crate) enum CreoLossCode {
     ContainerCensus,
     /// A byte-bounded compressed section has invalid or incomplete LZW data.
     CompressedSectionUnexpanded,
+    /// Geometry-looking bytes in a physical section have no visible-namespace ownership.
+    PhysicalGeometryOwnerUnresolved,
+    /// A positional ellipse flip is not a complete compact integer.
+    ReferenceConicPrefixUnresolved,
     /// No persistence-layout discriminant matched, so no layout-specific
     /// decode strategy was applied.
     SourceDialectUnverified,
@@ -87,6 +91,10 @@ pub(crate) enum CreoLossCode {
     VisibGeomSurfaceUntransferred,
     /// Unique `VisibGeom` curve-topology rows were not transferred as carriers.
     VisibGeomCurveUntransferred,
+    /// Cross-section curve parameter bodies retain unclassified bytes.
+    CrossSectionCurveBodyOpaque,
+    /// A generated round entry has no independently owned surface carrier.
+    RoundCarrierOwnerUnresolved,
     /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
     /// structural record.
     LegacySurfaceCarrierUnresolved,
@@ -173,6 +181,8 @@ pub(crate) enum CreoLossCode {
     SectionIncidenceNative,
     /// Active section dimension relations retain native operands.
     SectionRelationNative,
+    /// Full-width section variable lanes retain opaque scalar roles.
+    SectionVariableScalarOpaque,
     /// Dimension-driven section solver variables retain unresolved exact values.
     SectionDimensionVariableUnresolved,
     /// Section solver pre-solve estimates use an unresolved dimension sentinel.
@@ -212,6 +222,8 @@ impl CreoLossCode {
         match self {
             Self::ContainerCensus => "container.census",
             Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
+            Self::PhysicalGeometryOwnerUnresolved => "container.physical-geometry-owner-unresolved",
+            Self::ReferenceConicPrefixUnresolved => "reference.conic-prefix-unresolved",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
             Self::LegacyIntegerValueUnresolved => "legacy.integer-value-unresolved",
@@ -232,6 +244,8 @@ impl CreoLossCode {
             Self::GeometryInstanceCarriersGated => "geometry.instance-carriers-gated",
             Self::VisibGeomSurfaceUntransferred => "geometry.visibgeom-surface-untransferred",
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
+            Self::CrossSectionCurveBodyOpaque => "curve.cross-section-body-opaque",
+            Self::RoundCarrierOwnerUnresolved => "geometry.round-carrier-owner-unresolved",
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
@@ -274,6 +288,7 @@ impl CreoLossCode {
             Self::SectionRelationJoinMissing => "section.relation-join-missing",
             Self::SectionIncidenceNative => "section.incidence-native",
             Self::SectionRelationNative => "section.relation-native",
+            Self::SectionVariableScalarOpaque => "section.variable-scalar-opaque",
             Self::SectionDimensionVariableUnresolved => "section.dimension-variable-unresolved",
             Self::SectionDimensionGuessUnresolved => "section.dimension-guess-unresolved",
             Self::SectionSolverVariableMissing => "section.solver-variable-missing",
@@ -327,6 +342,8 @@ impl CreoLossCode {
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
+            | Self::PhysicalGeometryOwnerUnresolved
+            | Self::ReferenceConicPrefixUnresolved
             | Self::SurfacePrototypeFieldRetained
             | Self::SourceDialectUnverified
             | Self::LegacyRealValueUnresolved
@@ -343,6 +360,8 @@ impl CreoLossCode {
             | Self::TriangleStripRepresentationConflict
             | Self::VisibGeomSurfaceUntransferred
             | Self::VisibGeomCurveUntransferred
+            | Self::CrossSectionCurveBodyOpaque
+            | Self::RoundCarrierOwnerUnresolved
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::SectionSegmentGeometryUnresolved
@@ -361,6 +380,7 @@ impl CreoLossCode {
             | Self::SectionRelationJoinMissing
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
+            | Self::SectionVariableScalarOpaque
             | Self::SectionDimensionVariableUnresolved
             | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
@@ -404,6 +424,8 @@ impl CreoLossCode {
             | Self::CarrierTorusParameterRetention => LossTaxonomy::CarrierSummary,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
+            | Self::PhysicalGeometryOwnerUnresolved
+            | Self::ReferenceConicPrefixUnresolved
             | Self::TocScanCapped
             | Self::LegacyIntegerValueUnresolved
             | Self::LegacyContinuationFormUndefined
@@ -421,6 +443,8 @@ impl CreoLossCode {
             | Self::GeometryInstanceCarriersGated
             | Self::VisibGeomSurfaceUntransferred
             | Self::VisibGeomCurveUntransferred
+            | Self::CrossSectionCurveBodyOpaque
+            | Self::RoundCarrierOwnerUnresolved
             | Self::LegacySurfaceCarrierUnresolved
             | Self::NurbsBoundaryCarrierUnresolved
             | Self::VisibGeomSurfaceAmbiguous
@@ -447,6 +471,7 @@ impl CreoLossCode {
             | Self::SectionRelationJoinMissing
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
+            | Self::SectionVariableScalarOpaque
             | Self::SectionDimensionVariableUnresolved
             | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
@@ -501,6 +526,8 @@ mod tests {
             [
                 "container.census",
                 "container.compressed-section-unexpanded",
+                "container.physical-geometry-owner-unresolved",
+                "reference.conic-prefix-unresolved",
                 "source.dialect-unverified",
                 "legacy.real-value-unresolved",
                 "legacy.integer-value-unresolved",
@@ -521,6 +548,8 @@ mod tests {
                 "geometry.instance-carriers-gated",
                 "geometry.visibgeom-surface-untransferred",
                 "geometry.visibgeom-curve-untransferred",
+                "curve.cross-section-body-opaque",
+                "geometry.round-carrier-owner-unresolved",
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
@@ -563,6 +592,7 @@ mod tests {
                 "section.relation-join-missing",
                 "section.incidence-native",
                 "section.relation-native",
+                "section.variable-scalar-opaque",
                 "section.dimension-variable-unresolved",
                 "section.dimension-guess-unresolved",
                 "section.solver-variable-missing",

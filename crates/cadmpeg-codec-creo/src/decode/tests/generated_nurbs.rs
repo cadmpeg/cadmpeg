@@ -1481,7 +1481,6 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Extrude id 6".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: None,
             },
             recipe: crate::feature::operations::RecipeResolution::Resolved(
                 crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
@@ -1492,7 +1491,6 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                 parent: 0,
             }),
             offset: 10,
-            state_offset: 10,
         };
         assert_eq!(
             current_feature_operation(std::slice::from_ref(&operation), 6)
@@ -1562,7 +1560,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                 checked_classes(&[row(913, 20), row(914, 30)]),
                 6,
             ),
-            Some(crate::feature::schema::SchemaClass::Protrusion)
+            None
         );
         assert_eq!(
             resolved_feature_schema_class_from_classes(
@@ -1570,7 +1568,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                 checked_classes(&[row(913, 20), row(913, 30)]),
                 6,
             ),
-            Some(crate::feature::schema::SchemaClass::Protrusion)
+            None
         );
         assert_eq!(
             checked_classes(&[row(913, 20), row(914, 30)]),
@@ -1749,7 +1747,6 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
                 parent: 0,
             }),
             offset: usize::try_from(feature_id).expect("fixture index fits usize"),
-            state_offset: usize::try_from(feature_id).expect("fixture index fits usize"),
         }
     };
     let definition = |id, section_offset, offset| crate::feature::definitions::FeatureDefinition {
