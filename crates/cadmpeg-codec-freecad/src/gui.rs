@@ -501,14 +501,15 @@ fn transfer_schema_one(
         if !body_ids.is_empty() {
             plan.body_visibility_owners.insert(object_id.to_owned());
         }
+        let color = packed_color
+            .map(|packed| decode_color(packed, transparency))
+            .transpose()?;
         for body_id in &body_ids {
             push_body_update(
                 &mut plan,
                 body_id,
                 visibility.map_or(Assignment::Keep, |visible| Assignment::Set(Some(visible))),
-                packed_color
-                    .map(|packed| decode_color(packed, transparency))
-                    .transpose(),
+                Ok(color),
             )?;
         }
         if let Some(file) = values
