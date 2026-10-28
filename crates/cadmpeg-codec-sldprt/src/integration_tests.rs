@@ -580,6 +580,59 @@ fn digest_only_source_image_cannot_supply_native_envelope() {
 }
 
 #[test]
+fn metadata_fallback_transfers_display_meshes_without_geometry() {
+    use crate::test_support::container::{make_block, outer_header};
+    use crate::test_support::tessellation::display_list_payload;
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x41,
+        "Contents/DisplayLists",
+        &display_list_payload(),
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords Name="Part"><Configuration Name="Default"/></Keywords>"#,
+    ));
+    let result = decode(source.clone());
+    assert!(!result.report().geometry_transferred());
+    assert!(!result.ir().model.tessellations.is_empty());
+    for mesh in &result.ir().model.tessellations {
+        assert!(mesh.body.is_none());
+        assert!(mesh.faces.is_empty());
+        assert!(mesh.vertex_count() > 0);
+    }
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "tessellation.display-without-geometry" }));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "tessellation.face-ownership-unresolved" }));
+    assert_valid(&result);
+
+    let mut container_source = outer_header();
+    container_source.extend(make_block(
+        0x41,
+        "Contents/DisplayLists",
+        &display_list_payload(),
+    ));
+    let container = SldprtCodec
+        .decode(
+            &mut Cursor::new(container_source),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("container decode");
+    assert!(container.ir().model.tessellations.is_empty());
+}
+
+#[test]
 fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     let ir = source_less_cube();
     let plan = crate::test_support::plan_fixture_with_native_envelope(

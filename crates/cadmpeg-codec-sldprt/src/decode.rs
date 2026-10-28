@@ -101,9 +101,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             &classification,
             form_padding,
             &mut admitted_entities,
+            false,
         )?;
         let mut report =
-            build_container_report(ctx, &scan, &classification, container::notes(&scan))?;
+            build_container_report(ctx, &scan, &classification, container::notes(&scan), 0)?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         report.losses.append(&mut pmi_losses);
         return decode_result(ctx, ir, report, annotations, unknowns);
@@ -141,10 +142,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         &classification,
         form_padding,
         &mut admitted_entities,
+        true,
     )?;
-    let mut report = build_container_report(ctx, &scan, &classification, container::notes(&scan))?;
+    let display_meshes = ir.model.tessellations.len();
+    let mut report = build_container_report(
+        ctx,
+        &scan,
+        &classification,
+        container::notes(&scan),
+        display_meshes,
+    )?;
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
+    append_tessellation_losses(&ir, &mut report);
     append_design_losses(ctx, &ir, &mut report)?;
     decode_result(ctx, ir, report, annotations, unknowns)
 }
@@ -785,8 +795,39 @@ fn append_design_losses(
         .transpose()?
         .unwrap_or(0);
     if incomplete_history_references > 0 {
+        let duplicates = native
+            .as_ref()
+            .map(|native| {
+                crate::history::project::duplicate_history_source_diagnostics(
+                    &native.feature_histories,
+                )
+            })
+            .unwrap_or_default();
+        let detail = if duplicates.is_empty() {
+            String::new()
+        } else {
+            format!(" Duplicate source evidence: {}.", duplicates.join("; "))
+        };
+        let inferred = ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                feature
+                    .source_properties
+                    .get("dependencies_decoded")
+                    .is_some_and(|value| value == "false")
+            })
+            .count();
+        let state = if inferred > 0 {
+            format!(
+                " {inferred} feature(s) carry dependencies_decoded=false (inferred, not saved)."
+            )
+        } else {
+            " Dependencies without saved references carry dependencies_decoded=false.".to_owned()
+        };
         report.losses.push(SldprtLossCode::HistoryIncompleteReferences.note(format!(
-            "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references."
+            "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references.{detail}{state}"
         )));
     }
     let feature_positions = &feature_ordinals;
@@ -2400,6 +2441,305 @@ fn ensure_display_appearance(
     Ok(id)
 }
 
+struct DisplayPush {
+    persistent_face_bindings: Vec<crate::tessellation::PersistentFaceBinding>,
+    display_appearance_ranks: BTreeMap<String, u8>,
+    matched_feature_sources: BTreeSet<FeatureSourceId>,
+    conflicting_display_references: Vec<String>,
+    unresolved: Vec<crate::appearance::UnresolvedAppearanceBinding>,
+    feature_appearance_sources: BTreeSet<FeatureSourceId>,
+    mesh_count: usize,
+}
+
+type CollectedDisplaySections<'s> = Vec<(
+    crate::container::Section<'s>,
+    Vec<crate::tessellation::DisplayFace>,
+)>;
+
+fn collect_display_sections<'s>(
+    ctx: &DecodeContext<'_>,
+    scan: &'s ContainerScan<'s>,
+) -> Result<(CollectedDisplaySections<'s>, crate::tessellation::Summary), CodecError> {
+    let mut display_sections = Vec::new();
+    let mut display_summary = crate::tessellation::Summary::default();
+    for section in scan.sections() {
+        let faces = crate::tessellation::section_display_faces(ctx, section)?;
+        let summary = crate::tessellation::summary_for_faces(section.payload(), &faces);
+        display_summary.vertices += summary.vertices;
+        display_summary.triangles += summary.triangles;
+        for (total, count) in display_summary
+            .extended_forms
+            .iter_mut()
+            .zip(summary.extended_forms)
+        {
+            *total += count;
+        }
+        display_summary.opaque_extended_tables += summary.opaque_extended_tables;
+        display_sections.push((section, faces));
+    }
+    Ok((display_sections, display_summary))
+}
+
+fn display_binding_channels(
+    definition: &crate::appearance::AppearanceDefinition,
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+    let mut channels = BTreeMap::new();
+    if let Some(key) = cadmpeg_core::text::NonBlankString::new("packed_color_hex".to_owned()) {
+        channels.insert(key, definition.packed_hex.clone());
+    }
+    channels
+}
+
+fn retain_unresolved_appearance(
+    ir: &mut CadIr,
+    unresolved: &crate::appearance::UnresolvedAppearanceBinding,
+) {
+    let Some(hex) = unresolved.packed_hex.as_deref() else {
+        return;
+    };
+    let Ok(packed) = u32::from_str_radix(hex, 16) else {
+        return;
+    };
+    let [red, green, blue, _] = packed.to_le_bytes();
+    let color = cadmpeg_ir::topology::Color::from_rgba8(red, green, blue, 255);
+    let appearance_id = cadmpeg_ir::ids::AppearanceId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "unresolved"),
+        cadmpeg_ir::ids::IdentityKey::from(u64_from_index(unresolved.appearance_index))
+            .colon(unresolved.source_offset),
+    );
+    if !ir
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id == appearance_id)
+    {
+        ir.model
+            .appearances
+            .push(cadmpeg_ir::appearance::Appearance {
+                id: appearance_id.clone(),
+                name: Some("Unresolved appearance".to_owned()),
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: Some("unresolved".to_owned()),
+                category: None,
+                base_color: Some(color),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+    }
+    let binding_id = cadmpeg_ir::ids::AppearanceBindingId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "unresolved-binding"),
+        cadmpeg_ir::ids::IdentityKey::from(u64_from_index(unresolved.appearance_index))
+            .colon(unresolved.source_offset),
+    );
+    if ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| binding.id == binding_id)
+    {
+        return;
+    }
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: binding_id,
+        target: AppearanceTarget::Source {
+            source_id: unresolved.identity.clone(),
+        },
+        appearance: appearance_id,
+        source_entity_id: Some(unresolved.identity.clone()),
+        object_type: Some(unresolved.owner_class.clone()),
+        visible: None,
+        channels: unresolved_binding_channels(unresolved),
+    });
+}
+
+fn unresolved_binding_channels(
+    unresolved: &crate::appearance::UnresolvedAppearanceBinding,
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+    let mut channels = BTreeMap::new();
+    for (key, value) in [
+        ("owner_class", unresolved.owner_class.clone()),
+        ("identity", unresolved.identity.clone()),
+        ("appearance_index", unresolved.appearance_index.to_string()),
+        ("reason", unresolved.reason.clone()),
+        ("source_offset", unresolved.source_offset.to_string()),
+    ] {
+        if let Some(key) = cadmpeg_core::text::NonBlankString::new(key.to_owned()) {
+            channels.insert(key, value);
+        }
+    }
+    if let Some(hex) = &unresolved.packed_hex {
+        if let Some(key) = cadmpeg_core::text::NonBlankString::new("packed_color_hex".to_owned()) {
+            channels.insert(key, hex.clone());
+        }
+    }
+    channels
+}
+
+fn push_display_meshes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    display_sections: Vec<(
+        crate::container::Section<'_>,
+        Vec<crate::tessellation::DisplayFace>,
+    )>,
+    ir: &mut CadIr,
+    annotations: &mut Annotations,
+    unknowns: &mut Vec<UnknownRecord>,
+    eligible_features: &BTreeSet<FeatureSourceId>,
+) -> Result<DisplayPush, CodecError> {
+    let feature_appearance_sources = crate::appearance::feature_assignments(scan)
+        .into_iter()
+        .map(|assignment| assignment.feature_source_id)
+        .collect::<BTreeSet<_>>();
+    let mut matched_feature_sources = BTreeSet::new();
+    let mut conflicting_display_references = Vec::new();
+    let mut persistent_face_bindings = Vec::new();
+    let mut display_appearance_ranks = BTreeMap::new();
+    let mut unresolved = Vec::new();
+    let mut mesh_count = 0usize;
+    for (display, display_faces) in display_sections {
+        if display_faces.is_empty() {
+            continue;
+        }
+        let display_stream = display.source_stream();
+        for (table_index, face) in display_faces.iter().enumerate() {
+            let candidates = face
+                .surface_references
+                .iter()
+                .map(crate::tessellation::PersistentSurfaceReference::feature_source_id)
+                .collect::<BTreeSet<_>>();
+            if candidates.len() > 1 {
+                conflicting_display_references.push(conflicting_display_reference(
+                    display_stream.as_str(),
+                    table_index,
+                    &candidates,
+                ));
+                unresolved.push(crate::appearance::UnresolvedAppearanceBinding {
+                    owner_class: "DisplayFace".to_owned(),
+                    identity: format!("{}::DisplayFace[{table_index}]", display_stream.as_str()),
+                    appearance_index: table_index,
+                    reason: format!(
+                        "conflicting persistent surface references: {}",
+                        conflicting_display_references
+                            .last()
+                            .cloned()
+                            .unwrap_or_default()
+                    ),
+                    source_offset: face.table.start(),
+                    packed_hex: None,
+                });
+            }
+        }
+        let resolved = crate::appearance::resolve_display_appearances(
+            ctx,
+            scan,
+            display,
+            &display_faces,
+            eligible_features,
+        )?;
+        for source in resolved.matched_feature_sources {
+            matched_feature_sources.insert(source);
+        }
+        unresolved.extend(resolved.unresolved);
+        let mut display_links = Vec::new();
+        for (table_index, display_face) in display_faces.into_iter().enumerate() {
+            let id = format!(
+                "sldprt:displaylist:record#{}:{}",
+                display.ordinal(),
+                table_index
+            );
+            if let Some(identity) = display_face.persistent_surface_identity() {
+                persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
+                    tessellation: id.clone(),
+                    identity: crate::brep::PersistentFaceIdentity {
+                        feature_source_id: identity.feature_source_id,
+                        local_id: identity.local_id,
+                        trailing_fields: identity.trailing_fields.clone(),
+                    },
+                });
+            }
+            crate::annotations::note(
+                annotations,
+                id.as_str(),
+                display_stream,
+                u64_from_index(display_face.table.start()),
+                "displaylist_tessellation",
+                Exactness::ByteExact,
+            )?;
+            display_links.push(id.clone());
+            if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
+                display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
+                let definition = &resolved_definition.definition;
+                let source_entity_id =
+                    format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
+                let appearance = ensure_display_appearance(
+                    ir,
+                    definition,
+                    display.ordinal(),
+                    annotations,
+                    ScopedAppearanceOrigin::DisplayList,
+                )?;
+                ir.model.appearance_bindings.push(AppearanceBinding {
+                    id: cadmpeg_ir::ids::AppearanceBindingId::compose(
+                        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "binding"),
+                        cadmpeg_ir::identity_key!("display:")
+                            .then(display.ordinal())
+                            .colon(table_index),
+                    ),
+                    target: AppearanceTarget::Tessellation(id.clone()),
+                    appearance,
+                    source_entity_id: Some(source_entity_id),
+                    object_type: Some("DisplayFace".into()),
+                    visible: None,
+                    channels: display_binding_channels(definition),
+                });
+            }
+            let mesh = display_face.mesh;
+            mesh_count += 1;
+            ir.model.tessellations.push(
+                mesh.into_tessellation(
+                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                        CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                    })?,
+                )
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                })?,
+            );
+        }
+        let display_id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),
+            display.ordinal(),
+        );
+        crate::annotations::note(
+            annotations,
+            display_id.as_str(),
+            display_stream,
+            0,
+            "displaylist_tessellation",
+            Exactness::Unknown,
+        )?;
+        unknowns.push(UnknownRecord::retained(
+            display_id,
+            0,
+            retained_copy(ctx, display.payload(), "retain SLDPRT display section")?,
+            display_links,
+        ));
+    }
+    Ok(DisplayPush {
+        persistent_face_bindings,
+        display_appearance_ranks,
+        matched_feature_sources,
+        conflicting_display_references,
+        unresolved,
+        feature_appearance_sources,
+        mesh_count,
+    })
+}
+
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
     scan: &mut ContainerScan<'_>,
@@ -2422,23 +2762,7 @@ fn build_geometry_ir(
         configuration_bodies,
     } = decoded;
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
-    let mut display_sections = Vec::new();
-    let mut display_summary = crate::tessellation::Summary::default();
-    for section in scan.sections() {
-        let faces = crate::tessellation::section_display_faces(ctx, section)?;
-        let summary = crate::tessellation::summary_for_faces(section.payload(), &faces);
-        display_summary.vertices += summary.vertices;
-        display_summary.triangles += summary.triangles;
-        for (total, count) in display_summary
-            .extended_forms
-            .iter_mut()
-            .zip(summary.extended_forms)
-        {
-            *total += count;
-        }
-        display_summary.opaque_extended_tables += summary.opaque_extended_tables;
-        display_sections.push((section, faces));
-    }
+    let (display_sections, display_summary) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(
         scan,
         classification,
@@ -3032,126 +3356,54 @@ fn build_geometry_ir(
             properties: BTreeMap::new(),
         });
     }
-    let feature_appearance_sources = crate::appearance::feature_assignments(scan)
-        .into_iter()
-        .map(|assignment| assignment.feature_source_id)
-        .collect::<BTreeSet<_>>();
+    let push = push_display_meshes(
+        ctx,
+        scan,
+        display_sections,
+        &mut ir,
+        &mut annotations,
+        &mut unknowns,
+        &native_appearance_plan.feature_sources,
+    )?;
     let mut matched_feature_sources = native_appearance_plan.feature_sources.clone();
-    let mut conflicting_display_references = Vec::new();
-    let mut persistent_face_bindings = Vec::new();
-    let mut display_appearance_ranks = BTreeMap::new();
-    for (display, display_faces) in display_sections {
-        if display_faces.is_empty() {
-            continue;
-        }
-        let display_stream = display.source_stream();
-        for (table_index, face) in display_faces.iter().enumerate() {
-            let candidates = face
-                .surface_references
-                .iter()
-                .map(crate::tessellation::PersistentSurfaceReference::feature_source_id)
-                .collect::<BTreeSet<_>>();
-            if candidates.len() > 1 {
-                conflicting_display_references.push(conflicting_display_reference(
-                    display_stream.as_str(),
-                    table_index,
-                    &candidates,
-                ));
-            }
-        }
-        let resolved = crate::appearance::resolve_display_appearances(
-            ctx,
-            scan,
-            display,
-            &display_faces,
-            &native_appearance_plan.feature_sources,
-        )?;
-        for source in resolved.matched_feature_sources {
-            matched_feature_sources.insert(source);
-        }
-        let mut display_links = Vec::new();
-        for (table_index, display_face) in display_faces.into_iter().enumerate() {
-            let id = format!(
-                "sldprt:displaylist:record#{}:{}",
-                display.ordinal(),
-                table_index
-            );
-            if let Some(identity) = display_face.persistent_surface_identity() {
-                persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
-                    tessellation: id.clone(),
-                    identity: crate::brep::PersistentFaceIdentity {
-                        feature_source_id: identity.feature_source_id,
-                        local_id: identity.local_id,
-                        trailing_fields: identity.trailing_fields.clone(),
-                    },
-                });
-            }
-            crate::annotations::note(
-                &mut annotations,
-                id.as_str(),
-                display_stream,
-                u64_from_index(display_face.table.start()),
-                "displaylist_tessellation",
-                Exactness::ByteExact,
-            )?;
-            display_links.push(id.clone());
-            if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
-                display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
-                let definition = &resolved_definition.definition;
-                let source_entity_id =
-                    format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
-                let appearance = ensure_display_appearance(
-                    &mut ir,
-                    definition,
-                    display.ordinal(),
-                    &mut annotations,
-                    ScopedAppearanceOrigin::DisplayList,
-                )?;
-                ir.model.appearance_bindings.push(AppearanceBinding {
-                    id: cadmpeg_ir::ids::AppearanceBindingId::compose(
-                        &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "binding"),
-                        cadmpeg_ir::identity_key!("display:")
-                            .then(display.ordinal())
-                            .colon(table_index),
-                    ),
-                    target: AppearanceTarget::Tessellation(id.clone()),
-                    appearance,
-                    source_entity_id: Some(source_entity_id),
-                    object_type: Some("DisplayFace".into()),
-                    visible: None,
-                    channels: BTreeMap::new(),
-                });
-            }
-            let mesh = display_face.mesh;
-            ir.model.tessellations.push(
-                mesh.into_tessellation(
-                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
-                        CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                    })?,
-                )
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                })?,
-            );
-        }
-        let display_id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),
-            display.ordinal(),
+    for source in &push.matched_feature_sources {
+        matched_feature_sources.insert(*source);
+    }
+    let persistent_face_bindings = push.persistent_face_bindings;
+    let display_appearance_ranks = push.display_appearance_ranks;
+    let conflicting_display_references = push.conflicting_display_references;
+    let feature_appearance_sources = push.feature_appearance_sources;
+    for unresolved in push.unresolved {
+        let hex = unresolved
+            .packed_hex
+            .as_deref()
+            .map_or(String::new(), |hex| format!(" packed_hex={hex}"));
+        let message = format!(
+            "unresolved appearance binding: owner_class={} identity={} appearance_index={} reason={} source_offset={}{hex}",
+            unresolved.owner_class,
+            unresolved.identity,
+            unresolved.appearance_index,
+            unresolved.reason,
+            unresolved.source_offset,
         );
-        crate::annotations::note(
-            &mut annotations,
-            display_id.as_str(),
-            display_stream,
-            0,
-            "displaylist_tessellation",
-            Exactness::Unknown,
-        )?;
-        unknowns.push(UnknownRecord::retained(
-            display_id,
-            0,
-            retained_copy(ctx, display.payload(), "retain SLDPRT display section")?,
-            display_links,
-        ));
+        pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
+        retain_unresolved_appearance(&mut ir, &unresolved);
+    }
+    for unresolved in &native_appearance_plan.unresolved_details {
+        let hex = unresolved
+            .packed_hex
+            .as_deref()
+            .map_or(String::new(), |hex| format!(" packed_hex={hex}"));
+        let message = format!(
+            "unresolved appearance binding: owner_class={} identity={} appearance_index={} reason={} source_offset={}{hex}",
+            unresolved.owner_class,
+            unresolved.identity,
+            unresolved.appearance_index,
+            unresolved.reason,
+            unresolved.source_offset,
+        );
+        pmi_losses.push(SldprtLossCode::NativeAppearanceScopeUnresolved.note(message));
+        retain_unresolved_appearance(&mut ir, unresolved);
     }
     if let Some(message) = appearance_assignment_loss_message(
         &feature_appearance_sources,
@@ -3221,7 +3473,7 @@ fn build_geometry_ir(
             )),
             object_type: Some("Native scoped face".into()),
             visible: None,
-            channels: BTreeMap::new(),
+            channels: display_binding_channels(definition),
         });
     }
     for tessellation in &ir.model.tessellations {
@@ -3698,6 +3950,7 @@ fn build_metadata_ir(
     classification: &crate::dialect::LayerClassification,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
+    transfer_display: bool,
 ) -> Result<
     (
         CadIr,
@@ -4081,6 +4334,55 @@ fn build_metadata_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(ctx, &mut ir)?;
+    if transfer_display {
+        let (display_sections, _) = collect_display_sections(ctx, scan)?;
+        let eligible = BTreeSet::new();
+        let push = push_display_meshes(
+            ctx,
+            scan,
+            display_sections,
+            &mut ir,
+            &mut annotations,
+            &mut unknowns,
+            &eligible,
+        )?;
+        for unresolved in push.unresolved {
+            let hex = unresolved
+                .packed_hex
+                .as_deref()
+                .map_or(String::new(), |hex| format!(" packed_hex={hex}"));
+            let message = format!(
+                "unresolved appearance binding: owner_class={} identity={} appearance_index={} reason={} source_offset={}{hex}",
+                unresolved.owner_class,
+                unresolved.identity,
+                unresolved.appearance_index,
+                unresolved.reason,
+                unresolved.source_offset,
+            );
+            pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
+            retain_unresolved_appearance(&mut ir, &unresolved);
+        }
+        let _assigned = crate::tessellation::assign_persistent_owners(
+            &mut ir.model,
+            &[],
+            &push.persistent_face_bindings,
+        );
+        let mut owner_losses = Vec::new();
+        let _assigned_unique = crate::tessellation::assign_unique_surface_owners(
+            ctx,
+            &mut ir.model,
+            &mut owner_losses,
+        )?;
+        pmi_losses.append(&mut owner_losses);
+        if push.mesh_count > 0 {
+            pmi_losses.push(
+                SldprtLossCode::TessellationDisplayWithoutGeometry.note(format!(
+                    "{} DisplayLists tessellation mesh(es) transferred without B-rep geometry; ownership is unresolved and geometry_transferred is false.",
+                    push.mesh_count
+                )),
+            );
+        }
+    }
     let native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
@@ -5217,6 +5519,7 @@ fn build_container_report(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
+    display_meshes: usize,
 ) -> Result<DecodeBody, CodecError> {
     let parasolid_sources = scan
         .blocks
@@ -5241,11 +5544,18 @@ fn build_container_report(
              for this file."
                 .to_string(),
         ),
-        SldprtLossCode::MaterialMetadataNotTransferred.note(
-            "Body-bound appearances and tessellation were not transferred because no body graph \
-             exists."
-                .to_string(),
-        ),
+        if display_meshes > 0 {
+            SldprtLossCode::MaterialMetadataNotTransferred.note(format!(
+                "Body-bound appearances were not transferred because no body graph exists; \
+                 {display_meshes} DisplayLists mesh(es) retained without owners."
+            ))
+        } else {
+            SldprtLossCode::MaterialMetadataNotTransferred.note(
+                "Body-bound appearances and tessellation were not transferred because no body graph \
+                 exists."
+                    .to_string(),
+            )
+        },
     ];
 
     if !container::has_parasolid_body_stream(scan) {

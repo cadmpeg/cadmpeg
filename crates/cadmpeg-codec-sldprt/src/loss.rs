@@ -116,6 +116,8 @@ pub(crate) enum SldprtLossCode {
     TessellationFaceOwnershipUnresolved,
     /// Surface-owner assignment ran out of its local work cap.
     TessellationOwnerWorkCapped,
+    /// `DisplayLists` meshes transferred without B-rep geometry ownership.
+    TessellationDisplayWithoutGeometry,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// Shared-edge coedge senses give an odd-parity face cycle, so some face
@@ -229,6 +231,7 @@ impl SldprtLossCode {
         Self::NativeAppearanceScopeUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TessellationOwnerWorkCapped,
+        Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceSenseConflict,
         Self::TopologyFaceUnclaimed,
@@ -305,6 +308,7 @@ impl SldprtLossCode {
             Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
+            Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
@@ -396,6 +400,7 @@ impl SldprtLossCode {
             | Self::NativeAppearanceScopeUnresolved
             | Self::TessellationFaceOwnershipUnresolved
             | Self::TessellationOwnerWorkCapped
+            | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceSenseConflict
             | Self::TopologyFaceUnclaimed
@@ -452,9 +457,9 @@ impl SldprtLossCode {
             Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::NativeAppearanceScopeUnresolved => LossTaxonomy::MaterialNotTransferred,
-            Self::TessellationFaceOwnershipUnresolved | Self::TessellationOwnerWorkCapped => {
-                LossTaxonomy::ReferenceGraphNotClosed
-            }
+            Self::TessellationFaceOwnershipUnresolved
+            | Self::TessellationOwnerWorkCapped
+            | Self::TessellationDisplayWithoutGeometry => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
@@ -674,6 +679,7 @@ mod tests {
                 "appearance.native-scope-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "tessellation.owner-work-capped",
+                "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
                 "topology.face-sense-conflict",
                 "topology.face-unclaimed",
