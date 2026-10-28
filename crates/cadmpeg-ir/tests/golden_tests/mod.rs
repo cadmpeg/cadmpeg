@@ -200,13 +200,6 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
         .model
         .semantic_annotations
         .push(SemanticAnnotation {
-            id: "test:model:semantic-annotation#0"
-                .try_into()
-                .expect("valid identity"),
-            object: "zz:object".to_string(),
-            kind: SemanticAnnotationKind::Text,
-            runtime_type: "zz:runtime".to_string(),
-            order: 0,
             text: Vec::new(),
             references: BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("zz_source_role"),
@@ -217,7 +210,16 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
             position: None,
             parameters: named("parameter"),
             assets: Vec::new(),
-            native_ref: "zz:native-ref".to_string(),
+            ..SemanticAnnotation::new(
+                "test:model:semantic-annotation#0"
+                    .try_into()
+                    .expect("valid identity"),
+                "zz:object".to_string(),
+                SemanticAnnotationKind::Text,
+                "zz:runtime".to_string(),
+                0,
+                "zz:native-ref".to_string(),
+            )
         });
 
     [

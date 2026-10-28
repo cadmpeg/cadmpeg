@@ -320,11 +320,6 @@ pub(crate) fn project_semantic_notes(
                 text.push(value);
             }
             notes.push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-                id,
-                object: feature.id.clone(),
-                kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
-                runtime_type: feature.kind.clone(),
-                order: feature.ordinal,
                 text,
                 references: BTreeMap::new(),
                 value: None,
@@ -332,7 +327,14 @@ pub(crate) fn project_semantic_notes(
                 position: None,
                 parameters: BTreeMap::new(),
                 assets: Vec::new(),
-                native_ref: feature.id.clone(),
+                ..cadmpeg_ir::semantic_annotations::SemanticAnnotation::new(
+                    id,
+                    feature.id.clone(),
+                    cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
+                    feature.kind.clone(),
+                    feature.ordinal,
+                    feature.id.clone(),
+                )
             });
         }
     }

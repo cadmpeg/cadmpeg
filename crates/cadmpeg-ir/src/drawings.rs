@@ -95,6 +95,17 @@ pub struct Drawing {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_rotation_degrees")]
     pub rotation_degrees: Option<crate::scalar::FiniteReal>,
+    /// Sheet dimensions in millimetres and ordered title-block fields.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_sheet"
+    )]
+    pub sheet: Option<DrawingSheet>,
+    /// Curves in source order. Origin is the view origin; X points right and Y points up.
+    /// Coordinates are millimetres before view scale and rotation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub curves: Vec<DrawingCurve>,
     /// Remaining typed or exactly framed parameters by source name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
@@ -104,6 +115,39 @@ pub struct Drawing {
     pub assets: Vec<String>,
     /// Native drawing record supplying this entity.
     pub native_ref: String,
+}
+
+impl Drawing {
+    /// Construct a record with absent optional content and empty collections.
+    #[must_use]
+    pub fn new(
+        id: DrawingId,
+        object: String,
+        kind: DrawingKind,
+        runtime_type: String,
+        order: u32,
+        native_ref: String,
+    ) -> Self {
+        Self {
+            id,
+            object,
+            kind,
+            runtime_type,
+            order,
+            native_ref,
+            visible: None,
+            relationships: BTreeMap::new(),
+            template: None,
+            position: None,
+            scale: None,
+            direction: None,
+            rotation_degrees: None,
+            sheet: None,
+            curves: Vec::new(),
+            parameters: BTreeMap::new(),
+            assets: Vec::new(),
+        }
+    }
 }
 
 cadmpeg_core::named_optional_field!(
@@ -129,6 +173,42 @@ cadmpeg_core::named_optional_field!(
 #[cfg(test)]
 mod tests {
     use super::{Drawing, DrawingId};
+
+    #[test]
+    fn sheet_and_curves_wire_admission() {
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native",
+        "sheet": {"width_mm": 210.0, "height_mm": 297.0, "fields": [{"name": "Title", "value": "Test"}]},
+        "curves": [
+            {"geometry": {"kind": "line", "start": [0.0, 1.0], "end": [2.0, 3.0]}, "visibility": "hidden", "source": "projected_model_edge"},
+            {"geometry": {"kind": "circle", "center": [0.0, 0.0], "radius": 2.0}, "visibility": "visible", "source": "cosmetic"},
+            {"geometry": {"kind": "arc", "center": [0.0, 0.0], "radius": 2.0, "start": [2.0, 0.0], "middle": [0.0, 2.0], "end": [-2.0, 0.0]}, "visibility": "visible", "source": "center_line"}
+        ]});
+        let drawing: Drawing = serde_json::from_value(wire.clone()).unwrap();
+        assert!(drawing.sheet.as_ref().unwrap().is_valid());
+        assert!(drawing.curves.iter().all(super::DrawingCurve::is_valid));
+        assert_eq!(serde_json::to_value(drawing).unwrap(), wire);
+        let mut rejected = wire.clone();
+        rejected["sheet"]["width_mm"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<Drawing>(rejected)
+            .unwrap_err()
+            .to_string()
+            .contains("sheet"));
+        let mut rejected = wire.clone();
+        rejected["curves"][1]["geometry"]["radius"] = serde_json::json!(-1);
+        assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+        let mut rejected = wire.clone();
+        rejected["curves"][0]["geometry"]["start"] = serde_json::json!([0, null]);
+        assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+        let mut rejected = wire;
+        rejected["curves"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("visibility");
+        assert!(serde_json::from_value::<Drawing>(rejected)
+            .unwrap_err()
+            .to_string()
+            .contains("visibility"));
+    }
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
@@ -213,3 +293,165 @@ cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_template, DrawingId, "template");
 
 mod identity_rewrite;
+
+/// Sheet size and editable title-block content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DrawingSheet {
+    /// Positive sheet width in millimetres.
+    pub width_mm: crate::scalar::PositiveReal,
+    /// Positive sheet height in millimetres.
+    pub height_mm: crate::scalar::PositiveReal,
+    /// Ordered name/value pairs; names are unique.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<TitleBlockField>,
+}
+
+/// One editable title-block field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct TitleBlockField {
+    /// Field name.
+    pub name: NonBlankString,
+    /// Field value, including an empty value.
+    pub value: String,
+}
+
+/// Hidden-line classification, independent of presentation style.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum CurveVisibility {
+    /// Visible geometry.
+    Visible,
+    /// Geometry behind a model face.
+    Hidden,
+}
+
+/// Curve origin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum CurveSource {
+    /// Projected model edge.
+    ProjectedModelEdge,
+    /// Added drawing geometry.
+    Cosmetic,
+    /// Center line.
+    CenterLine,
+}
+
+/// Ordered view curve with mandatory visibility and source classes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DrawingCurve {
+    /// Geometry in the owning view frame.
+    pub geometry: DrawingCurveGeometry,
+    /// Hidden-line class.
+    pub visibility: CurveVisibility,
+    /// Explicit presentation visibility, separate from hidden-line class.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_displayed"
+    )]
+    pub displayed: Option<bool>,
+    /// Geometry source class.
+    pub source: CurveSource,
+}
+
+/// Analytic geometry in the owning view frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DrawingCurveGeometry {
+    /// Finite line segment.
+    Line {
+        /// Start point.
+        start: crate::units::FiniteVector<2>,
+        /// End point.
+        end: crate::units::FiniteVector<2>,
+    },
+    /// Complete circle.
+    Circle {
+        /// Center point.
+        center: crate::units::FiniteVector<2>,
+        /// Positive radius in millimetres.
+        radius: crate::scalar::PositiveReal,
+    },
+    /// Circular arc from start through middle to end, with distinct points.
+    Arc {
+        /// Center point.
+        center: crate::units::FiniteVector<2>,
+        /// Positive radius in millimetres.
+        radius: crate::scalar::PositiveReal,
+        /// Start point.
+        start: crate::units::FiniteVector<2>,
+        /// Interior point selecting the sweep.
+        middle: crate::units::FiniteVector<2>,
+        /// End point.
+        end: crate::units::FiniteVector<2>,
+    },
+}
+
+impl DrawingSheet {
+    /// Check dimensions and unique field names.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        let mut names = std::collections::BTreeSet::new();
+        self.width_mm.get().is_finite()
+            && self.width_mm.get() > 0.0
+            && self.height_mm.get().is_finite()
+            && self.height_mm.get() > 0.0
+            && self
+                .fields
+                .iter()
+                .all(|field| names.insert(field.name.as_str()))
+    }
+}
+
+const CURVE_RADIAL_RELATIVE_TOLERANCE: f64 = 1e-9;
+
+impl DrawingCurve {
+    /// Check numeric and arc-form invariants.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        let finite =
+            |point: crate::units::FiniteVector<2>| point.get().iter().all(|v| v.is_finite());
+        let positive =
+            |radius: crate::scalar::PositiveReal| radius.get().is_finite() && radius.get() > 0.0;
+        match self.geometry {
+            DrawingCurveGeometry::Line { start, end } => finite(start) && finite(end),
+            DrawingCurveGeometry::Circle { center, radius } => finite(center) && positive(radius),
+            DrawingCurveGeometry::Arc {
+                center,
+                radius,
+                start,
+                middle,
+                end,
+            } => {
+                finite(center)
+                    && positive(radius)
+                    && finite(start)
+                    && finite(middle)
+                    && finite(end)
+                    && start != middle
+                    && middle != end
+                    && start != end
+                    && [start, middle, end].iter().all(|point| {
+                        let [x, y] = point.get();
+                        let [cx, cy] = center.get();
+                        ((x - cx).hypot(y - cy) - radius.get()).abs()
+                            <= CURVE_RADIAL_RELATIVE_TOLERANCE * radius.get()
+                    })
+            }
+        }
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_sheet, DrawingSheet, "sheet");
+
+cadmpeg_core::named_optional_field!(deserialize_displayed, bool, "displayed");

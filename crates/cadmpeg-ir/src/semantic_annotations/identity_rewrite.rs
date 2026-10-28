@@ -3,7 +3,7 @@
 
 use super::{SemanticAnnotation, SemanticAnnotationKind};
 
-rewrite_record!(SemanticAnnotation, []; {id, object, kind, runtime_type, order, text, references, value, format, position, parameters, assets, native_ref});
+rewrite_record!(SemanticAnnotation, []; {id, object, kind, runtime_type, order, text, references, value, format, position, dimension_kind, text_override, upper_tolerance, lower_tolerance, parameters, assets, native_ref});
 rewrite_enum!(SemanticAnnotationKind, []; {
     Dimension,
     Text,
@@ -11,4 +11,15 @@ rewrite_enum!(SemanticAnnotationKind, []; {
     Leader,
     Symbol,
     Other,
+});
+
+rewrite_enum!(super::DimensionKind, []; {
+    Distance {},
+    HorizontalDistance {},
+    VerticalDistance {},
+    Radius {},
+    Diameter {},
+    Angle {},
+    ThreePointAngle {},
+    Other {native_type},
 });

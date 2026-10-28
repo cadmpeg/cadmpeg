@@ -25,6 +25,24 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 /// string form (via [`FreecadLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum FreecadLossCode {
+    /// Persisted drawing content remains native.
+    DrawingSheetNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingTitleBlockNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCosmeticEdgeNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCosmeticVertexNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingCenterLineNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingGeometryFormatNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionKindNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionGeometryNotTransferred,
+    /// Persisted drawing content remains native.
+    DrawingDimensionToleranceNotTransferred,
     /// A bounded archive payload cannot be opened; its stored bytes remain retained.
     ArchiveEntryUnreadable,
     /// A mesh use has no complete neutral placement path.
@@ -85,6 +103,15 @@ impl FreecadLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [FreecadLossCode] = &[
+        Self::DrawingSheetNotTransferred,
+        Self::DrawingTitleBlockNotTransferred,
+        Self::DrawingCosmeticEdgeNotTransferred,
+        Self::DrawingCosmeticVertexNotTransferred,
+        Self::DrawingCenterLineNotTransferred,
+        Self::DrawingGeometryFormatNotTransferred,
+        Self::DrawingDimensionKindNotTransferred,
+        Self::DrawingDimensionGeometryNotTransferred,
+        Self::DrawingDimensionToleranceNotTransferred,
         Self::ArchiveEntryUnreadable,
         Self::MeshPlacementNotTransferred,
         Self::MeshPlacementBounded,
@@ -118,6 +145,19 @@ impl FreecadLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::DrawingSheetNotTransferred => "drawing.sheet-not-transferred",
+            Self::DrawingTitleBlockNotTransferred => "drawing.title-block-not-transferred",
+            Self::DrawingCosmeticEdgeNotTransferred => "drawing.cosmetic-edge-not-transferred",
+            Self::DrawingCosmeticVertexNotTransferred => "drawing.cosmetic-vertex-not-transferred",
+            Self::DrawingCenterLineNotTransferred => "drawing.center-line-not-transferred",
+            Self::DrawingGeometryFormatNotTransferred => "drawing.geometry-format-not-transferred",
+            Self::DrawingDimensionKindNotTransferred => "drawing.dimension-kind-not-transferred",
+            Self::DrawingDimensionGeometryNotTransferred => {
+                "drawing.dimension-geometry-not-transferred"
+            }
+            Self::DrawingDimensionToleranceNotTransferred => {
+                "drawing.dimension-tolerance-not-transferred"
+            }
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::MeshPlacementNotTransferred => "geometry.mesh-placement-not-transferred",
             Self::MeshPlacementBounded => "geometry.mesh-placement-bounded",
@@ -164,7 +204,16 @@ impl FreecadLossCode {
             | Self::SketchNativeConstraint
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
-            Self::SketchExternalCacheUnresolved
+            Self::DrawingSheetNotTransferred
+            | Self::DrawingTitleBlockNotTransferred
+            | Self::DrawingCosmeticEdgeNotTransferred
+            | Self::DrawingCosmeticVertexNotTransferred
+            | Self::DrawingCenterLineNotTransferred
+            | Self::DrawingGeometryFormatNotTransferred
+            | Self::DrawingDimensionKindNotTransferred
+            | Self::DrawingDimensionGeometryNotTransferred
+            | Self::DrawingDimensionToleranceNotTransferred
+            | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
             | Self::ArchiveEntryUnreadable
@@ -191,7 +240,16 @@ impl FreecadLossCode {
             Self::MeshPlacementNotTransferred | Self::MeshPlacementBounded => {
                 LossTaxonomy::GeometryNotTransferred
             }
-            Self::ArchiveEntryUnreadable
+            Self::DrawingSheetNotTransferred
+            | Self::DrawingTitleBlockNotTransferred
+            | Self::DrawingCosmeticEdgeNotTransferred
+            | Self::DrawingCosmeticVertexNotTransferred
+            | Self::DrawingCenterLineNotTransferred
+            | Self::DrawingGeometryFormatNotTransferred
+            | Self::DrawingDimensionKindNotTransferred
+            | Self::DrawingDimensionGeometryNotTransferred
+            | Self::DrawingDimensionToleranceNotTransferred
+            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
@@ -255,6 +313,15 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "drawing.sheet-not-transferred",
+                "drawing.title-block-not-transferred",
+                "drawing.cosmetic-edge-not-transferred",
+                "drawing.cosmetic-vertex-not-transferred",
+                "drawing.center-line-not-transferred",
+                "drawing.geometry-format-not-transferred",
+                "drawing.dimension-kind-not-transferred",
+                "drawing.dimension-geometry-not-transferred",
+                "drawing.dimension-tolerance-not-transferred",
                 "source.archive-entry-unreadable",
                 "geometry.mesh-placement-not-transferred",
                 "geometry.mesh-placement-bounded",

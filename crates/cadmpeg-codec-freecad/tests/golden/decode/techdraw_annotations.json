@@ -667,10 +667,6 @@
             "X": "<Float value=\"80.0000000000000000\"/>",
             "Y": "<Float value=\"125.0000000000000000\"/>"
           },
-          "position": [
-            80.0,
-            125.0
-          ],
           "relationships": {
             "References2D": [
               {
@@ -811,7 +807,11 @@
           "native_ref": "fcstd:native:drawing#Template",
           "object": "fcstd:native:object#Template",
           "order": 1,
-          "runtime_type": "TechDraw::DrawSVGTemplate"
+          "runtime_type": "TechDraw::DrawSVGTemplate",
+          "sheet": {
+            "height_mm": 297.0,
+            "width_mm": 210.0
+          }
         },
         {
           "direction": [
@@ -1886,6 +1886,9 @@
             "fcstd:native:entry#BoxCorners",
             "fcstd:native:entry#Dimension.SavedGeometry.0.brp"
           ],
+          "dimension_kind": {
+            "kind": "distance"
+          },
           "format": "%.2w",
           "id": "fcstd:model:semantic-annotation#Dimension:content",
           "kind": "dimension",
