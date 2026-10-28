@@ -51,7 +51,7 @@ pub(crate) struct AssemblyInventory<'a> {
     pub(crate) occurrences: Vec<AssemblyOccurrence>,
     pub(crate) placements: Vec<AssemblyPlacement<'a>>,
     pub(crate) representations: Vec<DesignViewRepresentation<'a>>,
-    pub(crate) visibility_off: Vec<DesignViewVisibilityOff>,
+    pub(crate) visibility_off: Vec<DesignViewVisibilityOff<'a>>,
     pub(crate) groundings: Vec<OccurrenceGrounding<'a>>,
     pub(crate) issues: Vec<RecordIssue>,
 }
@@ -101,10 +101,11 @@ pub(crate) struct DesignViewRepresentation<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) struct DesignViewVisibilityOff {
+pub(crate) struct DesignViewVisibilityOff<'a> {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) occurrence_path: Vec<u32>,
+    pub(crate) suffix: View<'a>,
 }
 
 #[derive(Debug)]
@@ -238,21 +239,16 @@ pub(crate) fn project_occurrences(
             )?;
             continue;
         };
-        if occurrence_records
+        let Some(occurrence_record) = occurrence_records
             .get(&source.occurrence_id)
             .and_then(Option::as_ref)
-            .is_none()
-        {
+        else {
             count_unresolved(
                 &mut unresolved_placements,
                 UnresolvedCause::OccurrenceRecord,
             )?;
             continue;
-        }
-        let occurrence_record = occurrence_records
-            .get(&source.occurrence_id)
-            .and_then(Option::as_ref)
-            .expect("occurrence record resolves after the presence check");
+        };
         if emitted_ids.contains(&source.occurrence_id) {
             count_unresolved(
                 &mut unresolved_placements,
@@ -693,7 +689,7 @@ fn parse_design_view_representation<'a>(
     })
 }
 
-fn parse_visibility_off(payload: View<'_>) -> Result<DesignViewVisibilityOff, CodecError> {
+fn parse_visibility_off(payload: View<'_>) -> Result<DesignViewVisibilityOff<'_>, CodecError> {
     let mut cursor = Cursor::new(payload);
     let _header_value = cursor.u32("design-view visibility header value")?;
     let _kind = cursor.u16("design-view visibility kind")?;
@@ -724,19 +720,12 @@ fn parse_visibility_off(payload: View<'_>) -> Result<DesignViewVisibilityOff, Co
         0,
         "design-view visibility trailer",
     )?;
-    if !cursor
-        .remaining("design-view visibility suffix")?
-        .window()
-        .is_empty()
-    {
-        return Err(CodecError::Malformed(
-            "Inventor design-view visibility record has trailing bytes".into(),
-        ));
-    }
+    let suffix = cursor.remaining("design-view visibility suffix")?;
     Ok(DesignViewVisibilityOff {
         segment_token: String::new(),
         record_ordinal: 0,
         occurrence_path,
+        suffix,
     })
 }
 
@@ -1763,6 +1752,8 @@ mod tests {
             segment_token: "synthetic".into(),
             record_ordinal,
             occurrence_path: occurrence_path.to_vec(),
+            suffix_len: 0,
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
         }
     }
 
@@ -2064,5 +2055,81 @@ mod tests {
             let visible: Vec<_> = projection.occurrences.iter().map(|o| o.visible).collect();
             assert_eq!(visible, hidden, "active view {active:?}");
         }
+    }
+
+    #[test]
+    fn visibility_off_state_retains_bytes_after_its_trailer() {
+        let mut bytes = visibility_off_fixture(2);
+        bytes.extend_from_slice(&[7, 8, 9]);
+        let arena = DecodeArena::new();
+        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("extended visibility state fits policy");
+        let state = parse_visibility_off(root).expect("extended visibility state parses");
+        assert_eq!(state.occurrence_path, vec![2]);
+        assert_eq!(state.suffix.window(), &[7, 8, 9]);
+    }
+
+    #[test]
+    fn a_state_record_in_another_segment_is_not_a_member() {
+        let mut other_segment = visibility_off_record(2, &[2]);
+        other_segment.segment_token = "other".into();
+        let projection = project_under_service_full(
+            &[ufrx_occurrence(4, 7, 0), ufrx_occurrence(4, 8, 1)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7), assembly_occurrence(8)],
+            &[assembly_placement(7), assembly_placement(8)],
+            super::OccurrenceStates {
+                active_design_view: Some("Default"),
+                representations: &[design_view_representation_record(
+                    "Default",
+                    1,
+                    &[0x8000_0003],
+                )],
+                visibility_off: &[other_segment],
+                ..Default::default()
+            },
+        );
+        assert!(projection.occurrences.iter().all(|o| o.visible.is_none()));
+    }
+
+    #[test]
+    fn a_grounding_record_in_another_segment_grounds_nothing() {
+        let mut occurrence = assembly_occurrence(7);
+        occurrence.related_references = vec![0x8000_0009];
+        let mut grounding = grounding_record(8, 0x0200_0200);
+        grounding.segment_token = "other".into();
+        let projection = project_under_service_full(
+            &[ufrx_occurrence(4, 7, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[occurrence],
+            &[assembly_placement(7)],
+            super::OccurrenceStates {
+                groundings: &[grounding],
+                ..Default::default()
+            },
+        );
+        assert!(projection.joints.is_empty());
+    }
+
+    #[test]
+    fn two_representations_with_the_active_name_leave_no_active_view() {
+        // Mirrors the specification: a name that selects no single record
+        // hides no occurrence, including when the hide is a member of both.
+        let projection = project_under_service_full(
+            &[ufrx_occurrence(4, 7, 0)],
+            &[external_reference(4, "part.ipt", [0, 0])],
+            &[assembly_occurrence(7)],
+            &[assembly_placement(7)],
+            super::OccurrenceStates {
+                active_design_view: Some("TestView"),
+                representations: &[
+                    design_view_representation_record("TestView", 1, &[0x8000_0003]),
+                    design_view_representation_record("TestView", 2, &[0x8000_0003]),
+                ],
+                visibility_off: &[visibility_off_record(2, &[1])],
+                ..Default::default()
+            },
+        );
+        assert_eq!(projection.occurrences[0].visible, None);
     }
 }

@@ -478,7 +478,7 @@ Parsed by:
 
 Spec §9 · layout: byte offsets · size: 22 B
 
-The occurrence keys follow at offset 22, then one zero trailer byte.
+The occurrence keys follow at offset 22, then one zero trailer byte; later bytes are retained.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/assembly.rs`

@@ -18,6 +18,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -1063,12 +1064,7 @@ fn decode_container<'a>(
                         external_references.len()
                     )));
                 }
-                if assembly_projection.nested_hidden != 0 {
-                    losses.push(InventorLossCode::AssemblyVisibilityNestedNative.note(format!(
-                        "Retained {} hidden occurrence(s) below a root occurrence in native records.",
-                        assembly_projection.nested_hidden
-                    )));
-                }
+                losses.extend(nested_visibility_loss(assembly_projection.nested_hidden));
                 for (cause, count) in &assembly_projection.unresolved_placements {
                     losses.push(
                         InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
@@ -1668,6 +1664,16 @@ fn project_protein_records(
         assets,
         rejections,
         issues,
+    })
+}
+
+/// The loss for occurrences hidden below a root occurrence, which only the
+/// native records keep.
+pub(crate) fn nested_visibility_loss(nested_hidden: usize) -> Option<LossNote> {
+    (nested_hidden != 0).then(|| {
+        InventorLossCode::AssemblyVisibilityNestedNative.note(format!(
+            "Retained {nested_hidden} hidden occurrence(s) below a root occurrence in native records."
+        ))
     })
 }
 

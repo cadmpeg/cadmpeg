@@ -1471,7 +1471,7 @@ kind = "byte"
 section = "9"
 anchor = "A visibility-off record has type"
 size = 22
-note = "The occurrence keys follow at offset 22, then one zero trailer byte."
+note = "The occurrence keys follow at offset 22, then one zero trailer byte; later bytes are retained."
 parsed_by = "crates/cadmpeg-codec-inventor/src/assembly.rs"
 
 [[record.field]]

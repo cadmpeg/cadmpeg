@@ -521,12 +521,14 @@ pub(crate) struct DesignViewVisibilityOffRecord {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) occurrence_path: Vec<u32>,
+    pub(crate) suffix_len: u64,
+    pub(crate) suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 impl DesignViewVisibilityOffRecord {
     pub(crate) fn from_state(
         ctx: &DecodeContext<'_>,
-        state: &crate::assembly::DesignViewVisibilityOff,
+        state: &crate::assembly::DesignViewVisibilityOff<'_>,
     ) -> Result<Self, CodecError> {
         ctx.charge_entities(1, "admit Inventor design-view visibility state")?;
         Ok(Self {
@@ -537,6 +539,8 @@ impl DesignViewVisibilityOffRecord {
             segment_token: state.segment_token.clone(),
             record_ordinal: state.record_ordinal,
             occurrence_path: state.occurrence_path.clone(),
+            suffix_len: cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(state.suffix.window()),
         })
     }
 }
