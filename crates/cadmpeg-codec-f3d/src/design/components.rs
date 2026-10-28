@@ -1319,6 +1319,7 @@ mod tests {
             references: vec![crate::records::xref::XrefReference {
                 current_pose: None,
                 contained_poses: Vec::new(),
+                owned_poses: Vec::new(),
                 id: "f3d:xref:reference#0".to_owned(),
                 ordinal: 0,
                 occurrence_ordinal: 0,
@@ -2455,6 +2456,7 @@ mod tests {
         crate::records::xref::XrefReference {
             current_pose: None,
             contained_poses: Vec::new(),
+            owned_poses: Vec::new(),
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,

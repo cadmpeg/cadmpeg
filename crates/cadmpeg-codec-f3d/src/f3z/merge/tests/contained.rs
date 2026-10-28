@@ -9,7 +9,7 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::assembly_features::{
     DesignComponentOccurrence, DesignComponentOccurrenceDraft, DesignComponentOccurrencePlacement,
 };
-use crate::records::xref::{XrefContainedPose, XrefPlacementSource, XrefReference};
+use crate::records::xref::{XrefContainedPose, XrefOwnedPose, XrefPlacementSource, XrefReference};
 use crate::test_support::{local_reference, typed_cross_document_reference};
 
 const ROLE: &str = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
@@ -73,10 +73,65 @@ fn carrier(
     bytes
 }
 
+/// A component-path carrier of the external occurrence itself: the referenced
+/// design's root component, this document's placement 8506, then `owners`.
+fn owned_carrier(entity_id: u64, owners: &[u64], transform: [[f64; 4]; 4]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(b"257");
+    bytes.extend_from_slice(&entity_id.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&u32::try_from(2 + owners.len()).unwrap().to_le_bytes());
+    bytes.extend(typed_cross_document_reference(250, ROOT_COMPONENT, ROLE));
+    bytes.extend_from_slice(&20_u32.to_le_bytes());
+    for (discriminator, target) in std::iter::once(8506)
+        .chain(owners.iter().copied())
+        .enumerate()
+    {
+        bytes.extend(local_reference(target));
+        bytes.extend_from_slice(&u32::try_from(discriminator).unwrap().to_le_bytes());
+    }
+    bytes.push(0);
+    bytes.push(0);
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend(local_reference(8506));
+    bytes.push(2);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&42_u32.to_le_bytes());
+    bytes.extend(local_reference(8));
+    bytes.extend(local_reference(3));
+    bytes.extend(local_reference(6));
+    bytes
+}
+
+fn owned(entity_id: u64, owners: &[u64], world: [[f64; 4]; 4]) -> XrefOwnedPose {
+    let magic = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    let bytes = owned_carrier(entity_id, owners, world);
+    let pose = crate::xref::owned_component_path_pose(&bytes, magic).unwrap();
+    XrefOwnedPose {
+        carrier_record_index: pose.carrier_record_index,
+        frame_bytes: bytes.into(),
+        owner_record_indices: pose.owner_record_indices,
+        transform: pose.transform.map(|rows| rows.try_into().unwrap()),
+    }
+}
+
 fn reference(contained_poses: Vec<XrefContainedPose>) -> XrefReference {
+    with_owned(contained_poses, Vec::new())
+}
+
+fn with_owned(
+    contained_poses: Vec<XrefContainedPose>,
+    owned_poses: Vec<XrefOwnedPose>,
+) -> XrefReference {
     XrefReference {
         current_pose: None,
         contained_poses,
+        owned_poses,
         id: "f3d:xref:reference#0-occurrence-0".to_owned(),
         ordinal: 0,
         occurrence_ordinal: 0,
@@ -207,15 +262,28 @@ fn local_carrier(id: &str, record_index: u32) -> DesignComponentOccurrence {
 /// member root holds parts 496 at x = 30 mm and 497 at x = -30 mm, with these
 /// contained poses. Returns the instance's placement and the loss codes.
 fn place(poses: Vec<XrefContainedPose>) -> (Transform, Vec<cadmpeg_ir::report::loss::LossKind>) {
+    place_reference(reference(poses))
+}
+
+fn place_reference(
+    reference: XrefReference,
+) -> (Transform, Vec<cadmpeg_ir::report::loss::LossKind>) {
     const OWNER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9222";
+    const OUTER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9300";
     const PART: &str =
         "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-component-occurrence#";
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.occurrences = vec![
         occurrence("f3d:model:occurrence#root", None, None, 0.0),
         occurrence(
-            "f3d:model:occurrence#owner",
+            "f3d:model:occurrence#outer",
             Some("f3d:model:occurrence#root"),
+            Some(OUTER),
+            0.0,
+        ),
+        occurrence(
+            "f3d:model:occurrence#owner",
+            Some("f3d:model:occurrence#outer"),
             Some(OWNER),
             5.0,
         ),
@@ -244,10 +312,10 @@ fn place(poses: Vec<XrefContainedPose>) -> (Transform, Vec<cadmpeg_ir::report::l
             -30.0,
         ),
     ];
-    let reference = reference(poses);
     crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![
             local_carrier(OWNER, 9222),
+            local_carrier(OUTER, 9300),
             local_carrier(&format!("{PART}496"), 496),
             local_carrier(&format!("{PART}497"), 497),
         ];
@@ -323,4 +391,99 @@ fn an_external_occurrence_takes_the_pose_its_contained_occurrences_give() {
     )]);
     assert!((transform.rows()[0][3] - 10.0).abs() < 1e-9);
     assert_eq!(losses, [F3dLossCode::XrefContainedPoseNative.kind()]);
+}
+
+#[test]
+fn an_owned_external_occurrence_takes_its_own_pose_unless_a_contained_pose_places_it() {
+    let magic = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    let bytes = owned_carrier(11, &[9222], translation(20.0, 4.0, 0.0));
+    let pose = crate::xref::owned_component_path_pose(&bytes, magic).unwrap();
+    assert_eq!(
+        (
+            pose.placement_record_index,
+            pose.owner_record_indices.as_slice(),
+            pose.role.as_str()
+        ),
+        (8506, &[9222][..], ROLE)
+    );
+    // Its own carrier lists an owner; a two-element carrier is #486's form.
+    assert!(crate::xref::owned_component_path_pose(
+        &owned_carrier(11, &[], translation(20.0, 4.0, 0.0)),
+        magic
+    )
+    .is_none());
+    assert!(crate::xref::contained_component_path_pose(&bytes, magic).is_none());
+    let reference = with_owned(
+        Vec::new(),
+        vec![owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+    );
+    assert!(crate::xref::owned_poses_match(&reference));
+    let mut moved = reference.clone();
+    moved.owned_poses[0].transform = Some(translation(21.0, 4.0, 0.0).try_into().unwrap());
+    assert!(!crate::xref::owned_poses_match(&moved));
+
+    // The instance's own world pose, 200 mm, is 195 mm below the owner at 5 mm.
+    let (transform, losses) = place_reference(reference);
+    assert!(
+        (transform.rows()[0][3] - 195.0).abs() < 1e-9,
+        "{:?}",
+        transform.rows()
+    );
+    assert_eq!(losses, [F3dLossCode::XrefOwnedPose.kind()]);
+
+    // Own carriers that list the most owners and disagree leave the placement.
+    let (transform, losses) = place_reference(with_owned(
+        Vec::new(),
+        vec![
+            owned(11, &[9222], translation(20.0, 4.0, 0.0)),
+            owned(12, &[9222], translation(21.0, 4.0, 0.0)),
+        ],
+    ));
+    assert!(
+        (transform.rows()[0][3] - 10.0).abs() < 1e-9,
+        "{:?}",
+        transform.rows()
+    );
+    assert_eq!(losses, [F3dLossCode::XrefOwnedPoseDisagrees.kind()]);
+
+    // An own carrier that lists fewer owners yields to the one that lists more.
+    let (transform, losses) = place_reference(with_owned(
+        Vec::new(),
+        vec![
+            owned(12, &[9222], translation(21.0, 4.0, 0.0)),
+            owned(11, &[9222, 9300], translation(20.0, 4.0, 0.0)),
+        ],
+    ));
+    assert!(
+        (transform.rows()[0][3] - 195.0).abs() < 1e-9,
+        "{:?}",
+        transform.rows()
+    );
+    assert_eq!(losses, [F3dLossCode::XrefOwnedPose.kind()]);
+
+    // A matrix that is not a rigid motion is not an own carrier at all.
+    let mut scaled = translation(20.0, 4.0, 0.0);
+    scaled[0][0] = 2.0;
+    assert!(
+        crate::xref::owned_component_path_pose(&owned_carrier(13, &[9222], scaled), magic)
+            .is_none()
+    );
+
+    // A contained pose wins over the instance's own carrier, which stays native.
+    let (transform, losses) = place_reference(with_owned(
+        vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
+        vec![owned(11, &[9222], translation(20.0, 4.0, 0.0))],
+    ));
+    assert!(
+        (transform.rows()[0][3] - 295.0).abs() < 1e-9,
+        "{:?}",
+        transform.rows()
+    );
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::XrefContainedPose.kind(),
+            F3dLossCode::XrefOwnedPoseNative.kind()
+        ]
+    );
 }

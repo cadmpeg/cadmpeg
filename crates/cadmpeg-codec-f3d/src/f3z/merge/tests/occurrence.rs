@@ -514,6 +514,7 @@ fn occurrence_key_preserves_authored_roles() {
     let reference = |role: &str, ordinal: u32| XrefReference {
         current_pose: None,
         contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: "f3d:xref:reference#1".into(),
         ordinal,
         occurrence_ordinal: 0,
@@ -543,6 +544,7 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
     let reference = |ordinal| XrefReference {
         current_pose: None,
         contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
         occurrence_ordinal: 0,
@@ -798,6 +800,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     let reference = XrefReference {
         current_pose: None,
         contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: "f3d:xref:reference#0".to_owned(),
         ordinal: 0,
         occurrence_ordinal: 0,
