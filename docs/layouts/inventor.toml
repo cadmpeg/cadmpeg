@@ -3524,3 +3524,115 @@ type = "bytes[9]"
 source = "spec"
 value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."
+
+[[record]]
+name = "pm_dc_body_motion_properties"
+kind = "slot"
+section = "13"
+anchor = "three-slot body-motion form"
+size = 12
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/motion.rs"
+
+[[record.field]]
+name = "selected_bodies"
+type = "u32"
+source = "spec"
+anchor = "Slot 0 is an object collection"
+
+[[record.field]]
+name = "transforms"
+type = "u32"
+source = "spec"
+anchor = "Slot 1 is a transform list"
+
+[[record.field]]
+name = "dimensions"
+type = "u32"
+source = "spec"
+anchor = "Slot 2 contains feature dimensions"
+
+[[record]]
+name = "pm_dc_face_motion_properties"
+kind = "slot"
+section = "13"
+anchor = "13-slot face-motion form"
+size = 52
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/motion.rs"
+
+[[record.field]]
+name = "selected_faces"
+type = "u32"
+source = "spec"
+anchor = "Slot 0 is a face collection"
+
+[[record.field]]
+name = "mode"
+type = "u32"
+source = "spec"
+anchor = "Slot 1 is the face-motion mode"
+
+[[record.field]]
+name = "mode_operand_2"
+type = "u32"
+source = "spec"
+anchor = "null slots 2 through 7 and 10"
+
+[[record.field]]
+name = "mode_operand_3"
+type = "u32"
+source = "spec"
+anchor = "null slots 2 through 7 and 10"
+
+[[record.field]]
+name = "mode_operand_4"
+type = "u32"
+source = "spec"
+anchor = "null slots 2 through 7 and 10"
+
+[[record.field]]
+name = "mode_operand_5"
+type = "u32"
+source = "spec"
+anchor = "null slots 2 through 7 and 10"
+
+[[record.field]]
+name = "mode_operand_6"
+type = "u32"
+source = "spec"
+anchor = "null slots 2 through 7 and 10"
+
+[[record.field]]
+name = "mode_operand_7"
+type = "u32"
+source = "spec"
+anchor = "null slots 2 through 7 and 10"
+
+[[record.field]]
+name = "affected_bodies"
+type = "u32"
+source = "spec"
+anchor = "Slot 8 is the selection of affected bodies"
+
+[[record.field]]
+name = "dimensions"
+type = "u32"
+source = "spec"
+anchor = "Slot 9 contains feature dimensions"
+
+[[record.field]]
+name = "mode_operand"
+type = "u32"
+source = "spec"
+anchor = "null slots 2 through 7 and 10"
+
+[[record.field]]
+name = "flag"
+type = "u32"
+source = "spec"
+anchor = "Slot 11 is a Boolean"
+
+[[record.field]]
+name = "transform"
+type = "u32"
+source = "spec"
+anchor = "Slot 12 is the model-space motion transform"

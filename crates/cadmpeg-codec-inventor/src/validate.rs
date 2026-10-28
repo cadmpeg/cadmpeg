@@ -1106,6 +1106,13 @@ fn validate_features(
             property.identity.segment_token.as_str(),
             property.identity.record_ordinal,
         )) != Some(&property.identity.type_id.as_str())
+            || !crate::feature::motion::property_is_valid(property, |reference| {
+                raw.get(&(
+                    property.identity.segment_token.as_str(),
+                    reference.record_ordinal()?,
+                ))
+                .copied()
+            })
             || references
                 .into_iter()
                 .any(|reference| !resolves(property.identity.segment_token.as_str(), reference))
@@ -1405,6 +1412,10 @@ fn validate_features(
                 record,
             )
         }));
+    let motion_index = crate::feature::motion::ValidationIndex::new(
+        &data.pm_dc_feature_properties,
+        &data.pm_dc_transforms,
+    );
     for feature in &ir.model.features {
         if is_flat_pattern_feature(feature)
             && feature
@@ -1579,7 +1590,18 @@ fn validate_features(
                 raw_feature.identity.segment_token.as_str(),
                 raw_feature.identity.record_ordinal,
             ))
-            .and_then(|label| crate::feature::FeatureFamily::from_class_id(label.class_id()))
+            .and_then(|label| {
+                let family = crate::feature::FeatureFamily::from_class_id(label.class_id())?;
+                if matches!(family, crate::feature::FeatureFamily::Motion)
+                    && !crate::feature::motion::class_admits(
+                        label.class_id(),
+                        raw_feature.properties.references().len(),
+                    )
+                {
+                    return None;
+                }
+                Some(family)
+            })
             .filter(|family| family.admits_definition(definition))
         else {
             findings.push(finding(
@@ -1605,6 +1627,15 @@ fn validate_features(
                 ));
             }
             continue;
+        }
+        if matches!(family, crate::feature::FeatureFamily::Motion)
+            && !motion_index.matches(raw_feature, definition)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral motion does not match its PmDc operands or transform".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
         }
         let output_slot = family.output_slot(raw_feature);
         let expected_collection = raw_feature
@@ -1673,7 +1704,9 @@ fn validate_features(
             continue;
         }
         let PmDcFeaturePropertyKind::References {
-            family: crate::feature::PmDcFeatureReferenceFamily::ObjectCollection,
+            family:
+                crate::feature::PmDcFeatureReferenceFamily::ObjectCollection
+                | crate::feature::PmDcFeatureReferenceFamily::BodySelection,
             items,
         } = &collection.kind
         else {

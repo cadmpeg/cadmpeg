@@ -1240,3 +1240,39 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 9 | `options` | `bytes[9]` | little | spec | Mirror auxiliary payloads follow the versioned content header and stamps. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `pm_dc_body_motion_properties`
+
+Spec §13 · layout: ordered slots (no stated byte offsets) · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/motion.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `selected_bodies` | `u32` | little | spec | Slot 0 is an object collection |
+| 1 | `transforms` | `u32` | little | spec | Slot 1 is a transform list |
+| 2 | `dimensions` | `u32` | little | spec | Slot 2 contains feature dimensions |
+
+## `pm_dc_face_motion_properties`
+
+Spec §13 · layout: ordered slots (no stated byte offsets) · size: 52 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/motion.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `selected_faces` | `u32` | little | spec | Slot 0 is a face collection |
+| 1 | `mode` | `u32` | little | spec | Slot 1 is the face-motion mode |
+| 2 | `mode_operand_2` | `u32` | little | spec | null slots 2 through 7 and 10 |
+| 3 | `mode_operand_3` | `u32` | little | spec | null slots 2 through 7 and 10 |
+| 4 | `mode_operand_4` | `u32` | little | spec | null slots 2 through 7 and 10 |
+| 5 | `mode_operand_5` | `u32` | little | spec | null slots 2 through 7 and 10 |
+| 6 | `mode_operand_6` | `u32` | little | spec | null slots 2 through 7 and 10 |
+| 7 | `mode_operand_7` | `u32` | little | spec | null slots 2 through 7 and 10 |
+| 8 | `affected_bodies` | `u32` | little | spec | Slot 8 is the selection of affected bodies |
+| 9 | `dimensions` | `u32` | little | spec | Slot 9 contains feature dimensions |
+| 10 | `mode_operand` | `u32` | little | spec | null slots 2 through 7 and 10 |
+| 11 | `flag` | `u32` | little | spec | Slot 11 is a Boolean |
+| 12 | `transform` | `u32` | little | spec | Slot 12 is the model-space motion transform |
