@@ -73,7 +73,7 @@ pub(crate) enum InventorLossCode {
     FeatureRectangularPatternOperandsNative,
     /// Thread annotations retain sizing and termination operands only natively.
     FeatureThreadDefinitionPartial,
-    /// Thicken selections and thickness side remain native operands.
+    /// Thicken selections, construction controls, or thickness side remain native.
     FeatureThickenOperandsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
