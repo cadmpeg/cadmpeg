@@ -434,10 +434,9 @@ fn decode_container<'a>(
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
-    let active_representation = ufrx
+    let active_design_view = ufrx
         .representation()
-        .and_then(|representation| representation.active_representation.as_ref())
-        .map(|(name, kind)| (name.as_str(), kind.as_str()));
+        .map(|representation| representation.active_design_view.as_str());
     let assembly_projection = crate::assembly::project_occurrences(
         ctx,
         ufrx_occurrences,
@@ -445,7 +444,7 @@ fn decode_container<'a>(
         &assembly_occurrences,
         &assembly_placements,
         crate::assembly::OccurrenceStates {
-            active_representation,
+            active_design_view,
             representations: &design_view_representations,
             visibility_off: &design_view_visibility,
             groundings: &assembly_groundings,
@@ -1062,6 +1061,12 @@ fn decode_container<'a>(
                     losses.push(InventorLossCode::AssemblyComponentExternal.note(format!(
                         "Retained {} unresolved external component reference(s).",
                         external_references.len()
+                    )));
+                }
+                if assembly_projection.nested_hidden != 0 {
+                    losses.push(InventorLossCode::AssemblyVisibilityNestedNative.note(format!(
+                        "Retained {} hidden occurrence(s) below a root occurrence in native records.",
+                        assembly_projection.nested_hidden
                     )));
                 }
                 for (cause, count) in &assembly_projection.unresolved_placements {
@@ -1915,18 +1920,21 @@ fn project_ufrx_representation(
     state: &crate::external_reference::UfrxRepresentationState,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
-    let (active_representation, active_representation_kind) =
-        match state.active_representation.as_ref() {
-            Some((name, kind)) => (Some(name.to_owned()), Some(kind.to_owned())),
-            None => (None, None),
-        };
+    let design_views = state.design_views.as_ref().map(|views| {
+        views
+            .iter()
+            .map(|(name, kind)| crate::native::ufrx::UfrxDesignView {
+                name: name.to_owned(),
+                kind: kind.to_owned(),
+            })
+            .collect()
+    });
     let wire = UfrxRepresentationRecordWire {
         prefix: state.prefix,
-        active_representation,
-        active_representation_kind,
+        design_views,
         secondary_active_lod_state: state.secondary_active_lod_state,
-        active_model_state: state.active_model_state.clone(),
-        active_model_state_state: state.active_model_state_state,
+        active_design_view: state.active_design_view.clone(),
+        active_design_view_state: state.active_design_view_state,
     };
     admit_ufrx_record(
         ctx,

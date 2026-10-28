@@ -45,7 +45,6 @@ const OCCURRENCE_GROUNDING_TYPE: [u8; 16] = [
     0x61, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,
 ];
 const GROUNDED_FLAGS_BIT: u32 = 0x0200_0000;
-const DESIGN_VIEW_KIND: &str = "DesignView";
 
 #[derive(Debug)]
 pub(crate) struct AssemblyInventory<'a> {
@@ -162,7 +161,7 @@ impl UnresolvedCause {
 /// The design-view and occurrence state records that qualify an occurrence.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct OccurrenceStates<'a> {
-    pub(crate) active_representation: Option<(&'a str, &'a str)>,
+    pub(crate) active_design_view: Option<&'a str>,
     pub(crate) representations: &'a [DesignViewRepresentationRecord],
     pub(crate) visibility_off: &'a [DesignViewVisibilityOffRecord],
     pub(crate) groundings: &'a [AssemblyGroundingRecord],
@@ -172,6 +171,8 @@ pub(crate) struct OccurrenceStates<'a> {
 pub(crate) struct AssemblyProjection {
     pub(crate) occurrences: Vec<Occurrence>,
     pub(crate) joints: Vec<AssemblyJoint>,
+    /// Hidden occurrences below a root occurrence; they stay in native records.
+    pub(crate) nested_hidden: usize,
     pub(crate) unresolved_placements: BTreeMap<UnresolvedCause, NonZeroUsize>,
 }
 
@@ -203,11 +204,19 @@ pub(crate) fn project_occurrences(
             .iter()
             .map(|record| (record.occurrence_id, record)),
     );
-    let hidden_keys = hidden_occurrence_keys(
-        states.active_representation,
+    let hidden_paths = active_hidden_paths(
+        states.active_design_view,
         states.representations,
         states.visibility_off,
     );
+    let hidden_keys: HashSet<u32> = hidden_paths
+        .iter()
+        .filter_map(|path| match path {
+            [key] => Some(*key),
+            _ => None,
+        })
+        .collect();
+    let nested_hidden = hidden_paths.iter().filter(|path| path.len() > 1).count();
     let grounding_records = unique_index(states.groundings.iter().map(|record| {
         (
             (record.segment_token.clone(), record.record_ordinal),
@@ -337,6 +346,7 @@ pub(crate) fn project_occurrences(
     Ok(AssemblyProjection {
         occurrences,
         joints,
+        nested_hidden,
         unresolved_placements,
     })
 }
@@ -354,26 +364,23 @@ fn record_reference_ordinal(reference: u32) -> Option<u32> {
 
 /// Collects the occurrence keys the active design-view representation hides.
 ///
-/// Only the representation the `UFRxDoc` document names as the active
-/// `DesignView` representation contributes. Member references that do not
+/// Only the representation the `UFRxDoc` header names as the active design
+/// view contributes. Member references that do not
 /// select a visibility-off state record in the same segment hide nothing.
-fn hidden_occurrence_keys(
-    active_representation: Option<(&str, &str)>,
+fn active_hidden_paths<'a>(
+    active_design_view: Option<&str>,
     representations: &[DesignViewRepresentationRecord],
-    visibility_off: &[DesignViewVisibilityOffRecord],
-) -> HashSet<u32> {
-    let Some((name, kind)) = active_representation else {
-        return HashSet::new();
+    visibility_off: &'a [DesignViewVisibilityOffRecord],
+) -> Vec<&'a [u32]> {
+    let Some(name) = active_design_view else {
+        return Vec::new();
     };
-    if kind != DESIGN_VIEW_KIND {
-        return HashSet::new();
-    }
     let matched: Vec<&DesignViewRepresentationRecord> = representations
         .iter()
         .filter(|representation| representation.name == name)
         .collect();
     let [representation] = matched.as_slice() else {
-        return HashSet::new();
+        return Vec::new();
     };
     let members: HashSet<(String, u32)> = representation
         .member_references
@@ -386,10 +393,7 @@ fn hidden_occurrence_keys(
     visibility_off
         .iter()
         .filter(|state| members.contains(&(state.segment_token.clone(), state.record_ordinal)))
-        .filter_map(|state| match state.occurrence_path.as_slice() {
-            [key] => Some(*key),
-            _ => None,
-        })
+        .map(|state| state.occurrence_path.as_slice())
         .collect()
 }
 
@@ -1795,7 +1799,7 @@ mod tests {
             &occurrences,
             &placements,
             super::OccurrenceStates {
-                active_representation: Some(("Default", "DesignView")),
+                active_design_view: Some("Default"),
                 representations: &representations,
                 visibility_off: &visibility,
                 ..Default::default()
@@ -1822,18 +1826,14 @@ mod tests {
         )];
         let visibility = [visibility_off_record(2, &[2])];
 
-        for active in [
-            None,
-            Some(("Other", "DesignView")),
-            Some(("Default", "LevelOfDetail")),
-        ] {
+        for active in [None, Some("Other")] {
             let projection = project_under_service_full(
                 &ufrx,
                 std::slice::from_ref(&reference),
                 &occurrences,
                 &placements,
                 super::OccurrenceStates {
-                    active_representation: active,
+                    active_design_view: active,
                     representations: &representations,
                     visibility_off: &visibility,
                     ..Default::default()
@@ -1933,7 +1933,7 @@ mod tests {
             &[assembly_occurrence(7), assembly_occurrence(8)],
             &[assembly_placement(7), assembly_placement(8)],
             super::OccurrenceStates {
-                active_representation: Some(("Default", "DesignView")),
+                active_design_view: Some("Default"),
                 representations: &[design_view_representation_record(
                     "Default",
                     1,
@@ -1945,6 +1945,7 @@ mod tests {
         );
         assert_eq!(projection.occurrences.len(), 2);
         assert!(projection.occurrences.iter().all(|o| o.visible.is_none()));
+        assert_eq!(projection.nested_hidden, 1);
     }
 
     #[test]
@@ -1955,7 +1956,7 @@ mod tests {
             &[assembly_occurrence(7), assembly_occurrence(8)],
             &[assembly_placement(7), assembly_placement(8)],
             super::OccurrenceStates {
-                active_representation: Some(("Default", "DesignView")),
+                active_design_view: Some("Default"),
                 representations: &[design_view_representation_record(
                     "Default",
                     1,
@@ -1976,7 +1977,7 @@ mod tests {
             &[assembly_occurrence(7), assembly_occurrence(8)],
             &[assembly_placement(7), assembly_placement(8)],
             super::OccurrenceStates {
-                active_representation: Some(("Default", "DesignView")),
+                active_design_view: Some("Default"),
                 representations: &[
                     design_view_representation_record("Default", 1, &[0x8000_0003]),
                     design_view_representation_record("Default", 2, &[0x8000_0003]),
@@ -1996,7 +1997,7 @@ mod tests {
             &[assembly_occurrence(7)],
             &[],
             super::OccurrenceStates {
-                active_representation: Some(("Default", "DesignView")),
+                active_design_view: Some("Default"),
                 representations: &[design_view_representation_record(
                     "Default",
                     1,
@@ -2028,5 +2029,40 @@ mod tests {
             },
         );
         assert!(projection.joints.is_empty());
+    }
+
+    #[test]
+    fn the_hide_applies_only_in_the_view_that_lists_it() {
+        let ufrx = [ufrx_occurrence(4, 7, 0), ufrx_occurrence(4, 8, 1)];
+        let occurrences = [assembly_occurrence(7), assembly_occurrence(8)];
+        let placements = [assembly_placement(7), assembly_placement(8)];
+        let representations = [
+            design_view_representation_record("Default", 1, &[0x8000_0004, 0x8000_0005]),
+            design_view_representation_record(
+                "TestView",
+                2,
+                &[0x8000_0006, 0x8000_0007, 0x8000_0008],
+            ),
+        ];
+        let visibility = [visibility_off_record(7, &[2])];
+        for (active, hidden) in [
+            (Some("TestView"), vec![None, Some(false)]),
+            (Some("Default"), vec![None, None]),
+        ] {
+            let projection = project_under_service_full(
+                &ufrx,
+                &[external_reference(4, "part.ipt", [0, 0])],
+                &occurrences,
+                &placements,
+                super::OccurrenceStates {
+                    active_design_view: active,
+                    representations: &representations,
+                    visibility_off: &visibility,
+                    ..Default::default()
+                },
+            );
+            let visible: Vec<_> = projection.occurrences.iter().map(|o| o.visible).collect();
+            assert_eq!(visible, hidden, "active view {active:?}");
+        }
     }
 }

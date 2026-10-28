@@ -2783,7 +2783,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     }
     if let UfrxRecord::ParsedPrefix(payload) = record {
         if let Some(representation) = payload.representation.as_ref() {
-            let representation_pair_present = representation.active_representation.is_some();
+            let representation_pair_present = representation.design_views.is_some();
             let expected_pair = document_kind(ir).and_then(|kind| match kind {
                 "assembly" => Some(true),
                 "part" => Some(false),
@@ -2919,11 +2919,10 @@ fn validate_assembly(
             Some(issue.id()),
         ));
     }
-    let active_representation = data
+    let active_design_view = data
         .ufrx
         .representation()
-        .and_then(|representation| representation.active_representation.as_ref())
-        .map(|(name, kind)| (name.as_str(), kind.as_str()));
+        .map(|representation| representation.active_design_view.as_str());
     let mut projected = crate::assembly::project_occurrences(
         ctx,
         data.ufrx.occurrences(),
@@ -2931,7 +2930,7 @@ fn validate_assembly(
         &data.assembly_occurrences,
         &data.assembly_placements,
         crate::assembly::OccurrenceStates {
-            active_representation,
+            active_design_view,
             representations: &data.design_view_representations,
             visibility_off: &data.design_view_visibility,
             groundings: &data.assembly_groundings,

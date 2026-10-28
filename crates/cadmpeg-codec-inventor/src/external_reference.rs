@@ -132,10 +132,11 @@ pub(crate) enum UfrxLevelOfDetailMemberKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxRepresentationState {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<(String, String)>,
+    /// The stored `(name, kind)` representation list of an assembly; a part stores none.
+    pub(crate) design_views: Option<Vec<(String, String)>>,
     pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: String,
-    pub(crate) active_model_state_state: [u16; 2],
+    pub(crate) active_design_view: String,
+    pub(crate) active_design_view_state: [u16; 2],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,7 +277,8 @@ fn parse_stream_grammar<'a>(
         cursor.utf16(ctx, "header pair key", 65_536)?;
         cursor.utf16(ctx, "header pair value", 65_536)?;
     }
-    cursor.take(4, "active LOD state")?;
+    cursor.u16("active LOD state")?;
+    let design_view_count = usize::from(cursor.u16("design-view count")?);
     let assembly_representation = if schema == 15 {
         match document_kind {
             DocumentKind::Assembly => true,
@@ -296,25 +298,29 @@ fn parse_stream_grammar<'a>(
     };
     let representation = if schema == 15 {
         let prefix = cursor.u16("representation prefix")?;
-        let active_representation = if assembly_representation {
-            Some((
-                cursor.utf16(ctx, "active representation", 65_536)?,
-                cursor.utf16(ctx, "active representation kind", 65_536)?,
-            ))
+        let design_views = if assembly_representation {
+            let mut views = Vec::new();
+            for _ in 0..design_view_count {
+                views.push((
+                    cursor.utf16(ctx, "design view", 65_536)?,
+                    cursor.utf16(ctx, "design view kind", 65_536)?,
+                ));
+            }
+            Some(views)
         } else {
             None
         };
         Some(UfrxRepresentationState {
             prefix,
-            active_representation,
+            design_views,
             secondary_active_lod_state: [
                 cursor.u16("secondary active LOD state")?,
                 cursor.u16("secondary active LOD state")?,
             ],
-            active_model_state: cursor.utf16(ctx, "active model state", 65_536)?,
-            active_model_state_state: [
-                cursor.u16("active model-state state")?,
-                cursor.u16("active model-state state")?,
+            active_design_view: cursor.utf16(ctx, "active design view", 65_536)?,
+            active_design_view_state: [
+                cursor.u16("active design-view state")?,
+                cursor.u16("active design-view state")?,
             ],
         })
     } else {
@@ -1238,20 +1244,10 @@ mod tests {
                     .representation
                     .as_ref()
                     .expect("schema 15 representation state");
-                assert_eq!(representation.active_model_state, "Master");
+                assert_eq!(representation.active_design_view, "Master");
                 assert_eq!(
-                    representation
-                        .active_representation
-                        .as_ref()
-                        .map(|(name, _)| name.as_str()),
-                    Some("Default")
-                );
-                assert_eq!(
-                    representation
-                        .active_representation
-                        .as_ref()
-                        .map(|(_, kind)| kind.as_str()),
-                    Some("DesignView")
+                    representation.design_views,
+                    Some(vec![("Default".to_owned(), "DesignView".to_owned())])
                 );
                 assert_eq!(document.model_states.len(), 1);
                 assert_eq!(document.model_states[0].prefix, 0);
@@ -1278,8 +1274,8 @@ mod tests {
             .expect("schema-15 part UFRxDoc parses");
 
         let representation = document.representation.expect("model-state header parses");
-        assert_eq!(representation.active_representation, None);
-        assert_eq!(representation.active_model_state, "Master");
+        assert_eq!(representation.design_views, None);
+        assert_eq!(representation.active_design_view, "Master");
         assert_eq!(document.model_states.len(), 1);
         assert_eq!(document.references.len(), 1);
     }
@@ -1539,7 +1535,8 @@ mod tests {
         push_u16(&mut bytes, 0);
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 0);
-        bytes.extend_from_slice(&[0; 4]);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, u16::from(schema == 15 && assembly));
         if schema == 15 {
             push_u16(&mut bytes, 0);
             if assembly {
