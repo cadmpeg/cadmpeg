@@ -244,6 +244,11 @@ pub(crate) enum F3dLossCode {
     /// External occurrence instances below local owners take the pose their own
     /// component-path carriers store; the placement matrix stays native.
     XrefOwnedPose,
+    /// An instance's own component-path carriers give different poses; it keeps
+    /// its placement.
+    XrefOwnedPoseDisagrees,
+    /// Own component-path carriers that place no instance stay native.
+    XrefOwnedPoseNative,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
@@ -436,6 +441,8 @@ impl F3dLossCode {
         Self::XrefContainedPoseDisagrees,
         Self::XrefContainedPoseNative,
         Self::XrefOwnedPose,
+        Self::XrefOwnedPoseDisagrees,
+        Self::XrefOwnedPoseNative,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::XrefOwnerUnresolved,
@@ -596,6 +603,8 @@ impl F3dLossCode {
             Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
             Self::XrefContainedPoseNative => "xref.contained-pose-native",
             Self::XrefOwnedPose => "xref.owned-pose",
+            Self::XrefOwnedPoseDisagrees => "xref.owned-pose-disagrees",
+            Self::XrefOwnedPoseNative => "xref.owned-pose-native",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::XrefOwnerUnresolved => "xref.owner-unresolved",
@@ -655,6 +664,7 @@ impl F3dLossCode {
             | Self::XrefContainedPose
             | Self::XrefContainedPoseNative
             | Self::XrefOwnedPose
+            | Self::XrefOwnedPoseNative
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
@@ -760,6 +770,7 @@ impl F3dLossCode {
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
             | Self::XrefContainedPoseDisagrees
+            | Self::XrefOwnedPoseDisagrees
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::XrefOwnerUnresolved
@@ -820,6 +831,8 @@ impl F3dLossCode {
             | Self::XrefContainedPoseDisagrees
             | Self::XrefContainedPoseNative
             | Self::XrefOwnedPose
+            | Self::XrefOwnedPoseDisagrees
+            | Self::XrefOwnedPoseNative
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1087,6 +1100,8 @@ mod tests {
                 "xref.contained-pose-disagrees",
                 "xref.contained-pose-native",
                 "xref.owned-pose",
+                "xref.owned-pose-disagrees",
+                "xref.owned-pose-native",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "xref.owner-unresolved",

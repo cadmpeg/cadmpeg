@@ -593,6 +593,7 @@ fn place_contained_poses(
     let local_root = |id: &str| !id.starts_with("f3d:xref/");
     let mut placed = Vec::new();
     let mut disagreeing = 0usize;
+    let mut owned_disagreeing = 0usize;
     let mut bound = BTreeSet::new();
     let mut bound_owned = BTreeSet::new();
     let mut owned_placed = 0usize;
@@ -732,7 +733,11 @@ fn place_contained_poses(
                     })
             });
             if !agree || !first.is_proper_rigid() {
-                disagreeing += 1;
+                if own_pose {
+                    owned_disagreeing += 1;
+                } else {
+                    disagreeing += 1;
+                }
                 continue;
             }
             let parent_world = match parent_of(instance) {
@@ -787,9 +792,14 @@ fn place_contained_poses(
             "{owned_placed} external occurrence instance(s) below local owners take the pose their own component-path carriers store; their occurrence-placement matrices stay in the native frames"
         )));
     }
+    if owned_disagreeing != 0 {
+        losses.push(F3dLossCode::XrefOwnedPoseDisagrees.note(format!(
+            "{owned_disagreeing} external occurrence instance(s) below local owners keep their placement: the instance's own component-path carriers give different poses"
+        )));
+    }
     if owned_unbound != 0 {
-        losses.push(F3dLossCode::XrefContainedPoseNative.note(format!(
-            "{owned_unbound} component-path carrier(s) of external occurrences below local owners are not applied: a contained pose places the instance, or no merged instance has their owner chain; they stay native"
+        losses.push(F3dLossCode::XrefOwnedPoseNative.note(format!(
+            "{owned_unbound} own component-path carrier(s) of external occurrences below local owners stay native: a contained-occurrence carrier places their instance, or no merged instance has their owner chain"
         )));
     }
     if unbound != 0 {

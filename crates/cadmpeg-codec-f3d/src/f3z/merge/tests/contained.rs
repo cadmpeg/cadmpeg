@@ -269,14 +269,21 @@ fn place_reference(
     reference: XrefReference,
 ) -> (Transform, Vec<cadmpeg_ir::report::loss::LossKind>) {
     const OWNER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9222";
+    const OUTER: &str = "f3d:Design/BulkStream.dat:design-component-occurrence#9300";
     const PART: &str =
         "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-component-occurrence#";
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.occurrences = vec![
         occurrence("f3d:model:occurrence#root", None, None, 0.0),
         occurrence(
-            "f3d:model:occurrence#owner",
+            "f3d:model:occurrence#outer",
             Some("f3d:model:occurrence#root"),
+            Some(OUTER),
+            0.0,
+        ),
+        occurrence(
+            "f3d:model:occurrence#owner",
+            Some("f3d:model:occurrence#outer"),
             Some(OWNER),
             5.0,
         ),
@@ -308,6 +315,7 @@ fn place_reference(
     crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![
             local_carrier(OWNER, 9222),
+            local_carrier(OUTER, 9300),
             local_carrier(&format!("{PART}496"), 496),
             local_carrier(&format!("{PART}497"), 497),
         ];
@@ -423,6 +431,44 @@ fn an_owned_external_occurrence_takes_its_own_pose_unless_a_contained_pose_place
     );
     assert_eq!(losses, [F3dLossCode::XrefOwnedPose.kind()]);
 
+    // Own carriers that list the most owners and disagree leave the placement.
+    let (transform, losses) = place_reference(with_owned(
+        Vec::new(),
+        vec![
+            owned(11, &[9222], translation(20.0, 4.0, 0.0)),
+            owned(12, &[9222], translation(21.0, 4.0, 0.0)),
+        ],
+    ));
+    assert!(
+        (transform.rows()[0][3] - 10.0).abs() < 1e-9,
+        "{:?}",
+        transform.rows()
+    );
+    assert_eq!(losses, [F3dLossCode::XrefOwnedPoseDisagrees.kind()]);
+
+    // An own carrier that lists fewer owners yields to the one that lists more.
+    let (transform, losses) = place_reference(with_owned(
+        Vec::new(),
+        vec![
+            owned(12, &[9222], translation(21.0, 4.0, 0.0)),
+            owned(11, &[9222, 9300], translation(20.0, 4.0, 0.0)),
+        ],
+    ));
+    assert!(
+        (transform.rows()[0][3] - 195.0).abs() < 1e-9,
+        "{:?}",
+        transform.rows()
+    );
+    assert_eq!(losses, [F3dLossCode::XrefOwnedPose.kind()]);
+
+    // A matrix that is not a rigid motion is not an own carrier at all.
+    let mut scaled = translation(20.0, 4.0, 0.0);
+    scaled[0][0] = 2.0;
+    assert!(
+        crate::xref::owned_component_path_pose(&owned_carrier(13, &[9222], scaled), magic)
+            .is_none()
+    );
+
     // A contained pose wins over the instance's own carrier, which stays native.
     let (transform, losses) = place_reference(with_owned(
         vec![retained(12, 496, &[9222], translation(33.0, 4.0, 0.0))],
@@ -437,7 +483,7 @@ fn an_owned_external_occurrence_takes_its_own_pose_unless_a_contained_pose_place
         losses,
         [
             F3dLossCode::XrefContainedPose.kind(),
-            F3dLossCode::XrefContainedPoseNative.kind()
+            F3dLossCode::XrefOwnedPoseNative.kind()
         ]
     );
 }
