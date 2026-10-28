@@ -16,10 +16,9 @@ use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferForm, ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec},
         holes::HoleKind,
-        BooleanOp, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection,
-        ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceSelection, Feature,
-        FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, FeatureResultTopology,
-        LinearTermination, ParameterValue,
+        DesignParameter, DistinctMembers, EdgeSelection, ExtrudeDirection, ExtrudeSide,
+        ExtrusionDirectionSource, FaceSelection, Feature, FeatureContent, FeatureDefinition,
+        FeatureId, FeatureOperation, FeatureResultTopology, LinearTermination, ParameterValue,
     },
     scalar::{Angle, Length},
 };
@@ -37,6 +36,7 @@ use crate::{design::DesignInventory, sketch::SketchInventory};
 pub(crate) mod base;
 pub(crate) mod combine;
 mod edge_selection;
+pub(crate) mod extrusion;
 pub(crate) mod history;
 mod hole;
 pub(crate) mod loft_sweep;
@@ -181,6 +181,7 @@ pub(crate) struct FeatureProjection {
     pub(crate) input_topologies: Vec<cadmpeg_ir::features::FeatureInputTopology>,
     pub(crate) unresolved_features: usize,
     pub(crate) unresolved_states: usize,
+    pub(crate) extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Closed loops that resolved extrusion profiles append to sketch
@@ -2026,6 +2027,7 @@ pub(crate) fn project(
             input_topologies: Vec::new(),
             unresolved_features: total,
             unresolved_states: 0,
+            extrusion_losses: Vec::new(),
             revolve_losses: Vec::new(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[]),
             added_profiles: HashMap::new(),
@@ -2209,6 +2211,7 @@ pub(crate) fn project(
         })
     };
     let mut projected = Vec::new();
+    let mut extrusion_losses = Vec::new();
     let mut revolve_losses = Vec::new();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
@@ -2218,7 +2221,9 @@ pub(crate) fn project(
         }) {
             Some((label, family)) => match family {
                 FeatureFamily::Base => None,
-                FeatureFamily::Extrusion => project_extrusion(ctx, feature, label, &index),
+                FeatureFamily::Extrusion => {
+                    extrusion::project(ctx, feature, label, &index, &mut extrusion_losses)
+                }
                 FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
                 FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
                 FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
@@ -2428,14 +2433,20 @@ pub(crate) fn project(
                     if groups.iter().any(|group| group.spec.is_unresolved()))
         })
         .count();
+    let unresolved_extrusion_profiles = features
+        .iter()
+        .filter(|feature| extrusion::has_native_profile(feature.evaluation.definition()))
+        .count();
     Ok(FeatureProjection {
         unresolved_features: total
             .checked_sub(neutral)
             .and_then(|unresolved| unresolved.checked_add(unresolved_chamfers))
+            .and_then(|unresolved| unresolved.checked_add(unresolved_extrusion_profiles))
             .ok_or_else(|| {
                 CodecError::malformed("Inventor feature projection exceeds inventory")
             })?,
         unresolved_states: unresolved_states.min(neutral),
+        extrusion_losses,
         revolve_losses,
         mirror_losses: mirror::native_losses(&inventory.pattern_features, &features),
         features,
@@ -2890,64 +2901,21 @@ fn project_extrusion(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let operation = enum16(source, 0, PmDcFeatureEnumFamily::PartOperation, index)?;
-    let op = match operation {
-        1 => BooleanOp::NewBody,
-        2 => BooleanOp::Cut,
-        3 => BooleanOp::Join,
-        4 => BooleanOp::Intersect,
-        _ => return None,
-    };
     if source.properties.references().get(23)? != source.properties.references().get(1)? {
         return None;
     }
-    let boundary = BoundaryProfile::new(source, label, 1, index)?;
-
-    let direction_record = resolve_direction(source, 2, index)?;
-    let mut direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
-        direction_record.direction[0].get(),
-        direction_record.direction[1].get(),
-        direction_record.direction[2].get(),
-    ))?;
-    if boolean(source, 3, index)? {
-        direction = direction.reversed();
-    }
-    let extent_value = enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)?;
-    let symmetric = boolean(source, 7, index)?;
-    let second_extent = source
-        .properties
-        .references()
-        .get(29)
-        .is_some_and(|reference| reference.index() != 0);
-    let first = extrusion_side(source, index, ExtrusionSideSlots::FIRST, extent_value)?;
-    let start = if extent_value == EXTENT_FROM_TO {
-        let (plane, native) = extent_target_plane(source, index, 8, 10, 17)?;
-        ExtrudeStart::FromPlane { plane, native }
+    let boundary = BoundaryProfile::new(source, label, 1, index);
+    let native_profile = if boundary.is_none() {
+        Some(extrusion::native_profile(source, label, index)?)
     } else {
-        ExtrudeStart::ProfilePlane {}
+        None
     };
-    let extent = match (extent_value, symmetric, second_extent) {
-        (EXTENT_SYMMETRIC_DISTANCE | EXTENT_THROUGH_ALL, true, false) => {
-            ExtrudeExtent::Symmetric { side: first }
-        }
-        (EXTENT_SYMMETRIC_DISTANCE, false, _) | (_, true, true) => return None,
-        (_, true, false) => return None,
-        (_, false, true) => {
-            let second_value = enum16(source, 29, PmDcFeatureEnumFamily::Extent, index)?;
-            if !matches!(
-                second_value,
-                EXTENT_DISTANCE | EXTENT_THROUGH_NEXT | EXTENT_THROUGH_ALL
-            ) || extent_value == EXTENT_FROM_TO
-            {
-                return None;
-            }
-            ExtrudeExtent::TwoSided {
-                first,
-                second: extrusion_side(source, index, ExtrusionSideSlots::SECOND, second_value)?,
-            }
-        }
-        (_, false, false) => ExtrudeExtent::OneSided { side: first },
-    };
+    let extrusion::Operands {
+        op,
+        direction,
+        start,
+        extent,
+    } = extrusion::indexed_operands(source, index)?;
     let (feature_id, result) = match feature_result(ctx, source, 26, index)? {
         Ok(value) => value,
         Err(error) => return Some(Err(error)),
@@ -2956,7 +2924,10 @@ fn project_extrusion(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature") {
         return Some(Err(error));
     }
-    let profile = boundary.resolve(index)?;
+    let profile = match boundary {
+        Some(boundary) => boundary.resolve(index)?,
+        None => native_profile?,
+    };
     let feature = Feature {
         id: feature_id,
         ordinal: u64::from(label.index),

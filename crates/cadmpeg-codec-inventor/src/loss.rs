@@ -65,6 +65,10 @@ pub(crate) enum InventorLossCode {
     FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
+    /// Extrusion construction operands remain native.
+    FeatureExtrusionOperandsNative,
+    /// An extrusion retains its exact profile selection without a neutral sketch graph.
+    FeatureExtrusionProfileNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
     /// Thread annotations retain sizing and termination operands only natively.
@@ -181,6 +185,8 @@ impl InventorLossCode {
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureExtrusionOperandsNative,
+        Self::FeatureExtrusionProfileNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
@@ -254,6 +260,8 @@ impl InventorLossCode {
             Self::FeatureRectangularPatternOperandsNative => {
                 "feature.rectangular-pattern-operands-native"
             }
+            Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
+            Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
@@ -347,6 +355,8 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureExtrusionOperandsNative
+            | Self::FeatureExtrusionProfileNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
@@ -446,6 +456,8 @@ mod tests {
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.extrusion-operands-native",
+                "feature.extrusion-profile-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",

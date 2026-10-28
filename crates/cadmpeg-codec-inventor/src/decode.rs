@@ -817,6 +817,7 @@ fn decode_container<'a>(
         losses.extend(crate::feature::sheet_metal::retained_control_losses(
             ir.model.features.iter(),
         ));
+        losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
         losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::pattern::native_losses(
@@ -1341,6 +1342,7 @@ struct UnresolvedDesign {
     feature_states: usize,
     profile_bodies: usize,
     sketch_construction: usize,
+    extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
@@ -1416,6 +1418,7 @@ fn project_design(
         feature_states: features.unresolved_states,
         profile_bodies: profile_bodies.undecoded,
         sketch_construction: sketches.unresolved_construction,
+        extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
         mirror_losses: features.mirror_losses,
     })
