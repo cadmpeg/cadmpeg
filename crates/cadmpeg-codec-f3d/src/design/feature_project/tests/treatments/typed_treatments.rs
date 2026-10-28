@@ -115,7 +115,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         scope(32, 700, "Hole"),
     ];
     if let DesignScopePayloadMut::Hole(slot) = scopes[2].payload_mut() {
-        *slot = Some(DesignHoleConstruction {
+        slot.extent = Some(crate::records::feature::hole::DesignHoleExtent {
+            leading_word: None,
+            extent_control: Some(0),
+            saved_non_distance_depth: None,
+        });
+        slot.point = Some(DesignHoleConstruction {
             point_record_index: 378,
             point_record_byte_offset: 10,
             position: crate::test_support::reals([1.25, -2.5, 3.75]),
@@ -445,7 +450,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-            bottom: None,
+            bottom: Some(cadmpeg_ir::features::holes::HoleBottom::Angled {depth_to_tip: false, ..}),
             ..
         }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::SimpleDrilled { drill_point_angle },
@@ -482,7 +487,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
-            bottom: None,
+            bottom: Some(cadmpeg_ir::features::holes::HoleBottom::Angled {depth_to_tip: false, ..}),
             ..
         }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::CounterboreDrilled {

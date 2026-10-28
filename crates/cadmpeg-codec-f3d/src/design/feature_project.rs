@@ -586,6 +586,7 @@ pub(crate) struct ProjectedParameterDesign {
     /// `BaseFlange` scopes projected with their stored thickness copy because
     /// their sheet-metal rule states no thickness.
     pub(crate) unruled_flange_thicknesses: usize,
+    pub(crate) hole_extent_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl ProjectedParameterDesign {
@@ -636,6 +637,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         sheet_metal_settings,
         ..
     } = inputs;
+    let mut hole_extent_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
@@ -881,8 +883,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)?
-                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Hole) => {
+                    project_hole(scope, &parameters, face_operands, &mut hole_extent_losses)?
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                }
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1726,6 +1730,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         parameters,
         unordered_parameter_scopes,
         unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
+        hole_extent_losses,
     })
 }
 
@@ -7106,19 +7111,107 @@ fn project_boundary_fill(
     ))
 }
 
+fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::HoleExtentUnproven.note(format!(
+        "Hole {} retains its native extent because its controls, depth or face operands do not define an admitted extent.", scope.id
+    ))
+}
+
+fn hole_termination(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::LinearTermination> {
+    use cadmpeg_ir::features::LinearTermination;
+    let extent = scope.hole_extent()?;
+    let mut depths = parameters
+        .iter()
+        .filter(|(_, p)| p.source_kind() == "HoleDepth");
+    let depth = depths.next();
+    if depths.next().is_some() {
+        return None;
+    }
+    match extent.extent_control {
+        Some(0) | None => Some(LinearTermination::Blind {
+            length: design_positive_length(depth?.1)?.into(),
+        }),
+        Some(1)
+            if extent.saved_non_distance_depth.is_some()
+                && depth.is_none()
+                && hole_start_faces_only(scope, face_operands)? =>
+        {
+            Some(LinearTermination::ThroughAll {})
+        }
+        _ => None,
+    }
+}
+
+/// Whether the face operands of a Hole scope name at most its start face: no
+/// operand (a sketch-point Hole), or a direct `face` or `bounded_face` recipe
+/// followed by a `bounded_face` recipe, each bound to its scope reference entry.
+/// A further face operand or a direct persistent face selection can name an
+/// extent face, so it refuses the form.
+fn hole_start_faces_only(
+    scope: &DesignParameterScope,
+    face_operands: &[DesignFaceOperand],
+) -> Option<bool> {
+    use crate::records::recipes::ConstructionRecipeKind;
+    let stream = native_stream(&scope.id)?;
+    if scope
+        .hole_construction()
+        .is_some_and(|construction| construction.face_selection.is_some())
+    {
+        return Some(false);
+    }
+    let mut faces: Vec<_> = face_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+        })
+        .collect();
+    faces.sort_by_key(|operand| operand.scope_reference_ordinal);
+    let [first, second] = faces.as_slice() else {
+        return Some(faces.is_empty());
+    };
+    let bound = |operand: &DesignFaceOperand| {
+        operand.group_record_index().is_none()
+            && usize::try_from(operand.scope_reference_ordinal)
+                .ok()
+                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                == Some(&operand.record_index())
+    };
+    Some(
+        first.scope_reference_ordinal < second.scope_reference_ordinal
+            && matches!(
+                first.recipe_kind,
+                ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
+            )
+            && second.recipe_kind == ConstructionRecipeKind::BoundedFace
+            && bound(first)
+            && bound(second),
+    )
+}
+
 fn project_hole(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     face_operands: &[DesignFaceOperand],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{
         holes::{HoleBottom, HoleKind},
         FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
 
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole
-        || !matches!(parameters.len(), 3 | 5)
-    {
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Hole {
+        return Ok(None);
+    }
+    let Some(extent) = hole_termination(scope, parameters, face_operands) else {
+        losses.push(hole_extent_loss(scope));
+        return Ok(None);
+    };
+    if !matches!(parameters.len(), 2..=5) {
         return Ok(None);
     }
     let parameter = |source_kind: &str| {
@@ -7129,20 +7222,25 @@ fn project_hole(
         let parameter = matches.next()?;
         matches.next().is_none().then_some(parameter)
     };
-    let depth = or_none!(design_positive_length(or_none!(parameter("HoleDepth"))));
+    let depth = match &extent {
+        LinearTermination::Blind { length } => Some(length.get()),
+        _ => None,
+    };
+    let base_count = if depth.is_some() { 3 } else { 2 };
     let diameter = or_none!(design_positive_length(or_none!(parameter("HoleDiameter"))));
     let tip_angle = or_none!(design_angle(or_none!(parameter("TipAngle"))));
     if tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
         return Ok(None);
     }
-    let counterbore = match parameters.len() {
-        3 => None,
-        5 => {
+    let counterbore = match parameters.len().checked_sub(base_count) {
+        Some(0) => None,
+        Some(2) => {
             let counterbore_depth =
                 or_none!(design_positive_length(or_none!(parameter("CBDepth"))));
             let counterbore_diameter =
                 or_none!(design_positive_length(or_none!(parameter("CBDiameter"))));
-            if counterbore_depth.get() > depth.get() || counterbore_diameter.get() <= diameter.get()
+            if depth.is_some_and(|depth| counterbore_depth.get() > depth)
+                || counterbore_diameter.get() <= diameter.get()
             {
                 return Ok(None);
             }
@@ -7155,7 +7253,13 @@ fn project_hole(
     let drill_point_angle = cadmpeg_ir::scalar::InteriorAngle::try_from(tip_angle).ok();
     let (kind, bottom) = match (counterbore, drill_point_angle) {
         (None, None) => (HoleKind::Simple, Some(HoleBottom::Flat)),
-        (None, Some(drill_point_angle)) => (HoleKind::SimpleDrilled { drill_point_angle }, None),
+        (None, Some(drill_point_angle)) => (
+            HoleKind::SimpleDrilled { drill_point_angle },
+            Some(HoleBottom::Angled {
+                included_angle: drill_point_angle,
+                depth_to_tip: false,
+            }),
+        ),
         (Some((diameter, depth)), None) => (
             HoleKind::Counterbore { diameter, depth },
             Some(HoleBottom::Flat),
@@ -7166,7 +7270,10 @@ fn project_hole(
                 depth,
                 drill_point_angle,
             },
-            None,
+            Some(HoleBottom::Angled {
+                included_angle: drill_point_angle,
+                depth_to_tip: false,
+            }),
         ),
     };
     let face = match resolved_direct_face_selection(scope, face_operands)? {
@@ -7205,9 +7312,7 @@ fn project_hole(
         )
         .ok()),
 
-        extent: Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(depth),
-        }),
+        extent: Some(extent),
         bottom,
         taper_angle: None,
         allow_multi_profile_faces: None,

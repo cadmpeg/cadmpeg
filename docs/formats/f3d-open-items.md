@@ -20,6 +20,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-105. Hole Extents To
+
+**Question.** Which extent controls and face operands define an Extents To hole?
+
+**Known.** To and Through All both store a non-distance depth with the name `SavedHoleDepthInNonDistanceExtentsCase`. Control `1` with that property, no `HoleDepth`, and only start-face operands defines Through All.
+
+**Need.** A file with a To-face hole.
+
+**Conflict.** None.
+
+**Note.** A Distance hole that reaches a face does not define the To-face form.
+
+### DR-106. Hole extent leading word
+
+**Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?
+
+**Known.** Type versions 3 and 4 do not store the word, and type version 3 stores no extent control. Every observed word is `0`, on Distance and non-distance holes.
+
+**Need.** A Hole of type version 5 or 7 with a nonzero word, and the hole type, tap, or position setting that produces it.
+
+**Conflict.** None.
+
+**Note.** The decoder records the word on the native Hole extent and does not use it for projection.
+
 ### DR-09A. Sheet-metal settings compatibility and override encoding
 
 **Question.** What is the Hem Tangent bend-position code, what do the compatibility values `1` and `4` encode, what does the version-3 rule-reference suffix encode, and how do the settings mask bits, optional slots, and override bundle tails map to independent rule controls?

@@ -628,6 +628,21 @@ Unstated regions:
 - `267..294` (27 B): The Draft frame carries an unassigned span before the preceding-history state.
 - `298..340` (42 B): The fixed frame tail before the paired indexed header is not assigned.
 
+## `design_hole_extent_controls`
+
+Spec §3.1 · layout: byte offsets · size: 4 B
+
+Offsets are relative to the end of the Hole property block, or to the end of the u32 word that type versions 5 and 7 store after it. Type version 3 stores only the two-byte prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `prefix` | `bytes[2]` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
+| 2 | 1 | `extent_control` | `u8` | little | spec | The extent control `X` is `0` for Distance and `1` for a non-distance extent |
+| 3 | 1 | `suffix` | `u8` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
+
 ## `design_hole_point_data_v1_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 97 B

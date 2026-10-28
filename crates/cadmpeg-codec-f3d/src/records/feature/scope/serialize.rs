@@ -308,6 +308,7 @@ impl Serialize for DesignParameterScope {
             );
         }
         emit_opt!("hole_construction", self.hole_construction());
+        emit_opt!("hole_extent", self.hole_extent());
         if let Some(sketch) = self.sketch_entity() {
             emit!("entity_id", sketch.entity_id.as_str());
             emit!("entity_suffix", sketch.entity_id.suffix());

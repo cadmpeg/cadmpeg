@@ -58,6 +58,11 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
+    deserialize_hole_extent,
+    crate::records::feature::hole::DesignHoleExtent,
+    "hole_extent"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_occurrence_transfer,
     super::occurrence_transfer::DesignOccurrenceTransfer,
     "occurrence_transfer"
@@ -349,6 +354,12 @@ impl<T> ScopePayloadCompleteness for Vec<T> {
     }
 }
 
+impl ScopePayloadCompleteness for crate::records::feature::hole::DesignHoleScope {
+    fn is_uninterpreted(&self) -> bool {
+        self.point.is_none() && self.extent.is_none()
+    }
+}
+
 impl ScopePayloadCompleteness for DesignSurfacePatchScope {
     fn is_uninterpreted(&self) -> bool {
         matches!(
@@ -570,7 +581,7 @@ design_feature_kinds! {
         SurfacePatch => "SurfacePatch": DesignSurfacePatchScope,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
-        Hole => "Hole": Option<DesignHoleConstruction>,
+        Hole => "Hole": crate::records::feature::hole::DesignHoleScope,
         Scale => "Scale": Option<DesignScaleOperation>,
         Massstab => "Maßstab": Option<DesignScaleOperation>,
         Thread => "Thread": Option<DesignThreadConstruction>,
@@ -1052,6 +1063,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_hole_construction"
     )]
     hole_construction: Option<DesignHoleConstruction>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_hole_extent"
+    )]
+    hole_extent: Option<crate::records::feature::hole::DesignHoleExtent>,
 
     /// Sketch-module entity bound to this sketch scope.
     #[serde(flatten)]
@@ -1631,7 +1648,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.work_point_construction.is_some() {
             present.push("work_point_construction");
         }
-        if wire.hole_construction.is_some() {
+        if wire.hole_construction.is_some() || wire.hole_extent.is_some() {
             present.push("hole_construction");
         }
         if present.len() > 1 {
@@ -1838,7 +1855,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             ),
             DesignFeatureKind::SurfaceTrim => DesignScopePayload::SurfaceTrim,
             DesignFeatureKind::BoundaryFill => DesignScopePayload::BoundaryFill,
-            DesignFeatureKind::Hole => DesignScopePayload::Hole(wire.hole_construction.take()),
+            DesignFeatureKind::Hole => {
+                DesignScopePayload::Hole(crate::records::feature::hole::DesignHoleScope {
+                    point: wire.hole_construction.take(),
+                    extent: wire.hole_extent.take(),
+                })
+            }
             DesignFeatureKind::Split => DesignScopePayload::Split,
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
             DesignFeatureKind::Massstab => {
@@ -1982,6 +2004,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.work_axis_construction.is_some()
             || wire.work_point_construction.is_some()
             || wire.hole_construction.is_some()
+            || wire.hole_extent.is_some()
         {
             return Err(DesignParameterScopePayloadError(format!(
                 "design parameter scope payload disagrees with kind {}",
@@ -2104,6 +2127,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             work_point_construction: None,
             unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
             hole_construction: None,
+            hole_extent: None,
             sketch_entity: None,
             paired_class_tag: scope.paired_class_tag.into(),
             paired_byte_offset: scope.paired_byte_offset,
@@ -2217,7 +2241,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::BaseFeature(value) => wire.base_feature_construction = value,
             DesignScopePayload::WorkAxis(value) => wire.work_axis_construction = value,
             DesignScopePayload::WorkPoint(value) => wire.work_point_construction = value,
-            DesignScopePayload::Hole(value) => wire.hole_construction = value,
+            DesignScopePayload::Hole(value) => {
+                wire.hole_construction = value.point;
+                wire.hole_extent = value.extent;
+            }
             DesignScopePayload::SurfaceTrim
             | DesignScopePayload::BoundaryFill
             | DesignScopePayload::Split
@@ -2884,16 +2911,23 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn hole_extent(&self) -> Option<&crate::records::feature::hole::DesignHoleExtent> {
+        match &self.payload {
+            DesignScopePayload::Hole(value) => value.extent.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn hole_construction(&self) -> Option<&DesignHoleConstruction> {
         match &self.payload {
-            DesignScopePayload::Hole(value) => value.as_ref(),
+            DesignScopePayload::Hole(value) => value.point.as_ref(),
             _ => None,
         }
     }
 
     pub(crate) fn hole_construction_mut(&mut self) -> Option<&mut DesignHoleConstruction> {
         match &mut self.payload {
-            DesignScopePayload::Hole(value) => value.as_mut(),
+            DesignScopePayload::Hole(value) => value.point.as_mut(),
             _ => None,
         }
     }

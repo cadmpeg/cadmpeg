@@ -781,7 +781,7 @@ fn hole_face_case() -> (
         })
         .unwrap();
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-        *slot = Some(DesignHoleConstruction {
+        slot.point = Some(DesignHoleConstruction {
             point_record_index: 55,
             point_record_byte_offset: 0,
             position: crate::test_support::reals([0.0; 3]),

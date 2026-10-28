@@ -110,6 +110,91 @@ pub(in crate::design::decode) fn exact_hole_construction(
     .transpose()
 }
 
+/// Read the Hole extent controls of `scope`. `type_version` is the Hole type
+/// version that the scope class row states.
+pub(super) fn hole_extent(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    type_version: Option<u32>,
+) -> Option<hole::DesignHoleExtent> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let bytes = bytes.get(..end)?;
+    let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    let after_index = after_tag.checked_add(4)?;
+    let prologue = after_index.checked_add(8)?;
+    if bytes.get(after_index..prologue)? != [0; 8] {
+        return None;
+    }
+    hole_extent_payload(bytes, prologue, extent_layout(type_version?)?)
+}
+
+/// The extent block of a Hole type version: whether a u32 word precedes the
+/// `01 01` marker, and whether an extent control byte follows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ExtentLayout {
+    leading_word: bool,
+    control: bool,
+}
+
+fn extent_layout(type_version: u32) -> Option<ExtentLayout> {
+    let (leading_word, control) = match type_version {
+        3 => (false, false),
+        4 => (false, true),
+        5 | 7 => (true, true),
+        _ => return None,
+    };
+    Some(ExtentLayout {
+        leading_word,
+        control,
+    })
+}
+
+fn hole_extent_payload(
+    bytes: &[u8],
+    at: usize,
+    layout: ExtentLayout,
+) -> Option<hole::DesignHoleExtent> {
+    if bytes.get(at) != Some(&0) {
+        return None;
+    }
+    let prologue = super::parameter_scope::read_payload_prologue(bytes, at, bytes.len())?;
+    if prologue.property_count != u32::from(prologue.saved_hole_depth.is_some()) {
+        return None;
+    }
+    let mut cursor = prologue.end;
+    let leading_word = if layout.leading_word {
+        let value = View::u32_le_at(bytes, cursor)?;
+        let offset = u64::try_from(cursor).ok()?;
+        cursor = cursor.checked_add(4)?;
+        Some(crate::records::identity::Located { value, offset })
+    } else {
+        None
+    };
+    let extent_control = if layout.control {
+        let [1, 1, control, 0, ..] = bytes.get(cursor..)? else {
+            return None;
+        };
+        if !hole::valid_hole_extent_control(*control) {
+            return None;
+        }
+        Some(*control)
+    } else {
+        let [1, 1, ..] = bytes.get(cursor..)? else {
+            return None;
+        };
+        if prologue.saved_hole_depth.is_some() {
+            return None;
+        }
+        None
+    };
+    Some(hole::DesignHoleExtent {
+        leading_word,
+        extent_control,
+        saved_non_distance_depth: prologue.saved_hole_depth,
+    })
+}
+
 fn exact_hole_face_selection(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
