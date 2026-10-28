@@ -102,7 +102,7 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 Pre-schema-15 level-of-detail records are framed, but their member semantics are not transferred: kind 1 members and the kind 2 subassembly level-of-detail selection are retained natively. Which members a level of detail suppresses, and how the active level of detail is chosen, is unproven.
 
-Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records. Schema-15 model-state records are framed for section-version entry 2 values 16 or earlier and 18 or later; the suffix length at entry 2 value 17 is not established, and those records are refused. The schema-15 header grammar of an assembly with more than the default representation, model state, or level of detail is unknown.
+Some assembly saves, for example weldment templates, store occurrence-table records that do not follow the occurrence grammar; they stay malformed UFRx records. Schema-15 model-state records are framed for section-version entry 2 values 16 or earlier and 18 or later; the suffix length at entry 2 value 17 is not established, and those records are refused. The schema-15 header grammar of an assembly with more than the default model state or level of detail is unknown. The u16 state before the design-view count and the u16 pair after the active design-view name have no known meaning.
 
 The meaning of the eight export-entry state bytes, of the export padding byte, and of first-section tag `0x1e` (a second name that usually equals the component name) is unknown.
 
@@ -118,17 +118,19 @@ The meaning of the eight export-entry state bytes, of the export padding byte, a
 
 **Need.** We must type the exceptional branches before transferring their scale, reflection, or singular-transform semantics.
 
-### AS-04. Occurrence visibility and grounded state
+### AS-04. Occurrence state outside root visibility and grounding
 
-**Question.** Which fields store the visibility and the grounded state of one assembly occurrence?
+**Question.** Which fields give the visibility of an occurrence more than one level below a root occurrence? Where is a hide stored when the subassembly's own design view sets it? What do the occurrence property tags `0x0f` and `0x10`, the `AmDc` occurrence flag bits `0x00400000` and `0x00800000`, and the state records of types `2133049bd21187a9a0002ea976d456c9` and `553a6b21d31123656000f587346bfbb0` encode?
 
-**Known.** External-reference state bit `0x2000` is the only decoded occurrence state. It marks a suppressed occurrence and sets `visible = false`. No other field sets `visible`.
+**Known.** Section 9 of [inventor.md](inventor.md) states the hidden state of a root occurrence and of an occurrence one level below a root occurrence, in the active design-view representation, and the grounded state of an occurrence. The decoder keeps a key path of more than one key natively and hides no root occurrence.
 
-The first `UFRxDoc` occurrence property section has the one-byte tags `0x07`, `0x0d`, `0x0f`, `0x10`, and `0x1d`. Tag `0x0f` and tag `0x10` change on one occurrence while all other occurrence, `AmDc`, and `AmGraphics` fields stay the same. Neither tag is visibility: the document preview shows the occurrence with each value. Tag `0x0f` is not the grounded state: an occurrence with tag `0x0f` set moves together with other occurrences when the constraint solution changes, and a one-occurrence assembly usually stores 0. Tag `0x0f` also stores values other than 0 and 1, for example `0x2a`, `0x37`, `0xd3`, and `0xff`. `AmDc` occurrence flag bits `0x00400000` and `0x00800000` change with no proven role. Bit `0x10` occurs only together with one of them.
+When a part inside a subassembly is hidden from the top assembly, the editor can either store the hide in the top assembly or write it into the design view of the subassembly. In the first case the top assembly stores a visibility-off record in place of a record of type `f5e1ddd4…`. That record holds the key path of the subassembly occurrence and the counted name `Default` of the design view that the occurrence follows. The `2e1ea3eb…` record of the representation also grows by 12 bytes. The meaning of those 12 bytes is unknown. The second case is not decoded.
 
-Visibility is a property of a design-view representation. `DesignViewSegment` stores one record of type `41a2c29dd211cc99a0002aa976d456c9` for each representation, with a counted UTF-16LE name and a list of record references. Records of type `553a6b21d31123656000f587346bfbb0` contain a counted u32 list whose values are `UFRxDoc` occurrence keys, the first entry at the root. Records of types `2133049bd21187a9a0002ea976d456c9` and `2123c271d21187a9a0002ea976d456c9` store small state values. The active representation, the join from a state record to a key-path record, and the meaning of the state values are unknown.
+Tag `0x0f` and tag `0x10` of the first `UFRxDoc` occurrence property section change on one occurrence while all other occurrence, `AmDc`, and `AmGraphics` fields stay the same. Neither tag stores the hidden or the grounded state: the `UFRxDoc` occurrence record is the same when either state changes. Tag `0x0f` stores values other than 0 and 1, for example `0x2a`, `0x37`, `0xd3`, and `0xff`. `AmDc` occurrence flag bits `0x00400000` and `0x00800000` change with no proven role. Bit `0x10` occurs only together with one of them.
 
-**Need.** We must find the field for each state, and prove each value with two documents that differ only in that state, before we set `visible` from a representation or emit a grounded state. A grounded occurrence can map to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence. The IR needs no addition for it.
+Records of type `553a6b21d31123656000f587346bfbb0` in the `AmDc` segment start with the same key list as a visibility-off record and then store floating-point values and a counted UTF-16LE string. Records of type `2133049bd21187a9a0002ea976d456c9` store small state values. Their join to a representation and the meaning of their values are unknown.
+
+**Need.** We must find the field for each state, and prove each value with two documents that differ only in that state, before we set `visible` for an occurrence two or more levels below the root, or for a hide that the subassembly's design view stores.
 
 ## 4. Properties, materials, and design intent
 

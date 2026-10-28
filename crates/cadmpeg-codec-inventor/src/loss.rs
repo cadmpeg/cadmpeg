@@ -143,6 +143,8 @@ pub(crate) enum InventorLossCode {
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
     AssemblyPlacementNotTransferred,
+    /// Occurrences hidden below a root occurrence stay in native records.
+    AssemblyVisibilityNestedNative,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The active kernel carrier used an unverified Spatial ACIS grammar band.
@@ -220,6 +222,7 @@ impl InventorLossCode {
         Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
+        Self::AssemblyVisibilityNestedNative,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -301,6 +304,7 @@ impl InventorLossCode {
             Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
+            Self::AssemblyVisibilityNestedNative => "assembly.visibility-nested-native",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -383,9 +387,9 @@ impl InventorLossCode {
             | Self::ProteinGuidAmbiguous
             | Self::MaterialDistanceUnitUntyped
             | Self::AppearanceFaceOverrideUnresolved => LossTaxonomy::MaterialNotTransferred,
-            Self::UfrxSchemaUnsupportedAssembly | Self::AssemblyComponentExternal => {
-                LossTaxonomy::AssemblyComponentsExternal
-            }
+            Self::UfrxSchemaUnsupportedAssembly
+            | Self::AssemblyComponentExternal
+            | Self::AssemblyVisibilityNestedNative => LossTaxonomy::AssemblyComponentsExternal,
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
@@ -485,6 +489,7 @@ mod tests {
                 "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
+                "assembly.visibility-nested-native",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",

@@ -70,6 +70,7 @@
             "state": "selected"
           }
         ],
+        "assembly_groundings": [],
         "assembly_occurrences": [],
         "assembly_placements": [],
         "assembly_record_issues": [],
@@ -99,6 +100,8 @@
           }
         ],
         "design_record_issues": [],
+        "design_view_representations": [],
+        "design_view_visibility": [],
         "edge_continuities": [],
         "edge_ownerships": [],
         "embedded_references": [],

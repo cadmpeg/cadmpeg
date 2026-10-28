@@ -18,6 +18,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -37,8 +38,9 @@ use crate::native::ufrx::{
     UfrxRecord, UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PropertyRecord,
+    ActiveCarrierRecord, AssemblyGroundingRecord, AssemblyOccurrenceRecord,
+    AssemblyPlacementRecord, AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord,
+    DesignViewRepresentationRecord, DesignViewVisibilityOffRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
     RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
     StructuralIssueRecord, VersionTupleRecord,
@@ -404,6 +406,23 @@ fn decode_container<'a>(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+    let design_view_representations = assembly_inventory
+        .representations
+        .iter()
+        .map(|representation| {
+            DesignViewRepresentationRecord::from_representation(ctx, representation)
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let design_view_visibility = assembly_inventory
+        .visibility_off
+        .iter()
+        .map(|state| DesignViewVisibilityOffRecord::from_state(ctx, state))
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let assembly_groundings = assembly_inventory
+        .groundings
+        .iter()
+        .map(|grounding| AssemblyGroundingRecord::from_grounding(ctx, grounding))
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let presentation_native =
         presentation_native_projection::project(ctx, &mut presentation_inventory)?;
     let pm_app_default_styles = presentation_native.default_styles;
@@ -416,14 +435,24 @@ fn decode_container<'a>(
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
+    let active_design_view = ufrx
+        .representation()
+        .map(|representation| representation.active_design_view.as_str());
     let assembly_projection = crate::assembly::project_occurrences(
         ctx,
         ufrx_occurrences,
         external_references,
         &assembly_occurrences,
         &assembly_placements,
+        crate::assembly::OccurrenceStates {
+            active_design_view,
+            representations: &design_view_representations,
+            visibility_off: &design_view_visibility,
+            groundings: &assembly_groundings,
+        },
     )?;
     ir.model.occurrences = assembly_projection.occurrences;
+    ir.model.assembly_joints = assembly_projection.joints;
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
@@ -441,6 +470,13 @@ fn decode_container<'a>(
     ufrx.install(ctx, namespace)?;
     namespace.set_arena(ctx, "assembly_occurrences", &assembly_occurrences)?;
     namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
+    namespace.set_arena(
+        ctx,
+        "design_view_representations",
+        &design_view_representations,
+    )?;
+    namespace.set_arena(ctx, "design_view_visibility", &design_view_visibility)?;
+    namespace.set_arena(ctx, "assembly_groundings", &assembly_groundings)?;
     namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
     namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
     namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;
@@ -1028,6 +1064,7 @@ fn decode_container<'a>(
                         external_references.len()
                     )));
                 }
+                losses.extend(nested_visibility_loss(assembly_projection.nested_hidden));
                 for (cause, count) in &assembly_projection.unresolved_placements {
                     losses.push(
                         InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
@@ -1630,6 +1667,16 @@ fn project_protein_records(
     })
 }
 
+/// The loss for occurrences hidden below a root occurrence, which only the
+/// native records keep.
+pub(crate) fn nested_visibility_loss(nested_hidden: usize) -> Option<LossNote> {
+    (nested_hidden != 0).then(|| {
+        InventorLossCode::AssemblyVisibilityNestedNative.note(format!(
+            "Retained {nested_hidden} hidden occurrence(s) below a root occurrence in native records."
+        ))
+    })
+}
+
 fn project_ufrx_state(
     ctx: &DecodeContext<'_>,
     state: &UfrxState<'_>,
@@ -1879,18 +1926,21 @@ fn project_ufrx_representation(
     state: &crate::external_reference::UfrxRepresentationState,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
-    let (active_representation, active_representation_kind) =
-        match state.active_representation.as_ref() {
-            Some((name, kind)) => (Some(name.to_owned()), Some(kind.to_owned())),
-            None => (None, None),
-        };
+    let design_views = state.design_views.as_ref().map(|views| {
+        views
+            .iter()
+            .map(|(name, kind)| crate::native::ufrx::UfrxDesignView {
+                name: name.to_owned(),
+                kind: kind.to_owned(),
+            })
+            .collect()
+    });
     let wire = UfrxRepresentationRecordWire {
         prefix: state.prefix,
-        active_representation,
-        active_representation_kind,
+        design_views,
         secondary_active_lod_state: state.secondary_active_lod_state,
-        active_model_state: state.active_model_state.clone(),
-        active_model_state_state: state.active_model_state_state,
+        active_design_view: state.active_design_view.clone(),
+        active_design_view_state: state.active_design_view_state,
     };
     admit_ufrx_record(
         ctx,

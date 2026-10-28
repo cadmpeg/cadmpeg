@@ -73,7 +73,7 @@ The ZIP package, `InstanceProperties.bin` page framing, schemas, and typed prope
 
 ## 8. External references
 
-`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation/model-state branch adds a u16 representation prefix. An assembly then stores two counted UTF-16LE representation strings. A part omits these two strings. Both document kinds continue with a two-u16 secondary LOD state, a counted UTF-16LE active model-state name, and a two-u16 model-state pair; they omit the older header-version-flags field. Schema 15 then stores a u32 and a u16 header state, one more u32, and the u16 invariant 1. The model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a suffix. When section-version entry 2 is 16 or earlier, the suffix has 77 bytes; when it is 18 or later, it has 81 bytes. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer.
+`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation branch follows the header-pair table with a u16 state, a u16 design-view count, and a u16 representation prefix. An assembly then stores that many design-view entries. Each entry is a counted UTF-16LE name and a counted UTF-16LE kind, and the entries keep the order of the design-view list. A part stores no entries, and its count word has no stated meaning. Both document kinds continue with a two-u16 secondary LOD state, a counted UTF-16LE active design-view name, and a two-u16 state pair; they omit the older header-version-flags field. The active design-view name selects one entry of the list. Schema 15 then stores a u32 and a u16 header state, one more u32, and the u16 invariant 1. The model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a suffix. When section-version entry 2 is 16 or earlier, the suffix has 77 bytes; when it is 18 or later, it has 81 bytes. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer.
 
 Schemas before 15 store level-of-detail records at the same position, after the u32 LOD count. Each record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 member count, the members, and a zero-byte record terminator. A member contains a counted UTF-16LE occurrence key, a u8 kind, and a zero-byte member trailer. Kind 1 has no payload. Kind 2 inserts a two-u16 state pair and a counted UTF-16LE level-of-detail name of the referenced subassembly before the trailer. Other kinds are not implemented. The member keys are the decimal form of the occurrence key described below.
 
@@ -128,9 +128,50 @@ An `AmGraphics` record with type identifier `a26371cad011b2d30008bfbb21eddc09` o
 
 The active placement branch continues with u8 branch, u8 graphics state, u32 occurrence identifier, counted UTF-16LE label `"GRx"`, u16 invariant 1, u32 graphics index, u32 object reference, and the occurrence identifier again. Both occurrence-identifier fields are equal. The remaining branch-specific suffix is retained. A placement joins an occurrence through the exact occurrence identifier.
 
+The related references of an `AmDc` occurrence select occurrence state records of type `614d8790d011f8d10008cabc0663dc09` in the same segment. Record references use bit 31 as a qualifier and bits 0 through 30 as a one-based record index; the referenced record ordinal is the index minus one. A state record starts with:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+```
+
+The remaining bytes of a state record are retained. Flag bit `0x02000000` marks the occurrence as grounded. An occurrence is grounded when a state record that its related references select has this bit set.
+
+The `DesignViewSegment` stores one representation record of type `41a2c29dd211cc99a0002aa976d456c9` for each design-view representation. Its payload starts with:
+
+```text
+header_value u32
+kind u16
+name counted UTF-16LE
+list_marker u16 = 2
+list_signature u16 = 0x3000
+member_count u32
+member_metadata u32[2] when member_count is nonzero
+member_references u32[member_count]
+```
+
+The remaining bytes of a representation record are retained. The member references select records of the same segment. The active representation of an assembly is the one representation record whose name equals the active design-view name of the `UFRxDoc` header. When no representation record or more than one representation record has that name, no representation is active and no occurrence is hidden. Each representation lists its own members, so a visibility-off record that the user makes in one representation is a member of that representation only.
+
+A visibility-off record has type `2123c271d21187a9a0002ea976d456c9`. Its payload is:
+
+```text
+header_value u32
+kind u16
+list_marker u16 = 2
+list_signature u16 = 0x3000
+key_count u32 >= 1
+key_metadata u32[2]
+occurrence_keys u32[key_count]
+trailer u8 = 0
+```
+
+The remaining bytes of a visibility-off record are retained. A visibility-off record hides an occurrence when the active representation lists it as a member. A key path of one key names the root occurrence whose `occurrence_key` equals that key. A key path of two keys names an occurrence inside an assembly that a root occurrence instantiates: the first key is the `occurrence_key` of the root occurrence, and the second key is the `occurrence_key` of an occurrence in the occurrence table of that assembly. A representation that lists no such record leaves the occurrence visible.
+
 A `UFRxDoc` occurrence joins the `AmDc` and `AmGraphics` records through `occurrence_id`. It joins its external prototype through `reference_id`: the one external reference with the same `reference_id` is the prototype. Copies of one file keep its document identifier, so the document identifier alone does not select a copy. When the occurrence stores a first-section document identifier, the prototype must store the same document identifier. Otherwise, and when no reference or several references have the `reference_id`, the occurrence is unresolved. The external-reference occurrence count equals the number of joined `UFRxDoc` occurrences. Each occurrence in the current document is a root placement. A referenced assembly remains an unresolved external prototype; its internal occurrences are not inserted into the current document.
 
-Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
+Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
 
 ## 10. Part appearance assignments
 
