@@ -37,8 +37,9 @@ use crate::native::ufrx::{
     UfrxRecord, UfrxRepresentationRecord, UfrxRepresentationRecordWire,
 };
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PropertyRecord,
+    ActiveCarrierRecord, AssemblyGroundingRecord, AssemblyOccurrenceRecord,
+    AssemblyPlacementRecord, AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord,
+    DesignViewRepresentationRecord, DesignViewVisibilityOffRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
     RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
     StructuralIssueRecord, VersionTupleRecord,
@@ -404,6 +405,23 @@ fn decode_container<'a>(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
+    let design_view_representations = assembly_inventory
+        .representations
+        .iter()
+        .map(|representation| {
+            DesignViewRepresentationRecord::from_representation(ctx, representation)
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let design_view_visibility = assembly_inventory
+        .visibility_off
+        .iter()
+        .map(|state| DesignViewVisibilityOffRecord::from_state(ctx, state))
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let assembly_groundings = assembly_inventory
+        .groundings
+        .iter()
+        .map(|grounding| AssemblyGroundingRecord::from_grounding(ctx, grounding))
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let presentation_native =
         presentation_native_projection::project(ctx, &mut presentation_inventory)?;
     let pm_app_default_styles = presentation_native.default_styles;
@@ -416,14 +434,25 @@ fn decode_container<'a>(
         &mut admitted_entities,
         "admit Inventor pre-assembly entities",
     )?;
+    let active_representation = ufrx
+        .representation()
+        .and_then(|representation| representation.active_representation.as_ref())
+        .map(|(name, kind)| (name.as_str(), kind.as_str()));
     let assembly_projection = crate::assembly::project_occurrences(
         ctx,
         ufrx_occurrences,
         external_references,
         &assembly_occurrences,
         &assembly_placements,
+        crate::assembly::OccurrenceStates {
+            active_representation,
+            representations: &design_view_representations,
+            visibility_off: &design_view_visibility,
+            groundings: &assembly_groundings,
+        },
     )?;
     ir.model.occurrences = assembly_projection.occurrences;
+    ir.model.assembly_joints = assembly_projection.joints;
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
@@ -441,6 +470,13 @@ fn decode_container<'a>(
     ufrx.install(ctx, namespace)?;
     namespace.set_arena(ctx, "assembly_occurrences", &assembly_occurrences)?;
     namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
+    namespace.set_arena(
+        ctx,
+        "design_view_representations",
+        &design_view_representations,
+    )?;
+    namespace.set_arena(ctx, "design_view_visibility", &design_view_visibility)?;
+    namespace.set_arena(ctx, "assembly_groundings", &assembly_groundings)?;
     namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
     namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
     namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;

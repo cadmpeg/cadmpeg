@@ -141,6 +141,9 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
             occurrence_id: 0,
         }],
         placements: Vec::new(),
+        representations: Vec::new(),
+        visibility_off: Vec::new(),
+        groundings: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
@@ -181,6 +184,9 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
             object_reference: 0,
             suffix: View::over_retained(&suffix),
         }],
+        representations: Vec::new(),
+        visibility_off: Vec::new(),
+        groundings: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();

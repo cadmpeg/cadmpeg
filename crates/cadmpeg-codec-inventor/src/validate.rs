@@ -46,6 +46,7 @@ use crate::record_issue::RecordIssue;
 
 const ARENAS: &[&str] = &[
     "active_carrier",
+    "assembly_groundings",
     "assembly_occurrences",
     "assembly_placements",
     "assembly_record_issues",
@@ -53,6 +54,8 @@ const ARENAS: &[&str] = &[
     "database_issues",
     "databases",
     "design_record_issues",
+    "design_view_representations",
+    "design_view_visibility",
     "embedded_references",
     "external_references",
     "feature_record_issues",
@@ -2164,6 +2167,9 @@ struct NativeData {
     ufrx: UfrxRecord,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
+    design_view_representations: Vec<crate::native::DesignViewRepresentationRecord>,
+    design_view_visibility: Vec<crate::native::DesignViewVisibilityOffRecord>,
+    assembly_groundings: Vec<crate::native::AssemblyGroundingRecord>,
     assembly_record_issues: Vec<RecordIssue>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
@@ -2233,6 +2239,10 @@ impl NativeData {
             ufrx: UfrxRecord::read(ctx, namespace)?,
             assembly_occurrences: namespace.arena_as_for_decode(ctx, "assembly_occurrences")?,
             assembly_placements: namespace.arena_as_for_decode(ctx, "assembly_placements")?,
+            design_view_representations: namespace
+                .arena_as_for_decode(ctx, "design_view_representations")?,
+            design_view_visibility: namespace.arena_as_for_decode(ctx, "design_view_visibility")?,
+            assembly_groundings: namespace.arena_as_for_decode(ctx, "assembly_groundings")?,
             assembly_record_issues: namespace.arena_as_for_decode(ctx, "assembly_record_issues")?,
             pm_app_default_styles: namespace.arena_as_for_decode(ctx, "pm_app_default_styles")?,
             pm_app_rendering_styles: namespace
@@ -2909,12 +2919,23 @@ fn validate_assembly(
             Some(issue.id()),
         ));
     }
+    let active_representation = data
+        .ufrx
+        .representation()
+        .and_then(|representation| representation.active_representation.as_ref())
+        .map(|(name, kind)| (name.as_str(), kind.as_str()));
     let mut projected = crate::assembly::project_occurrences(
         ctx,
         data.ufrx.occurrences(),
         data.ufrx.external_references(),
         &data.assembly_occurrences,
         &data.assembly_placements,
+        crate::assembly::OccurrenceStates {
+            active_representation,
+            representations: &data.design_view_representations,
+            visibility_off: &data.design_view_visibility,
+            groundings: &data.assembly_groundings,
+        },
     )?;
     projected
         .occurrences
@@ -2923,6 +2944,18 @@ fn validate_assembly(
         findings.push(finding(
             Check::NativeLinks,
             "Inventor neutral occurrences do not match the typed assembly records".into(),
+            None,
+        ));
+    }
+    projected
+        .joints
+        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    let mut expected_joints = ir.model.assembly_joints.clone();
+    expected_joints.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    if expected_joints != projected.joints {
+        findings.push(finding(
+            Check::NativeLinks,
+            "Inventor neutral assembly joints do not match the typed assembly records".into(),
             None,
         ));
     }

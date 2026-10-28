@@ -446,6 +446,52 @@ Spec §9 · layout: byte offsets · size: 54 B
 | 46 | 4 | `related_marker` | `u32` | little | spec | related_marker u32 |
 | 50 | 4 | `related_count` | `u32` | little | spec | related_count u32 |
 
+## `assembly_occurrence_state_prefix`
+
+Spec §9 · layout: byte offsets · size: 14 B
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `header_id` | `u16` | little | spec | header_id u16 |
+| 6 | 4 | `next_reference` | `u32` | little | spec | next_reference u32 |
+| 10 | 4 | `flags` | `u32` | little | spec | flags u32 |
+
+## `design_view_representation_head`
+
+Spec §9 · layout: byte offsets · size: 6 B
+
+The counted UTF-16LE name follows at offset 6; the list prefix after it has no fixed offset.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `kind` | `u16` | little | spec | kind u16 |
+
+## `design_view_visibility_off_prefix`
+
+Spec §9 · layout: byte offsets · size: 22 B
+
+The occurrence keys follow at offset 22, then one zero trailer byte.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_value` | `u32` | little | spec | header_value u32 |
+| 4 | 2 | `kind` | `u16` | little | spec | kind u16 |
+| 6 | 2 | `list_marker` | `u16` | little | spec | list_marker u16 = 2 · value `2` |
+| 8 | 2 | `list_signature` | `u16` | little | spec | list_signature u16 = 0x3000 · value `12288` |
+| 10 | 4 | `key_count` | `u32` | little | spec | key_count u32 >= 1 |
+| 14 | 8 | `key_metadata` | `u32[2]` | little | spec | key_metadata u32[2] |
+
 ## `pm_dc_loft_section`
 
 Spec §13.2 · layout: byte offsets · size: 59 B

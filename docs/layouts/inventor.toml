@@ -1407,6 +1407,118 @@ source = "spec"
 anchor = "related_count u32"
 
 [[record]]
+name = "assembly_occurrence_state_prefix"
+kind = "byte"
+section = "9"
+anchor = "A state record starts with"
+size = 14
+parsed_by = "crates/cadmpeg-codec-inventor/src/assembly.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record]]
+name = "design_view_representation_head"
+kind = "byte"
+section = "9"
+anchor = "The `DesignViewSegment` stores one representation record of type"
+size = 6
+note = "The counted UTF-16LE name follows at offset 6; the list prefix after it has no fixed offset."
+parsed_by = "crates/cadmpeg-codec-inventor/src/assembly.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "kind"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "kind u16"
+
+[[record]]
+name = "design_view_visibility_off_prefix"
+kind = "byte"
+section = "9"
+anchor = "A visibility-off record has type"
+size = 22
+note = "The occurrence keys follow at offset 22, then one zero trailer byte."
+parsed_by = "crates/cadmpeg-codec-inventor/src/assembly.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "kind"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "kind u16"
+
+[[record.field]]
+name = "list_marker"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "list_marker u16 = 2"
+value = 2
+
+[[record.field]]
+name = "list_signature"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "list_signature u16 = 0x3000"
+value = 0x3000
+
+[[record.field]]
+name = "key_count"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "key_count u32 >= 1"
+
+[[record.field]]
+name = "key_metadata"
+offset = 14
+type = "u32[2]"
+source = "spec"
+anchor = "key_metadata u32[2]"
+
+[[record]]
 name = "pm_dc_loft_section"
 kind = "byte"
 section = "13.2"

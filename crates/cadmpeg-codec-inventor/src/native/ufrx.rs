@@ -980,6 +980,12 @@ impl Serialize for UfrxRecord {
     }
 }
 impl UfrxRecord {
+    pub(crate) fn representation(&self) -> Option<&UfrxRepresentationRecord> {
+        match self {
+            Self::ParsedPrefix(payload) => payload.representation.as_ref(),
+            _ => None,
+        }
+    }
     pub(crate) fn model_states(&self) -> &[UfrxModelStateRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.model_states,
