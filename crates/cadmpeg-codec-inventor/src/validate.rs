@@ -1711,6 +1711,22 @@ fn validate_features(
                 Some(feature.id.as_str().to_owned()),
             ));
         }
+        if matches!(family, crate::feature::FeatureFamily::Combine)
+            && crate::feature::combine::definition(raw_feature, |reference| {
+                let ordinal = reference.checked_sub(1)?;
+                properties_by_record
+                    .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
+                    .copied()
+            })
+            .as_ref()
+                != Some(definition)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor Combine operands, operation, or keep-tools state differs from its PmDc properties".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
         let output_slot = family.output_slot(raw_feature);
         let expected_collection = raw_feature
             .properties
@@ -1756,7 +1772,7 @@ fn validate_features(
         else {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result does not resolve to its PmDc object collection".into(),
+                "Inventor feature result does not resolve to its PmDc result collection".into(),
                 Some(result.id.as_str().to_owned()),
             ));
             continue;
@@ -1786,7 +1802,7 @@ fn validate_features(
         else {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result native reference is not an object collection".into(),
+                "Inventor feature result native reference is not its body collection or body selector".into(),
                 Some(result.id.as_str().to_owned()),
             ));
             continue;
@@ -1814,7 +1830,7 @@ fn validate_features(
         {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result bodies do not match its PmDc object collection".into(),
+                "Inventor feature result bodies do not match its PmDc result collection".into(),
                 Some(result.id.as_str().to_owned()),
             ));
         }
