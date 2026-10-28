@@ -47,6 +47,7 @@ pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
 mod split;
+pub(crate) mod work_plane;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
@@ -2375,6 +2376,24 @@ pub(crate) fn project(
             neutral: false,
         });
     }
+    for record in &inventory.work_planes {
+        if history
+            .placement(record.identity.record_ordinal)
+            .is_none_or(|placement| placement.kind != history::HistoryNodeKind::WorkPlane)
+        {
+            continue;
+        }
+        let label = label_of(record.identity.record_ordinal);
+        projected.push(HistoryItem {
+            record: record.identity.record_ordinal,
+            kind: history::HistoryNodeKind::WorkPlane,
+            flags: record.header.flags,
+            label,
+            feature: work_plane::project(ctx, record, label)?,
+            result: None,
+            neutral: false,
+        });
+    }
     apply_history(&mut projected, &history, inventory, token)?;
     let unresolved_states = projected
         .iter()
@@ -2521,7 +2540,7 @@ fn apply_history(
             insert_history_property(&mut item.feature, "history", "flat_pattern")?;
         }
         let consumed: Vec<u32> = match item.kind {
-            history::HistoryNodeKind::Sketch => Vec::new(),
+            history::HistoryNodeKind::Sketch | history::HistoryNodeKind::WorkPlane => Vec::new(),
             history::HistoryNodeKind::Feature => item
                 .label
                 .map(|label| {

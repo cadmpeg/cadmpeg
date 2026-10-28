@@ -5,6 +5,8 @@
 //! ordered top level of the browser tree. Wrapper nodes own labels
 //! whose participants are nested nodes. A feature label lists the sketches
 //! the feature consumes; those sketches precede the feature in the history.
+//! A work plane occupies its browser position like a feature. The label of a
+//! work plane lists the work planes it is built from; those precede it.
 
 use std::collections::{HashMap, HashSet};
 
@@ -13,6 +15,7 @@ use cadmpeg_core::CodecError;
 
 use super::{
     FeatureInventory, PmDcFeature, PmDcFeatureLabel, PmDcFeatureTerminator, PmDcPatternFeature,
+    PmDcWorkPlane,
 };
 use crate::design::scope::{root_role, BrepSegmentName, BrepSegmentRole, PmDcModelRoot};
 use crate::design::DesignInventory;
@@ -26,6 +29,7 @@ pub(crate) enum HistoryNodeKind {
     Feature,
     Pattern,
     Sketch,
+    WorkPlane,
 }
 
 /// Position and state of one record in the browser history.
@@ -89,6 +93,7 @@ pub(super) fn build(
             labels: &inventory.labels,
             terminators: &inventory.terminators,
             sketches,
+            work_planes: &inventory.work_planes,
             roots: &design.model_roots,
             segments: &design.brep_segments,
         },
@@ -101,6 +106,7 @@ pub(crate) struct HistoryRecords<'a> {
     pub(crate) labels: &'a [PmDcFeatureLabel],
     pub(crate) terminators: &'a [PmDcFeatureTerminator],
     pub(crate) sketches: &'a [crate::sketch::PmDcSketch],
+    pub(crate) work_planes: &'a [PmDcWorkPlane],
     pub(crate) roots: &'a [PmDcModelRoot],
     pub(crate) segments: &'a [BrepSegmentName],
 }
@@ -182,6 +188,16 @@ pub(crate) fn build_records(
         );
     }
     for record in records
+        .work_planes
+        .iter()
+        .filter(|record| record.identity.segment_token.as_str() == token)
+    {
+        add_kind(
+            record.identity.record_ordinal,
+            Kind::Node(HistoryNodeKind::WorkPlane),
+        );
+    }
+    for record in records
         .terminators
         .iter()
         .filter(|record| record.identity.segment_token.as_str() == token)
@@ -216,6 +232,18 @@ pub(crate) fn build_records(
     Ok(walk.history)
 }
 
+/// Whether a history node of `consumer` kind consumes a label participant of
+/// `member` kind. A feature or pattern consumes its sketches. A work plane
+/// also consumes the work planes it is built from; a work plane listed only
+/// in another work plane's label takes its position before that plane.
+fn consumes(consumer: HistoryNodeKind, member: Option<Kind>) -> bool {
+    match member {
+        Some(Kind::Node(HistoryNodeKind::Sketch)) => true,
+        Some(Kind::Node(HistoryNodeKind::WorkPlane)) => consumer == HistoryNodeKind::WorkPlane,
+        _ => false,
+    }
+}
+
 impl Walk<'_, '_> {
     fn members(
         &mut self,
@@ -247,8 +275,7 @@ impl Walk<'_, '_> {
                                     .iter()
                                     .filter_map(|reference| reference.record_ordinal())
                                     .filter(|ordinal| {
-                                        self.kinds.get(ordinal)
-                                            == Some(&Kind::Node(HistoryNodeKind::Sketch))
+                                        consumes(kind, self.kinds.get(ordinal).copied())
                                     })
                                     .collect::<Vec<_>>()
                             })

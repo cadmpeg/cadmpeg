@@ -97,6 +97,7 @@ pub(super) fn validate_mirrors(
         labels: &data.pm_dc_feature_labels,
         terminators: &data.pm_dc_feature_terminators,
         sketches: &data.pm_dc_sketches,
+        work_planes: &data.pm_dc_work_planes,
         roots: &data.pm_dc_model_roots,
         segments: &segments,
     };

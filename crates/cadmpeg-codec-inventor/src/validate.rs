@@ -1373,6 +1373,11 @@ fn validate_features(
         .map(PmDcPatternFeature::id)
         .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
         .collect::<HashSet<_>>();
+    let work_planes = cadmpeg_core::decode::unique_index(
+        data.pm_dc_work_planes
+            .iter()
+            .map(|record| (record.id(), record)),
+    );
     let thicken_record_types =
         cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
             (
@@ -1515,6 +1520,28 @@ fn validate_features(
             continue;
         }
         let native = feature.native_ref.as_deref();
+        if let Some(plane) = native.and_then(|native| work_planes.get(native)) {
+            let frame = plane
+                .as_ref()
+                .and_then(|plane| crate::feature::work_plane::frame(plane));
+            let matches = match feature.evaluation.definition() {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DatumPlane { frame: actual },
+                ) => frame == Some(*actual),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native { .. },
+                ) => plane.is_some() && frame.is_none(),
+                _ => false,
+            };
+            if !matches || results.contains_key(&feature.id) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor work-plane feature does not match its work-plane frame".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         let Some(raw_feature) = native.and_then(|native| raw_features.get(native).copied()) else {
             if native.is_some_and(|native| history_records.contains(native))
                 && crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())

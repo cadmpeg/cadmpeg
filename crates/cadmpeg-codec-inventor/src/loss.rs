@@ -95,6 +95,8 @@ pub(crate) enum InventorLossCode {
     FeatureRevolveOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
+    /// A history work plane's stored in-plane axes are not orthonormal.
+    FeatureWorkPlaneFrameNative,
     /// Revolve extents retain unresolved angular termination operands.
     FeatureRevolveExtentNative,
     /// Fixed-angle revolutions retain an unresolved direction control.
@@ -202,6 +204,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureMirrorOperandsNative,
+        Self::FeatureWorkPlaneFrameNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
         Self::FeatureRevolveControlUnresolved,
@@ -285,6 +288,7 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
+            Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
@@ -373,6 +377,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureMirrorOperandsNative
+            | Self::FeatureWorkPlaneFrameNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
@@ -475,6 +480,7 @@ mod tests {
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
                 "feature.mirror-operands-native",
+                "feature.work-plane-frame-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",
                 "feature.revolve-control-unresolved",
