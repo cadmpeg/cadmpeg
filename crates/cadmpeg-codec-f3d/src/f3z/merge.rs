@@ -194,6 +194,7 @@ impl MergeSession<'_, '_> {
             &member_roots,
             &mut parent_report.losses,
         )?;
+        place_contained_poses(self.ctx, parent_ir, table, &mut parent_report.losses)?;
         parent_report
             .losses
             .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
@@ -494,6 +495,264 @@ fn rebind_joint_descent(
                 operand.subelements.drain(..consumed);
             }
         }
+    }
+    Ok(())
+}
+
+/// Contained poses of one instance agree to a tenth of a micrometre in
+/// translation; the file stores them exactly, so this admits only rounding.
+const CONTAINED_POSE_TRANSLATION_MM: f64 = 1.0e-4;
+/// Contained poses of one instance agree to a nanoradian in rotation.
+const CONTAINED_POSE_ROTATION: f64 = 1.0e-9;
+
+/// Places each external occurrence at the pose that the component-path
+/// carriers of the occurrences inside it store
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+///
+/// A carrier names an occurrence inside the referenced design, the external
+/// occurrence's placement record and some of its local owners, innermost
+/// first, and stores the inner occurrence's pose in the frame of the
+/// occurrence holding the outermost one it lists. The inner occurrence's merged
+/// placement below the external occurrence then gives the external
+/// occurrence's pose. An instance takes it only when its owners begin with the
+/// carrier's and every carrier that reaches it gives the same pose.
+fn place_contained_poses(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    table: &XrefTable,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    use crate::records::feature::assembly_features::DesignComponentOccurrence;
+    use cadmpeg_ir::products::OccurrenceParent;
+    use cadmpeg_ir::transform::Transform;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    if table
+        .references
+        .iter()
+        .all(|reference| reference.contained_poses.is_empty())
+    {
+        return Ok(());
+    }
+    let Some(namespace) = ir.native.namespace("f3d") else {
+        return Ok(());
+    };
+    // The record index of each local carrier, and of each placed external
+    // reference, by native identity. Members' records are scoped below their
+    // first instance, so a record index names one only within its scope.
+    let mut records = namespace
+        .arena_iter_as_for_decode::<DesignComponentOccurrence>(ctx, "design_component_occurrences")
+        .map(|carrier| carrier.map(|carrier| (carrier.id, u64::from(carrier.record_index))))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    for reference in namespace.arena_iter_as_for_decode::<XrefReference>(ctx, "xref_references") {
+        let reference = reference?;
+        if let Some(source) = &reference.placement_source {
+            records.insert(reference.id, source.carrier_record_index);
+        }
+    }
+    let index = ir
+        .model
+        .occurrences
+        .iter()
+        .enumerate()
+        .map(|(position, occurrence)| (occurrence.id.clone(), position))
+        .collect::<BTreeMap<_, _>>();
+    let parent_of = |position: usize| match ir.model.occurrences.get(position).map(|o| &o.parent) {
+        Some(OccurrenceParent::Occurrence { occurrence }) => index.get(occurrence).copied(),
+        _ => None,
+    };
+    let world = |mut position: usize| -> Result<Transform, CodecError> {
+        let mut chain = Vec::new();
+        for _ in 0..=ir.model.occurrences.len() {
+            chain.push(position);
+            match parent_of(position) {
+                Some(parent) => position = parent,
+                None => break,
+            }
+        }
+        chain
+            .iter()
+            .rev()
+            .try_fold(Transform::identity(), |world, &at| {
+                let local = ir
+                    .model
+                    .occurrences
+                    .get(at)
+                    .map_or(Transform::identity(), |occurrence| occurrence.transform);
+                world.compose(local).map_err(|_| {
+                    CodecError::malformed("F3Z occurrence world transform is not finite")
+                })
+            })
+    };
+    let mut children = BTreeMap::<usize, Vec<usize>>::new();
+    for position in 0..ir.model.occurrences.len() {
+        if let Some(parent) = parent_of(position) {
+            children.entry(parent).or_default().push(position);
+        }
+    }
+    let local_root = |id: &str| !id.starts_with("f3d:xref/");
+    let mut placed = Vec::new();
+    let mut disagreeing = 0usize;
+    let mut bound = BTreeSet::new();
+    for reference in table
+        .references
+        .iter()
+        .filter(|r| !r.contained_poses.is_empty())
+    {
+        let instances = ir
+            .model
+            .occurrences
+            .iter()
+            .enumerate()
+            .filter(|(_, occurrence)| {
+                occurrence.native_ref.as_deref() == Some(reference.id.as_str())
+            })
+            .map(|(position, _)| position)
+            .collect::<Vec<_>>();
+        for instance in instances {
+            // The local carriers that hold the instance, innermost first, with
+            // the occurrence that holds each.
+            let mut owners = Vec::new();
+            let mut holders = vec![parent_of(instance)];
+            let mut at = parent_of(instance);
+            while let Some(position) = at {
+                let Some(record) = ir.model.occurrences.get(position).and_then(|occurrence| {
+                    occurrence
+                        .native_ref
+                        .as_deref()
+                        .filter(|id| local_root(id))
+                        .and_then(|id| records.get(id))
+                }) else {
+                    break;
+                };
+                owners.push(*record);
+                at = parent_of(position);
+                holders.push(at);
+                if owners.len() > ir.model.occurrences.len() {
+                    break;
+                }
+            }
+            // The merged occurrences inside this instance, by their record.
+            let mut inside = BTreeMap::<u64, Vec<(usize, Transform)>>::new();
+            let mut stack = vec![(instance, Transform::identity())];
+            while let Some((position, below)) = stack.pop() {
+                for &child in children.get(&position).map_or(&[][..], Vec::as_slice) {
+                    let Some(occurrence) = ir.model.occurrences.get(child) else {
+                        continue;
+                    };
+                    let local = below.compose(occurrence.transform).map_err(|_| {
+                        CodecError::malformed("F3Z contained occurrence transform is not finite")
+                    })?;
+                    // Only the referenced design's own records: a member nested
+                    // inside it has its own record indices.
+                    let own = occurrence.native_ref.as_deref().filter(|id| {
+                        !id.strip_prefix("f3d:xref/")
+                            .is_some_and(|scoped| scoped.contains("/xref/"))
+                    });
+                    if let Some(record) = own.and_then(|id| records.get(id)) {
+                        inside.entry(*record).or_default().push((child, local));
+                    }
+                    stack.push((child, local));
+                }
+            }
+            let mut poses = Vec::new();
+            for (ordinal, pose) in reference.contained_poses.iter().enumerate() {
+                // A carrier lists the instance's owners from the innermost
+                // out, as far as it goes; its pose is in the frame of the
+                // occurrence that holds the outermost one it lists.
+                if !owners.starts_with(&pose.owner_record_indices) {
+                    continue;
+                }
+                let frame = match holders
+                    .get(pose.owner_record_indices.len())
+                    .copied()
+                    .flatten()
+                {
+                    Some(holder) => world(holder)?,
+                    None => Transform::identity(),
+                };
+                let Some([(_, below)]) =
+                    inside.get(&pose.contained_record_index).map(Vec::as_slice)
+                else {
+                    continue;
+                };
+                let Some(stored) =
+                    crate::design::components::neutral_affine(pose.transform.map_or(
+                        crate::xref::IDENTITY_ROWS,
+                        crate::records::xref::XrefPlacementTransform::rows,
+                    ))
+                else {
+                    continue;
+                };
+                let implied = below
+                    .try_inverse_affine()
+                    .and_then(|inverse| frame.compose(stored)?.compose(inverse))
+                    .map_err(|_| CodecError::malformed("F3Z contained pose is not invertible"))?;
+                bound.insert((reference.id.as_str(), ordinal));
+                poses.push(implied);
+            }
+            let Some(first) = poses.first().copied() else {
+                continue;
+            };
+            let agree = poses.iter().all(|pose| {
+                pose.rows()
+                    .iter()
+                    .flatten()
+                    .zip(first.rows().iter().flatten())
+                    .enumerate()
+                    .all(|(at, (a, b))| {
+                        let tolerance = if at % 4 == 3 {
+                            CONTAINED_POSE_TRANSLATION_MM
+                        } else {
+                            CONTAINED_POSE_ROTATION
+                        };
+                        (a - b).abs() <= tolerance
+                    })
+            });
+            if !agree || !first.is_proper_rigid() {
+                disagreeing += 1;
+                continue;
+            }
+            let parent_world = match parent_of(instance) {
+                Some(parent) => world(parent)?,
+                None => Transform::identity(),
+            };
+            let local = parent_world
+                .try_inverse_affine()
+                .and_then(|inverse| inverse.compose(first))
+                .map_err(|_| CodecError::malformed("F3Z contained pose is not invertible"))?;
+            placed.push((instance, local));
+        }
+    }
+    let unbound = table
+        .references
+        .iter()
+        .flat_map(|reference| {
+            (0..reference.contained_poses.len())
+                .map(move |ordinal| (reference.id.as_str(), ordinal))
+        })
+        .filter(|key| !bound.contains(key))
+        .count();
+    let count = placed.len();
+    for (position, local) in placed {
+        if let Some(occurrence) = ir.model.occurrences.get_mut(position) {
+            occurrence.transform = local;
+        }
+    }
+    if count != 0 {
+        losses.push(F3dLossCode::XrefContainedPose.note(format!(
+            "{count} external occurrence instance(s) take the pose that the component-path carriers of the occurrences inside them store; their occurrence-placement matrices stay in the native frames"
+        )));
+    }
+    if disagreeing != 0 {
+        losses.push(F3dLossCode::XrefContainedPoseDisagrees.note(format!(
+            "{disagreeing} external occurrence instance(s) keep their placement: the component-path carriers of the occurrences inside them give different poses"
+        )));
+    }
+    if unbound != 0 {
+        losses.push(F3dLossCode::XrefContainedPoseNative.note(format!(
+            "{unbound} component-path carrier(s) of occurrences inside external occurrences name no merged instance with their owner chain; they stay native"
+        )));
     }
     Ok(())
 }
@@ -1069,6 +1328,7 @@ fn scope_named_values(
 
 #[cfg(test)]
 mod tests {
+    mod contained;
     mod fidelity;
     mod occurrence;
 

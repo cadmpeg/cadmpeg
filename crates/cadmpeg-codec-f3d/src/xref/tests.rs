@@ -199,6 +199,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         designs: Vec::new(),
         references: vec![crate::records::xref::XrefReference {
             current_pose: None,
+            contained_poses: Vec::new(),
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,

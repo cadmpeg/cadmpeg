@@ -9,6 +9,7 @@ fn placement_table() -> crate::xref::XrefTable {
         designs: Vec::new(),
         references: vec![crate::records::xref::XrefReference {
             current_pose: None,
+            contained_poses: Vec::new(),
             id: "f3d:xref:reference#4-occurrence-0".into(),
             ordinal: 4,
             occurrence_ordinal: 0,

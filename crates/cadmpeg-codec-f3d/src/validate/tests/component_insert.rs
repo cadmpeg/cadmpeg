@@ -87,6 +87,7 @@ fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
         .xref_references
         .push(crate::records::xref::XrefReference {
             current_pose: None,
+            contained_poses: Vec::new(),
             id: "f3d:xref:reference#0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
