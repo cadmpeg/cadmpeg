@@ -4296,6 +4296,7 @@ impl RecordPayload for PmDcFeatureTerminatorPayload {
 pub(crate) mod tests {
     mod holes;
     mod sheet_metal;
+    mod surface_extrusion;
     mod thicken;
 
     use super::{
