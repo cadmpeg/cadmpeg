@@ -779,6 +779,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .contains(&"Payload.bin".to_owned()));
     let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
+    for arena in ["physical_ledger", "logical_ledger", "byte_coverage"] {
+        assert!(!namespace.arenas().contains_key(arena));
+    }
+    let restored: cadmpeg_ir::SourceFidelity =
+        serde_json::from_value(serde_json::to_value(result.source_fidelity()).unwrap()).unwrap();
+    assert_eq!(
+        restored.freecad_ledgers(),
+        result.source_fidelity().freecad_ledgers()
+    );
 
     let mut corrupted = result.ir().clone();
     let missing_payload = ledger
@@ -798,9 +807,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(crate::test_support::validate_native(&corrupted)
         .iter()
         .any(|finding| {
-            finding
-                .message
-                .contains("logical ledger omits nonempty entry Payload.bin")
+            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+                && finding.message == "unregistered FCStd native arena logical_ledger"
         }));
 }
 
