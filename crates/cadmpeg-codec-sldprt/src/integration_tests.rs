@@ -38,6 +38,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::test_support::parasolid::triangle_body_with_overlapping_point;
 use crate::test_support::parasolid::tripled_triangle_body;
 use crate::test_support::pmi::pmi_semantic_payload;
+use crate::test_support::tessellation::descriptor;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 use crate::SldprtCodec;
 
@@ -600,3 +601,101 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
 }
 
 mod partition_sketches;
+
+fn face_table_bytes() -> Vec<u8> {
+    let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
+    let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    out.extend(descriptor(12, 100, 3, &positions));
+    out.extend(descriptor(12, 100, 3, &[0; 36]));
+    out.extend(descriptor(4, 8, 4, &[0; 16]));
+    out.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
+    out.extend(descriptor(1, 8, 4, &[0; 4]));
+    out
+}
+
+fn framed_reference(text: &str) -> Vec<u8> {
+    let units = text.encode_utf16().collect::<Vec<_>>();
+    let mut payload = vec![
+        0xff,
+        0xfe,
+        0xff,
+        u8::try_from(units.len()).expect("reference fits in one frame"),
+    ];
+    payload.extend(units.into_iter().flat_map(u16::to_le_bytes));
+    payload
+}
+
+fn reused_tag_block(tag: u16, triangles: u32, strips: u32) -> Vec<u8> {
+    let mut block = Vec::new();
+    block.extend(tag.to_le_bytes());
+    block.extend(triangles.to_le_bytes());
+    block.extend(strips.to_le_bytes());
+    block
+}
+
+fn two_face_display_source(gap: &[u8], second_metadata: &[u8]) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for face in 0..2 {
+        payload.extend([0xff, 0xff, 0x01, 0x00]);
+        let name = b"uoTempFaceTessData_c";
+        payload.extend((u16::try_from(name.len()).expect("class name fits u16")).to_le_bytes());
+        payload.extend(name);
+        payload.extend(1_u32.to_le_bytes());
+        payload.extend(1_u32.to_le_bytes());
+        payload.extend(face_table_bytes());
+        if face == 0 {
+            payload.extend_from_slice(gap);
+        } else {
+            payload.extend_from_slice(second_metadata);
+        }
+    }
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    source
+}
+
+fn loss_codes(result: &EditableDecodeResult) -> Vec<&str> {
+    let mut codes = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.local_code())
+        .collect::<Vec<_>>();
+    codes.sort_unstable();
+    codes
+}
+
+#[test]
+fn reused_tag_conflict_withholds_the_persistent_join() {
+    let reference = framed_reference("moPlaneSurfIdRep_c,7,3,");
+    let baseline = decode(two_face_display_source(&[], &reference));
+    let single = decode(two_face_display_source(
+        &reused_tag_block(0x8001, 1, 1),
+        &reference,
+    ));
+    let mut gap = reused_tag_block(0x8001, 1, 1);
+    gap.extend(reused_tag_block(0x8002, 1, 1));
+    let conflicted = decode(two_face_display_source(&gap, &reference));
+
+    for result in [&baseline, &single, &conflicted] {
+        assert_eq!(result.ir().model.tessellations.len(), 2);
+        assert_valid(result);
+    }
+    assert!(
+        !loss_codes(&baseline).contains(&"tessellation.reused-tag-ambiguous"),
+        "no join is disputed without a reused tag"
+    );
+    assert_eq!(
+        loss_codes(&baseline),
+        loss_codes(&single),
+        "a single surviving tag admits the join without a report change"
+    );
+    assert!(
+        loss_codes(&conflicted).contains(&"tessellation.reused-tag-ambiguous"),
+        "conflicting tags withhold the join: {:?}",
+        loss_codes(&conflicted)
+    );
+}

@@ -3070,21 +3070,48 @@ fn build_geometry_ir(
             matched_feature_sources.insert(source);
         }
         let mut display_links = Vec::new();
+        let join_verdicts: Vec<crate::tessellation::PersistentJoinVerdict> = if display_faces
+            .iter()
+            .any(|face| !face.surface_references.is_empty())
+        {
+            let classes = crate::tessellation::class_intervals(display.payload());
+            display_faces
+                .iter()
+                .enumerate()
+                .map(|(index, _)| {
+                    crate::tessellation::persistent_join_verdict(
+                        display.payload(),
+                        &display_faces,
+                        index,
+                        &classes,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         for (table_index, display_face) in display_faces.into_iter().enumerate() {
             let id = format!(
                 "sldprt:displaylist:record#{}:{}",
                 display.ordinal(),
                 table_index
             );
-            if let Some(identity) = display_face.persistent_surface_identity() {
-                persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
-                    tessellation: id.clone(),
-                    identity: crate::brep::PersistentFaceIdentity {
-                        feature_source_id: identity.feature_source_id,
-                        local_id: identity.local_id,
-                        trailing_fields: identity.trailing_fields.clone(),
-                    },
-                });
+            match join_verdicts.get(table_index) {
+                Some(crate::tessellation::PersistentJoinVerdict::Admit(identity)) => {
+                    persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
+                        tessellation: id.clone(),
+                        identity: identity.clone(),
+                    });
+                }
+                Some(crate::tessellation::PersistentJoinVerdict::Withhold(
+                    crate::tessellation::PersistentJoinWithhold::AmbiguousReusedTag,
+                )) => {
+                    pmi_losses.push(SldprtLossCode::TessellationReusedTagAmbiguous.note(format!(
+                        "sldprt display-face table at byte {} carries conflicting reused class tags; its persistent join is withheld.",
+                        display_face.table.start()
+                    )));
+                }
+                Some(crate::tessellation::PersistentJoinVerdict::Withhold(_)) | None => {}
             }
             crate::annotations::note(
                 &mut annotations,
