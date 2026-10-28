@@ -8,10 +8,7 @@ pub(super) fn validate_xref_placement_sources(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     for reference in &ctx.native.xref_references {
-        let Some(source) = &reference.placement_source else {
-            continue;
-        };
-        if !crate::xref::placement_source_matches(source)? {
+        if !crate::xref::placement_source_matches(reference)? {
             push_constant_finding(
                 findings,
                 Check::NativeLinks,

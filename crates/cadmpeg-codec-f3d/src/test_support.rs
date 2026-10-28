@@ -102,6 +102,65 @@ pub(crate) fn local_reference(target: u64) -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn legacy_attributed_external_placement(
+    role: &str,
+    attributes: bool,
+    matrix: Option<[[f64; 4]; 4]>,
+) -> Vec<u8> {
+    let target = || {
+        let mut reference = vec![1];
+        reference.extend_from_slice(&3_u64.to_le_bytes());
+        reference.push(1);
+        reference.extend_from_slice(&0x0102_0304_0506_0708_u64.to_le_bytes());
+        reference.push(0);
+        lp_ascii(&mut reference, "E03784ED-5E19-4E14-B9F2-3B07017018CD");
+        reference.push(0);
+        reference
+    };
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "380");
+    bytes.extend_from_slice(&10_u64.to_le_bytes());
+    lp_ascii(&mut bytes, "");
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend(target());
+    bytes.extend_from_slice(&9_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&(if attributes { 3_u32 } else { 0_u32 }).to_le_bytes());
+    if attributes {
+        lp_ascii(&mut bytes, "GatedByParent");
+        lp_ascii(&mut bytes, "IntrinsicMetaTypebool");
+        bytes.push(0);
+        lp_ascii(&mut bytes, "ResolutionTime");
+        lp_ascii(&mut bytes, "IntrinsicMetaTypeHString");
+        lp_utf16(&mut bytes, "");
+        lp_ascii(&mut bytes, "SelfGated");
+        lp_ascii(&mut bytes, "IntrinsicMetaTypebool");
+        bytes.push(0);
+    }
+    bytes.extend_from_slice(&0_u16.to_le_bytes());
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+    lp_utf16(&mut bytes, "66666666-7777-8888-9999-aaaaaaaaaaaa");
+    bytes.push(1);
+    bytes.extend_from_slice(&71_u64.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+    bytes.extend_from_slice(&5_u32.to_le_bytes());
+    bytes.push(0);
+    bytes.extend(target());
+    bytes.push(u8::from(matrix.is_none()));
+    if let Some(matrix) = matrix {
+        for value in matrix.into_iter().flatten() {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    lp_utf16(&mut bytes, role);
+    bytes.push(0);
+    bytes.extend(local_reference(7));
+    bytes
+}
+
 /// A cross-document reference record: the presence byte, the target, the
 /// cross-document marker, the source type GUID, the link type GUID, and the
 /// link name.
