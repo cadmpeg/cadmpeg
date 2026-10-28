@@ -877,7 +877,7 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         );
     }
-    let untyped_records = native::untyped_records(&ir, ctx)?;
+    let untyped_records = native::untyped_records(&ir);
     for record in &untyped_records {
         losses.push(IgesLossCode::EntityRetainedUnprojected.note(format!(
             "native record {record} contains source-only text or macro statements; their evidence is retained but their content is not typed"
