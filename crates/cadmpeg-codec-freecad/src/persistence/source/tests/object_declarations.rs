@@ -56,6 +56,7 @@ fn changed_object_identity_and_type_use_the_declared_extent_and_actual_matched_d
             [
                 u64_from_index(name_start)..u64_from_index(name_start + raw_name.len()),
                 u64_from_index(type_start)..u64_from_index(type_start + type_name.len()),
+                attribute_range(&bytes, "id", "7"),
                 u64_from_index(data_name_start)..u64_from_index(data_name_start + data_name.len()),
             ]
         );

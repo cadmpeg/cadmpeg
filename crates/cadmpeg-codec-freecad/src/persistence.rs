@@ -610,10 +610,20 @@ fn parse_object(
         Some(dependency) => (dependency.dependencies, dependency.allow_partial),
         None => (Vec::new(), None),
     };
+    let persistent_id = node
+        .attributes()
+        .find(|attribute| attribute.namespace().is_none() && attribute.name() == "id")
+        .filter(|attribute| attribute.value().parse::<i64>().is_ok())
+        .map(|attribute| match source {
+            Some(source) => source.attribute(&attribute).map(|value| value.parse().ok()),
+            None => Ok(attribute.value().parse().ok()),
+        })
+        .transpose()?
+        .flatten();
     Ok(ObjectRecord {
         identity,
         type_name,
-        persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
+        persistent_id,
         view_type: node.attribute("ViewType").map(str::to_owned),
         attributes,
         dependencies,
