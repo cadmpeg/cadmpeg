@@ -93,6 +93,7 @@ impl Serialize for DesignParameterScope {
         emit!("record_index", self.record_index);
         emit!("frame_length", self.frame_length);
         emit!("kind", self.kind_name());
+        emit_opt!("source_kind", self.source_kind.as_ref());
         emit!("kind_offset", self.kind_offset);
 
         if let Some(extrude) = self.extrude() {

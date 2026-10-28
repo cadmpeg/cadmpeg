@@ -1303,7 +1303,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             Ok(Feature {
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
-                name: Some(format!("{} {}", scope.kind_name(), scope.feature_ordinal)),
+                name: Some(format!(
+                    "{} {}",
+                    scope.source_kind_name(),
+                    scope.feature_ordinal
+                )),
                 suppressed: Some(
                     matches!(
                         family,
@@ -1324,7 +1328,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 } else {
                     BTreeMap::new()
                 },
-                source_tag: Some(scope.kind_name().to_owned()),
+                source_tag: Some(scope.source_kind_name().to_owned()),
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 

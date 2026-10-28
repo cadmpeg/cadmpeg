@@ -320,8 +320,6 @@ pub(in crate::design) fn parse_design_parameter(
         let (expression, expression_end) = parameter_text!(payload, expression_at, 1..=256);
         let expression_trailer = payload.get(expression_end..expression_end + trailer_len)?;
         let document = discriminated && owner_record_index.is_none();
-        // A document parameter's trailer is eight or nine zero bytes and
-        // `u8 1`; an owned parameter's is nine or ten zero bytes.
         let long_document_trailer = document
             && payload.get(expression_end..expression_end + 10)
                 == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
@@ -348,12 +346,23 @@ pub(in crate::design) fn parse_design_parameter(
         } else {
             None
         };
+        let extended_owned_kind = if shift == WIDE_DISCRIMINATED_SHIFT
+            && family_discriminator.is_some_and(|value| value.code() == 6)
+            && owner_record_index.is_some()
+            && payload.get(expression_end..expression_end + 11) == Some(&[0; 11])
+        {
+            lp_utf16_bounded(payload, expression_end + 11, 1..=256)
+        } else {
+            None
+        };
         let source_kind_at = if prefixed_kind.is_some() {
             expression_end + 10
+        } else if extended_owned_kind.is_some() {
+            expression_end + 11
         } else {
             expression_end + trailer_len
         };
-        let (source_kind, source_kind_end) = match prefixed_kind {
+        let (source_kind, source_kind_end) = match prefixed_kind.or(extended_owned_kind) {
             Some(value) => value,
             None => parameter_text!(payload, source_kind_at, 1..=256),
         };
@@ -387,6 +396,7 @@ pub(in crate::design) fn parse_design_parameter(
         if tail.len() != 12
             || tail[0..2] != [0, 1]
             || tail[3..].iter().any(|byte| *byte != 0)
+            || (source_kind_at == expression_end + 11 && tail[2] != 16)
             || !valid_design_parameter_family(family_discriminator, &source_kind, tail[2])
             || source_kind.is_empty()
         {
