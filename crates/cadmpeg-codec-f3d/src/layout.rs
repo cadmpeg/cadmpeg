@@ -4485,6 +4485,60 @@ pub(crate) mod hem_teardrop_fixed_operation_section {
     pub(crate) const INSIDE_BEND_RADIUS: usize = 81;
 }
 
+/// Byte offsets for the `move_transform_frame_253` record.
+///
+/// Spec §3.1. Record length 253 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263, the class-456 form uses paired class 258, and the class-452 form uses paired class 262 and form word 5; the same-index paired header follows at offset 253.
+/// ```
+pub(crate) mod move_transform_frame_253 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 253;
+    /// Offset of `form` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FORM: usize = 43;
+    /// Offset of `reserved_zero` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_ZERO: usize = 47;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 48;
+}
+
+/// Byte offsets for the `move_transform_frame_254` record.
+///
+/// Spec §3.1. Record length 254 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_frame_254 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 254;
+}
+
+/// Byte offsets for the `move_transform_frame_273` record.
+///
+/// Spec §3.1. Record length 273 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_frame_273 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 273;
+}
+
+/// Byte offsets for the `move_transform_frame_274` record.
+///
+/// Spec §3.1. Record length 274 B.
+///
+/// ```text
+/// Offsets are relative to the transform record's primary indexed header.
+/// ```
+pub(crate) mod move_transform_frame_274 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 274;
+}
+
 /// Byte offsets for the `component_insert_identity_scope_compact` record.
 ///
 /// Spec §3.1. Record length 261 B.

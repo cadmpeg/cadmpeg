@@ -3671,6 +3671,9 @@ fn project_move(
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
     let operation = scope.move_operation()?;
+    if !operation.preserves_orientation() {
+        return None;
+    }
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies: BodySelection::Native(group.id.clone()),
