@@ -511,11 +511,11 @@ const CONTAINED_POSE_ROTATION: f64 = 1.0e-9;
 ///
 /// A carrier names an occurrence inside the referenced design, the external
 /// occurrence's placement record and some of its local owners, innermost
-/// first, and stores the inner occurrence's pose in the frame of the
-/// occurrence holding the outermost one it lists. The inner occurrence's merged
-/// placement below the external occurrence then gives the external
-/// occurrence's pose. An instance takes it only when its owners begin with the
-/// carrier's and every carrier that reaches it gives the same pose.
+/// first, and stores the inner occurrence's world pose. The inner occurrence's
+/// merged placement below the external occurrence then gives the external
+/// occurrence's world pose. An instance takes it only when its owners begin with the
+/// carrier's and every carrier that reaches it through the most owners gives the
+/// same pose.
 fn place_contained_poses(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -610,10 +610,8 @@ fn place_contained_poses(
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
         for instance in instances {
-            // The local carriers that hold the instance, innermost first, with
-            // the occurrence that holds each.
+            // The local carriers that hold the instance, innermost first.
             let mut owners = Vec::new();
-            let mut holders = vec![parent_of(instance)];
             let mut at = parent_of(instance);
             while let Some(position) = at {
                 let Some(record) = ir.model.occurrences.get(position).and_then(|occurrence| {
@@ -627,7 +625,6 @@ fn place_contained_poses(
                 };
                 owners.push(*record);
                 at = parent_of(position);
-                holders.push(at);
                 if owners.len() > ir.model.occurrences.len() {
                     break;
                 }
@@ -657,20 +654,11 @@ fn place_contained_poses(
             }
             let mut poses = Vec::new();
             for (ordinal, pose) in reference.contained_poses.iter().enumerate() {
-                // A carrier lists the instance's owners from the innermost
-                // out, as far as it goes; its pose is in the frame of the
-                // occurrence that holds the outermost one it lists.
+                // A carrier lists the instance's owners from the innermost out, as
+                // far as it goes.
                 if !owners.starts_with(&pose.owner_record_indices) {
                     continue;
                 }
-                let frame = match holders
-                    .get(pose.owner_record_indices.len())
-                    .copied()
-                    .flatten()
-                {
-                    Some(holder) => world(holder)?,
-                    None => Transform::identity(),
-                };
                 let Some([(_, below)]) =
                     inside.get(&pose.contained_record_index).map(Vec::as_slice)
                 else {
@@ -686,11 +674,22 @@ fn place_contained_poses(
                 };
                 let implied = below
                     .try_inverse_affine()
-                    .and_then(|inverse| frame.compose(stored)?.compose(inverse))
+                    .and_then(|inverse| stored.compose(inverse))
                     .map_err(|_| CodecError::malformed("F3Z contained pose is not invertible"))?;
                 bound.insert((reference.id.as_str(), ordinal));
-                poses.push(implied);
+                poses.push((pose.owner_record_indices.len(), implied));
             }
+            // A carrier that lists fewer owners can keep the pose from before an owner
+            // it leaves out moved: the carriers that list the most owners give the
+            // pose, and must agree.
+            let Some(reach) = poses.iter().map(|(reach, _)| *reach).max() else {
+                continue;
+            };
+            let poses = poses
+                .into_iter()
+                .filter(|(owners, _)| *owners == reach)
+                .map(|(_, pose)| pose)
+                .collect::<Vec<_>>();
             let Some(first) = poses.first().copied() else {
                 continue;
             };
