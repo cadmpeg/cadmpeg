@@ -61,7 +61,7 @@ fn annotation_projection_keeps_every_native_field_and_only_the_neutral_record_li
     let mut ir = CadIr::empty();
     crate::annotations::install(&ctx, &scan, &mut ir).unwrap();
     let before = ir.native.clone();
-    crate::neutral_projection::project(&ctx, &scan, &mut ir).unwrap();
+    crate::neutral_projection::project(&ctx, &scan, Vec::new(), &mut ir).unwrap();
     assert_eq!(ir.native, before);
     let [annotation] = ir.model.semantic_annotations.as_slice() else {
         panic!("one source dot")
@@ -251,9 +251,11 @@ fn document_metadata_projection_keeps_typed_values_order_and_native_owners() {
     let mut ir = CadIr::empty();
     crate::document_data::install(&ctx, &scan, &mut ir).unwrap();
     let before = ir.native.clone();
-    assert!(crate::neutral_projection::project(&ctx, &scan, &mut ir)
-        .unwrap()
-        .is_empty());
+    assert!(
+        crate::neutral_projection::project(&ctx, &scan, Vec::new(), &mut ir)
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(ir.native, before);
     let expected = [
         (
@@ -346,4 +348,240 @@ fn document_metadata_projection_keeps_typed_values_order_and_native_owners() {
         assert_eq!(records[0].id(), native_id);
         assert_eq!(records[0].field("neutral_attributes"), None);
     }
+}
+
+fn material_texture(uuid: u8) -> Vec<u8> {
+    let archive = ArchiveVersion::V8;
+    let mut body = vec![uuid; 16];
+    body.extend(7_u32.to_le_bytes());
+    body.extend(bytes::utf16_bytes("texture.png"));
+    body.push(1);
+    for value in 1..=7_u32 {
+        body.extend(value.to_le_bytes());
+    }
+    for index in 0..16 {
+        body.extend((if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
+    }
+    body.extend([1, 2, 3, 4]);
+    body.extend([5, 6, 7, 8]);
+    body.extend([0x22; 16]);
+    for value in [0.25_f64, 1.25, 0.1, 0.2, 0.3, 0.4, 0.5] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend([9, 10, 11, 12]);
+    for value in [0.6_f64, 0.7, 0.8, 0.9] {
+        body.extend(value.to_le_bytes());
+    }
+    body.extend(4_i32.to_le_bytes());
+    let texture_uuid = crate::wire::Uuid::from_canonical([
+        0xd6, 0xff, 0x10, 0x6d, 0x32, 0x9b, 0x4f, 0x29, 0x97, 0xe2, 0xfd, 0x28, 0x2a, 0x61, 0x80,
+        0x20,
+    ])
+    .to_wire();
+    bytes::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[
+            bytes::crc_chunk(archive, 0x0002_fffb, &texture_uuid),
+            bytes::nested_crc_chunk(
+                archive,
+                0x0002_fffc,
+                &bytes::anonymous_chunk(archive, 0, &body),
+            ),
+            bytes::short_chunk(archive, 0x8002_7fff, 0),
+        ]
+        .concat(),
+    )
+}
+
+fn material_record(uuid: u8, name: &str, index: i32, fresnel: bool, textures: &[u8]) -> Vec<u8> {
+    let archive = ArchiveVersion::V8;
+    let mut body = vec![uuid; 16];
+    body.extend(index.to_le_bytes());
+    body.extend(bytes::utf16_bytes(name));
+    body.extend([0xaa; 16]);
+    for color in [
+        [1, 2, 3, 4],
+        [10, 20, 30, 40],
+        [5, 6, 7, 8],
+        [9, 10, 11, 12],
+        [13, 14, 15, 16],
+        [17, 18, 19, 20],
+    ] {
+        body.extend(color);
+    }
+    for value in [1.25_f64, 0.125, 2.5, 0.25] {
+        body.extend(value.to_le_bytes());
+    }
+    let texture_start = body.len();
+    let mut texture_array = i32::try_from(textures.len())
+        .unwrap()
+        .to_le_bytes()
+        .to_vec();
+    let mut children = Vec::new();
+    for identity in textures {
+        let start = texture_array.len();
+        texture_array.extend(material_texture(*identity));
+        children.push(start + 8..texture_array.len() + 8);
+    }
+    let mut texture_fields = 1_i32.to_le_bytes().to_vec();
+    texture_fields.extend(0_i32.to_le_bytes());
+    texture_fields.extend(texture_array);
+    body.extend(bytes::crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &texture_fields,
+        &children,
+    ));
+    let texture_end = body.len();
+    body.extend(bytes::utf16_bytes(""));
+    body.extend(0_i32.to_le_bytes());
+    body.extend([1, 0]);
+    if fresnel {
+        body.push(1);
+        for value in [0.375_f64, 0.625, 1.5] {
+            body.extend(value.to_le_bytes());
+        }
+        body.extend([0xbb; 16]);
+        body.push(1);
+    }
+    let mut fields = 1_i32.to_le_bytes().to_vec();
+    fields.extend((if fresnel { 7_i32 } else { 3 }).to_le_bytes());
+    fields.extend(body);
+    let inner = bytes::crc_chunk_excluding(
+        archive,
+        0x4000_8000,
+        &fields,
+        &[texture_start + 8..texture_end + 8],
+    );
+    let mut payload = vec![0x20];
+    payload.extend(inner);
+    let material_uuid = crate::wire::Uuid::from_canonical([
+        0x60, 0xb5, 0xdb, 0xbc, 0xe6, 0x60, 0x11, 0xd3, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22,
+        0xf0,
+    ])
+    .to_wire();
+    let class = bytes::long_chunk(
+        archive,
+        0x0002_7ffa,
+        &[
+            bytes::crc_chunk(archive, 0x0002_fffb, &material_uuid),
+            bytes::crc_chunk_excluding(archive, 0x0002_fffc, &payload, &[1..payload.len()]),
+            bytes::short_chunk(archive, 0x8002_7fff, 0),
+        ]
+        .concat(),
+    );
+    bytes::nested_crc_chunk(archive, 0x2000_8040, &class)
+}
+
+#[test]
+fn material_typed_handoff_keeps_native_order_values_and_optional_field_absence() {
+    let archive = bytes::minimal_document(
+        "80",
+        &[
+            bytes::table(ArchiveVersion::V8, 0x1000_0015, &[]),
+            bytes::table(
+                ArchiveVersion::V8,
+                0x1000_0010,
+                &[
+                    material_record(0x99, "Last identity", 7, true, &[0x44, 0x11]),
+                    material_record(0x11, "First equal identity", 7, true, &[]),
+                    material_record(0x11, "  ", -2, false, &[]),
+                ],
+            ),
+            bytes::table(ArchiveVersion::V8, 0x1000_0013, &[]),
+        ],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, view) =
+        DecodeContext::from_root_bytes(&archive, &arena, &DecodePolicy::service()).unwrap();
+    let scan = crate::container::scan(&ctx, &archive).unwrap();
+    let mut ir = CadIr::empty();
+    let (installed, materials) = crate::presentation::install(&ctx, view, &scan, &mut ir).unwrap();
+    assert!(installed.losses.is_empty(), "{:?}", installed.losses);
+    assert!(installed.opaque_records.is_empty());
+    let before = ir.native.clone();
+    let losses = crate::neutral_projection::project(&ctx, &scan, materials, &mut ir).unwrap();
+    assert_eq!(losses.len(), 2);
+    for (loss, (order, uuid)) in losses.iter().zip([
+        (0, "44444444-4444-4444-4444-444444444444"),
+        (1, "11111111-1111-1111-1111-111111111111"),
+    ]) {
+        assert_eq!(
+            loss.code,
+            crate::loss::RhinoLossCode::NativeRecordUnprojected.kind()
+        );
+        assert_eq!(loss.message, format!("rhino:presentation:material#99999999-9999-9999-9999-999999999999 texture {order} (Some(\"{uuid}\")): the full UVW transform and texture interpretation are retained natively without a neutral texture mapping"));
+    }
+    assert_eq!(ir.native, before);
+    let native = &ir.native.namespace("rhino").unwrap().arenas()["materials"];
+    assert_eq!(ir.model.appearances.len(), 3);
+    for (ordinal, (name, uuid, count)) in [
+        (
+            Some("First equal identity"),
+            "11111111-1111-1111-1111-111111111111",
+            7,
+        ),
+        (None, "11111111-1111-1111-1111-111111111111", 4),
+        (
+            Some("Last identity"),
+            "99999999-9999-9999-9999-999999999999",
+            7,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let appearance = &ir.model.appearances[ordinal];
+        assert_eq!(
+            appearance.id.as_str(),
+            format!("rhino:model:material#{ordinal:06}")
+        );
+        assert_eq!(appearance.native_ref.as_deref(), Some(native[ordinal].id()));
+        assert_eq!(appearance.name.as_deref(), name);
+        assert_eq!(appearance.asset_guid.as_deref(), Some(uuid));
+        assert_eq!(
+            native[ordinal].field("source_uuid"),
+            Some(serde_json::json!(uuid))
+        );
+        assert_eq!(
+            appearance.base_color.unwrap(),
+            cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 215)
+        );
+        assert!(appearance.textures.is_empty());
+        for (name, value) in [
+            ("index_of_refraction", 1.25),
+            ("reflectivity", 0.125),
+            ("shine", 2.5),
+            ("transparency", 0.25),
+        ] {
+            assert_eq!(appearance.properties[name].get(), value);
+        }
+        assert_eq!(appearance.properties.len(), count);
+        for (name, value) in [
+            ("reflection_glossiness", 0.375),
+            ("refraction_glossiness", 0.625),
+            ("fresnel_index_of_refraction", 1.5),
+        ] {
+            assert_eq!(
+                appearance.properties.get(name).copied(),
+                (count == 7).then(|| crate::test_support::finite(value))
+            );
+        }
+    }
+    assert_eq!(
+        native[0].field("name"),
+        Some(serde_json::json!("First equal identity"))
+    );
+    assert_eq!(native[1].field("name"), Some(serde_json::json!("  ")));
+    assert_eq!(
+        native[2].field("name"),
+        Some(serde_json::json!("Last identity"))
+    );
+    assert_eq!(native[0].field("archive_index"), Some(serde_json::json!(7)));
+    assert_eq!(
+        native[1].field("archive_index"),
+        Some(serde_json::json!(-2))
+    );
+    assert_eq!(native[2].field("archive_index"), Some(serde_json::json!(7)));
 }

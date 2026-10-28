@@ -45,7 +45,7 @@ fn source_free_text_style_retains_font_names_weight_and_panose() {
         DecodeContext::from_root_bytes(&archive, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&ctx, &archive).unwrap();
     let mut decoded = CadIr::empty();
-    let installed = crate::presentation::install(&ctx, view, &scan, &mut decoded).unwrap();
+    let (installed, _) = crate::presentation::install(&ctx, view, &scan, &mut decoded).unwrap();
     assert!(installed.losses.is_empty(), "{:?}", installed.losses);
     let parsed = &decoded.native.namespace("rhino").unwrap().arenas()["text_styles"][0];
     for field in ["name", "source_uuid", "font_description", "font"] {

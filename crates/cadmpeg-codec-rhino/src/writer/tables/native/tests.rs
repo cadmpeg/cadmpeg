@@ -33,7 +33,8 @@ fn typed_group_name_and_uuid_are_authored_without_source_bytes() {
         .expect("context");
     let scan = crate::container::scan(&ctx, &archive).expect("scan");
     let mut decoded = CadIr::empty();
-    crate::presentation::install(&ctx, view, &scan, &mut decoded).expect("typed inverse");
+    let (_, _) =
+        crate::presentation::install(&ctx, view, &scan, &mut decoded).expect("typed inverse");
     let record = &decoded
         .native
         .namespace("rhino")

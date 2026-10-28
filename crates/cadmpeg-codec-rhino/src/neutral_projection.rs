@@ -126,9 +126,10 @@ fn attribute_target(item: &PresentationItem) -> Option<AttributeTarget> {
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
+    materials: Vec<crate::presentation::MaterialProjection>,
     ir: &mut CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
-    let mut losses = materials::project(ctx, scan, ir)?;
+    let mut losses = materials::project(ctx, scan, materials, ir)?;
     losses.extend(document::project(ctx, scan, ir)?);
     losses.extend(annotations::project(ctx, ir)?);
     losses.extend(views::project(ctx, ir)?);

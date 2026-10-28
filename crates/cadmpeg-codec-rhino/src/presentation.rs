@@ -181,6 +181,58 @@ struct MaterialRecord {
     physically_based: Option<PhysicallyBasedMaterialRecord>,
 }
 
+pub(crate) struct MaterialProjection {
+    pub(crate) native_id: String,
+    pub(crate) archive_index: Option<i32>,
+    pub(crate) source_uuid: Option<String>,
+    pub(crate) name: String,
+    pub(crate) diffuse: [u8; 4],
+    pub(crate) properties: [(&'static str, Option<FiniteReal>); 7],
+    pub(crate) texture_source_uuids: Vec<Option<String>>,
+}
+
+impl From<MaterialRecord> for MaterialProjection {
+    fn from(material: MaterialRecord) -> Self {
+        let fresnel = material.fresnel.0;
+        Self {
+            native_id: material.id,
+            archive_index: material.archive_index,
+            source_uuid: material.source_uuid,
+            name: material.name,
+            diffuse: material.diffuse.into_inner(),
+            properties: [
+                ("index_of_refraction", Some(material.index_of_refraction)),
+                ("reflectivity", Some(material.reflectivity)),
+                ("shine", Some(material.shine)),
+                ("transparency", Some(material.transparency)),
+                (
+                    "reflection_glossiness",
+                    fresnel
+                        .as_ref()
+                        .map(|settings| settings.reflection_glossiness),
+                ),
+                (
+                    "refraction_glossiness",
+                    fresnel
+                        .as_ref()
+                        .map(|settings| settings.refraction_glossiness),
+                ),
+                (
+                    "fresnel_index_of_refraction",
+                    fresnel
+                        .as_ref()
+                        .map(|settings| settings.index_of_refraction),
+                ),
+            ],
+            texture_source_uuids: material
+                .textures
+                .into_iter()
+                .map(|texture| texture.source_uuid)
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug)]
 struct MaterialFresnelSettings {
     reflections: bool,
@@ -4574,7 +4626,7 @@ pub(crate) fn install(
     root: cadmpeg_core::decode::View<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<NativeInstall, CodecError> {
+) -> Result<(NativeInstall, Vec<MaterialProjection>), CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let physical_scale = binding.neutral_scale();
     let mut groups = Vec::new();
@@ -5359,11 +5411,19 @@ pub(crate) fn install(
     namespace.set_arena(ctx, "text_styles", &text_styles)?;
     namespace.set_arena(ctx, "layers", &layers)?;
     namespace.set_arena(ctx, "object_presentation", &object_presentation)?;
-    Ok(NativeInstall {
-        source_layout,
-        losses,
-        opaque_records,
-    })
+    let mut materials = materials
+        .into_iter()
+        .map(MaterialProjection::from)
+        .collect::<Vec<_>>();
+    materials.sort_by(|left, right| left.native_id.cmp(&right.native_id));
+    Ok((
+        NativeInstall {
+            source_layout,
+            losses,
+            opaque_records,
+        },
+        materials,
+    ))
 }
 
 #[cfg(test)]

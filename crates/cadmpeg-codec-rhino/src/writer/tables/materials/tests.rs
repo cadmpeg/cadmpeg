@@ -50,7 +50,7 @@ fn current_material_values_override_native_copies_without_source_bytes() {
         .expect("context");
     let scan = crate::container::scan(&ctx, &archive).expect("scan");
     let mut decoded = CadIr::empty();
-    let installed = crate::presentation::install(&ctx, view, &scan, &mut decoded)
+    let (installed, _) = crate::presentation::install(&ctx, view, &scan, &mut decoded)
         .expect("read authored material");
     assert!(installed.losses.is_empty(), "{:?}", installed.losses);
     let record = &decoded

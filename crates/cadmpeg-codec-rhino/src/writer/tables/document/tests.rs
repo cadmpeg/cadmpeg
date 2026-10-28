@@ -46,7 +46,7 @@ fn read(records: &[Vec<u8>], project: bool) -> CadIr {
     );
     if project {
         let before = serde_json::to_value(&ir.native).expect("source native");
-        let losses = crate::neutral_projection::project(&ctx, &scan, &mut ir)
+        let losses = crate::neutral_projection::project(&ctx, &scan, Vec::new(), &mut ir)
             .expect("project actual document fields");
         assert!(losses.is_empty(), "{losses:?}");
         assert_eq!(

@@ -7,9 +7,7 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, IdentityKey};
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::CadIr;
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 fn target(item: &PresentationItem) -> Option<AppearanceTarget> {
@@ -31,58 +29,37 @@ fn target(item: &PresentationItem) -> Option<AppearanceTarget> {
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
+    materials: Vec<crate::presentation::MaterialProjection>,
     ir: &mut CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    let mut materials = Vec::new();
-    if let Some(namespace) = ir.native.namespace("rhino") {
-        if let Some(records) = namespace.arenas().get("materials") {
-            for record in records {
-                materials.push((record.id().to_owned(), record.copy_fields(ctx)?));
-            }
+    for material in &materials {
+        let _object = ctx.enter_nested("copy native field object")?;
+        let _textures = ctx.enter_nested("copy native field sequence")?;
+        for _ in &material.texture_source_uuids {
+            let _texture = ctx.enter_nested("copy native field object")?;
         }
     }
     let mut by_index = BTreeMap::new();
-    for (ordinal, (native_id, fields)) in materials.into_iter().enumerate() {
-        for (texture_order, texture) in fields
-            .get("textures")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
-            losses.push(crate::loss::RhinoLossCode::NativeRecordUnprojected.note(format!("{native_id} texture {texture_order} ({:?}): the full UVW transform and texture interpretation are retained natively without a neutral texture mapping", texture.get("source_uuid").and_then(Value::as_str))));
+    for (ordinal, material) in materials.into_iter().enumerate() {
+        let native_id = material.native_id;
+        for (texture_order, source_uuid) in material.texture_source_uuids.iter().enumerate() {
+            losses.push(crate::loss::RhinoLossCode::NativeRecordUnprojected.note(format!("{native_id} texture {texture_order} ({:?}): the full UVW transform and texture interpretation are retained natively without a neutral texture mapping", source_uuid.as_deref())));
         }
         let id = AppearanceId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "model", "material"),
             IdentityKey::zero_padded(cadmpeg_core::decode::u64_from_index(ordinal), 6),
         );
-        if let Some(index) = fields.get("archive_index").and_then(Value::as_i64) {
+        if let Some(index) = material.archive_index {
             by_index
-                .entry(index)
+                .entry(i64::from(index))
                 .or_insert_with(Vec::new)
                 .push(id.clone());
         }
-        let base_color = fields
-            .get("diffuse")
-            .filter(|value| !value.is_null())
-            .map(|value| crate::wire::native_color(value).map_err(CodecError::malformed))
-            .transpose()?;
+        let base_color = Some(crate::wire::packed_color(material.diffuse));
         let mut properties = BTreeMap::new();
-        for name in [
-            "index_of_refraction",
-            "reflectivity",
-            "shine",
-            "transparency",
-            "reflection_glossiness",
-            "refraction_glossiness",
-            "fresnel_index_of_refraction",
-        ] {
-            if let Some(value) = fields
-                .get(name)
-                .and_then(Value::as_f64)
-                .and_then(FiniteReal::new)
-            {
+        for (name, value) in material.properties {
+            if let Some(value) = value {
                 let name = cadmpeg_core::text::NonBlankString::new(name).ok_or_else(|| {
                     CodecError::malformed("Rhino material property name is empty")
                 })?;
@@ -93,15 +70,8 @@ pub(super) fn project(
         ir.model.appearances.push(Appearance {
             native_ref: Some(native_id.clone()),
             id: id.clone(),
-            name: fields
-                .get("name")
-                .and_then(Value::as_str)
-                .filter(|value| !value.trim().is_empty())
-                .map(str::to_owned),
-            asset_guid: fields
-                .get("source_uuid")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
+            name: (!material.name.trim().is_empty()).then_some(material.name),
+            asset_guid: material.source_uuid,
             library_id: None,
             visual_guid: None,
             physical_token: None,
