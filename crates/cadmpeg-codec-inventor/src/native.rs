@@ -1202,6 +1202,10 @@ impl RseRecordRecord {
     pub(crate) fn payload_len(&self) -> u64 {
         self.payload_len
     }
+    pub(crate) fn matches_payload(&self, bytes: &[u8]) -> bool {
+        self.payload_len == cadmpeg_core::decode::u64_from_index(bytes.len())
+            && self.payload_sha256 == cadmpeg_ir::hash::sha256_hex(bytes)
+    }
 }
 
 #[derive(Serialize, Deserialize)]

@@ -153,6 +153,10 @@ pub(crate) enum InventorLossCode {
     KernelHeaderToleranceUnresolved,
     /// The compound container uses an admitted noncanonical encoding.
     ContainerNoncanonical,
+    /// Drawing records retain unresolved semantics natively.
+    DrawingNativeOnly,
+    /// A drawing record is outside its typed prefix form.
+    DrawingRecordMalformed,
 }
 
 impl InventorLossCode {
@@ -219,6 +223,8 @@ impl InventorLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::KernelHeaderToleranceUnresolved,
         Self::ContainerNoncanonical,
+        Self::DrawingNativeOnly,
+        Self::DrawingRecordMalformed,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -295,6 +301,8 @@ impl InventorLossCode {
             Self::KernelHeaderMetadataUnresolved => "source.kernel-header-metadata-unresolved",
             Self::KernelHeaderToleranceUnresolved => "source.kernel-header-tolerance-unresolved",
             Self::ContainerNoncanonical => "container.noncanonical",
+            Self::DrawingNativeOnly => "drawing.native-only",
+            Self::DrawingRecordMalformed => "drawing.record-malformed",
         }
     }
 
@@ -312,10 +320,11 @@ impl InventorLossCode {
         match self {
             Self::GeometryKernelCarrierNotTransferred
             | Self::GeometryProceduralSurfaceNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
+            Self::DrawingNativeOnly | Self::RseSegmentPairUntyped | Self::UfrxSchemaUnsupported => {
                 LossTaxonomy::RecordNotTyped
             }
-            Self::RseMetadataStreamMalformed
+            Self::DrawingRecordMalformed
+            | Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
             | Self::AssemblyRecordMalformed
             | Self::PresentationRecordMalformed
@@ -474,6 +483,8 @@ mod tests {
                 "source.kernel-header-metadata-unresolved",
                 "source.kernel-header-tolerance-unresolved",
                 "container.noncanonical",
+                "drawing.native-only",
+                "drawing.record-malformed",
             ]
         );
     }

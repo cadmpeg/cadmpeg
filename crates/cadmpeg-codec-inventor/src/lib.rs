@@ -16,6 +16,7 @@ mod database;
 mod decode;
 mod design;
 mod dialect;
+mod drawing;
 mod external_reference;
 mod feature;
 #[doc(hidden)]

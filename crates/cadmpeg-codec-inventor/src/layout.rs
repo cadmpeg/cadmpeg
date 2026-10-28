@@ -171,6 +171,120 @@ pub(crate) mod pm_dc_feature_dimension_tail {
     pub(crate) const LEN: usize = 9;
 }
 
+/// Byte offsets for the `meta_reference_header` record.
+///
+/// Spec §3. Record length 3 B.
+pub(crate) mod meta_reference_header {
+    /// Record length in bytes. Spec §3.
+    pub(crate) const LEN: usize = 3;
+}
+
+/// Byte offsets for the `drawing_sheet_prefix` record.
+///
+/// Spec §15. Record length 30 B.
+pub(crate) mod drawing_sheet_prefix {
+    /// Offset of `identifier` (`bytes[16]`). Spec §15.
+    pub(crate) const IDENTIFIER: usize = 14;
+}
+
+/// Byte offsets for the `drawing_view_prefix` record.
+///
+/// Spec §15. Record length 30 B.
+pub(crate) mod drawing_view_prefix {
+    /// Record length in bytes. Spec §15.
+    pub(crate) const LEN: usize = 30;
+}
+
+/// Byte offsets for the `drawing_sheet_controls` record.
+///
+/// Spec §15. Record length 24 B.
+pub(crate) mod drawing_sheet_controls {
+    /// Record length in bytes. Spec §15.
+    pub(crate) const LEN: usize = 24;
+}
+
+/// Byte offsets for the `drawing_model_reference_prefix` record.
+///
+/// Spec §15. Record length 49 B.
+pub(crate) mod drawing_model_reference_prefix {
+    /// Record length in bytes. Spec §15.
+    pub(crate) const LEN: usize = 49;
+}
+
+/// Byte offsets for the `drawing_cached_view_prefix` record.
+///
+/// Spec §15. Record length 32 B.
+pub(crate) mod drawing_cached_view_prefix {
+    /// Offset of `view_reference` (`u32`, little-endian). Spec §15.
+    pub(crate) const VIEW_REFERENCE: usize = 28;
+}
+
+/// Byte offsets for the `drawing_sheet_property_list` record.
+///
+/// Spec §15. Record length 16 B.
+pub(crate) mod drawing_sheet_property_list {
+    /// Stated value of `marker` (`u16`). Spec §15.
+    pub(crate) const MARKER_VALUE: u16 = 0x0002;
+    /// Stated value of `count` (`u32`). Spec §15.
+    pub(crate) const COUNT_VALUE: u32 = 0x0000_0006;
+}
+
+/// Byte offsets for the `drawing_view_operand_list` record.
+///
+/// Spec §15. Record length 16 B.
+pub(crate) mod drawing_view_operand_list {
+    /// Stated value of `count` (`u32`). Spec §15.
+    pub(crate) const COUNT_VALUE: u32 = 0x0000_0013;
+}
+
+/// Byte offsets for the `meta_reference_identifier` record.
+///
+/// Spec §3. Record length 16 B.
+pub(crate) mod meta_reference_identifier {
+    /// Record length in bytes. Spec §3.
+    pub(crate) const LEN: usize = 16;
+}
+
+/// Byte offsets for the `meta_reference_pair` record.
+///
+/// Spec §3. Record length 8 B.
+pub(crate) mod meta_reference_pair {
+    /// Record length in bytes. Spec §3.
+    pub(crate) const LEN: usize = 8;
+}
+
+/// Byte offsets for the `drawing_sheet_tail_prefix` record.
+///
+/// Spec §15. Record length 14 B.
+pub(crate) mod drawing_sheet_tail_prefix {
+    /// Record length in bytes. Spec §15.
+    pub(crate) const LEN: usize = 14;
+}
+
+/// Byte offsets for the `drawing_sheet_terminal` record.
+///
+/// Spec §15. Record length 8 B.
+pub(crate) mod drawing_sheet_terminal {
+    /// Record length in bytes. Spec §15.
+    pub(crate) const LEN: usize = 8;
+}
+
+/// Byte offsets for the `drawing_main_view_fixed` record.
+///
+/// Spec §15. Record length 136 B.
+pub(crate) mod drawing_main_view_fixed {
+    /// Record length in bytes. Spec §15.
+    pub(crate) const LEN: usize = 136;
+}
+
+/// Byte offsets for the `drawing_alternate_view_fixed` record.
+///
+/// Spec §15. Record length 140 B.
+pub(crate) mod drawing_alternate_view_fixed {
+    /// Record length in bytes. Spec §15.
+    pub(crate) const LEN: usize = 140;
+}
+
 /// Byte offsets for the `pm_dc_mirror_selection_tail` record.
 ///
 /// Spec §13. Record length 8 B.

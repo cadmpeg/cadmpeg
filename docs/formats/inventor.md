@@ -1,12 +1,12 @@
-# Autodesk Inventor IPT/IAM
+# Autodesk Inventor IPT/IAM/IDW
 
-This specification defines the byte semantics of the supported Autodesk Inventor IPT/IAM envelope. Multi-byte integers are little-endian unless a section states otherwise.
+This specification defines the byte semantics of the supported Autodesk Inventor document envelope. Multi-byte integers are little-endian unless a section states otherwise.
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/inventor.md`](../layouts/inventor.md), generated from `docs/layouts/inventor.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
 ## 1. Compound container
 
-An IPT or IAM document is a Compound File Binary container. The container follows the CFB sector, FAT, DIFAT, mini-FAT, directory, and sibling-tree rules. The directory contains the `RSeStorage` storage. A positive format identification also requires a structurally reached `RSeStorage/RSeSegInfo` stream or a stream at `RSeStorage/V<n>/RSeDb`, where `<n>` is one or more decimal digits.
+An IPT, IAM, or IDW document is a Compound File Binary container. The container follows the CFB sector, FAT, DIFAT, mini-FAT, directory, and sibling-tree rules. The directory contains the `RSeStorage` storage. A positive format identification also requires a structurally reached `RSeStorage/RSeSegInfo` stream or a stream at `RSeStorage/V<n>/RSeDb`, where `<n>` is one or more decimal digits.
 
 The last DIFAT sector's next-sector link is ENDOFCHAIN (`0xfffffffe`). Some Inventor documents store FREESECT (`0xffffffff`) in that link instead. That link is a chain terminator only when the header DIFAT count equals `ceil((fat_count - 109) / (sector_size / 4 - 1))`, the walk visits exactly that many DIFAT sectors, and the walk collects exactly `fat_count` FAT sector identifiers. Such a document decodes and reports `inventor/container.noncanonical` ("CFB DIFAT chain ended with FREESECT instead of ENDOFCHAIN"). A FREESECT link under any other count, an empty DIFAT whose start is not ENDOFCHAIN, and a FREESECT terminator on any FAT chain are malformed.
 
@@ -35,6 +35,8 @@ span u32
 `span` equals `4 + count * item_size`. Section 1 items are 4-byte block descriptors. Bit 31 states that the corresponding bulk block is stored; bits 0 through 30 give its payload length. Section 2 items are 10 bytes. Section 3 items are 28 bytes. Section 4 items are 28-byte type descriptors. A type descriptor contains a 16-byte type identifier and two `(u16, u32)` field pairs. The section 4 count is not limited to 256; descriptors at index 256 and later have no record selector that addresses them.
 
 Sections 5 through 11 use backward framing. The eight bytes before a section payload contain a u32 span to the previous payload and a u32 discriminator. The section chain joins the section 4 footer exactly. Section 11 has a 72-byte payload. The 16-byte terminal identifier follows section 11.
+
+Section 9 is a counted sequence of tagged reference entries. Each entry starts with `key:u16` and `tag:u8`. Tags 1 and 2 carry a 16-byte identifier. Tag 3 carries two u32 values. Entries have no padding, and the sequence exhausts the section payload. A section-9 payload that is not a complete tagged sequence, and whose length is the count times 19 bytes, keeps its entries untyped.
 
 ## 4. RSe bulk stream and records
 
@@ -714,7 +716,7 @@ Feature-label class `2d11a90cd0118b83000819b00524dc09` identifies a stored-body 
 
 An unqualified surface-body reference is a one-based index in its PmDc metadata section 10. A qualified surface-body reference is a one-based record index in its own segment. The packed word 0 is null. A qualified reference with index 0 does not select a body.
 
-Metadata section 7 has a segment-pair form with 32-byte entries: `segment_id:bytes[16]`, `revision_id:bytes[16]`. Its discriminator is its entry count. Section 8 contains 20-byte revision entries: `revision_id:bytes[16]`, `segment_pair_index:u16`, `reference_count:u16`. The segment-pair index is zero-based into section 7. The revision identifier identifies the referenced revision; it need not equal the segment pair's revision identifier. Section 10 contains 8-byte external entries: `revision_index:u32`, `key_extension:u16`, `header_id:u16`. The revision index is zero-based into section 8. Each section's payload length equals its entry count times its entry width. A revision entry's reference count equals the number of section-10 entries that select it.
+In the surface-body reference form, metadata section 7 has a segment-pair form with 32-byte entries: `segment_id:bytes[16]`, `revision_id:bytes[16]`. Its discriminator is its entry count. Section 8 contains 20-byte revision entries: `revision_id:bytes[16]`, `segment_pair_index:u16`, `reference_count:u16`. The segment-pair index is zero-based into section 7. The revision identifier identifies the referenced revision; it need not equal the segment pair's revision identifier. Section 10 contains 8-byte external entries: `revision_index:u32`, `key_extension:u16`, `header_id:u16`. The revision index is zero-based into section 8. Each section's payload length equals its entry count times its entry width. A revision entry's reference count equals the number of section-10 entries that select it.
 
 The zero-extension external form has `key_extension = 0` and selects the unique kernel-entity link whose `header_value` is 0 and whose `header_id` equals the external entry's header identifier, in the unique segment whose identifier equals the selected section-7 segment identifier. The current-model Base result form selects a kernel-entity link in the document model root's named PmBRep segment. The link's qualified body reference and the carrier footer's selected key select the same active carrier record. The link's entity identifier joins the unique body with that ASM body key in this carrier. A body key is scoped to its carrier. A result identity can survive later changes to that body; it does not state that the current body is the Base source shape. A result whose body is absent from the current model has no current-body join.
 
@@ -940,3 +942,67 @@ The plate scalar control contains `value:u32` after its versioned content header
 ## 14. Document kind
 
 `Pm*` segment families identify a part document. `Am*` segment families identify an assembly document. A document that contains both families has the distinct `mixed_part_assembly` kind. Property metadata can identify a part, assembly, drawing, or presentation only when segment-family evidence does not already identify the kind.
+
+## 15. Drawing documents
+
+An IDW drawing uses the CFB and RSe envelope of sections 1 through 4. The segment registry identifies these drawing families:
+
+| Registry type | Segment family |
+| --- | --- |
+| `DlDocDcSegmentType` | Drawing document |
+| `DlBRxSegmentType` | Drawing browser |
+| `DlDirectorySegmentType` | Drawing directory |
+| `AppSegmentType` | Drawing application |
+| `DlSheetDcSegmentType` | Sheet definition |
+| `DlSheetSmSegmentType` | Sheet cache |
+| `DlSheetDlSegmentType` | Sheet display |
+
+A segment's registry type, segment identifier, and registry version govern its record family. A display name does not select a drawing family.
+
+The following drawing record forms use segment major version 19. Other segment versions keep these records untyped.
+
+| Segment | Type identifier | Record |
+| --- | --- | --- |
+| `DlSheetDcSegmentType` | `cd907cd3d01116fa60000dbd861c3cb0` | Sheet |
+| `DlSheetDcSegmentType` | `5942cb22d111c557600037bd861c3cb0` | Drawing view |
+| `DlSheetDcSegmentType` | `c1965962d4114e8e600095873fa6fbb0` | Alternate drawing view |
+| `DlBRxSegmentType` | `69a56f6bd2112c3d6000b58d3125c3b0` | Modeled-document browser reference |
+| `DlSheetSmSegmentType` | `81136d8ad111566b600038bd861c3cb0` | Cached view |
+
+The sheet prefix contains `header:bytes[14]` and `identifier:bytes[16]`. A u32-counted UTF-16LE label follows the prefix. A type-2 property-reference list follows the label. The sheet property-list prefix contains `marker:u16 = 2`, `signature:u16 = 0x3000`, `count:u32 = 6`, and `metadata:u32[2]`. Its six packed references follow. The six property references are qualified local references to type `754d8790d011f8d10008cabc0663dc09`. The first two auxiliary lists contain qualified local references to type `b2206557d11196a460001b8aeb49cdb0`. The view lists contain non-null qualified local references. The sheet controls contain `controls:bytes[24]`. A type-2 view-reference list follows the controls, then the sheet tail. The view-reference list names drawing-view records of type `5942cb22d111c557600037bd861c3cb0` in the same sheet segment. The sheet tail prefix contains `prefix:bytes[14]`. Three type-2 auxiliary reference lists follow. The third list names alternate-drawing-view records of type `c1965962d4114e8e600095873fa6fbb0`. The sheet terminal contains `terminal:bytes[8]` and ends the record.
+
+The view prefix contains `header:bytes[22]` and `values:u32[2]`. The view operand-list prefix contains `marker:u16 = 2`, `signature:u16 = 0x3000`, `count:u32 = 19`, and `metadata:u32[2]`. Its nineteen ordered packed references follow. The operand references are non-null qualified references in the same sheet segment. Their target classes are:
+
+| Slot | Target type identifier |
+| --- | --- |
+| 0 | `2e187506d2111f5e6000b3856c2387b0` |
+| 1 | `9ff49f1dd11101e96000a8ade3bc87b0` |
+| 2 | `3edf52ced011d0d20008ccbc0663dc09` |
+| 3 | `3edf52ced011d0d20008ccbc0663dc09` |
+| 4 | `4debf5fad41120726000bebead9287b0` |
+| 5 | `35df52ced011d0d20008ccbc0663dc09` |
+| 6 | `474dd06b2047478c9da481bcfae149d5` |
+| 7 | `229630f7d111a466600027a5602d6bb0` |
+| 8 | `5c42cb22d111c557600037bd861c3cb0` |
+| 9 | `284d8790d011f8d10008cabc0663dc09` |
+| 10 | `284d8790d011f8d10008cabc0663dc09` |
+| 11 | `ebf44026d111e457600037bd861c3cb0` |
+| 12 | `264d8790d011f8d10008cabc0663dc09` |
+| 13 | `264d8790d011f8d10008cabc0663dc09` |
+| 14 | `e9ee786bd11195a460009dade3bc87b0` |
+| 15 | `e9ee786bd11195a460009dade3bc87b0` |
+| 16 | `2e187506d2111f5e6000b3856c2387b0` |
+| 17 | `9ff49f1dd11101e96000a8ade3bc87b0` |
+| 18 | `35df52ced011d0d20008ccbc0663dc09` |
+
+The list is followed by `word:u16`, `values:u32[2]`, a u32 extension in the alternate-view form, and u32-counted UTF-16LE text. The opaque tail follows the text. The counted text length is a u32 immediately before its UTF-16LE code units. The view header contains `header_value:u32`, `header_id:u16`, and `remainder:bytes[16]`.
+
+A type-2 list with zero items contains only its marker, signature, and u32 count. A nonempty type-2 list also contains two u32 metadata values and one packed u32 reference per item. A packed local reference uses bits 0 through 30 as a one-based record index. Bit 31 is the qualifier. A zero index selects no record.
+
+The modeled-document browser prefix contains `prefix:bytes[49]`. A u32-counted UTF-16LE path follows. Its suffix is `.ipt` or `.iam`. The opaque tail follows the path.
+
+The cached-view prefix contains `prefix:bytes[28]` and `view_reference:u32`. The view reference is non-null and unqualified. It is a one-based index in metadata section 10. In the zero-high-word, zero-key-extension form, the first u32 of the section-10 entry is a zero-based index in section 8. The selected revision entry gives a zero-based segment-pair index in section 7. It selects one drawing-view record of type `5942cb22d111c557600037bd861c3cb0` in the selected sheet segment by `header_value = 0` and equal `header_id`. A cached view whose reference selects any other record keeps its record untyped. The opaque tail follows the reference.
+
+Drawing metadata section 7 has 32-byte segment-pair entries. Section 8 has 20-byte revision entries. Section 10 has 8-byte entries containing a u32 reference word and two u16 values. The section-8 count field is `reference_count:u16`. Section 9 has the tagged entries of section 3.
+
+`RSeEmbeddings/ThirdPartyStorages/_DWFSnapshot` contains opaque file bytes.

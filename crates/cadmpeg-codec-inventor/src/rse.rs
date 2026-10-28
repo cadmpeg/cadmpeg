@@ -107,6 +107,7 @@ impl MetaStreamDeclaration {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SegmentKind {
+    Drawing(crate::drawing::Family),
     PmBRep,
     MbBRep,
     PmDc,
@@ -171,6 +172,9 @@ impl DocumentKind {
 
 impl SegmentKind {
     fn classify(display_name: &str, type_name: Option<&str>) -> Self {
+        if let Some(family) = type_name.and_then(crate::drawing::Family::from_type_name) {
+            return Self::Drawing(family);
+        }
         match type_name {
             Some("PmBrepSegmentType") => Self::PmBRep,
             Some("MbBrepSegmentType") => Self::MbBRep,
@@ -195,6 +199,7 @@ impl SegmentKind {
 
     pub(crate) fn label(&self) -> &str {
         match self {
+            Self::Drawing(family) => family.type_name(),
             Self::PmBRep => "pm_brep",
             Self::MbBRep => "mb_brep",
             Self::PmDc => "pm_dc",
@@ -924,6 +929,18 @@ mod tests {
             detail: "bad body".into(),
         };
         assert_eq!(meta.declaration(), Some(expected));
+    }
+
+    #[test]
+    fn drawing_family_requires_the_registry_type() {
+        assert_eq!(
+            SegmentKind::classify("arbitrary", Some("DlDocDcSegmentType")),
+            SegmentKind::Drawing(crate::drawing::Family::Document)
+        );
+        assert_eq!(
+            SegmentKind::classify("DlDocDcSegmentType", None),
+            SegmentKind::Unknown("DlDocDcSegmentType".into())
+        );
     }
 
     #[test]
