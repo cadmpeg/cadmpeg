@@ -48,6 +48,10 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceUnplaced,
     /// A local occurrence owner joins no unique component definition.
     LocalOccurrenceOwnerUnbound,
+    /// A solved body has no unique explicit component owner.
+    ComponentBodyOwnerUnresolved,
+    /// A body without explicit membership uses entity-cluster component ownership.
+    ComponentBodyOwnerFallback,
     /// The component owner graph contains a cycle.
     LocalOccurrenceOwnerCycle,
     /// Repeated local instance trees exceed the decode limits.
@@ -358,6 +362,8 @@ impl F3dLossCode {
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
         Self::LocalOccurrenceOwnerUnbound,
+        Self::ComponentBodyOwnerUnresolved,
+        Self::ComponentBodyOwnerFallback,
         Self::LocalOccurrenceOwnerCycle,
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
@@ -514,6 +520,8 @@ impl F3dLossCode {
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
+            Self::ComponentBodyOwnerFallback => "assembly.component-body-owner-fallback",
+            Self::ComponentBodyOwnerUnresolved => "assembly.component-body-owner-unresolved",
             Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
@@ -705,6 +713,8 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::ComponentBodyOwnerUnresolved
+            | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -911,6 +921,8 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
+            | Self::ComponentBodyOwnerUnresolved
+            | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -1027,6 +1039,8 @@ mod tests {
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
                 "assembly.local-occurrence-owner-unbound",
+                "assembly.component-body-owner-unresolved",
+                "assembly.component-body-owner-fallback",
                 "assembly.local-occurrence-owner-cycle",
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",

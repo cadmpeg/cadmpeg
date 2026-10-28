@@ -22,6 +22,16 @@ locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
+## Composite types
+
+| Type | Bytes | Endianness | Meaning |
+| ---- | ----: | ---------- | ------- |
+| `component_body_membership_count` | 4 | little | The u32 count precedes the terminal Body-reference list. |
+| `component_body_membership_reference` | 51 | little | A present same-segment reference with a nonzero u64 target, a 36-byte ASCII type GUID, and two trailing zero bytes. |
+| `component_body_membership_local_reference` | 11 | little | A present untyped same-segment reference with a nonzero u64 target and two zero bytes. |
+| `component_body_membership_local_entry` | 15 | little | An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities. |
+| `component_body_membership_single_overhead` | 15 | little | A u32 body count and an eleven-byte untyped owner reference enclose the single body list. |
+
 ## `indexed_design_record_header`
 
 Spec §3.1 · layout: byte offsets · size: 11 B

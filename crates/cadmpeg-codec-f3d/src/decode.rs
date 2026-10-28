@@ -2462,6 +2462,7 @@ impl<'a> F3dDecodeSession<'a> {
             );
         }
         let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
+            ctx,
             scan,
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
@@ -2694,6 +2695,7 @@ impl<'a> F3dDecodeSession<'a> {
             SessionPath::Geometry(_) => std::mem::take(&mut self.native.design_body_bindings),
             SessionPath::Bodyless { .. } => {
                 crate::design::decode::body::decode_design_body_bindings(
+                    self.ctx,
                     self.scan,
                     None,
                     &self.native.body_native_keys,
@@ -2860,10 +2862,19 @@ impl<'a> F3dDecodeSession<'a> {
                 || !prereqs.design_body_bindings.is_empty()
                 || container::text_brep_names(scan).next().is_some(),
         );
+        let hidden_bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body.visible == Some(false))
+            .map(|body| body.id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
         let local_sources = crate::design::components::LocalComponentSources {
             scopes: &prereqs.design_parameter_scopes,
             occurrences: &prereqs.design_component_occurrences,
             components: &local_components,
+            hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
             bodies: bodies.as_ref(),
             root_ordinal_start: prereqs
@@ -3210,7 +3221,7 @@ fn decode_scanned_document<'a>(
 
     let model_selection = crate::design::decode::body::design_model_selection(scan)?;
     let unbound_body_bindings =
-        crate::design::decode::body::decode_design_body_bindings(scan, None, &[])?;
+        crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
     let model_breps = model_brep_candidates(scan, &model_selection.blob_names)?;
     let mut brep_outcome = if model_selection.explicitly_empty {
         ModelBrepOutcome::NoPhysicalModel
