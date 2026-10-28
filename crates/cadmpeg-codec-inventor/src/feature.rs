@@ -3911,6 +3911,27 @@ pub(crate) fn thicken_operation<'a>(
     })
 }
 
+pub(crate) fn thicken_operand_losses<'a>(
+    features: impl IntoIterator<Item = &'a Feature>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let count = features
+        .into_iter()
+        .filter(|feature| match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Thicken { .. }) => true,
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
+                kind.as_str() == "Thicken"
+            }
+            _ => false,
+        })
+        .count();
+    if count == 0 {
+        return Vec::new();
+    }
+    vec![crate::loss::InventorLossCode::FeatureThickenOperandsNative.note(format!(
+        "{count} Inventor thicken operation(s) retain native selections or unresolved construction controls and thickness side."
+    ))]
+}
+
 fn project_thicken(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
