@@ -95,15 +95,34 @@ fn malformed_unused_links_remain_explicitly_source_only() {
             &cadmpeg_ir::DecodeOptions::default(),
         )
         .expect("source-only property with its fidelity");
-        let source = decoded
+        assert!(decoded
             .source_fidelity()
             .retained_record(&property.id)
+            .is_none());
+        let source = decoded
+            .source_fidelity()
+            .record_layout()
+            .get(&property.id)
             .expect("property source");
         let xml =
             crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), &property.id);
         let range = graph.property_sources[&property.id].record_range();
         assert_eq!(xml, document[range.clone()].as_bytes());
         assert_eq!(source.offset(), u64::try_from(range.start).unwrap());
+        assert_eq!(
+            source.byte_len(),
+            u64::try_from(range.end - range.start).unwrap()
+        );
+        assert_eq!(
+            source.pointers()["byte_start"],
+            u64::try_from(range.start).unwrap()
+        );
+        assert_eq!(
+            source.pointers()["byte_end"],
+            u64::try_from(range.end).unwrap()
+        );
+        assert_eq!(source.payloads()["raw_xml"].as_ref(), xml);
+        assert_eq!(source.payloads().len(), 1);
         assert_eq!(property, graph.properties[0]);
     }
 }
