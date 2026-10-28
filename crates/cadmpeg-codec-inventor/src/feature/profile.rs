@@ -340,6 +340,7 @@ fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
 }
 
 /// Joins that resolve profile selections in one document.
+#[derive(Default)]
 pub(super) struct ProfileIndex<'a> {
     bodies: HashMap<(&'a str, u32), Option<&'a ProfileBody>>,
     kernel_links: HashMap<(&'a str, u32), &'a PmDcKernelEntityLink>,

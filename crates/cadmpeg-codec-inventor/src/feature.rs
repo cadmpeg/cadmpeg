@@ -41,6 +41,7 @@ mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod mirror;
 pub(crate) mod motion;
+pub(crate) mod pattern;
 pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
@@ -159,6 +160,7 @@ pub(crate) struct FeatureInventory {
     record_types: HashMap<cadmpeg_ir::ids::IdentityKey, HashMap<u32, Option<String>>>,
     pub(crate) features: Vec<PmDcFeature>,
     pub(crate) pattern_features: Vec<PmDcPatternFeature>,
+    pub(crate) pattern_operands: pattern::Operands,
     pub(crate) terminators: Vec<PmDcFeatureTerminator>,
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
@@ -326,6 +328,12 @@ pub(crate) struct PmDcPatternFeaturePayload {
     pub(crate) property_slots: Vec<crate::pmdc::PmDcReference>,
     pub(crate) control: u8,
     pub(crate) extension_values: Vec<u32>,
+}
+
+impl PmDcPatternFeaturePayload {
+    pub(crate) fn is_rectangular(&self) -> bool {
+        self.family == PmDcPatternFamily::Rectangular
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -588,6 +596,7 @@ pub(crate) fn inventory(
         record_types: HashMap::new(),
         features: Vec::new(),
         pattern_features: Vec::new(),
+        pattern_operands: pattern::Operands::default(),
         terminators: Vec::new(),
         properties: Vec::new(),
         dimensions: Vec::new(),
@@ -618,11 +627,22 @@ pub(crate) fn inventory(
             .record_types
             .entry(segment.pair.token.key().clone())
             .or_default();
+        let has_rectangular_pattern = table
+            .records
+            .iter()
+            .any(|record| record.type_id == RECTANGULAR_PATTERN_FEATURE_TYPE);
         for record in &table.records {
             record_types
                 .entry(record.ordinal)
                 .and_modify(|previous| *previous = None)
                 .or_insert_with(|| Some(type_id_string(record.type_id)));
+            if has_rectangular_pattern {
+                inventory.pattern_operands.note_record(
+                    segment.pair.token.as_str(),
+                    record.ordinal,
+                    record.type_id,
+                );
+            }
             if segment.kind == SegmentKind::PmBRep && record.type_id != KERNEL_ENTITY_LINK_TYPE {
                 continue;
             }
@@ -795,6 +815,69 @@ pub(crate) fn inventory(
                     },
                     segment_token: segment.pair.token.key().clone(),
                     record_ordinal: record.ordinal,
+                    detail: crate::issue_detail(error)?,
+                });
+            }
+        }
+        if !has_rectangular_pattern {
+            continue;
+        }
+        let operand_references = inventory
+            .pattern_features
+            .iter()
+            .filter(|pattern| {
+                pattern.identity.segment_token.as_str() == segment.pair.token.as_str()
+                    && pattern.family == PmDcPatternFamily::Rectangular
+            })
+            .flat_map(|pattern| {
+                pattern
+                    .property_slots
+                    .iter()
+                    .filter_map(|reference| reference.record_ordinal())
+            })
+            .collect::<HashSet<_>>();
+        for record in &table.records {
+            if !operand_references.contains(&record.ordinal) || !pattern::is_operand(record.type_id)
+            {
+                continue;
+            }
+            if let Err(error) = inventory.pattern_operands.read(
+                ctx,
+                segment.pair.token.as_str(),
+                record.ordinal,
+                record.type_id,
+                record.payload,
+                version,
+            ) {
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+                ctx.charge_entities(1, "admit Inventor PmDc feature issue")?;
+                inventory.issues.push(RecordIssue {
+                    family: RecordIssueFamily::Feature {
+                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
+                    },
+                    segment_token: segment.pair.token.key().clone(),
+                    record_ordinal: record.ordinal,
+                    detail: crate::issue_detail(error)?,
+                });
+            }
+        }
+        for pattern in inventory.pattern_features.iter().filter(|pattern| {
+            pattern.identity.segment_token.as_str() == segment.pair.token.as_str()
+                && pattern.family == PmDcPatternFamily::Rectangular
+        }) {
+            if let Err(error) = inventory
+                .pattern_operands
+                .validate_suppression(pattern, &inventory.properties)
+            {
+                ctx.charge_entities(1, "admit Inventor PmDc feature issue")?;
+                inventory.issues.push(RecordIssue {
+                    family: RecordIssueFamily::Feature {
+                        type_id: pattern.identity.type_id.clone(),
+                    },
+                    segment_token: pattern.identity.segment_token.clone(),
+                    record_ordinal: pattern.identity.record_ordinal,
                     detail: crate::issue_detail(error)?,
                 });
             }
@@ -1867,7 +1950,8 @@ impl FeatureFamily {
     }
 }
 
-struct ProjectionIndex<'a> {
+#[derive(Default)]
+pub(crate) struct ProjectionIndex<'a> {
     result_model: Option<&'a cadmpeg_ir::document::Model>,
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
@@ -2220,15 +2304,24 @@ pub(crate) fn project(
             continue;
         }
         let label = label_of(pattern.identity.record_ordinal);
-        let value = label
-            .and_then(|label| {
+        let value = match pattern.family {
+            PmDcPatternFamily::Mirror => label.and_then(|label| {
                 let (mirror_index, seed_records) = mirrors.as_ref()?;
                 mirror_index.project(ctx, pattern, label, |ordinal| {
                     let seed = seed_records.get(&ordinal)?.as_ref()?;
                     mirror::seed_feature_id(&history, pattern.identity.record_ordinal, seed)
                 })
-            })
-            .transpose()?;
+            }),
+            PmDcPatternFamily::Rectangular => pattern::project(
+                ctx,
+                pattern,
+                label,
+                &index,
+                &inventory.pattern_operands,
+                &history,
+            ),
+        }
+        .transpose()?;
         let (feature, result) = match value {
             Some((feature, result)) => {
                 neutral += 1;
@@ -3880,6 +3973,15 @@ fn feature_result(
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
     let collection = slot_property(source, slot, index)?;
+    result_from_collection(ctx, &source.identity, collection, index)
+}
+
+fn result_from_collection(
+    ctx: &DecodeContext<'_>,
+    identity: &crate::record_identity::RecordIdentity,
+    collection: &PmDcFeatureProperty,
+    index: &ProjectionIndex<'_>,
+) -> Option<Result<(FeatureId, FeatureResultTopology), CodecError>> {
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::ObjectCollection,
         items,
@@ -3889,11 +3991,7 @@ fn feature_result(
     };
     let mut bodies = Vec::new();
     for reference in items.references() {
-        let body = resolve_property(
-            source.identity.segment_token.as_str(),
-            reference.index(),
-            index,
-        )?;
+        let body = resolve_property(identity.segment_token.as_str(), reference.index(), index)?;
         if !matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
             return None;
         }
@@ -3908,7 +4006,7 @@ fn feature_result(
     if let Err(error) = ctx.charge_entities(1, "project Inventor feature result topology") {
         return Some(Err(error));
     }
-    let key = match source.identity.key() {
+    let key = match identity.key() {
         Ok(key) => key,
         Err(error) => return Some(Err(error)),
     };
@@ -4238,6 +4336,7 @@ pub(crate) mod tests {
             record_types: std::collections::HashMap::new(),
             features: vec![test_feature(0, 0, &[])],
             pattern_features: Vec::new(),
+            pattern_operands: super::pattern::Operands::default(),
             terminators: Vec::new(),
             properties: Vec::new(),
             dimensions: Vec::new(),
@@ -4549,7 +4648,10 @@ pub(crate) mod tests {
         assert!(admitted(&edge_set(Some(reference(11))), types));
     }
 
-    fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
+    pub(super) fn test_property(
+        ordinal: u32,
+        kind: PmDcFeaturePropertyKind,
+    ) -> PmDcFeatureProperty {
         Located::new(
             PmDcFeaturePropertyPayload {
                 save_version_major: 16,
@@ -4655,7 +4757,7 @@ pub(crate) mod tests {
         )
     }
 
-    fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
+    pub(super) fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
         Located::new(
             crate::design::PmDcParameterPayload {
                 save_version_major: 16,
@@ -4687,7 +4789,7 @@ pub(crate) mod tests {
         )
     }
 
-    fn neutral_parameter(
+    pub(super) fn neutral_parameter(
         raw: &crate::design::PmDcParameter,
         value: ParameterValue,
     ) -> DesignParameter {
@@ -4712,7 +4814,7 @@ pub(crate) mod tests {
 
     // The fixture builder keeps each independently indexed record family explicit.
     #[allow(clippy::too_many_arguments)]
-    fn test_projection_index<'a>(
+    pub(super) fn test_projection_index<'a>(
         properties: &'a [PmDcFeatureProperty],
         parameters: &'a [crate::design::PmDcParameter],
         neutral_parameters: &'a [DesignParameter],

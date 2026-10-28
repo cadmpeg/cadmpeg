@@ -208,6 +208,7 @@ fn empty_data() -> super::NativeData {
         sketch_record_issues: Vec::new(),
         pm_dc_features: Vec::new(),
         pm_dc_pattern_features: Vec::new(),
+        pm_dc_pattern_operands: Vec::new(),
         pm_dc_feature_terminators: Vec::new(),
         pm_dc_feature_properties: Vec::new(),
         pm_dc_sheet_metal_styles: Vec::new(),

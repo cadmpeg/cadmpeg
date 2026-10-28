@@ -127,6 +127,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "drawing_metadata_references",
     "drawing_reference_tables",
     "drawing_record_issues",
+    "pm_dc_pattern_operands",
 ];
 
 pub(crate) fn validate_native(
@@ -1416,7 +1417,80 @@ fn validate_features(
         &data.pm_dc_feature_properties,
         &data.pm_dc_transforms,
     );
+    let patterns_by_id = cadmpeg_core::decode::unique_index(
+        data.pm_dc_pattern_features
+            .iter()
+            .map(|record| (record.id(), record)),
+    );
+    let pattern_operands = if data.pm_dc_pattern_operands.is_empty() {
+        crate::feature::pattern::Operands::default()
+    } else {
+        crate::feature::pattern::Operands::from_native(&data.pm_dc_pattern_operands, &data.records)
+    };
+    for operand in &data.pm_dc_pattern_operands {
+        if !pattern_operands.matches_record(operand) {
+            findings.push(finding(Check::NativeLinks, "Inventor rectangular-pattern operand does not resolve to a unique typed RSe record".into(), Some(operand.id())));
+        }
+    }
+    for source in data
+        .pm_dc_pattern_features
+        .iter()
+        .filter(|source| source.is_rectangular())
+    {
+        if pattern_operands
+            .validate_suppression(source, &data.pm_dc_feature_properties)
+            .is_err()
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor rectangular-pattern suppression does not match its instance counts"
+                    .into(),
+                Some(source.id()),
+            ));
+        }
+    }
+    let pattern_validation = ir
+        .model
+        .features
+        .iter()
+        .any(crate::feature::pattern::is_linear_pattern)
+        .then(|| {
+            crate::feature::pattern::validation_index(crate::feature::pattern::SourceRecords {
+                properties: &data.pm_dc_feature_properties,
+                parameters: &data.pm_dc_parameters,
+                values: &ir.model.parameters,
+                transforms: &data.pm_dc_transforms,
+                directions: &data.pm_dc_directions,
+            })
+        });
     for feature in &ir.model.features {
+        if crate::feature::pattern::is_linear_pattern(feature) {
+            if feature
+                .native_ref
+                .as_ref()
+                .and_then(|id| patterns_by_id.get(id))
+                .and_then(Option::as_ref)
+                .is_none_or(|source| {
+                    pattern_validation.as_ref().is_none_or(|index| {
+                        !crate::feature::pattern::matches_source(
+                            source,
+                            feature,
+                            index,
+                            &pattern_operands,
+                            &ir.model.feature_result_topologies,
+                            &ir.model.features,
+                        )
+                    })
+                })
+            {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor rectangular pattern does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if is_flat_pattern_feature(feature)
             && feature
                 .native_ref
@@ -2097,6 +2171,7 @@ struct NativeData {
     sketch_record_issues: Vec<RecordIssue>,
     pm_dc_features: Vec<PmDcFeature>,
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
+    pm_dc_pattern_operands: Vec<crate::feature::pattern::NativeOperand>,
     pm_dc_feature_terminators: Vec<PmDcFeatureTerminator>,
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_sheet_metal_styles: Vec<crate::feature::sheet_metal::style::Style>,
@@ -2170,6 +2245,7 @@ impl NativeData {
             sketch_record_issues: namespace.arena_as_for_decode(ctx, "sketch_record_issues")?,
             pm_dc_features: namespace.arena_as_for_decode(ctx, "pm_dc_features")?,
             pm_dc_pattern_features: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_features")?,
+            pm_dc_pattern_operands: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_operands")?,
             pm_dc_feature_terminators: namespace
                 .arena_as_for_decode(ctx, "pm_dc_feature_terminators")?,
             pm_dc_feature_properties: namespace

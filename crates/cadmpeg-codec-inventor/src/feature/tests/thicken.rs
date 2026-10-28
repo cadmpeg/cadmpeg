@@ -164,6 +164,7 @@ fn fixture() -> Fixture {
         .collect(),
         features: Vec::new(),
         pattern_features: Vec::new(),
+        pattern_operands: crate::feature::pattern::Operands::default(),
         terminators: Vec::new(),
         dimensions: Vec::new(),
         properties: Vec::new(),
