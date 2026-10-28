@@ -241,6 +241,9 @@ pub(crate) enum F3dLossCode {
     /// Contained-occurrence component-path carriers name no merged instance
     /// with their owner chain.
     XrefContainedPoseNative,
+    /// External occurrence instances below local owners take the pose their own
+    /// component-path carriers store; the placement matrix stays native.
+    XrefOwnedPose,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
@@ -432,6 +435,7 @@ impl F3dLossCode {
         Self::XrefContainedPose,
         Self::XrefContainedPoseDisagrees,
         Self::XrefContainedPoseNative,
+        Self::XrefOwnedPose,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::XrefOwnerUnresolved,
@@ -591,6 +595,7 @@ impl F3dLossCode {
             Self::XrefContainedPose => "xref.contained-pose",
             Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
             Self::XrefContainedPoseNative => "xref.contained-pose-native",
+            Self::XrefOwnedPose => "xref.owned-pose",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::XrefOwnerUnresolved => "xref.owner-unresolved",
@@ -649,6 +654,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceCurrentPoseNative
             | Self::XrefContainedPose
             | Self::XrefContainedPoseNative
+            | Self::XrefOwnedPose
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
@@ -813,6 +819,7 @@ impl F3dLossCode {
             | Self::XrefContainedPose
             | Self::XrefContainedPoseDisagrees
             | Self::XrefContainedPoseNative
+            | Self::XrefOwnedPose
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1079,6 +1086,7 @@ mod tests {
                 "xref.contained-pose",
                 "xref.contained-pose-disagrees",
                 "xref.contained-pose-native",
+                "xref.owned-pose",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "xref.owner-unresolved",

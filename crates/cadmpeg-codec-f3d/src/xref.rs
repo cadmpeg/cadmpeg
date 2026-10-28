@@ -192,6 +192,7 @@ impl ReferenceJson {
         Ok(XrefReference {
             current_pose: None,
             contained_poses: Vec::new(),
+            owned_poses: Vec::new(),
             id,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
@@ -788,12 +789,17 @@ fn bind_occurrences(
             .filter_map(|record| bytes.get(record.offset..record.end))
             .filter_map(|body| contained_component_path_pose(body, serializer_magic))
             .collect::<Vec<_>>();
+        let owned = carriers
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter_map(|body| owned_component_path_pose(body, serializer_magic))
+            .collect::<Vec<_>>();
 
         streams.push((
             placements,
             failures,
             crate::ids::native_scope(&entry.name),
-            (poses, contained),
+            (poses, contained, owned),
         ));
     }
     let mut expanded = Vec::new();
@@ -822,7 +828,7 @@ fn bind_occurrences(
     let mut ambiguous_current_poses = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
-        for (placements, _, stream, (poses, contained)) in &streams {
+        for (placements, _, stream, (poses, contained, owned)) in &streams {
             let direct = select_component_insert_transforms(
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
@@ -872,15 +878,36 @@ fn bind_occurrences(
                         })
                     })
                     .collect::<Vec<_>>();
-                occurrences.push((placement, stream.clone(), pose, contained));
+                let owned = owned
+                    .iter()
+                    .filter(|pose| {
+                        pose.placement_record_index == placement.carrier_record_index
+                            && pose.role == reference.neutron_role.as_str()
+                    })
+                    .filter_map(|pose| {
+                        Some(crate::records::xref::XrefOwnedPose {
+                            carrier_record_index: pose.carrier_record_index,
+                            frame_bytes: pose.frame_bytes.clone().into(),
+                            owner_record_indices: pose.owner_record_indices.clone(),
+                            transform: pose
+                                .transform
+                                .map(crate::records::xref::XrefPlacementTransform::try_from)
+                                .transpose()
+                                .ok()?,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                occurrences.push((placement, stream.clone(), pose, (contained, owned)));
             }
         }
         if occurrences.is_empty() {
             expanded.push(reference.clone());
             continue;
         }
-        for (occurrence_ordinal, (placement, stream, current_pose, contained_poses)) in
-            occurrences.into_iter().enumerate()
+        for (
+            occurrence_ordinal,
+            (placement, stream, current_pose, (contained_poses, owned_poses)),
+        ) in occurrences.into_iter().enumerate()
         {
             let occurrence_id = format!(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
@@ -903,6 +930,7 @@ fn bind_occurrences(
                     .map_err(CodecError::NotImplemented)?,
                 current_pose,
                 contained_poses,
+                owned_poses,
                 ..reference.clone()
             });
         }
@@ -2147,6 +2175,87 @@ fn cross_document_target<'a>(
         }
         _ => None,
     }
+}
+
+/// The world pose that a `CommonData` component-path carrier stores for an
+/// external occurrence below local owners
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct OwnedPathPose {
+    /// The carrier's own indexed record.
+    pub(crate) carrier_record_index: u64,
+    /// The occurrence role of the cross-document element.
+    pub(crate) role: String,
+    /// This document's occurrence-placement record of the external occurrence.
+    pub(crate) placement_record_index: u64,
+    /// The local occurrence carriers that hold it, innermost first.
+    pub(crate) owner_record_indices: Vec<u64>,
+    /// `None` is the stored identity form.
+    pub(crate) transform: Option<[[f64; 4]; 4]>,
+    /// The complete carrier record, header included.
+    pub(crate) frame_bytes: Vec<u8>,
+}
+
+/// Parse a component-path carrier whose path is the referenced design's root
+/// component (a cross-document element), this document's occurrence placement
+/// of that role, and one or more of its local owners.
+pub(crate) fn owned_component_path_pose(
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Option<OwnedPathPose> {
+    let (members, at) = occurrence_path_members(body)?;
+    let [(component, _), (placement, _), owners @ ..] = members.as_slice() else {
+        return None;
+    };
+    let (_, role) = cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
+    let (placement_record_index, None) = placement.local()? else {
+        return None;
+    };
+    if owners.is_empty() || placement_record_index == 0 || body.get(at) != Some(&0) {
+        return None;
+    }
+    let owner_record_indices = owners
+        .iter()
+        .map(|(owner, _)| match owner.local()? {
+            (target, None) if target != 0 => Some(target),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    Some(OwnedPathPose {
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        role: role.to_owned(),
+        placement_record_index,
+        owner_record_indices,
+        transform,
+        frame_bytes: body.to_vec(),
+    })
+}
+
+/// Re-read a reference's retained owned poses through the carrier parser and
+/// require each to name this reference's role and placement record.
+pub(crate) fn owned_poses_match(reference: &XrefReference) -> bool {
+    if reference.owned_poses.is_empty() {
+        return true;
+    }
+    let Some(source) = &reference.placement_source else {
+        return false;
+    };
+    reference.owned_poses.iter().all(|retained| {
+        [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+            .into_iter()
+            .filter_map(|magic| owned_component_path_pose(&retained.frame_bytes, magic))
+            .any(|pose| {
+                pose.carrier_record_index == retained.carrier_record_index
+                    && pose.placement_record_index == source.carrier_record_index
+                    && pose.role == reference.neutron_role.as_str()
+                    && pose.owner_record_indices == retained.owner_record_indices
+                    && pose.transform
+                        == retained
+                            .transform
+                            .map(crate::records::xref::XrefPlacementTransform::rows)
+            })
+    })
 }
 
 /// Re-read a reference's retained contained poses through the carrier parser

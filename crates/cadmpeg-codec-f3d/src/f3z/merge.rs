@@ -530,7 +530,7 @@ fn place_contained_poses(
     if table
         .references
         .iter()
-        .all(|reference| reference.contained_poses.is_empty())
+        .all(|reference| reference.contained_poses.is_empty() && reference.owned_poses.is_empty())
     {
         return Ok(());
     }
@@ -594,10 +594,12 @@ fn place_contained_poses(
     let mut placed = Vec::new();
     let mut disagreeing = 0usize;
     let mut bound = BTreeSet::new();
+    let mut bound_owned = BTreeSet::new();
+    let mut owned_placed = 0usize;
     for reference in table
         .references
         .iter()
-        .filter(|r| !r.contained_poses.is_empty())
+        .filter(|r| !r.contained_poses.is_empty() || !r.owned_poses.is_empty())
     {
         let instances = ir
             .model
@@ -679,6 +681,27 @@ fn place_contained_poses(
                 bound.insert((reference.id.as_str(), ordinal));
                 poses.push((pose.owner_record_indices.len(), implied));
             }
+            // Without contained poses, the instance's own carriers give its world pose
+            // through its owners. A contained pose wins: an external occurrence's own
+            // carrier can keep its insert pose.
+            let own_pose = poses.is_empty();
+            if own_pose {
+                for (ordinal, pose) in reference.owned_poses.iter().enumerate() {
+                    if !owners.starts_with(&pose.owner_record_indices) {
+                        continue;
+                    }
+                    let Some(stored) =
+                        crate::design::components::neutral_affine(pose.transform.map_or(
+                            crate::xref::IDENTITY_ROWS,
+                            crate::records::xref::XrefPlacementTransform::rows,
+                        ))
+                    else {
+                        continue;
+                    };
+                    bound_owned.insert((reference.id.as_str(), ordinal));
+                    poses.push((pose.owner_record_indices.len(), stored));
+                }
+            }
             // A carrier that lists fewer owners can keep the pose from before an owner
             // it leaves out moved: the carriers that list the most owners give the
             // pose, and must agree.
@@ -721,6 +744,9 @@ fn place_contained_poses(
                 .and_then(|inverse| inverse.compose(first))
                 .map_err(|_| CodecError::malformed("F3Z contained pose is not invertible"))?;
             placed.push((instance, local));
+            if own_pose {
+                owned_placed += 1;
+            }
         }
     }
     let unbound = table
@@ -732,7 +758,15 @@ fn place_contained_poses(
         })
         .filter(|key| !bound.contains(key))
         .count();
-    let count = placed.len();
+    let owned_unbound = table
+        .references
+        .iter()
+        .flat_map(|reference| {
+            (0..reference.owned_poses.len()).map(move |ordinal| (reference.id.as_str(), ordinal))
+        })
+        .filter(|key| !bound_owned.contains(key))
+        .count();
+    let count = placed.len() - owned_placed;
     for (position, local) in placed {
         if let Some(occurrence) = ir.model.occurrences.get_mut(position) {
             occurrence.transform = local;
@@ -746,6 +780,16 @@ fn place_contained_poses(
     if disagreeing != 0 {
         losses.push(F3dLossCode::XrefContainedPoseDisagrees.note(format!(
             "{disagreeing} external occurrence instance(s) keep their placement: the component-path carriers of the occurrences inside them give different poses"
+        )));
+    }
+    if owned_placed != 0 {
+        losses.push(F3dLossCode::XrefOwnedPose.note(format!(
+            "{owned_placed} external occurrence instance(s) below local owners take the pose their own component-path carriers store; their occurrence-placement matrices stay in the native frames"
+        )));
+    }
+    if owned_unbound != 0 {
+        losses.push(F3dLossCode::XrefContainedPoseNative.note(format!(
+            "{owned_unbound} component-path carrier(s) of external occurrences below local owners are not applied: a contained pose places the instance, or no merged instance has their owner chain; they stay native"
         )));
     }
     if unbound != 0 {

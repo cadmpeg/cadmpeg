@@ -211,6 +211,26 @@ pub(crate) struct XrefContainedPose {
     pub(crate) transform: Option<XrefPlacementTransform>,
 }
 
+/// The world pose that a component-path carrier stores for an external
+/// occurrence below local owners
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct XrefOwnedPose {
+    pub(crate) carrier_record_index: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) frame_bytes: cadmpeg_ir::native::bytes::NativeBytes,
+    /// The local occurrence carriers that hold the external occurrence,
+    /// innermost first.
+    pub(crate) owner_record_indices: Vec<u64>,
+    /// World pose in centimetres. `None` is the stored identity form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub(crate) transform: Option<XrefPlacementTransform>,
+}
+
 /// One outgoing XREF placement of the top-level `RedirectionsStream.dat` table
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -260,6 +280,10 @@ pub(crate) struct XrefReference {
     /// this external occurrence, each through this placement.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) contained_poses: Vec<XrefContainedPose>,
+    /// World poses that component-path carriers store for this external
+    /// occurrence below its local owners.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) owned_poses: Vec<XrefOwnedPose>,
 }
 
 #[cfg(test)]
