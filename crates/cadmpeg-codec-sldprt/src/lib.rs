@@ -110,6 +110,7 @@ mod container;
 mod decode;
 mod dialect;
 mod feature_schema;
+mod framed_string;
 #[doc(hidden)]
 pub mod fuzz;
 mod history;
