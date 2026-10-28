@@ -220,7 +220,6 @@ pub(in super::super) fn build_report(
         coverage,
         losses,
         notes: container::notes(scan),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
 }
 

@@ -481,18 +481,6 @@
         "design": true,
         "model": true
       }
-    },
-    "transfer_ledger": {
-      "entries": [
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#1"
-          },
-          "source": "D1"
-        }
-      ]
     }
   },
   "source_fidelity": {

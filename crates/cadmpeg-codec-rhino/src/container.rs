@@ -1732,7 +1732,6 @@ pub(crate) fn container_only_result(
             coverage: cadmpeg_ir::report::decode::Coverage::default(),
             losses,
             notes,
-            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
         source_fidelity,
     })

@@ -99,7 +99,7 @@ These hold across every codec, every dialect, and every release. A change that b
 
 **Decoders tolerate unknown records generationally.** A record a decoder does not recognize is retained, not fatal, and not a reason to select a different decoder. This is the open-world read architecture — the same rule sfnt and protobuf converged on. Version-selected decoder variants are not a cleanup of it; they are its replacement, and they break the previous invariant.
 
-**Transfer accounting is explicit.** Every drop goes through a `*LossCode` with a pinned `family.detail` string, a `LossTaxonomy`, a severity, and a strict floor. IGES also fills `TransferLedger` so its read, write, and loss dispositions can be checked for closure. Other codecs currently leave that ledger empty. The dialect id in a report joins a claim to one file's classification.
+**Transfer accounting is explicit.** Every drop goes through a `*LossCode` with a pinned `family.detail` string, a `LossTaxonomy`, a severity, and a strict floor. The dialect id in a report joins a claim to one file's classification.
 
 **Write reports are honest about bytes.** `ExportReport.target` names the dialect actually produced, on every write path, including the inherited dialect under preservation. The claim is verified against the output: re-decoding the written bytes through the codec's own classifier lands on exactly the dialect the report named. A report that names a target the bytes do not classify as is a defect, not a rounding.
 

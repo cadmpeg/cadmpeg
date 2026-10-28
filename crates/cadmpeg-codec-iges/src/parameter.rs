@@ -2695,11 +2695,6 @@ impl QuarantinedParameterRecord {
         }
     }
 
-    /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:parameter#{}", self.sequence)
-    }
-
     pub(crate) fn loss_note(&self) -> Result<LossNote, CodecError> {
         let owned = match &self.ownership {
             QuarantinedCards::Owned { range, .. } => {

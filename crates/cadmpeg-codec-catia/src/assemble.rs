@@ -743,7 +743,6 @@ pub(crate) fn build_geometry_report(
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -877,7 +876,6 @@ pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 

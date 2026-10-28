@@ -13,7 +13,6 @@ fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
 
     super::super::report_untyped_material_distances(&mut report, 0);

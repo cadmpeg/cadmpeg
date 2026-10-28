@@ -125,7 +125,6 @@ pub(crate) fn decoded(
             coverage: Default::default(),
             losses,
             notes: summary.notes,
-            transfer_ledger: Default::default(),
         },
         ir,
         source_fidelity: fidelity,

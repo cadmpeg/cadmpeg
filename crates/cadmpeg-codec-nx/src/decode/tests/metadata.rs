@@ -34,7 +34,6 @@ fn decoded_unknown_limit_error(
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
 
     let file = crate::test_support::test_prt::prt_with_named_payloads(&[]);
@@ -94,7 +93,6 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
 
     super::super::report_untransferred_streams(

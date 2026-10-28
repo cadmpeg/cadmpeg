@@ -437,7 +437,6 @@ fn build_container_body(
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes,
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
     body.losses.push(loss);
     body.losses.extend(dialect_losses);

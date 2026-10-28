@@ -45,13 +45,7 @@ fn fixture() -> Value {
                     "provenance": {"format": "synthetic", "stream": "source", "offset": 7, "tag": "pcurve"}
                 }
             ],
-            "notes": [],
-            "transfer_ledger": {"entries": [
-                {"source": "one", "outcome": {"disposition": "emitted", "target": FIRST}},
-                {"source": "two", "outcome": {"disposition": "retained", "target": SECOND, "note": "retained"}},
-                {"source": "three", "outcome": {"disposition": "approximated", "target": FIRST, "note": "approximate"}},
-                {"source": "four", "outcome": {"disposition": "omitted", "note": "absent"}}
-            ]}
+            "notes": []
         },
         "fidelity": {
             "record_layout": {
@@ -94,6 +88,23 @@ fn object_paths(value: &Value, path: &str, paths: &mut Vec<String>) {
 
 #[test]
 fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
+    for ledger in [
+        json!({"entries": [
+            {"source": "one", "outcome": {"disposition": "emitted", "target": FIRST}},
+            {"source": "two", "outcome": {"disposition": "retained", "target": SECOND, "note": "retained"}},
+            {"source": "three", "outcome": {"disposition": "approximated", "target": FIRST, "note": "approximate"}},
+            {"source": "four", "outcome": {"disposition": "omitted", "note": "absent"}}
+        ]}),
+        json!({"entries": []}),
+        Value::Null,
+        json!([]),
+    ] {
+        let mut removed = fixture();
+        removed["report"]["transfer_ledger"] = ledger;
+        let error = DecodeSidecar::from_json(&removed.to_string())
+            .expect_err("the removed report field is not admitted through a sidecar");
+        assert!(error.to_string().contains("transfer_ledger"), "{error}");
+    }
     let mut fixtures = vec![fixture()];
     for admission in [
         json!("admitted"),

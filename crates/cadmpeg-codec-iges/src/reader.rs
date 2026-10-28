@@ -10,11 +10,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::{document_local_sha256, DOCUMENT_FINGERPRINT_METADATA_KEY};
-use cadmpeg_ir::report::{
-    decode::{TransferLedger, TransferOutcome},
-    loss::LossNote,
-    Severity,
-};
+use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::source_fidelity::parts::{ParserPartOutput, PartOutput};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
@@ -212,21 +208,6 @@ fn append_generic_losses(
 
         losses.push(code.note(message).with_provenance(entry.loss_provenance()));
     }
-}
-
-fn record_retained_transfer(
-    ledger: &mut TransferLedger,
-    source: String,
-    target: String,
-    note: &'static str,
-) {
-    ledger.record(
-        source,
-        TransferOutcome::Retained {
-            target,
-            note: Some(note.to_owned()),
-        },
-    );
 }
 
 fn annotate_representation(
@@ -781,8 +762,6 @@ fn decode_with_occurrence_limits(
     source_fidelity.append(parser_fidelity)?;
     source_fidelity.append(part_fidelity)?;
     source_fidelity.install_record_captures(ctx, |_, _| Ok(()))?;
-    // The transfer ledger is verified before DecodeResult construction, so its
-    // identity checks require the same canonical arena order as the result.
     ir.finalize();
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
@@ -927,81 +906,11 @@ fn decode_with_occurrence_limits(
         );
         reject_invalid_semantic_ir(ctx, &ir)?;
     }
-    let attributed = if ctx.container_only() {
-        BTreeSet::new()
-    } else {
-        let mut attributed = attributed_sequences(&losses);
-        attributed.extend(&parse.given_up_parameters);
-        attributed.extend(
-            parse
-                .parameters
-                .iter()
-                .filter(|record| record.has_absent_fields())
-                .map(|record| record.directory_sequence),
-        );
-        attributed
-    };
-    let mut transfer_ledger = TransferLedger::default();
-    for entry in parse
-        .directory
-        .iter()
-        .filter(|entry| entry.entity_type != 0)
-    {
-        let attributed_loss = attributed.contains(&entry.sequence);
-        let note = if ctx.container_only() {
-            "native record retained; semantic projection was not requested"
-        } else if !crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table) {
-            "native record retained; entity is outside the declared read envelope"
-        } else if projection.decoded.contains(&entry.sequence) && attributed_loss {
-            "native record retained; semantic projection emitted with an attributed loss"
-        } else if projection.decoded.contains(&entry.sequence) {
-            "native record retained; semantic projection emitted"
-        } else if attributed_loss {
-            "native record retained; semantic projection omitted with an attributed loss"
-        } else if projection.consumed.contains(&entry.sequence) {
-            "native record retained; record was consumed as construction support"
-        } else {
-            // The generic pass attributes every envelope-admitted record that
-            // is neither decoded nor consumed, so no decode reaches this arm;
-            // it names that state truthfully if a later pass admits it.
-            "native record retained; no standalone neutral projection was required"
-        };
-        let source = format!("D{}", entry.sequence);
-        let target = format!("iges:entity:directory#{}", entry.sequence);
-        record_retained_transfer(&mut transfer_ledger, source, target, note);
-    }
-    for record in &parse.quarantined_directory {
-        let source = format!("D{}", record.sequence);
-        record_retained_transfer(
-            &mut transfer_ledger,
-            source,
-            record.identity(),
-            "quarantined directory record retained; typed Directory fields were not recovered",
-        );
-    }
-    for record in &parse.quarantined_parameters {
-        let source = format!("D{}:parameter", record.sequence);
-        record_retained_transfer(
-            &mut transfer_ledger,
-            source,
-            record.identity(),
-            "quarantined parameter data retained; tokens were not recovered",
-        );
-    }
-    let verification_index = cadmpeg_ir::index::ModelIndex::build(&ir);
-    transfer_ledger
-        .verify(&verification_index)
-        .map_err(|message| {
-            CodecError::malformed(format_args!(
-                "IGES transfer ledger is inconsistent: {message}"
-            ))
-        })?;
     let mut notes = directory::summary_notes(&parse.directory);
     notes.extend(parameter::summary_notes(&parse.parameters));
     notes.extend(graph::summary_notes(&parse.references));
     let document_digest =
         document_local_sha256(ctx, &ir, ir.source.as_ref(), "iges", crate::SOURCE_IMAGE_ID)?;
-    drop(verification_index);
     source_fidelity.metadata.insert(
         DOCUMENT_FINGERPRINT_METADATA_KEY.to_owned(),
         document_digest,
@@ -1038,7 +947,6 @@ fn decode_with_occurrence_limits(
     }
     body.losses = losses;
     body.notes = notes;
-    body.transfer_ledger = transfer_ledger;
     Ok(Decoded {
         ir,
         body,

@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::wire;
-
-use crate::report::decode::{DecodeReport, DecodeTransfer, TransferLedger};
+use crate::report::decode::{DecodeReport, DecodeTransfer};
 use cadmpeg_core::dialect::DialectLayers;
 use std::collections::BTreeMap;
 
-use crate::report::decode::{TransferDisposition, TransferOutcome, TransferRecord};
+fn decode_report_for_wire_tests() -> DecodeReport {
+    DecodeReport::unclassified(
+        "test",
+        DecodeTransfer {
+            scope: crate::document::ContentScope::full(),
+            geometry_transferred: false,
+        },
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+}
 
 #[test]
 fn hex_coverage_records_the_formatted_name() {
@@ -51,41 +60,52 @@ fn current_decode_report_schema_requires_its_format_identity() {
         required.iter().any(|field| field == "identity"),
         "{schema:#}"
     );
+    assert!(schema["properties"].get("transfer_ledger").is_none());
+    assert_eq!(schema["additionalProperties"], false);
+    for name in [
+        "TransferDisposition",
+        "TransferOutcome",
+        "TransferRecord",
+        "TransferLedger",
+    ] {
+        for definitions in ["$defs", "definitions"] {
+            assert!(
+                schema
+                    .get(definitions)
+                    .and_then(|types| types.get(name))
+                    .is_none(),
+                "{name}: {schema:#}"
+            );
+        }
+    }
 }
 
 #[test]
 fn transfer_record_keeps_the_nested_outcome_wire_shape() {
-    let record = TransferRecord {
-        source: "D1".into(),
-        outcome: TransferOutcome::Retained {
-            target: "iges:entity:directory#1".into(),
-            note: Some("retained".into()),
-        },
-    };
-    let wire = serde_json::to_value(&record).expect("transfer record serializes");
+    let record = serde_json::json!({
+        "source": "D1",
+        "outcome": {
+            "disposition": "retained",
+            "target": "iges:entity:directory#1",
+            "note": "retained"
+        }
+    });
+    let report = decode_report_for_wire_tests();
+    let mut wire = serde_json::to_value(&report).expect("decode report serializes");
+    assert!(wire.get("transfer_ledger").is_none());
     assert_eq!(
-        wire,
-        serde_json::json!({
-            "source": "D1",
-            "outcome": {
-                "disposition": "retained",
-                "target": "iges:entity:directory#1",
-                "note": "retained"
-            }
-        })
+        serde_json::from_value::<DecodeReport>(wire.clone()).unwrap(),
+        report
     );
-    assert_eq!(
-        serde_json::from_value::<TransferRecord>(wire).expect("transfer record deserializes"),
-        record
-    );
+    wire["transfer_ledger"] = serde_json::json!({"entries": [record]});
+    let error = serde_json::from_value::<DecodeReport>(wire)
+        .expect_err("the removed transfer ledger is not a decode-report field");
+    assert!(error.to_string().contains("transfer_ledger"), "{error}");
 }
 
 #[test]
 fn transfer_record_wire_rejects_disposition_target_disagreement() {
-    // The disposition is the tag, so a target and a note exist only on the
-    // dispositions that carry them: each disagreement is a missing or an
-    // unknown field, not a value a reader has to refuse.
-    for wire in [
+    for record in [
         serde_json::json!({
             "source": "D1",
             "outcome": {"disposition": "retained"}
@@ -102,27 +122,17 @@ fn transfer_record_wire_rejects_disposition_target_disagreement() {
             "source": "D1",
             "outcome": {"disposition": "emitted"}
         }),
+        serde_json::json!({
+            "source": "D2",
+            "outcome": {"disposition": "omitted", "note": "unsupported"}
+        }),
     ] {
-        assert!(serde_json::from_value::<TransferRecord>(wire).is_err());
+        let mut wire = serde_json::to_value(decode_report_for_wire_tests()).unwrap();
+        wire["transfer_ledger"] = serde_json::json!({"entries": [record]});
+        let error = serde_json::from_value::<DecodeReport>(wire)
+            .expect_err("no former outcome shape restores the removed report field");
+        assert!(error.to_string().contains("transfer_ledger"), "{error}");
     }
-
-    let omitted: TransferRecord = serde_json::from_value(serde_json::json!({
-        "source": "D2",
-        "outcome": {"disposition": "omitted", "note": "unsupported"}
-    }))
-    .expect("omitted record has no target");
-    assert_eq!(omitted.target(), None);
-    assert_eq!(
-        wire::field::<crate::report::decode::TransferDisposition>(
-            &(omitted.outcome),
-            "disposition"
-        ),
-        TransferDisposition::Omitted
-    );
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(&(omitted.outcome), "note").as_deref(),
-        Some("unsupported")
-    );
 }
 
 #[test]
@@ -138,7 +148,6 @@ fn classified_report_wire_requires_its_primary_format() {
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        TransferLedger::default(),
     );
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
@@ -171,7 +180,6 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        TransferLedger::default(),
     );
 
     let rendered = serde_json::to_string(&report).unwrap();

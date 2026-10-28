@@ -1107,7 +1107,6 @@ pub(in crate::families) fn try_decode_zero_entity(
             coverage,
             losses,
             notes: Vec::new(),
-            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
         annotations: annotations.build(),
         unknowns,

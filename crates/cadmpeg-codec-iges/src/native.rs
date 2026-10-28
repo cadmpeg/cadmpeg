@@ -175,6 +175,18 @@ enum NativeQuarantinedRecord<'a> {
     Parameter(&'a QuarantinedParameterRecord),
 }
 
+impl Serialize for QuarantinedDirectoryRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        NativeQuarantinedRecord::Directory(self).serialize(serializer)
+    }
+}
+
+impl Serialize for QuarantinedParameterRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        NativeQuarantinedRecord::Parameter(self).serialize(serializer)
+    }
+}
+
 impl Serialize for NativeQuarantinedRecord<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -2212,8 +2224,8 @@ where
 }
 
 struct NativeInputIndexes<'a> {
-    quarantined_directory_records: Vec<NativeQuarantinedRecord<'a>>,
-    quarantined_parameter_records: Vec<NativeQuarantinedRecord<'a>>,
+    quarantined_directory_records: Vec<&'a QuarantinedDirectoryRecord>,
+    quarantined_parameter_records: Vec<&'a QuarantinedParameterRecord>,
     cards: Vec<NativeCard<'a>>,
     by_directory: BTreeMap<u32, &'a ParameterRecord>,
     entries: BTreeMap<u32, &'a DirectoryEntry>,
@@ -2226,19 +2238,9 @@ fn index_native_inputs<'a>(
     quarantine: QuarantinedRecords<'a>,
 ) -> NativeInputIndexes<'a> {
     let mut quarantined_directory_records = Vec::new();
-    quarantined_directory_records.extend(
-        quarantine
-            .directory
-            .iter()
-            .map(NativeQuarantinedRecord::Directory),
-    );
+    quarantined_directory_records.extend(quarantine.directory.iter());
     let mut quarantined_parameter_records = Vec::new();
-    quarantined_parameter_records.extend(
-        quarantine
-            .parameters
-            .iter()
-            .map(NativeQuarantinedRecord::Parameter),
-    );
+    quarantined_parameter_records.extend(quarantine.parameters.iter());
     let mut cards = Vec::new();
     cards.extend(
         scan.lines

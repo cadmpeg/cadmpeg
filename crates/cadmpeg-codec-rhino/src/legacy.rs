@@ -19,7 +19,6 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
@@ -3080,7 +3079,6 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             coverage,
             losses,
             notes,
-            transfer_ledger: TransferLedger::default(),
         },
         source_fidelity,
     })

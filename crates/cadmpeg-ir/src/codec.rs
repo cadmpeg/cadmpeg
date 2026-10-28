@@ -18,7 +18,7 @@ pub use self::loss::DecodeLossCode;
 use crate::document::CadIr;
 use crate::report::{
     check::Finding,
-    decode::{Coverage, DecodeReport, DecodeTransfer, TransferLedger},
+    decode::{Coverage, DecodeReport, DecodeTransfer},
     loss::{LossNote as DecodeLoss, StrictConsequence},
 };
 use crate::source_fidelity::SourceFidelity;
@@ -198,8 +198,6 @@ pub struct DecodeBody {
     pub losses: Vec<DecodeLoss>,
     /// Codec-defined informational notes.
     pub notes: Vec<String>,
-    /// Complete source-to-result accounting.
-    pub transfer_ledger: TransferLedger,
 }
 
 impl DecodeBody {
@@ -211,7 +209,6 @@ impl DecodeBody {
             coverage: Coverage::default(),
             losses: Vec::new(),
             notes: Vec::new(),
-            transfer_ledger: TransferLedger::default(),
         }
     }
 }

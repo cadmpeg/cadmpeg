@@ -933,7 +933,6 @@ mod tests {
             std::collections::BTreeMap::default(),
             Vec::new(),
             Vec::new(),
-            crate::report::decode::TransferLedger::default(),
         )
     }
 

@@ -40,7 +40,6 @@ pub(crate) fn build_decode_report(
                 crate::container::SummaryScope::FullDecode
             },
         ),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
 }
 

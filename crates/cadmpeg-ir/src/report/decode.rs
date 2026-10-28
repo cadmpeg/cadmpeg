@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode reports, coverage, and source-transfer disposition.
+//! Decode reports, coverage, and delivered content scope.
 
 use std::collections::BTreeMap;
 
@@ -24,8 +24,6 @@ pub struct DecodeReport {
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
-    /// Per-source disposition ledger for decoded records and entities.
-    pub transfer_ledger: TransferLedger,
 }
 
 /// Delivered content scope and B-rep geometry outcome.
@@ -68,9 +66,6 @@ struct DecodeReportWire {
     losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     notes: Vec<String>,
-    /// Per-source disposition ledger for decoded records and entities.
-    #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
-    transfer_ledger: TransferLedger,
 }
 
 impl From<DecodeReport> for DecodeReportWire {
@@ -81,7 +76,6 @@ impl From<DecodeReport> for DecodeReportWire {
             coverage,
             losses,
             notes,
-            transfer_ledger,
         } = report;
         Self {
             identity: classification,
@@ -89,7 +83,6 @@ impl From<DecodeReport> for DecodeReportWire {
             coverage: coverage.into_wire(),
             losses,
             notes,
-            transfer_ledger,
         }
     }
 }
@@ -102,7 +95,6 @@ impl From<DecodeReportWire> for DecodeReport {
             coverage: Coverage::from_wire(wire.coverage),
             losses: wire.losses,
             notes: wire.notes,
-            transfer_ledger: wire.transfer_ledger,
         }
     }
 }
@@ -119,137 +111,6 @@ impl JsonSchema for DecodeReport {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         DecodeReportWire::json_schema(generator)
-    }
-}
-
-/// Final disposition of one source record or semantic object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum TransferDisposition {
-    /// Transferred as an exact neutral or native entity.
-    Emitted,
-    /// Preserved in a native retained-record arena.
-    Retained,
-    /// Transferred with an explicit approximation.
-    Approximated,
-    /// Deliberately not transferred.
-    Omitted,
-}
-
-/// One source object's structurally valid transfer outcome.
-///
-/// The disposition is the wire's tag, so each outcome carries exactly the
-/// fields valid for it: an emitted record has no note to state, and an omitted
-/// record has no target.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "disposition", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum TransferOutcome {
-    /// Transferred as an exact neutral or native entity.
-    Emitted {
-        /// Resulting neutral or native identity.
-        target: String,
-    },
-    /// Preserved in a native retained-record arena.
-    Retained {
-        /// Resulting native retained-record identity.
-        target: String,
-        /// Informational note about retention or semantic projection.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_note"
-        )]
-        note: Option<String>,
-    },
-    /// Transferred with an explicit approximation.
-    Approximated {
-        /// Resulting neutral or native identity.
-        target: String,
-        /// Concise reason for the approximation.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_note"
-        )]
-        note: Option<String>,
-    },
-    /// Deliberately not transferred.
-    Omitted {
-        /// Concise reason for the omission.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_note"
-        )]
-        note: Option<String>,
-    },
-}
-
-/// One source object's transfer disposition.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct TransferRecord {
-    /// Stable source identity or source-local record key.
-    pub source: String,
-    /// Outcome whose variant carries exactly the data valid for its disposition.
-    pub outcome: TransferOutcome,
-}
-
-impl TransferRecord {
-    /// Returns the produced target, or `None` for an omitted source object.
-    #[must_use]
-    pub fn target(&self) -> Option<&str> {
-        match &self.outcome {
-            TransferOutcome::Emitted { target }
-            | TransferOutcome::Retained { target, .. }
-            | TransferOutcome::Approximated { target, .. } => Some(target),
-            TransferOutcome::Omitted { .. } => None,
-        }
-    }
-}
-
-/// Complete source-to-result accounting for a decode.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct TransferLedger {
-    /// Entries in deterministic source traversal order.
-    pub entries: Vec<TransferRecord>,
-}
-
-impl TransferLedger {
-    /// Returns whether the ledger contains no transfer entries.
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Records one source disposition.
-    pub fn record(&mut self, source: impl Into<String>, outcome: TransferOutcome) {
-        self.entries.push(TransferRecord {
-            source: source.into(),
-            outcome,
-        });
-    }
-
-    /// Verifies every produced target against a finalized model index.
-    pub fn verify(&self, index: &crate::index::ModelIndex<'_>) -> Result<(), String> {
-        for entry in &self.entries {
-            if let Some(target) = entry
-                .target()
-                .filter(|target| !index.contains(target, crate::index::StandardIndex))
-            {
-                return Err(format!(
-                    "transfer source {:?} targets unresolved identity {:?}",
-                    entry.source, target
-                ));
-            }
-        }
-        Ok(())
     }
 }
 
@@ -394,7 +255,6 @@ impl DecodeReport {
             coverage: Coverage::default(),
             losses: vec![crate::codec::DecodeLossCode::SidecarStale.note(message)],
             notes: Vec::new(),
-            transfer_ledger: TransferLedger::default(),
         }
     }
 
@@ -413,7 +273,6 @@ impl DecodeReport {
             coverage: body.coverage,
             losses: body.losses,
             notes: body.notes,
-            transfer_ledger: body.transfer_ledger,
         }
     }
 
@@ -426,7 +285,6 @@ impl DecodeReport {
         coverage: BTreeMap<String, usize>,
         losses: Vec<LossNote>,
         notes: Vec<String>,
-        transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
             classification: FormatIdentity::classified(dialects),
@@ -434,7 +292,6 @@ impl DecodeReport {
             coverage: Coverage::from_wire(coverage),
             losses,
             notes,
-            transfer_ledger,
         }
     }
 
@@ -447,7 +304,6 @@ impl DecodeReport {
         coverage: BTreeMap<String, usize>,
         losses: Vec<LossNote>,
         notes: Vec<String>,
-        transfer_ledger: TransferLedger,
     ) -> Self {
         Self {
             classification: FormatIdentity::unclassified(format),
@@ -455,7 +311,6 @@ impl DecodeReport {
             coverage: Coverage::from_wire(coverage),
             losses,
             notes,
-            transfer_ledger,
         }
     }
 
@@ -489,9 +344,6 @@ impl DecodeReport {
         self.transfer.geometry_transferred()
     }
 }
-
-// Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_note, String, "note");
 
 #[cfg(test)]
 mod tests;

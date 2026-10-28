@@ -3755,7 +3755,6 @@ fn build_geometry_report(
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes,
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
 }
 
@@ -4927,7 +4926,6 @@ fn build_container_report(
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes,
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
 }
 

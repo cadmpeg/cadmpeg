@@ -1019,7 +1019,6 @@ pub(super) fn try_decode_freeform_surfaces(
                 coverage,
                 losses,
                 notes: Vec::new(),
-                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
             },
             annotations,
             unknowns,

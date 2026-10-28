@@ -329,7 +329,7 @@ The V5.0 read profile applies the null-string rule to a one-string General Note:
 
 ## Record quarantine
 
-A defect inside one record does not refuse the file. The decoder separates three tiers of defect. A framing defect that leaves record boundaries or the section census unknown refuses the file. A defect attributable to one Directory Entry record, or to one entity's Parameter Data, quarantines that record: the decoder retains its raw card bytes under a stable identity, accounts for it in the transfer ledger, and charges a loss. An integrity or resource failure refuses the request unchanged. This section is the contract for that separation. It states what the decoder produces for each defect class, and it holds for both container-only and full decodes.
+A defect inside one record does not refuse the file. The decoder separates three tiers of defect. A framing defect that leaves record boundaries or the section census unknown refuses the file. A defect attributable to one Directory Entry record, or to one entity's Parameter Data, quarantines that record: the decoder retains its raw card bytes under a stable identity, and charges a loss. An integrity or resource failure refuses the request unchanged. This section is the contract for that separation. It states what the decoder produces for each defect class, and it holds for both container-only and full decodes.
 
 ### Card framing and the boundary-recovery reading
 
@@ -357,15 +357,13 @@ The post-Terminate rule is dialect-specific. Type 5.x retains unsequenced physic
 
 ### Quarantined records
 
-Every Directory Entry has admitted interpretation fields or is quarantined. Admitted metadata fields contain values read from the source; unreadable metadata has no substituted value. A quarantined record carries no interpreted fields. A quarantined record is retained under a stable identity that the transfer ledger and the reference graph name.
+Every Directory Entry has admitted interpretation fields or is quarantined. Admitted metadata fields contain values read from the source; unreadable metadata has no substituted value. A quarantined record carries no interpreted fields. A quarantined record is retained under a stable identity that the reference graph names.
 
 Line Font, Level, View, Label Display, Line Weight, Color, and Subscript are independently interpretable metadata fields. An unreadable field has no interpreted value and retains its exact source bytes. It does not determine Parameter Data ownership or geometry admission. A readable display value that violates its dialect's field rule remains noncanonical metadata; it does not remove independently defined geometry.
 
 One quarantine record covers a Directory Entry whose identity, interpretation, status, transformation, or Parameter Data ownership fields cannot be read. The quarantine spans the two-card pair. A Directory Entry section with an odd card count quarantines its trailing unpaired card as one record; pairing is anchored at sequence one, so the unpaired card is the last one.
 
 Quarantined records count as native entities for resource accounting, on the same charge as every other native record.
-
-Every quarantined record is accounted in the transfer ledger as retained. The ledger omits a null entity only when the file states entity type `0`; a quarantined record states nothing, so it is accounted rather than assumed null. Ledger verification stays fatal, and a failure there is a decoder defect and not a source defect.
 
 ### Pointers into a quarantined record
 
@@ -775,7 +773,7 @@ A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face co
 
 ## Byte accounting
 
-The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads and line endings are lowercase hexadecimal strings with two digits per byte. Directory fields, Parameter tokens, links, and source identities remain available through that namespace. A framed unreadable Parameter literal retains its field span and a defect code without changing the positions of the other tokens. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader emits a closed `transfer_ledger` for every non-null Directory entity and for every quarantined record, and verifies it against the decoded model.
+The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads and line endings are lowercase hexadecimal strings with two digits per byte. Directory fields, Parameter tokens, links, and source identities remain available through that namespace. A framed unreadable Parameter literal retains its field span and a defect code without changing the positions of the other tokens. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest.
 
 ## Decode admission
 
@@ -785,8 +783,8 @@ ownership, endpoint agreement, pcurve agreement, transforms, and document
 invariants before it returns the document. A failed candidate does not commit
 partial topology.
 
-Every non-null Directory Entry has one retained native identity and one
-`transfer_ledger` disposition, and so does every quarantined record. A
+Every non-null Directory Entry has one retained native identity, and so does
+every quarantined record. A
 supported entity without neutral projection has a stable namespaced loss code,
 source provenance, and its retained native record. A projected entity with reduced fidelity records the reduction on the
 same source identity. The decoder records losses and returns as much content as

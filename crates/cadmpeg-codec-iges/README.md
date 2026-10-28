@@ -97,9 +97,8 @@ parameters keep their native scale.
 
 Records that block faithful transfer land in `DecodeReport::losses`.
 `native.iges` retains physical cards and typed or generic entity data.
-`SourceFidelity` retains the complete source image and its SHA-256 digest;
-`transfer_ledger` records every non-null Directory entity and verifies its
-closure against the decoded model. Coverage for each envelope lives in the
+`SourceFidelity` retains the complete source image and its SHA-256 digest.
+Coverage for each envelope lives in the
 [format-support profile][support].
 
 ## Stress inputs

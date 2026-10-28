@@ -343,11 +343,6 @@ impl QuarantinedDirectoryRecord {
         self.bytes.len() / crate::card::CARD_WIDTH
     }
 
-    /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:directory#{}", self.sequence)
-    }
-
     pub(crate) fn loss_note(&self) -> LossNote {
         let message = format!("IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
         self.sequence,

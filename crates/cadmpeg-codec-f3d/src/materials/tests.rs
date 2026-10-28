@@ -1693,7 +1693,6 @@ fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
              transferred.",
         )],
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 

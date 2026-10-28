@@ -1269,7 +1269,6 @@ mod tests {
                 BTreeMap::new(),
                 Vec::new(),
                 Vec::new(),
-                crate::report::decode::TransferLedger::default(),
             );
             let sidecar = crate::source_fidelity::DecodeSidecar::bind_sha256(
                 crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),

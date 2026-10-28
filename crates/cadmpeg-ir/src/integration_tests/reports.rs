@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::report::{
-    decode::{DecodeReport, DecodeTransfer, TransferLedger},
+    decode::{DecodeReport, DecodeTransfer},
     export::{CensusBasis, EntityCensus, ExportReport},
     loss::{LossKind, LossNote, LossTaxonomy},
     Severity,
@@ -43,7 +43,6 @@ fn unclassified_reports_serialize_empty_dialect_keys() {
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        TransferLedger::default(),
     );
     let rendered = serde_json::to_string(&decode).unwrap();
     assert!(

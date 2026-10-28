@@ -29,7 +29,6 @@ fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
             F3dLossCode::MissingGeometryStream.note("stated before classification"),
         ],
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 

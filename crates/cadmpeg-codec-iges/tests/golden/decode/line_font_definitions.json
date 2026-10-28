@@ -786,42 +786,6 @@
         "design": true,
         "model": true
       }
-    },
-    "transfer_ledger": {
-      "entries": [
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#1"
-          },
-          "source": "D1"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#3"
-          },
-          "source": "D3"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#5"
-          },
-          "source": "D5"
-        },
-        {
-          "outcome": {
-            "disposition": "retained",
-            "note": "native record retained; semantic projection emitted",
-            "target": "iges:entity:directory#7"
-          },
-          "source": "D7"
-        }
-      ]
     }
   },
   "source_fidelity": {

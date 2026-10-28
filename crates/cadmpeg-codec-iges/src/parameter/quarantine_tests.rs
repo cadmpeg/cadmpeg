@@ -131,13 +131,12 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
     );
-    assert!(result
-        .report()
-        .transfer_ledger
-        .entries
-        .iter()
-        .any(|entry| entry.source == "D3:parameter"
-            && entry.target() == Some("iges:quarantine:parameter#3")));
+    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir())
+        .contains("iges:quarantine:parameter#3", cadmpeg_ir::index::StandardIndex));
+    assert!(serde_json::to_value(result.report())
+        .unwrap()
+        .get("transfer_ledger")
+        .is_none());
 }
 
 #[test]
@@ -377,7 +376,10 @@ fn parameter_quarantine_record_names_its_identity_and_owned_range() {
         failing_offset: None,
         defect: super::ParameterDefect::NoOwnedCards,
     };
-    assert_eq!(record.identity(), "iges:quarantine:parameter#3");
+    assert_eq!(
+        serde_json::to_value(&record).unwrap()["id"],
+        "iges:quarantine:parameter#3"
+    );
     let loss = record.loss_note().unwrap();
     assert_eq!(
         loss.provenance.unwrap().tag.as_deref(),

@@ -22,7 +22,6 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::{AnnotationBuilder, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -1475,7 +1474,6 @@ fn decode_container<'a>(
         coverage,
         losses,
         notes: Vec::new(),
-        transfer_ledger: TransferLedger::default(),
     };
     Ok(Decoded {
         ir,

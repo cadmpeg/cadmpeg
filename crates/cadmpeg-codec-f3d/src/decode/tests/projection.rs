@@ -77,7 +77,6 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: Default::default(),
     };
 
     report_design_projection_gaps(
@@ -117,7 +116,6 @@ fn history_past_its_binding_bound_reports_a_loss() {
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: Default::default(),
     };
 
     report_design_projection_gaps(
@@ -186,7 +184,6 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: Default::default(),
     };
 
     report_design_projection_gaps(
@@ -245,7 +242,6 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes: Vec::new(),
-        transfer_ledger: Default::default(),
     };
 
     report_design_projection_gaps(

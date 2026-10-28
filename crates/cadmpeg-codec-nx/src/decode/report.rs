@@ -450,7 +450,6 @@ pub(super) fn build_geometry_report(
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: notes.to_vec(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
