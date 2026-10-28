@@ -5,6 +5,7 @@ use super::identity::DesignAffineTransform;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, XrefPlacementTransform, "transform");
+cadmpeg_core::named_optional_field!(deserialize_current_pose, XrefCurrentPose, "current_pose");
 cadmpeg_core::named_optional_field!(deserialize_type_guid, String, "type_guid");
 cadmpeg_core::named_optional_field!(deserialize_owner, XrefLocalOwner, "owner");
 cadmpeg_core::named_optional_field!(
@@ -226,7 +227,11 @@ pub(crate) struct XrefReference {
     pub(crate) transform: Option<XrefPlacementTransform>,
     /// Current pose from the occurrence's component-path carrier, when one
     /// names this placement.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_current_pose"
+    )]
     pub(crate) current_pose: Option<XrefCurrentPose>,
 }
 
