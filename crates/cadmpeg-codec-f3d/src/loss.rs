@@ -64,6 +64,9 @@ pub(crate) enum F3dLossCode {
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
+    /// Registered component entities with no context-UUID binding in this
+    /// document; their naming spaces are dropped.
+    ComponentNamingSpaceUnbound,
     /// An empty-path root frame has no decoded component-definition reference.
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
@@ -231,6 +234,24 @@ pub(crate) enum F3dLossCode {
     /// Two or more component-path carriers name one local occurrence; its
     /// stored placement stays in place.
     LocalOccurrenceCurrentPoseAmbiguous,
+    /// External occurrence instances take the pose their contained
+    /// occurrences' component-path carriers store; the placement matrix stays
+    /// native.
+    XrefContainedPose,
+    /// The contained occurrences' component-path carriers of an instance give
+    /// different poses; it keeps its placement.
+    XrefContainedPoseDisagrees,
+    /// Contained-occurrence component-path carriers name no merged instance
+    /// with their owner chain.
+    XrefContainedPoseNative,
+    /// External occurrence instances below local owners take the pose their own
+    /// component-path carriers store; the placement matrix stays native.
+    XrefOwnedPose,
+    /// An instance's own component-path carriers give different poses; it keeps
+    /// its placement.
+    XrefOwnedPoseDisagrees,
+    /// Own component-path carriers that place no instance stay native.
+    XrefOwnedPoseNative,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
@@ -342,6 +363,7 @@ impl F3dLossCode {
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
+        Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
         Self::SavedFreeEdgeBodyUnowned,
@@ -419,6 +441,12 @@ impl F3dLossCode {
         Self::LocalOccurrenceCurrentPose,
         Self::LocalOccurrenceCurrentPoseNative,
         Self::LocalOccurrenceCurrentPoseAmbiguous,
+        Self::XrefContainedPose,
+        Self::XrefContainedPoseDisagrees,
+        Self::XrefContainedPoseNative,
+        Self::XrefOwnedPose,
+        Self::XrefOwnedPoseDisagrees,
+        Self::XrefOwnedPoseNative,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::XrefOwnerUnresolved,
@@ -490,6 +518,7 @@ impl F3dLossCode {
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
+            Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
             Self::LocalOccurrenceEnvelopeSuperseded => {
@@ -575,6 +604,12 @@ impl F3dLossCode {
             Self::LocalOccurrenceCurrentPoseAmbiguous => {
                 "assembly.local-occurrence-current-pose-ambiguous"
             }
+            Self::XrefContainedPose => "xref.contained-pose",
+            Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
+            Self::XrefContainedPoseNative => "xref.contained-pose-native",
+            Self::XrefOwnedPose => "xref.owned-pose",
+            Self::XrefOwnedPoseDisagrees => "xref.owned-pose-disagrees",
+            Self::XrefOwnedPoseNative => "xref.owned-pose-native",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::XrefOwnerUnresolved => "xref.owner-unresolved",
@@ -631,6 +666,10 @@ impl F3dLossCode {
             | Self::XrefCurrentPoseNative
             | Self::LocalOccurrenceCurrentPose
             | Self::LocalOccurrenceCurrentPoseNative
+            | Self::XrefContainedPose
+            | Self::XrefContainedPoseNative
+            | Self::XrefOwnedPose
+            | Self::XrefOwnedPoseNative
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
@@ -672,6 +711,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
+            | Self::ComponentNamingSpaceUnbound
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -735,6 +775,8 @@ impl F3dLossCode {
             | Self::XrefPlacementRoleUnbound
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
+            | Self::XrefContainedPoseDisagrees
+            | Self::XrefOwnedPoseDisagrees
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::XrefOwnerUnresolved
@@ -791,6 +833,12 @@ impl F3dLossCode {
             | Self::LocalOccurrenceCurrentPose
             | Self::LocalOccurrenceCurrentPoseNative
             | Self::LocalOccurrenceCurrentPoseAmbiguous
+            | Self::XrefContainedPose
+            | Self::XrefContainedPoseDisagrees
+            | Self::XrefContainedPoseNative
+            | Self::XrefOwnedPose
+            | Self::XrefOwnedPoseDisagrees
+            | Self::XrefOwnedPoseNative
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -865,7 +913,8 @@ impl F3dLossCode {
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
-            | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            | Self::ComponentDefinitionRevised
+            | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
@@ -977,6 +1026,7 @@ mod tests {
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
+                "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
                 "assembly.saved-free-edge-body-unowned",
@@ -1054,6 +1104,12 @@ mod tests {
                 "assembly.local-occurrence-current-pose",
                 "assembly.local-occurrence-current-pose-native",
                 "assembly.local-occurrence-current-pose-ambiguous",
+                "xref.contained-pose",
+                "xref.contained-pose-disagrees",
+                "xref.contained-pose-native",
+                "xref.owned-pose",
+                "xref.owned-pose-disagrees",
+                "xref.owned-pose-native",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "xref.owner-unresolved",

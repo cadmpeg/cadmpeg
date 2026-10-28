@@ -73,7 +73,7 @@ The ZIP package, `InstanceProperties.bin` page framing, schemas, and typed prope
 
 ## 8. External references
 
-`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation/model-state branch adds a u16 representation prefix. An assembly then stores two counted UTF-16LE representation strings. A part omits these two strings. Both document kinds continue with a two-u16 secondary LOD state, a counted UTF-16LE active model-state name, and a two-u16 model-state pair; they omit the older header-version-flags field. Schema 15 then stores a u32 and a u16 header state, one more u32, and the u16 invariant 1. The model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a suffix. When section-version entry 2 is 16 or earlier, the suffix has 77 bytes; when it is 18 or later, it has 81 bytes. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer.
+`UFRxDoc` schemas 11 through 15 start with a u16 schema and a u16 section-version count. The section-version table governs optional header fields. The schema-15 representation branch follows the header-pair table with a u16 state, a u16 design-view count, and a u16 representation prefix. An assembly then stores that many design-view entries. Each entry is a counted UTF-16LE name and a counted UTF-16LE kind, and the entries keep the order of the design-view list. A part stores no entries, and its count word has no stated meaning. Both document kinds continue with a two-u16 secondary LOD state, a counted UTF-16LE active design-view name, and a two-u16 state pair; they omit the older header-version-flags field. The active design-view name selects one entry of the list. Schema 15 then stores a u32 and a u16 header state, one more u32, and the u16 invariant 1. The model-state table precedes the external-reference table. Each model-state record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 prefix count, u32 parameter count, the counted parameter records, and a suffix. When section-version entry 2 is 16 or earlier, the suffix has 77 bytes; when it is 18 or later, it has 81 bytes. Each parameter record contains a counted UTF-16LE name, u8 tag, u16 kind, u16 state, counted UTF-16LE value, and u16 trailer.
 
 Schemas before 15 store level-of-detail records at the same position, after the u32 LOD count. Each record contains a u8 prefix, counted UTF-16LE name, two-u16 state pair, u32 member count, the members, and a zero-byte record terminator. A member contains a counted UTF-16LE occurrence key, a u8 kind, and a zero-byte member trailer. Kind 1 has no payload. Kind 2 inserts a two-u16 state pair and a counted UTF-16LE level-of-detail name of the referenced subassembly before the trailer. Other kinds are not implemented. The member keys are the decimal form of the occurrence key described below.
 
@@ -128,9 +128,50 @@ An `AmGraphics` record with type identifier `a26371cad011b2d30008bfbb21eddc09` o
 
 The active placement branch continues with u8 branch, u8 graphics state, u32 occurrence identifier, counted UTF-16LE label `"GRx"`, u16 invariant 1, u32 graphics index, u32 object reference, and the occurrence identifier again. Both occurrence-identifier fields are equal. The remaining branch-specific suffix is retained. A placement joins an occurrence through the exact occurrence identifier.
 
+The related references of an `AmDc` occurrence select occurrence state records of type `614d8790d011f8d10008cabc0663dc09` in the same segment. Record references use bit 31 as a qualifier and bits 0 through 30 as a one-based record index; the referenced record ordinal is the index minus one. A state record starts with:
+
+```text
+header_value u32
+header_id u16
+next_reference u32
+flags u32
+```
+
+The remaining bytes of a state record are retained. Flag bit `0x02000000` marks the occurrence as grounded. An occurrence is grounded when a state record that its related references select has this bit set.
+
+The `DesignViewSegment` stores one representation record of type `41a2c29dd211cc99a0002aa976d456c9` for each design-view representation. Its payload starts with:
+
+```text
+header_value u32
+kind u16
+name counted UTF-16LE
+list_marker u16 = 2
+list_signature u16 = 0x3000
+member_count u32
+member_metadata u32[2] when member_count is nonzero
+member_references u32[member_count]
+```
+
+The remaining bytes of a representation record are retained. The member references select records of the same segment. The active representation of an assembly is the one representation record whose name equals the active design-view name of the `UFRxDoc` header. When no representation record or more than one representation record has that name, no representation is active and no occurrence is hidden. Each representation lists its own members, so a visibility-off record that the user makes in one representation is a member of that representation only.
+
+A visibility-off record has type `2123c271d21187a9a0002ea976d456c9`. Its payload is:
+
+```text
+header_value u32
+kind u16
+list_marker u16 = 2
+list_signature u16 = 0x3000
+key_count u32 >= 1
+key_metadata u32[2]
+occurrence_keys u32[key_count]
+trailer u8 = 0
+```
+
+The remaining bytes of a visibility-off record are retained. A visibility-off record hides an occurrence when the active representation lists it as a member. A key path of one key names the root occurrence whose `occurrence_key` equals that key. A key path of two keys names an occurrence inside an assembly that a root occurrence instantiates: the first key is the `occurrence_key` of the root occurrence, and the second key is the `occurrence_key` of an occurrence in the occurrence table of that assembly. A representation that lists no such record leaves the occurrence visible.
+
 A `UFRxDoc` occurrence joins the `AmDc` and `AmGraphics` records through `occurrence_id`. It joins its external prototype through `reference_id`: the one external reference with the same `reference_id` is the prototype. Copies of one file keep its document identifier, so the document identifier alone does not select a copy. When the occurrence stores a first-section document identifier, the prototype must store the same document identifier. Otherwise, and when no reference or several references have the `reference_id`, the occurrence is unresolved. The external-reference occurrence count equals the number of joined `UFRxDoc` occurrences. Each occurrence in the current document is a root placement. A referenced assembly remains an unresolved external prototype; its internal occurrences are not inserted into the current document.
 
-Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
+Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss.
 
 ## 10. Part appearance assignments
 
@@ -500,7 +541,18 @@ A feature label with class identifier `c65f5855d311730c60003aa99dccefb0` labels 
 
 A plate with a surface-body reference in slot 6 has that body as its result. The result-collection plate form has 17 properties, null slot 6, a result object collection in slot 15, and a part-operation enumeration in slot 16. Part-operation value 1 creates a new body. With no bend operands, the plate is the closed profile region of its face sketch, thickened from the sketch plane by its thickness parameter on the selected side. A plate that names a record in slot 4 or in slots 9 through 13 is joined to an existing face by a bend.
 
-An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. Slot 23 repeats the boundary-patch reference. Slot 26 identifies the result object collection. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 2, 4, 5, 6, and 7 mean fixed dimension, symmetric fixed dimension, through next, through all, from-to, and to. A fixed dimension uses the slot-4 length. Extent 2 occurs only with a true symmetric-extent Boolean, and its length is the total travel split evenly around the profile plane. A true symmetric-extent Boolean with extent 5 extends through all material on both sides of the profile plane. Other extents with a true symmetric-extent Boolean are outside the supported branch. A boundary patch contains profile-selection references. The feature label's sole participant identifies the owning planar sketch. Each profile selection is one or more closed rings of whole curves or parts of curves of that sketch. The rings of one boundary patch bound the extruded region: a selected ring that lies inside an odd number of other selected rings bounds a hole in the region of the innermost selected ring that contains it.
+An extrusion uses property slots 0 through 7 for part operation, boundary patch, direction, reverse direction, forward length, taper angle, extent, and symmetric extent. The repeated-patch form stores the same boundary-patch reference in slots 1 and 23. Slot 26 identifies the result object collection. The direction vector supplies the travel direction. A true slot-3 Boolean negates it. Part-operation enumeration values 1, 2, 3, and 4 mean new body, cut, join, and intersection. Extent values 1, 2, 4, 5, 6, and 7 mean fixed dimension, symmetric fixed dimension, through next, through all, from-to, and to. A fixed dimension uses the slot-4 length. Extent 2 occurs only with a true symmetric-extent Boolean, and its length is the total travel split evenly around the profile plane. A true symmetric-extent Boolean with extent 5 extends through all material on both sides of the profile plane. Other extents with a true symmetric-extent Boolean are outside the supported branch.
+
+The zero-control extrusion form has these operand values:
+
+| Operand | Value |
+| --- | --- |
+| Slot-2 direction `entity_flags` | 0 |
+| Slot-2 direction `parameter` | 0 |
+| Slot-2 direction `extension` | Absent or 0 |
+| Type `3b2477a4d1118f96000826bd0663dc09` profile-selection `value` | 0 |
+
+A boundary patch contains profile-selection references. Its ordered selections identify the stored profile. Each selection's entity-link reference identifies its selected profile. The other entities and constraints of the consumed sketch have separate record identities. The feature label's sole participant identifies the owning planar sketch. Each profile selection is one or more closed rings of whole curves or parts of curves of that sketch. The rings of one boundary patch bound the extruded region: a selected ring that lies inside an odd number of other selected rings bounds a hole in the region of the innermost selected ring that contains it.
 
 The extent-7 target is the work plane in slot 11, or the model face recorded by a termination flag in slot 13 and a surface in slot 18. Exactly one of the two forms is present: a nonzero slot 11 occurs with null slots 13 and 18. Both forms store a plane and no face identity. The extrusion ends at that plane. The extent-6 extrusion starts at the work plane in slot 8, or at the face recorded by the termination flag in slot 10 and the surface in slot 17, and ends at the extent-7 target. The start target has the same two forms, and it also stores a plane and no face identity. A two-sided extrusion has an extent enumeration in slot 29. Slots 27, 28, and 29 hold the length, taper angle, and extent of the side opposite the extrusion direction.
 
@@ -508,7 +560,7 @@ Type `fd24893dd211fa99000840ab0663dc09` is a termination flag. It adds one `valu
 
 Type `f0801215d4119e8eef90a8ac7f9ac3ff` is a surface record. After the content header it stores three record references, `state:u8`, `form:u32`, and `value:u32`. Form 25 is a plane: nine f64 values follow and end the record. They are the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
 
-Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes.
+Type `42df52ced011d0d20008ccbc0663dc09` is a work plane. After the content header it stores `entity_flags:u32` and two u32 values. Segment major versions above 21 add one u32 value. An optional u32 `0x203` and one u32 value follow. The record ends with nine f64 values: the origin, the u axis, and the v axis in internal centimetres. The plane normal is the cross product of the u and v axes. A work plane that owns a feature label is a browser node. A browser work plane whose u and v axes are orthonormal is a datum plane with that origin, u axis, and normal. A browser work plane with other axes stays a native work-plane feature with the loss `feature.work-plane-frame-native`.
 
 A constant-radius edge fillet uses slot 0 for the fillet edge-set collection, slot 11 for the fillet form, and slot 15 for the result object collection. Fillet form value 0 is an edge fillet. Each edge set identifies its edge collection and positive length parameter. Selection type 4 with value 0 lists the exact edge items. The edge set also carries its nullable continuity Boolean. For a sheet-metal corner round, a null continuity reference supplies no additional continuity condition; the edge collection, explicit selection mode, and constant radius still define the edge fillet.
 
@@ -559,7 +611,7 @@ The revolve work-axis form has zero entity flags, zero u32 values, an empty refe
 
 A hole uses slots 0 through 6 for hole form, diameter, depth, entry diameter, entry depth, entry angle, and drill-point angle. Slots 7, 8, 9, 16, 17, 21, and 24 identify its center-point selection, transform, extent, direction, Boolean, placement, and result object collection. Slots 26 and 27 optionally select Boolean properties. Hole-form values 0, 1, 2, and 3 mean drilled, countersink, counterbore, and spotface. The bore diameter is positive. A counterbore or spotface has a cylindrical entry recess with the slot-3 diameter and slot-4 depth. The recess diameter exceeds the bore diameter, and its depth is positive. For a drilled hole, counterbore, or spotface, the slot-6 drill-point angle defines the bottom: zero gives a flat bottom; a nonzero value is an included angle strictly between zero and pi. A countersink uses the slot-3 entry diameter and slot-5 included angle. The entry diameter exceeds the bore diameter, and the included angle is strictly between zero and pi.
 
-Type `b1226593d2115359a00021803603c8c9` stores a hole center-point selection. The content header is followed by a type-2 reference list and the record ends. When slot 21 is null, the center-point list is nonempty and the hole label has one participant, which identifies the owning planar sketch. Each center reference selects a distinct point in that sketch's entity list. The point's sketch reference selects that sketch. The sketch's transform and direction references equal hole slots 8 and 16. A selected point `(u, v)` gives the model-space position `M * (u, v, 0, 1)`, where `M` is the slot-8 transform. Positions and transform translations use internal centimetres. The direction record supplies the drilling direction. A non-null slot-21 placement repeats the slot-8 transform reference and has non-null point and value references. Its position is the transform translation.
+Type `b1226593d2115359a00021803603c8c9` stores a hole center-point selection. The content header is followed by a type-2 reference list and the record ends. When slot 21 is null, the center-point list is nonempty and the hole label has one participant, which identifies the owning planar sketch. Each center reference selects a distinct point in that sketch's entity list. The point's sketch reference selects that sketch. The sketch's transform and direction references equal hole slots 8 and 16. A selected point `(u, v)` gives the model-space position `M * (u, v, 0, 1)`, where `M` is the slot-8 transform. Positions and transform translations use internal centimetres. The direction record is the sketch-plane normal. With a false slot-17 Boolean, the hole drills along the negated normal, into the material below the sketch plane. A non-null slot-21 placement repeats the slot-8 transform reference and has non-null point and value references. Its position is the transform translation.
 
 Hole extent values 1, 4, 5, and 7 mean fixed depth, through next, through all, and to. A fixed-depth hole uses the positive slot-2 depth. A to hole has a slot-15 termination flag. Exactly one of slots 13 and 14 is non-null. Flag value 1 selects the slot-13 work plane with the plane-frame grammar above. Flag value 0 selects the slot-14 native face-selection record of type `ccb59f50d1114f6b0008a1ba32a3dc09`. The face-item grammar above applies. One nonzero full u32 index selects one terminating face in the native face-selection graph. The work-plane target carries a plane frame; the face target carries a face selection. Neither target adds an offset.
 
@@ -590,9 +642,11 @@ Feature-label class identifiers `dea6a68f4c4b529188ca31b5630198c8`, `e99f832b7a4
 
 Each class has a three-slot body-motion form. Slot 0 is an object collection of the selected surface-body wrappers. The collection members are distinct wrappers in the same PmDc segment. Slot 1 is a transform list of type `29fe0008d511dd3510003697ab9f0ab5`. Slot 2 contains feature dimensions. A transform-list record contains the versioned content header and one type-2 reference list, then ends. In the single-transform form the list has one member, a transform of type `184d8790d011f8d10008cabc0663dc09`. It applies to every selected body. The matrix maps a model-space point `p` to `R*p + t`, with column vectors. The linear part is a proper orthogonal rotation; the last row is `0, 0, 0, 1`. Translation values use internal centimetres. The selected bodies keep their identities; this form creates no copies.
 
-Type `83aadad54f4375dacd1003b260a8a422` is an ordered body selection. It contains the versioned content header and one type-2 reference list, then ends. Each non-null member names a distinct surface-body wrapper in the same PmDc segment. A null member selects no body. The wrapper identity is the persistent body selection.
+Type `83aadad54f4375dacd1003b260a8a422` is an ordered body selection. It contains the versioned content header and one type-2 reference list, then ends. Each non-null member names a distinct surface-body wrapper in the same PmDc segment. A null member selects no body. The wrapper identity is the persistent body selection. Combine slot 0, Split slot 7, and the 13-slot Move form's slot 8 use this selection.
 
 Move also has a 13-slot face-motion form. Slot 0 is a face collection of type `f1b2bc24d01121dd0008d0bc0663dc09`. Slot 1 is the face-motion mode. Slot 8 is the selection of affected bodies. Slot 9 contains feature dimensions. Slot 11 is a Boolean. Slot 12 is the model-space motion transform. Face-motion mode 2 with null slots 2 through 7 and 10, a true slot-11 Boolean, and an identity linear part translates the selected faces by the transform translation. The body identities in slot 8 persist after this motion.
+
+A feature with label class `336723c07e40eacb2eff669e9add87f8` is Combine. Its property list has four entries. Slot 0 is a body selector with exactly one target-body wrapper. Slot 1 is an object collection with one or more tool-body wrappers, in order. Slot 2 is a part-operation enumeration with type value 5: values 2, 3, and 4 mean cut, join, and intersection. Slot 3 is the keep-tools Boolean: true retains the tool bodies and false consumes them. Target and tool wrapper identities are distinct, and each tool occurs once. The result retains the target wrapper identity. The slot-0 selector names this result identity. The slot-1 collection supplies operands, not result identities.
 
 Types `44326720d211c51d60002aab01f31bb0` and `b5a9d9fad211053360002cab01f31bb0` store rectangular-pattern and mirror feature records. Both start with the generic 30-byte feature prefix through `outline_value`, followed by a type-2 property-reference list, `value:u32`, a type-2 participant-reference list, six property references, and `control:u8`.
 
@@ -630,11 +684,11 @@ A model root (§11) also owns the browser feature tree of its model. The root la
 
 The participant list of a root label is the ordered top level of the browser tree. Each participant is one tree member:
 
-- A feature, pattern-feature, or planar-sketch record is a history node.
+- A feature, pattern-feature, planar-sketch, or work-plane record is a history node.
 - The end-of-features record is the end-of-part marker. Top-level members after the marker are below the end of part.
 - Another record that owns a feature label is a group. The participants of its label are its nested members, in order.
 
-The participants of a feature label that are planar-sketch records are the sketches that the feature consumes. History order is the post-order of the tree: the consumed sketches of a feature precede it, and the nested members of a group take the position of the group. A record has one position; a repeated reference does not move it. The model history precedes the flat-pattern history.
+The participants of a feature label that are planar-sketch records are the sketches that the feature consumes. The participants of a work-plane label that are work-plane records are the work planes that it is built from. A work plane that only such a label lists takes its position immediately before the work plane that lists it. History order is the post-order of the tree: the consumed sketches of a feature precede it, and the nested members of a group take the position of the group. A record has one position; a repeated reference does not move it. The model history precedes the flat-pattern history.
 
 The participants of a pattern-feature record are its seed features.
 

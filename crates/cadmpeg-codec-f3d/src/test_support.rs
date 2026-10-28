@@ -165,14 +165,22 @@ pub(crate) fn legacy_attributed_external_placement(
 /// cross-document marker, the source type GUID, the link type GUID, and the
 /// link name.
 pub(crate) fn cross_document_reference(target: u64, link_name: &str) -> Vec<u8> {
+    typed_cross_document_reference(target, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", link_name)
+}
+
+/// A cross-document reference whose target has type `type_guid`.
+pub(crate) fn typed_cross_document_reference(
+    target: u64,
+    type_guid: &str,
+    link_name: &str,
+) -> Vec<u8> {
     let mut bytes = vec![1];
     bytes.extend_from_slice(&target.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
     bytes.push(0);
-    bytes.extend_from_slice(&36_u32.to_le_bytes());
-    bytes.extend_from_slice(b"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    lp_ascii(&mut bytes, type_guid);
     lp_utf16(&mut bytes, link_name);
     bytes.push(0);
     bytes

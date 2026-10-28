@@ -1184,7 +1184,7 @@ fn surface_sense(sense: Sense, orientation_reversed: bool) -> Sense {
 /// Refuses a body offset past the payload, naming the offset and the payload
 /// length: a header that states its body outside its own stream is a framing
 /// error, not an empty body.
-fn header_body<'a>(
+pub(crate) fn header_body<'a>(
     payload: &'a [u8],
     header: &StreamHeader,
 ) -> Result<&'a [u8], cadmpeg_core::CodecError> {
@@ -6106,58 +6106,25 @@ fn solve_face_orientation(out: &mut Brep) {
             (edge, a.clone(), b.clone(), *a_reversed == *b_reversed)
         })
         .collect::<Vec<_>>();
-    let mut adjacency: HashMap<FaceId, Vec<(FaceId, bool)>> = HashMap::new();
-    for (_, a, b, parity) in &shared_edges {
-        for (face, neighbor) in [(a, b), (b, a)] {
-            let neighbors = adjacency.entry(face.clone()).or_default();
-            neighbors.push((neighbor.clone(), *parity));
-        }
-    }
-    let mut initial = HashMap::new();
+    let mut native = HashMap::new();
     for face in &out.faces {
-        initial.insert(face.id.clone(), face.sense == Sense::Reversed);
-    }
-    let mut solved = HashMap::new();
-    for face in &out.faces {
-        let root = face.id.clone();
-        if solved.contains_key(&root) {
-            continue;
-        }
-        solved.insert(root.clone(), initial[&root]);
-        let mut pending = Vec::new();
-        pending.push(root);
-        while let Some(face) = pending.pop() {
-            let sense = solved[&face];
-            for (neighbor, parity) in adjacency.get(&face).into_iter().flatten() {
-                if !solved.contains_key(neighbor) {
-                    solved.insert(neighbor.clone(), sense ^ parity);
-                    pending.push(neighbor.clone());
-                }
-            }
-        }
+        native.insert(face.id.clone(), face.sense == Sense::Reversed);
     }
     let mut conflicts = crate::loss::NamedCount::default();
     for (edge, a, b, parity) in &shared_edges {
-        if solved.get(a).map(|sense| sense ^ parity) != solved.get(b).copied() {
+        if native.get(a).map(|sense| sense ^ parity) != native.get(b).copied() {
             conflicts.push(edge.as_str());
         }
     }
     if !conflicts.is_empty() {
         out.losses.push(
             crate::loss::SldprtLossCode::TopologyFaceSenseConflict.note(format!(
-                "coedge senses form an odd-parity face cycle; each face keeps the sense first \
-                 reached in face order, which contradicts shared edges {conflicts} \
+                "coedge senses disagree with the stored face senses; each face keeps its stored \
+                 sense, which contradicts shared edges {conflicts} \
                  ({} in total).",
                 conflicts.count()
             )),
         );
-    }
-    for face in &mut out.faces {
-        face.sense = if solved.get(&face.id).copied().unwrap_or(false) {
-            Sense::Reversed
-        } else {
-            Sense::Forward
-        };
     }
 }
 
@@ -7714,7 +7681,7 @@ mod tests {
     }
 
     #[test]
-    fn shared_edge_coedge_parity_orients_connected_faces() {
+    fn stored_face_senses_survive_coedge_parity_disagreement() {
         use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
         use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
 
@@ -7769,18 +7736,27 @@ mod tests {
 
         (super::solve_face_orientation(&mut brep));
         assert_eq!(brep.faces[0].sense, Sense::Forward);
-        assert_eq!(brep.faces[1].sense, Sense::Reversed);
+        assert_eq!(brep.faces[1].sense, Sense::Forward);
+        assert_eq!(brep.losses.len(), 1);
+        assert_eq!(
+            brep.losses[0].code.local_code(),
+            "topology.face-sense-conflict"
+        );
 
         brep.faces[1].sense = Sense::Reversed;
         brep.coedges[1].sense = Sense::Reversed;
         (super::solve_face_orientation(&mut brep));
         assert_eq!(brep.faces[0].sense, Sense::Forward);
-        assert_eq!(brep.faces[1].sense, Sense::Forward);
-        assert!(brep.losses.is_empty());
+        assert_eq!(brep.faces[1].sense, Sense::Reversed);
+        assert_eq!(brep.losses.len(), 2);
+        assert_eq!(
+            brep.losses[1].code.local_code(),
+            "topology.face-sense-conflict"
+        );
     }
 
     #[test]
-    fn odd_parity_face_cycle_solves_in_face_order_and_reports_the_conflict() {
+    fn coedge_parity_disagreement_keeps_stored_senses_and_reports_every_edge() {
         use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
         use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
 
@@ -7837,16 +7813,19 @@ mod tests {
         (super::solve_face_orientation(&mut brep));
         assert_eq!(
             brep.faces.iter().map(|face| face.sense).collect::<Vec<_>>(),
-            [Sense::Forward, Sense::Reversed, Sense::Reversed]
+            [Sense::Forward, Sense::Forward, Sense::Forward]
         );
         assert_eq!(brep.losses.len(), 1);
         assert_eq!(
             brep.losses[0].code.local_code(),
             "topology.face-sense-conflict"
         );
-        assert!(brep.losses[0]
-            .message
-            .ends_with(&format!("shared edges {} (1 in total).", mint("edge-bc"))));
+        assert!(brep.losses[0].message.ends_with(&format!(
+            "shared edges {a}, {b}, {c} (3 in total).",
+            a = mint("edge-ab"),
+            b = mint("edge-bc"),
+            c = mint("edge-ca")
+        )));
     }
 
     #[test]

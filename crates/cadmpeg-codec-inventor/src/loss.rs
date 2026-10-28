@@ -65,6 +65,10 @@ pub(crate) enum InventorLossCode {
     FeatureLabelNameReplaced,
     /// Typed feature records have an operation graph that is not closed.
     FeatureOperationGraphOpen,
+    /// Extrusion construction operands remain native.
+    FeatureExtrusionOperandsNative,
+    /// An extrusion retains its exact profile selection without a neutral sketch graph.
+    FeatureExtrusionProfileNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
     /// Thread annotations retain sizing and termination operands only natively.
@@ -91,6 +95,8 @@ pub(crate) enum InventorLossCode {
     FeatureRevolveOperandsNative,
     /// Mirror operands differ from the identity-frame, zero-option construction.
     FeatureMirrorOperandsNative,
+    /// A history work plane's stored in-plane axes are not orthonormal.
+    FeatureWorkPlaneFrameNative,
     /// Revolve extents retain unresolved angular termination operands.
     FeatureRevolveExtentNative,
     /// Fixed-angle revolutions retain an unresolved direction control.
@@ -143,6 +149,8 @@ pub(crate) enum InventorLossCode {
     AssemblyComponentExternal,
     /// Assembly occurrence placements could not be transferred.
     AssemblyPlacementNotTransferred,
+    /// Occurrences hidden below a root occurrence stay in native records.
+    AssemblyVisibilityNestedNative,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// The active kernel carrier used an unverified Spatial ACIS grammar band.
@@ -181,6 +189,8 @@ impl InventorLossCode {
         Self::FeatureProfileBodyUndecoded,
         Self::FeatureLabelNameReplaced,
         Self::FeatureOperationGraphOpen,
+        Self::FeatureExtrusionOperandsNative,
+        Self::FeatureExtrusionProfileNative,
         Self::FeatureRectangularPatternOperandsNative,
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
@@ -194,6 +204,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureMirrorOperandsNative,
+        Self::FeatureWorkPlaneFrameNative,
         Self::FeatureRevolveExtentNative,
         Self::FeatureRevolveDirectionNative,
         Self::FeatureRevolveControlUnresolved,
@@ -220,6 +231,7 @@ impl InventorLossCode {
         Self::UfrxSchemaUnsupported,
         Self::AssemblyComponentExternal,
         Self::AssemblyPlacementNotTransferred,
+        Self::AssemblyVisibilityNestedNative,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
@@ -254,6 +266,8 @@ impl InventorLossCode {
             Self::FeatureRectangularPatternOperandsNative => {
                 "feature.rectangular-pattern-operands-native"
             }
+            Self::FeatureExtrusionOperandsNative => "feature.extrusion-operands-native",
+            Self::FeatureExtrusionProfileNative => "feature.extrusion-profile-native",
             Self::FeatureOperationGraphOpen => "feature.operation-graph-open",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
@@ -274,6 +288,7 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
+            Self::FeatureWorkPlaneFrameNative => "feature.work-plane-frame-native",
             Self::FeatureRevolveOperandsNative => "feature.revolve-operands-native",
             Self::FeatureRevolveExtentNative => "feature.revolve-extent-native",
             Self::FeatureRevolveDirectionNative => "feature.revolve-direction-native",
@@ -301,6 +316,7 @@ impl InventorLossCode {
             Self::UfrxSchemaUnsupported => "ufrx.schema-unsupported",
             Self::AssemblyComponentExternal => "assembly.component-external",
             Self::AssemblyPlacementNotTransferred => "assembly.placement-not-transferred",
+            Self::AssemblyVisibilityNestedNative => "assembly.visibility-nested-native",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -347,6 +363,8 @@ impl InventorLossCode {
             }
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::FeatureOperationGraphOpen
+            | Self::FeatureExtrusionOperandsNative
+            | Self::FeatureExtrusionProfileNative
             | Self::FeatureRectangularPatternOperandsNative
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
@@ -359,6 +377,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureMirrorOperandsNative
+            | Self::FeatureWorkPlaneFrameNative
             | Self::FeatureRevolveOperandsNative
             | Self::FeatureRevolveExtentNative
             | Self::FeatureRevolveDirectionNative
@@ -383,9 +402,9 @@ impl InventorLossCode {
             | Self::ProteinGuidAmbiguous
             | Self::MaterialDistanceUnitUntyped
             | Self::AppearanceFaceOverrideUnresolved => LossTaxonomy::MaterialNotTransferred,
-            Self::UfrxSchemaUnsupportedAssembly | Self::AssemblyComponentExternal => {
-                LossTaxonomy::AssemblyComponentsExternal
-            }
+            Self::UfrxSchemaUnsupportedAssembly
+            | Self::AssemblyComponentExternal
+            | Self::AssemblyVisibilityNestedNative => LossTaxonomy::AssemblyComponentsExternal,
             Self::AssemblyPlacementNotTransferred => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
@@ -446,6 +465,8 @@ mod tests {
                 "feature.profile-body-undecoded",
                 "feature.label-name-replaced",
                 "feature.operation-graph-open",
+                "feature.extrusion-operands-native",
+                "feature.extrusion-profile-native",
                 "feature.rectangular-pattern-operands-native",
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
@@ -459,6 +480,7 @@ mod tests {
                 "feature.sheet-metal-style-forms-native",
                 "feature.revolve-operands-native",
                 "feature.mirror-operands-native",
+                "feature.work-plane-frame-native",
                 "feature.revolve-extent-native",
                 "feature.revolve-direction-native",
                 "feature.revolve-control-unresolved",
@@ -485,6 +507,7 @@ mod tests {
                 "ufrx.schema-unsupported",
                 "assembly.component-external",
                 "assembly.placement-not-transferred",
+                "assembly.visibility-nested-native",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",

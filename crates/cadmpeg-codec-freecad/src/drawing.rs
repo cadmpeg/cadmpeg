@@ -180,7 +180,11 @@ pub(crate) fn transfer_neutral(
         } else {
             None
         };
-        let position = position.map(FiniteVector::from);
+        let position = if classify(record.kind.as_str()) == DrawingKind::Dimension {
+            None
+        } else {
+            position.map(FiniteVector::from)
+        };
         let mut relationships = BTreeMap::new();
         for (role, targets) in &record.relationships {
             let mut selections = Vec::new();
@@ -215,21 +219,6 @@ pub(crate) fn transfer_neutral(
             assets.push(crate::native::native_id("entry", name));
         }
         model.drawings.push(Drawing {
-            id: neutral_ids
-                .get(record.object.as_str())
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "drawing {} has no admitted neutral identity",
-                        record.id
-                    ))
-                })
-                .cloned()?,
-            object: record.object.clone(),
-            kind: classify(record.kind.as_str()),
-            runtime_type: record.kind.as_str().to_owned(),
-            order: u32::try_from(order).map_err(|_| {
-                CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
-            })?,
             visible: None,
             relationships: cadmpeg_core::text::named_entries(&record.object, relationships)?,
             template,
@@ -239,7 +228,24 @@ pub(crate) fn transfer_neutral(
             rotation_degrees,
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
-            native_ref: record.id.clone(),
+            ..Drawing::new(
+                neutral_ids
+                    .get(record.object.as_str())
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "drawing {} has no admitted neutral identity",
+                            record.id
+                        ))
+                    })
+                    .cloned()?,
+                record.object.clone(),
+                classify(record.kind.as_str()),
+                record.kind.as_str().to_owned(),
+                u32::try_from(order).map_err(|_| {
+                    CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
+                })?,
+                record.id.clone(),
+            )
         });
     }
     Ok(())
@@ -685,3 +691,5 @@ fn vector_value(value: &ValueRecord) -> Option<FiniteVector<3>> {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+pub(crate) mod content;

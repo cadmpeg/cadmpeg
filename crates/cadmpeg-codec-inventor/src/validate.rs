@@ -46,6 +46,7 @@ use crate::record_issue::RecordIssue;
 
 const ARENAS: &[&str] = &[
     "active_carrier",
+    "assembly_groundings",
     "assembly_occurrences",
     "assembly_placements",
     "assembly_record_issues",
@@ -53,6 +54,8 @@ const ARENAS: &[&str] = &[
     "database_issues",
     "databases",
     "design_record_issues",
+    "design_view_representations",
+    "design_view_visibility",
     "embedded_references",
     "external_references",
     "feature_record_issues",
@@ -1370,6 +1373,11 @@ fn validate_features(
         .map(PmDcPatternFeature::id)
         .chain(data.pm_dc_sketches.iter().map(PmDcSketch::id))
         .collect::<HashSet<_>>();
+    let work_planes = cadmpeg_core::decode::unique_index(
+        data.pm_dc_work_planes
+            .iter()
+            .map(|record| (record.id(), record)),
+    );
     let thicken_record_types =
         cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
             (
@@ -1413,6 +1421,18 @@ fn validate_features(
                 record,
             )
         }));
+    let extrusion_index = crate::feature::extrusion::ValidationIndex::new(
+        &crate::feature::extrusion::ValidationRecords {
+            properties: &data.pm_dc_feature_properties,
+            parameters: &data.pm_dc_parameters,
+            sketches: &data.pm_dc_sketches,
+            directions: &data.pm_dc_directions,
+            planes: &data.pm_dc_work_planes,
+            entity_links: &data.pm_dc_entity_style_links,
+            kernel_links: &data.pm_dc_kernel_entity_links,
+            model: &ir.model,
+        },
+    );
     let motion_index = crate::feature::motion::ValidationIndex::new(
         &data.pm_dc_feature_properties,
         &data.pm_dc_transforms,
@@ -1500,6 +1520,28 @@ fn validate_features(
             continue;
         }
         let native = feature.native_ref.as_deref();
+        if let Some(plane) = native.and_then(|native| work_planes.get(native)) {
+            let frame = plane
+                .as_ref()
+                .and_then(|plane| crate::feature::work_plane::frame(plane));
+            let matches = match feature.evaluation.definition() {
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::DatumPlane { frame: actual },
+                ) => frame == Some(*actual),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native { .. },
+                ) => plane.is_some() && frame.is_none(),
+                _ => false,
+            };
+            if !matches || results.contains_key(&feature.id) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor work-plane feature does not match its work-plane frame".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         let Some(raw_feature) = native.and_then(|native| raw_features.get(native).copied()) else {
             if native.is_some_and(|native| history_records.contains(native))
                 && crate::feature::FeatureFamily::from_definition(feature.evaluation.definition())
@@ -1685,6 +1727,20 @@ fn validate_features(
             ));
             continue;
         };
+        if matches!(family, crate::feature::FeatureFamily::Extrusion)
+            && !labels
+                .get(&(
+                    raw_feature.identity.segment_token.as_str(),
+                    raw_feature.identity.record_ordinal,
+                ))
+                .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral extrusion operands do not match their PmDc slots".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
         if matches!(family, crate::feature::FeatureFamily::Base) {
             if !base::valid(
                 ir,
@@ -1708,6 +1764,22 @@ fn validate_features(
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral motion does not match its PmDc operands or transform".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
+        if matches!(family, crate::feature::FeatureFamily::Combine)
+            && crate::feature::combine::definition(raw_feature, |reference| {
+                let ordinal = reference.checked_sub(1)?;
+                properties_by_record
+                    .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
+                    .copied()
+            })
+            .as_ref()
+                != Some(definition)
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor Combine operands, operation, or keep-tools state differs from its PmDc properties".into(),
                 Some(feature.id.as_str().to_owned()),
             ));
         }
@@ -1756,7 +1828,7 @@ fn validate_features(
         else {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result does not resolve to its PmDc object collection".into(),
+                "Inventor feature result does not resolve to its PmDc result collection".into(),
                 Some(result.id.as_str().to_owned()),
             ));
             continue;
@@ -1786,7 +1858,7 @@ fn validate_features(
         else {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result native reference is not an object collection".into(),
+                "Inventor feature result native reference is not its body collection or body selector".into(),
                 Some(result.id.as_str().to_owned()),
             ));
             continue;
@@ -1814,7 +1886,7 @@ fn validate_features(
         {
             findings.push(finding(
                 Check::NativeLinks,
-                "Inventor feature result bodies do not match its PmDc object collection".into(),
+                "Inventor feature result bodies do not match its PmDc result collection".into(),
                 Some(result.id.as_str().to_owned()),
             ));
         }
@@ -2148,6 +2220,9 @@ struct NativeData {
     ufrx: UfrxRecord,
     assembly_occurrences: Vec<AssemblyOccurrenceRecord>,
     assembly_placements: Vec<AssemblyPlacementRecord>,
+    design_view_representations: Vec<crate::native::DesignViewRepresentationRecord>,
+    design_view_visibility: Vec<crate::native::DesignViewVisibilityOffRecord>,
+    assembly_groundings: Vec<crate::native::AssemblyGroundingRecord>,
     assembly_record_issues: Vec<RecordIssue>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
@@ -2217,6 +2292,10 @@ impl NativeData {
             ufrx: UfrxRecord::read(ctx, namespace)?,
             assembly_occurrences: namespace.arena_as_for_decode(ctx, "assembly_occurrences")?,
             assembly_placements: namespace.arena_as_for_decode(ctx, "assembly_placements")?,
+            design_view_representations: namespace
+                .arena_as_for_decode(ctx, "design_view_representations")?,
+            design_view_visibility: namespace.arena_as_for_decode(ctx, "design_view_visibility")?,
+            assembly_groundings: namespace.arena_as_for_decode(ctx, "assembly_groundings")?,
             assembly_record_issues: namespace.arena_as_for_decode(ctx, "assembly_record_issues")?,
             pm_app_default_styles: namespace.arena_as_for_decode(ctx, "pm_app_default_styles")?,
             pm_app_rendering_styles: namespace
@@ -2757,7 +2836,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     }
     if let UfrxRecord::ParsedPrefix(payload) = record {
         if let Some(representation) = payload.representation.as_ref() {
-            let representation_pair_present = representation.active_representation.is_some();
+            let representation_pair_present = representation.design_views.is_some();
             let expected_pair = document_kind(ir).and_then(|kind| match kind {
                 "assembly" => Some(true),
                 "part" => Some(false),
@@ -2893,12 +2972,22 @@ fn validate_assembly(
             Some(issue.id()),
         ));
     }
+    let active_design_view = data
+        .ufrx
+        .representation()
+        .map(|representation| representation.active_design_view.as_str());
     let mut projected = crate::assembly::project_occurrences(
         ctx,
         data.ufrx.occurrences(),
         data.ufrx.external_references(),
         &data.assembly_occurrences,
         &data.assembly_placements,
+        crate::assembly::OccurrenceStates {
+            active_design_view,
+            representations: &data.design_view_representations,
+            visibility_off: &data.design_view_visibility,
+            groundings: &data.assembly_groundings,
+        },
     )?;
     projected
         .occurrences
@@ -2907,6 +2996,18 @@ fn validate_assembly(
         findings.push(finding(
             Check::NativeLinks,
             "Inventor neutral occurrences do not match the typed assembly records".into(),
+            None,
+        ));
+    }
+    projected
+        .joints
+        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    let mut expected_joints = ir.model.assembly_joints.clone();
+    expected_joints.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    if expected_joints != projected.joints {
+        findings.push(finding(
+            Check::NativeLinks,
+            "Inventor neutral assembly joints do not match the typed assembly records".into(),
             None,
         ));
     }

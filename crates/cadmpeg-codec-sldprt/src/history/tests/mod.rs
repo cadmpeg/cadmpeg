@@ -146,6 +146,7 @@ pub(in crate::history) fn native_with_configuration_lanes(
     }
 }
 
+mod diagnostics;
 mod equations;
 mod extrusion_profile;
 mod feature_operations;

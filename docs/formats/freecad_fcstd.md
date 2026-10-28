@@ -1862,3 +1862,83 @@ source object. Whole-body appearance, per-face overrides, per-edge line styles, 
 point styles have distinct targets. Each target resolves in its own topology arena; a declared
 override also retains its precedence over the whole-object appearance. An appearance asset's
 presence alone does not establish that target or precedence association.
+
+### Neutral drawing sheets, curves, and dimensions
+
+A template's `PageResult` property identifies its embedded SVG through a
+`FileIncluded` file attribute. If `PageResult` is absent, the `Template` property
+can identify the embedded SVG. External file paths do not select archive members.
+The SVG root `width` and `height` attributes give sheet size. Each attribute has
+a positive finite decimal number and an explicit, case-sensitive unit suffix.
+Leading and trailing whitespace and whitespace before the suffix are permitted.
+The admitted suffixes and millimetre factors are `mm` = 1, `cm` = 10,
+`in` = 25.4, `pt` = 25.4/72, `pc` = 25.4/6, and `px` = 25.4/96.
+A unitless number, percentage, unknown suffix, nonpositive number, or nonfinite
+number has no neutral sheet size. `viewBox` does not supply physical dimensions.
+A `drawing.sheet-not-transferred` loss identifies an SVG carrier without an
+admitted size. `EditableTexts`, an `App::PropertyMap`, contains a counted `Map`
+of `Item` elements. Each `key` names a title-block field and each `value` gives
+its text. Neutral sheet fields retain this order and empty values; names must be
+nonblank and unique. A blank field name has a `drawing.title-block-not-transferred`
+loss. A page obtains its sheet through its template identity.
+
+Neutral view curves use a two-dimensional Cartesian frame with origin at the
+view origin, positive X to the right, and positive Y up. Coordinates are
+millimetres before view scale and rotation. Curve order follows property and
+record order. Each curve has a mandatory hidden-line class (`visible` or
+`hidden`) and source class (`projected_model_edge`, `cosmetic`, or `center_line`).
+The optional `displayed` flag retains presentation visibility separately.
+Neutral geometry admits lines, circles, and circular arcs. An arc has a center,
+positive radius, and distinct start, middle, and end points. The middle point
+selects the sweep from start to end. Each point must lie on the circle within
+relative radial error 1e-9. All curve coordinates must be finite.
+
+`CosmeticEdgeList` records supply cosmetic curves. Neutral transfer admits
+`ExtractType` 0, matching `GeometryType` and `GeomType`, `Source` 1, and
+`Reversed` false. `HLRVisible` selects the hidden-line class and `Visible`
+selects `displayed`. Geometry type 7 supplies a line only when `Points` has
+exactly two points. Geometry type 1 supplies a circle from `Center` and a
+positive `Radius`. All selected points must have Z equal to zero. Arc records and other forms
+retain their native records and emit `drawing.cosmetic-edge-not-transferred`.
+
+`CenterLineList` uses source class `center_line` and `Source` 2. Neutral transfer
+admits a type-7 line with `HShift`, `VShift`, `Rotate`, and `Extend` equal to zero,
+`Flip` false, `Mode` and `Type` each in 0 through 2, and `Start` and `End` equal
+to the two stored branch points. Other curve gates are the cosmetic-edge gates.
+Other forms emit `drawing.center-line-not-transferred`. Cosmetic vertices remain
+native and emit `drawing.cosmetic-vertex-not-transferred` per record. Geometry
+format overrides remain native and emit `drawing.geometry-format-not-transferred`
+per record. Empty lists emit no loss. A model view stores its model references
+and view parameters, without projected hidden-line edges. No projected curves
+are generated from the model shape, and absent projected edges cause no loss.
+
+The semantic-annotation arena owns dimension category, measurement, format,
+replacement text, tolerances, and text position. A dimension drawing retains its
+relationships but has no duplicate typed text position. The dimension `Type` property contains an
+`Integer` selector. A `CustomEnumList`, when present, supplies ordered `Enum`
+labels indexed from zero by that selector. Labels `Distance`, `DistanceX`,
+`DistanceY`, `Radius`, `Diameter`, `Angle`, and `Angle3Pt` select distance,
+horizontal distance, vertical distance, radius, diameter, angle, and three-point
+angle. Without a custom list, selector 0 selects distance. Other selectors or
+labels select neutral `other` with the native selector or label and emit
+`drawing.dimension-kind-not-transferred`.
+
+`FormatSpec` supplies the dimension format. `Arbitrary` true also selects it as
+replacement text. `OverTolerance` and `UnderTolerance` are
+`App::PropertyQuantityConstraint` properties with direct `Float` values. Finite
+nonzero values supply signed upper and lower tolerances when
+`ArbitraryTolerances` is false or absent. Zero means unset. Numeric tolerance
+values under `ArbitraryTolerances` true remain native and emit
+`drawing.dimension-tolerance-not-transferred`. Under that flag, the present
+`FormatSpecOverTolerance` and `FormatSpecUnderTolerance` strings also remain native
+with this loss. Linear dimension values and
+tolerances use millimetres; angular values and tolerances use degrees. The
+existing `X` and `Y` pair supplies the text position. View and subelement
+references retain their existing relationship roles.
+
+`SavedGeometry` is a `Part::PropertyTopoShapeList` with ordered `TopoShape` file
+references. An empty saved shape with `TShapes 0` and null root `*` supplies no
+measurement. A nonempty or untyped saved shape remains native, supplies no
+neutral measurement, and emits `drawing.dimension-geometry-not-transferred`.
+The dimension measurement is not inferred from reference geometry, format text,
+or an arbitrary property name.

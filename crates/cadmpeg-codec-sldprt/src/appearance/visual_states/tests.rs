@@ -36,6 +36,7 @@ fn choice(rank: u8, rgb: Option<[u8; 3]>) -> Choice {
         definition: rgb.map(|rgb| AppearanceDefinition {
             name: "Scoped test appearance".into(),
             color: Color::from_rgba8(rgb[0], rgb[1], rgb[2], 255),
+            packed_hex: format!("{:02x}{:02x}{:02x}00", rgb[0], rgb[1], rgb[2]),
             source_name: cadmpeg_ir::StreamName::try_from("ThirdPtyStore/VisualStates".to_owned())
                 .unwrap(),
             record_offset: 12,
