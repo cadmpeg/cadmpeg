@@ -1318,6 +1318,7 @@ mod tests {
         crate::xref::XrefTable {
             references: vec![crate::records::xref::XrefReference {
                 current_pose: None,
+                contained_poses: Vec::new(),
                 id: "f3d:xref:reference#0".to_owned(),
                 ordinal: 0,
                 occurrence_ordinal: 0,
@@ -2426,6 +2427,7 @@ mod tests {
     fn resolved_role_reference() -> crate::records::xref::XrefReference {
         crate::records::xref::XrefReference {
             current_pose: None,
+            contained_poses: Vec::new(),
             id: "f3d:xref:reference#0-occurrence-0".into(),
             ordinal: 0,
             occurrence_ordinal: 0,
