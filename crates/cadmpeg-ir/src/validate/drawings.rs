@@ -41,7 +41,15 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
             }
         }
         let order_valid = orders.insert(drawing.order);
-        if !refs_valid || !order_valid {
+        let numeric_valid = drawing
+            .sheet
+            .as_ref()
+            .is_none_or(crate::drawings::DrawingSheet::is_valid)
+            && drawing
+                .curves
+                .iter()
+                .all(crate::drawings::DrawingCurve::is_valid);
+        if !refs_valid || !order_valid || !numeric_valid {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
@@ -70,6 +78,27 @@ mod tests {
             );
         }
         ir
+    }
+
+    #[test]
+    fn validator_checks_sheet_names_and_arc_form() {
+        let mut ir = fixture();
+        ir.model.drawings.truncate(1);
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        let sheet = serde_json::json!({"width_mm": 20.0, "height_mm": 30.0, "fields": [{"name": "Title", "value": "A"}, {"name": "Title", "value": "B"}]});
+        ir.model.drawings[0].sheet = Some(serde_json::from_value(sheet).unwrap());
+        let mut findings = Vec::new();
+        check_drawings(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
+        ir.model.drawings[0].sheet.as_mut().unwrap().fields.pop();
+        findings.clear();
+        check_drawings(&ir, &ids, &mut findings);
+        assert!(findings.is_empty());
+        ir.model.drawings[0].curves.push(serde_json::from_value(serde_json::json!({"geometry": {"kind": "arc", "center": [0, 0], "radius": 1, "start": [1, 0], "middle": [1, 0], "end": [0, 1]}, "visibility": "visible", "source": "cosmetic"})).unwrap());
+        check_drawings(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
     }
 
     #[test]

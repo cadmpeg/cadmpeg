@@ -40,7 +40,17 @@ pub(super) fn check_semantic_annotations(
             }
         }
         let order_valid = orders.insert(annotation.order);
-        if !refs_valid || !order_valid {
+        let has_dimension_fields = annotation.dimension_kind.is_some()
+            || annotation.text_override.is_some()
+            || annotation.upper_tolerance.is_some()
+            || annotation.lower_tolerance.is_some();
+        let numeric_valid = (!has_dimension_fields
+            || annotation.kind == crate::semantic_annotations::SemanticAnnotationKind::Dimension)
+            && [annotation.upper_tolerance, annotation.lower_tolerance]
+                .iter()
+                .flatten()
+                .all(|value| value.get().is_finite() && value.get() != 0.0);
+        if !refs_valid || !order_valid || !numeric_valid {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
@@ -72,6 +82,29 @@ mod tests {
             );
         }
         ir
+    }
+
+    #[test]
+    fn validator_requires_dimension_owner_and_set_tolerance() {
+        let mut ir = fixture();
+        ir.model.semantic_annotations.truncate(1);
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        ir.model.semantic_annotations[0].upper_tolerance =
+            Some(crate::scalar::FiniteReal::new(0.2).unwrap());
+        let mut findings = Vec::new();
+        check_semantic_annotations(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
+        ir.model.semantic_annotations[0].kind =
+            crate::semantic_annotations::SemanticAnnotationKind::Dimension;
+        findings.clear();
+        check_semantic_annotations(&ir, &ids, &mut findings);
+        assert!(findings.is_empty());
+        ir.model.semantic_annotations[0].upper_tolerance =
+            Some(crate::scalar::FiniteReal::new(0.0).unwrap());
+        check_semantic_annotations(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
     }
 
     #[test]

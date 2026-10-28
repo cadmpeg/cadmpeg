@@ -995,6 +995,20 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &drawings,
             )?;
+            drawing::content::enrich(
+                ctx,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
+            annotation::enrich_dimensions(
+                ctx,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
             namespace.set_arena(ctx, "annotations", &annotations)?;
             application::install(
                 ctx,

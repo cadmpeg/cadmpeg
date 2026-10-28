@@ -278,11 +278,6 @@ pub(super) fn decode(
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId::from(identity.clone()),
-                object: identity.as_str().to_owned(),
-                kind: drawing_kind(name),
-                runtime_type: name.into(),
-                order,
                 visible: hidden_drawing_ids.contains(&id).then_some(false),
                 relationships,
                 template: None,
@@ -292,7 +287,14 @@ pub(super) fn decode(
                 rotation_degrees: None,
                 parameters: stored_parameters,
                 assets: Vec::new(),
-                native_ref: identity.into_string(),
+                ..Drawing::new(
+                    DrawingId::from(identity.clone()),
+                    identity.as_str().to_owned(),
+                    drawing_kind(name),
+                    name.into(),
+                    order,
+                    identity.into_string(),
+                )
             },
         );
     }
