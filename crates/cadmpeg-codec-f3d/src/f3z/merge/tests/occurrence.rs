@@ -512,6 +512,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
 fn occurrence_key_preserves_authored_roles() {
     assert!(crate::records::xref::RequiredXrefText::try_from(String::new()).is_err());
     let reference = |role: &str, ordinal: u32| XrefReference {
+        current_pose: None,
         id: "f3d:xref:reference#1".into(),
         ordinal,
         occurrence_ordinal: 0,
@@ -539,6 +540,7 @@ fn occurrence_key_preserves_authored_roles() {
 #[test]
 fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
     let reference = |ordinal| XrefReference {
+        current_pose: None,
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
         occurrence_ordinal: 0,
@@ -792,6 +794,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     let scan = crate::container::scan(&ctx, bytes).unwrap();
     let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
     let reference = XrefReference {
+        current_pose: None,
         id: "f3d:xref:reference#0".to_owned(),
         ordinal: 0,
         occurrence_ordinal: 0,
