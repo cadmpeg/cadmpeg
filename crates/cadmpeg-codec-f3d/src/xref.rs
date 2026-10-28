@@ -61,6 +61,9 @@ pub(crate) struct XrefTable {
     /// Type-admitted placements that do not close under their generation grammar.
     pub(crate) placement_failures: Vec<OccurrencePlacementFailure>,
     pub(crate) unbound_legacy_placements: Vec<OccurrencePlacementFailure>,
+    /// Placements named by two or more component-path carriers, as
+    /// `(placement record, carrier records)`; they keep their placement matrix.
+    pub(crate) ambiguous_current_poses: Vec<(u64, Vec<u64>)>,
     /// `(XREF ordinal, placement-record count)` pairs whose structured
     /// placements were superseded by scope-bound Component Insert carriers.
     pub(crate) placement_overrides: Vec<PlacementOverride>,
@@ -604,7 +607,7 @@ pub(crate) fn project_occurrences(
     }
     if native_poses != 0 {
         projection.losses.push(F3dLossCode::XrefCurrentPoseNative.note(format!(
-            "{native_poses} external occurrence(s) below a local owner keep their occurrence-placement matrix; the world pose of their component-path carrier stays native"
+            "{native_poses} external placement(s) below a local owner keep their occurrence-placement matrix in every projected instance; the world pose of their component-path carrier stays native"
         )));
     }
     Ok(projection)
@@ -810,6 +813,7 @@ fn bind_occurrences(
         })
         .collect();
     let mut placement_overrides = Vec::new();
+    let mut ambiguous_current_poses = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
         for (placements, _, stream, poses) in &streams {
@@ -833,10 +837,17 @@ fn bind_occurrences(
             let selected =
                 occurrence_transforms_with_precedence(direct, placements, &reference.neutron_role);
 
-            occurrences.extend(selected.into_iter().map(|placement| {
-                let pose = current_pose(poses, &placement, &reference.neutron_role);
-                (placement, stream.clone(), pose)
-            }));
+            for placement in selected {
+                let pose = match current_pose(poses, &placement, &reference.neutron_role) {
+                    CurrentPose::One(pose) => Some(pose),
+                    CurrentPose::None => None,
+                    CurrentPose::Ambiguous(carriers) => {
+                        ambiguous_current_poses.push((placement.carrier_record_index, carriers));
+                        None
+                    }
+                };
+                occurrences.push((placement, stream.clone(), pose));
+            }
         }
         if occurrences.is_empty() {
             expanded.push(reference.clone());
@@ -873,7 +884,16 @@ fn bind_occurrences(
     table.placement_failures = placement_failures;
     table.unbound_legacy_placements = unbound_legacy_placements;
     table.placement_overrides = placement_overrides;
+    table.ambiguous_current_poses = ambiguous_current_poses;
     Ok(())
+}
+
+/// The component-path carriers that name one placement.
+enum CurrentPose {
+    None,
+    One(crate::records::xref::XrefCurrentPose),
+    /// The carrier records of two or more matching carriers.
+    Ambiguous(Vec<u64>),
 }
 
 /// The current pose of one placement: the unique component-path carrier in the
@@ -882,22 +902,33 @@ fn current_pose(
     poses: &[ComponentPathPose],
     placement: &OccurrencePlacement,
     role: &str,
-) -> Option<crate::records::xref::XrefCurrentPose> {
-    let mut matching = poses.iter().filter(|pose| {
-        pose.placement_record_index == placement.carrier_record_index && pose.role == role
-    });
-    let pose = matching.next()?;
-    if matching.next().is_some() {
-        return None;
-    }
-    Some(crate::records::xref::XrefCurrentPose {
+) -> CurrentPose {
+    let matching = poses
+        .iter()
+        .filter(|pose| {
+            pose.placement_record_index == placement.carrier_record_index && pose.role == role
+        })
+        .collect::<Vec<_>>();
+    let pose = match matching.as_slice() {
+        [] => return CurrentPose::None,
+        [pose] => pose,
+        many => {
+            return CurrentPose::Ambiguous(
+                many.iter().map(|pose| pose.carrier_record_index).collect(),
+            )
+        }
+    };
+    let Ok(transform) = pose
+        .transform
+        .map(crate::records::xref::XrefPlacementTransform::try_from)
+        .transpose()
+    else {
+        return CurrentPose::None;
+    };
+    CurrentPose::One(crate::records::xref::XrefCurrentPose {
         carrier_record_index: pose.carrier_record_index,
         frame_bytes: pose.frame_bytes.clone().into(),
-        transform: pose
-            .transform
-            .map(crate::records::xref::XrefPlacementTransform::try_from)
-            .transpose()
-            .ok()?,
+        transform,
     })
 }
 

@@ -1762,7 +1762,7 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     };
-    let decode = |carrier_names: u64, local_first: bool| {
+    let decode = |carrier_names: u64, local_first: bool, second: Option<f64>| {
         let mut placement = occurrence_record_with_serializer_magic(
             role,
             10,
@@ -1776,6 +1776,16 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
         let carrier_at = u64_from_index(placement.len());
         let mut bulk = placement;
         bulk.extend(carrier);
+        let second_at = u64_from_index(bulk.len());
+        if let Some(x) = second {
+            bulk.extend(component_path_carrier(role, 12, 10, translation(x), false));
+        }
+        let carriers: &[u64] = if second.is_some() { &[11, 12] } else { &[11] };
+        let carrier_records: Vec<(u64, u64)> = if second.is_some() {
+            vec![(10, 0), (11, carrier_at), (12, second_at)]
+        } else {
+            vec![(10, 0), (11, carrier_at)]
+        };
         let properties =
             br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1799,9 +1809,15 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
                     "Component",
                     &[10],
                 ),
-                (super::COMPONENT_PATH_TYPE_GUID, "", 0, "CommonData", &[11]),
+                (
+                    super::COMPONENT_PATH_TYPE_GUID,
+                    "",
+                    0,
+                    "CommonData",
+                    carriers,
+                ),
             ],
-            &[(10, 0), (11, carrier_at)],
+            &carrier_records,
         ))
         .unwrap();
         zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
@@ -1816,7 +1832,7 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
     };
 
     for local_first in [false, true] {
-        let decoded = decode(10, local_first);
+        let decoded = decode(10, local_first, None);
         let native = f3d_native(decoded.ir());
         assert_eq!(
             native.xref_references[0]
@@ -1828,7 +1844,7 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
             "local element first: {local_first}"
         );
     }
-    let decoded = decode(10, false);
+    let decoded = decode(10, false, None);
     let native = f3d_native(decoded.ir());
     let reference = &native.xref_references[0];
     assert_eq!(reference.transform.unwrap().rows()[0][3], 7.0);
@@ -1856,7 +1872,7 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
     changed.current_pose = Some(pose);
     assert!(!super::current_pose_matches(&changed));
 
-    let unbound = decode(99, false);
+    let unbound = decode(99, false, None);
     let native = f3d_native(unbound.ir());
     assert!(native.xref_references[0].current_pose.is_none());
     assert!(unbound
@@ -1864,4 +1880,20 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
         .losses
         .iter()
         .all(|loss| loss.code != F3dLossCode::XrefPlacementCurrentPose.kind()));
+
+    let ambiguous = decode(10, false, Some(13.0));
+    let native = f3d_native(ambiguous.ir());
+    assert!(native.xref_references[0].current_pose.is_none());
+    assert_eq!(
+        native.xref_references[0].transform.unwrap().rows()[0][3],
+        7.0
+    );
+    let notes = ambiguous
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::XrefCurrentPoseAmbiguous.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    assert!(notes[0].message.contains("[11, 12]"));
 }

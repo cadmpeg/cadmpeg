@@ -217,6 +217,9 @@ pub(crate) enum F3dLossCode {
     /// An owned external occurrence keeps its placement matrix; its
     /// component-path carrier pose stays native.
     XrefCurrentPoseNative,
+    /// Two or more component-path carriers name one placement; its placement
+    /// matrix stays in place.
+    XrefCurrentPoseAmbiguous,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
@@ -400,6 +403,7 @@ impl F3dLossCode {
         Self::XrefPlacementRoleUnbound,
         Self::XrefPlacementCurrentPose,
         Self::XrefCurrentPoseNative,
+        Self::XrefCurrentPoseAmbiguous,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::XrefOwnerUnresolved,
@@ -547,6 +551,7 @@ impl F3dLossCode {
             Self::XrefPlacementRoleUnbound => "xref.placement-role-unbound",
             Self::XrefPlacementCurrentPose => "xref.placement-current-pose",
             Self::XrefCurrentPoseNative => "xref.current-pose-native",
+            Self::XrefCurrentPoseAmbiguous => "xref.current-pose-ambiguous",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::XrefOwnerUnresolved => "xref.owner-unresolved",
@@ -702,6 +707,7 @@ impl F3dLossCode {
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
             | Self::XrefPlacementRoleUnbound
+            | Self::XrefCurrentPoseAmbiguous
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::XrefOwnerUnresolved
@@ -754,6 +760,7 @@ impl F3dLossCode {
             | Self::XrefPlacementMetadataNative
             | Self::XrefPlacementCurrentPose
             | Self::XrefCurrentPoseNative
+            | Self::XrefCurrentPoseAmbiguous
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1011,6 +1018,7 @@ mod tests {
                 "xref.placement-role-unbound",
                 "xref.placement-current-pose",
                 "xref.current-pose-native",
+                "xref.current-pose-ambiguous",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "xref.owner-unresolved",
