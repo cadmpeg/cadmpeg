@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+use super::align::DesignAlignEnvelope;
 use super::assembly::DesignAssemblyAlignment;
 #[cfg(test)]
 use crate::records::identity::serialize_absent_u64_offset;
@@ -201,6 +202,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_mirror_construction,
     DesignMirrorConstruction,
     "mirror_construction"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_align_envelope,
+    DesignAlignEnvelope,
+    "align_envelope"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_move_operation,
@@ -569,6 +575,7 @@ design_feature_kinds! {
         RectangularPattern => "Rectangular Pattern": Option<DesignRectangularPatternConstruction>,
         Mirror => "Mirror": Option<DesignMirrorConstruction>,
         SymetrieMiroir => "Symétrie miroir": Option<DesignMirrorConstruction>,
+        Align => "Align": Option<DesignAlignEnvelope>,
         Move => "Move": Option<DesignMoveOperation>,
         OffsetFaces => "OffsetFaces": Option<DesignOffsetFacesOperation>,
         DecalerLesFaces => "DécalerLesFaces": Option<DesignOffsetFacesOperation>,
@@ -851,6 +858,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_move_operation"
     )]
     move_operation: Option<DesignMoveOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_align_envelope"
+    )]
+    align_envelope: Option<DesignAlignEnvelope>,
     /// Exact uniform body-scale construction carried by a Scale scope.
     #[serde(
         default,
@@ -1570,6 +1583,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.direct_face_operation.is_some() {
             present.push("direct_face_operation");
         }
+        if wire.align_envelope.is_some() {
+            present.push("align_envelope");
+        }
         if wire.move_operation.is_some() {
             present.push("move_operation");
         }
@@ -1715,6 +1731,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::SymetrieMiroir => {
                 DesignScopePayload::SymetrieMiroir(wire.mirror_construction.take())
             }
+            DesignFeatureKind::Align => DesignScopePayload::Align(wire.align_envelope.take()),
             DesignFeatureKind::Move => DesignScopePayload::Move(wire.move_operation.take()),
             DesignFeatureKind::OffsetFaces => {
                 DesignScopePayload::OffsetFaces(match wire.direct_face_operation.take() {
@@ -1976,6 +1993,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.sketch_entity.is_some()
             || wire.solid_primitive.is_some()
             || wire.direct_face_operation.is_some()
+            || wire.align_envelope.is_some()
             || wire.move_operation.is_some()
             || wire.scale_operation.is_some()
             || wire.surface_stitch_operation.is_some()
@@ -2094,6 +2112,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             reference_member_offsets,
             solid_primitive: None,
             direct_face_operation: None,
+            align_envelope: None,
             move_operation: None,
             scale_operation: None,
             surface_stitch_operation: None,
@@ -2193,6 +2212,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Thicken(value) => {
                 wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken);
             }
+            DesignScopePayload::Align(value) => wire.align_envelope = value,
             DesignScopePayload::Move(value) => wire.move_operation = value,
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
                 wire.scale_operation = value;
@@ -2650,6 +2670,13 @@ impl DesignParameterScope {
             | DesignScopePayload::Esquisse(value)
             | DesignScopePayload::Skizze(value)
             | DesignScopePayload::Esboco(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn align_envelope(&self) -> Option<&DesignAlignEnvelope> {
+        match &self.payload {
+            DesignScopePayload::Align(value) => value.as_ref(),
             _ => None,
         }
     }

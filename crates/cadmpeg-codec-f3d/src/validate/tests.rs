@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+pub(crate) mod align;
+
 use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use std::io::Cursor;
 

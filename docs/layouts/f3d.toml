@@ -24223,3 +24223,505 @@ offset = 154
 type = "u32"
 source = "spec"
 anchor = "The `emboss_counted_suffix` layout starts immediately after the native pair run."
+
+[[record]]
+name = "align_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "An `Align` prefix precedes its ordered reference table"
+size = 126
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "zero"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 0
+
+[[record.field]]
+name = "first_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "first_reference"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "first_padding"
+offset = 26
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "source_code"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_marker"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "second_reference"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_padding"
+offset = 41
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "identity_length"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 36
+
+[[record.field]]
+name = "identity"
+offset = 51
+type = "bytes[72]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "tail_zero"
+offset = 123
+type = "bytes[3]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0]
+
+[[record]]
+name = "align_scope_extended_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "An `Align` prefix precedes its ordered reference table"
+size = 130
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/align.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "extra_code"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "zero"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 0
+
+[[record.field]]
+name = "first_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "first_reference"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "first_padding"
+offset = 30
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "source_code"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_marker"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 1
+
+[[record.field]]
+name = "second_reference"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "second_padding"
+offset = 45
+type = "bytes[6]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "identity_length"
+offset = 51
+type = "u32"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = 36
+
+[[record.field]]
+name = "identity"
+offset = 55
+type = "bytes[72]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+
+[[record.field]]
+name = "tail_zero"
+offset = 127
+type = "bytes[3]"
+source = "spec"
+anchor = "An `Align` prefix precedes its ordered reference table"
+value = [0, 0, 0]
+
+[[record]]
+name = "align_constructor"
+kind = "byte"
+section = "3.1"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+size = 293
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/align/construction.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_marker"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "first_word"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "first_padding"
+offset = 36
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_marker"
+offset = 42
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "second_word"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "second_padding"
+offset = 47
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "third_marker"
+offset = 53
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "third_word"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "third_padding"
+offset = 58
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_code"
+offset = 64
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "fourth_marker"
+offset = 68
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "fourth_word"
+offset = 69
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "fourth_padding"
+offset = 73
+type = "bytes[10]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_code"
+offset = 83
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "matrix_zero"
+offset = 87
+type = "bytes[1]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0]
+
+[[record.field]]
+name = "matrix_scalars"
+offset = 88
+type = "f64[16]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "matrix_tail_zero"
+offset = 216
+type = "bytes[2]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0]
+
+[[record.field]]
+name = "third_code"
+offset = 218
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "owner_zero"
+offset = 222
+type = "bytes[1]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0]
+
+[[record.field]]
+name = "owner_marker"
+offset = 223
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "owner_word"
+offset = 224
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "owner_padding"
+offset = 228
+type = "bytes[13]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_scalar_code"
+offset = 241
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "scalar"
+offset = 245
+type = "f64"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "second_scalar_code"
+offset = 253
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "first_companion_marker"
+offset = 257
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "first_companion_word"
+offset = 258
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "first_companion_padding"
+offset = 262
+type = "bytes[7]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_companion_marker"
+offset = 269
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "second_companion_word"
+offset = 270
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "second_companion_padding"
+offset = 274
+type = "bytes[6]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "repeated_owner_marker"
+offset = 280
+type = "u8"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = 1
+
+[[record.field]]
+name = "repeated_owner_word"
+offset = 281
+type = "u32"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+
+[[record.field]]
+name = "repeated_owner_padding"
+offset = 285
+type = "bytes[8]"
+source = "spec"
+anchor = "The indexed record named by the first Align prefix reference is its constructor"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
