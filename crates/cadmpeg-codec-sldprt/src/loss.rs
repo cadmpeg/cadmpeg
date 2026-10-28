@@ -116,6 +116,9 @@ pub(crate) enum SldprtLossCode {
     TessellationFaceOwnershipUnresolved,
     /// Surface-owner assignment ran out of its local work cap.
     TessellationOwnerWorkCapped,
+    /// Display-face tables carry conflicting reused class tags, so the
+    /// persistent join is withheld.
+    TessellationReusedTagAmbiguous,
     /// `DisplayLists` meshes transferred without B-rep geometry ownership.
     TessellationDisplayWithoutGeometry,
     /// No body record was available; a body hierarchy was derived.
@@ -231,6 +234,7 @@ impl SldprtLossCode {
         Self::NativeAppearanceScopeUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TessellationOwnerWorkCapped,
+        Self::TessellationReusedTagAmbiguous,
         Self::TessellationDisplayWithoutGeometry,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceSenseConflict,
@@ -308,6 +312,7 @@ impl SldprtLossCode {
             Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TessellationOwnerWorkCapped => "tessellation.owner-work-capped",
+            Self::TessellationReusedTagAmbiguous => "tessellation.reused-tag-ambiguous",
             Self::TessellationDisplayWithoutGeometry => "tessellation.display-without-geometry",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyFaceSenseConflict => "topology.face-sense-conflict",
@@ -400,6 +405,7 @@ impl SldprtLossCode {
             | Self::NativeAppearanceScopeUnresolved
             | Self::TessellationFaceOwnershipUnresolved
             | Self::TessellationOwnerWorkCapped
+            | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry
             | Self::TopologyBodyHierarchyDerived
             | Self::TopologyFaceSenseConflict
@@ -459,6 +465,7 @@ impl SldprtLossCode {
             | Self::NativeAppearanceScopeUnresolved => LossTaxonomy::MaterialNotTransferred,
             Self::TessellationFaceOwnershipUnresolved
             | Self::TessellationOwnerWorkCapped
+            | Self::TessellationReusedTagAmbiguous
             | Self::TessellationDisplayWithoutGeometry => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::ConfigActiveIdentityUnresolved
@@ -679,6 +686,7 @@ mod tests {
                 "appearance.native-scope-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "tessellation.owner-work-capped",
+                "tessellation.reused-tag-ambiguous",
                 "tessellation.display-without-geometry",
                 "topology.body-hierarchy-derived",
                 "topology.face-sense-conflict",

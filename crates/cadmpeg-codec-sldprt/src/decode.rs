@@ -2494,6 +2494,7 @@ struct DisplayPush {
     unresolved: Vec<crate::appearance::UnresolvedAppearanceBinding>,
     feature_appearance_sources: BTreeSet<FeatureSourceId>,
     mesh_count: usize,
+    withheld_reused_tags: Vec<usize>,
 }
 
 type CollectedDisplaySections<'s> = Vec<(
@@ -2642,6 +2643,7 @@ fn push_display_meshes(
     let mut matched_feature_sources = BTreeSet::new();
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
+    let mut withheld_reused_tags = Vec::new();
     let mut display_appearance_ranks = BTreeMap::new();
     let mut unresolved = Vec::new();
     let mut mesh_count = 0usize;
@@ -2690,21 +2692,45 @@ fn push_display_meshes(
         }
         unresolved.extend(resolved.unresolved);
         let mut display_links = Vec::new();
+        let join_verdicts: Vec<crate::tessellation::PersistentJoinVerdict> = if display_faces
+            .iter()
+            .any(|face| !face.surface_references.is_empty())
+        {
+            let classes = crate::tessellation::class_intervals(display.payload());
+            display_faces
+                .iter()
+                .enumerate()
+                .map(|(index, _)| {
+                    crate::tessellation::persistent_join_verdict(
+                        display.payload(),
+                        &display_faces,
+                        index,
+                        &classes,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         for (table_index, display_face) in display_faces.into_iter().enumerate() {
             let id = format!(
                 "sldprt:displaylist:record#{}:{}",
                 display.ordinal(),
                 table_index
             );
-            if let Some(identity) = display_face.persistent_surface_identity() {
-                persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
-                    tessellation: id.clone(),
-                    identity: crate::brep::PersistentFaceIdentity {
-                        feature_source_id: identity.feature_source_id,
-                        local_id: identity.local_id,
-                        trailing_fields: identity.trailing_fields.clone(),
-                    },
-                });
+            match join_verdicts.get(table_index) {
+                Some(crate::tessellation::PersistentJoinVerdict::Admit(identity)) => {
+                    persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
+                        tessellation: id.clone(),
+                        identity: identity.clone(),
+                    });
+                }
+                Some(crate::tessellation::PersistentJoinVerdict::Withhold(
+                    crate::tessellation::PersistentJoinWithhold::AmbiguousReusedTag,
+                )) => {
+                    withheld_reused_tags.push(display_face.table.start());
+                }
+                Some(crate::tessellation::PersistentJoinVerdict::Withhold(_)) | None => {}
             }
             crate::annotations::note(
                 annotations,
@@ -2782,6 +2808,7 @@ fn push_display_meshes(
         unresolved,
         feature_appearance_sources,
         mesh_count,
+        withheld_reused_tags,
     })
 }
 
@@ -3418,6 +3445,11 @@ fn build_geometry_ir(
     let display_appearance_ranks = push.display_appearance_ranks;
     let conflicting_display_references = push.conflicting_display_references;
     let feature_appearance_sources = push.feature_appearance_sources;
+    for start in push.withheld_reused_tags {
+        pmi_losses.push(SldprtLossCode::TessellationReusedTagAmbiguous.note(format!(
+            "sldprt display-face table at byte {start} carries conflicting reused class tags; its persistent join is withheld."
+        )));
+    }
     for unresolved in push.unresolved {
         let hex = unresolved
             .packed_hex
