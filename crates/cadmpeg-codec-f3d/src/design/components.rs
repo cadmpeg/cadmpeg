@@ -1742,6 +1742,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn carrier_naming_a_dropped_component_stays_unplaced() {
+        const OCCURRENCE: &str = "443e5aa6-d561-4b5b-9634-661e7da12db3";
+        let mut dropped = carrier(
+            100,
+            OCCURRENCE,
+            DesignComponentOccurrencePlacement::Base,
+            DOCUMENT_ROOT,
+        );
+        dropped.component_record_index = 999;
+        let projection = project_carriers(
+            &[dropped],
+            &two_component_stream(Some(276)),
+            &[COMPONENT_BODY, ROOT_BODY],
+        );
+        assert!(projection.occurrences.is_empty());
+        assert!(projection.definitions.is_empty());
+        assert_eq!(projection.losses.len(), 1);
+        assert_eq!(
+            projection.losses[0].code,
+            crate::loss::F3dLossCode::LocalOccurrenceUnplaced.kind()
+        );
+        assert!(projection.losses[0]
+            .message
+            .contains("no naming-space binding"));
+    }
+
     fn nested_fixture() -> (
         Vec<DesignComponentOccurrence>,
         BTreeMap<String, StreamComponents>,
