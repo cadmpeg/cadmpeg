@@ -62,7 +62,30 @@ fn extent_extrusion(
     slots: &[(usize, u32)],
     extra: Vec<PmDcFeatureProperty>,
 ) -> Option<Feature> {
-    let raw_parameters = vec![raw_parameter(70), raw_parameter(71), raw_parameter(72)];
+    configured_extent_extrusion(extent, symmetric, slots, extra, |_| {}, |_, _, _, _| {})
+}
+
+fn configured_extent_extrusion(
+    extent: u16,
+    symmetric: bool,
+    slots: &[(usize, u32)],
+    extra: Vec<PmDcFeatureProperty>,
+    configure: impl FnOnce(&mut crate::feature::ProjectionIndex<'_>),
+    check: impl FnOnce(
+        &PmDcFeature,
+        &PmDcFeatureLabel,
+        &crate::feature::ProjectionIndex<'_>,
+        Option<&Feature>,
+    ),
+) -> Option<Feature> {
+    let raw_parameters = vec![
+        raw_parameter(70),
+        raw_parameter(71),
+        raw_parameter(72),
+        raw_parameter(73),
+        raw_parameter(74),
+        raw_parameter(75),
+    ];
     let neutral_parameters = vec![
         neutral_parameter(
             &raw_parameters[0],
@@ -75,6 +98,18 @@ fn extent_extrusion(
         neutral_parameter(
             &raw_parameters[2],
             ParameterValue::Length(Length::new(3.0).expect("finite length fixture")),
+        ),
+        neutral_parameter(
+            &raw_parameters[3],
+            ParameterValue::Angle(Angle::new(0.2).expect("finite angle fixture")),
+        ),
+        neutral_parameter(
+            &raw_parameters[4],
+            ParameterValue::Length(Length::new(0.0).expect("finite length fixture")),
+        ),
+        neutral_parameter(
+            &raw_parameters[5],
+            ParameterValue::Angle(Angle::new(-0.2).expect("finite angle fixture")),
         ),
     ];
     let raw_sketch = Located::new(
@@ -193,6 +228,21 @@ fn extent_extrusion(
         ),
     ];
     properties.extend(extra);
+    for property in &mut properties {
+        let type_id = match property.kind {
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::BoundaryPatch,
+                ..
+            } => Some(crate::feature::BOUNDARY_PATCH_TYPE),
+            PmDcFeaturePropertyKind::ProfileSelection { .. } => {
+                Some(crate::feature::PROFILE_SELECTION_TYPE)
+            }
+            _ => None,
+        };
+        if let Some(type_id) = type_id {
+            property.identity.type_id = crate::record_identity::RecordTypeId::from_bytes(type_id);
+        }
+    }
     let mut all_slots = vec![
         (0, 1),
         (1, 2),
@@ -232,8 +282,23 @@ fn extent_extrusion(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("projection context");
-    project_extrusion(&ctx, &feature, &label, &index)
-        .map(|projected| projected.expect("extrusion projection").0)
+    configure(&mut index);
+    let mut losses = Vec::new();
+    let projected = crate::feature::extrusion::project(&ctx, &feature, &label, &index, &mut losses)
+        .map(|projected| projected.expect("extrusion projection").0);
+    if projected.as_ref().is_some_and(|feature| {
+        crate::feature::extrusion::has_native_profile(feature.evaluation.definition())
+    }) {
+        assert!(losses.iter().any(|note| note.code.local_code()
+            == crate::loss::InventorLossCode::FeatureExtrusionProfileNative.code()));
+    } else if projected.is_none() {
+        assert!(losses.iter().any(|note| note.code.local_code()
+            == crate::loss::InventorLossCode::FeatureExtrusionOperandsNative.code()));
+    } else {
+        assert!(losses.is_empty());
+    }
+    check(&feature, &label, &index, projected.as_ref());
+    projected
 }
 
 fn extrude_definition(feature: &Feature) -> (&ExtrudeExtent, &cadmpeg_ir::features::ExtrudeStart) {
@@ -513,4 +578,514 @@ fn parses_kernel_entity_link_work_plane_termination_flag_and_surface() {
     ))
     .expect("surface form")
     .is_none());
+}
+
+fn assert_native_profile_validator(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &crate::feature::ProjectionIndex<'_>,
+    feature: Option<&Feature>,
+) {
+    use crate::feature::extrusion;
+    let feature = feature.expect("extrusion with native profile");
+    let definition = feature.evaluation.definition();
+    assert!(extrusion::has_native_profile(definition));
+    assert!(extrusion::matches(index, source, label, definition));
+    let mut changed = definition.clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = &mut changed
+    else {
+        panic!("extrusion fixture");
+    };
+    *profile =
+        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Native(
+            "inventor:pmdc:feature-property#generated-999".into(),
+        ));
+    assert!(!extrusion::matches(index, source, label, &changed));
+    let mut changed = definition.clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = &mut changed else {
+        panic!("extrusion fixture");
+    };
+    *op = if *op == BooleanOp::Cut {
+        BooleanOp::Join
+    } else {
+        BooleanOp::Cut
+    };
+    assert!(!extrusion::matches(index, source, label, &changed));
+    let mut changed = definition.clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) = &mut changed
+    else {
+        panic!("extrusion fixture");
+    };
+    *direction = ExtrudeDirection::default();
+    assert!(!extrusion::matches(index, source, label, &changed));
+    let mut changed = definition.clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { start, .. }) = &mut changed else {
+        panic!("extrusion fixture");
+    };
+    *start = cadmpeg_ir::features::ExtrudeStart::ProfilePlane {};
+    if changed != *definition {
+        assert!(!extrusion::matches(index, source, label, &changed));
+    }
+    let mut changed = definition.clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = &mut changed
+    else {
+        panic!("extrusion fixture");
+    };
+    *extent = ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: LinearTermination::ThroughAll {},
+            draft: None,
+        },
+    };
+    if changed != *definition {
+        assert!(!extrusion::matches(index, source, label, &changed));
+    }
+    assert_eq!(
+        extrusion::profile_loss().code.local_code(),
+        "feature.extrusion-profile-native"
+    );
+    assert_eq!(
+        extrusion::operand_loss().code.local_code(),
+        "feature.extrusion-operands-native"
+    );
+}
+
+#[test]
+fn native_profile_extrusion_forms_and_validator_operands() {
+    let forms = [
+        (1, false, Vec::new(), Vec::new()),
+        (2, true, Vec::new(), Vec::new()),
+        (4, false, Vec::new(), Vec::new()),
+        (5, false, Vec::new(), Vec::new()),
+        (5, true, Vec::new(), Vec::new()),
+        (7, false, vec![(11, 40)], Vec::new()),
+        (6, false, vec![(8, 41), (11, 40)], Vec::new()),
+        (
+            7,
+            false,
+            vec![(13, 20), (18, 21)],
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+                plane_surface(21),
+            ],
+        ),
+        (
+            6,
+            false,
+            vec![(10, 20), (17, 21), (11, 40)],
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+                plane_surface(21),
+            ],
+        ),
+        (1, false, vec![(5, 73)], Vec::new()),
+        (
+            1,
+            false,
+            vec![(3, 20)],
+            vec![test_property(
+                20,
+                PmDcFeaturePropertyKind::Boolean {
+                    name: String::new(),
+                    name_value: 0,
+                    value: true,
+                },
+            )],
+        ),
+        (
+            1,
+            false,
+            vec![(27, 72), (28, 71), (29, 22)],
+            vec![enum_property(22, PmDcFeatureEnumFamily::Extent, 1)],
+        ),
+    ];
+    for second_extent in [4, 5] {
+        configured_extent_extrusion(
+            1,
+            false,
+            &[(27, 72), (28, 71), (29, 22)],
+            vec![enum_property(
+                22,
+                PmDcFeatureEnumFamily::Extent,
+                second_extent,
+            )],
+            |index| index.sketch_ids.clear(),
+            assert_native_profile_validator,
+        )
+        .expect("opposite-side termination");
+    }
+    for operation in [1, 2, 4] {
+        configured_extent_extrusion(
+            1,
+            false,
+            &[(0, 20)],
+            vec![test_property(
+                20,
+                PmDcFeaturePropertyKind::Enumeration {
+                    family: PmDcFeatureEnumFamily::PartOperation,
+                    type_value: 5,
+                    value: operation,
+                },
+            )],
+            |index| index.sketch_ids.clear(),
+            assert_native_profile_validator,
+        )
+        .expect("operation with native profile");
+    }
+    for (extent, symmetric, slots, extra) in forms {
+        let projected = configured_extent_extrusion(
+            extent,
+            symmetric,
+            &slots,
+            extra,
+            |index| index.sketch_ids.clear(),
+            assert_native_profile_validator,
+        );
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = projected
+            .expect("native profile form")
+            .evaluation
+            .definition()
+            .clone()
+        else {
+            panic!("extrusion fixture");
+        };
+        assert_eq!(
+            profile,
+            cadmpeg_ir::features::ProfileRef::Planar(
+                cadmpeg_ir::features::PlanarProfileRef::Native(
+                    "inventor:pmdc:feature-property#generated-2".into()
+                )
+            )
+        );
+    }
+}
+
+#[test]
+fn native_profile_extrusion_refuses_unresolved_participants_and_targets() {
+    for slots in [&[(13, 20), (18, 21)][..], &[(11, 40), (13, 20)][..]] {
+        assert!(configured_extent_extrusion(
+            7,
+            false,
+            slots,
+            vec![
+                test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 0 }),
+                plane_surface(21)
+            ],
+            |index| index.sketch_ids.clear(),
+            |_, _, _, feature| assert!(feature.is_none())
+        )
+        .is_none());
+    }
+    assert!(configured_extent_extrusion(
+        1,
+        false,
+        &[],
+        Vec::new(),
+        |index| {
+            index.sketch_ids.clear();
+            index.sketches.clear();
+        },
+        |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+    assert!(configured_extent_extrusion(
+        1,
+        false,
+        &[],
+        Vec::new(),
+        |index| {
+            index.sketch_ids.clear();
+            index.entity_style_links.clear();
+        },
+        |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+}
+
+#[test]
+fn native_profile_requires_the_zero_selection_control() {
+    assert!(configured_extent_extrusion(
+        1,
+        false,
+        &[(1, 22), (23, 22)],
+        vec![
+            test_property(
+                22,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::BoundaryPatch,
+                    items: reference_list(&[24])
+                }
+            ),
+            test_property(
+                23,
+                PmDcFeaturePropertyKind::ProfileSelection {
+                    entity_link: reference(52),
+                    value: 1
+                }
+            ),
+        ],
+        |index| index.sketch_ids.clear(),
+        |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+    assert!(configured_extent_extrusion(
+        1,
+        false,
+        &[(1, 22), (23, 22)],
+        vec![
+            test_property(
+                22,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::BoundaryPatch,
+                    items: reference_list(&[4, 24])
+                }
+            ),
+            test_property(
+                23,
+                PmDcFeaturePropertyKind::ProfileSelection {
+                    entity_link: reference(52),
+                    value: 1
+                }
+            ),
+        ],
+        |index| index.sketch_ids.clear(),
+        |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+}
+
+#[test]
+fn native_profile_direction_controls_are_pinned() {
+    use crate::feature::extrusion::native_direction_controls;
+    assert!(native_direction_controls(0, 0.0, None));
+    assert!(native_direction_controls(0, 0.0, Some(0)));
+    assert!(!native_direction_controls(1, 0.0, None));
+    assert!(!native_direction_controls(0, 1.0, None));
+    assert!(!native_direction_controls(0, 0.0, Some(1)));
+}
+
+#[test]
+fn native_profile_extrusion_refuses_a_nonplane_target() {
+    assert!(configured_extent_extrusion(
+        7,
+        false,
+        &[(13, 20), (18, 21)],
+        vec![
+            test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            test_property(
+                21,
+                PmDcFeaturePropertyKind::SurfaceBody {
+                    body: reference(30)
+                }
+            ),
+        ],
+        |index| index.sketch_ids.clear(),
+        |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+}
+
+#[test]
+fn native_profile_keeps_the_complete_boundary_patch() {
+    configured_extent_extrusion(
+        1,
+        false,
+        &[(1, 22), (23, 22)],
+        vec![
+            test_property(
+                22,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::BoundaryPatch,
+                    items: reference_list(&[4, 25]),
+                },
+            ),
+            test_property(
+                24,
+                PmDcFeaturePropertyKind::ProfileSelection {
+                    entity_link: reference(52),
+                    value: 0,
+                },
+            ),
+        ],
+        |index| index.sketch_ids.clear(),
+        |source, label, index, feature| {
+            assert_native_profile_validator(source, label, index, feature);
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = feature
+                .as_ref()
+                .expect("multiple selections")
+                .evaluation
+                .definition()
+            else {
+                panic!("extrusion fixture");
+            };
+            assert_eq!(
+                *profile,
+                cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Native(
+                        "inventor:pmdc:feature-property#generated-22".into()
+                    )
+                )
+            );
+        },
+    )
+    .expect("complete native patch");
+}
+
+#[test]
+fn native_profile_refuses_empty_and_duplicate_selections() {
+    for members in [&[][..], &[4, 4][..]] {
+        assert!(configured_extent_extrusion(
+            1,
+            false,
+            &[(1, 22), (23, 22)],
+            vec![test_property(
+                22,
+                PmDcFeaturePropertyKind::References {
+                    family: PmDcFeatureReferenceFamily::BoundaryPatch,
+                    items: reference_list(members)
+                }
+            ),],
+            |index| index.sketch_ids.clear(),
+            |_, _, _, feature| assert!(feature.is_none())
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn native_profile_refuses_unequal_patch_references_and_zero_blind_length() {
+    assert!(configured_extent_extrusion(
+        1,
+        false,
+        &[(23, 22)],
+        vec![test_property(
+            22,
+            PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::BoundaryPatch,
+                items: reference_list(&[4])
+            }
+        ),],
+        |index| index.sketch_ids.clear(),
+        |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+    assert!(configured_extent_extrusion(
+        1,
+        false,
+        &[(4, 74)],
+        Vec::new(),
+        |index| index.sketch_ids.clear(),
+        |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+}
+
+#[test]
+fn native_profile_retains_signed_taper_on_each_side() {
+    let projected = configured_extent_extrusion(
+        1,
+        false,
+        &[(5, 73), (27, 72), (28, 75), (29, 22)],
+        vec![enum_property(22, PmDcFeatureEnumFamily::Extent, 1)],
+        |index| index.sketch_ids.clear(),
+        assert_native_profile_validator,
+    )
+    .expect("two tapered sides");
+    let ExtrudeExtent::TwoSided { first, second } = extrude_definition(&projected).0 else {
+        panic!("two-sided fixture");
+    };
+    assert_eq!(first.draft.expect("first draft").get(), 0.2);
+    assert_eq!(second.draft.expect("second draft").get(), -0.2);
+}
+
+#[test]
+fn native_profile_direction_and_operation_values_are_exact() {
+    for (value, expected) in [
+        (1, BooleanOp::NewBody),
+        (2, BooleanOp::Cut),
+        (3, BooleanOp::Join),
+        (4, BooleanOp::Intersect),
+    ] {
+        let feature = configured_extent_extrusion(
+            1,
+            false,
+            &[(0, 22), (3, 23)],
+            vec![
+                test_property(
+                    22,
+                    PmDcFeaturePropertyKind::Enumeration {
+                        family: PmDcFeatureEnumFamily::PartOperation,
+                        type_value: 5,
+                        value,
+                    },
+                ),
+                test_property(
+                    23,
+                    PmDcFeaturePropertyKind::Boolean {
+                        name: String::new(),
+                        name_value: 0,
+                        value: true,
+                    },
+                ),
+            ],
+            |index| index.sketch_ids.clear(),
+            assert_native_profile_validator,
+        )
+        .expect("reversed extrusion");
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, op, .. }) =
+            feature.evaluation.definition()
+        else {
+            panic!("extrusion fixture");
+        };
+        assert_eq!(*op, expected);
+        assert_eq!(
+            *direction,
+            ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::FeatureDirection3::Z_AXIS.reversed(),
+                source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::Custom {}),
+            }
+        );
+    }
+}
+
+#[test]
+fn native_profile_validator_requires_the_patch_and_selection_record_types() {
+    configured_extent_extrusion(
+        1,
+        false,
+        &[],
+        Vec::new(),
+        |index| index.sketch_ids.clear(),
+        |source, label, index, feature| {
+            assert_native_profile_validator(source, label, index, feature);
+            for ordinal in [2, 3] {
+                let mut wrong = (*index
+                    .properties
+                    .get(&("generated", ordinal))
+                    .expect("property key")
+                    .expect("unique property"))
+                .clone();
+                wrong.identity.type_id =
+                    crate::record_identity::RecordTypeId::from_bytes(crate::feature::BOOLEAN_TYPE);
+                let mut changed = crate::feature::ProjectionIndex {
+                    properties: index.properties.clone(),
+                    sketches: index.sketches.clone(),
+                    sketch_ids: index.sketch_ids.clone(),
+                    directions: index.directions.clone(),
+                    entity_style_links: index.entity_style_links.clone(),
+                    ..crate::feature::ProjectionIndex::default()
+                };
+                assert!(
+                    crate::feature::extrusion::native_profile(source, label, &changed).is_some()
+                );
+                changed
+                    .properties
+                    .insert(("generated", ordinal), Some(&wrong));
+                assert!(
+                    crate::feature::extrusion::native_profile(source, label, &changed).is_none()
+                );
+            }
+        },
+    )
+    .expect("native profile fixture");
 }

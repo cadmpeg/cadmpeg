@@ -1416,6 +1416,18 @@ fn validate_features(
                 record,
             )
         }));
+    let extrusion_index = crate::feature::extrusion::ValidationIndex::new(
+        &crate::feature::extrusion::ValidationRecords {
+            properties: &data.pm_dc_feature_properties,
+            parameters: &data.pm_dc_parameters,
+            sketches: &data.pm_dc_sketches,
+            directions: &data.pm_dc_directions,
+            planes: &data.pm_dc_work_planes,
+            entity_links: &data.pm_dc_entity_style_links,
+            kernel_links: &data.pm_dc_kernel_entity_links,
+            model: &ir.model,
+        },
+    );
     let motion_index = crate::feature::motion::ValidationIndex::new(
         &data.pm_dc_feature_properties,
         &data.pm_dc_transforms,
@@ -1688,6 +1700,20 @@ fn validate_features(
             ));
             continue;
         };
+        if matches!(family, crate::feature::FeatureFamily::Extrusion)
+            && !labels
+                .get(&(
+                    raw_feature.identity.segment_token.as_str(),
+                    raw_feature.identity.record_ordinal,
+                ))
+                .is_some_and(|label| extrusion_index.matches(raw_feature, label, definition))
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral extrusion operands do not match their PmDc slots".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
         if matches!(family, crate::feature::FeatureFamily::Base) {
             if !base::valid(
                 ir,
