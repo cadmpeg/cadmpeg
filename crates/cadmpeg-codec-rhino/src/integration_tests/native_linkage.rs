@@ -190,3 +190,160 @@ fn source_free_writer_uses_current_neutral_annotations_and_products_through_nati
         }
     }
 }
+
+#[test]
+fn document_metadata_projection_keeps_typed_values_order_and_native_owners() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    let archive = ArchiveVersion::V8;
+    let mut revision = vec![0x10];
+    revision.extend(bytes::utf16_bytes("Source author"));
+    revision.extend(
+        [1_i32, 2, 3, 4, 5, 126, 6, 127]
+            .into_iter()
+            .flat_map(i32::to_le_bytes),
+    );
+    revision.extend(bytes::utf16_bytes("Source editor"));
+    revision.extend(
+        [8_i32, 9, 10, 11, 5, 126, 4, 158]
+            .into_iter()
+            .flat_map(i32::to_le_bytes),
+    );
+    revision.extend(7_i32.to_le_bytes());
+    let mut notes = vec![0x11];
+    notes.extend(1_i32.to_le_bytes());
+    notes.extend(bytes::utf16_bytes("Source notes"));
+    notes.extend(1_i32.to_le_bytes());
+    notes.extend(
+        [10_i32, 20, 300, 400]
+            .into_iter()
+            .flat_map(i32::to_le_bytes),
+    );
+    notes.push(1);
+    let mut application = vec![0x10];
+    for value in [
+        "Source application",
+        "https://example.invalid/source",
+        "Source application details",
+    ] {
+        application.extend(bytes::utf16_bytes(value));
+    }
+    let source = bytes::minimal_document(
+        "80",
+        &[
+            bytes::table(
+                archive,
+                0x1000_0014,
+                &[
+                    bytes::crc_chunk(archive, 0x2000_8021, &revision),
+                    bytes::crc_chunk(archive, 0x2000_8022, &notes),
+                    bytes::crc_chunk(archive, 0x2000_8024, &application),
+                ],
+            ),
+            bytes::table(archive, 0x1000_0015, &[bytes::units_record(archive, 2)]),
+            bytes::table(archive, 0x1000_0013, &[]),
+        ],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    let scan = crate::container::scan(&ctx, &source).unwrap();
+    let mut ir = CadIr::empty();
+    crate::document_data::install(&ctx, &scan, &mut ir).unwrap();
+    let before = ir.native.clone();
+    assert!(crate::neutral_projection::project(&ctx, &scan, &mut ir)
+        .unwrap()
+        .is_empty());
+    assert_eq!(ir.native, before);
+    let expected = [
+        (
+            "document_notes",
+            "rhino:document:notes#current",
+            "html",
+            AttributeValue::Boolean(true),
+        ),
+        (
+            "document_notes",
+            "rhino:document:notes#current",
+            "text",
+            AttributeValue::String("Source notes".into()),
+        ),
+        (
+            "document_notes",
+            "rhino:document:notes#current",
+            "visible",
+            AttributeValue::Boolean(true),
+        ),
+        (
+            "document_notes",
+            "rhino:document:notes#current",
+            "window_rectangle",
+            AttributeValue::vector([10.0, 20.0, 300.0, 400.0]).unwrap(),
+        ),
+        (
+            "document_notes",
+            "rhino:document:notes#current",
+            "locked",
+            AttributeValue::Boolean(true),
+        ),
+        (
+            "revisions",
+            "rhino:document:revision#current",
+            "created_by",
+            AttributeValue::String("Source author".into()),
+        ),
+        (
+            "revisions",
+            "rhino:document:revision#current",
+            "created_utc_fields",
+            AttributeValue::vector([1.0, 2.0, 3.0, 4.0, 5.0, 126.0, 6.0, 127.0]).unwrap(),
+        ),
+        (
+            "revisions",
+            "rhino:document:revision#current",
+            "last_edited_by",
+            AttributeValue::String("Source editor".into()),
+        ),
+        (
+            "revisions",
+            "rhino:document:revision#current",
+            "last_edited_utc_fields",
+            AttributeValue::vector([8.0, 9.0, 10.0, 11.0, 5.0, 126.0, 4.0, 158.0]).unwrap(),
+        ),
+        (
+            "revisions",
+            "rhino:document:revision#current",
+            "revision_count",
+            AttributeValue::Integer(7),
+        ),
+        (
+            "applications",
+            "rhino:document:application#writer",
+            "name",
+            AttributeValue::String("Source application".into()),
+        ),
+        (
+            "applications",
+            "rhino:document:application#writer",
+            "url",
+            AttributeValue::String("https://example.invalid/source".into()),
+        ),
+        (
+            "applications",
+            "rhino:document:application#writer",
+            "details",
+            AttributeValue::String("Source application details".into()),
+        ),
+    ];
+    assert_eq!(ir.model.attributes.len(), expected.len());
+    for (attribute, (arena, native_id, field, value)) in ir.model.attributes.iter().zip(expected) {
+        assert_eq!(attribute.name, format!("rhino.{arena}.{field}"));
+        assert_eq!(attribute.target, AttributeTarget::Document);
+        assert_eq!(attribute.native_ref.as_deref(), Some(native_id));
+        assert_eq!(attribute.values, [Some(value)]);
+        let records = &ir.native.namespace("rhino").unwrap().arenas()[arena];
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id(), native_id);
+        assert_eq!(records[0].field("neutral_attributes"), None);
+    }
+}

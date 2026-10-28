@@ -129,7 +129,7 @@ pub(crate) fn project(
     ir: &mut CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = materials::project(ctx, scan, ir)?;
-    losses.extend(document::project(ctx, ir)?);
+    losses.extend(document::project(ctx, scan, ir)?);
     losses.extend(annotations::project(ctx, ir)?);
     losses.extend(views::project(ctx, ir)?);
     let layers = &scan.metadata.layers;
