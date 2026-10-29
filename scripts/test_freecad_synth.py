@@ -26,7 +26,7 @@ def load(name: str, filename: str):
 
 PREPARE = load("prepare_freecad_synth", "prepare-freecad-synth.py")
 VERIFY = load("verify_freecad_synth", "verify-freecad-synth.py")
-SUCCESS = {"ir_version": "8", "command": "convert", "status": "ok",
+SUCCESS = {"ir_version": "10", "command": "convert", "status": "ok",
            "export": {"write_path": {"path": "synthesized"}}}
 
 
@@ -54,14 +54,14 @@ if mode == "dump_failure" and args[0] == "dump":
     sys.exit(3)
 target = Path(args[args.index("-o") + 1])
 if args[0] == "dump":
-    target.write_text(json.dumps({"ir_version": "8", "scope": {"model": True, "design": True}}))
+    target.write_text(json.dumps({"ir_version": "10", "scope": {"model": True, "design": True}}))
     target.with_suffix(".fidelity.json").write_text("retained source bytes")
 else:
     if list(Path(args[1]).parent.glob("*.fidelity.json")):
         sys.exit(4)
     if mode != "missing_output":
         target.write_bytes(b"authored FCStd")
-    report = {"ir_version": "8", "command": "convert", "status": "ok",
+    report = {"ir_version": "10", "command": "convert", "status": "ok",
               "export": {"write_path": {"path": "synthesized"}}}
     if mode == "replay":
         report["export"]["write_path"]["path"] = "verbatim_replay"
@@ -108,7 +108,7 @@ else:
 
     def test_requires_successful_current_wire_synthesized_reports(self) -> None:
         for mode in ["replay", "old_wire", "refused", "malformed_report"]:
-            with self.subTest(mode=mode), self.assertRaisesRegex(RuntimeError, "successful wire-v8 synthesized"):
+            with self.subTest(mode=mode), self.assertRaisesRegex(RuntimeError, "successful wire-v10 synthesized"):
                 self.prepare(mode)
 
     def test_missing_materialized_output_is_refused(self) -> None:

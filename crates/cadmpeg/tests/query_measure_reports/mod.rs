@@ -121,7 +121,7 @@ fn a_measure_report_states_its_work_or_leaves_it_out() {
     let dir = tempdir().unwrap();
     let report = |work: &str| {
         format!(
-            r#"{{"ir_version": "8", "command": "measure", "status": "ok", "refusal": null,
+            r#"{{"ir_version": "10", "command": "measure", "status": "ok", "refusal": null,
                "decode_report": null, "measure": {{"bodies": [{{}}], "faces": [],
                "edges": [], "surfaces": [], "document": {{"unavailable": {{}}{work}}}}}}}"#
         )

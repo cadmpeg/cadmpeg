@@ -29,11 +29,11 @@ def prepare(cadmpeg: Path, fixtures: Path, output: Path) -> int:
             export = value.get("export") if isinstance(value, dict) else None
             write_path = export.get("write_path") if isinstance(export, dict) else None
             if (not isinstance(value, dict) or not isinstance(write_path, dict)
-                    or value.get("ir_version") != "8"
+                    or value.get("ir_version") != "10"
                     or value.get("status") != "ok"
                     or value.get("command") != "convert"
                     or write_path.get("path") != "synthesized"):
-                raise RuntimeError(f"{source.name}: acceptance input did not have a successful wire-v8 synthesized export report")
+                raise RuntimeError(f"{source.name}: acceptance input did not have a successful wire-v10 synthesized export report")
             target = output / source.name
             if not target.is_file() or target.stat().st_size == 0:
                 raise RuntimeError(f"{source.name}: synthesis did not produce a nonempty FCStd output")

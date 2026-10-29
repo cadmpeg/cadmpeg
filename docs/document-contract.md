@@ -39,7 +39,7 @@ An empty export is represented by a `NoExportableSolids` loss. The CLI writes em
 
 ## Content scope
 
-Wire version 8 requires a `scope` object with a boolean for every `ArenaClass`:
+Wire version 10 requires a `scope` object with a boolean for every `ArenaClass`:
 
 ```json
 {"scope":{"model":true,"design":false}}
@@ -83,4 +83,4 @@ Adding an arena class changes the wire contract and requires a wire bump. Update
 
 ## Version policy
 
-Readers accept exactly version 8. Earlier documents are refused with a message that names the change to `scope` and the report transfer change. There is no migration path in the reader.
+Readers accept exactly version 10. Earlier documents are refused with a message that names the change to `scope` and the report transfer change. There is no migration path in the reader.

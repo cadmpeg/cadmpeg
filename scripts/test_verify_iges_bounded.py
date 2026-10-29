@@ -46,7 +46,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         }
         self.write(
             {
-                "ir_version": "8",
+                "ir_version": "10",
                 "command": "dump",
                 "status": "refused",
                 "refusal": refusal,
@@ -61,7 +61,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
     def test_rejects_success_report_as_refusal(self) -> None:
         self.write(
             {
-                "ir_version": "8",
+                "ir_version": "10",
                 "command": "dump",
                 "status": "ok",
                 "refusal": None,
@@ -74,7 +74,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
         self.assertEqual(error, "decode refusal report status is not refused")
 
     def test_rejects_unsupported_refusal_version(self) -> None:
-        for version in ("5", "6", "7", "9", "10", "11", "37"):
+        for version in ("5", "6", "7", "8", "9", "11", "37"):
             with self.subTest(version=version):
                 self.write(
                     {
@@ -92,7 +92,7 @@ class DecodeRefusalReportTests(unittest.TestCase):
                 actual, error = MODULE.load_decode_refusal(self.path)
 
                 self.assertIsNone(actual)
-                self.assertEqual(error, 'decode refusal report does not use ir_version "8"')
+                self.assertEqual(error, 'decode refusal report does not use ir_version "10"')
 
     def test_gate_rejects_unclassified_decode_exit(self) -> None:
         input_path = Path(self.directory.name) / "input.igs"
@@ -123,7 +123,7 @@ import sys
 report = pathlib.Path(sys.argv[sys.argv.index('--report') + 1])
 assert sys.argv[1] == 'dump'
 report.write_text(json.dumps({
-    'ir_version': '8',
+    'ir_version': '10',
     'command': 'dump',
     'status': 'refused',
     'refusal': {
@@ -180,7 +180,7 @@ if command == "check":
 output = pathlib.Path(sys.argv[sys.argv.index("--output") + 1])
 if command == "dump" and pathlib.Path(sys.argv[2]).name == "cut.iges":
     report = pathlib.Path(sys.argv[sys.argv.index("--report") + 1])
-    report.write_text(json.dumps({"ir_version": "8", "command": "dump", "status": "refused", "refusal": {"stage": "decode", "code": "decode_failed", "message": "cut source"}}))
+    report.write_text(json.dumps({"ir_version": "10", "command": "dump", "status": "refused", "refusal": {"stage": "decode", "code": "decode_failed", "message": "cut source"}}))
     sys.exit(1)
 output.write_text("{}")
 ''')
