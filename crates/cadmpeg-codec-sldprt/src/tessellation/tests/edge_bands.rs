@@ -128,36 +128,28 @@ fn banded_queries_match_scanning_every_edge() {
                 for point in probes(&mut state, &points, tolerance, scale) {
                     let within = polygon_boundary_within(&points, point, tolerance);
                     let contains = polygon_contains(&points, point, tolerance);
-                    let context = || format!("{points:?} {point:?} {tolerance:e}");
+                    let context = format!("{points:?} {point:?} {tolerance:e}");
                     assert_eq!(
                         polygon.boundary_within(point, tolerance),
                         within,
-                        "{}",
-                        context()
+                        "{context}"
                     );
-                    assert_eq!(
-                        polygon.contains(point, tolerance),
-                        contains,
-                        "{}",
-                        context()
-                    );
+                    assert_eq!(polygon.contains(point, tolerance), contains, "{context}");
                     let strictly = contains && !within;
                     assert_eq!(
                         polygon_strictly_contains(&points, point, tolerance),
                         strictly,
-                        "{}",
-                        context()
+                        "{context}"
                     );
                     assert_eq!(
                         polygon.strictly_contains(point, tolerance),
                         strictly,
-                        "{}",
-                        context()
+                        "{context}"
                     );
                     if PolygonBox::new(&points, tolerance)
                         .is_some_and(|bounds| bounds.excludes(point))
                     {
-                        assert!(!contains && !within, "{}", context());
+                        assert!(!contains && !within, "{context}");
                         excluded += 1;
                     }
                     cases += 1;

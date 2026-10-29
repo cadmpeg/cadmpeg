@@ -12,7 +12,7 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
@@ -112,24 +112,17 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
 /// Compare neutral semantics after mapping source section positions through
 /// their unique admitted member names. Native and source metadata are excluded.
 fn neutral_document(bytes: &[u8]) -> String {
-    decoded_neutral_document(bytes).1
-}
-
-/// [`neutral_document`] with the decode it compared, when the bytes decode.
-fn decoded_neutral_document(bytes: &[u8]) -> (Option<DecodeResult>, String) {
-    match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-        Ok(result) => {
-            let scan = crate::test_support::container::scan(bytes);
-            let sections =
-                section_identities(&scan).expect("unique admitted source member identities");
-            let text = snapshot_text(&normalized_document(result.ir(), &sections));
-            (Some(result), text)
-        }
-        Err(error) => (
-            None,
-            snapshot_text(&serde_json::json!({ "decode_error": error.to_string() })),
-        ),
-    }
+    let value =
+        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
+            Ok(result) => {
+                let scan = crate::test_support::container::scan(bytes);
+                let sections =
+                    section_identities(&scan).expect("unique admitted source member identities");
+                normalized_document(result.ir(), &sections)
+            }
+            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        };
+    snapshot_text(&value)
 }
 
 /// Every committed golden still matches what the codec produces.
@@ -179,7 +172,8 @@ fn fixtures_survive_the_semantic_write_path() {
             });
             continue;
         }
-        let (source, expected) = decoded_neutral_document(&bytes);
+        let expected = neutral_document(&bytes);
+        let source = bytes.clone();
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
@@ -187,11 +181,10 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
-                let (written, actual) = decoded_neutral_document(bytes);
-                if let Err(mismatch) = snapshots_agree(&expected, &actual) {
+                if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
-                if written_measures_agree(&name, source.as_ref(), written.as_ref()) {
+                if written_measures_agree(&name, &source, bytes) {
                     measured_count += 1;
                 }
             }
@@ -219,21 +212,21 @@ fn fixtures_survive_the_semantic_write_path() {
 /// authored cylinder, sphere and NURBS solids among them.
 const MEASURED_FIXTURE_FLOOR: usize = 16;
 
-/// When the source decode measures a comparable body, asserts that the
-/// written decode measures the same. Returns whether the source measures a
-/// comparable body.
-fn written_measures_agree(
-    name: &str,
-    source: Option<&DecodeResult>,
-    written: Option<&DecodeResult>,
-) -> bool {
-    let undecoded = || -> ! { panic!("fixture `{name}`: a container does not decode") };
-    let before = source.unwrap_or_else(|| undecoded()).ir();
-    if !measures_decide(name, before).expect("the fixture is measured") {
+/// Decodes `source` and `written` and, when the source measures a
+/// comparable body, asserts that both measure the same. Returns whether the
+/// source measures a comparable body.
+fn written_measures_agree(name: &str, source: &[u8], written: &[u8]) -> bool {
+    let decode = |bytes: &[u8]| {
+        SldprtCodec
+            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+            .unwrap_or_else(|_| panic!("fixture `{name}`: a container does not decode"))
+    };
+    let before = decode(source);
+    if !measures_decide(name, before.ir()).expect("the fixture is measured") {
         return false;
     }
-    let after = written.unwrap_or_else(|| undecoded()).ir();
-    measures_agree(name, before, after).expect("the round trip keeps its measured geometry");
+    measures_agree(name, before.ir(), decode(written).ir())
+        .expect("the round trip keeps its measured geometry");
     true
 }
 
