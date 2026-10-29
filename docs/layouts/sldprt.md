@@ -71,7 +71,7 @@ Spec §1.1 · layout: byte offsets · size: 8 B
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `file_id` | `u32` | unstated | spec | The spec states the width but not the byte order of this field, unlike `version` on the same line. |
-| 4 | 4 | `version` | `u32` | big | spec | `version` (u32 **big-endian**, value `0x00000004`) |
+| 4 | 4 | `version` | `u32` | big | spec | `version` (u32 **big-endian**; observed value `0x00000004`) |
 
 ## `block_frame_header`
 
