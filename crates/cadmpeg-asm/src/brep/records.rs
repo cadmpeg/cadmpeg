@@ -357,7 +357,11 @@ pub struct FaceSidednessWire {
     #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
     id: String,
     record_index: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_key"
+    )]
     face_key: Option<String>,
     native_sense: cadmpeg_ir::topology::Sense,
     normalized_sense: cadmpeg_ir::topology::Sense,
@@ -1137,6 +1141,7 @@ mod tests {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_containment, FaceContainment, "containment");
+cadmpeg_core::named_optional_field!(deserialize_face_key, String, "face_key");
 cadmpeg_core::named_optional_field!(deserialize_trailing, i64, "trailing");
 cadmpeg_core::named_optional_field!(deserialize_free_vertex, VertexId, "free_vertex");
 
