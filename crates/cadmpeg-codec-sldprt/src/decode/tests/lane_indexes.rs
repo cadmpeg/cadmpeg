@@ -42,14 +42,14 @@ fn lane_indexes_match_the_name_and_feature_scans() {
                 parent: "lane".into(),
                 ordinal,
                 sequence: ordinal,
-                offset: Some(u64::from(next(30))),
+                offset: u64::from(next(30)),
                 object_id: ObjectId::from_value(next(5)),
                 value: format!("Feature{ordinal}"),
             })
             .collect::<Vec<_>>();
         let by_offset = super::super::names_by_offset(&names);
         for offset in 0..32 {
-            let scanned = names.iter().find(|name| name.offset == Some(offset));
+            let scanned = names.iter().find(|name| name.offset == offset);
             assert_eq!(
                 by_offset.get(&offset).map(|name| std::ptr::from_ref(*name)),
                 scanned.map(std::ptr::from_ref)

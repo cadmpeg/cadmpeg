@@ -193,11 +193,11 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     for (ordinal, marker) in markers.iter_mut().enumerate() {
         *marker = marker.with_test_position(
             u32::try_from(ordinal).expect("fixture marker ordinal"),
-            marker.offset().expect("original source marker position"),
+            marker.offset(),
         );
     }
     assert_eq!(markers[6].id(), "relation-line");
-    assert_eq!(markers[6].offset(), Some(84));
+    assert_eq!(markers[6].offset(), 84);
     let mut native_payload = vec![0; 181];
     for offset in [0, 27, 54] {
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
@@ -229,7 +229,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 id: "relation".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(90),
+                offset: 90,
                 family: FeatureInputRelationFamily::CircleDiameter,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
@@ -240,7 +240,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 )
                 .unwrap(),
                 operands: vec![FeatureInputOperand {
-                    offset: Some(91),
+                    offset: 91,
                     reference_ref: "reference".into(),
                     kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_929D),
                     entity_index: 0,
@@ -252,7 +252,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 id: "qualified-point-relation".into(),
                 parent: "lane".into(),
                 ordinal: 2,
-                offset: Some(94),
+                offset: 94,
                 family: FeatureInputRelationFamily::PointPointDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
@@ -264,14 +264,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
-                        offset: Some(95),
+                        offset: 95,
                         reference_ref: "qualified-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 16,
                         entity_ref: Some(qualified_curve.id().to_string()),
                     },
                     FeatureInputOperand {
-                        offset: Some(96),
+                        offset: 96,
                         reference_ref: "point-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 17,
@@ -284,7 +284,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 id: "line-relation".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(92),
+                offset: 92,
                 family: FeatureInputRelationFamily::LineLineDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
@@ -295,7 +295,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 )
                 .unwrap(),
                 operands: vec![FeatureInputOperand {
-                    offset: Some(93),
+                    offset: 93,
                     reference_ref: "line-reference".into(),
                     kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                     entity_index: 0,
@@ -307,7 +307,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 id: "coincident-point-relation".into(),
                 parent: "lane".into(),
                 ordinal: 3,
-                offset: Some(97),
+                offset: 97,
                 family: FeatureInputRelationFamily::PointPointDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
@@ -319,14 +319,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
-                        offset: Some(98),
+                        offset: 98,
                         reference_ref: "coincident-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 18,
                         entity_ref: Some(coincident_point.id().to_string()),
                     },
                     FeatureInputOperand {
-                        offset: Some(99),
+                        offset: 99,
                         reference_ref: "coincident-pair-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_837B),
                         entity_index: 17,
@@ -339,7 +339,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 id: "self-linked-curve-relation".into(),
                 parent: "lane".into(),
                 ordinal: 4,
-                offset: Some(100),
+                offset: 100,
                 family: FeatureInputRelationFamily::Angle,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
@@ -351,14 +351,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
-                        offset: Some(101),
+                        offset: 101,
                         reference_ref: "self-linked-curve-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 18,
                         entity_ref: Some(self_linked_curve.id().to_string()),
                     },
                     FeatureInputOperand {
-                        offset: Some(102),
+                        offset: 102,
                         reference_ref: "support-curve-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 19,
@@ -371,7 +371,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 id: "forward-linked-curve-relation".into(),
                 parent: "lane".into(),
                 ordinal: 5,
-                offset: Some(103),
+                offset: 103,
                 family: FeatureInputRelationFamily::LineLineDistance,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),
@@ -383,14 +383,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 .unwrap(),
                 operands: vec![
                     FeatureInputOperand {
-                        offset: Some(104),
+                        offset: 104,
                         reference_ref: "forward-linked-curve-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 20,
                         entity_ref: Some(forward_linked_curve.id().to_string()),
                     },
                     FeatureInputOperand {
-                        offset: Some(105),
+                        offset: 105,
                         reference_ref: "forward-support-reference".into(),
                         kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386),
                         entity_index: 21,
@@ -584,7 +584,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             id: "relation".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(90),
+            offset: 90,
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
@@ -595,7 +595,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
             )
             .unwrap(),
             operands: vec![FeatureInputOperand {
-                offset: Some(91),
+                offset: 91,
                 reference_ref: "reference".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 0,
@@ -731,7 +731,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(3),
+        offset: 3,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -743,14 +743,14 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: Some(4),
+                offset: 4,
                 reference_ref: "first-reference".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 0,
                 entity_ref: Some(first_marker.id().to_string()),
             },
             FeatureInputOperand {
-                offset: Some(5),
+                offset: 5,
                 reference_ref: "second-reference".into(),
                 kind: FeatureInputOperandKind::D6,
                 entity_index: 1,

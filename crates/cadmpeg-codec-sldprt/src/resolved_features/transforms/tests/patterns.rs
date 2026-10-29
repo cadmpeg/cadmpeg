@@ -15,7 +15,6 @@ use crate::resolved_features::axes::line_reference_direction as typed_line_refer
 use crate::resolved_features::axes::linear_pattern_display_directions as typed_linear_pattern_display_directions;
 use crate::resolved_features::bindings::bind_pattern_inputs;
 use crate::resolved_features::bindings::bind_sweep_adjacent_profiles;
-use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::relation_geometry::project_relation_bindings;
 use crate::resolved_features::relation_geometry::project_relation_point_geometry;
 use crate::resolved_features::relation_geometry::project_relation_solved_line_geometry;
@@ -64,12 +63,11 @@ fn compact_line_reference_direction(
 }
 
 fn bind_pattern_inputs_test(
-    class_sources: &ClassSources,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    bind_pattern_inputs(class_sources, features, histories, lanes)
+    bind_pattern_inputs(features, histories, lanes)
 }
 
 fn linear_pattern_display_directions(
@@ -131,7 +129,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(offset),
+        offset,
         value: value.into(),
         object_id: ObjectId::try_from(object_id).ok(),
     };
@@ -206,7 +204,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
-            offset: Some(100),
+            offset: 100,
             object_id: Some(ObjectId::Absent),
             value: "D3".into(),
         },
@@ -216,7 +214,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 1,
             sequence: 1,
-            offset: Some(300),
+            offset: 300,
             object_id: Some(ObjectId::Absent),
             value: "D4".into(),
         },
@@ -457,6 +455,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         native_payload: native_payload.into(),
         classes: vec![FeatureInputClass {
             sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(line_ref_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(line_ref_offset),
             feature_ref: None,
             id: "line-reference".into(),
             parent: "lane".into(),
@@ -573,12 +572,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .all(|id| known.contains(id)));
     };
 
-    let class_sources = ClassSources::from_positions([(
-        &lane.classes[0],
-        cadmpeg_core::decode::u64_from_index(line_ref_offset),
-    )]);
     bind_pattern_inputs_test(
-        &class_sources,
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -607,7 +601,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
         }));
     bind_pattern_inputs_test(
-        &class_sources,
         &mut features,
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -646,7 +639,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         }
     });
     bind_pattern_inputs_test(
-        &class_sources,
         &mut features,
         std::slice::from_ref(&history),
         &[ambiguous_lane],
@@ -676,7 +668,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .unwrap(),
         }));
     bind_pattern_inputs_test(
-        &class_sources,
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
@@ -718,7 +709,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     *pattern = PatternKind::new(transform).unwrap();
     updated_features_evaluation.set_definition(updated_features_definition);
     bind_pattern_inputs_test(
-        &class_sources,
         &mut features,
         std::slice::from_ref(&linear_history),
         std::slice::from_ref(&lane),
@@ -769,7 +759,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .unwrap(),
         }));
     bind_pattern_inputs_test(
-        &class_sources,
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
@@ -796,6 +785,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 1,
             sequence: 1,
+            offset: 200,
             name: "moNumberDim_c".into(),
         },
         FeatureInputClass {
@@ -804,16 +794,9 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             parent: "lane".into(),
             ordinal: 2,
             sequence: 2,
+            offset: 300,
             name: "ParallelPlaneDistanceDim_c".into(),
         },
-    ]);
-    let derived_sources = ClassSources::from_positions([
-        (
-            &derived_lane.classes[0],
-            cadmpeg_core::decode::u64_from_index(line_ref_offset),
-        ),
-        (&derived_lane.classes[1], 200),
-        (&derived_lane.classes[2], 300),
     ]);
     derived_lane
         .names
@@ -829,7 +812,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     // decode. The authored z/e expressions remain exact; only typed caches
     // receive the quantities established by the native dimension classes.
     crate::resolved_features::parameters::enrich_history_parameters(
-        &derived_sources,
         std::slice::from_mut(&mut derived_history),
         [&derived_lane],
         true,
@@ -837,7 +819,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     assert_eq!(derived_history.features[2].parameters["z"], "3");
     assert_eq!(derived_history.features[2].parameters["e"], "19");
     bind_pattern_inputs_test(
-        &derived_sources,
         &mut features,
         std::slice::from_ref(&derived_history),
         std::slice::from_ref(&derived_lane),
@@ -861,7 +842,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     mirror_history.features[1].input_class = Some("moMirrorSolid_c".into());
     mirror_history.features[2].input_class = Some("moDerivedCosmeticThread_c".into());
     let mut mirror_lane = lane.clone();
-    mirror_lane.names[2].offset = Some(150);
+    mirror_lane.names[2].offset = 150;
     mirror_lane.native_payload.resize(700, 0);
     mirror_lane.native_payload.fill(0);
     mirror_lane.classes.clear();
@@ -908,7 +889,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             pattern: PatternKind::UNRESOLVED_MIRROR,
         }));
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&mirror_lane)),
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
@@ -948,7 +928,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             .unwrap(),
         }));
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&mirror_lane)),
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
@@ -974,7 +953,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             pattern: PatternKind::UNRESOLVED_MIRROR,
         }));
     bind_pattern_inputs_test(
-        &crate::test_support::native::class_sources(std::slice::from_ref(&mirror_lane)),
         &mut features,
         std::slice::from_ref(&mirror_history),
         std::slice::from_ref(&mirror_lane),
@@ -1214,7 +1192,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         })
         .collect::<Vec<_>>();
     let operand = |offset: u64, index: u16| FeatureInputOperand {
-        offset: Some(offset),
+        offset,
         reference_ref: format!("reference-{offset}"),
         kind: FeatureInputOperandKind::E1,
         entity_index: index,
@@ -1226,7 +1204,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
             parent: "lane".into(),
             ordinal: u32::try_from(offset).expect("relation offset fits u32"),
             sequence: u32::try_from(offset).expect("relation offset fits u32"),
-            offset: Some(offset),
+            offset,
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
             feature_ref: "feature-native".into(),
@@ -1420,7 +1398,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(100),
+        offset: 100,
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -1432,14 +1410,14 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: Some(101),
+                offset: 101,
                 reference_ref: "point-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 0,
                 entity_ref: Some("point-0".into()),
             },
             FeatureInputOperand {
-                offset: Some(102),
+                offset: 102,
                 reference_ref: "line-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 2,
@@ -1630,7 +1608,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(100),
+        offset: 100,
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -1642,14 +1620,14 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         .unwrap(),
         operands: vec![
             FeatureInputOperand {
-                offset: Some(101),
+                offset: 101,
                 reference_ref: "point-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD),
                 entity_index: 4,
                 entity_ref: Some("point-4".into()),
             },
             FeatureInputOperand {
-                offset: Some(102),
+                offset: 102,
                 reference_ref: "line-reference".into(),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_81E7),
                 entity_index: 1,
@@ -1780,7 +1758,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let known_b = marker("known-b", Some([0.005, 0.0]));
     let missing = marker("missing", None);
     let operand = |index: usize, marker: &str| FeatureInputOperand {
-        offset: Some(cadmpeg_core::decode::u64_from_index(index)),
+        offset: cadmpeg_core::decode::u64_from_index(index),
         reference_ref: format!("reference-{index}"),
         kind: FeatureInputOperandKind::D6,
         entity_index: u16::try_from(index).expect("test index fits u16"),
@@ -1793,7 +1771,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
                 parent: "lane".into(),
                 ordinal: 0,
                 sequence: 0,
-                offset: Some(offset),
+                offset,
                 family,
                 class_ref: "class".into(),
                 feature_ref: "feature-native".into(),

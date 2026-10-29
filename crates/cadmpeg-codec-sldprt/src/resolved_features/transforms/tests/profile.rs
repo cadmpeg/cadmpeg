@@ -60,7 +60,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -74,7 +74,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .into_iter()
             .enumerate()
             .map(|(index, marker)| FeatureInputOperand {
-                offset: Some(cadmpeg_core::decode::u64_from_index(index)),
+                offset: cadmpeg_core::decode::u64_from_index(index),
                 reference_ref: format!("reference-{index}"),
                 kind: FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C),
                 entity_index: u16::try_from(index).expect("test index fits u16"),
@@ -208,13 +208,7 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     };
     let mut features = vec![producer, target];
 
-    project_compact_edge_selections(
-        &crate::test_support::native::class_sources(&[&lane]),
-        &mut features,
-        &[],
-        &[lane],
-    )
-    .unwrap();
+    project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[1].evaluation.definition()
@@ -301,7 +295,7 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         parent: "lane".into(),
         ordinal: 0,
         sequence: 0,
-        offset: Some(0),
+        offset: 0,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
         feature_ref: "feature-native".into(),
@@ -312,7 +306,7 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         )
         .unwrap(),
         operands: vec![FeatureInputOperand {
-            offset: Some(0),
+            offset: 0,
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::D6,
             entity_index: 0,
@@ -441,22 +435,22 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     let mut curve = marker("curve", Some([0.003, 0.004]));
     curve.feature_ref = Some("sketch-native".into());
-    curve = curve.with_test_position(1, curve.offset().expect("source offset"));
+    curve = curve.with_test_position(1, curve.offset());
     curve = curve.with_test_position(curve.ordinal(), 200);
     curve.reclassify(SketchInputKind::LineOrCircle);
     let mut endpoint = marker("endpoint", Some([0.005, 0.006]));
     endpoint.feature_ref = Some("sketch-native".into());
-    endpoint = endpoint.with_test_position(2, endpoint.offset().expect("source offset"));
+    endpoint = endpoint.with_test_position(2, endpoint.offset());
     endpoint = endpoint.with_test_position(endpoint.ordinal(), 2);
     endpoint.links = point.links.clone();
     let mut arc = marker("arc", None);
     arc.feature_ref = Some("sketch-native".into());
-    arc = arc.with_test_position(3, arc.offset().expect("source offset"));
+    arc = arc.with_test_position(3, arc.offset());
     arc = arc.with_test_position(arc.ordinal(), 3);
     arc.reclassify(SketchInputKind::Arc);
     let mut arc_start = marker("arc-start", Some([0.001, 0.0]));
     arc_start.feature_ref = Some("sketch-native".into());
-    arc_start = arc_start.with_test_position(4, arc_start.offset().expect("source offset"));
+    arc_start = arc_start.with_test_position(4, arc_start.offset());
     arc_start = arc_start.with_test_position(arc_start.ordinal(), 4);
     arc_start.links = crate::records::SketchInputLinks::new(
         0,
@@ -467,17 +461,17 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     let mut arc_end = marker("arc-end", Some([0.0, 0.001]));
     arc_end.feature_ref = Some("sketch-native".into());
-    arc_end = arc_end.with_test_position(5, arc_end.offset().expect("source offset"));
+    arc_end = arc_end.with_test_position(5, arc_end.offset());
     arc_end = arc_end.with_test_position(arc_end.ordinal(), 5);
     arc_end.links = arc_start.links.clone();
     let mut arc_center = marker("arc-center", Some([0.0, 0.0]));
     arc_center.feature_ref = Some("sketch-native".into());
-    arc_center = arc_center.with_test_position(6, arc_center.offset().expect("source offset"));
+    arc_center = arc_center.with_test_position(6, arc_center.offset());
     arc_center = arc_center.with_test_position(arc_center.ordinal(), 6);
     let triangle_point = |id: &str, ordinal, offset, coordinates_m| {
         let mut point = marker(id, Some(coordinates_m));
         point.feature_ref = Some("sketch-native".into());
-        point = point.with_test_position(ordinal, point.offset().expect("source offset"));
+        point = point.with_test_position(ordinal, point.offset());
         point = point.with_test_position(point.ordinal(), offset);
         point
     };
@@ -489,7 +483,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let triangle_line = |id: &str, ordinal, offset, first: &str, second: &str| {
         let mut line = marker(id, Some([0.0, 0.0]));
         line.feature_ref = Some("sketch-native".into());
-        line = line.with_test_position(ordinal, line.offset().expect("source offset"));
+        line = line.with_test_position(ordinal, line.offset());
         line = line.with_test_position(line.ordinal(), offset);
         line.reclassify(SketchInputKind::LineOrCircle);
         line.links = crate::records::SketchInputLinks::new(
@@ -514,8 +508,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     ];
     let mut display_handle = marker("display-handle", Some([0.030, 0.030]));
     display_handle.feature_ref = Some("sketch-native".into());
-    display_handle =
-        display_handle.with_test_position(13, display_handle.offset().expect("source offset"));
+    display_handle = display_handle.with_test_position(13, display_handle.offset());
     display_handle = display_handle.with_test_position(display_handle.ordinal(), 300);
     display_handle.reclassify(SketchInputKind::Arc);
     payload.resize(400, 0);
@@ -546,7 +539,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
                 id: "plane-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(0),
+                offset: 0,
                 value: "Front Plane".into(),
                 object_id: ObjectId::from_value(2),
             },
@@ -556,7 +549,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
                 id: "sketch-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(100),
+                offset: 100,
                 value: "Sketch1".into(),
                 object_id: ObjectId::from_value(7),
             },
@@ -588,7 +581,6 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     )
     .expect("marker profile fixture fits service policy");
     project_marker_backed_sketches(
-        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut features,
         &mut sketches,
@@ -639,7 +631,6 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
         }));
     project_marker_backed_sketches(
-        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut configured_features,
         &mut sketches,
@@ -680,7 +671,6 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let mut replacement_sketches = vec![compact_sketch];
     let mut replacement_entities = vec![compact_entity];
     project_marker_backed_sketches(
-        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut replacement_features,
         &mut replacement_sketches,
@@ -769,7 +759,6 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
     )
     .expect("marker profile fixture fits service policy");
     project_marker_backed_sketches(
-        &crate::test_support::native::class_sources(&lanes),
         &ctx,
         &mut features,
         &mut sketches,

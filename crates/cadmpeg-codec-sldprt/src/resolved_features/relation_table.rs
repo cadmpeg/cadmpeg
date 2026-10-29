@@ -1126,7 +1126,7 @@ pub(super) fn project_relation_tables(
         let markers_by_offset = lane
             .sketch_entities
             .iter()
-            .filter_map(|marker| Some((marker.offset()?, marker)))
+            .map(|marker| (marker.offset(), marker))
             .collect::<HashMap<_, _>>();
         // A configuration lane repeats the sketches of the same features, so the
         // sketch of a feature is read from this lane's own entities first.

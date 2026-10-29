@@ -90,7 +90,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
             id: "seed".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             selector: 0,
             kind: FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "name".into(),

@@ -58,7 +58,7 @@ pub(super) fn merge(
         };
         let start = FeatureObjectNames::new(&native.feature_input_lanes[position].names)
             .of(record)
-            .and_then(|name| name.offset)
+            .map(|name| name.offset)
             .ok_or_else(|| CodecError::malformed("authored sketch has no object name"))?;
         let end = native
             .feature_histories
@@ -67,7 +67,7 @@ pub(super) fn merge(
             .filter_map(|feature| {
                 FeatureObjectNames::new(&native.feature_input_lanes[position].names)
                     .of(feature)
-                    .and_then(|name| name.offset)
+                    .map(|name| name.offset)
             })
             .filter(|offset| *offset > start)
             .min()
@@ -450,8 +450,7 @@ pub(super) fn merge(
                     &lane.id,
                     lane.configuration.clone(),
                     payload,
-                )?
-                .0;
+                )?;
         }
     }
     Ok(())

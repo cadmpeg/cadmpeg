@@ -1184,7 +1184,7 @@ fn generated_sketch_owner_id(
 /// Author validated native class/name identities without retained lane bytes.
 pub(crate) fn synthesize_feature_classes(
     native: &mut crate::native::SldprtNative,
-) -> Result<super::class_sources::ClassSources, cadmpeg_core::CodecError> {
+) -> Result<std::collections::BTreeSet<String>, cadmpeg_core::CodecError> {
     const LANE_ID: &str = "sldprt:generated:feature-class-input#0";
     native.feature_input_lanes.retain(|lane| lane.id != LANE_ID);
     let mut used = native
@@ -1241,12 +1241,12 @@ pub(crate) fn synthesize_feature_classes(
         append_generated_object_name(&mut payload, &name, object_id)?;
     }
     if payload.is_empty() {
-        return Ok(super::class_sources::ClassSources::default());
+        return Ok(std::collections::BTreeSet::new());
     }
-    let (lane, class_sources) =
-        generated_native_lane(&native.feature_histories, LANE_ID, None, payload)?;
+    let lane = generated_native_lane(&native.feature_histories, LANE_ID, None, payload)?;
+    let written = lane.classes.iter().map(|class| class.id.clone()).collect();
     native.feature_input_lanes.push(lane);
-    Ok(class_sources)
+    Ok(written)
 }
 
 fn source_less_lanes(
@@ -1328,19 +1328,16 @@ fn source_less_lanes(
     let mut lanes = assemble_source_less_lanes(objects);
     for lane in &mut lanes {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &lane.native_payload,
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
         )?;
         lane.classes = class_declarations(&lane.native_payload, &lane.id)?;
-        let class_sources =
-            super::class_sources::ClassSources::from_source(&ctx, root, &lane.classes)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
-        lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names)?.records;
-        lane.relation_bindings =
-            relation_bindings(&class_sources, &lane.id, &lane.classes, &lane.scalars, &[])?;
-        lane.references = reference_cells(&class_sources, &lane.scalars, &lane.classes)?.records;
+        lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names)?;
+        lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
+        lane.references = reference_cells(&lane.scalars, &lane.classes)?;
         lane.sketch_entities = admit_sketch_input_entities(&lane.native_payload, &lane.id)?;
     }
     let bytes = lanes
@@ -1348,18 +1345,12 @@ fn source_less_lanes(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &bytes,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
-    let mut body_sources = super::body_sources::BodySources::from_concatenated(&lanes, root)?;
-    bind_scalar_operands(
-        &ctx,
-        &native.feature_histories,
-        &mut lanes,
-        &mut body_sources,
-    )?;
+    bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
     Ok(lanes)
 }
 
@@ -1375,7 +1366,6 @@ pub(crate) fn generated_configuration_lane(
         Some(configuration.into()),
         payload,
     )
-    .map(|(lane, _)| lane)
 }
 
 /// Re-admit newly authored bytes into their complete typed native lane.
@@ -1384,7 +1374,7 @@ pub(crate) fn generated_native_lane(
     id: &str,
     configuration: Option<String>,
     payload: Vec<u8>,
-) -> Result<(FeatureInputLane, super::class_sources::ClassSources), cadmpeg_core::CodecError> {
+) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
     let lane = source_less_lane(&mut lanes, configuration.as_deref().unwrap_or("0"));
     lane.id = id.into();
@@ -1393,24 +1383,21 @@ pub(crate) fn generated_native_lane(
     // The context borrows an allocation separate from mutable lane storage.
     // Only freshly authored target bytes enter either allocation.
     let context_bytes = payload.clone();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &context_bytes,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     lane.classes = class_declarations(&payload, &lane.id)?;
-    let class_sources = super::class_sources::ClassSources::from_source(&ctx, root, &lane.classes)?;
     lane.names = object_names(&ctx, &payload, &lane.id)?;
-    lane.scalars = named_scalars(&payload, &lane.id, &lane.names)?.records;
-    lane.relation_bindings =
-        relation_bindings(&class_sources, &lane.id, &lane.classes, &lane.scalars, &[])?;
-    lane.references = reference_cells(&class_sources, &lane.scalars, &lane.classes)?.records;
+    lane.scalars = named_scalars(&payload, &lane.id, &lane.names)?;
+    lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
+    lane.references = reference_cells(&lane.scalars, &lane.classes)?;
     lane.sketch_entities = admit_sketch_input_entities(&payload, &lane.id)?;
     lane.native_payload = payload.into();
-    let mut body_sources = super::body_sources::BodySources::from_concatenated(&lanes, root)?;
-    bind_scalar_operands(&ctx, histories, &mut lanes, &mut body_sources)?;
+    bind_scalar_operands(&ctx, histories, &mut lanes)?;
     ctx.finish_session()?;
-    Ok((lanes.remove(0), class_sources))
+    Ok(lanes.remove(0))
 }
 
 fn assemble_source_less_lanes(mut objects: Vec<(String, u64, Vec<u8>)>) -> Vec<FeatureInputLane> {

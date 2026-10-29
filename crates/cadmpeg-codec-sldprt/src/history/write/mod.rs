@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-to-native history write preparation.
 
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
@@ -142,31 +141,6 @@ fn project_features_with_native_inputs(
     Ok(project_feature_model_with_native_inputs(native, sketches)?.features)
 }
 
-/// Admit the class positions of each distinct lane from its own payload, as
-/// the decoder admits them from the lane View.
-fn lane_class_sources(
-    ctx: &DecodeContext<'_>,
-    root: cadmpeg_core::decode::View<'_>,
-    lanes: &[crate::records::FeatureInputLane],
-) -> Result<ClassSources, CodecError> {
-    let mut class_sources = ClassSources::default();
-    let mut start = root.start();
-    let mut admitted = HashSet::new();
-    for lane in lanes {
-        let end = start
-            .checked_add(lane.native_payload.len())
-            .ok_or_else(|| CodecError::malformed("feature-input lane source length overflow"))?;
-        let source = root
-            .child(start, end)
-            .ok_or_else(|| CodecError::malformed("feature-input lane source exceeds root"))?;
-        if admitted.insert(lane.id.as_str()) {
-            class_sources.admit_source(ctx, source, &lane.classes)?;
-        }
-        start = end;
-    }
-    Ok(class_sources)
-}
-
 fn project_feature_model_with_native_inputs(
     native: &crate::native::SldprtNative,
     sketches: &[cadmpeg_ir::sketches::Sketch],
@@ -177,15 +151,10 @@ fn project_feature_model_with_native_inputs(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let (ctx, root) =
+    let (ctx, _) =
         DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
-    // Class positions that the lane bytes do not admit select the
-    // position-free projection; they never refuse the write.
-    let class_sources =
-        lane_class_sources(&ctx, root, &native.feature_input_lanes).unwrap_or_default();
     let mut histories = native.feature_histories.clone();
     enrich_history_semantic(
-        &class_sources,
         &ctx,
         &mut histories,
         &native.feature_input_lanes,
@@ -195,27 +164,18 @@ fn project_feature_model_with_native_inputs(
     let mut projection = project_feature_model(&ctx, &histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
-        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
     )?;
     crate::resolved_features::operations::bind_sweep_operations(
-        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(
-        &class_sources,
-        &ctx,
-        features,
-        &histories,
-        &native.feature_input_lanes,
-    )?;
+    project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
-        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,
@@ -223,7 +183,6 @@ fn project_feature_model_with_native_inputs(
     );
     // discarded-value: marking the features is the whole effect on the write route; the collected sketches have a reader only on the decode route
     let _ = crate::resolved_features::markers::spatial_sketches(
-        &class_sources,
         features,
         &histories,
         &native.feature_input_lanes,

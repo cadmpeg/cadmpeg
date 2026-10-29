@@ -14,7 +14,6 @@ use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::records::{FeatureInputLane, FeatureInputName};
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -91,7 +90,6 @@ fn plane_frame_source(feature: &crate::records::Feature) -> String {
 
 /// Add validated reference-plane frames to a projection copy of history.
 pub(crate) fn enrich_history_reference_planes(
-    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -130,7 +128,7 @@ pub(crate) fn enrich_history_reference_planes(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                if let Some(position) = names.of(feature).map(|name| name.offset) {
                     starts.push((position, history_index, feature_index));
                 }
             }
@@ -240,9 +238,7 @@ pub(crate) fn enrich_history_reference_planes(
             let mut anchored_frames = Vec::new();
             for class in &lane.classes {
                 let frame = (|| {
-                    let offset = class_sources
-                        .position(class)
-                        .and_then(|offset| usize::try_from(offset).ok())?;
+                    let offset = usize::try_from(class.offset).ok()?;
                     (start..end).contains(&offset).then(|| {
                         constraint_reference_plane_frame(&lane.native_payload, offset, &class.name)
                     })?
@@ -527,7 +523,7 @@ pub(crate) fn enrich_history_reference_points(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                if let Some(position) = names.of(feature).map(|name| name.offset) {
                     starts.push((position, history_index, feature_index));
                 }
             }
@@ -582,9 +578,7 @@ fn resolved_reference_point(
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let object_id = name.object_id.and_then(ObjectId::value)?;
-    let name_start = name
-        .offset
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let name_start = usize::try_from(name.offset).ok()?;
     let name_end = name_start
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -664,7 +658,7 @@ pub(crate) fn enrich_history_coordinate_systems(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                if let Some(position) = names.of(feature).map(|name| name.offset) {
                     starts.push((position, history_index, feature_index));
                 }
             }
@@ -1453,12 +1447,9 @@ pub(crate) fn enrich_history_sketch_block_references(
                 };
                 let end = instance_names
                     .get(position + 1)
-                    .and_then(|(next, _)| {
-                        next.offset.and_then(|offset| usize::try_from(offset).ok())
-                    })
+                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
                     .unwrap_or(lane.native_payload.len());
-                let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok())
-                else {
+                let Some(start) = usize::try_from(name.offset).ok() else {
                     continue;
                 };
                 let Some(local_id) = sketch_block_record_local_id(&lane.native_payload, start, end)
@@ -1473,12 +1464,9 @@ pub(crate) fn enrich_history_sketch_block_references(
             for (position, (name, instance_index)) in instance_names.iter().enumerate() {
                 let end = instance_names
                     .get(position + 1)
-                    .and_then(|(next, _)| {
-                        next.offset.and_then(|offset| usize::try_from(offset).ok())
-                    })
+                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
                     .unwrap_or(lane.native_payload.len());
-                let Some(start) = name.offset.and_then(|offset| usize::try_from(offset).ok())
-                else {
+                let Some(start) = usize::try_from(name.offset).ok() else {
                     continue;
                 };
                 if let Some(origin) = sketch_block_record_origin(&lane.native_payload, start, end)
@@ -1517,9 +1505,7 @@ pub(crate) fn enrich_history_sketch_block_references(
             for (position, (name, instance_index)) in instance_names.iter().enumerate() {
                 let end = instance_names
                     .get(position + 1)
-                    .and_then(|(next, _)| {
-                        next.offset.and_then(|offset| usize::try_from(offset).ok())
-                    })
+                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
                     .unwrap_or(lane.native_payload.len());
                 let Some(local_id) = sketch_block_compact_local_id(&lane.native_payload, name, end)
                 else {
@@ -1673,9 +1659,7 @@ fn sketch_block_compact_local_id(
     name: &FeatureInputName,
     record_end: usize,
 ) -> Option<u16> {
-    let name_start = name
-        .offset
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let name_start = usize::try_from(name.offset).ok()?;
     let name_end = name_start
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -1686,7 +1670,6 @@ fn sketch_block_compact_local_id(
 
 /// Add the two serialized construction-plane operands to plane-intersection axes.
 pub(crate) fn enrich_history_reference_axes(
-    class_sources: &ClassSources,
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -1704,7 +1687,7 @@ pub(crate) fn enrich_history_reference_axes(
         let mut starts = Vec::new();
         for (history_index, history) in histories.iter().enumerate() {
             for (feature_index, feature) in history.features.iter().enumerate() {
-                if let Some(position) = names.of(feature).and_then(|name| name.offset) {
+                if let Some(position) = names.of(feature).map(|name| name.offset) {
                     starts.push((position, history_index, feature_index));
                 }
             }
@@ -1737,17 +1720,15 @@ pub(crate) fn enrich_history_reference_axes(
                 if matches!(
                     class.name.as_str(),
                     "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
-                ) && class_sources.position(class).is_some_and(|position| {
-                    (u64_from_index(start)..u64_from_index(end)).contains(&position)
-                }) {
+                ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+                {
                     axis_data_classes.push(class);
                 }
             }
             let mut anchored_frames = Vec::new();
             for class in &axis_data_classes {
-                let Some(body) = class_sources
-                    .position(class)
-                    .and_then(|offset| usize::try_from(offset).ok())
+                let Some(body) = usize::try_from(class.offset)
+                    .ok()
                     .and_then(|offset| offset.checked_add(6 + class.name.len()))
                 else {
                     continue;

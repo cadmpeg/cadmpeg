@@ -83,7 +83,7 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
                         parent: id.clone(),
                         ordinal,
                         sequence: ordinal,
-                        offset: Some(0),
+                        offset: 0,
                         family: if next(3) == 0 {
                             FeatureInputRelationFamily::PointPointDistance
                         } else {
@@ -98,7 +98,7 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
                         )
                         .unwrap(),
                         operands: vec![FeatureInputOperand {
-                            offset: Some(0),
+                            offset: 0,
                             reference_ref: "reference".into(),
                             kind: FeatureInputOperandKind::Native(
                                 NativeOperandTag::try_from(0x829a).unwrap(),

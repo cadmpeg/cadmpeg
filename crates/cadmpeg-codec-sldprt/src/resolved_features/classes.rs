@@ -5,7 +5,6 @@ use super::operations::repeated_class_token;
 use super::scalars::FeatureObjectNames;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
-use crate::resolved_features::class_sources::ClassSources;
 use cadmpeg_core::decode::u64_from_index;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -48,11 +47,10 @@ fn idless_legacy_startup_shape(records: &[Feature], classes: &[Option<&str>]) ->
 
 /// Bind Keywords history records to their serialized feature-input object classes.
 pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
-    class_sources: &ClassSources,
     histories: &mut [FeatureHistory],
     lanes: &[L],
 ) {
-    let classes = history_classes(class_sources, histories, lanes)
+    let classes = history_classes(histories, lanes)
         .into_iter()
         .map(|class| class.map(str::to_owned))
         .collect::<Vec<_>>();
@@ -68,7 +66,6 @@ pub(crate) fn bind_history_classes<L: Borrow<FeatureInputLane>>(
 /// The feature-input object class of every history feature, in history and
 /// then feature order. The classes a feature already carries are not read.
 pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
-    class_sources: &ClassSources,
     histories: &[FeatureHistory],
     lanes: &'a [L],
 ) -> Vec<Option<&'a str>> {
@@ -87,10 +84,10 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
             .map(|name| (name.offset, name))
             .collect::<HashMap<_, _>>();
         for class in &lane.classes {
-            let name_offset = class_sources
-                .position(class)
-                .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())));
-            let Some(name) = names_by_offset.get(&name_offset) else {
+            let name_offset = class
+                .offset
+                .checked_add(6 + u64_from_index(class.name.len()));
+            let Some(name) = name_offset.and_then(|offset| names_by_offset.get(&offset)) else {
                 continue;
             };
             if let Some(object_id) = name.object_id.and_then(ObjectId::value) {
@@ -125,10 +122,10 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
             .map(|name| (name.offset, name.value.as_str()))
             .collect::<HashMap<_, _>>();
         for class in &lane.classes {
-            let name_offset = class_sources
-                .position(class)
-                .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())));
-            let Some(name) = names_by_offset.get(&name_offset) else {
+            let name_offset = class
+                .offset
+                .checked_add(6 + u64_from_index(class.name.len()));
+            let Some(name) = name_offset.and_then(|offset| names_by_offset.get(&offset)) else {
                 continue;
             };
             if class.role() != FeatureInputClassRole::Native {
@@ -180,10 +177,10 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
         let direct_name_offsets = lane
             .classes
             .iter()
-            .map(|class| {
-                class_sources
-                    .position(class)
-                    .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())))
+            .filter_map(|class| {
+                class
+                    .offset
+                    .checked_add(6 + u64_from_index(class.name.len()))
             })
             .collect::<HashSet<_>>();
         let names = FeatureObjectNames::new(&lane.names);
@@ -201,9 +198,8 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
             }) else {
                 continue;
             };
-            let Some(token) = name
-                .offset
-                .and_then(|offset| usize::try_from(offset).ok())
+            let Some(token) = usize::try_from(name.offset)
+                .ok()
                 .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
                 .filter(|token| is_class_token(*token))
             else {
@@ -321,7 +317,7 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
         }
     }
 
-    let name_tokens = IndirectNameTokens::new(class_sources, lanes);
+    let name_tokens = IndirectNameTokens::new(lanes);
     let mut classes_by_token = HashMap::<(&str, u16), Vec<&str>>::new();
     for (feature, bound) in features.iter().zip(&bound) {
         let Some(class) = bound else {
@@ -354,8 +350,7 @@ pub(crate) fn history_classes<'a, L: Borrow<FeatureInputLane>>(
         }
     }
 
-    let legacy_hole_bindings =
-        legacy_repeated_hole_wizard_classes(class_sources, histories, &bound, lanes);
+    let legacy_hole_bindings = legacy_repeated_hole_wizard_classes(histories, &bound, lanes);
     for (feature, bound) in features.iter().zip(&mut bound) {
         if bound.is_none() {
             if let Some(class) = legacy_hole_bindings.get(feature.id.as_str()) {
@@ -410,17 +405,17 @@ struct IndirectNameTokens<'a> {
 }
 
 impl<'a> IndirectNameTokens<'a> {
-    fn new(class_sources: &ClassSources, lanes: &[&'a FeatureInputLane]) -> Self {
+    fn new(lanes: &[&'a FeatureInputLane]) -> Self {
         let direct_name_offsets = lanes
             .iter()
             .flat_map(|lane| {
-                lane.classes.iter().map(|class| {
-                    (
+                lane.classes.iter().filter_map(|class| {
+                    Some((
                         lane.id.as_str(),
-                        class_sources.position(class).and_then(|position| {
-                            position.checked_add(6 + u64_from_index(class.name.len()))
-                        }),
-                    )
+                        class
+                            .offset
+                            .checked_add(6 + u64_from_index(class.name.len()))?,
+                    ))
                 })
             })
             .collect::<HashSet<_>>();
@@ -441,9 +436,8 @@ impl<'a> IndirectNameTokens<'a> {
                 if direct_name_offsets.contains(&(lane.id.as_str(), name.offset)) {
                     continue;
                 }
-                let Some(token) = name
-                    .offset
-                    .and_then(|offset| usize::try_from(offset).ok())
+                let Some(token) = usize::try_from(name.offset)
+                    .ok()
                     .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
                 else {
                     continue;
@@ -486,7 +480,6 @@ impl<'a> IndirectNameTokens<'a> {
 /// `classes` are the classes bound so far to the features of `histories`, in
 /// history and then feature order.
 fn legacy_repeated_hole_wizard_classes<'h, 'a>(
-    class_sources: &ClassSources,
     histories: &'h [FeatureHistory],
     classes: &[Option<&str>],
     lanes: &[&'a FeatureInputLane],
@@ -541,10 +534,10 @@ fn legacy_repeated_hole_wizard_classes<'h, 'a>(
         let direct_name_offsets = lane
             .classes
             .iter()
-            .map(|class| {
-                class_sources
-                    .position(class)
-                    .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())))
+            .filter_map(|class| {
+                class
+                    .offset
+                    .checked_add(6 + u64_from_index(class.name.len()))
             })
             .collect::<HashSet<_>>();
         let mut groups = HashMap::<u16, Vec<&Feature>>::new();
@@ -555,9 +548,8 @@ fn legacy_repeated_hole_wizard_classes<'h, 'a>(
             let Some(feature) = by_name.get(name.value.as_str()).copied().flatten() else {
                 continue;
             };
-            let Some(token) = name
-                .offset
-                .and_then(|offset| usize::try_from(offset).ok())
+            let Some(token) = usize::try_from(name.offset)
+                .ok()
                 .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
                 .filter(|token| is_class_token(*token))
             else {
@@ -651,7 +643,6 @@ mod idless_history_binding_tests {
     use crate::records::FeatureSource;
     use crate::records::ObjectId;
     use crate::records::{Feature, FeatureContent, FeatureHistory, FeatureInputName};
-    use crate::resolved_features::class_sources::ClassSources;
     use cadmpeg_core::decode::u64_from_index;
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::features::FeatureDefinition;
@@ -735,7 +726,7 @@ mod idless_history_binding_tests {
                     id: "offset-name".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: Some(0),
+                    offset: 0,
                     object_id: ObjectId::from_value(10),
                     value: "name-0".into(),
                 },
@@ -745,7 +736,7 @@ mod idless_history_binding_tests {
                     id: "principal-name".into(),
                     parent: "lane".into(),
                     ordinal: 1,
-                    offset: Some(end),
+                    offset: end,
                     object_id: ObjectId::from_value(3),
                     value: "name-1".into(),
                 },
@@ -762,7 +753,6 @@ mod idless_history_binding_tests {
         };
 
         enrich_history_reference_planes(
-            &crate::test_support::native::class_sources(&[&lane]),
             &cadmpeg_test_support::service_decode_context(),
             &mut histories,
             &[lane],
@@ -836,7 +826,7 @@ mod idless_history_binding_tests {
                     id: "profile-name".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: Some(100),
+                    offset: 100,
                     object_id: ObjectId::from_value(41),
                     value: "name-1".into(),
                 },
@@ -846,7 +836,7 @@ mod idless_history_binding_tests {
                     id: "metadata-name".into(),
                     parent: "lane".into(),
                     ordinal: 1,
-                    offset: Some(150),
+                    offset: 150,
                     object_id: ObjectId::from_value(42),
                     value: "name-2".into(),
                 },
@@ -856,7 +846,7 @@ mod idless_history_binding_tests {
                     id: "extrusion-name".into(),
                     parent: "lane".into(),
                     ordinal: 2,
-                    offset: Some(extrusion_offset),
+                    offset: extrusion_offset,
                     object_id: ObjectId::from_value(43),
                     value: "name-2".into(),
                 },
@@ -1069,6 +1059,7 @@ mod idless_history_binding_tests {
             native_payload: payload.into(),
             classes: vec![FeatureInputClass {
                 sequence: 0,
+                offset: 0,
                 feature_ref: None,
                 id: "class".into(),
                 parent: "lane".into(),
@@ -1082,7 +1073,7 @@ mod idless_history_binding_tests {
                     id: "first".into(),
                     parent: "lane".into(),
                     ordinal: 0,
-                    offset: Some(100),
+                    offset: 100,
                     object_id: ObjectId::from_value(41),
                     value: "hole A".into(),
                 },
@@ -1092,7 +1083,7 @@ mod idless_history_binding_tests {
                     id: "second".into(),
                     parent: "lane".into(),
                     ordinal: 1,
-                    offset: Some(200),
+                    offset: 200,
                     object_id: ObjectId::from_value(42),
                     value: "hole B".into(),
                 },
@@ -1114,9 +1105,7 @@ mod idless_history_binding_tests {
             .iter()
             .map(|feature| feature.input_class.as_deref())
             .collect::<Vec<_>>();
-        let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
-        let bindings =
-            legacy_repeated_hole_wizard_classes(&class_sources, &histories, &classes, &[&lane]);
+        let bindings = legacy_repeated_hole_wizard_classes(&histories, &classes, &[&lane]);
         assert_eq!(bindings.get("feature-10").copied(), Some("moHoleWzd_c"));
         assert_eq!(bindings.get("feature-20").copied(), Some("moHoleWzd_c"));
     }
@@ -1277,14 +1266,12 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).expect("test class ordinal fits u32"),
                 sequence: u32::try_from(ordinal).expect("test class ordinal fits u32"),
+                offset: u64_from_index(ordinal) * 100,
                 name: name.into(),
             };
             (class, u64_from_index(ordinal) * 100)
         })
         .collect::<Vec<_>>();
-        let class_sources = ClassSources::from_positions(
-            declared.iter().map(|(class, position)| (class, *position)),
-        );
         let classes = declared.into_iter().map(|(class, _)| class).collect();
         let lane = FeatureInputLane {
             id: "lane".into(),
@@ -1304,8 +1291,8 @@ mod idless_history_binding_tests {
         };
         let mut borrowed = histories.clone();
 
-        bind_history_classes(&class_sources, &mut histories, std::slice::from_ref(&lane));
-        bind_history_classes(&class_sources, &mut borrowed, &[&lane]);
+        bind_history_classes(&mut histories, std::slice::from_ref(&lane));
+        bind_history_classes(&mut borrowed, &[&lane]);
 
         assert_eq!(borrowed, histories);
         assert_eq!(
@@ -1348,6 +1335,7 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal,
                 sequence: ordinal,
+                offset,
                 name: name.into(),
             };
             (class, offset)
@@ -1356,9 +1344,6 @@ mod idless_history_binding_tests {
             class(0, 100, "moCosmeticThread_c"),
             class(1, 200, "moRefAxis_c"),
         ];
-        let class_sources = ClassSources::from_positions(
-            declared.iter().map(|(class, position)| (class, *position)),
-        );
         let classes = declared
             .into_iter()
             .map(|(class, _)| class)
@@ -1369,9 +1354,7 @@ mod idless_history_binding_tests {
             parent: "lane".into(),
             ordinal,
             sequence: ordinal,
-            offset: class_sources
-                .position(class)
-                .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len()))),
+            offset: class.offset + 6 + u64_from_index(class.name.len()),
             object_id: None,
             value: value.into(),
         };
@@ -1396,7 +1379,7 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        bind_history_classes(&class_sources, &mut histories, &[lane]);
+        bind_history_classes(&mut histories, &[lane]);
 
         assert_eq!(
             histories[0].features[0].input_class.as_deref(),
@@ -1428,12 +1411,10 @@ mod idless_history_binding_tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
+            offset: 100,
             name: "moHoleWzd_c".into(),
         };
-        let class_sources = ClassSources::from_positions([(&class, 100)]);
-        let direct_offset = class_sources
-            .position(&class)
-            .and_then(|position| position.checked_add(6 + u64_from_index(class.name.len())));
+        let direct_offset = class.offset + 6 + u64_from_index(class.name.len());
         let names = vec![
             FeatureInputName {
                 sequence: 0,
@@ -1451,7 +1432,7 @@ mod idless_history_binding_tests {
                 id: "repeated-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(400),
+                offset: 400,
                 object_id: ObjectId::from_value(2),
                 value: "repeated hole".into(),
             },
@@ -1461,7 +1442,7 @@ mod idless_history_binding_tests {
                 id: "target-name".into(),
                 parent: "lane".into(),
                 ordinal: 2,
-                offset: Some(400),
+                offset: 400,
                 object_id: ObjectId::from_value(3),
                 value: "target hole".into(),
             },
@@ -1486,7 +1467,7 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        bind_history_classes(&class_sources, &mut histories, &[lane]);
+        bind_history_classes(&mut histories, &[lane]);
 
         assert!(histories[0]
             .features
@@ -1495,7 +1476,6 @@ mod idless_history_binding_tests {
     }
 
     fn scanned_name_tokens<'a>(
-        class_sources: &ClassSources,
         lanes: &[&'a FeatureInputLane],
         feature: &Feature,
         history_name_counts: &HashMap<&str, usize>,
@@ -1503,13 +1483,13 @@ mod idless_history_binding_tests {
         let direct_name_offsets = lanes
             .iter()
             .flat_map(|lane| {
-                lane.classes.iter().map(|class| {
-                    (
+                lane.classes.iter().filter_map(|class| {
+                    Some((
                         lane.id.as_str(),
-                        class_sources.position(class).and_then(|position| {
-                            position.checked_add(6 + u64_from_index(class.name.len()))
-                        }),
-                    )
+                        class
+                            .offset
+                            .checked_add(6 + u64_from_index(class.name.len()))?,
+                    ))
                 })
             })
             .collect::<HashSet<_>>();
@@ -1534,8 +1514,7 @@ mod idless_history_binding_tests {
                     name.object_id.and_then(ObjectId::value) == Some(object_id)
                 }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
             }) {
-                let Some(offset) = name.offset.and_then(|offset| usize::try_from(offset).ok())
-                else {
+                let Some(offset) = usize::try_from(name.offset).ok() else {
                     continue;
                 };
                 if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
@@ -1567,15 +1546,17 @@ mod idless_history_binding_tests {
                         .collect::<Vec<_>>();
                     let declared = (0..next(3))
                         .map(|ordinal| {
+                            let position = next(8);
                             let class = FeatureInputClass {
                                 feature_ref: None,
                                 id: format!("class-{lane_index}-{ordinal}"),
                                 parent: (*lane_id).into(),
                                 ordinal: u32::try_from(ordinal).expect("ordinal"),
                                 sequence: u32::try_from(ordinal).expect("ordinal"),
+                                offset: position,
                                 name: "moX_c".into(),
                             };
-                            (class, next(8))
+                            (class, position)
                         })
                         .collect::<Vec<_>>();
                     let positions = declared
@@ -1590,7 +1571,7 @@ mod idless_history_binding_tests {
                             parent: (*lane_id).into(),
                             ordinal: u32::try_from(ordinal).expect("ordinal"),
                             sequence: u32::try_from(ordinal).expect("ordinal"),
-                            offset: Some(next(30)),
+                            offset: next(30),
                             object_id: ObjectId::from_value(
                                 u32::try_from(next(4)).expect("object id"),
                             ),
@@ -1616,10 +1597,6 @@ mod idless_history_binding_tests {
                     (lane, positions)
                 })
                 .collect::<Vec<_>>();
-            let class_sources =
-                ClassSources::from_positions(placed.iter().flat_map(|(lane, positions)| {
-                    lane.classes.iter().zip(positions.iter().copied())
-                }));
             let lanes = placed.iter().map(|(lane, _)| lane).collect::<Vec<_>>();
             let features = (0..6)
                 .map(|ordinal| {
@@ -1636,11 +1613,10 @@ mod idless_history_binding_tests {
                     *history_name_counts.entry(&feature.name).or_default() += 1;
                 }
             }
-            let tokens = IndirectNameTokens::new(&class_sources, &lanes);
+            let tokens = IndirectNameTokens::new(&lanes);
             for feature in &features {
                 let mut indexed = tokens.of(feature, &history_name_counts).to_vec();
-                let mut scanned =
-                    scanned_name_tokens(&class_sources, &lanes, feature, &history_name_counts);
+                let mut scanned = scanned_name_tokens(&lanes, feature, &history_name_counts);
                 indexed.sort_unstable();
                 scanned.sort_unstable();
                 assert_eq!(indexed, scanned);
@@ -1678,6 +1654,7 @@ mod idless_history_binding_tests {
             parent: "lane".into(),
             ordinal: 0,
             sequence: 0,
+            offset: 100,
             name: "moCosmeticThread_c".into(),
         };
         let names = histories[0]
@@ -1690,15 +1667,14 @@ mod idless_history_binding_tests {
                 parent: "lane".into(),
                 ordinal: u32::try_from(index).expect("test name ordinal fits u32"),
                 sequence: u32::try_from(index).expect("test name ordinal fits u32"),
-                offset: Some(300 + u64_from_index(index) * 100),
+                offset: 300 + u64_from_index(index) * 100,
                 object_id: feature.source_value().and_then(ObjectId::from_value),
                 value: feature.name.clone(),
             })
             .collect::<Vec<_>>();
         let mut payload = vec![0; 500];
         for name in &names {
-            let offset =
-                usize::try_from(name.offset.expect("source offset")).expect("required invariant");
+            let offset = usize::try_from(name.offset).expect("required invariant");
             payload[offset - 2..offset].copy_from_slice(&0x82a4_u16.to_le_bytes());
         }
         let lane = FeatureInputLane {
@@ -1718,11 +1694,7 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        bind_history_classes(
-            &ClassSources::from_positions([(&lane.classes[0], 100)]),
-            &mut histories,
-            &[lane],
-        );
+        bind_history_classes(&mut histories, &[lane]);
 
         assert!(histories[0]
             .features
@@ -1738,6 +1710,7 @@ mod idless_history_binding_tests {
             feature_ref: Some("feature-0".into()),
             ordinal: 7,
             sequence: 93,
+            offset: 0,
             name: "moExtrusion_c".into(),
         };
         let lane = FeatureInputLane {
@@ -1766,9 +1739,8 @@ mod idless_history_binding_tests {
             configurations: Vec::new(),
             features: vec![feature(0, "localized operation")],
         }];
-        let sources = ClassSources::default();
         let bind = |histories: &mut [FeatureHistory], lane: &FeatureInputLane| {
-            bind_history_classes(&sources, histories, std::slice::from_ref(lane));
+            bind_history_classes(histories, std::slice::from_ref(lane));
         };
         bind(&mut histories, &lane);
         assert_eq!(
@@ -1776,7 +1748,6 @@ mod idless_history_binding_tests {
             Some("moExtrusion_c")
         );
         assert!(lane.native_payload.is_empty());
-        assert_eq!(sources.position(&lane.classes[0]), None);
 
         lane.classes[0].feature_ref = Some("missing-owner".into());
         bind(&mut histories, &lane);

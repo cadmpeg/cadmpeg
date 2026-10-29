@@ -6,7 +6,6 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputRelationFamily,
     FeatureInputScalar, FeatureInputScalarRole,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use std::collections::{BTreeMap, HashMap};
 
 /// Resolve a dimensional binding through the current canonical parameter slice.
@@ -118,7 +117,6 @@ impl<'a> DeclaredParameters<'a> {
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
-    class_sources: &ClassSources,
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
@@ -183,7 +181,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             .flat_map(|history| &history.features)
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| {
-                let offset = usize::try_from(object_names.of(feature)?.offset?).ok()?;
+                let offset = usize::try_from(object_names.of(feature)?.offset).ok()?;
                 Some((offset, feature))
             })
             .collect::<Vec<_>>();
@@ -195,7 +193,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             if feature.input_class.as_deref() == Some("moLPattern_c") {
                 let object_start = object_names
                     .of(feature)
-                    .and_then(|name| name.offset)
+                    .map(|name| name.offset)
                     .and_then(|offset| usize::try_from(offset).ok());
                 let object_end = object_starts
                     .iter()
@@ -207,13 +205,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                         )
                     });
                 if let Some(dimensions) = object_start.and_then(|start| {
-                    super::axes::typed_linear_pattern_dimensions(
-                        class_sources,
-                        feature,
-                        lane,
-                        start,
-                        object_end,
-                    )
+                    super::axes::typed_linear_pattern_dimensions(feature, lane, start, object_end)
                 }) {
                     for (name, default, length) in [
                         (
@@ -282,10 +274,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                     let value_only = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
                         value_only_scalar_offset(&lane.native_payload, name).is_some_and(
                             |value_offset| {
-                                scalar
-                                    .offset
-                                    .and_then(|offset| usize::try_from(offset).ok())
-                                    == Some(value_offset)
+                                usize::try_from(scalar.offset).ok() == Some(value_offset)
                             },
                         )
                     });
@@ -432,9 +421,7 @@ fn scalar_unit_from_feature_parameter(
 }
 
 pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
-    let name_offset = name
-        .offset
-        .and_then(|offset| usize::try_from(offset).ok())?;
+    let name_offset = usize::try_from(name.offset).ok()?;
     let header_offset = name_offset
         .checked_add(NAME_MARKER.len() + 1)?
         .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -520,14 +507,11 @@ pub(crate) fn sync_feature_scalars(
                 cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
             })?;
             if !lane.native_payload.is_empty() {
-                let offset = scalar
-                    .offset
-                    .and_then(|offset| usize::try_from(offset).ok())
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed(
-                            "SLDPRT scalar offset exceeds address space",
-                        )
-                    })?;
+                let offset = usize::try_from(scalar.offset).ok().ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "SLDPRT scalar offset exceeds address space",
+                    )
+                })?;
                 let end = offset.checked_add(8).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("SLDPRT scalar extent overflows")
                 })?;

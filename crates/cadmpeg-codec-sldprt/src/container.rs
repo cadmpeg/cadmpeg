@@ -12,7 +12,7 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_container::compression::inflate_zlib_member_tracked;
+use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::dialect::DialectLayers;
@@ -602,7 +602,7 @@ fn decode_wrapped_payload<'a>(
         return Ok(None);
     };
     let (decoded, consumed) =
-        match inflate_zlib_member_tracked(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
+        match inflate_zlib_member(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
             Ok(result) => result,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(None),
@@ -798,15 +798,7 @@ fn expand_block<'a>(
     {
         return Ok(None);
     }
-    let extent = ctx.capture_part_extent(source)?;
-    let stream = format!(
-        "sldprt-block:{}:{}:{}:{}",
-        extent.stream().len(),
-        extent.stream(),
-        extent.offset(),
-        extent.byte_len()
-    );
-    writer.finalize_from(source, &stream).map(Some)
+    writer.finalize().map(Some)
 }
 
 fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {

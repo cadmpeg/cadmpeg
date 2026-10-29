@@ -23,10 +23,10 @@ use super::{
     DimensionSubtype,
 };
 
-fn parse_source(
+fn parse_payload(
     payload: &[u8],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> (Vec<PmiDimension>, cadmpeg_ir::SourceFidelity) {
+) -> Vec<PmiDimension> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         payload,
@@ -34,28 +34,28 @@ fn parse_source(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .expect("PMI source");
-    let parsed =
-        super::parse_payload(&ctx, root, losses).expect("PMI test input fits service policy");
-    let mut fidelity = cadmpeg_ir::SourceFidelity::default();
-    super::layout::install(&ctx, parsed.pointers, &mut fidelity).expect("PMI source layouts");
-    (parsed.records, fidelity)
-}
-
-fn parse_payload(
-    payload: &[u8],
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Vec<PmiDimension> {
-    parse_source(payload, losses).0
+    super::parse_payload(&ctx, root, losses).expect("PMI test input fits service policy")
 }
 
 fn pointer(payload: &[u8], record: &PmiDimension, field: &str) -> Option<u64> {
-    parse_source(payload, &mut Vec::new())
-        .1
-        .record_layout()
-        .get(&record.id)?
-        .pointers()
-        .get(field)
-        .copied()
+    let record = parse_payload(payload, &mut Vec::new())
+        .into_iter()
+        .find(|candidate| candidate.id == record.id)?;
+    let slot = |name: &str| {
+        patch_slots::field_offset(payload, record.offset, name)
+            .ok()
+            .map(cadmpeg_core::decode::u64_from_index)
+    };
+    match field {
+        "offset" => Some(record.offset),
+        "display_text_offset" => record.display_text_offset(),
+        "value_offset" => slot("value"),
+        "precision_offset" => slot("valPrecision"),
+        "basic_offset" => slot("isBasic"),
+        "inspection_offset" => slot("isInspection"),
+        "reference_only_offset" => slot("isReferenceOnly"),
+        _ => None,
+    }
 }
 
 fn write_with_regenerated_pmi(
@@ -166,6 +166,7 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
     PmiDimension {
         id: "dimension".into(),
         parent: "block".into(),
+        offset: 0,
         guid: "guid".into(),
         cad_text: "D1@Pattern1".into(),
         item_count: std::num::NonZeroU32::MIN,
@@ -766,11 +767,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(dimension.reference_only);
     assert_eq!(
         decoded.source_fidelity().annotations.provenance[&dimension.id].offset,
-        decoded.source_fidelity().record_layout()[&dimension.id]
-            .pointers()
-            .get("offset")
-            .copied()
-            .expect("source offset")
+        dimension.offset
     );
     let parameter = decoded
         .ir()
@@ -1268,13 +1265,7 @@ fn u16_precision_survives_plain_patch_round_trip() {
         .iter()
         .any(|p| p.pmi.is_some()));
     let original = payload.clone();
-    patch_payload(
-        decoded.ir(),
-        &record.parent,
-        &mut payload,
-        decoded.source_fidelity(),
-    )
-    .unwrap();
+    patch_payload(decoded.ir(), &record.parent, &mut payload).unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
     assert_eq!(payload, original);
 }
@@ -1349,13 +1340,7 @@ fn patching_a_count_beyond_float_precision_is_refused_not_rounded() {
     }
 
     let mut patched = payload;
-    let error = patch_payload(
-        decoded.ir(),
-        &parent,
-        &mut patched,
-        decoded.source_fidelity(),
-    )
-    .unwrap_err();
+    let error = patch_payload(decoded.ir(), &parent, &mut patched).unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::UnsupportedContent(_)
@@ -1437,12 +1422,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
         ));
     }
     assert!(!matches!(
-        patch_payload(
-            &ir,
-            "block",
-            &mut [],
-            &cadmpeg_ir::SourceFidelity::default()
-        ),
+        patch_payload(&ir, "block", &mut []),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }

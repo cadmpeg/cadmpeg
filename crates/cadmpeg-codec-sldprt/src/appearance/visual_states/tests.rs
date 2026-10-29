@@ -89,7 +89,7 @@ fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_obj
             feature_ref: None,
             ordinal: 0,
             sequence: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(47),
             value: "Corner".into(),
         }],

@@ -9,7 +9,6 @@ use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
-use crate::resolved_features::class_sources::ClassSources;
 use crate::resolved_features::selections::compact_edge_component_path_at;
 use crate::resolved_features::selections::compact_edge_selection_at;
 use crate::resolved_features::selections::compact_extrusion_endpoint_selector_for_marker;
@@ -208,6 +207,7 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         native_payload: payload.clone().into(),
         classes: vec![FeatureInputClass {
             sequence: 0,
+            offset: 0,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -226,9 +226,8 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
     let selections = operation_surface_selection_candidates(
-        (&class_sources, &identity_ctx),
+        &identity_ctx,
         FeatureClass::TrimSurface,
         &lane,
         0,
@@ -278,6 +277,7 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: 0,
+            offset: 0,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -308,9 +308,8 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     one[class_body..class_body + 2].copy_from_slice(&class_token.to_le_bytes());
     build_face(&mut one, first_body, 6);
     let lane = lane_for(one);
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
     let selections = operation_surface_selection_candidates(
-        (&class_sources, &identity_ctx),
+        &identity_ctx,
         FeatureClass::Dome,
         &lane,
         first_body,
@@ -331,7 +330,7 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
     build_face(&mut collision, second_body, 9);
     let lane = lane_for(collision);
     assert!(operation_surface_selection_candidates(
-        (&class_sources, &identity_ctx),
+        &identity_ctx,
         FeatureClass::Dome,
         &lane,
         first_body,
@@ -523,6 +522,7 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: 0,
+            offset: 0,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -541,9 +541,7 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
-    let candidates =
-        fillet_face_selection_candidates(&class_sources, &candidates_ctx, &lane, 0, 700).unwrap();
+    let candidates = fillet_face_selection_candidates(&candidates_ctx, &lane, 0, 700).unwrap();
     assert_eq!(candidates.len(), 3);
     assert_eq!(
         candidates
@@ -564,7 +562,7 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
     let mut incomplete = lane.clone();
     incomplete.native_payload.truncate(403);
     assert!(
-        fillet_face_selection_candidates(&class_sources, &candidates_ctx, &incomplete, 0, 403)
+        fillet_face_selection_candidates(&candidates_ctx, &incomplete, 0, 403)
             .unwrap()
             .is_empty()
     );
@@ -1042,6 +1040,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             feature_ref: None,
             id: "face-plane-data".into(),
             parent: "lane".into(),
@@ -1055,7 +1054,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 id: "producer-40-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: Some(0),
+                offset: 0,
                 object_id: ObjectId::from_value(40),
                 value: "Producer40".into(),
             },
@@ -1065,7 +1064,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 id: "producer-41-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
-                offset: Some(8),
+                offset: 8,
                 object_id: ObjectId::from_value(41),
                 value: "Producer41".into(),
             },
@@ -1075,7 +1074,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 id: "plane-name".into(),
                 parent: "lane".into(),
                 ordinal: 2,
-                offset: Some(16),
+                offset: 16,
                 object_id: ObjectId::from_value(37),
                 value: "Plane".into(),
             },
@@ -1091,12 +1090,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(
-        &lane.classes[0],
-        cadmpeg_core::decode::u64_from_index(class_offset),
-    )]);
     let candidates = face_reference_plane_selection_candidates(
-        &class_sources,
         &candidates_ctx,
         &lane,
         0,
@@ -1143,8 +1137,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
             native_feature("plane", 37, "moRefPlane_c"),
         ],
     }];
-    let selections =
-        compact_surface_selections(&class_sources, &identity_ctx, &histories, &lane).unwrap();
+    let selections = compact_surface_selections(&identity_ctx, &histories, &lane).unwrap();
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "plane");
     assert_eq!(
@@ -1195,6 +1188,7 @@ fn face_reference_plane_accepts_a_component_face_path() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             feature_ref: None,
             id: "component-face".into(),
             parent: "lane".into(),
@@ -1213,12 +1207,7 @@ fn face_reference_plane_accepts_a_component_face_path() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(
-        &lane.classes[0],
-        cadmpeg_core::decode::u64_from_index(class_offset),
-    )]);
     let candidates = face_reference_plane_selection_candidates(
-        &class_sources,
         &candidates_ctx,
         &lane,
         0,
@@ -1300,6 +1289,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         classes: vec![
             FeatureInputClass {
                 sequence: 0,
+                offset: 0,
                 feature_ref: None,
                 id: "surface-class".into(),
                 parent: "lane".into(),
@@ -1313,6 +1303,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
                 id: "projection-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
+                offset: cadmpeg_core::decode::u64_from_index(payload.len()),
                 name: "moPLineProjIdRep_c".into(),
             },
         ],
@@ -1328,15 +1319,8 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([
-        (&lane.classes[0], 0),
-        (
-            &lane.classes[1],
-            cadmpeg_core::decode::u64_from_index(payload.len()),
-        ),
-    ]);
     let candidates = operation_surface_selection_candidates(
-        (&class_sources, &identity_ctx),
+        &identity_ctx,
         FeatureClass::SplitFace,
         &lane,
         0,
@@ -1357,7 +1341,7 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
     );
     assert_eq!(candidates[0].1[1].local_id, Some(3));
     assert!(operation_surface_selection_candidates(
-        (&class_sources, &identity_ctx),
+        &identity_ctx,
         FeatureClass::SplitFace,
         &lane,
         0,
@@ -1397,6 +1381,7 @@ fn generated_surface_identities_are_producer_outputs() {
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
             sequence: 0,
+            offset: 0,
             feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
@@ -1415,15 +1400,9 @@ fn generated_surface_identities_are_producer_outputs() {
         sketch_entities: Vec::new(),
     };
 
-    let class_sources = ClassSources::from_positions([(&lane.classes[0], 0)]);
-    let identities = generated_surface_identities(
-        &class_sources,
-        &lane.id,
-        &lane.classes,
-        &lane.native_payload,
-    )
-    .unwrap()
-    .records;
+    let identities = generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload)
+        .unwrap()
+        .records;
 
     assert_eq!(identities.len(), 2, "{identities:#?}");
     assert!(identities.iter().all(|identity| {
@@ -1473,7 +1452,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: Some(0),
+            offset: 0,
             object_id: ObjectId::from_value(233),
             value: "Producer".into(),
         }],
@@ -1499,7 +1478,7 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
         parent: "lane".into(),
         ordinal: 1,
         sequence: 1,
-        offset: Some(1),
+        offset: 1,
         object_id: ObjectId::from_value(234),
         value: "Producer".into(),
     });
