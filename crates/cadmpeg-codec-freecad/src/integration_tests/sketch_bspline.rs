@@ -39,7 +39,7 @@ fn recipe_sketch_bspline_knots_and_points() {
             let points: Vec<_> = curve
                 .control_points()
                 .iter()
-                .map(|point| point.coordinates().map(|coordinate| coordinate.get()))
+                .map(|point| point.coordinates().map(cadmpeg_ir::scalar::FiniteReal::get))
                 .collect();
             assert_eq!(points, poles);
             assert_eq!(curve.pole_rows().weights(), None);
@@ -63,7 +63,7 @@ fn recipe_sketch_bspline_knots_and_points() {
             )
             .unwrap()
             .coordinates()
-            .map(|coordinate| coordinate.get());
+            .map(cadmpeg_ir::scalar::FiniteReal::get);
             let expected = if periodic {
                 [0.0, -10.0]
             } else {
@@ -125,9 +125,13 @@ fn recipe_sketch_bspline_body_measures() {
                 for (actual, expected) in bbox
                     .min
                     .coordinates()
-                    .map(|coordinate| coordinate.get())
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
                     .into_iter()
-                    .chain(bbox.max.coordinates().map(|coordinate| coordinate.get()))
+                    .chain(
+                        bbox.max
+                            .coordinates()
+                            .map(cadmpeg_ir::scalar::FiniteReal::get),
+                    )
                     .zip([-10.0, -10.0, 0.0, 10.0, 10.0, height])
                 {
                     assert!(
@@ -189,7 +193,7 @@ fn sketch_bspline_rational_periodic_weights_and_point() {
     )
     .unwrap()
     .coordinates()
-    .map(|coordinate| coordinate.get());
+    .map(cadmpeg_ir::scalar::FiniteReal::get);
     assert!((point[0] - 10.0 / 3.0).abs() < POINT_TOLERANCE);
     assert!((point[1] + 10.0).abs() < POINT_TOLERANCE);
     ctx.finish_session().unwrap();
