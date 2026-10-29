@@ -132,7 +132,7 @@ Analytic surfaces carry the frame needed to interpret parameters: plane `u_axis`
 
 `Curve.parameter_range` optionally retains a finite source interval independently of topology edges. Its first endpoint is strictly below its second. The interval records the bounded carrier extent; it does not restrict use of the underlying mathematical curve outside that interval.
 
-`Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. A closed edge, whose start and end are one vertex, with no range traverses its carrier once: one revolution `[0, 2π]` of a circle or an ellipse, or the effective knot domain of a clamped or periodic NURBS curve; a placed curve takes the interval of its basis. The edge is closed over that interval only when both ends of the interval evaluate to its vertex. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
+`Edge.param_range` uses the canonical parameterization of its curve when a 3D carrier exists. An edge runs from its start vertex to its end vertex in the direction of increasing curve parameter: the first endpoint of its range evaluates to its start vertex and the second to its end vertex. An edge with no range on an open bounded curve, which has a `Curve.parameter_range` or is a clamped NURBS curve, runs in the same direction over that domain or a part of it, so its start vertex is not at the end of the domain while its end vertex is at the start. A carrier-less degenerate or tolerant edge has no canonical 3D domain; its optional range retains finite native endpoint doubles without imposing carrier-domain ordering. Full circles are anchored to `[0, 2π]`. A closed edge, whose start and end are one vertex, with no range traverses its carrier once: one revolution `[0, 2π]` of a circle or an ellipse, or the effective knot domain of a clamped or periodic NURBS curve; a placed curve takes the interval of its basis. The edge is closed over that interval only when both ends of the interval evaluate to its vertex. Periodic ranges may cross a seam by using an end value greater than the start value in the unwrapped domain. Pcurve coordinates use the corresponding surface conventions.
 
 Decoders convert kernel conventions at decode:
 
@@ -348,6 +348,7 @@ Validation uses reference lookup and in-IR arithmetic. It checks:
 - directed, closed subdivision face rings with continuous endpoints;
 - annotation entity, stream, and field-path integrity;
 - canonical periodic parameter domains;
+- edge curve endpoints at the edge's vertices, in the edge's direction;
 - finite coordinates, unit directions, positive radii, and NURBS shape invariants;
 - tessellation channel and index bounds, canonical feature-edge pairs, and
   vertex- and corner-normal cardinalities;

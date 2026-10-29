@@ -503,9 +503,26 @@ fn vertex_positions(ir: &CadIr) -> BorrowedIdentities<'_, (Point3, Option<f64>)>
     })
 }
 
+/// The bounded domain of a curve that an edge with no range runs over: its
+/// stored interval, or the effective knot domain of a clamped NURBS curve.
+fn bounded_curve_domain(curve: &crate::geometry::Curve) -> Option<[f64; 2]> {
+    if let Some(range) = curve.parameter_range {
+        return Some(range.endpoints());
+    }
+    match curve.geometry.solved() {
+        Some(SolvedCurveGeometry::Nurbs(nurbs)) if !nurbs.periodic() => {
+            crate::eval::nurbs_curve_parameter_domain(nurbs)
+                .map(crate::topology::IncreasingParameterInterval::endpoints)
+        }
+        _ => None,
+    }
+}
+
 /// An edge's curve evaluated at its parameter range must land on the edge's
 /// start and end vertex positions within the topology tolerances or the
-/// evaluated curve cache's fit tolerance.
+/// evaluated curve cache's fit tolerance. An edge with no range on an open
+/// bounded curve must not have its start vertex at the curve's end and its end
+/// vertex at the curve's start.
 pub(super) fn check_edge_endpoint_consistency(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -514,6 +531,13 @@ pub(super) fn check_edge_endpoint_consistency(
     let curves = BorrowedIdentities::build(|add| {
         for curve in &ir.model.curves {
             add(curve.id.as_str(), &curve.geometry);
+        }
+    });
+    let curve_domains = BorrowedIdentities::build(|add| {
+        for curve in &ir.model.curves {
+            if let Some(domain) = bounded_curve_domain(curve) {
+                add(curve.id.as_str(), domain);
+            }
         }
     });
     let owners = curve_owners(ir);
@@ -526,9 +550,6 @@ pub(super) fn check_edge_endpoint_consistency(
     });
     let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
-        let Some([start_t, end_t]) = edge.param_range().map(crate::units::FiniteVector::get) else {
-            continue;
-        };
         let Some(curve_id) = edge.curve() else {
             continue;
         };
@@ -539,6 +560,12 @@ pub(super) fn check_edge_endpoint_consistency(
             vertices.get(edge.start.as_str()),
             vertices.get(edge.end.as_str()),
         ) else {
+            continue;
+        };
+        let range = edge.param_range().map(crate::units::FiniteVector::get);
+        let Some([start_t, end_t]) =
+            range.or_else(|| curve_domains.get(curve_id.as_str()).copied())
+        else {
             continue;
         };
         let (Some(at_start), Some(at_end)) = (
@@ -564,6 +591,26 @@ pub(super) fn check_edge_endpoint_consistency(
             Point3::distance(at_start, *start),
             Point3::distance(at_end, *end),
         );
+        if range.is_none() {
+            let reversed_mismatch = worse_mismatch(
+                Point3::distance(at_start, *end),
+                Point3::distance(at_end, *start),
+            );
+            let open = Point3::distance(at_start, at_end) > bound;
+            let along = mismatch <= bound;
+            if open && reversed_mismatch <= bound && !along {
+                super::record_finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    Severity::Error,
+                    Some(edge.id.as_str()),
+                    format_args!(
+                        "edge runs against its curve: its start vertex is at the curve's end and its end vertex at its start, within {reversed_mismatch:.6}"
+                    ),
+                );
+            }
+            continue;
+        }
         if !mismatch.is_finite() || mismatch > bound {
             super::record_finding(
                 findings,
