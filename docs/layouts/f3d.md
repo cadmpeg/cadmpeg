@@ -6526,7 +6526,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 289 B
 
-The 349-byte identity frame has one zero separator before the repeated reference.
+The separated identity and matrix frames have one zero separator before the repeated reference.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
@@ -6545,7 +6545,7 @@ Parsed by:
 | 160 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 | 236 | 1 | `separator` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `0` |
 | 237 | 51 | `component_reference_repeat` | `bytes[51]` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
-| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. · value `1` |
+| 288 | 1 | `identity_flag` | `u8` | little | spec | Typed local component occurrences use local references with inline type GUIDs. |
 
 ## `local_component_occurrence_typed_compact_prefix`
 
@@ -6589,7 +6589,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 188 B
 
-Relative to the end of the typed compact prefix.
+Relative to the end of the typed prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`

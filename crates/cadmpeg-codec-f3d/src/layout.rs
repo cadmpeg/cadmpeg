@@ -6155,7 +6155,7 @@ pub(crate) mod sketch_owner_typed_reference {
 /// Spec §3.1. Record length 289 B.
 ///
 /// ```text
-/// The 349-byte identity frame has one zero separator before the repeated reference.
+/// The separated identity and matrix frames have one zero separator before the repeated reference.
 /// ```
 pub(crate) mod local_component_occurrence_typed_prefix {
     /// Record length in bytes. Spec §3.1.
@@ -6229,7 +6229,7 @@ pub(crate) mod local_component_occurrence_typed_identity_tail {
 /// Spec §3.1. Record length 188 B.
 ///
 /// ```text
-/// Relative to the end of the typed compact prefix.
+/// Relative to the end of the typed prefix.
 /// ```
 pub(crate) mod local_component_occurrence_typed_matrix_tail {
     /// Record length in bytes. Spec §3.1.
