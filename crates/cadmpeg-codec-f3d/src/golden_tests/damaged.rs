@@ -55,7 +55,7 @@ pub(super) fn check_snapshots(update: bool, root: &Path, failures: &mut Vec<Stri
             (
                 "generate",
                 super::ByteComparison::Decoded,
-                super::generate_outcome(&input),
+                Ok(super::generate_outcome(&input)),
             ),
             (
                 "patch",
@@ -63,14 +63,19 @@ pub(super) fn check_snapshots(update: bool, root: &Path, failures: &mut Vec<Stri
                 super::patch_outcome(&input),
             ),
         ] {
-            if let Some(outcome) = &outcome {
-                let extension = if outcome.is_ok() { "bin" } else { "err.txt" };
-                produced
-                    .get_mut(branch)
-                    .expect("encode branch")
-                    .insert(format!("{name}.{extension}"));
+            let kept = produced.get_mut(branch).expect("encode branch");
+            match &outcome {
+                Ok(Some(outcome)) => {
+                    let extension = if outcome.is_ok() { "bin" } else { "err.txt" };
+                    kept.insert(format!("{name}.{extension}"));
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    kept.insert(format!("{name}.bin"));
+                    kept.insert(format!("{name}.err.txt"));
+                }
             }
-            super::compare_encode(update, root, branch, &name, comparison, outcome, failures);
+            super::compare_lane(update, root, branch, &name, comparison, outcome, failures);
         }
     }
     for (branch, names) in produced {

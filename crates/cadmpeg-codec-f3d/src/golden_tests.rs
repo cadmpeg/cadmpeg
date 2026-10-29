@@ -413,9 +413,15 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     text
 }
 
+/// A lane's encode outcome, or the write-path expectation the lane broke.
+type Lane = Result<Option<Result<Vec<u8>, String>>, &'static str>;
+
 /// Encodes an unedited decode result via the verbatim-replay branch.
-fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
+fn replay_outcome(bytes: &[u8]) -> Lane {
+    let Ok(result) = decode_result(bytes) else {
+        return Ok(None);
+    };
+    let result = EditableDecodeResult::from(result);
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(
         EncodeInput::new(result.ir(), Some(result.source_fidelity())),
@@ -424,19 +430,16 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
             match plan.write_to(&mut out) {
-                Ok(_) => {
-                    assert!(
-                        matches!(path, WritePath::VerbatimReplay { .. }),
-                        "the replay lane must take the verbatim-replay write path"
-                    );
-                    Ok(out)
+                Ok(_) if !matches!(path, WritePath::VerbatimReplay { .. }) => {
+                    return Err("the replay lane must take the verbatim-replay write path");
                 }
+                Ok(_) => Ok(out),
                 Err(error) => Err(error.to_string()),
             }
         }
         Err(error) => Err(error.to_string()),
     };
-    Some(outcome)
+    Ok(Some(outcome))
 }
 
 fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
@@ -454,10 +457,13 @@ fn generate_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     })
 }
 
-fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
-    let result = EditableDecodeResult::from(decode_result(bytes).ok()?);
+fn patch_outcome(bytes: &[u8]) -> Lane {
+    let Ok(result) = decode_result(bytes) else {
+        return Ok(None);
+    };
+    let result = EditableDecodeResult::from(result);
     if result.ir().model.points.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut edited = result.ir().clone();
     let moved = edited.model.points[0].position().get();
@@ -470,19 +476,13 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
         .expect("a finite position is a point"),
     );
     let mut out = Vec::new();
-    Some(
-        match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out)
-        {
-            Ok(path) => {
-                assert!(
-                    matches!(path, WritePath::Patched { .. }),
-                    "the patch lane edits the IR, so the writer must run"
-                );
-                Ok(out)
-            }
-            Err(error) => Err(error.to_string()),
-        },
-    )
+    match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out) {
+        Ok(path) if !matches!(path, WritePath::Patched { .. }) => {
+            Err("the patch lane edits the IR, so the writer must run")
+        }
+        Ok(_) => Ok(Some(Ok(out))),
+        Err(error) => Ok(Some(Err(error.to_string()))),
+    }
 }
 
 fn first_line_diff(expected: &str, actual: &str) -> (usize, String, String) {
@@ -636,6 +636,23 @@ enum ByteComparison {
     Decoded,
 }
 
+/// Compares a lane's outcome, or records the write path it broke and keeps
+/// its goldens.
+fn compare_lane(
+    update: bool,
+    root: &Path,
+    dir: &str,
+    name: &str,
+    comparison: ByteComparison,
+    lane: Lane,
+    failures: &mut Vec<String>,
+) {
+    match lane {
+        Ok(outcome) => compare_encode(update, root, dir, name, comparison, outcome, failures),
+        Err(expectation) => failures.push(format!("{dir}/{name}: {expectation}")),
+    }
+}
+
 fn compare_encode(
     update: bool,
     root: &Path,
@@ -706,7 +723,7 @@ fn golden_snapshots_are_byte_identical() {
             &inspect_snapshot(&input),
             &mut failures,
         );
-        compare_encode(
+        compare_lane(
             update,
             &root,
             "replay",
@@ -724,7 +741,7 @@ fn golden_snapshots_are_byte_identical() {
             generate_outcome(&input),
             &mut failures,
         );
-        compare_encode(
+        compare_lane(
             update,
             &root,
             "patch",
