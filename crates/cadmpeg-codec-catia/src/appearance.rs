@@ -470,7 +470,12 @@ mod tests {
             .model
             .appearances
             .iter()
-            .map(|appearance| appearance.native_ref.as_deref().unwrap())
+            .map(|appearance| {
+                appearance
+                    .native_ref
+                    .as_deref()
+                    .expect("each appearance names its source color row")
+            })
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(actual, expected);
         assert_eq!(
@@ -1167,7 +1172,7 @@ mod tests {
                 None,
             )
         })
-        .unwrap();
+        .expect("inline colors transfer without a refusal");
         assert_eq!(result.decoded_packets(), 2);
         assert_eq!(result.emitted_assets, 2);
         assert_eq!(result.emitted_bindings, 2);
@@ -1187,7 +1192,7 @@ mod tests {
                     rgba[0], rgba[1], rgba[2], rgba[3]
                 ))
             );
-            let wire = serde_json::to_value(source).unwrap();
+            let wire = serde_json::to_value(source).expect("the source color serializes");
             assert!(wire.get("appearance").is_none());
         }
         for (binding, appearance) in ir
@@ -1220,7 +1225,7 @@ mod tests {
                 Some(&fbb),
             )
         })
-        .unwrap();
+        .expect("FBB face colors transfer without a refusal");
         assert_eq!(result.source_colors.len(), 7);
         assert_eq!(result.emitted_assets, 7);
         assert_eq!(result.emitted_bindings, 6);
@@ -1248,7 +1253,7 @@ mod tests {
                 .appearances
                 .iter()
                 .find(|appearance| appearance.id == binding.appearance)
-                .unwrap();
+                .expect("each binding names a held appearance");
             assert_eq!(
                 appearance.native_ref.as_deref(),
                 Some(result.source_colors[index + 1].id.as_str())
