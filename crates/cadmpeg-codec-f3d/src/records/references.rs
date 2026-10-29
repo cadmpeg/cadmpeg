@@ -25,10 +25,18 @@ pub(crate) struct PersistentReference {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the persistent-reference field name in its Design `BulkStream`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     pub(crate) byte_offset: Option<u64>,
     /// Byte offset of the u64 value relative to `byte_offset`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_value_offset_u32"
+    )]
     pub(crate) value_offset: Option<u32>,
     /// Whether this reference identifies a persistent point or one end of a curve.
     pub(crate) kind: PersistentReferenceKind,
@@ -184,7 +192,11 @@ impl LostEdgeReference {
 #[serde(deny_unknown_fields)]
 struct LostEdgeReferenceWire {
     id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_record_byte_offset_u64"
+    )]
     record_byte_offset: Option<u64>,
     class_tag: String,
     record_index: u32,
@@ -392,15 +404,31 @@ struct DesignMaterialAssignmentWire {
     id: String,
     body_binding_id: super::bodies::DesignBodyBindingId,
     asm_body_key: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_asm_body_key_offset_u64"
+    )]
     asm_body_key_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entity_suffix_offset_u64"
+    )]
     entity_suffix_offset: Option<u64>,
     entity_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_entity_id_offset_u64"
+    )]
     entity_id_offset: Option<u64>,
     visual_guid: DesignVisualToken,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_visual_guid_offset_u64"
+    )]
     visual_guid_offset: Option<u64>,
     #[serde(
         default,
@@ -408,7 +436,11 @@ struct DesignMaterialAssignmentWire {
         deserialize_with = "deserialize_physical_token"
     )]
     physical_token: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_physical_token_offset_u64"
+    )]
     physical_token_offset: Option<u64>,
     #[serde(
         default,
@@ -416,7 +448,11 @@ struct DesignMaterialAssignmentWire {
         deserialize_with = "deserialize_visual_preset"
     )]
     visual_preset: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_visual_preset_offset_u64"
+    )]
     visual_preset_offset: Option<u64>,
 }
 impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
@@ -477,3 +513,38 @@ impl DesignMaterialAssignment {}
 mod tests;
 
 mod identity_rewrite;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_asm_body_key_offset_u64,
+    u64,
+    "asm_body_key_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");
+cadmpeg_core::named_optional_field!(deserialize_entity_id_offset_u64, u64, "entity_id_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_entity_suffix_offset_u64,
+    u64,
+    "entity_suffix_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_physical_token_offset_u64,
+    u64,
+    "physical_token_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_record_byte_offset_u64,
+    u64,
+    "record_byte_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_value_offset_u32, u32, "value_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_visual_guid_offset_u64,
+    u64,
+    "visual_guid_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_visual_preset_offset_u64,
+    u64,
+    "visual_preset_offset"
+);

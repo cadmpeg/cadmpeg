@@ -408,11 +408,23 @@ struct ActEntitySerde {
     record_index: u32,
     entity_id: String,
     in_table: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_table_record_index_offset_u64"
+    )]
     table_record_index_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_channel_record_index_offset_u64"
+    )]
     channel_record_index_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_channel_entity_id_offset_u64"
+    )]
     channel_entity_id_offset: Option<u64>,
     channel_class_tag: String,
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
@@ -616,7 +628,11 @@ impl ActGuid {
 #[serde(deny_unknown_fields)]
 struct ActGuidWire {
     id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
     ordinal: u32,
     guid: String,
@@ -871,7 +887,11 @@ impl ActRegistryChannel {
 struct ActRegistryChannelWire {
     id: String,
     ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
     name: String,
     guid: String,
@@ -1037,9 +1057,17 @@ impl ActRootComponent {
 #[serde(deny_unknown_fields)]
 struct ActRootComponentWire {
     id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
     byte_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_padding_u64"
+    )]
     padding: Option<u64>,
     record_index: u32,
     class_tag: String,
@@ -1241,3 +1269,22 @@ impl ActRootComponent {
 
 #[cfg(test)]
 mod tests;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");
+cadmpeg_core::named_optional_field!(
+    deserialize_channel_entity_id_offset_u64,
+    u64,
+    "channel_entity_id_offset"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_channel_record_index_offset_u64,
+    u64,
+    "channel_record_index_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_padding_u64, u64, "padding");
+cadmpeg_core::named_optional_field!(
+    deserialize_table_record_index_offset_u64,
+    u64,
+    "table_record_index_offset"
+);
