@@ -202,7 +202,7 @@ fn sole_identity_group_projects_fixed_fillet_transition_chain() {
 }
 
 #[test]
-fn full_layout_identity_uses_the_same_fixed_fillet_edge_proof() {
+fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
     let scope = fixed_scope();
     let group = group(2, 10);
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
@@ -220,7 +220,7 @@ fn full_layout_identity_uses_the_same_fixed_fillet_edge_proof() {
             decode_ctx
         ))
         .unwrap()
-        .is_some()
+        .is_none()
     );
 }
 

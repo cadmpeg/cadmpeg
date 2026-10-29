@@ -22,7 +22,8 @@ use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
-use cadmpeg_test_support::golden::snapshots_agree;
+use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree};
+use cadmpeg_test_support::roundtrip::{mutation_roundtrip, ExpectedWritePath, MutationOutcome};
 
 use super::F3dCodec;
 use crate::test_support::native_test::TestEncode;
@@ -843,6 +844,96 @@ const MEASURED_FIXTURE_FLOOR: usize = 59;
 
 /// Fixtures with no point for the mutation lane to move.
 const FIXTURES_WITHOUT_POINTS: [&str; 1] = ["container_metadata_only"];
+
+/// Serializes the neutral model plus unit and tolerance declarations.
+fn neutral_document(ir: &CadIr) -> String {
+    snapshot_text(&serde_json::json!({
+        "model": serde_json::to_value(&ir.model).expect("serialize model"),
+        "units": { "length": "millimeter" },
+        "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
+    }))
+}
+
+/// An edit to a decoded document survives the patch writer.
+#[test]
+fn an_edit_survives_the_patch_writer() {
+    let mut edited_count = 0usize;
+    let mut measured_count = 0usize;
+    let mut skipped: Vec<&str> = Vec::new();
+    for (name, _) in fixtures() {
+        let input = read_fixture(name).expect("committed fixture");
+        let ran = mutation_roundtrip(
+            &F3dCodec,
+            name,
+            &input,
+            ExpectedWritePath::Patched,
+            |ir| {
+                let Some(point) = ir.model.points.first_mut() else {
+                    return false;
+                };
+                let moved = point.position().get();
+                point.set_position(
+                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                        moved.x + MUTATION_MM,
+                        moved.y,
+                        moved.z,
+                    ))
+                    .expect("a finite position is a point"),
+                );
+                true
+            },
+            |outcome| match outcome {
+                MutationOutcome::Written { edited, bytes, .. } => {
+                    let round_trip = decode_result(bytes).unwrap_or_else(|error| {
+                        panic!("fixture `{name}`: patched output does not decode: {error}")
+                    });
+                    let moved = edited.model.points[0].position().get().x;
+                    let returned = round_trip.ir().model.points[0].position().get().x;
+                    assert!(
+                        (returned - moved).abs() <= 1.0e-9,
+                        "fixture `{name}`: the patch writer produced a container that round-trips, but the \
+                         edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
+                    );
+                    if let Err(mismatch) = snapshots_agree(
+                        &neutral_document(edited),
+                        &neutral_document(round_trip.ir()),
+                    ) {
+                        panic!(
+                            "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
+                        );
+                    }
+                    if measures_decide(name, edited).expect("the fixture is measured") {
+                        measures_agree(name, edited, round_trip.ir())
+                            .expect("the round trip keeps its measured geometry");
+                        measured_count += 1;
+                    }
+                }
+                MutationOutcome::Refused { error } => {
+                    panic!("fixture `{name}`: the patch writer declined to move a point: {error}")
+                }
+            },
+        );
+        if ran {
+            edited_count += 1;
+        } else {
+            skipped.push(name);
+        }
+    }
+    assert_eq!(
+        skipped, FIXTURES_WITHOUT_POINTS,
+        "the set of fixtures with no point to move changed; this lane covers every other fixture, so \
+         a new name here narrows it and a missing one means a fixture lost its geometry"
+    );
+    assert_eq!(
+        edited_count,
+        fixtures().len() - FIXTURES_WITHOUT_POINTS.len(),
+        "every fixture that carries a point must reach the patch writer"
+    );
+    assert!(
+        measured_count >= MEASURED_FIXTURE_FLOOR,
+        "fewer fixtures than the floor measure a comparable body through the patch writer"
+    );
+}
 
 /// An edit has the same meaning through preservation and synthesis.
 #[test]

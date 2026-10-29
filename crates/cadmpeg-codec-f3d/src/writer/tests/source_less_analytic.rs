@@ -74,7 +74,7 @@ fn finite_tolerance_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2
 }
 
 #[test]
-fn generated_f3d_synthesizes_only_document_content_and_applies_semantic_edits() {
+fn generated_f3d_replays_byte_exactly_and_rejects_semantic_edits() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = EditableDecodeResult::from(
         F3dCodec
@@ -82,16 +82,14 @@ fn generated_f3d_synthesizes_only_document_content_and_applies_semantic_edits() 
             .unwrap(),
     );
 
-    let (output, report) = synthesize_document(decoded.ir(), Some(decoded.source_fidelity()));
-    assert_eq!(
-        output.ir().model.bodies.len(),
-        decoded.ir().model.bodies.len()
-    );
-    assert_eq!(
-        output.ir().model.faces.len(),
-        decoded.ir().model.faces.len()
-    );
-    assert_native_omission(&report);
+    let mut replayed = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut replayed,
+    )
+    .unwrap();
+    assert_eq!(replayed, source);
 
     let mut point_edited = decoded.ir().clone();
     let moved = point_edited.model.points[0].position().get();
@@ -138,9 +136,13 @@ fn generated_f3d_synthesizes_only_document_content_and_applies_semantic_edits() 
 
     let (mut modified, _, fidelity) = decoded.into_parts();
     modified.model.bodies[0].name = Some("edited".into());
-    let (output, _) = synthesize_document(&modified, Some(&fidelity));
+    let mut renamed = Vec::new();
+    crate::test_support::plan_inherited_write(&modified, &fidelity, &mut renamed).unwrap();
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
+        .unwrap();
     assert_eq!(
-        output.ir().model.bodies[0].name,
+        round_trip.ir().model.bodies[0].name,
         modified.model.bodies[0].name
     );
 }

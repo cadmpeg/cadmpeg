@@ -21,13 +21,13 @@ use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 #[test]
-fn generated_f3d_reports_native_sketch_point_coordinates() {
+fn generated_f3d_rewrites_native_sketch_point_coordinates() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let _expected = update_f3d_native(&mut edited, |native| {
+    let expected = update_f3d_native(&mut edited, |native| {
         let point = &mut native.sketch_points[0];
         let mut coordinates = point.coordinates();
         coordinates.u += 12.5;
@@ -36,30 +36,26 @@ fn generated_f3d_reports_native_sketch_point_coordinates() {
         point.coordinates()
     });
 
-    let (output, report) =
-        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
-    super::source_less_analytic::assert_native_omission(&report);
-    let native = f3d_native(output.ir());
-    assert!(native.sketch_points.is_empty());
-    assert!(native.sketch_curve_identities.is_empty());
-    assert!(native.sketch_relations.is_empty());
-    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
-    if !edited.model.sketches.is_empty() {
-        assert!(report
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::WriterDesignRecordsOmitted.kind()));
-    }
+    let mut regenerated = Vec::new();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
+        .expect("native sketch-point regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        f3d_native(round_trip.ir()).sketch_points[0].coordinates(),
+        expected
+    );
 }
 
 #[test]
-fn generated_f3d_reports_native_sketch_arc_geometry() {
+fn generated_f3d_rewrites_native_sketch_arc_geometry() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let _expected = update_f3d_native(&mut edited, |native| {
+    let expected = update_f3d_native(&mut edited, |native| {
         let curve = &mut native.sketch_curve_identities[0];
         let Some(crate::records::sketch_geometry::SketchCurveGeometry::Arc {
             center,
@@ -85,30 +81,26 @@ fn generated_f3d_reports_native_sketch_arc_geometry() {
         curve.geometry.clone()
     });
 
-    let (output, report) =
-        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
-    super::source_less_analytic::assert_native_omission(&report);
-    let native = f3d_native(output.ir());
-    assert!(native.sketch_points.is_empty());
-    assert!(native.sketch_curve_identities.is_empty());
-    assert!(native.sketch_relations.is_empty());
-    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
-    if !edited.model.sketches.is_empty() {
-        assert!(report
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::WriterDesignRecordsOmitted.kind()));
-    }
+    let mut regenerated = Vec::new();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
+        .expect("native sketch-arc regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        f3d_native(round_trip.ir()).sketch_curve_identities[0].geometry,
+        expected
+    );
 }
 
 #[test]
-fn generated_f3d_reports_native_sketch_constraint_mask() {
+fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let _expected_references = update_f3d_native(&mut edited, |native| {
+    let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
         relation.definition = crate::records::sketch_relations::SketchRelationDefinition::new(
             0x40,
@@ -165,30 +157,34 @@ fn generated_f3d_reports_native_sketch_constraint_mask() {
         )
     });
 
-    let (output, report) =
-        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
-    super::source_less_analytic::assert_native_omission(&report);
-    let native = f3d_native(output.ir());
-    assert!(native.sketch_points.is_empty());
-    assert!(native.sketch_curve_identities.is_empty());
-    assert!(native.sketch_relations.is_empty());
-    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
-    if !edited.model.sketches.is_empty() {
-        assert!(report
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::WriterDesignRecordsOmitted.kind()));
-    }
+    let mut regenerated = Vec::new();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
+        .expect("native sketch-constraint regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    let native = f3d_native(round_trip.ir());
+    let relation = &native.sketch_relations[0];
+    assert_eq!(relation.definition.state(), 0x40);
+    assert_eq!(
+        relation.constraint_kinds(),
+        [crate::records::sketch_relations::SketchConstraintKind::Horizontal]
+    );
+    assert_eq!(relation.unknown_constraint_bits(), 0);
+    assert_eq!(relation.members(), &expected_references.0);
+    assert_eq!(relation.auxiliary_references(), &expected_references.1);
+    assert_eq!(relation.owner_reference, expected_references.2);
+    assert_eq!(relation.return_members(), &expected_references.3);
 }
 
 #[test]
-fn generated_f3d_reports_native_sketch_nurbs_values() {
+fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
-    let _expected = update_f3d_native(&mut edited, |native| {
+    let expected = update_f3d_native(&mut edited, |native| {
         let curve = &mut native.sketch_curve_identities[1];
         let Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
             carrier_reference,
@@ -226,18 +222,14 @@ fn generated_f3d_reports_native_sketch_nurbs_values() {
         curve.geometry.clone()
     });
 
-    let (output, report) =
-        super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
-    super::source_less_analytic::assert_native_omission(&report);
-    let native = f3d_native(output.ir());
-    assert!(native.sketch_points.is_empty());
-    assert!(native.sketch_curve_identities.is_empty());
-    assert!(native.sketch_relations.is_empty());
-    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
-    if !edited.model.sketches.is_empty() {
-        assert!(report
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::WriterDesignRecordsOmitted.kind()));
-    }
+    let mut regenerated = Vec::new();
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
+        .expect("native sketch-NURBS regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated F3D decode");
+    assert_eq!(
+        f3d_native(round_trip.ir()).sketch_curve_identities[1].geometry,
+        expected
+    );
 }

@@ -1029,6 +1029,36 @@ mod tests {
         assert_eq!(serde_json::to_string(&state).unwrap(), wire);
     }
     #[test]
+    fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
+        let frame = serde_json::json!({"length": 0, "sha256": cadmpeg_ir::hash::digest::Sha256Digest::digest(&[])});
+        let wire = |fields: serde_json::Value| {
+            let mut wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7,
+                "index":0, "byte_offset":12, "frame":frame});
+            for (key, value) in fields.as_object().expect("record fields") {
+                wire[key] = value.clone();
+            }
+            wire
+        };
+        for fields in [
+            serde_json::json!({"name":"edge", "entity_references":[7, -1]}),
+            serde_json::json!({"name":"opaque_history_payload", "framing_error":"invalid frame"}),
+        ] {
+            let wire = wire(fields);
+            let record: super::AsmHistoryRecord = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+        }
+        for fields in [
+            serde_json::json!({"name":"edge", "framing_error":"invalid frame"}),
+            serde_json::json!({"name":"opaque_history_payload", "framing_error":"invalid frame",
+                "entity_references":[7]}),
+        ] {
+            let error = serde_json::from_value::<super::AsmHistoryRecord>(wire(fields))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("framing_error"));
+        }
+    }
+    #[test]
     fn history_record_framing_keeps_typed_metadata_without_parser_bytes_or_location() {
         let frame = serde_json::json!({"length": 0, "sha256": cadmpeg_ir::hash::digest::Sha256Digest::digest(&[])});
         for (name, error, references) in [

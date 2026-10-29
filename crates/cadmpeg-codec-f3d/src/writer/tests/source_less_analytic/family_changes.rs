@@ -52,7 +52,7 @@ fn generated_f3d_synthesizes_analytic_surface_family_changes() {
             .expect("generated planar triangle decode"),
     );
     let mut edited = decoded.ir().clone();
-    edited.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+    let expected = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -61,22 +61,12 @@ fn generated_f3d_synthesizes_analytic_surface_family_changes() {
         )
         .unwrap(),
     ));
+    edited.model.surfaces[0].geometry = expected.clone();
 
-    let (output, report) = super::synthesize_document(&edited, Some(decoded.source_fidelity()));
-    if output.ir().model.surfaces.is_empty() {
-        assert!(report
-            .losses
-            .iter()
-            .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error));
-    } else {
-        assert!(
-            output.ir().model.surfaces.iter().all(|surface| {
-                matches!(
-                    surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
-                )
-            }),
-            "the retained plane must not override the authored sphere"
-        );
-    }
+    let (output, _) = super::synthesize_document(&edited, Some(decoded.source_fidelity()));
+    assert!(
+        !output.ir().model.surfaces.is_empty(),
+        "the authored sphere must be written"
+    );
+    assert_eq!(output.ir().model.surfaces[0].geometry, expected);
 }
