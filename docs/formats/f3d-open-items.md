@@ -384,7 +384,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
 
-### DR-125. Construction-operand group closing flag
+### DR-130. Construction-operand group closing flag
 
 **Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?
 
