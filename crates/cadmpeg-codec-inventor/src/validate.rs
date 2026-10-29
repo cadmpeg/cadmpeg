@@ -2955,12 +2955,9 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     if let UfrxRecord::ParsedPrefix(payload) = record {
         if let Some(representation) = payload.representation.as_ref() {
             let representation_pair_present = representation.design_views.is_some();
-            let expected_pair = document_kind(ir).and_then(|kind| match kind {
-                "assembly" => Some(true),
-                "part" => Some(false),
-                _ => None,
-            });
-            if expected_pair.is_some_and(|expected| representation_pair_present != expected) {
+            if !representation_pair_present
+                && document_kind(ir).is_some_and(|kind| matches!(kind, "assembly" | "part"))
+            {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor UFRxDoc representation state is inconsistent".into(),
