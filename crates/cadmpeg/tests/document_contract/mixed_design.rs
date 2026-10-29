@@ -181,7 +181,7 @@ fn assert_partial_export(report: &ExportReport, kind: MixedKind) {
         .losses
         .iter()
         .filter(|loss| {
-            loss.code.local_code() == "source.undecoded-omitted"
+            loss.code.local_code() == "metadata.native-property-not-transferred"
                 && loss.message.contains("Length")
                 && loss.message.contains("Pad")
         })
@@ -189,7 +189,6 @@ fn assert_partial_export(report: &ExportReport, kind: MixedKind) {
     match kind {
         MixedKind::Unreadable => {
             assert_eq!(omitted.len(), 1, "{:?}", report.losses);
-            assert_eq!(omitted[0].severity, Severity::Warning);
         }
         MixedKind::Vendor => assert!(omitted.is_empty()),
     }

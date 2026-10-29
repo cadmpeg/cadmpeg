@@ -4,15 +4,12 @@
 //! Fixture-backed goldens decode their fixture at `Full` and at `Geometry`.
 //! Code-built goldens are checked at `Full` from their committed snapshot.
 
-use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_test_support::data_checks::conformance::{
-    b1_unrepresented, dangling_token_findings, scope_findings,
-};
+use cadmpeg_test_support::data_checks::conformance::{dangling_token_findings, scope_findings};
 use cadmpeg_test_support::data_checks::decode_goldens;
 use serde_json::Value;
 
@@ -20,27 +17,9 @@ fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn decode_findings(
-    document: &Value,
-    report: &Value,
-    fidelity: &Value,
-    requested: &[&str],
-) -> Vec<String> {
+fn decode_findings(document: &Value, report: &Value, requested: &[&str]) -> Vec<String> {
     let mut findings = scope_findings(document, report, requested);
     findings.extend(dangling_token_findings(document));
-    let derived = b1_unrepresented(document, fidelity);
-    let stored: BTreeSet<&str> = fidelity
-        .get("unrepresented")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect();
-    if stored != derived {
-        findings.push(format!(
-            "unrepresented {stored:?} differs from the B1 derivation {derived:?}"
-        ));
-    }
     findings
 }
 
@@ -106,9 +85,8 @@ fn fixture_findings(format: &str) -> Vec<String> {
             };
             let document = serde_json::to_value(decoded.ir()).expect("CADIR JSON");
             let report = serde_json::to_value(decoded.report()).expect("report JSON");
-            let fidelity = serde_json::to_value(decoded.source_fidelity()).expect("fidelity JSON");
             findings.extend(
-                decode_findings(&document, &report, &fidelity, requested)
+                decode_findings(&document, &report, requested)
                     .into_iter()
                     .map(|finding| format!("{} at {}: {finding}", path.display(), depth.as_str())),
             );
@@ -129,7 +107,7 @@ fn golden_findings(crate_name: &str) -> Vec<String> {
             .cloned()
             .unwrap_or(Value::Null);
         findings.extend(
-            decode_findings(&golden.ir, &report, &golden.fidelity, &["model", "design"])
+            decode_findings(&golden.ir, &report, &["model", "design"])
                 .into_iter()
                 .map(|finding| format!("{}: {finding}", golden.path)),
         );

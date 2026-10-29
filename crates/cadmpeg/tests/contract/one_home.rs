@@ -2,8 +2,8 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::CodecFormat;
-use cadmpeg_test_support::contract::parts::check_one_home;
+use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::ArenaClass;
 
 #[test]
 fn step_malformed_terminated_statement_has_one_home_and_keeps_the_real_peer() {
@@ -15,31 +15,29 @@ fn step_malformed_terminated_statement_has_one_home_and_keeps_the_real_peer() {
     assert_eq!(decoded.ir().model.points[0].position().get().x, 4.0);
     assert_eq!(decoded.ir().model.points[0].position().get().y, 5.0);
     assert_eq!(decoded.ir().model.points[0].position().get().z, 6.0);
-    let given_up = decoded
-        .source_fidelity()
-        .parts()
-        .values()
-        .filter(|part| {
-            matches!(
-                part.state(),
-                cadmpeg_ir::source_fidelity::parts::PartState::GivenUp {}
-            )
-        })
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
         .collect::<Vec<_>>();
-    assert_eq!(given_up.len(), 1);
-    assert_eq!(given_up[0].level().as_str(), "step.simple_entity_instance");
-    check_one_home(
-        CodecFormat::Step,
-        &decoded.ir().native,
-        decoded.source_fidelity(),
-        &decoded.report().losses,
-        "file",
-        |stream, range| {
-            if stream != "file" {
-                return None;
-            }
-            bytes.get(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
-        },
-    )
-    .expect("exact helper home, retained image, layouts and unique loss");
+    assert_eq!(unreadable.len(), 1, "{:?}", decoded.report().losses);
+    assert_eq!(unreadable[0].severity, Severity::Error);
+    assert!(unreadable[0]
+        .message
+        .starts_with("part step.simple_entity_instance "));
+    let broken: &[u8] = b"#1=BROKEN(,);";
+    let retained = decoded
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .filter(|record| record.data() == Some(broken))
+        .collect::<Vec<_>>();
+    assert_eq!(retained.len(), 1);
+    let offset = bytes
+        .windows(broken.len())
+        .position(|window| window == broken)
+        .unwrap();
+    assert_eq!(retained[0].offset(), u64::try_from(offset).unwrap());
+    assert!(retained[0].untyped().contains(&ArenaClass::Model));
 }

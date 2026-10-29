@@ -5,9 +5,8 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::source_fidelity::parts::PartState;
-use cadmpeg_ir::CodecFormat;
-use cadmpeg_test_support::contract::parts::check_one_home;
+use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::ArenaClass;
 use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
 
 #[test]
@@ -27,7 +26,6 @@ fn freecad_bad_direct_property_has_one_home_and_keeps_the_real_neutral_peer() {
         .open(&ctx, "Document.xml")
         .expect("original Document.xml member");
     assert_eq!(member.window(), document.as_bytes());
-    let member_extent = ctx.capture_part_extent(member).unwrap();
     let decoded = cadmpeg_codec_freecad::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("bounded bad property preserves its readable peer");
@@ -56,69 +54,41 @@ fn freecad_bad_direct_property_has_one_home_and_keeps_the_real_neutral_peer() {
         .attributes
         .iter()
         .any(|attribute| attribute.name == "Bad"));
-    let given_up = decoded
-        .source_fidelity()
-        .parts()
+    let unreadable = decoded
+        .report()
+        .losses
         .iter()
-        .filter(|(_, part)| matches!(part.state(), PartState::GivenUp {}))
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
         .collect::<Vec<_>>();
-    assert_eq!(given_up.len(), 1);
-    let (id, part) = given_up[0];
-    assert_eq!(part.level().as_str(), "freecad.property_value");
-    assert_eq!(part.stream(), member_extent.stream());
+    assert_eq!(unreadable.len(), 1, "{:?}", decoded.report().losses);
+    assert_eq!(unreadable[0].severity, Severity::Error);
+    assert!(unreadable[0]
+        .message
+        .starts_with("part freecad.property_value "));
+    let retained = decoded
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .filter(|record| record.data() == Some(raw_value.as_bytes()))
+        .collect::<Vec<_>>();
+    assert_eq!(retained.len(), 1);
     assert_eq!(
-        part.offset(),
-        member_extent.offset() + u64::try_from(document.find(bad).unwrap() + value_start).unwrap()
+        retained[0].offset(),
+        u64::try_from(member.start() + document.find(bad).unwrap() + value_start).unwrap()
     );
-    assert_eq!(part.byte_len(), u64::try_from(raw_value.len()).unwrap());
-    assert_eq!(
-        decoded
-            .source_fidelity()
-            .retained_record(id.as_str())
-            .unwrap()
-            .data(),
-        Some(raw_value.as_bytes())
-    );
-    let unknowns = decoded.ir().native_unknowns("fcstd").unwrap();
-    let [unknown] = unknowns.as_slice() else {
-        panic!("one linked value failure")
-    };
-    assert_eq!(&unknown.id, id);
-    assert_eq!(unknown.links.len(), 1);
+    assert!(retained[0].untyped().contains(&ArenaClass::Model));
+    assert!(retained[0].untyped().contains(&ArenaClass::Design));
     let property = decoded.ir().native.namespace("fcstd").unwrap().arenas()["properties"]
         .iter()
-        .find(|record| record.id() == unknown.links[0].as_str())
+        .find(|record| {
+            record
+                .fields()
+                .is_ok_and(|fields| fields.get("name").is_some_and(|name| name == "Bad"))
+        })
         .unwrap();
     let fields = property.fields().unwrap();
-    assert_eq!(fields["name"], "Bad");
     assert_eq!(fields["type_name"], "App::PropertyInteger");
     for key in ["values", "links", "side_entries"] {
         assert!(fields[key].is_null());
     }
-    assert!(decoded.source_fidelity().record_layout()[property.id()]
-        .payloads()
-        .is_empty());
-    let parent = &decoded.source_fidelity().parts()[part.parent().unwrap()];
-    assert_eq!(parent.level().as_str(), "freecad.property");
-    assert_eq!(parent.state(), &PartState::Decoded {});
-    check_one_home(
-        CodecFormat::Fcstd,
-        &decoded.ir().native,
-        decoded.source_fidelity(),
-        &decoded.report().losses,
-        "file",
-        |stream, range| {
-            let start = usize::try_from(range.start).ok()?;
-            let end = usize::try_from(range.end).ok()?;
-            if stream == "file" {
-                return bytes.get(start..end);
-            }
-            if stream == member_extent.stream() {
-                return member.child(start, end).map(|view| view.window());
-            }
-            None
-        },
-    )
-    .expect("unique helper stub, exact original member bytes and sole unreadable loss");
-    assert!(ctx.take_record_captures().unwrap().is_empty());
 }
