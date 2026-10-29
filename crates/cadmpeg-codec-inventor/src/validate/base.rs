@@ -14,16 +14,59 @@ pub(super) fn valid(
     source: &PmDcFeature,
     result: Option<&FeatureResultTopology>,
 ) -> bool {
-    let Some((input, output)) = base::wrappers(source, |ordinal| {
+    let mut labels = data.pm_dc_feature_labels.iter().filter(|label| {
+        label.identity.segment_token == source.identity.segment_token
+            && label.header.owner.record_ordinal() == Some(source.identity.record_ordinal)
+    });
+    let Some(label) = labels.next() else {
+        return false;
+    };
+    if labels.next().is_some() {
+        return false;
+    }
+    let property_at = |ordinal| {
         let mut matches = data.pm_dc_feature_properties.iter().filter(|property| {
             property.identity.segment_token == source.identity.segment_token
                 && property.identity.record_ordinal == ordinal
         });
         let property = matches.next()?;
         matches.next().is_none().then_some(property)
-    }) else {
+    };
+    let Some((input, output)) = base::wrappers(source, label.class_id(), property_at) else {
         return false;
     };
+    if label.class_id() == crate::feature::derived::CLASS_ID {
+        if !label.participants.references().is_empty() {
+            return false;
+        }
+        let Some(operands) = crate::feature::derived::operands(
+            source,
+            property_at,
+            |ordinal| {
+                let mut records = data.records.iter().filter(|record| {
+                    record.token == source.identity.segment_token.as_str()
+                        && record.ordinal == ordinal
+                });
+                let record = records.next()?;
+                records
+                    .next()
+                    .is_none()
+                    .then_some((record.type_id.clone(), record.payload_len))
+            },
+            &data.pm_dc_transforms,
+        ) else {
+            return false;
+        };
+        if feature.source_properties.get("derived_source") != Some(&operands.source.id())
+            || feature.source_properties.get("derived_transform") != Some(&operands.transform.id())
+        {
+            return false;
+        }
+    } else if feature.source_properties.contains_key("derived_source")
+        || feature.source_properties.contains_key("derived_transform")
+    {
+        return false;
+    }
     let Some(output_reference) = base::surface_reference(output) else {
         return false;
     };

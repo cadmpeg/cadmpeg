@@ -253,6 +253,14 @@ Records of type `553a6b21d31123656000f587346bfbb0` in the `AmDc` segment start w
 
 **Need.** The complete flange and bend naming tuples, their integer roles, and the rule for an edge named through its adjacent faces must be exact before generated `local_id` values can be assigned. A new neutral feature must not assign an edge role from geometric proximity or from record order.
 
+### DE-11. Derived-part source construction
+
+**Question.** Which fields select the external source document and revision, define source update dependencies, and define the companion tagging operation? Which component fields extend the version-19 form?
+
+**Known.** Section 13.4 defines the version-19 derived stored-body form, its source and result wrappers, its component references, and its transform reference. The stored-body Base family includes this derived form. Its result uses the current-model body join independently of the component transform.
+
+**Need.** Component references outside the transform require complete record grammars and source-document joins. Source revision selection and update dependencies require exact operands before external construction can replay. The additional component fields in other segment versions, and nonempty component lists, require their construction roles. The companion tagging operation requires its complete effect and selection rules.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

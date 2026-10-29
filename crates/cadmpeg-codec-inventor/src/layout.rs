@@ -4,6 +4,48 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
+/// Byte offsets for the `pm_dc_derived_source_field` record.
+///
+/// Spec §13.4. Record length 4 B.
+///
+/// ```text
+/// Offset starts after the segment-major-19 content header.
+/// ```
+pub(crate) mod pm_dc_derived_source_field {
+    /// Record length in bytes. Spec §13.4.
+    pub(crate) const LEN: usize = 4;
+}
+
+/// Byte offsets for the `pm_dc_derived_component_fields` record.
+///
+/// Spec §13.4. Record length 32 B.
+///
+/// ```text
+/// Offsets start after the segment-major-19 state content header.
+/// ```
+pub(crate) mod pm_dc_derived_component_fields {
+    /// Record length in bytes. Spec §13.4.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `state` (`i32`, little-endian). Spec §13.4.
+    #[cfg(test)]
+    pub(crate) const STATE: usize = 0;
+    /// Stated value of `state` (`i32`). Spec §13.4.
+    pub(crate) const STATE_VALUE: i32 = -1;
+    /// Offset of `references` (`u32[4]`, little-endian). Spec §13.4.
+    #[cfg(test)]
+    pub(crate) const REFERENCES: usize = 4;
+    /// Offset of `marker` (`u32`, little-endian). Spec §13.4.
+    #[cfg(test)]
+    pub(crate) const MARKER: usize = 20;
+    /// Stated value of `marker` (`u32`). Spec §13.4.
+    pub(crate) const MARKER_VALUE: u32 = 0x3000_0004;
+    /// Offset of `count` (`u32`, little-endian). Spec §13.4.
+    #[cfg(test)]
+    pub(crate) const COUNT: usize = 24;
+    /// Stated value of `count` (`u32`). Spec §13.4.
+    pub(crate) const COUNT_VALUE: u32 = 0x0000_0000;
+}
+
 /// Byte offsets for the `pm_dc_content_header` record.
 ///
 /// Spec §12. Record length 22 B.

@@ -788,6 +788,20 @@ In the surface-body reference form, metadata section 7 has a segment-pair form w
 The zero-extension external form has `key_extension = 0` and selects the unique kernel-entity link whose `header_value` is 0 and whose `header_id` equals the external entry's header identifier, in the unique segment whose identifier equals the selected section-7 segment identifier. The current-model Base result form selects a kernel-entity link in the document model root's named PmBRep segment. The link's qualified body reference and the carrier footer's selected key select the same active carrier record. The link's entity identifier joins the unique body with that ASM body key in this carrier. A body key is scoped to its carrier. A result identity can survive later changes to that body; it does not state that the current body is the Base source shape. A result whose body is absent from the current model has no current-body join.
 
 
+The derived stored-body form has feature-label class `eecb298e2c45650820104eb55d062c80`. In segment major version 19 its three property slots select the stored source-body wrapper, the result-body wrapper, and a source property of type `3cc048210042420ba62103b20b7f4891`, respectively. All three references are non-null and qualified. The label participant list is empty. The source-body wrapper has a non-null qualified body reference. The two body wrappers have the stored-source and current-result identity rules above. The source property in segment major version 19 contains the content header followed by one qualified component reference, then ends.
+
+In segment major version 19, a derived component has type `a034363fd31191b5c0000385e89c6b4f` and a state content header with no stamps. Its 32-byte body contains:
+
+```text
+state i32 = -1
+references u32[4]
+marker u32 = 0x30000004
+count u32 = 0
+terminal u32
+```
+
+The component ends after `terminal`. The four references and the terminal reference are non-null qualified references in the same segment. Their target types, in order, are `9f34363fd31191b5c0000385e89c6b4f`, `604d8790d011f8d10008cabc0663dc09`, `184d8790d011f8d10008cabc0663dc09`, `d77e5d25d311f2b5c0000385e89c6b4f`, and `a7fbcb1db64f16cfe979019eae94a4df`. The third reference selects a transform record. The result-body wrapper selects the current-model body independently of that reference.
+
 ### 13.5 Attached plates and bend properties
 
 The 17-property attached-plate form has these slots:

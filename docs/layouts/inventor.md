@@ -9,6 +9,36 @@ Table source: `docs/layouts/inventor.toml`.
 
 Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein stream envelope, UFRxDoc, and kernel-carrier envelope. The Protein page format is tabulated in `docs/layouts/protein.toml`.
 
+## `pm_dc_derived_source_field`
+
+Spec §13.4 · layout: byte offsets · size: 4 B
+
+Offset starts after the segment-major-19 content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `component` | `u32` | little | spec | one qualified component reference |
+
+## `pm_dc_derived_component_fields`
+
+Spec §13.4 · layout: byte offsets · size: 32 B
+
+Offsets start after the segment-major-19 state content header.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/derived.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | state i32 = -1 · value `-1` |
+| 4 | 16 | `references` | `u32[4]` | little | spec | references u32[4] |
+| 20 | 4 | `marker` | `u32` | little | spec | marker u32 = 0x30000004 · value `805306372` |
+| 24 | 4 | `count` | `u32` | little | spec | count u32 = 0 · value `0` |
+| 28 | 4 | `terminal` | `u32` | little | spec | terminal u32 |
+
 ## `pm_dc_content_header`
 
 Spec §12 · layout: byte offsets · size: 22 B
