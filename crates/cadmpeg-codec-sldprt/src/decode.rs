@@ -410,7 +410,8 @@ fn append_design_losses(
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
-        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
+        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitBodyTool,
+        SplitFaceTool,
     };
     use cadmpeg_ir::features::{
         ExtrusionDirectionSource, LoftPointSection, LoftSection, SurfaceBoundary,
@@ -1674,8 +1675,12 @@ fn append_design_losses(
                         || incomplete_body_selection(tools)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
-                FeatureOperation::SplitBody { targets, tools } => {
-                    incomplete_body_selection(targets) || incomplete_face_selection(tools)
+                FeatureOperation::SplitBody { targets, tool } => {
+                    incomplete_body_selection(targets)
+                        || match tool {
+                            SplitBodyTool::Faces(faces) => incomplete_face_selection(faces),
+                            SplitBodyTool::Plane { .. } => false,
+                        }
                 }
                 FeatureOperation::SplitFace { targets, tool } => {
                     incomplete_face_selection(targets)

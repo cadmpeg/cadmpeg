@@ -46,7 +46,7 @@ pub(crate) mod pattern;
 pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
-mod split;
+pub(crate) mod split;
 pub(crate) mod work_plane;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
@@ -1802,6 +1802,7 @@ pub(crate) enum FeatureFamily {
     Revolve,
     Motion,
     Combine,
+    Split,
 }
 
 impl FeatureFamily {
@@ -1826,6 +1827,7 @@ impl FeatureFamily {
                 motion::ROTATE_CLASS_ID,
             ],
             Self::Combine => &[combine::CLASS_ID],
+            Self::Split => &[split::CLASS_ID],
         }
     }
 
@@ -1852,6 +1854,7 @@ impl FeatureFamily {
             Self::Motion if source.properties.references().len() == 13 => 8,
             Self::Motion => 0,
             Self::Combine => 0,
+            Self::Split => 9,
         }
     }
 
@@ -1871,6 +1874,7 @@ impl FeatureFamily {
             Self::Revolve,
             Self::Motion,
             Self::Combine,
+            Self::Split,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -1927,6 +1931,9 @@ impl FeatureFamily {
             ) | (
                 Self::Combine,
                 FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+            ) | (
+                Self::Split,
+                FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
             )
         )
     }
@@ -1956,6 +1963,7 @@ impl FeatureFamily {
                 FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
             ) => Some(Self::Motion),
             FeatureDefinition::Operation(FeatureOperation::Combine { .. }) => Some(Self::Combine),
+            FeatureDefinition::Operation(FeatureOperation::SplitBody { .. }) => Some(Self::Split),
             _ => None,
         }
     }
@@ -2242,6 +2250,7 @@ pub(crate) fn project(
                 }
                 FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
                 FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
+                FeatureFamily::Split => split::project(ctx, feature, label, &index, &history),
             }
             .map(|result| result.map(|(feature, result)| (feature, Some(result))))
             .transpose()?,
@@ -2690,6 +2699,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
                     .into(),
             ),
             FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
+            FeatureFamily::Split => NativeFeatureKind::Other("Split".into()),
         };
     }
     if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {

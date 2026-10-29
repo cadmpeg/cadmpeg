@@ -708,3 +708,77 @@ fn work_plane_features_match_their_work_plane_frames() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
+    use crate::feature::split::tests::solid::{plane_split_at, properties_at};
+    use crate::feature::work_plane::{frame, tests::work_plane};
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let plane = work_plane(42, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let split = plane_split_at(30, 60, 42);
+    let properties = properties_at(60, 2);
+    let mut datum = annotation(plane.id());
+    datum.id = crate::feature::history_feature_id(&plane.identity)?;
+    datum.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::DatumPlane {
+            frame: frame(&plane).ok_or("orthonormal frame")?,
+        },
+    ));
+    let target = cadmpeg_ir::features::BodySelection::Native(properties[7].id());
+    let other = FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+        cadmpeg_ir::identity_key!("other"),
+    );
+    for (tool, mismatches) in [
+        (
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            0,
+        ),
+        (
+            cadmpeg_ir::features::SplitBodyTool::Plane { plane: other },
+            1,
+        ),
+        (
+            cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
+            1,
+        ),
+    ] {
+        let mut data = empty_data();
+        data.pm_dc_work_planes = vec![plane.clone()];
+        data.pm_dc_features = vec![split.clone()];
+        data.pm_dc_feature_properties = properties.clone();
+        data.pm_dc_feature_labels = vec![crate::feature::tests::test_label(
+            30,
+            4,
+            crate::feature::split::CLASS_ID,
+            &[],
+        )];
+        let mut feature = annotation(split.id());
+        feature.id = crate::feature::history_feature_id(&split.identity)?;
+        feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::SplitBody {
+                targets: target.clone(),
+                tool,
+            },
+        ));
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features = vec![datum.clone(), feature];
+        let mut found = Vec::new();
+        super::validate_features(&ctx, &ir, &data, &mut found)?;
+        let count = found
+            .iter()
+            .filter(|finding| {
+                finding.message == "Inventor neutral split does not match its PmDc operands"
+            })
+            .count();
+        assert_eq!(count, mismatches, "{found:?}");
+    }
+    Ok(())
+}

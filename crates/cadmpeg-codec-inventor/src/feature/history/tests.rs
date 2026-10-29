@@ -548,3 +548,73 @@ fn a_work_plane_built_from_a_nested_work_plane_follows_it() {
     let projection = project_work_planes(&inventory, sketches);
     assert_eq!(projection.features[0].name.as_deref(), Some("Work Plane0"));
 }
+
+#[test]
+fn solid_split_binds_its_plane_to_the_placed_work_plane_feature() {
+    use crate::feature::split::tests::solid::{plane_split_at, properties_at};
+    for (plane, root, binds) in [
+        (42, [42, 41, 30, 1], true),
+        (44, [42, 41, 30, 1], false),
+        (43, [42, 41, 30, 1], false),
+        (42, [41, 30, 42, 1], false),
+    ] {
+        let (mut inventory, sketches) = work_plane_inventory();
+        let folder = ClassId::try_from("0".repeat(32)).expect("class");
+        let mut members = root.to_vec();
+        members.extend([2, 3, 4, 5, 6]);
+        inventory.labels[0] = label(100, 0, "", folder, &members);
+        inventory.labels.push(label(
+            150,
+            30,
+            "Split1",
+            crate::feature::split::CLASS_ID,
+            &[],
+        ));
+        inventory.features.push(plane_split_at(30, 60, plane));
+        inventory.properties.extend(properties_at(60, 2));
+        let projection = project_work_planes(&inventory, sketches);
+        let split = projection
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Split1"))
+            .expect("split feature");
+        assert_eq!(split.ordinal, if root[0] == 42 { 4 } else { 3 });
+        let work_plane = projection
+            .features
+            .iter()
+            .find(|feature| feature.native_ref == Some(inventory.work_planes[1].id()))
+            .expect("work-plane feature");
+        match split.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                tool: cadmpeg_ir::features::SplitBodyTool::Plane { plane },
+                ..
+            }) => {
+                assert!(binds, "{plane}");
+                assert_eq!(plane, &work_plane.id);
+                assert_eq!(split.dependencies.as_slice(), std::slice::from_ref(plane));
+                let mut ir = cadmpeg_ir::document::CadIr::empty();
+                ir.model.features = projection.features.clone();
+                let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+                    .expect("validate projection");
+                assert!(
+                    !report
+                        .findings
+                        .iter()
+                        .any(|finding| finding.message.contains("split-body tool plane")),
+                    "{:?}",
+                    report.findings
+                );
+                let result = projection
+                    .result_topologies
+                    .iter()
+                    .find(|result| result.output_of == split.id)
+                    .expect("split result");
+                assert_eq!(result.bodies().len(), 2);
+            }
+            FeatureDefinition::Operation(FeatureOperation::Native { .. }) => {
+                assert!(!binds, "{plane}");
+            }
+            other => panic!("unexpected split definition {other:?}"),
+        }
+    }
+}

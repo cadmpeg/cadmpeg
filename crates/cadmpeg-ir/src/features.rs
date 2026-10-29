@@ -3588,13 +3588,13 @@ pub enum FeatureOperation {
         /// Side retained by the trim.
         keep: BodyTrimSide,
     },
-    /// Partitions selected bodies with selected surface faces while retaining
-    /// every resulting side.
+    /// Partitions selected bodies with surface faces or a datum plane while
+    /// retaining every resulting side.
     SplitBody {
         /// Bodies partitioned by the operation.
         targets: BodySelection,
-        /// Surface faces extended as necessary to partition the targets.
-        tools: FaceSelection,
+        /// Geometry that partitions the target bodies.
+        tool: SplitBodyTool,
     },
     /// Partitions selected faces along selected sketch curves while retaining
     /// every resulting face region.
@@ -9133,6 +9133,21 @@ impl<'de> Deserialize<'de> for GeometryImportPath {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Self::try_from(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
+}
+
+/// Geometry used to partition bodies in a `SplitBody` operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum SplitBodyTool {
+    /// Surface faces extended as necessary to partition the targets.
+    Faces(FaceSelection),
+    /// Datum-plane feature extended through the target bodies.
+    Plane {
+        /// Earlier datum-plane feature supplying the splitting plane.
+        plane: FeatureId,
+    },
 }
 
 /// Geometry used to partition faces in a `SplitFace` operation.

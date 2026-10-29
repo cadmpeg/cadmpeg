@@ -146,7 +146,7 @@ fn split_body_path_tool_keeps_group_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: FaceSelection::Native(ref tool), ..
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(ref tool)), ..
         }) if tool == &groups[0].id
     ));
 }
@@ -162,7 +162,7 @@ fn split_body_face_tool_keeps_native_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: FaceSelection::Native(ref native), ..
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(ref native)), ..
         }) if native == &tool.id
     ));
 }
@@ -185,7 +185,7 @@ fn split_body_historical_face_tool_keeps_native_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: FaceSelection::Historical { ref native, .. }, ..
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { ref native, .. }), ..
         }) if native.as_str() == tool.id
     ));
 }
