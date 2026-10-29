@@ -79,7 +79,12 @@ fn distinguishes_stored_base_and_application_owned_features() {
         crate::native::native_id("object", "BaseFeature")
     );
     assert_eq!(census[0].type_name, "PartDesign::FeatureBase");
-    assert_eq!(census[0].feature, base.id.as_str());
+    // CADIR v8 #213: resolve the history relation through neutral.native_ref.
+    assert_eq!(base.native_ref.as_deref(), Some(census[0].object.as_str()));
+    assert!(serde_json::to_value(&census[0])
+        .unwrap()
+        .get("feature")
+        .is_none());
     assert_eq!(census[0].semantic_kind, "native");
     assert!(!census[0].neutral());
     assert!(!census[0].post_processed);

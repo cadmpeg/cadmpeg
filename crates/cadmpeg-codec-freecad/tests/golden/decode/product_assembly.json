@@ -2948,6 +2948,7 @@
         {
           "id": "fcstd:model:body#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1"
           ]
@@ -2955,6 +2956,7 @@
         {
           "id": "fcstd:model:body#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1"
           ]
@@ -3769,6 +3771,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:30",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -3782,6 +3785,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:8",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
@@ -3795,6 +3799,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:26",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
@@ -3808,6 +3813,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:18",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -3821,6 +3827,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:15",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -3834,6 +3841,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:5",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -3847,6 +3855,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:25%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:20",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -3860,6 +3869,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:26%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:10",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
@@ -3873,6 +3883,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:29",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -3886,6 +3897,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:12",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -3899,6 +3911,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:7%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:25",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -3912,6 +3925,7 @@
           },
           "end": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6%40location1",
           "id": "fcstd:model:edge#BracketPrototype:Shape:BracketPrototype.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:22",
           "start": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -3925,6 +3939,7 @@
           },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1%40location1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:9",
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -3938,6 +3953,7 @@
           },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1%40location1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:13",
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3%40location1",
           "tolerance": 1e-7
         },
@@ -3951,6 +3967,7 @@
           },
           "end": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3%40location1",
           "id": "fcstd:model:edge#PinPrototype:Shape:PinPrototype.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:5",
           "start": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3%40location1",
           "tolerance": 1e-7
         }
@@ -3964,6 +3981,7 @@
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:1",
@@ -3977,6 +3995,7 @@
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:31",
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:6",
@@ -3990,6 +4009,7 @@
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:2",
@@ -4003,6 +4023,7 @@
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:23",
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:4",
@@ -4016,6 +4037,7 @@
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:5",
@@ -4029,6 +4051,7 @@
               "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#BracketPrototype:Shape:BracketPrototype.Shape.brp:3",
@@ -4042,6 +4065,7 @@
               "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:3",
           "sense": "reversed",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12%40location1",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:3",
@@ -4055,6 +4079,7 @@
               "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:11",
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12%40location1",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:1",
@@ -4068,6 +4093,7 @@
               "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:7",
           "sense": "forward",
           "shell": "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12%40location1",
           "surface": "fcstd:model:surface#PinPrototype:Shape:PinPrototype.Shape.brp:2",
@@ -4087,7 +4113,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1",
-          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1%3A1"
+          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:10%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -4100,7 +4127,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1",
-          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1%3A1"
+          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:20%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:32"
         },
         {
           "boundary": {
@@ -4113,7 +4141,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1",
-          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1%3A1"
+          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:24%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -4126,7 +4155,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1",
-          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1%3A1"
+          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:28%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -4139,7 +4169,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1",
-          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1%3A1"
+          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:30%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -4152,7 +4183,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1",
-          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1%3A1"
+          "id": "fcstd:model:loop#BracketPrototype:Shape:BracketPrototype.Shape.brp:32%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:4"
         },
         {
           "boundary": {
@@ -4162,7 +4194,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1",
-          "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1%3A1"
+          "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:11%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:4"
         },
         {
           "boundary": {
@@ -4175,7 +4208,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1",
-          "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1%3A1"
+          "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:7%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:12"
         },
         {
           "boundary": {
@@ -4185,7 +4219,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1",
-          "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1%3A1"
+          "id": "fcstd:model:loop#PinPrototype:Shape:PinPrototype.Shape.brp:9%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:8"
         }
       ],
       "occurrences": [
@@ -5969,6 +6004,7 @@
         {
           "body": "fcstd:model:body#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1",
           "id": "fcstd:model:region#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#BracketPrototype:Shape:BracketPrototype.Shape.brp:33%40location1"
           ]
@@ -5976,6 +6012,7 @@
         {
           "body": "fcstd:model:body#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1",
           "id": "fcstd:model:region#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#PinPrototype:Shape:PinPrototype.Shape.brp:12%40location1"
           ]
@@ -6011,6 +6048,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:2",
           "region": "fcstd:model:region#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1"
         },
         {
@@ -6029,6 +6067,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:2",
           "region": "fcstd:model:region#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1"
         }
       ],
@@ -6271,51 +6310,61 @@
       "vertices": [
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:6",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:7",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:17",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:9",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:14%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:19",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:16",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:11",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BracketPrototype:Shape:BracketPrototype.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#BracketPrototype:Shape:BracketPrototype.Shape.brp:topology-use:21",
           "point": "fcstd:model:point#BracketPrototype:Shape:BracketPrototype.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:10",
           "point": "fcstd:model:point#PinPrototype:Shape:PinPrototype.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#PinPrototype:Shape:PinPrototype.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#PinPrototype:Shape:PinPrototype.Shape.brp:topology-use:6",
           "point": "fcstd:model:point#PinPrototype:Shape:PinPrototype.Shape.brp:3%40location1",
           "tolerance": 1e-7
         }
@@ -6343,7 +6392,8 @@
           "product_nodes": 11,
           "properties": 328,
           "shape_payloads": 2,
-          "string_tables": 1
+          "string_tables": 1,
+          "topology_uses": 47
         }
       },
       "__arena_sha256": {
@@ -6364,7 +6414,8 @@
           "objects": "054d11ea3e1156c6c1183ef431ac48c85171c1edf532d0521b1c98e672996b9e",
           "properties": "ddb61c52fdf893f147faabd475a07d5da961a42763044051268d80bfc4aa2b7b",
           "shape_payloads": "8424ca604da8f344245b9dbc196fe7fe3db65cff0a2b91447545a4ff7ea086c7",
-          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
+          "topology_uses": "2e7fa19c03f83d12be056df5f687c2e30997f80a6f1e3e3ba1404a78aeb466d3"
         }
       },
       "__arena_values": {
@@ -15222,7 +15273,7 @@
       }
     },
     "metadata": {
-      "document_local_sha256": "69e998263e9f04c278fe1e2daeb5eb9e5ffd3f26a94ab231f79c95e2cdf40e53",
+      "document_local_sha256": "92b882df8533080ad4515919d0eae5f03d33d66a2b1e97090f66be3edf320402",
       "fcstd.archive_entry_count": "13",
       "fcstd.object_count": "24",
       "fcstd.physical_archive_bytes": "7109",

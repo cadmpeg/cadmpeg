@@ -36,3 +36,5 @@ pub(crate) fn entry_fixture(
     crate::test_support::source_fidelity::EntryFixture::try_new(id, name, role, references, data)
         .expect("valid entry fixture")
 }
+
+pub(crate) mod topology;

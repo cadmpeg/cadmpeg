@@ -8,9 +8,10 @@ use super::{
 };
 use crate::brep::{
     surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation,
-    TextOrientation, TextShapeKind, TextShapeUse, TextSurface, TextTShape, TextTShapeGeometry,
+    TextOrientation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
 };
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
+use crate::test_support::topology::geometry_for_kind;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -43,35 +44,6 @@ fn test_indexed_polygon(
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<IndexedPolygon, CodecError> {
     IndexedPolygon::try_new(nodes, parameters, deflection)
-}
-
-fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
-    match kind {
-        TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
-            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            point: cadmpeg_ir::features::FinitePoint3::ZERO,
-            representations: Vec::new(),
-        },
-        TextShapeKind::Edge => TextTShapeGeometry::Edge {
-            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            same_parameter: false,
-            same_range: false,
-            degenerated: false,
-            representations: Vec::new(),
-        },
-        TextShapeKind::Face => TextTShapeGeometry::Face {
-            natural_restriction: false,
-            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            surface: None,
-            location: crate::brep::LocationRef::Identity,
-            triangulation: None,
-        },
-        TextShapeKind::Wire => TextTShapeGeometry::Wire,
-        TextShapeKind::Shell => TextTShapeGeometry::Shell,
-        TextShapeKind::Solid => TextTShapeGeometry::Solid,
-        TextShapeKind::CompSolid => TextTShapeGeometry::CompSolid,
-        TextShapeKind::Compound => TextTShapeGeometry::Compound,
-    }
 }
 
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
@@ -1525,9 +1497,26 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
         .expect("element maps");
     let groups = &maps[0].maps[0].groups;
-    assert_eq!(groups[0].names[1][0].topology_ids.len(), 2);
-    assert_eq!(groups[1].names[1][0].topology_ids.len(), 2);
-    assert_eq!(groups[1].names[2][0].topology_ids.len(), 2);
+    // CADIR v8 #213 removes native topology_ids. Query the same source
+    // selectors through CURRENT neutral.native_ref, preserving both roots.
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let inverse = super::current_bindings(&ctx, result.ir()).unwrap();
+    let count = |group: usize, index| {
+        inverse
+            .selected_records(&maps[0].property, &groups[group].indexed_name, index)
+            .1
+            .count()
+    };
+    assert_eq!(count(0, 1), 2);
+    assert_eq!(count(1, 1), 2);
+    assert_eq!(count(1, 2), 2);
+    // DeletedEdgeStable remains a native historical name with no source edge.
+    assert_eq!(groups[0].names[2][0].encoded, ";DeletedEdgeStable.0.a");
+    let (linked, missing) = inverse.selected_records(&maps[0].property, &groups[0].indexed_name, 2);
+    assert!(!linked);
+    assert_eq!(missing.count(), 0);
+    let native = serde_json::to_value(&maps[0]).unwrap();
+    assert!(native.to_string().find("topology_ids").is_none());
     assert_valid_document(result.ir());
 }
 

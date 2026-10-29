@@ -45,6 +45,7 @@
         "native.fcstd.properties": 36,
         "native.fcstd.shape_payloads": 1,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 13,
         "occurrences": 0,
         "parameters": 0,
         "pcurves": 6,
@@ -286,6 +287,24 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:9": "regenerated"
               }
             },
             "unknowns": {

@@ -8663,7 +8663,6 @@ pub(crate) fn census(
             id: crate::native::native_child_id("design-census", object.id(), "projection"),
             object: object.id().to_owned(),
             type_name: object.type_name.clone(),
-            feature: feature.id.as_str().to_owned(),
             semantic_kind,
             post_processed,
         });

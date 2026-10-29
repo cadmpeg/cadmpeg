@@ -48,6 +48,7 @@
         "native.fcstd.properties": 54,
         "native.fcstd.shape_payloads": 2,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 23,
         "occurrences": 0,
         "parameters": 0,
         "pcurves": 0,
@@ -165,6 +166,16 @@
           "scope": "namespaced"
         },
         "message": "the fcstd write omits 1 native record(s) from `fcstd.shape_payloads`: fcstd:native:shape-payload#ConicWitness:InternalShape:ConicWitness.InternalShape.brp",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 5 native record(s) from `fcstd.topology_uses`: fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:10, fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:13, fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:17, fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:2, fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:6",
         "severity": "info"
       }
     ],
@@ -313,6 +324,29 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:9": "regenerated"
               }
             },
             "unknowns": {

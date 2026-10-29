@@ -10,6 +10,7 @@ pub(crate) mod frame;
 pub(crate) mod joint;
 pub(crate) mod object_declaration;
 pub(crate) mod object_identity;
+pub(crate) mod source_use;
 
 use crate::attachment::MapModeIndex;
 use cadmpeg_ir::units::FiniteVector;
@@ -30,6 +31,7 @@ pub(crate) const ARENAS: &[&str] = &[
     "extensions",
     "properties",
     "shape_payloads",
+    "topology_uses",
     "carrier_census",
     "string_tables",
     "product_nodes",
@@ -89,8 +91,6 @@ pub(crate) struct DesignCensusRecord {
     pub(crate) object: String,
     /// Persisted runtime type.
     pub(crate) type_name: String,
-    /// Neutral history feature projected from the object.
-    pub(crate) feature: String,
     /// Stable CADIR feature-definition family name.
     pub(crate) semantic_kind: String,
     /// Whether topology post-processing composition wraps the operation.
@@ -105,11 +105,11 @@ impl DesignCensusRecord {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DesignCensusRecordWire {
     id: String,
     object: String,
     type_name: String,
-    feature: String,
     semantic_kind: String,
     neutral: bool,
     post_processed: bool,
@@ -120,7 +120,6 @@ struct DesignCensusRecordOut<'a> {
     id: &'a str,
     object: &'a str,
     type_name: &'a str,
-    feature: &'a str,
     semantic_kind: &'a str,
     neutral: bool,
     post_processed: bool,
@@ -132,7 +131,6 @@ impl Serialize for DesignCensusRecord {
             id: &self.id,
             object: &self.object,
             type_name: &self.type_name,
-            feature: &self.feature,
             semantic_kind: &self.semantic_kind,
             neutral: self.neutral(),
             post_processed: self.post_processed,
@@ -149,7 +147,6 @@ impl TryFrom<DesignCensusRecordWire> for DesignCensusRecord {
             id: wire.id,
             object: wire.object,
             type_name: wire.type_name,
-            feature: wire.feature,
             semantic_kind: wire.semantic_kind,
             post_processed: wire.post_processed,
         };

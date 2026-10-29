@@ -777,6 +777,7 @@
         {
           "id": "fcstd:model:body#Model:Shape:Model.Shape.brp:34%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#Model:Shape:Model.Shape.brp:34%40location1"
           ]
@@ -1612,6 +1613,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:30",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -1625,6 +1627,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:8",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
@@ -1638,6 +1641,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:26",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
@@ -1651,6 +1655,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:18",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -1664,6 +1669,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:15",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -1677,6 +1683,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:5",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -1690,6 +1697,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:25%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:20",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -1703,6 +1711,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:26%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:10",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
@@ -1716,6 +1725,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:29",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
@@ -1729,6 +1739,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:12",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -1742,6 +1753,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:7%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:25",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
@@ -1755,6 +1767,7 @@
           },
           "end": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
           "id": "fcstd:model:edge#Model:Shape:Model.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:22",
           "start": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         }
@@ -1768,6 +1781,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:33",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:1",
@@ -1781,6 +1795,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:31",
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:6",
@@ -1794,6 +1809,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:27",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:2",
@@ -1807,6 +1823,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:23",
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:4",
@@ -1820,6 +1837,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:13",
           "sense": "reversed",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:5",
@@ -1833,6 +1851,7 @@
               "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:3",
           "sense": "forward",
           "shell": "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1",
           "surface": "fcstd:model:surface#Model:Shape:Model.Shape.brp:3",
@@ -1904,7 +1923,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:10%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:10%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:34"
         },
         {
           "boundary": {
@@ -1917,7 +1937,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:20%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:20%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:32"
         },
         {
           "boundary": {
@@ -1930,7 +1951,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:24%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:24%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:28"
         },
         {
           "boundary": {
@@ -1943,7 +1965,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:28%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:28%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:24"
         },
         {
           "boundary": {
@@ -1956,7 +1979,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:30%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:30%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:14"
         },
         {
           "boundary": {
@@ -1969,7 +1993,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#Model:Shape:Model.Shape.brp:32%40location1",
-          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%40location1%3A1"
+          "id": "fcstd:model:loop#Model:Shape:Model.Shape.brp:32%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:4"
         }
       ],
       "occurrences": [],
@@ -2697,6 +2722,7 @@
         {
           "body": "fcstd:model:body#Model:Shape:Model.Shape.brp:34%40location1",
           "id": "fcstd:model:region#Model:Shape:Model.Shape.brp:34%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:1",
           "shells": [
             "fcstd:model:shell#Model:Shape:Model.Shape.brp:33%40location1"
           ]
@@ -2866,6 +2892,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:2",
           "region": "fcstd:model:region#Model:Shape:Model.Shape.brp:34%40location1"
         }
       ],
@@ -3032,41 +3059,49 @@
       "vertices": [
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:6",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:7",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:17",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:9",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:14%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:19",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:16",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:11",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#Model:Shape:Model.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:21",
           "point": "fcstd:model:point#Model:Shape:Model.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
@@ -3094,7 +3129,8 @@
           "product_nodes": 0,
           "properties": 162,
           "shape_payloads": 1,
-          "string_tables": 1
+          "string_tables": 1,
+          "topology_uses": 34
         }
       },
       "__arena_sha256": {
@@ -3102,7 +3138,7 @@
           "annotations": "fc4aa87de03311dda60040d0cb3d936be17db5df30d5cbbff737376b85362555",
           "applications": "23e16a11390a3900af9e33f2f84f1cd281d5c61708277e0ebe87f550e748fc90",
           "carrier_census": "efa84ccb5acbee7f3408b19c2d98278e5324cb914eae7422f6137782c9f45aec",
-          "design_census": "36fa88b89a1dbe73989e2f0e0d30bcbbd58c94c8d73b8cef24757d8207dcfef3",
+          "design_census": "389b7225d9a487541f263a6ad1ee5d24993fb853ba6d5495efaf797613ad9983",
           "document": "49c32df2c71ab8d28178fc633c063765d5d41f35656d27686d0fabd47fb26485",
           "drawings": "efd7da12db41130568e33bb9b42336cfbca2cdb33f9b521d33d4886e487a9b1b",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -3116,7 +3152,8 @@
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "3763a80b635bd07791c9bdd6a26b72188717acad401bcc502a8dde0fc8b8d41c",
           "shape_payloads": "d371e79d860d5c655eb5abef73453c570b741dd9321fe278f5d840a709a687cf",
-          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
+          "topology_uses": "bc672b1f00ef0ac1864c4cd8a6c6f784ebaea24636431f9ae79168d71fc1f746"
         }
       },
       "__arena_values": {
@@ -6506,7 +6543,7 @@
       }
     },
     "metadata": {
-      "document_local_sha256": "f0da79b3b399e4e607b46ee3ca0eafa55f51ec8e3e1ad3ca8deb75805ddb94aa",
+      "document_local_sha256": "4008c1adf5c88ff32c2404a05a6a55d89cc81524859aad3f1580a847ba2f14fd",
       "fcstd.archive_entry_count": "5",
       "fcstd.object_count": "8",
       "fcstd.physical_archive_bytes": "5014",

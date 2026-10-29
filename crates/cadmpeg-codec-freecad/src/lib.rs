@@ -162,6 +162,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
+    if let Err(error) = topology_transfer::validate_source_uses(ctx, namespace, &shape_payloads) {
+        if matches!(error, CodecError::ResourceLimit(_)) {
+            return Err(error);
+        }
+        findings.push(finding(Check::NativeLinks, error.to_string(), None));
+    }
     if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -573,17 +579,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             ));
         }
     }
-    let topology_ids = ir
-        .model
-        .vertices
-        .iter()
-        .map(|entity| entity.id.as_str())
-        .chain(ir.model.edges.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.loops.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.faces.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.shells.iter().map(|entity| entity.id.as_str()))
-        .chain(ir.model.bodies.iter().map(|entity| entity.id.as_str()))
-        .collect::<HashSet<_>>();
     for map in &element_maps {
         if !property_ids.contains(map.property.as_str())
             || map
@@ -629,17 +624,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                         Some(map.id.clone()),
                     ));
                 }
-            }
-            if name
-                .topology_ids
-                .iter()
-                .any(|id| !topology_ids.contains(id.as_str()))
-            {
-                findings.push(finding(
-                    Check::ReferentialIntegrity,
-                    format!("{} references missing neutral topology", map.id),
-                    Some(map.id.clone()),
-                ));
             }
         }
     }
@@ -995,7 +979,7 @@ impl CodecBackend for FcstdCodec {
                 &entry_records,
                 &entry_sources,
             )?;
-            let (string_tables, mut element_maps) = element_map::parse(
+            let (string_tables, element_maps) = element_map::parse(
                 &property_reader,
                 document_xml,
                 scan.document.file_version.value(),
@@ -1169,7 +1153,6 @@ impl CodecBackend for FcstdCodec {
                     .namespace_mut("fcstd")
                     .set_arena(ctx, "design_census", &design_census)?;
             }
-            element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let mut gui_graph = if let Some(gui_source) = gui_source {
                 gui_source.transfer(
                     ctx,

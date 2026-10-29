@@ -6,10 +6,12 @@ mod extensions;
 mod maps;
 mod neutral;
 mod operands;
+mod topology_join;
 pub(super) use attachments::write as attachments;
 pub(super) use extensions::write as extensions;
 pub(super) use maps::write as maps;
 pub(super) use operands::write as operands;
+pub(super) use topology_join::TopologyJoin;
 pub(super) fn retained(
     ir: &cadmpeg_ir::CadIr,
     object: &crate::native::ObjectRecord,

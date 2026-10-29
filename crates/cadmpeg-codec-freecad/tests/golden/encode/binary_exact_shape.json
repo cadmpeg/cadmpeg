@@ -7,8 +7,8 @@
     },
     {
       "name": "BinaryCarrier.brp",
-      "payload_len": 1873,
-      "payload_sha256": "578b7e2ba58b90f60ace43097e5f7b4c5f5159691d0be541fd1a945f938908f8"
+      "payload_len": 1895,
+      "payload_sha256": "23df990d9e91f4622886548fcfee1a70717c7d5e1b819ac96bd7d847ade158e1"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -45,6 +45,7 @@
         "native.fcstd.properties": 36,
         "native.fcstd.shape_payloads": 1,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 17,
         "occurrences": 0,
         "parameters": 0,
         "pcurves": 9,
@@ -286,6 +287,28 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:9": "regenerated"
               }
             },
             "unknowns": {

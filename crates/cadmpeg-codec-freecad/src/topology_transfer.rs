@@ -8,8 +8,10 @@ use std::collections::{HashMap, HashSet};
 
 mod locations;
 mod ring_order;
+mod source_uses;
 use crate::brep::location_identity::LocationIdentityError;
 use locations::{Located, Locations};
+pub(crate) use source_uses::{current_bindings, CurrentTopologyBindings};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -115,7 +117,42 @@ pub(crate) fn transfer(
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<TopologyOccurrence>, CodecError> {
+    transfer_inner(ctx, ir, payloads, properties, losses, false)
+}
+
+pub(crate) fn transfer_projection(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    payloads: &[ShapePayloadRecord],
+    properties: &[PropertyRecord],
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<TopologyOccurrence>, CodecError> {
+    transfer_inner(ctx, ir, payloads, properties, losses, true)
+}
+
+fn transfer_inner(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    payloads: &[ShapePayloadRecord],
+    properties: &[PropertyRecord],
+    losses: &mut Vec<LossNote>,
+    projection: bool,
+) -> Result<Vec<TopologyOccurrence>, CodecError> {
+    let mut existing_uses = HashMap::<String, Vec<(usize, String)>>::new();
+    if projection {
+        if let Some(namespace) = ir.native.namespace("fcstd") {
+            for row in source_uses::resolve_namespace(ctx, namespace, payloads)? {
+                existing_uses
+                    .try_reserve(1)
+                    .map_err(|_| locations::allocation_failed(ctx))?;
+                let rows = existing_uses.entry(row.owner).or_default();
+                ctx.reserve_working(rows, 1, "FreeCAD current source-use identities")?;
+                rows.push((row.node, row.id));
+            }
+        }
+    }
     let mut occurrences = Vec::new();
+    let mut native_uses = Vec::new();
     for payload in payloads {
         let Some(tables) = Tables::from_payload(payload) else {
             continue;
@@ -129,7 +166,22 @@ pub(crate) fn transfer(
         let source_object = source_object.to_owned();
         let source_object = cadmpeg_core::text::NonBlankString::new(source_object)
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
-        let mut builder = match Builder::new(ctx, payload, tables, source_object) {
+        let construction = if projection {
+            Builder::new_with_identities(
+                ctx,
+                payload,
+                tables,
+                source_object,
+                Some(
+                    existing_uses
+                        .get(&payload.id)
+                        .map_or(&[][..], Vec::as_slice),
+                ),
+            )
+        } else {
+            Builder::new(ctx, payload, tables, source_object)
+        };
+        let mut builder = match construction {
             Ok(builder) => builder,
             Err(LocationIdentityError::Decode(error)) => return Err(error),
             Err(LocationIdentityError::Bounded) => {
@@ -145,8 +197,23 @@ pub(crate) fn transfer(
             builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir)?;
-        occurrences.extend(builder.occurrences);
-        losses.extend(builder.losses);
+        occurrences.extend(std::mem::take(&mut builder.occurrences));
+        losses.extend(std::mem::take(&mut builder.losses));
+        if let Some(records) = builder.source_uses.into_records()? {
+            ctx.reserve_working(
+                &mut native_uses,
+                records.len(),
+                "FreeCAD source-use native arena",
+            )?;
+            native_uses.extend(records);
+        }
+    }
+    if !projection {
+        native_uses.sort_unstable_by(|left, right| left.id().cmp(right.id()));
+        ir.native.namespace_mut("fcstd").arenas_mut().insert(
+            source_uses::working_text(ctx, "topology_uses")?,
+            native_uses,
+        );
     }
     close_radial_rings(&mut ir.model.coedges);
     let referenced_pcurves = referenced_pcurve_ids(&ir.model.coedges);
@@ -154,6 +221,14 @@ pub(crate) fn transfer(
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     Ok(occurrences)
+}
+
+pub(crate) fn validate_source_uses(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    payloads: &[ShapePayloadRecord],
+) -> Result<(), CodecError> {
+    source_uses::validate_namespace(ctx, namespace, payloads)
 }
 
 fn referenced_pcurve_ids(coedges: &[Coedge]) -> HashSet<&PcurveId> {
@@ -204,7 +279,24 @@ struct SourceOccurrenceKey(String);
 
 impl SourceOccurrenceKey {
     fn new(shape: usize, transform: Located) -> Self {
-        Self(format!("{}@{}", shape, transform.identity))
+        Self(format!("{shape}@{}", transform.identity))
+    }
+    fn from_identity(
+        ctx: &DecodeContext<'_>,
+        shape: usize,
+        identity: usize,
+    ) -> Result<Self, CodecError> {
+        use std::fmt::Write;
+        // Two decimal usize values plus '@'; the fixed bound cannot overflow.
+        let mut value = String::new();
+        ctx.reserve_text_working(
+            &mut value,
+            2 * usize::BITS as usize + 1,
+            "FreeCAD source occurrence lookup",
+        )?;
+        write!(value, "{shape}@{identity}")
+            .map_err(|_| CodecError::malformed("source occurrence lookup formatting failed"))?;
+        Ok(Self(value))
     }
 }
 
@@ -238,6 +330,7 @@ struct Builder<'a, 'c, 'r> {
     emitted_triangulations: HashSet<usize>,
     body_scope: Located,
     locations: Locations,
+    source_uses: source_uses::Inventory<'c, 'r>,
     root_discriminator: Option<usize>,
     current_body: Option<BodyId>,
     source_object: cadmpeg_core::text::NonBlankString,
@@ -253,9 +346,23 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         tables: Tables<'a>,
         source_object: cadmpeg_core::text::NonBlankString,
     ) -> Result<Self, LocationIdentityError> {
+        Self::new_with_identities(ctx, payload, tables, source_object, None)
+    }
+
+    fn new_with_identities(
+        ctx: &'c DecodeContext<'r>,
+        payload: &'a ShapePayloadRecord,
+        tables: Tables<'a>,
+        source_object: cadmpeg_core::text::NonBlankString,
+        existing: Option<&[(usize, String)]>,
+    ) -> Result<Self, LocationIdentityError> {
         let mut locations = Locations::new(ctx, tables)?;
-        admit_topology_locations(ctx, tables, &mut locations)?;
+        let source_plan = source_uses::Plan::discover(ctx, tables, &mut locations)?;
         let source_indices = source_topology_indices(ctx, tables, &mut locations)?;
+        let source_uses = match existing {
+            Some(existing) => source_uses::Inventory::reuse(ctx, source_plan, existing)?,
+            None => source_uses::Inventory::materialize(ctx, &payload.id, source_plan)?,
+        };
         Ok(Self {
             ctx,
             procedural_admission: None,
@@ -272,6 +379,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             source_object,
             source_indices,
             locations,
+            source_uses,
             occurrences: Vec::new(),
             losses: Vec::new(),
         })
@@ -283,6 +391,44 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
 
     fn compose(&self, left: Located, right: Located) -> Result<Located, CodecError> {
         self.locations.compose(left, right)
+    }
+
+    fn source_ref(&self, shape: usize, local: Located) -> Result<Option<String>, CodecError> {
+        let placed = self.compose(self.body_scope, local)?;
+        let Some(source) =
+            self.source_uses
+                .selector(self.root_discriminator.unwrap_or(1), shape, placed)
+        else {
+            return Ok(None);
+        };
+        if self.source_uses.is_fresh() {
+            // Decode keeps this neutral reference in its returned document.
+            // Encoder reprojections derive it only as temporary working data.
+            self.ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(source.len()),
+                "FreeCAD topology native reference",
+            )?;
+        }
+        let mut reference = String::new();
+        self.ctx.reserve_text_working(
+            &mut reference,
+            source.len(),
+            "FreeCAD topology native reference",
+        )?;
+        reference.push_str(source);
+        Ok(Some(reference))
+    }
+
+    fn push_shell(
+        &self,
+        ir: &mut CadIr,
+        mut shell: Shell,
+        shape: usize,
+        local: Located,
+    ) -> Result<(), CodecError> {
+        shell.native_ref = self.source_ref(shape, local)?;
+        ir.model.shells.push(shell);
+        Ok(())
     }
 
     fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
@@ -579,7 +725,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             return Ok(());
         }
         ir.model.bodies.push(Body {
-            native_ref: None,
+            native_ref: self.source_ref(root.shape, Located::identity())?,
             id: body_id.clone(),
             kind,
             regions,
@@ -651,7 +797,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         }
         if !shells.is_empty() {
             ir.model.regions.push(Region {
-                native_ref: None,
+                native_ref: self.source_ref(shape_index, transform)?,
                 id: region_id.clone(),
                 body: body.clone(),
                 shells,
@@ -727,7 +873,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         faces.push(face);
                     }
                 }
-                ir.model.shells.push(
+                self.push_shell(
+                    ir,
                     Shell::new(
                         component_id.clone(),
                         region.clone(),
@@ -736,7 +883,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         Vec::new(),
                     )
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
+                    shape_index,
+                    transform,
+                )?;
                 self.bind_topology(
                     TextShapeKind::Shell,
                     shape_index,
@@ -790,7 +939,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     location: 0.into(),
                 };
                 let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
-                ir.model.shells.push(
+                self.push_shell(
+                    ir,
                     Shell::new(
                         shell_id.clone(),
                         region.clone(),
@@ -799,12 +949,15 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                         vec![vertex],
                     )
                     .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
+                    shape_index,
+                    transform,
+                )?;
                 return Ok(vec![shell_id]);
             }
             _ => {}
         }
-        ir.model.shells.push(
+        self.push_shell(
+            ir,
             Shell::new(
                 shell_id.clone(),
                 region.clone(),
@@ -813,7 +966,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 Vec::new(),
             )
             .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-        );
+            shape_index,
+            transform,
+        )?;
         if shape.kind() == TextShapeKind::Wire {
             self.bind_topology(shape.kind(), shape_index, transform, shell_id.as_str())?;
         }
@@ -1095,7 +1250,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 .map(|position| coedge_ids[position].clone())
                 .collect();
             ir.model.loops.push(Loop {
-                native_ref: None,
+                native_ref: self.source_ref(wire_use.shape, wire_transform)?,
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1117,7 +1272,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             loops.push(loop_id);
         }
         ir.model.faces.push(Face {
-            native_ref: None,
+            native_ref: self.source_ref(face_use.shape, face_transform)?,
             id: face_id.clone(),
             shell: shell.clone(),
             surface: surface_id,
@@ -1233,7 +1388,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             end: end.clone(),
         };
         ir.model.edges.push(Edge {
-            native_ref: None,
+            native_ref: self.source_ref(edge_use.shape, transform)?,
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
@@ -1424,7 +1579,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             Some(self.source_association()?),
         ));
         ir.model.vertices.push(Vertex {
-            native_ref: None,
+            native_ref: self.source_ref(vertex_use.shape, transform)?,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: positive_tolerance(
@@ -2292,49 +2447,6 @@ fn occurrence_label(shape: usize, transform: Located) -> String {
     }
 }
 
-fn admit_topology_locations(
-    ctx: &DecodeContext<'_>,
-    tables: Tables<'_>,
-    locations: &mut Locations,
-) -> Result<(), LocationIdentityError> {
-    for root in tables.roots {
-        let root_location = locations.source(tables, root.location)?;
-        let mut visited = HashSet::new();
-        let mut stack = vec![(root.shape, Located::identity())];
-        while let Some((shape_index, local)) = stack.pop() {
-            if !locations.visit(ctx, &mut visited, shape_index, local)? {
-                continue;
-            }
-            locations.admit(ctx, tables, root_location, local)?;
-            let shape = tables.tshapes.resolve(shape_index)?;
-            match &shape.geometry {
-                TextTShapeGeometry::Face { location, .. } => {
-                    let support = locations.source(tables, *location)?;
-                    locations.admit(ctx, tables, local, support)?;
-                }
-                TextTShapeGeometry::Edge {
-                    representations, ..
-                } => {
-                    for representation in representations {
-                        let carrier = locations.source(tables, representation.location())?;
-                        locations.admit(ctx, tables, local, carrier)?;
-                    }
-                }
-                _ => {}
-            }
-            for child in &shape.children {
-                let child_location = locations.source(tables, child.location)?;
-                let child_location = locations.admit(ctx, tables, local, child_location)?;
-                stack
-                    .try_reserve(1)
-                    .map_err(|_| locations::allocation_failed(ctx))?;
-                stack.push((child.shape, child_location));
-            }
-        }
-    }
-    Ok(())
-}
-
 fn source_topology_indices(
     ctx: &DecodeContext<'_>,
     tables: Tables<'_>,
@@ -2393,7 +2505,7 @@ fn source_topology_indices(
     Ok(indices)
 }
 
-fn topology_rank(kind: TextShapeKind) -> u8 {
+pub(crate) fn topology_rank(kind: TextShapeKind) -> u8 {
     match kind {
         TextShapeKind::Compound => 0,
         TextShapeKind::CompSolid => 1,
@@ -2406,7 +2518,7 @@ fn topology_rank(kind: TextShapeKind) -> u8 {
     }
 }
 
-fn indexed_name(kind: TextShapeKind) -> &'static str {
+pub(crate) fn indexed_name(kind: TextShapeKind) -> &'static str {
     match kind {
         TextShapeKind::Vertex => "Vertex",
         TextShapeKind::Edge => "Edge",

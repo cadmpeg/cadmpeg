@@ -14,7 +14,6 @@ use crate::native::element_map::{
 use crate::native::{
     EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord, StringTables,
 };
-use crate::topology_transfer::TopologyOccurrence;
 
 fn recover_metadata<T>(
     result: Result<T, CodecError>,
@@ -468,22 +467,6 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
         )));
     }
     Ok(count)
-}
-
-/// Connect kernel indexed-map positions to every neutral placed occurrence.
-pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
-    for map in maps {
-        for occurrence in occurrences
-            .iter()
-            .filter(|occurrence| occurrence.property == map.property)
-        {
-            map.maps.bind_root_topology(
-                occurrence.indexed_name,
-                occurrence.source_index,
-                &occurrence.topology_id,
-            );
-        }
-    }
 }
 
 fn ownership_index(mut ownership: Vec<OwnershipPrefix<'_>>) -> Vec<OwnershipPrefix<'_>> {
@@ -964,7 +947,6 @@ fn legacy_map_payload(
             encoded: record.mapped_name.clone(),
             resolved: Some(record.mapped_name),
             string_ids: record.string_ids,
-            topology_ids: Vec::new(),
         });
     }
     let parsed = ParsedMap {
@@ -1501,7 +1483,6 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
         encoded: encoded.to_owned(),
         resolved: Some(resolved),
         string_ids,
-        topology_ids: Vec::new(),
     })
 }
 

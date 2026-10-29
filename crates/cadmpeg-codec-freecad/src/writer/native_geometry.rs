@@ -52,7 +52,7 @@ pub(super) fn project(
         .add_procedural_surfaces(surfaces.procedural)?
         .map_err(CodecError::malformed)?;
     let mut losses = Vec::new();
-    let topology_occurrences = crate::topology_transfer::transfer(
+    let topology_occurrences = crate::topology_transfer::transfer_projection(
         ctx,
         &mut projected,
         &payloads,
@@ -92,9 +92,6 @@ pub(super) fn project(
         &drawings,
     )?;
     if let Some(gui) = super::target::projection::gui_xml_lossy(namespace, &mut losses)? {
-        let mut element_maps =
-            namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
-        crate::element_map::bind_topology(&mut element_maps, &topology_occurrences);
         let documents = namespace.arena_as::<native::DocumentFacts>("document")?;
         let version = documents
             .first()

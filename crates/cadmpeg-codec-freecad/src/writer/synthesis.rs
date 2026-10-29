@@ -22,6 +22,8 @@ pub(super) fn write(
         || (ir, Vec::new()),
         |(projected, losses)| (projected, losses.clone()),
     );
+    let current_topology = crate::topology_transfer::current_bindings(ctx, ir)?;
+    let root_kinds = brep::RootKinds::new(ctx, ir, &current_topology)?;
     let mut native_dispositions = super::dispositions::initial();
     let mut objects = Vec::new();
     let mut names;
@@ -276,6 +278,7 @@ pub(super) fn write(
         }
     }
     let mut body_names = HashMap::new();
+    let mut emitted_topology = Vec::new();
     let mut shape_groups = BTreeMap::<String, Vec<&cadmpeg_ir::topology::Body>>::new();
     for (index, body) in ir.model.bodies.iter().enumerate() {
         let proposed = names
@@ -291,7 +294,7 @@ pub(super) fn write(
         shape_groups.entry(name).or_default().push(body);
     }
     for (name, bodies) in shape_groups {
-        let Some(bytes) = brep::serialize(ir, &bodies)? else {
+        let Some(serialized) = brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds)? else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
                     "body {} is omitted because a required carrier has no OCCT text encoding",
@@ -309,7 +312,8 @@ pub(super) fn write(
             ));
         }
         let file = format!("{name}.brp");
-        entries.insert(file.clone(), bytes);
+        entries.insert(file.clone(), serialized.bytes);
+        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)
@@ -356,13 +360,14 @@ pub(super) fn write(
         // the same placement twice. Keep canonical construction placements and
         // typed native placements; body-only objects use their BRep root.
     }
-    if let Some(bytes) = brep::unowned(ir, &mut losses)? {
+    if let Some(serialized) = brep::unowned_with_uses(ctx, ir, &mut losses, &root_kinds)? {
         let mut name = "FreeGeometry".to_owned();
         while objects.iter().any(|object| object.name == name) {
             name.push('_');
         }
         let file = format!("{name}.brp");
-        entries.insert(file.clone(), bytes);
+        entries.insert(file.clone(), serialized.bytes);
+        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
         let mut object = Object::new(name, "Part::Feature", "Independent geometry");
         object.set(
             "Shape",
@@ -427,8 +432,12 @@ pub(super) fn write(
         &mut losses,
         &mut native_dispositions,
     )?;
+    let topology_join =
+        super::native::TopologyJoin::from_current(ctx, ir, current_topology, &emitted_topology)?;
     let dictionaries = super::native::maps(
+        ctx,
         ir,
+        &topology_join,
         &mut objects,
         &names,
         &native_properties,
@@ -489,6 +498,7 @@ pub(super) fn write(
         &entries,
         &mut native_dispositions,
     )?;
+    topology_join.record_emitted(ctx, &objects, &entries, &mut native_dispositions)?;
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)

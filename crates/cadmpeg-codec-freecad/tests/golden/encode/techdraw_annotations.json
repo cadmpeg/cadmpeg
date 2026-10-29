@@ -49,6 +49,7 @@
         "native.fcstd.properties": 162,
         "native.fcstd.shape_payloads": 1,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 34,
         "occurrences": 0,
         "parameters": 3,
         "pcurves": 24,
@@ -657,6 +658,45 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:14": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:15": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:16": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:17": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:18": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:19": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:20": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:21": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:22": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:23": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:24": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:25": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:26": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:27": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:28": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:29": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:30": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:31": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:32": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:33": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:34": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#Model:Shape:Model.Shape.brp:topology-use:9": "regenerated"
               }
             },
             "unknowns": {

@@ -137,8 +137,11 @@ fn link_targets_reject_absence_on_every_admission_route() {
 #[test]
 fn design_census_neutral_is_derived_and_checked_on_the_wire() {
     for (semantic_kind, neutral) in [("native", false), ("pattern", true)] {
-        let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "feature":"feature", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
+        let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type", "semantic_kind":semantic_kind, "neutral":neutral, "post_processed":false});
         let record = serde_json::from_value::<super::DesignCensusRecord>(wire.clone()).unwrap();
+        // CADIR v8 #213 removes the native feature backlink; the native
+        // object relation and every other census field stay canonical.
+        assert!(wire.get("feature").is_none());
         assert_eq!(record.neutral(), neutral);
         assert_eq!(serde_json::to_value(record).unwrap(), wire);
         let mut invalid = wire;
@@ -971,3 +974,15 @@ fn a_product_node_writes_occurrence_fields_and_a_container_without_them() {
 }
 
 mod provenance;
+
+#[test]
+fn native_design_census_rejects_the_removed_neutral_feature_backlink() {
+    // CADIR v8 #213: Feature.native_ref owns this inverse relation.
+    let wire = serde_json::json!({"id":"census", "object":"object", "type_name":"type",
+        "semantic_kind":"native", "neutral":false, "post_processed":false});
+    let native: super::DesignCensusRecord = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(native).unwrap(), wire);
+    let mut old = wire;
+    old["feature"] = serde_json::json!("fcstd:model:feature#source");
+    assert!(serde_json::from_value::<super::DesignCensusRecord>(old).is_err());
+}

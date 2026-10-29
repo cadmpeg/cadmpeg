@@ -597,17 +597,54 @@ Co 1001000 +2 0 *
         .expect("displayed Shape element map");
     assert_eq!(shape_map.hasher_index, Some(0));
     let groups = &shape_map.maps[0].groups;
-    assert_eq!(groups[0].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[1].names[2][0].topology_ids.len(), 1);
-    assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[2].names[2][0].topology_ids.len(), 1);
+    // CADIR v8 #213 removes native topology_ids, preserving all mapped-name
+    // facts and querying the same source indices through neutral.native_ref.
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let inverse = crate::topology_transfer::current_bindings(&ctx, result.ir()).unwrap();
+    assert_eq!(
+        inverse
+            .selected_records(&shape_map.property, &groups[0].indexed_name, 1)
+            .1
+            .count(),
+        1
+    );
+    assert_eq!(
+        inverse
+            .selected_records(&shape_map.property, &groups[1].indexed_name, 1)
+            .1
+            .count(),
+        1
+    );
+    assert_eq!(
+        inverse
+            .selected_records(&shape_map.property, &groups[1].indexed_name, 2)
+            .1
+            .count(),
+        1
+    );
+    assert_eq!(
+        inverse
+            .selected_records(&shape_map.property, &groups[2].indexed_name, 1)
+            .1
+            .count(),
+        1
+    );
+    assert_eq!(
+        inverse
+            .selected_records(&shape_map.property, &groups[2].indexed_name, 2)
+            .1
+            .count(),
+        1
+    );
     let shape_face_ids = groups[0]
         .names
         .iter()
-        .flatten()
-        .flat_map(|name| &name.topology_ids)
-        .map(String::as_str)
+        .enumerate()
+        .flat_map(|(index, _)| {
+            inverse
+                .selected_records(&shape_map.property, &groups[0].indexed_name, index)
+                .1
+        })
         .collect::<std::collections::HashSet<_>>();
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
         matches!(

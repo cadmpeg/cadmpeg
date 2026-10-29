@@ -51,8 +51,7 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         .add_procedural_surfaces(surfaces.procedural)?
         .map_err(CodecError::malformed)?;
     let mut losses = Vec::new();
-    let mut maps = namespace.arena_as::<native::element_map::ElementMapRecord>("element_maps")?;
-    let topology_occurrences = crate::topology_transfer::transfer(
+    let topology_occurrences = crate::topology_transfer::transfer_projection(
         ctx,
         &mut projected,
         &payloads,
@@ -60,7 +59,6 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
         &mut losses,
     )?;
     crate::topology_transfer::apply_body_names(&mut projected, &payloads, &properties);
-    crate::element_map::bind_topology(&mut maps, &topology_occurrences);
     if ir.scope.design {
         let extensions = namespace.arena_as::<native::ExtensionRecord>("extensions")?;
         crate::design::transfer(

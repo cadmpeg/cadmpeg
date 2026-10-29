@@ -853,7 +853,8 @@
           "product_nodes": 0,
           "properties": 80,
           "shape_payloads": 0,
-          "string_tables": 1
+          "string_tables": 1,
+          "topology_uses": 0
         }
       },
       "__arena_sha256": {
@@ -861,7 +862,7 @@
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "applications": "de484123d908f0a095c74e2fc19072c83c5656992c0ae88c69f2d313c8005029",
           "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "design_census": "7e6e7a89b1d8501fed7f407b7034e58aaf2fd96792564b2fc979656b865605fc",
+          "design_census": "919a39d48f433022be1a09a9b166ca3df071188be74a19d4863959be18c039be",
           "document": "d93178e2ae60a752308667e099e054b0413f4e1d2aca58c574989f415af65261",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -875,7 +876,8 @@
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "e33d72f4e7264737114102252a404f0b600a5691c305e768fb672f2e71032c78",
           "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
+          "topology_uses": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
         }
       },
       "__arena_values": {
@@ -3161,7 +3163,7 @@
       }
     },
     "metadata": {
-      "document_local_sha256": "4a90fe48609d525875f97998c7fa8f081176807ece8f6636fa4f4347119c941e",
+      "document_local_sha256": "f004ab9645866ca3e2bad417233a447017f079d1f1063cd47f6f1cb3cdc4043a",
       "fcstd.archive_entry_count": "7",
       "fcstd.object_count": "7",
       "fcstd.physical_archive_bytes": "3219",

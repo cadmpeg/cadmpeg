@@ -329,6 +329,7 @@
         {
           "id": "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17%40location1",
           "kind": "solid",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:1",
           "regions": [
             "fcstd:model:region#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:16%40location1"
           ]
@@ -583,6 +584,7 @@
           "carrier": {},
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%40location1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:10%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:10",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%40location1",
           "tolerance": 1e-7
         },
@@ -596,6 +598,7 @@
           },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:14",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
           "tolerance": 1e-7
         },
@@ -609,6 +612,7 @@
           },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:17",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%40location1",
           "tolerance": 1e-7
         },
@@ -622,6 +626,7 @@
           },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%40location1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:6",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%40location1",
           "tolerance": 1e-7
         },
@@ -635,6 +640,7 @@
           },
           "end": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%40location1",
           "id": "fcstd:model:edge#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:12",
           "start": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
           "tolerance": 1e-7
         }
@@ -648,6 +654,7 @@
               "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:8",
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15%40location1",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:2",
@@ -661,6 +668,7 @@
               "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:4",
           "sense": "reversed",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15%40location1",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3",
@@ -674,6 +682,7 @@
               "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1%3A1"
             ]
           },
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:15",
           "sense": "forward",
           "shell": "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15%40location1",
           "surface": "fcstd:model:surface#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1",
@@ -693,7 +702,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1",
-          "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1%3A1"
+          "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:12%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:9"
         },
         {
           "boundary": {
@@ -703,7 +713,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1",
-          "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1%3A1"
+          "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:14%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:5"
         },
         {
           "boundary": {
@@ -716,7 +727,8 @@
             "kind": "ring"
           },
           "face": "fcstd:model:face#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1",
-          "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1%3A1"
+          "id": "fcstd:model:loop#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:7%40location1%3A1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:16"
         }
       ],
       "occurrences": [],
@@ -983,6 +995,7 @@
         {
           "body": "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17%40location1",
           "id": "fcstd:model:region#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:2",
           "shells": [
             "fcstd:model:shell#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:15%40location1"
           ]
@@ -1006,6 +1019,7 @@
               "kind": "face"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:3",
           "region": "fcstd:model:region#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:16%40location1"
         }
       ],
@@ -1099,16 +1113,19 @@
       "vertices": [
         {
           "id": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:13",
           "point": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:1%40location1",
           "tolerance": 1.0000036674803817e-7
         },
         {
           "id": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:7",
           "point": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:3%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:11",
           "point": "fcstd:model:point#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:8%40location1",
           "tolerance": 1e-7
         }
@@ -1136,7 +1153,8 @@
           "product_nodes": 0,
           "properties": 36,
           "shape_payloads": 1,
-          "string_tables": 1
+          "string_tables": 1,
+          "topology_uses": 17
         }
       },
       "__arena_sha256": {
@@ -1158,7 +1176,8 @@
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "5abd55c010f2bd7763f51cf1a0e6facb8b3ebacec2ebba96257599089a537f61",
           "shape_payloads": "1262fed60df3c2da2a2c606dc18b05b569810f6c74a2133d523379ddb3bf4488",
-          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
+          "topology_uses": "007d9d09c364d114ba697d5af96aa901702c652e03e02f86fde367d69417e61c"
         }
       },
       "__arena_values": {
@@ -2113,7 +2132,7 @@
       }
     },
     "metadata": {
-      "document_local_sha256": "9c2d5b6c3b9320be92f38c48dfa90634de5bd52514fc233a69c9a4da5556f666",
+      "document_local_sha256": "3be36aa7220fc00aaa972ff7e189bc0c1c6140e4e4489ba151e9128a4ee06ad4",
       "fcstd.archive_entry_count": "2",
       "fcstd.object_count": "2",
       "fcstd.physical_archive_bytes": "2400",

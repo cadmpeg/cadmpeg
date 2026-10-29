@@ -19,7 +19,9 @@ fn hex(value: i64) -> String {
 }
 
 pub(crate) fn write(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
+    topology: &super::topology_join::TopologyJoin<'_>,
     objects: &mut [Object],
     names: &HashMap<String, String>,
     properties: &[PropertyRecord],
@@ -186,6 +188,15 @@ pub(crate) fn write(
             );
             continue;
         };
+        if !topology.shape_matches(ctx, object, &property.name, archive_entries)? {
+            losses.push(
+                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                    "element map {} has an omitted shape property",
+                    map.id
+                )),
+            );
+            continue;
+        }
         let Some(shape) = object.properties.get_mut(&property.name) else {
             losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
@@ -195,15 +206,7 @@ pub(crate) fn write(
             );
             continue;
         };
-        if map
-            .maps
-            .iter()
-            .flat_map(|node| &node.groups)
-            .flat_map(|group| &group.names)
-            .flatten()
-            .flat_map(|name| &name.topology_ids)
-            .any(|id| !names.contains_key(id))
-        {
+        if !topology.map_resolves(&map, &object.name) {
             losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred
                     .note(format!("element map {} refers to omitted topology", map.id)),

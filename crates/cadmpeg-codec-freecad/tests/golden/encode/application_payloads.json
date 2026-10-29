@@ -445,6 +445,9 @@
                 "fcstd:native:string-table#0": "written"
               }
             },
+            "topology_uses": {
+              "disposition": "dropped"
+            },
             "unknowns": {
               "disposition": "dropped"
             }

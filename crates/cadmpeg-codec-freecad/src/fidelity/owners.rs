@@ -26,6 +26,7 @@ impl NativeOwnerResolver for Owners {
                     "extensions" | "properties" | "gui_properties" => Some(("owner", false)),
                     "shape_payloads" | "element_maps" => Some(("property", false)),
                     "carrier_census" => Some(("payload", false)),
+                    "topology_uses" => Some(("owner", false)),
                     "product_nodes" | "joints" | "drawings" | "annotations" | "applications"
                     | "attachments" | "design_census" => Some(("object", false)),
                     "gui_view_providers" => Some(("object", true)),
