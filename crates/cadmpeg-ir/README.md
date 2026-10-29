@@ -44,7 +44,7 @@ ir.finalize(&ctx)?;
 let report = validate_neutral(&ir, Vec::new());
 
 assert!(report.is_ok());
-assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
+assert_eq!(ir.ir_version(), cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` clones and finalizes the document before it emits
