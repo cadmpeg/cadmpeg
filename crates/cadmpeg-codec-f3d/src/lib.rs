@@ -167,14 +167,6 @@ impl CodecBackend for F3dCodec {
         validate::validate_native(ctx, ir)
     }
 
-    fn validate_source_layout(
-        ctx: &DecodeContext<'_>,
-        ir: &CadIr,
-        fidelity: &cadmpeg_ir::source_fidelity::SourceFidelity,
-    ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-        validate::source_layout::validate_source_layout(ctx, ir, fidelity)
-    }
-
     fn detect_impl(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,

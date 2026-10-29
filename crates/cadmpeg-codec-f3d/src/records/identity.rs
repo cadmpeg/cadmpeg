@@ -112,10 +112,8 @@ impl<T, O> Located<T, O> {
     }
 }
 
-/// A source value and the byte offset of its encoding. The offset is a
-/// `record_layout` pointer of the owning record's capture, not document
-/// content: the wire carries the value only, and a value read from the wire
-/// has no offset.
+/// A source value and the byte offset of its encoding. The wire carries the
+/// value only, and a value read from the wire has no offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Sourced<T> {
     pub(crate) value: T,
@@ -300,26 +298,7 @@ impl<T, O> ReferenceRun<T, O> {
     }
 }
 
-impl<T> ReferenceRun<T, u64> {
-    /// Give the run one encoding location per value, or remove its
-    /// locations. A location run of another length removes them.
-    pub(crate) fn set_offsets(&mut self, offsets: Option<Vec<u64>>) {
-        let values = match std::mem::replace(&mut self.0, ReferenceRunData::Unlocated(Vec::new())) {
-            ReferenceRunData::Unlocated(values) => values,
-            ReferenceRunData::Located(rows) => rows.into_iter().map(|row| row.value).collect(),
-        };
-        *self = match offsets {
-            Some(offsets) if offsets.len() == values.len() => Self::located(
-                values
-                    .into_iter()
-                    .zip(offsets)
-                    .map(|(value, offset)| Located { value, offset })
-                    .collect(),
-            ),
-            _ => Self::unlocated(values),
-        };
-    }
-}
+impl<T> ReferenceRun<T, u64> {}
 
 /// A vector that always holds at least one element.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -410,14 +389,6 @@ impl<T: Copy> MaybeRecordedValue<T> {
     /// Whether the form stores the value as a member.
     pub(super) fn is_stored(&self) -> bool {
         matches!(self, Self::Located(_))
-    }
-
-    /// The source encoding location slot of a stored member.
-    pub(super) fn offset_mut(&mut self) -> Option<&mut Option<u64>> {
-        match self {
-            Self::Located(recorded) => Some(&mut recorded.offset),
-            Self::Unlocated(_) => None,
-        }
     }
 
     pub(super) fn from_wire(

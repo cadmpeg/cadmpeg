@@ -215,12 +215,12 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let serialized = serde_json::to_value(&construction).expect("serialize legacy form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize legacy form"),
-            &construction
-        ),
-        construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize legacy form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     // The ordinary form is sized by its kind offset, so a shorter scope
@@ -436,12 +436,12 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize snapshot form"),
-            &construction
-        ),
-        construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize snapshot form")
+        )
+        .expect("reserialize"),
+        serialized
     );
     let DesignBaseFeatureConstruction::BodySnapshot {
         bodies,
@@ -1280,12 +1280,12 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
 
     let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize body-reference form"),
-            &construction
-        ),
-        construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize body-reference form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     let mut nonzero_field = bytes.clone();

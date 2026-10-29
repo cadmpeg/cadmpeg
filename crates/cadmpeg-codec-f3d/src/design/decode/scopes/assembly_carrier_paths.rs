@@ -33,19 +33,16 @@ use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope::DesignParameterScope;
 
-pub(super) fn exact_variable_reference_operand_qualifiers<'a>(
-    source: View<'a>,
+pub(super) fn exact_variable_reference_operand_qualifiers(
+    source: View<'_>,
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
-    staged_sources: &mut Vec<(usize, PathSourceDraft<'a>)>,
 ) -> Result<Option<[DesignAssemblyOperandQualifier; 2]>, CodecError> {
     let bytes = source.window();
     let mut qualifiers = [None, None];
-    let mut drafts = Vec::new();
-    for (ordinal, (qualifier, frame)) in qualifiers.iter_mut().zip(frames).enumerate() {
+    for (qualifier, frame) in qualifiers.iter_mut().zip(frames) {
         if let Some(path) = exact_class_363_operand_path(source, records, scope, frame)? {
-            drafts.push((ordinal, path.source));
             *qualifier =
                 Some(DesignAssemblyOperandQualifier::OccurrencePath { path: path.content });
         } else {
@@ -55,7 +52,6 @@ pub(super) fn exact_variable_reference_operand_qualifiers<'a>(
     let [Some(first), Some(second)] = qualifiers else {
         return Ok(None);
     };
-    staged_sources.extend(drafts);
     Ok(Some([first, second]))
 }
 
@@ -172,15 +168,14 @@ fn exact_class_363_operand_path<'a>(
         if occurrence_guid != terminal_occurrence_guid || identity_guid != terminal_identity_guid {
             return None;
         }
-        let (scope_record_index, locator_scope_reference_offset) =
-            exact_same_segment_record_reference(
-                bytes,
-                carrier_at.checked_add(class_363_carrier::SCOPE_REFERENCE)?,
-            )?;
+        let (scope_record_index, _) = exact_same_segment_record_reference(
+            bytes,
+            carrier_at.checked_add(class_363_carrier::SCOPE_REFERENCE)?,
+        )?;
         if scope_record_index != scope.record_index {
             return None;
         }
-        let (_, wrapper_reference_offset) = exact_same_segment_record_reference(
+        exact_same_segment_record_reference(
             bytes,
             leading
                 .start
@@ -193,18 +188,11 @@ fn exact_class_363_operand_path<'a>(
         let mut draft = PathSourceDraft::legacy(source, terminal_at, PathSourceForm::Carrier363)?;
         draft.occurrence(occurrence_at, identity_at)?;
         draft.identity(identity_at, identity_at.checked_add(76)?)?;
-        draft.set_link(
-            PathLinkSources::new(
-                source,
-                frame.reference_offset?,
-                carrier_at,
-                locator_scope_reference_offset,
-                wrapper_reference_offset,
-                leading_identity.start,
-                occurrence_guid_offset,
-            )?
-            .occurrence_reference(source, occurrence_at, identity_at)?,
-        );
+        draft.set_link(PathLinkSources::new(
+            source,
+            carrier_at,
+            leading_identity.start,
+        )?);
         draft.validate_positions()?;
         DesignAssemblyOperandPath::try_new(
             DesignAssemblyOperandPathLink {

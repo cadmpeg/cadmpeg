@@ -5,9 +5,8 @@
 //! is to select the grammar of the scope frame: the fixed frame forms that
 //! `docs/formats/f3d.md` names by their length and class pair, or the general
 //! envelope, whose length is the sum of its fields. The decoder derives the
-//! generation from the frame. The document holds the generation; the frame
-//! length and every frame offset are `record_layout` pointers of the scope's
-//! capture.
+//! generation from the frame. The document holds the generation, not the
+//! frame length or any frame offset.
 
 use serde::{Deserialize, Serialize};
 
@@ -623,16 +622,6 @@ impl DesignComponentInsertFrame {
 }
 
 impl DesignJointOriginFrame {
-    /// Byte length of the frame.
-    pub(crate) fn frame_length(self) -> u64 {
-        Self::FIXED
-            .iter()
-            .find(|(frame, _)| *frame == self)
-            .map_or(0, |(_, length)| *length)
-    }
-}
-
-impl DesignCopyPasteFrame {
     /// Byte length of the frame.
     pub(crate) fn frame_length(self) -> u64 {
         Self::FIXED

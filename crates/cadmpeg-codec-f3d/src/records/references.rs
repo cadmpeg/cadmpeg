@@ -168,6 +168,7 @@ impl LostEdgeReference {
     pub(crate) fn record_index_offset(&self) -> Option<u64> {
         self.record_byte_offset?.checked_add(7)
     }
+    #[cfg(test)]
     pub(crate) fn byte_offset(&self) -> Option<u64> {
         self.record_byte_offset?.checked_add(29)
     }
@@ -412,50 +413,9 @@ impl From<DesignMaterialAssignment> for DesignMaterialAssignmentWire {
         }
     }
 }
-impl PersistentReference {
-    /// The source offsets of a decoded reference, as the `record_layout`
-    /// pointers of its capture: the property start and the value offset
-    /// relative to it.
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 2] {
-        [
-            ("byte_offset", self.byte_offset),
-            ("value_offset", self.value_offset.map(u64::from)),
-        ]
-    }
-}
-impl LostEdgeReference {
-    /// The source offsets of a decoded reference, as the `record_layout`
-    /// pointers of its capture.
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 5] {
-        [
-            ("record_byte_offset", self.record_byte_offset()),
-            ("class_tag_offset", self.class_tag_offset()),
-            ("record_index_offset", self.record_index_offset()),
-            ("byte_offset", self.byte_offset()),
-            ("next_byte_offset", self.next_byte_offset()),
-        ]
-    }
-}
-impl DesignMaterialAssignment {
-    /// The source offsets of a decoded assignment, as the `record_layout`
-    /// pointers of its capture.
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 6] {
-        [
-            ("asm_body_key_offset", self.asm_body_key_offset),
-            ("entity_suffix_offset", self.entity_suffix_offset),
-            ("entity_id_offset", self.entity_id_offset),
-            ("visual_guid_offset", self.visual_guid_offset),
-            (
-                "physical_token_offset",
-                self.physical_token.as_ref().and_then(|value| value.offset),
-            ),
-            (
-                "visual_preset_offset",
-                self.visual_preset.as_ref().and_then(|value| value.offset),
-            ),
-        ]
-    }
-}
+impl PersistentReference {}
+impl LostEdgeReference {}
+impl DesignMaterialAssignment {}
 
 #[cfg(test)]
 mod tests;

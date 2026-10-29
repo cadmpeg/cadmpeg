@@ -1294,6 +1294,7 @@ impl DesignMeshScope {
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
+    #[cfg(test)]
     pub(crate) fn base_record(&self) -> DesignMeshRecordIdentity {
         let frame_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
         DesignMeshRecordIdentity {

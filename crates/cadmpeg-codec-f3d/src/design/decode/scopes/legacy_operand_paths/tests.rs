@@ -104,11 +104,10 @@ fn legacy_path_keeps_both_occurrence_guids() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let path =
-        super::exact_legacy_class_388_operand_path_envelope(source, &records, &scope, 10, 1, 0)
-            .unwrap()
-            .unwrap()
-            .content;
+    let path = super::exact_legacy_class_388_operand_path_envelope(source, &records, &scope, 10, 0)
+        .unwrap()
+        .unwrap()
+        .content;
     assert_eq!(path.occurrence_guids().len(), 2);
     assert_eq!(
         path.occurrence_guids()[0].as_str(),

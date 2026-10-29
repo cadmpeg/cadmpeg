@@ -51,21 +51,6 @@ fn flattened_scope_frames_reject_partial_value_offset_pairs() {
                 serde_json::to_value(&decoded).expect("serialize frame"),
                 wire
             );
-            let mut pointers = crate::records::source_offsets::collect(
-                &mut DesignParameterScope::empty("scope", kind.clone(), 1),
-            );
-            pointers.insert(format!("{prefix}_transform_offset"), 10);
-            let mut names = vec![format!("{prefix}_transform_offset")];
-            if with_reference {
-                pointers.insert(format!("{prefix}_reference_offset"), 20);
-                names.push(format!("{prefix}_reference_offset"));
-            }
-            let mut located = decoded;
-            assert!(crate::records::source_offsets::restore(&mut located, &pointers).is_empty());
-            super::test_support::assert_required_pointers(
-                &located,
-                &names.iter().map(String::as_str).collect::<Vec<_>>(),
-            );
         }
     }
 }
@@ -115,18 +100,6 @@ fn revolve_opposite_angle_preserves_wire_and_rejects_partial_source_location() {
             serde_json::from_str(&wire).expect("revolve construction");
         assert_eq!(serde_json::to_string(&value).expect("revolve wire"), wire);
     }
-    let mut located: crate::records::feature::path_features::DesignRevolveConstruction =
-        serde_json::from_str(&format!("{base},\"opposite_angle_record_index\":4}}"))
-            .expect("revolve construction");
-    located.operation_offset = Some(12);
-    located.angle_offset = Some(40);
-    if let Some(opposite) = &mut located.opposite_angle {
-        opposite.offset = Some(80);
-    }
-    super::test_support::assert_located_pointers(
-        &located,
-        &["operation_offset", "angle_offset", "opposite_angle_offset"],
-    );
 }
 
 #[test]
@@ -149,43 +122,16 @@ fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
         .expect_err("invalid prefix marker");
         assert!(error.to_string().contains("operation_prefix_marker"));
     }
-    let mut located: crate::records::feature::extrude::DesignExtrudePrologueReference =
-        serde_json::from_str(&format!("{reference},\"operation_prefix_marker\":1}}"))
-            .expect("prologue reference");
-    located.record_index_offset = Some(26);
-    if let Some(marker) = &mut located.operation_prefix_marker {
-        marker.offset = Some(37);
-    }
-    super::test_support::assert_located_pointers(
-        &located,
-        &["record_index_offset", "operation_prefix_marker_offset"],
-    );
-    for (layout, field, suffix, names) in [
+    for (layout, field, suffix) in [
         (
             "legacy_distance",
             "prefix_value",
             r#","operation":"join","extent_kind":2,"direction_reversed":false,"geometry_kind":1}"#,
-            &[
-                "operation_offset",
-                "extent_kind_offset",
-                "direction_reversed_offset",
-                "geometry_kind_offset",
-            ][..],
         ),
         (
             "legacy_shifted",
             "operation_prefix_marker",
             r#","operation":"join","direction_face_extend_values":[1,0],"side_extent_discriminators":[1,0],"direction_reversed":false,"solid_operation":true,"start":"profile_plane"}"#,
-            &[
-                "operation_offset",
-                "side_extent_discriminator_offsets.0",
-                "side_extent_discriminator_offsets.1",
-                "direction_face_extend_offsets.0",
-                "direction_face_extend_offsets.1",
-                "direction_reversed_offset",
-                "solid_operation_offset",
-                "start_offset",
-            ][..],
         ),
     ] {
         for value in [None, Some(i32::from(layout != "legacy_distance"))] {
@@ -201,19 +147,6 @@ fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
                 serde_json::to_string(&value).expect("extrude prologue wire"),
                 wire
             );
-            let mut located = value;
-            let mut next = 20;
-            let mut pointers = std::collections::BTreeMap::new();
-            let mut expected = names.to_vec();
-            if value_field(&located).is_some() {
-                expected.push(prefix_pointer(field));
-            }
-            for name in &expected {
-                next += 4;
-                pointers.insert((*name).to_owned(), next);
-            }
-            assert!(crate::records::source_offsets::restore(&mut located, &pointers).is_empty());
-            super::test_support::assert_located_pointers(&located, &expected);
         }
         for invalid in [2, u8::MAX] {
             let wire = format!("{{\"layout\":\"{layout}\",\"{field}\":{invalid}{suffix}");
@@ -223,30 +156,6 @@ fn extrude_prefixes_preserve_wire_and_reject_partial_locations() {
             .expect_err("invalid prologue prefix");
             assert!(error.to_string().contains(field));
         }
-    }
-}
-
-/// The prefix value or marker of a legacy prologue, when it stores one.
-fn value_field(prologue: &crate::records::feature::extrude::DesignExtrudePrologue) -> Option<()> {
-    match prologue {
-        crate::records::feature::extrude::DesignExtrudePrologue::LegacyDistance {
-            prefix_zero,
-            ..
-        } => prefix_zero.map(|_| ()),
-        crate::records::feature::extrude::DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker,
-            ..
-        } => operation_prefix_marker.map(|_| ()),
-        _ => None,
-    }
-}
-
-/// The pointer of the prefix value or marker named `field`.
-fn prefix_pointer(field: &str) -> &'static str {
-    if field == "prefix_value" {
-        "prefix_value_offset"
-    } else {
-        "operation_prefix_marker_offset"
     }
 }
 
@@ -265,27 +174,6 @@ fn mirror_references_preserve_wire_and_reject_partial_locations() {
             serde_json::from_str(&wire).expect("mirror construction");
         assert_eq!(serde_json::to_string(&value).expect("mirror wire"), wire);
     }
-    let mut located: crate::records::feature::mirror::DesignMirrorConstruction =
-        serde_json::from_str(&format!("{prefix}{both}}}")).expect("mirror construction");
-    located.count_offset = Some(0);
-    located.stitch_tolerance_offset = Some(0);
-    for (reference, offset) in [
-        (&mut located.seed_feature_scope_record_index, 100),
-        (&mut located.plane_scope_record_index, 200),
-    ] {
-        if let Some(reference) = reference {
-            reference.offset = Some(offset);
-        }
-    }
-    super::test_support::assert_located_pointers(
-        &located,
-        &[
-            "count_offset",
-            "stitch_tolerance_offset",
-            "seed_feature_reference_offset",
-            "plane_reference_offset",
-        ],
-    );
 }
 
 #[test]
@@ -308,31 +196,8 @@ fn hole_construction_preserves_tangent_and_input_reference_wire() {
         let result =
             serde_json::from_str::<crate::records::feature::hole::DesignHoleConstruction>(&wire);
         if mask == 0 || mask == 3 {
-            let mut located = result.expect("complete tangent form");
+            let located = result.expect("complete tangent form");
             assert_eq!(serde_json::to_string(&located).expect("hole wire"), wire);
-            located.point_record_byte_offset = Some(10);
-            located.position_offset = Some(35);
-            located.direction_offset = Some(59);
-            located.point_parameter_offsets = Some([83, 91]);
-            located.reference_type_offset = Some(99);
-            for (input, offset) in located.input_records.iter_mut().zip([129, 134]) {
-                input.offset = Some(offset);
-            }
-            let mut names = vec![
-                "point_record_byte_offset",
-                "position_offset",
-                "direction_offset",
-                "point_parameter_offsets.0",
-                "point_parameter_offsets.1",
-                "reference_type_offset",
-                "input_record_offsets.0",
-                "input_record_offsets.1",
-            ];
-            if let Some(tangent) = &mut located.tangent_point_data {
-                tangent.data.offset = Some(104);
-                names.push("tangent_point_data_offset");
-            }
-            super::test_support::assert_located_pointers(&located, &names);
         } else {
             let error = result.expect_err("partial tangent form").to_string();
             for (field, _) in fields {
@@ -355,19 +220,6 @@ fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
     );
     assert_eq!(operation.bodies()[1].source.value, 13);
     assert_eq!(operation.bodies()[1].copied.value, 14);
-    super::test_support::assert_located_at(
-        operation,
-        &[
-            ("body_group_byte_offset", 100),
-            ("relation_byte_offset", 200),
-            ("body_operand_record_offsets.0", 126),
-            ("body_operand_record_offsets.1", 137),
-            ("source_body_entity_suffix_offsets.0", 225),
-            ("source_body_entity_suffix_offsets.1", 255),
-            ("copied_body_entity_suffix_offsets.0", 240),
-            ("copied_body_entity_suffix_offsets.1", 270),
-        ],
-    );
     let value: serde_json::Value = serde_json::from_str(wire).expect("copy JSON");
     for field in [
         "body_operand_record_indices",
@@ -418,15 +270,7 @@ fn scale_center_preserves_wire_and_rejects_partial_location() {
         assert_eq!(serde_json::to_string(&record).unwrap(), expected);
         let read: crate::records::feature::body_ops::DesignScaleOperation =
             serde_json::from_str(expected).unwrap();
-        let names: &[&str] = match center {
-            None => &["uniform_factor_offset"],
-            Some(_) => &["center_position_offset", "uniform_factor_offset"],
-        };
-        super::test_support::assert_located_pointers(&record, names);
-        let pointers = crate::records::source_offsets::collect(&mut record.clone());
-        let mut restored = read;
-        assert!(crate::records::source_offsets::restore(&mut restored, &pointers).is_empty());
-        assert_eq!(restored, record);
+        assert_eq!(serde_json::to_string(&read).unwrap(), expected);
     }
 }
 
@@ -743,10 +587,6 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
             "paired_byte_offset".to_owned(),
         ];
         names.extend((0..values.len()).map(|index| format!("reference_member_offsets.{index}")));
-        super::test_support::assert_located_pointers(
-            &scope,
-            &names.iter().map(String::as_str).collect::<Vec<_>>(),
-        );
     }
 }
 
@@ -780,33 +620,6 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
                 index_from_u32(intermediate_count)
             );
             assert_eq!(serde_json::to_value(&group).unwrap(), wire);
-            let mut pointers = (0..radius_count)
-                .map(|index| {
-                    (
-                        format!("groups.0.radius_offsets.{index}"),
-                        u64::from(100 + index * 8),
-                    )
-                })
-                .chain((0..intermediate_count).map(|index| {
-                    (
-                        format!("groups.0.intermediate_parameter_offsets.{index}"),
-                        u64::from(200 + index * 8),
-                    )
-                }))
-                .collect::<Vec<_>>();
-            if with_tangency {
-                pointers.push(("groups.0.tangency_weight.value_offset".to_owned(), 50));
-            }
-            let pointers = pointers
-                .iter()
-                .map(|(name, offset)| (name.as_str(), *offset))
-                .collect::<Vec<_>>();
-            super::test_support::assert_located_at(
-                crate::records::feature::fixed_parameters::DesignFixedFilletParameters {
-                    groups: vec![group],
-                },
-                &pointers,
-            );
             for field in [
                 "radii",
                 "radius_record_indexes",
@@ -863,15 +676,6 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
     let axis: crate::records::feature::patterns::DesignCircularPatternAxis =
         serde_json::from_value(inline.clone()).unwrap();
     assert_eq!(serde_json::to_value(&axis).unwrap(), inline);
-    super::test_support::assert_located_at(
-        circular_construction(axis),
-        &[
-            ("count_offset", 1),
-            ("angle_offset", 2),
-            ("axis.origin_offset", 12),
-            ("axis.direction_offset", 36),
-        ],
-    );
     for count in [1_u32, 2] {
         for resolved in [false, true] {
             let mut wire = serde_json::json!({
@@ -888,21 +692,6 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
             let axis: crate::records::feature::patterns::DesignCircularPatternAxis =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&axis).unwrap(), wire);
-            let mut pointers = vec![
-                ("count_offset".to_owned(), 1),
-                ("angle_offset".to_owned(), 2),
-            ];
-            pointers.extend((0..count).map(|index| {
-                (
-                    format!("axis.identity_offsets.{index}"),
-                    u64::from(100 + index * 8),
-                )
-            }));
-            let pointers = pointers
-                .iter()
-                .map(|(name, offset)| (name.as_str(), *offset))
-                .collect::<Vec<_>>();
-            super::test_support::assert_located_at(circular_construction(axis), &pointers);
             for field in ["persistent_identities"] {
                 let mut invalid = wire.clone();
                 invalid[field]
@@ -1098,16 +887,6 @@ fn legacy_extrude_constants_and_geometry_preserve_wire() {
             Some(crate::records::feature::extrude::DesignExtrudeExtent::OneSidedDistance)
         );
         assert_eq!(prologue.solid_operation(), geometry_kind == 1);
-        super::test_support::assert_located_at(
-            prologue,
-            &[
-                ("prefix_value_offset", 21),
-                ("operation_offset", 25),
-                ("extent_kind_offset", 29),
-                ("direction_reversed_offset", 33),
-                ("geometry_kind_offset", 34),
-            ],
-        );
         for (field, before, after) in [
             (
                 "prefix_value",
@@ -1159,20 +938,7 @@ fn coil_placement_derives_only_the_encoded_identity_matrix() {
                 &crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
             );
         }
-        let mut pointers = vec![
-            ("coil_placement.selection_record_byte_offset", 0),
-            ("coil_placement.transform_record_byte_offset", 5),
-        ];
-        if matrix.is_some() {
-            pointers.push(("coil_placement.transform_offset", 55));
-        }
-        super::test_support::assert_located_at(
-            crate::records::feature::coil::DesignCoilScope {
-                placement: Some(placement),
-                ..Default::default()
-            },
-            &pointers,
-        );
+        if matrix.is_some() {}
     }
 }
 
@@ -1195,7 +961,12 @@ fn move_form_preserves_its_closed_integer_wire_domain() {
 
 #[test]
 fn mirror_scope_tolerance_pairs_repeated_markers_with_their_locations() {
-    for (marker, repeated) in [(61, None), (89, Some(59)), (94, Some(58)), (100, Some(59))] {
+    for (marker, _) in [
+        (61, None::<u64>),
+        (89, Some(59)),
+        (94, Some(58)),
+        (100, Some(59)),
+    ] {
         let wire =
             format!("{{\"marker\":{marker},\"first_reference\":12,\"second_reference\":11}}");
         let lane: crate::records::feature::mirror::DesignMirrorScopeTolerance =
@@ -1205,20 +976,6 @@ fn mirror_scope_tolerance_pairs_repeated_markers_with_their_locations() {
             wire
         );
         assert_eq!(lane.marker.code(), marker);
-        let mut construction = mirror_with_scope_tolerance();
-        construction.tolerance_source =
-            crate::records::feature::mirror::DesignMirrorToleranceSource::Scope(lane);
-        let mut pointers = vec![
-            ("count_offset", 0),
-            ("stitch_tolerance_offset", 51),
-            ("stitch_tolerance_scope.marker_offset", 47),
-            ("stitch_tolerance_scope.first_reference_offset", 63),
-            ("stitch_tolerance_scope.second_reference_offset", 76),
-        ];
-        if let Some(repeated) = repeated {
-            pointers.push(("stitch_tolerance_scope.repeated_marker_offset", repeated));
-        }
-        super::test_support::assert_located_at(construction, &pointers);
     }
     for marker in [0, 90] {
         let wire =
@@ -1232,11 +989,6 @@ fn mirror_scope_tolerance_pairs_repeated_markers_with_their_locations() {
 }
 
 const MIRROR_SCOPE_TOLERANCE_WIRE: &str = r#"{"count":2,"count_record_index":11,"stitch_tolerance":0.001,"stitch_tolerance_scope":{"marker":89,"first_reference":12,"second_reference":11},"seed_group_record_index":20,"plane_group_record_index":30}"#;
-
-fn mirror_with_scope_tolerance() -> crate::records::feature::mirror::DesignMirrorConstruction {
-    serde_json::from_str(MIRROR_SCOPE_TOLERANCE_WIRE).expect("inline mirror tolerance")
-}
-
 #[test]
 fn mirror_derives_count_and_requires_one_tolerance_carrier() {
     let wire = MIRROR_SCOPE_TOLERANCE_WIRE;
@@ -1288,10 +1040,6 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
             assert_eq!(
                 serde_json::to_string(&combine).expect("combine operation wire"),
                 wire
-            );
-            super::test_support::assert_located_at(
-                combine,
-                &[("operation_offset", 20), ("keep_tools_offset", 25)],
             );
         }
     }
@@ -1349,7 +1097,6 @@ fn thread_nominal_size_preserves_spelling_and_derives_numeric_wire_value() {
             serde_json::to_string(&thread).expect("thread nominal-size wire"),
             json
         );
-        super::test_support::assert_located_at(thread, &[("designation_offset", 38)]);
     }
     for text in ["", "-", "0", "-0.0", "-1", "NaN", "inf", "1e9999"] {
         let error =
@@ -1376,13 +1123,6 @@ fn thread_nominal_size_preserves_spelling_and_derives_numeric_wire_value() {
         assert_eq!(
             serde_json::to_string(&thread).expect("compact trailer wire"),
             json
-        );
-        super::test_support::assert_located_at(
-            thread,
-            &[
-                ("designation_offset", 38),
-                ("trailing_reference_offset", 100),
-            ],
         );
     }
     let invalid = compact.replace(
@@ -1429,16 +1169,6 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
                 .resolution
                 .map(|value| (value.state_id, value.vertex_slot())),
             resolution
-        );
-        super::test_support::assert_located_at(
-            decoded,
-            &[
-                ("byte_offset", 10),
-                ("paired_byte_offset", 20),
-                ("recipe_record_byte_offset", 30),
-                ("recipe_program_offset", 43),
-                ("next_byte_offset", 50),
-            ],
         );
         let mut plane_inputs: [serde_json::Value; 3] = std::array::from_fn(|_| wire.clone());
         if let Some((_, slot)) = resolution {
@@ -1533,43 +1263,6 @@ fn scope_feature_ordinal_preserves_positive_wire_values_and_rejects_zero() {
 }
 
 #[test]
-fn scope_history_state_offset_is_derived_and_wire_mismatches_are_rejected() {
-    for kind_offset in [32_u64, 100, u64::MAX - 88] {
-        let mut scope = DesignParameterScope::empty("scope", DesignFeatureKind::Sketch, 1);
-        scope
-            .try_edit(|draft| {
-                draft.byte_offset = kind_offset - 32;
-                draft.frame_length = 120;
-                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.reference_count_offset = draft.byte_offset + 9;
-                draft.layout_fixture_references();
-                draft.kind_offset = kind_offset;
-                draft.feature_ordinal_offset = kind_offset + 16;
-            })
-            .unwrap();
-        let wire = serde_json::to_value(&scope).expect("serialize scope");
-        assert!(wire.get("history_state_id_offset").is_none());
-        let pointers = crate::records::source_offsets::collect(&mut scope.clone());
-        assert_eq!(pointers["history_state_id_offset"], kind_offset - 8);
-        assert!(scope.located_history_state_offset_holds());
-        let mut decoded: DesignParameterScope =
-            serde_json::from_value(wire.clone()).expect("valid derived offset");
-        assert_eq!(
-            serde_json::to_value(&decoded).expect("serialize scope"),
-            wire
-        );
-        assert!(crate::records::source_offsets::restore(&mut decoded, &pointers).is_empty());
-        decoded.restore_frame_length(120);
-        assert_eq!(decoded, scope);
-        let mut bad = pointers;
-        bad.insert("history_state_id_offset".to_owned(), kind_offset - 7);
-        let mut moved = scope.clone();
-        crate::records::source_offsets::restore(&mut moved, &bad);
-        assert!(!moved.located_history_state_offset_holds());
-    }
-}
-
-#[test]
 fn bend_radius_requires_a_positive_finite_value() {
     for value in [0.0, -0.0, -1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
         assert!(cadmpeg_ir::scalar::PositiveReal::new(value).is_none());
@@ -1592,7 +1285,6 @@ fn bend_radius_requires_a_positive_finite_value() {
             serde_json::to_value(&operation).expect("serialize hem"),
             wire
         );
-        super::test_support::assert_located_at(operation, &[("bend_radius_offset", 100)]);
         for invalid in [0.0, -1.0] {
             let mut bad = wire.clone();
             bad["bend_radius"] = invalid.into();
@@ -1640,15 +1332,6 @@ fn rectangular_pattern_sidecar_preserves_signed_spans() {
         let record: super::patterns::DesignRectangularPatternConstruction =
             serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&record).unwrap(), wire);
-        super::test_support::assert_located_at(
-            record,
-            &[
-                ("value_offsets.0", 10),
-                ("value_offsets.1", 20),
-                ("value_offsets.2", 30),
-                ("value_offsets.3", 40),
-            ],
-        );
     }
 }
 
@@ -1747,38 +1430,7 @@ fn parameter_scope_layout_rejects_invalid_admission_and_preserves_failed_edits()
         assert!(edited.try_edit(edit).is_err());
         assert_eq!(edited, scope);
     }
-    let pointers = crate::records::source_offsets::collect(&mut scope.clone());
-    let located = |wire: serde_json::Value,
-                   pointers: &std::collections::BTreeMap<String, u64>,
-                   frame_length: u64| {
-        let mut located: DesignParameterScope = serde_json::from_value(wire).unwrap();
-        crate::records::source_offsets::restore(&mut located, pointers);
-        located.restore_frame_length(frame_length);
-        located
-            .located_draft()
-            .is_some_and(|draft| draft.check_frame_layout().is_ok())
-    };
     let wire = serde_json::to_value(&scope).unwrap();
-    assert!(located(wire.clone(), &pointers, 128));
-    assert!(!located(wire.clone(), &pointers, 89));
-    for (field, value) in [
-        ("paired_byte_offset", 129),
-        ("kind_offset", 0),
-        ("feature_ordinal_offset", 49),
-        ("previous_history_state_id_offset", 1),
-        ("reference_count_offset", 0),
-        ("reference_member_offsets.0", 15),
-    ] {
-        let mut pointers = pointers.clone();
-        pointers.insert(field.to_owned(), value);
-        assert!(!located(wire.clone(), &pointers, 128), "{field}");
-    }
-    let mut previous = wire.clone();
-    previous["previous_history_state_id"] = serde_json::json!(1);
-    assert!(
-        !located(previous, &pointers, 128),
-        "previous_history_state_id"
-    );
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
 }
@@ -1794,16 +1446,8 @@ fn parameter_scope_located_absent_history_states_remain_legal() {
         })
         .unwrap();
     let wire = serde_json::to_value(&scope).unwrap();
-    let mut decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
-    let pointers = crate::records::source_offsets::collect(&mut scope.clone());
-    assert_eq!(pointers["previous_history_state_id_offset"], 79);
-    assert!(crate::records::source_offsets::restore(&mut decoded, &pointers).is_empty());
-    decoded.restore_frame_length(125);
-    assert_eq!(decoded, scope);
-    assert!(decoded
-        .located_draft()
-        .is_some_and(|draft| draft.check_frame_layout().is_ok()));
 }
 
 #[test]
@@ -1856,22 +1500,5 @@ fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
 mod three_point_planes;
 
 mod work_points;
-
-/// A Circular Pattern construction around `axis`.
-fn circular_construction(
-    axis: crate::records::feature::patterns::DesignCircularPatternAxis,
-) -> crate::records::feature::patterns::DesignCircularPatternConstruction {
-    crate::records::feature::patterns::DesignCircularPatternConstruction {
-        count: std::num::NonZeroU32::new(3).expect("checked fixture value"),
-        count_record_index: 4,
-        count_offset: None,
-        angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("checked fixture value"),
-        angle_record_index: 5,
-        angle_offset: None,
-        axis,
-        axis_record_index: 6,
-        selection_record_index: 7,
-    }
-}
 
 mod base_feature_rows;

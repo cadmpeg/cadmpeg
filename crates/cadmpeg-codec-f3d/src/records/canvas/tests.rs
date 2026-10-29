@@ -169,12 +169,7 @@ fn canvas_content_edits_are_independent_of_source_payloads() {
         wire[field] = replacement;
         let image: super::DesignCanvasImage = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&image).unwrap(), wire);
-        assert!(image.scope_byte_offset().is_none());
         assert!(image.geometry.byte_offset.is_none());
-        assert!(image
-            .source_offsets()
-            .iter()
-            .all(|(_, offset)| offset.is_none()));
     }
     for field in [
         "scope_reference_offset",
@@ -252,13 +247,8 @@ fn source_canvas_admission_checks_actual_scope_envelopes_and_overflow() {
             content.component_entity_suffix,
         )
         .unwrap();
-        assert_eq!(image.scope_byte_offset(), Some(402));
-        let offsets: std::collections::BTreeMap<_, _> =
-            image.source_offsets().into_iter().collect();
-        assert_eq!(offsets["geometry_byte_offset"], Some(100));
         let restored: super::DesignCanvasImage =
             serde_json::from_value(serde_json::to_value(&image).unwrap()).unwrap();
-        assert!(restored.scope_byte_offset().is_none());
         assert_eq!(
             serde_json::to_value(restored).unwrap(),
             serde_json::to_value(image).unwrap()

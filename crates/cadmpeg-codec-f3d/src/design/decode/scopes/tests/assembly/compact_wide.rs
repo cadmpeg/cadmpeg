@@ -87,12 +87,7 @@ pub(super) fn exact_assembly_alignment_with_types(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types(
-        source,
-        records,
-        scope,
-        owners,
-        types,
-        &mut Vec::new(),
+        source, records, scope, owners, types,
     )
 }
 

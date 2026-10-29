@@ -47,8 +47,6 @@ pub(super) struct ProductPrereqs {
     /// Scopes after history-bound variant admission, before design-intent
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
-    pub(super) source_layout_pointers:
-        std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
     /// Authored feature order, which tells top-level `Component Insert`
@@ -102,7 +100,6 @@ impl ProductPrereqs {
             design_parameter_owners,
             design_component_occurrences,
             design_parameter_scopes,
-            source_layout_pointers: _,
             design_joint_motions,
             design_feature_timelines,
             design_component_naming_spaces,
@@ -155,16 +152,13 @@ pub(super) fn decode(
         }
     }
     let construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
-    let mut material_source_pointers = crate::design::decode::sketch::SourcePointers::new();
-    let design_material_assignments =
-        crate::materials::decode_design_assignments(ctx, scan, &mut material_source_pointers)?;
+    let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
     let design_types = crate::design::decode::meta::decode_types(scan)?;
     let crate::design::decode::parameters::DecodedParameters {
         parameters: mut design_parameters,
         unparsed: design_parameter_unparsed,
-        pointers: mut parameter_source_pointers,
         state_targets: parameter_state_targets,
-    } = crate::design::decode::parameters::decode_parameters(ctx, scan)?;
+    } = crate::design::decode::parameters::decode_parameters(scan)?;
     let parameter_state_parts = crate::design::decode::parameter_state::decode(ctx, scan)?;
     crate::design::decode::parameter_state::link_parameters(
         ctx,
@@ -185,29 +179,25 @@ pub(super) fn decode(
         owners: design_parameter_owners,
         unparsed: design_parameter_owner_unparsed,
     } = crate::design::decode::parameters::decode_parameter_owners(
-        ctx,
         scan,
         &design_parameters,
         &merged_record_headers(&design_record_headers, &design_owner_record_headers),
-        &mut parameter_source_pointers,
     )?;
     let design_component_occurrences =
         crate::design::decode::components::decode_component_occurrences(scan)?;
-    let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
-        records: mut design_parameter_scopes,
-        source_layout_drafts,
-    } = crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
-        ctx,
-        scan,
-        &crate::design::decode::scopes::parameter_scope::ParameterScopeSources {
-            entities: &design_entity_headers,
-            types: &design_types,
-            parameters: &design_parameters,
-            parameter_owners: &design_parameter_owners,
-            component_occurrences: &design_component_occurrences,
-            recipes: &construction_recipes,
-        },
-    )?;
+    let mut design_parameter_scopes =
+        crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
+            ctx,
+            scan,
+            &crate::design::decode::scopes::parameter_scope::ParameterScopeSources {
+                entities: &design_entity_headers,
+                types: &design_types,
+                parameters: &design_parameters,
+                parameter_owners: &design_parameter_owners,
+                component_occurrences: &design_component_occurrences,
+                recipes: &construction_recipes,
+            },
+        )?;
     let primary_frames =
         crate::design::decode::scopes::parameter_scope::design_primary_frame_offsets(scan)?;
     let design_superseded_scope_envelopes =
@@ -217,20 +207,6 @@ pub(super) fn decode(
             &history_index,
             &primary_frames,
         )?;
-    let mut source_layout_pointers =
-        crate::design::decode::scopes::parameter_scope::capture_scope_layouts(
-            ctx,
-            &design_parameter_scopes,
-            source_layout_drafts,
-        )?;
-    for (id, pointers) in parameter_source_pointers
-        .into_iter()
-        .chain(material_source_pointers)
-    {
-        if source_layout_pointers.insert(id, pointers).is_some() {
-            return Err(CodecError::malformed("source pointer owner is duplicated"));
-        }
-    }
     let design_joint_motions =
         crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(scan)
@@ -262,7 +238,6 @@ pub(super) fn decode(
         design_parameter_owners,
         design_component_occurrences,
         design_parameter_scopes,
-        source_layout_pointers,
         design_joint_motions,
         design_feature_timelines,
         design_component_naming_spaces,

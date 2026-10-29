@@ -67,7 +67,6 @@ pub(crate) fn decode<'a>(
         body: mut report,
         source_fidelity: mut fidelity,
         native_layout: _,
-        mut pending_layouts,
         ..
     } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
     if let Some(root_image) = fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID) {
@@ -137,7 +136,7 @@ pub(crate) fn decode<'a>(
             untyped,
         )?;
         report.losses.append(&mut outer.losses);
-        return finalize_result(ctx, ir, source, report, fidelity, pending_layouts);
+        return finalize_result(ctx, ir, source, report, fidelity);
     }
 
     let merged = merge::merge_archive(
@@ -147,7 +146,7 @@ pub(crate) fn decode<'a>(
         model_root,
         &mut ir,
         &mut report,
-        (&mut fidelity, &mut pending_layouts),
+        &mut fidelity,
     )?;
     if merged > 0 {
         if let Some(image) = fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID) {
@@ -164,7 +163,7 @@ pub(crate) fn decode<'a>(
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
     report.losses.append(&mut outer.losses);
-    finalize_result(ctx, ir, source, report, fidelity, pending_layouts)
+    finalize_result(ctx, ir, source, report, fidelity)
 }
 
 fn finalize_result(
@@ -173,9 +172,7 @@ fn finalize_result(
     source: cadmpeg_ir::SourceMeta,
     mut body: DecodeBody,
     mut source_fidelity: cadmpeg_ir::SourceFidelity,
-    pending_layouts: Vec<crate::decode::source_layout::PendingLayouts>,
 ) -> Result<Decoded, CodecError> {
-    crate::decode::source_layout::install(ctx, &mut source_fidelity, pending_layouts)?;
     body.transfer.scope = ir.scope;
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(

@@ -253,10 +253,6 @@ impl DesignCombineExternalBodyIdentity {
     pub(crate) fn selector_asset_id(&self) -> &DesignRelaxedGuidText {
         &self.selector_asset_id
     }
-    /// Byte offset of `selector_asset_id` of a located scope.
-    pub(crate) fn selector_asset_id_offset(&self) -> Option<u64> {
-        self.selector_asset_id_offset
-    }
     pub(crate) fn selector_context_id(&self) -> &DesignRelaxedGuidText {
         &self.selector_context_id
     }
@@ -543,44 +539,6 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
     }
 }
 
-impl crate::records::source_offsets::SourceOffsets for DesignCombineExternalBodyIdentity {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset(
-            "selector_asset_id_offset",
-            &mut self.selector_asset_id_offset,
-        );
-        offsets.offset(
-            "selector_context_id_offset",
-            &mut self.selector_context_id_offset,
-        );
-        offsets.offset(
-            "occurrence_reference_offset",
-            &mut self.occurrence_reference_offset,
-        );
-        offsets.offset(
-            "external_body_reference_offset",
-            &mut self.external_body_reference_offset,
-        );
-        offsets.offset("external_segment_offset", &mut self.external_segment_offset);
-        offsets.offset(
-            "external_asset_id_offset",
-            &mut self.external_asset_id_offset,
-        );
-        offsets.offset(
-            "external_link_name_offset",
-            &mut self.external_link_name_offset,
-        );
-        if let Some(version) = &mut self.external_version {
-            offsets.sourced("external_property_key_offset", &mut version.property_key);
-            offsets.sourced("external_version_urn_offset", &mut version.version_urn);
-        }
-        offsets.offsets("tail_value_offsets", &mut self.tail_value_offsets);
-    }
-}
-
 /// One target or tool body selector owned by a `Combine` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignCombineBodySelection {
@@ -744,22 +702,6 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             tools: std::iter::once(operation.tools.first)
                 .chain(operation.tools.additional)
                 .collect(),
-        }
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignCombineOperation {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("operation_offset", &mut self.operation_offset);
-        offsets.offset("keep_tools_offset", &mut self.keep_tools_offset);
-        let tools = std::iter::once(&mut self.tools.first).chain(&mut self.tools.additional);
-        for (index, tool) in tools.enumerate() {
-            if let Some(identity) = &mut tool.external_identity {
-                offsets.record(&format!("tools.{index}.external_identity"), identity);
-            }
         }
     }
 }

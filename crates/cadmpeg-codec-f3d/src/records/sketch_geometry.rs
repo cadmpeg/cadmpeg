@@ -1080,14 +1080,6 @@ impl SketchPoint {
 }
 
 impl SketchPoint {
-    /// Source field offsets of this record, by `record_layout` pointer name.
-    pub(crate) fn source_offsets(&self) -> [(&'static str, Option<u64>); 2] {
-        [
-            ("byte_offset", self.byte_offset),
-            ("coordinate_offset", self.coordinate_offset.map(u64::from)),
-        ]
-    }
-
     pub(crate) fn validate_for_write(&self, curves: &[SketchCurveIdentity]) -> Result<(), String> {
         const CENTER_RELATIVE_TOLERANCE: f64 = 1e-7;
         let flags = self.flags();

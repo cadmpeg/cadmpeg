@@ -149,12 +149,6 @@ fn sketch_profile_document_has_ordered_region_members_without_source_positions()
     assert_eq!(selection.byte_offset, None);
     assert_eq!(selection.regions[0].member_count_offset, None);
     assert_eq!(selection.regions[0].members[0].incidence_words_offset, None);
-    let pointers = crate::records::source_offsets::collect(&mut source.clone());
-    assert_eq!(
-        pointers["region_selection.regions.0.members.0.incidence_words_offset"],
-        252
-    );
-    assert!(crate::records::source_offsets::collect(&mut restored.clone()).is_empty());
     for field in [
         "byte_offset",
         "asset_id_offset",

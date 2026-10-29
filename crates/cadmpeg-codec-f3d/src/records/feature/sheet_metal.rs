@@ -826,33 +826,6 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
     }
 }
 
-impl crate::records::source_offsets::SourceOffsets for DesignBaseFlangeOperation {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("thickness_offset", &mut self.thickness_offset);
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignEdgeFlangeOperation {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("bend_radius_offset", &mut self.bend_radius_offset);
-    }
-}
-
-impl crate::records::source_offsets::SourceOffsets for DesignHemOperation {
-    fn visit_source_offsets(
-        &mut self,
-        offsets: &mut crate::records::source_offsets::OffsetVisitor<'_>,
-    ) {
-        offsets.offset("bend_radius_offset", &mut self.bend_radius_offset);
-    }
-}
-
 #[cfg(test)]
 mod tests;
 

@@ -69,28 +69,9 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
         }
         native.design_parameter_scopes.push(scope.clone());
     }
-    // The scope capture states the source offsets of the located scope.
-    let capture = |scope: &DesignParameterScope| {
-        let pointers = crate::records::source_offsets::collect(&mut scope.clone());
-        let pointers = pointers
-            .iter()
-            .map(|(name, offset)| (name.as_str(), *offset))
-            .collect::<Vec<_>>();
-        crate::test_support::source_layout::sidecar(
-            "Design/BulkStream.dat",
-            &[(scope_id.as_str(), 0, 473, &pointers[..])],
-        )
-    };
-    let has_invalid_frame = |ir: &cadmpeg_ir::CadIr, scope: &DesignParameterScope| {
-        let fidelity = capture(scope);
+    let has_invalid_frame = |ir: &cadmpeg_ir::CadIr, _: &DesignParameterScope| {
         crate::test_support::with_decode_context(|ctx| {
-            let mut findings =
-                crate::validate::validate_native(ctx, ir).expect("validate the native namespace");
-            findings.extend(
-                crate::validate::source_layout::validate_source_layout(ctx, ir, &fidelity)
-                    .expect("validate the source layout"),
-            );
-            findings
+            crate::validate::validate_native(ctx, ir).expect("validate the native namespace")
         })
         .iter()
         .any(|finding| {
@@ -119,15 +100,6 @@ fn validation_accepts_only_the_class_397_symmetric_extent_frame() {
             }) = scope.extrude_prologue_mut()
             {
                 *direction_face_extend_values = [3, 1];
-            }
-        },
-        |scope| {
-            if let Some(DesignExtrudePrologue::LegacyShifted {
-                side_extent_discriminator_offsets,
-                ..
-            }) = scope.extrude_prologue_mut()
-            {
-                *side_extent_discriminator_offsets = Some([116, 129]);
             }
         },
         |scope| {

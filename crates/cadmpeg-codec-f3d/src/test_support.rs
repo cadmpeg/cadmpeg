@@ -201,5 +201,3 @@ pub(crate) mod record_access;
 pub(crate) mod body_reference_tail_test;
 
 pub(crate) mod placement_construction;
-
-pub(crate) mod source_layout;
