@@ -80,8 +80,16 @@ fn fixture_findings(format: &str) -> Vec<String> {
                 depth,
                 ..DecodeOptions::default()
             };
-            let Ok(decoded) = codec.decode(&mut Cursor::new(&bytes), &options) else {
-                continue;
+            let decoded = match codec.decode(&mut Cursor::new(&bytes), &options) {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    findings.push(format!(
+                        "{} at {}: decode failed: {error}",
+                        path.display(),
+                        depth.as_str()
+                    ));
+                    continue;
+                }
             };
             let document = serde_json::to_value(decoded.ir()).expect("CADIR JSON");
             let report = serde_json::to_value(decoded.report()).expect("report JSON");
