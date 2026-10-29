@@ -110,6 +110,7 @@ pub(crate) fn project_parameters(
         &global_owners,
         &source_aliases,
     )?;
+    order_parameters_by_dependencies(&mut parameters)?;
     evaluate_parameter_expressions(ctx, &mut parameters, &feature_names, &global_owners)?;
     for parameter in parameters
         .iter_mut()
@@ -121,6 +122,66 @@ pub(crate) fn project_parameters(
             .and_then(|expression| text_parameter_literal(&parameter.name, &expression));
     }
     Ok(parameters)
+}
+
+fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) -> Result<(), CodecError> {
+    let mut owner_order = Vec::new();
+    let mut seen_owners = HashSet::new();
+    let mut parameter_owners = HashMap::new();
+    for parameter in parameters.iter() {
+        let owner = parameter.owner.as_ref();
+        if seen_owners.insert(owner) {
+            owner_order.push(owner);
+        }
+        parameter_owners.insert(&parameter.id, owner);
+    }
+    let mut updates = Vec::new();
+    for owner in owner_order {
+        let mut remaining = Vec::new();
+        for (index, parameter) in parameters.iter().enumerate() {
+            if parameter.owner.as_ref() == owner {
+                remaining.push(index);
+            }
+        }
+        let mut ordered = Vec::new();
+        let mut ordered_ids = HashSet::new();
+        while !remaining.is_empty() {
+            let mut next = None;
+            for (position, index) in remaining.iter().enumerate() {
+                if parameters[*index]
+                    .expression
+                    .dependencies()
+                    .all(|dependency| {
+                        parameter_owners
+                            .get(dependency)
+                            .is_none_or(|dependency_owner| dependency_owner != &owner)
+                            || ordered_ids.contains(dependency)
+                    })
+                {
+                    next = Some(position);
+                    break;
+                }
+            }
+            let Some(position) = next else {
+                ordered.clear();
+                break;
+            };
+            let index = remaining.remove(position);
+            let id = &parameters[index].id;
+            ordered_ids.insert(id);
+            ordered.push(index);
+        }
+        for (ordinal, index) in ordered.into_iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                CodecError::malformed("SLDPRT ordered parameter ordinal exceeds u32")
+            })?;
+            updates.push((index, ordinal));
+        }
+    }
+    for (index, ordinal) in updates {
+        parameters[index].ordinal = ordinal;
+    }
+    Ok(())
 }
 
 fn text_parameter_literal(name: &str, expression: &str) -> Option<ParameterValue> {
