@@ -133,6 +133,8 @@ The position stream holds one f32 coordinate triple per vertex. Those coordinate
 
 A `Base Mesh Feature` scope is an indexed Design operation. Its owning entity reference identifies the feature object. The mesh-body record carries a marked reference to the scope's record index; that reference is the operation-to-tessellation join. The mesh-body record also references the Design GUID record whose ASCII identity equals the container's `fusion_uuid`, joins its `.paramesh` entry, and stores the affine map that projects its vertices into model millimetres. The neutral feature definition is `MeshImport` and stores the resulting tessellation identities in reference order. A mesh import owns tessellation geometry and has no BREP `Body`; the decoder does not fabricate one.
 
+When a document's mesh-body metadata or referenced `.paramesh` container does not satisfy the mesh-container grammar, the mesh tessellation is omitted with loss code `mesh.container-undecoded` and B-rep evaluation proceeds.
+
 Registry field 4 declares one channel whose values address vertices or triangle corners, and field 5 declares one channel whose values address triangles. A channel entry holds an optional role in field 2, an optional resource GUID in field 3, one stream entry in field 5, and zero or more face-group records in field 6. The stream entry holds the element code in field 1, the value-stream name in field 2, and the optional index-stream name in field 3. A field-6 face-group record holds its u32 key in field 1 and its GUID in field 2. Channel resource GUIDs are unique within the registry. Face-group keys and GUIDs are unique within their channel.
 
 The element code selects the stored element:

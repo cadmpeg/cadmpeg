@@ -3553,7 +3553,21 @@ fn project_mesh_bodies(
     native: &mut F3dNative,
     report: &mut DecodeBody,
 ) -> Result<MeshProjection, CodecError> {
-    let decoded = crate::design::decode::mesh::decode_mesh_bodies(ctx, scan)?;
+    let decoded = match crate::design::decode::mesh::decode_mesh_bodies(ctx, scan) {
+        Ok(decoded) => decoded,
+        Err(CodecError::ResourceLimit(e)) => return Err(CodecError::ResourceLimit(e)),
+        Err(e) => {
+            push_loss_vec(
+                &mut report.losses,
+                F3dLossCode::MeshContainerUndecoded,
+                format_args!("mesh bodies could not be decoded: {e}"),
+            );
+            return Ok(MeshProjection {
+                count: 0,
+                tessellations_by_scope: std::collections::HashMap::new(),
+            });
+        }
+    };
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
     for texture in native
