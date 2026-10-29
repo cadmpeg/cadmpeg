@@ -5065,9 +5065,12 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
-            configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from(
-                partition_map.remove(&source_index).unwrap_or_default(),
-            )?);
+            // A native record without a decoded partition keeps its body
+            // membership unresolved instead of resolving to an empty set.
+            if let Some(bodies) = partition_map.remove(&source_index) {
+                configuration.bodies =
+                    Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
+            }
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
@@ -5133,10 +5136,7 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| {
-            configuration.source_index.is_none()
-                && configuration.name.as_deref() == Some(active_name.as_str())
-        })
+        .filter(|(_, configuration)| configuration.name.as_deref() == Some(active_name.as_str()))
         .map(|(position, _)| position);
     let position = matches.next()?;
     let source_identity_available = !ir
@@ -5144,7 +5144,10 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .configurations
         .iter()
         .any(|configuration| configuration.source_index == Some(active_index));
-    if matches.next().is_some() || !source_identity_available {
+    if matches.next().is_some()
+        || ir.model.configurations[position].source_index.is_some()
+        || !source_identity_available
+    {
         return None;
     }
 
