@@ -41,16 +41,6 @@ impl Dependencies {
         let mut discriminator_targets = Vec::new();
         let mut source_lines = Vec::new();
         let mut source_points = Vec::new();
-        let source_integers = global.numeric_limits().integer_bits.is_none_or(|bits| {
-            bits >= 8
-                && bits
-                    >= u32::from(
-                        sections
-                            .lengths
-                            .single_integer
-                            .max(sections.lengths.double_integer),
-                    )
-        });
         let mut cursor = 0;
         let mut ordinal = 0;
         while cursor < sections.directory.window().len() {
@@ -174,7 +164,7 @@ impl Dependencies {
                             insert(ctx, &mut bad, address)?;
                         }
                         if declaration.is_some_and(|(_, _, point, _)| *point) {
-                            source_point = prefix.entity_type == 116 && source_integers;
+                            source_point = prefix.entity_type == 116;
                             let mut coordinates = 0;
                             let mut symbol = None;
                             for field in 0..4 {
@@ -228,7 +218,7 @@ impl Dependencies {
                     if !bad.contains(&address) {
                         let syntax = (|| {
                             let mut macro_values = Vec::new();
-                            let mut source_line = prefix.entity_type == 110 && source_integers;
+                            let mut source_line = prefix.entity_type == 110;
                             while !value_failed {
                                 let value = match prefix.stream.next() {
                                     Ok(Some(value)) => value,
