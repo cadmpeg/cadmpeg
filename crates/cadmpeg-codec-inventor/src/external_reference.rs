@@ -345,7 +345,14 @@ fn parse_stream_grammar<'a>(
     let lod_count = cursor.count32("LOD count", 65_536)?;
     let (model_states, levels_of_detail) = if schema == 15 {
         (
-            parse_model_states(ctx, source, &mut cursor, lod_count, section_versions[2])?,
+            parse_model_states(
+                ctx,
+                source,
+                &mut cursor,
+                lod_count,
+                section_versions[2],
+                matches!(document_kind, DocumentKind::Assembly),
+            )?,
             Vec::new(),
         )
     } else {
@@ -797,9 +804,11 @@ fn parse_model_states<'a>(
     cursor: &mut Cursor<'_>,
     count: usize,
     header_section_version: u16,
+    assembly: bool,
 ) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
     let suffix_len = match header_section_version {
         _ if count == 0 => 0,
+        _ if !assembly => 77,
         0..=16 => 77,
         17 => {
             return Err(CodecError::NotImplemented(
@@ -1710,15 +1719,23 @@ mod tests {
     }
 
     #[test]
-    fn model_state_suffix_length_follows_section_version_entry_2() {
-        for (version, suffix_len) in [(16, 77), (18, 81), (19, 81)] {
+    fn model_state_suffix_length_follows_document_kind_and_section_version_entry_2() {
+        for (version, assembly, suffix_len) in [
+            (16, true, 77),
+            (18, true, 81),
+            (19, true, 81),
+            (16, false, 77),
+            (17, false, 77),
+            (18, false, 77),
+            (19, false, 77),
+        ] {
             let bytes = model_state_record(suffix_len);
             let arena = DecodeArena::new();
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic model state fits policy");
             let mut cursor = Cursor::new(root);
-            let states = super::parse_model_states(&ctx, root, &mut cursor, 1, version)
+            let states = super::parse_model_states(&ctx, root, &mut cursor, 1, version, assembly)
                 .expect("model state parses");
             assert_eq!(states[0].suffix.window().len(), suffix_len);
             assert_eq!(cursor.position(), bytes.len() - 4);
@@ -1728,13 +1745,15 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic model state fits policy");
         assert!(matches!(
-            super::parse_model_states(&ctx, root, &mut Cursor::new(root), 1, 17),
+            super::parse_model_states(&ctx, root, &mut Cursor::new(root), 1, 17, true),
             Err(CodecError::NotImplemented(_))
         ));
         let mut cursor = Cursor::new(root);
-        assert!(super::parse_model_states(&ctx, root, &mut cursor, 0, 17)
-            .expect("no model states at entry 2 value 17")
-            .is_empty());
+        assert!(
+            super::parse_model_states(&ctx, root, &mut cursor, 0, 17, true)
+                .expect("no model states at entry 2 value 17")
+                .is_empty()
+        );
         assert_eq!(cursor.position(), 0);
     }
 
