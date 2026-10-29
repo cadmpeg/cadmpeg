@@ -490,7 +490,7 @@ fn complete_active_configuration_admits_the_rederived_model() {
 fn incomplete_active_configuration_remains_an_evaluation_boundary() {
     let mut ir = complete_block_ir();
     attach_complete_active_configuration(&mut ir);
-    ir.model.configurations[0].feature_states.clear();
+    ir.model.configurations[0].bodies = None;
 
     assert_eq!(
         saved_body_census_evidence(&ir),
