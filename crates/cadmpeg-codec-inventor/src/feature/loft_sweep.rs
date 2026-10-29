@@ -12,8 +12,10 @@ use crate::pmdc::{
     content_header, type_id_string, Cursor, PmDcListMetadata, PmDcReference, PmDcReferenceList,
 };
 
+pub(crate) mod controls;
 pub(super) mod projection;
 pub(crate) mod slots;
+pub(crate) mod validation;
 
 pub(crate) fn retained_control_losses<'a>(
     definitions: impl IntoIterator<Item = &'a cadmpeg_ir::features::FeatureDefinition>,
@@ -23,6 +25,7 @@ pub(crate) fn retained_control_losses<'a>(
 
     let mut sweeps = 0_usize;
     let mut lofts = 0_usize;
+    let mut surface_lofts = 0_usize;
     for definition in definitions {
         if let FeatureDefinition::Operation(FeatureOperation::Native {
             kind: NativeFeatureKind::Other(kind),
@@ -31,10 +34,10 @@ pub(crate) fn retained_control_losses<'a>(
         {
             if kind == Family::Sweep.native_name() {
                 sweeps += 1;
-            } else if kind == Family::SolidLoft.native_name()
-                || kind == Family::SurfaceLoft.native_name()
-            {
+            } else if kind == Family::SolidLoft.native_name() {
                 lofts += 1;
+            } else if kind == Family::SurfaceLoft.native_name() {
+                surface_lofts += 1;
             }
         }
     }
@@ -47,6 +50,11 @@ pub(crate) fn retained_control_losses<'a>(
     if lofts != 0 {
         losses.push(crate::loss::InventorLossCode::FeatureLoftControlsUnresolved.note(format!(
             "Retained {lofts} native Inventor loft feature(s): the section conditions, operands, controls, or complete per-feature result topology do not close the neutral loft construction."
+        )));
+    }
+    if surface_lofts != 0 {
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftSectionsNative.note(format!(
+            "Retained {surface_lofts} native Inventor surface loft feature(s): the section selections do not close the neutral loft construction."
         )));
     }
     losses

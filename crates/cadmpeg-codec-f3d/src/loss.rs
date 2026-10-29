@@ -24,6 +24,12 @@ use cadmpeg_ir::report::{
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum F3dLossCode {
+    /// A direct operation-table pose is applied uniformly to its definition.
+    OperationPoseApplied,
+    /// Component-path constraints prevent a uniform operation-table pose.
+    OperationPoseDisagrees,
+    /// An operation table has no unique admitted neutral placement.
+    OperationPoseNative,
     /// Payload-bearing Design dimension companions have no typed locus frame.
     DimensionCompanionUntyped,
     /// A whole-body reference tail has no admitted standard reference-run frame.
@@ -48,6 +54,10 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceUnplaced,
     /// A local occurrence owner joins no unique component definition.
     LocalOccurrenceOwnerUnbound,
+    /// A solved body has no unique explicit component owner.
+    ComponentBodyOwnerUnresolved,
+    /// A body without explicit membership uses entity-cluster component ownership.
+    ComponentBodyOwnerFallback,
     /// The component owner graph contains a cycle.
     LocalOccurrenceOwnerCycle,
     /// Repeated local instance trees exceed the decode limits.
@@ -125,6 +135,10 @@ pub(crate) enum F3dLossCode {
     HoleExtentUnproven,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
+    /// Emboss controls, native pairs, and selected contours have no neutral mapping.
+    EmbossControlsNative,
+    /// An Emboss prefix matches no admitted native construction form.
+    EmbossPrefixUnparsed,
     /// A non-equivalent duplicate scope envelope was superseded by the
     /// primary-indexed envelope.
     FeatureScopeEnvelopeSuperseded,
@@ -188,6 +202,8 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// Extrude scope retains an unassigned extent payload.
+    FeatureExtrudeExtentNative,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -283,6 +299,8 @@ pub(crate) enum F3dLossCode {
     VertexToleranceWidened,
     /// A cache-first spring support pcurve has no admitted endpoint relation.
     SpringSupportPcurveUnresolved,
+    /// A native support pcurve has no surface in its construction chart.
+    ProceduralSupportChartUnresolved,
     /// Coedges carry a UV pcurve reference with no decodable 2D carrier.
     PcurveUndecoded,
     /// Rolling-ball blend definitions resolved only one of two native supports.
@@ -344,6 +362,9 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::OperationPoseApplied,
+        Self::OperationPoseDisagrees,
+        Self::OperationPoseNative,
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
         Self::PlacementConstructionUntyped,
@@ -356,6 +377,8 @@ impl F3dLossCode {
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
         Self::LocalOccurrenceOwnerUnbound,
+        Self::ComponentBodyOwnerUnresolved,
+        Self::ComponentBodyOwnerFallback,
         Self::LocalOccurrenceOwnerCycle,
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
@@ -390,6 +413,8 @@ impl F3dLossCode {
         Self::FeatureScopeUnprojected,
         Self::HoleExtentUnproven,
         Self::FeatureScopePayloadUninterpreted,
+        Self::EmbossControlsNative,
+        Self::EmbossPrefixUnparsed,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
@@ -421,6 +446,7 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
+        Self::FeatureExtrudeExtentNative,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -462,6 +488,7 @@ impl F3dLossCode {
         Self::ProceduralCurveUndecoded,
         Self::VertexToleranceWidened,
         Self::SpringSupportPcurveUnresolved,
+        Self::ProceduralSupportChartUnresolved,
         Self::PcurveUndecoded,
         Self::BlendSupportPartial,
         Self::SolvedRecordUntyped,
@@ -495,6 +522,9 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::OperationPoseApplied => "assembly.operation-table-pose",
+            Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
+            Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
@@ -511,6 +541,8 @@ impl F3dLossCode {
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
+            Self::ComponentBodyOwnerFallback => "assembly.component-body-owner-fallback",
+            Self::ComponentBodyOwnerUnresolved => "assembly.component-body-owner-unresolved",
             Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
@@ -544,6 +576,8 @@ impl F3dLossCode {
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
+            Self::EmbossControlsNative => "feature.emboss-controls-native",
+            Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
@@ -580,6 +614,7 @@ impl F3dLossCode {
                 "feature.face-selection-active-substituted"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -624,6 +659,9 @@ impl F3dLossCode {
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
             Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::ProceduralSupportChartUnresolved => {
+                "geometry.procedural-support-chart-unresolved"
+            }
             Self::SpringSupportPcurveUnresolved => "geometry.spring-support-pcurve-unresolved",
             Self::PcurveUndecoded => "geometry.pcurve-undecoded",
             Self::BlendSupportPartial => "geometry.blend-support-partial",
@@ -660,7 +698,9 @@ impl F3dLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::BodylessDesignCarrier
+            Self::OperationPoseApplied
+            | Self::OperationPoseNative
+            | Self::BodylessDesignCarrier
             | Self::XrefPlacementMetadataNative
             | Self::XrefPlacementCurrentPose
             | Self::XrefCurrentPoseNative
@@ -689,7 +729,8 @@ impl F3dLossCode {
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::DimensionCompanionUntyped
+            Self::OperationPoseDisagrees
+            | Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::WorkPlaneFrameUnbound
             | Self::PlacementConstructionUntyped
@@ -699,6 +740,8 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::ComponentBodyOwnerUnresolved
+            | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -729,6 +772,8 @@ impl F3dLossCode {
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::FeatureScopeUnprojected
+            | Self::EmbossControlsNative
+            | Self::EmbossPrefixUnparsed
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -761,6 +806,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -786,6 +832,7 @@ impl F3dLossCode {
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
             | Self::VertexToleranceWidened
+            | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
             | Self::BlendSupportPartial
@@ -821,7 +868,10 @@ impl F3dLossCode {
             | Self::SolvedRecordUntyped
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
-            Self::ConfigurationMemberUnassigned
+            Self::OperationPoseApplied
+            | Self::OperationPoseDisagrees
+            | Self::OperationPoseNative
+            | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
@@ -859,6 +909,8 @@ impl F3dLossCode {
             | Self::WorkPlaneFrameUnbound
             | Self::HoleExtentUnproven
             | Self::FeatureScopeUnprojected
+            | Self::EmbossControlsNative
+            | Self::EmbossPrefixUnparsed
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -887,6 +939,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -904,6 +957,8 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
+            | Self::ComponentBodyOwnerUnresolved
+            | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -941,6 +996,7 @@ impl F3dLossCode {
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
             Self::VertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
             Self::ProceduralCurveUndecoded
+            | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::BlendSupportPartial => LossTaxonomy::ProceduralReduced,
             Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
@@ -1007,6 +1063,9 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "assembly.operation-table-pose",
+                "assembly.operation-table-pose-disagrees",
+                "assembly.operation-table-pose-native",
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
                 "placement.construction-untyped",
@@ -1019,6 +1078,8 @@ mod tests {
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
                 "assembly.local-occurrence-owner-unbound",
+                "assembly.component-body-owner-unresolved",
+                "assembly.component-body-owner-fallback",
                 "assembly.local-occurrence-owner-cycle",
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
@@ -1053,6 +1114,8 @@ mod tests {
                 "feature.scope-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.scope-payload-uninterpreted",
+                "feature.emboss-controls-native",
+                "feature.emboss-prefix-unparsed",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
@@ -1084,6 +1147,7 @@ mod tests {
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
+                "feature.extrude-extent-native",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
@@ -1125,6 +1189,7 @@ mod tests {
                 "geometry.procedural-curve-undecoded",
                 "geometry.vertex-tolerance-widened",
                 "geometry.spring-support-pcurve-unresolved",
+                "geometry.procedural-support-chart-unresolved",
                 "geometry.pcurve-undecoded",
                 "geometry.blend-support-partial",
                 "geometry.solved-record-untyped",

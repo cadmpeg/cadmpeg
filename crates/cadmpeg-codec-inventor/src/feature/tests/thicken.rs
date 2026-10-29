@@ -471,3 +471,68 @@ fn thicken_rejects_ambiguous_properties_and_wrong_dimension_list() {
     );
     assert!(fixture.project(DecodePolicy::service()).is_none());
 }
+
+#[test]
+fn thicken_keeps_each_unresolved_boolean_form_native() {
+    for (property, expected) in [
+        (2, true),
+        (3, false),
+        (4, false),
+        (5, false),
+        (6, false),
+        (7, true),
+        (8, false),
+    ] {
+        let mut fixture = fixture();
+        let mut payload = (*fixture.properties[property]).clone();
+        let PmDcFeaturePropertyKind::Boolean { value, .. } = &mut payload.kind else {
+            panic!("Boolean operand")
+        };
+        assert_eq!(*value, expected);
+        *value = !expected;
+        fixture.properties[property] = Located::new(
+            payload,
+            fixture.properties[property].identity.type_id.clone(),
+            segment(),
+            fixture.properties[property].identity.record_ordinal,
+        );
+        assert!(fixture.project(DecodePolicy::service()).is_none());
+    }
+}
+
+#[test]
+fn thicken_native_and_partial_definitions_emit_the_pinned_operand_loss() {
+    let (partial, _) = fixture()
+        .project(DecodePolicy::service())
+        .expect("candidate")
+        .expect("partial projection");
+    let mut native = partial.clone();
+    native.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("Thicken".into()),
+            parameters: BTreeMap::new(),
+        }),
+    );
+    for features in [&[&native][..], &[&partial][..], &[&native, &partial][..]] {
+        let losses = owner::thicken_operand_losses(features.iter().copied());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::InventorLossCode::FeatureThickenOperandsNative.kind()
+        );
+        assert_eq!(losses[0].code.namespace(), "inventor");
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.thicken-operands-native"
+        );
+        assert!(losses[0].message.starts_with(&features.len().to_string()));
+    }
+    native.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("Other".into()),
+            parameters: BTreeMap::new(),
+        }),
+    );
+    assert!(owner::thicken_operand_losses([&native]).is_empty());
+    assert!(owner::thicken_operand_losses([]).is_empty());
+}

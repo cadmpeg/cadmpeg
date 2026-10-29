@@ -22,6 +22,16 @@ locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
+## Composite types
+
+| Type | Bytes | Endianness | Meaning |
+| ---- | ----: | ---------- | ------- |
+| `component_body_membership_count` | 4 | little | The u32 count precedes the terminal Body-reference list. |
+| `component_body_membership_reference` | 51 | little | A present same-segment reference with a nonzero u64 target, a 36-byte ASCII type GUID, and two trailing zero bytes. |
+| `component_body_membership_local_reference` | 11 | little | A present untyped same-segment reference with a nonzero u64 target and two zero bytes. |
+| `component_body_membership_local_entry` | 15 | little | An 11-byte untyped Body reference followed by u32 1 in the repeated body list. List order is independent; both lists contain the same unique body identities. |
+| `component_body_membership_single_overhead` | 15 | little | A u32 body count and an eleven-byte untyped owner reference enclose the single body list. |
+
 ## `indexed_design_record_header`
 
 Spec §3.1 · layout: byte offsets · size: 11 B
@@ -6245,13 +6255,7 @@ Parsed by:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The value offset is one byte after the reference marker; the middle value is its ordered-table ordinal.
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — Prefix-field order is Depth, auxiliary group, Horizontal Distance, Rotation Angle, target-face group, Vertical Distance, profile group. This table order selects the sole-member operand grammar.
 
 ## `emboss_scope_reference_table_prefix`
 
@@ -6270,10 +6274,6 @@ Parsed by:
 | 160 | 72 | `null_guid` | `u16[36]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix |
 | 232 | 3 | `zero_separator` | `bytes[3]` | little | spec | A 36-code-unit LP-UTF16 null GUID and three zero bytes separate the prefix · value `[0, 0, 0]` |
 | 235 | 4 | `reference_count` | `u32` | little | spec | The `Emboss` fixed-prefix form has nine ordered references. · value `9` |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs` — The common reference count follows the complete null-GUID separator.
 
 ## `rectangular_pattern_spacing_direction_record`
 
@@ -7108,6 +7108,112 @@ Unstated regions:
 
 - `0..101` (101 B): Scope envelope or uninterpreted bytes.
 - `299..620` (321 B): Scope envelope follows the edge groups.
+
+## `operation_table_header`
+
+Spec §1.4 · layout: byte offsets · size: 15 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref/operation_pose.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `class_tag_length` | `u32` | little | spec | a three-digit LP-ASCII class tag · value `3` |
+| 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit LP-ASCII class tag |
+| 7 | 8 | `record_index` | `u64` | little | spec | a u64 indexed record identity |
+
+## `current_extrude_face_target_payload`
+
+Spec §3.1 · layout: byte offsets · size: 54 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fixed_parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `first_side_extent` | `u32` | little | spec | The current face-target payload starts at the first-side extent |
+| 4 | 11 | `first_side_offset_reference` | `bytes[11]` | little | spec | first-side offset reference at payload offset 4 |
+| 19 | 4 | `target_option` | `u32` | little | spec | target option at offset 19 is one · value `1` |
+| 23 | 4 | `second_side_extent` | `u32` | little | spec | offset 23 stores the second-side extent |
+| 28 | 11 | `second_side_offset_reference` | `bytes[11]` | little | spec | offset 28 stores the second-side offset reference |
+| 43 | 11 | `second_side_taper_reference` | `bytes[11]` | little | spec | offset 43 stores the second-side taper reference |
+
+Unstated regions:
+
+- `15..19` (4 B): Target padding.
+- `27..28` (1 B): Target separator.
+- `39..43` (4 B): Target padding.
+
+## `emboss_single_control_head`
+
+Spec §3.1 · layout: byte offsets · size: 61 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 4 | `control_words` | `u32` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 24 | 11 | `depth_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 35 | 11 | `auxiliary_group_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 46 | 11 | `horizontal_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 57 | 4 | `native_pair_count` | `u32` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+
+## `emboss_two_control_head`
+
+Spec §3.1 · layout: byte offsets · size: 65 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 8 | `control_words` | `u32[2]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 28 | 11 | `depth_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 39 | 11 | `auxiliary_group_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 50 | 11 | `horizontal_owner_reference` | `bytes[11]` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+| 61 | 4 | `native_pair_count` | `u32` | little | spec | Both heads contain the indexed header, nine zero bytes, the control lane |
+
+## `emboss_native_pair`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `values` | `u64[2]` | little | spec | An `Emboss` native pair contains two u64 values. |
+
+## `emboss_counted_suffix`
+
+Spec §3.1 · layout: byte offsets · size: 158 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/emboss.rs`
+- `crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `rotation_owner_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 11 | 11 | `face_group_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 22 | 11 | `vertical_owner_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 33 | 4 | `profile_group_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `1` |
+| 37 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 48 | 12 | `zero_tail` | `bytes[12]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 60 | 4 | `face_group_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `1` |
+| 64 | 11 | `repeated_face_group_reference` | `bytes[11]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 75 | 4 | `null_guid_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `36` |
+| 79 | 72 | `null_guid` | `u16[36]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
+| 151 | 3 | `zero_separator` | `bytes[3]` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. · value `[0, 0, 0]` |
+| 154 | 4 | `reference_count` | `u32` | little | spec | The `emboss_counted_suffix` layout starts immediately after the native pair run. |
 
 ## Not tabulated
 

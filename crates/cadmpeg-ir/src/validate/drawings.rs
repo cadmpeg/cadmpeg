@@ -41,10 +41,11 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
             }
         }
         let order_valid = orders.insert(drawing.order);
-        let numeric_valid = drawing
-            .sheet
-            .as_ref()
-            .is_none_or(crate::drawings::DrawingSheet::is_valid)
+        let numeric_valid = drawing.physical_content_is_valid()
+            && drawing
+                .sheet
+                .as_ref()
+                .is_none_or(crate::drawings::DrawingSheet::is_valid)
             && drawing
                 .curves
                 .iter()
@@ -99,6 +100,57 @@ mod tests {
         ir.model.drawings[0].curves.push(serde_json::from_value(serde_json::json!({"geometry": {"kind": "arc", "center": [0, 0], "radius": 1, "start": [1, 0], "middle": [1, 0], "end": [0, 1]}, "visibility": "visible", "source": "cosmetic"})).unwrap());
         check_drawings(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
+    fn template_geometry_and_horizontal_axis_require_their_owners() {
+        use crate::drawings::{DrawingKind, TemplateGeometry};
+        let mut ir = fixture();
+        ir.model.drawings.truncate(1);
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        let template = serde_json::from_value::<TemplateGeometry>(serde_json::json!({
+            "curves": [{"kind":"line", "start":[10,287], "end":[200,287]},
+                       {"kind":"circle", "center":[50,247], "radius":10},
+                       {"kind":"arc", "center":[20,267], "radius":10, "start":[20,277], "middle":[30,267], "end":[20,257]}],
+            "texts": [{"text":"Title", "position":[115,19], "height":4}]
+        })).unwrap();
+        ir.model.drawings[0].template_geometry = Some(template);
+        let mut findings = Vec::new();
+        check_drawings(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
+        ir.model.drawings[0].kind = DrawingKind::Template;
+        findings.clear();
+        check_drawings(&ir, &ids, &mut findings);
+        assert!(findings.is_empty());
+        if let crate::drawings::DrawingCurveGeometry::Arc { middle, start, .. } =
+            &mut ir.model.drawings[0]
+                .template_geometry
+                .as_mut()
+                .unwrap()
+                .curves[2]
+        {
+            *middle = *start;
+        }
+        check_drawings(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
+        ir.model.drawings[0].template_geometry = None;
+        ir.model.drawings[0].x_direction = crate::units::NonzeroVector::new([1.0, 0.0, 0.0]);
+        findings.clear();
+        check_drawings(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
+        for kind in [
+            DrawingKind::View,
+            DrawingKind::Projection,
+            DrawingKind::Section,
+            DrawingKind::Detail,
+        ] {
+            ir.model.drawings[0].kind = kind;
+            findings.clear();
+            check_drawings(&ir, &ids, &mut findings);
+            assert!(findings.is_empty());
+        }
     }
 
     #[test]

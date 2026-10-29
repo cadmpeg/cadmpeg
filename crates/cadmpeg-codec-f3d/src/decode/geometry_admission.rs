@@ -21,6 +21,25 @@ pub(super) fn admit(
     annotations: &mut [cadmpeg_asm::brep::annotations::AnnotationRecord],
 ) -> Result<(), CodecError> {
     vertex_tolerance::admit(ctx, ir, losses, annotations)?;
+    for curve in &ir.model.procedural_curves {
+        let context = match curve.definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => context,
+            ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
+            ProceduralCurveDefinition::SurfaceOffset(offset) => offset.context(),
+            ProceduralCurveDefinition::Deformable(deformable) => deformable.context(),
+            ProceduralCurveDefinition::Spring(spring) => spring.support_context(),
+            _ => continue,
+        };
+        for (side, support) in context.sides().iter().enumerate() {
+            if support.surface.is_none() && support.pcurve.is_some() {
+                losses.push(F3dLossCode::ProceduralSupportChartUnresolved.note(format!(
+                    "Curve {} support side {side} retains its native support fields without a neutral surface chart",
+                    curve.id
+                )));
+            }
+        }
+    }
+
     if !ir.model.procedural_curves.iter().any(|curve| {
         matches!(curve.definition(), ProceduralCurveDefinition::Spring(spring)
             if matches!(spring.layout(), SpringLayout::CacheFirst { .. }))

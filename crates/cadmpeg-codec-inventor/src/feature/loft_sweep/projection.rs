@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Loft and circular sweep construction from typed operands and owned result faces.
 
-use std::collections::HashSet;
-
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
     features::{
@@ -13,21 +11,19 @@ use cadmpeg_ir::{
 };
 
 use super::super::{
-    angle_parameter, boolean, boolean_properties, enum16, feature_result, references,
-    resolve_property, slot_property, FeatureFamily, PmDcFeature, PmDcFeatureEnumFamily,
-    PmDcFeatureLabel, PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
-    ProjectionIndex,
+    angle_parameter, boolean_properties, enum16, feature_result, references, resolve_property,
+    slot_property, FeatureFamily, PmDcFeature, PmDcFeatureEnumFamily, PmDcFeatureLabel,
+    PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex,
 };
-use super::{
-    LOFT_MODE_TYPE, SECTION_CONDITION_TYPE, SWEEP_MODE_TYPE, SWEEP_ORIENTATION_TYPE,
-    SWEEP_SCALING_TYPE,
-};
+use super::{SWEEP_MODE_TYPE, SWEEP_ORIENTATION_TYPE, SWEEP_SCALING_TYPE};
 use crate::pmdc::type_id_string;
 use cadmpeg_ir::features::{
     LoftGuidance, LoftSection, SolidSweepOperation, SweepSection, SweepShape,
 };
 
-mod evidence;
+pub(super) mod evidence;
+
+use super::controls::{self, NativeReason};
 
 pub(in crate::feature) fn project(
     ctx: &DecodeContext<'_>,
@@ -35,27 +31,42 @@ pub(in crate::feature) fn project(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
     family: FeatureFamily,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    if references(
-        source,
-        family.output_slot(source),
-        PmDcFeatureReferenceFamily::ObjectCollection,
-        index,
-    )?
-    .references()
-    .len()
-        != 1
-    {
-        return None;
-    }
     let operation = match family {
-        FeatureFamily::Sweep => sweep(source, label, index)?,
-        FeatureFamily::Loft => loft(source, label, index)?,
+        FeatureFamily::Sweep => {
+            if references(
+                source,
+                family.output_slot(source),
+                PmDcFeatureReferenceFamily::ObjectCollection,
+                index,
+            )?
+            .references()
+            .len()
+                != 1
+            {
+                return None;
+            }
+            sweep(source, label, index)?
+        }
+        FeatureFamily::Loft => match loft(source, label, index) {
+            Ok(operation) => operation,
+            Err(reason) => {
+                losses.push(reason.note());
+                return None;
+            }
+        },
         _ => return None,
     };
-    let (id, result) = match feature_result(ctx, source, family.output_slot(source), index)? {
-        Ok(value) => value,
-        Err(error) => return Some(Err(error)),
+    let (id, result) = match feature_result(ctx, source, family.output_slot(source), index) {
+        Some(Ok(value)) => value,
+        Some(Err(error)) => return Some(Err(error)),
+        None => {
+            if matches!(family, FeatureFamily::Loft) {
+                losses.push(NativeReason::ResultIdentity.note());
+            }
+            return None;
+        }
     };
     if let Err(error) = ctx.charge_entities(1, "project Inventor loft or sweep") {
         return Some(Err(error));
@@ -174,58 +185,35 @@ fn loft(
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
-) -> Option<FeatureOperation> {
-    if !only_slots(source, &[0, 1, 2, 9, 10, 13])
-        || enum16(source, 1, PmDcFeatureEnumFamily::PartOperation, index)? != 1
-        || boolean(source, 2, index)?
-        || boolean(source, 9, index)?
-        || !zero_control(slot_property(source, 10, index)?, LOFT_MODE_TYPE, 2)
-    {
-        return None;
-    }
-    let list = references(source, 0, PmDcFeatureReferenceFamily::LoftSections, index)?;
-    if list.references().len() != 2 {
-        return None;
-    }
+) -> Result<FeatureOperation, NativeReason> {
     let token = source.identity.segment_token.as_str();
+    let links = controls::sections(
+        source,
+        |reference| resolve_property(token, reference.index(), index),
+        |reference| {
+            let parameter = index
+                .parameters
+                .get(&(token, reference.record_ordinal()?))?
+                .as_ref()?;
+            let value = index
+                .parameter_values
+                .get(parameter.id().as_str())?
+                .as_ref()?
+                .value
+                .as_ref()?;
+            Some((*parameter, value))
+        },
+    )?;
     let sketches = participant_sketches(source, label, index);
-    let mut sections = Vec::new();
+    let mut selected = Vec::new();
     let mut section_sources = Vec::new();
-    let mut distinct = HashSet::new();
-    for reference in list.references() {
-        if !distinct.insert(reference.index()) {
-            return None;
-        }
-        let section = resolve_property(token, reference.index(), index)?;
-        let PmDcFeaturePropertyKind::LoftSection {
-            entity_link,
-            value: 0,
-            condition,
-            map_value: 0,
-            source_value: 1,
-            option,
-            ..
-        } = section.kind
-        else {
-            return None;
-        };
-        if !zero_control(
-            resolve_property(token, condition.index(), index)?,
-            SECTION_CONDITION_TYPE,
-            2,
-        ) || (option.index() != 0
-            && !matches!(
-                resolve_property(token, option.index(), index)?.kind,
-                PmDcFeaturePropertyKind::Boolean { value: false, .. }
-            ))
-        {
-            return None;
-        }
+    for entity_link in links {
         let profiles = sketches
             .iter()
             .filter_map(|(ordinal, sketch)| {
                 Some((
                     *ordinal,
+                    *sketch,
                     index.profiles.regions(
                         token,
                         *ordinal,
@@ -235,26 +223,43 @@ fn loft(
                 ))
             })
             .collect::<Vec<_>>();
-        let [(ordinal, profile)] = profiles.as_slice() else {
-            return None;
+        let [(ordinal, sketch, profile)] = profiles.as_slice() else {
+            return Err(NativeReason::Profile);
         };
         section_sources.push(
             index
                 .sketches
-                .get(&(token, *ordinal))?
-                .as_ref()?
+                .get(&(token, *ordinal))
+                .and_then(Option::as_ref)
+                .ok_or(NativeReason::Profile)?
                 .header
                 .source_index,
         );
-        let profile = profile.clone();
-        sections.push(LoftSection::Profile(ProfileRef::Planar(profile)));
+        selected.push((*ordinal, *sketch, profile.clone()));
     }
     evidence::loft(
-        index.result_model?,
+        index.result_model.ok_or(NativeReason::ResultTopology)?,
         source.header.source_index,
-        section_sources.try_into().ok()?,
-    )?;
-    Some(FeatureOperation::Loft {
+        section_sources
+            .try_into()
+            .map_err(|_| NativeReason::ResultTopology)?,
+        |section, name| {
+            selected
+                .get(section)
+                .is_some_and(|(ordinal, sketch, profile)| {
+                    index
+                        .profiles
+                        .contains_curve_name(token, *ordinal, sketch, profile, name)
+                })
+        },
+    )
+    .ok_or(NativeReason::ResultTopology)?;
+    let sections = selected
+        .into_iter()
+        .map(|entry| LoftSection::Profile(ProfileRef::Planar(entry.2)))
+        .collect();
+
+    Ok(FeatureOperation::Loft {
         sections,
         guidance: LoftGuidance::default(),
         op: BooleanOp::NewBody,

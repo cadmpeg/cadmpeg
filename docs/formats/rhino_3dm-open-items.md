@@ -268,9 +268,14 @@ each counted `TCODE_VIEW_CPLANE` child before admitting its typed fields?
 **Known.** Section 4.1 defines a CRC-bearing leaf as covering its direct body,
 and section 20.4 states that the named-construction-plane list CRC excludes
 each complete child while each `TCODE_VIEW_CPLANE` child has its own CRC.
-`views.rs:1235-1248` frames and parses each child but does not call
-`direct_view_child_checksum_warning`. `container.rs:211-219` validates only
-the parent list's direct ranges. OpenNURBS reads each child through
+`views.rs:1104-1143` frames each view-list child and calls
+`direct_view_child_checksum_warning` (`views.rs:1001-1006`) for
+`VIEW_VIEWPORT`, `VIEW_CPLANE`, `VIEW_TARGET`, `VIEW_POSITION`, `VIEW_NAME`,
+and `VIEW_WALLPAPER`. The named-construction-plane parser at
+`views.rs:1523-1558` frames and parses each `TCODE_VIEW_CPLANE` child; that path skips the checksum helper. `container.rs:333-345` validates only the
+parent named-plane, named-view, and view lists over their direct ranges
+(`Table::new` at `container.rs:204-225`; child enumeration for the direct
+ranges at `container.rs:337-344`). OpenNURBS reads each child through
 `EndRead3dmChunk` after `BeginRead3dmBigChunk` at
 `opennurbs_3dm_settings.cpp:5663-5672`.
 
@@ -595,7 +600,7 @@ adjacent child endpoints do not agree?
 
 **Known.** `rhino_3dm.md` §12.6 states that the source validity rule rejects a
 gap between adjacent children. The same section defines a CADIR midpoint
-repair. `crates/cadmpeg-codec-rhino/src/curves.rs:912-931` computes the midpoint
+repair. `crates/cadmpeg-codec-rhino/src/curves.rs:1275-1303` computes the midpoint
 of every unequal adjacent endpoint pair, replaces the last control point of the
 preceding segment and the first control point of the next segment with that
 midpoint, and reports the distance moved. The joined neutral NURBS therefore
@@ -617,13 +622,13 @@ minor-3 Brep's serialized region topology does not assign exactly one bounded
 region to each face?
 
 **Known.** The Brep stores explicit face-side and region records.
-`crates/cadmpeg-codec-rhino/src/decode.rs:4997-5060` uses those records only
-when every face has one bounded side. Otherwise
-`region_shell_groups_without_records` groups faces by edge-incidence component
-and assigns generated numeric region labels. The decoder commits those inferred
-shells and reports that incidence-derived shells were used. The source region
-records remain in native data but no longer determine the neutral ownership
-graph.
+`crates/cadmpeg-codec-rhino/src/decode.rs:4761-4776` commits the staged
+grouping and reports incidence-derived shells when the explicit topology is
+unusable, falling back through `region_shell_groups_without_records` at
+`crates/cadmpeg-codec-rhino/src/decode.rs:5772-5798`, which groups faces by
+edge-incidence component and assigns generated numeric region labels.
+The decoder commits those inferred shells and reports that incidence-derived
+shells were used. The source region records remain in native data; the neutral ownership graph follows the inferred shells.
 
 **Need.** Edge incidence can identify connected face components, but it does
 not define the source's bounded-region membership. The answer withholds the
@@ -639,9 +644,9 @@ for the serialized Brep regions.
 **Known.** Rhino Brep loop types distinguish outer, inner, slit,
 curve-on-surface, and point-on-surface loops. `rhino_3dm.md` §15 states that an
 unspecified neutral role makes the first loop of a face outer and all remaining
-loops inner. `crates/cadmpeg-codec-rhino/src/writer.rs:1968-1985` implements
-that rule by comparing each loop with `face.loops.first()`. It does not use a
-declared neutral role or geometric containment to establish the distinction.
+loops inner. `crates/cadmpeg-codec-rhino/src/writer.rs:1081-1086` implements
+that rule in `brep_loop_type`, called with `face.loops.first() == Some(&index)`
+at `crates/cadmpeg-codec-rhino/src/writer.rs:1003`. List position alone establishes the distinction.
 
 **Need.** Neutral loop order is traversal order, not an outer-boundary
 declaration. The writer therefore creates Rhino topology semantics from list
@@ -654,18 +659,23 @@ inference status. It must not silently classify the first loop as outer.
 **Question.** What neutral identity and archive index can a later layer retain
 when its UUID or integer layer index duplicates an earlier layer record?
 
-**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:2417-2428` keeps every
+**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:2655-2665` keeps every
 typed layer but assigns archive-identity ownership of a duplicate UUID to the
-first serialized record. `crates/cadmpeg-codec-rhino/src/settings.rs:2495-2512`
-keeps the first occurrence of a duplicate integer index and replaces each later
-layer's index with the next unused value above the existing range. `LayerRecord`
-has no separate original-index field, so the typed layer record retains the
-generated value in place of its serialized index. A duplicate-resolution loss
-reports the rewrite.
+first serialized record. `crates/cadmpeg-codec-rhino/src/settings.rs:2721-2736`
+keeps each duplicate integer index as serialized and reports
+`duplicate layer index {index} occurs {count} times; raw indexes preserved
+and object bindings withheld`. `LayerRecord` at
+`crates/cadmpeg-codec-rhino/src/settings.rs:715-720` documents that the
+serialized archive layer index passes through duplicate handling unsynthesized
+and source identity uses the record range instead. An object whose layer index
+is ambiguous remains layer-unbound at
+`crates/cadmpeg-codec-rhino/src/objects.rs:1602-1611`. A
+duplicate-resolution loss reports the collision.
 
-**Need.** A generated index was not declared by the archive and can be confused
-with a valid source layer index. First-record UUID ownership also does not give
-the later record a distinct source identity. The answer preserves each
+**Need.** Preserved duplicates do not give the later record a distinct source
+identity: first-record UUID ownership leaves the later record without archive
+identity, and a duplicated integer index withholds each ambiguous object
+binding. The answer preserves each
 serialized identity and represents the collision explicitly, or withholds the
 ambiguous archive-reference binding without manufacturing a replacement index.
 
@@ -677,29 +687,27 @@ ambiguous archive-reference binding without manufacturing a replacement index.
 **Known.** The record is a CRC-bearing table record whose body contains a
 complete nested OpenNURBS class chunk. OpenNURBS writes that child between
 `BeginWrite3dmChunk(TCODE_INSTANCE_DEFINITION_RECORD, 0)` and
-`EndWrite3dmChunk()` at `opennurbs_archive.cpp:11778-11791`. Section 4.1
-excludes complete nested chunks from a container CRC. The general table-record
-branch in `container.rs:200-211` supplies an empty direct range for the other
-class-owning table records, but it omits `TCODE_INSTANCE_DEFINITION_RECORD`.
-The fallback at `container.rs:271` therefore hashes the complete nested class
-chunk. A stored zero CRC is reported as an integrity failure even though the
-record has no direct body bytes.
+`EndWrite3dmChunk()` at
+`opennurbs_archive.cpp:11778-11791`. Section 4.1
+excludes complete nested chunks from a container CRC. The class-owning
+table-record branch in `container.rs:310-327` supplies an empty direct range,
+and it includes `TCODE_INSTANCE_DEFINITION_RECORD` at `container.rs:322`, so
+the record CRC covers only the empty direct range and excludes the nested
+class chunk.
 
-**Need.** Add the instance-definition record to the class-owning table-record
-CRC rule and add a witness whose nested class chunk is nonempty and whose
-record CRC is the CRC of its empty direct range.
+**Need.** A witness whose nested class chunk is nonempty and whose record CRC
+is the CRC of its empty direct range.
 
 ### QA-14. Failed candidate admission leaves native-record links behind
 
 **Question.** What state can a failed Rhino candidate admission change?
 
-**Known.** `decode.rs:602-666` checkpoints appended arena lengths and
-annotations, then replaces the complete Rhino native-unknown arena before it
-runs `admit_with_annotations`. The error branch truncates model arenas and
-rolls back annotations, but it does not restore the native-unknown arena. A
-rejected history projection can therefore leave an object record linked to a
-procedural surface that was rolled back. Final validation then reports a
-`native_links` error for the unresolved target.
+**Known.** `decode.rs:589-630` stages each candidate in a separate `CadIr`
+with a sparse annotation transaction and commits it through
+`try_admit_append`. The open half is whether a rejected candidate can leave
+staged state behind: a rejected history projection that leaves an object
+record linked to a rolled-back procedural surface surfaces as a
+`native_links` error at final validation.
 
 **Need.** Candidate admission must be atomic across the model, annotations,
 and native unknown records. A failure witness must assert that both the staged
@@ -710,17 +718,57 @@ entity and every link to it are absent after rollback.
 **Question.** Can `cadmpeg check` return success when decoding reports an
 integrity failure at error severity?
 
-**Known.** `commands.rs:288-294` passes decode losses into the validation
-report and bases the check verdict on `ValidationReport::is_ok`.
-`report.rs:997-1016` counts only validation findings; it does not inspect the
-report's losses. `loss.rs:193` assigns `container.integrity-failure` error
-severity, but a document with that loss and no error finding receives a
-successful check verdict.
+**Known.** `crates/cadmpeg/src/application/validators.rs:38-49` passes decode
+losses into the validation report, and `crates/cadmpeg/src/commands.rs:452`
+bases the check verdict on `ValidationReport::is_ok`.
+`crates/cadmpeg-ir/src/report/check.rs:185-203` counts only validation
+findings (`error_count`) while the report's losses stay outside `is_ok`.
+`loss.rs:361` assigns `container.integrity-failure` error severity, but a
+document with that loss and no error finding receives a successful check
+verdict.
 
 **Need.** Define one verdict rule for error-severity losses and error-severity
 findings. If an integrity loss is recoverable enough for a successful check,
 its severity and strict consequence must say so instead of placing an ignored
 error in a successful report.
+
+### QA-16. Ignored OpenNURBS comparison gate skips the fast suite
+
+**Question.** What parity evidence does the ignored OpenNURBS object-walk gate
+provide for the transfer floor?
+
+**Known.** `integration_tests.rs:1783` marks
+`opennurbs_object_walk_and_transfer_floor` with `#[ignore = "requires
+OPENNURBS_ROOT and an openNURBS example_read executable"]`. The gate needs
+`OPENNURBS_ROOT` with a built `example_read` binary, 153 example files, and
+`OPENNURBS_SYNTH_DIR` witnesses; it asserts per-archive object-walk totals
+against `example_read` output and transfer minimums against `BASELINE`.
+Ignored tests stay out of the normal fast suite, so routine verification misses this parity comparison.
+
+**Need.** A regularly executed parity witness: either run the ignored gate in
+an environment with its prerequisites and record the outcome, or check in a
+runnable witness set with the same totals so the fast suite covers the floor.
+
+### QA-17. Strict-floor overrides for dialect and integrity losses bypass QA-15
+
+**Question.** What does strict mode refuse when a decode reports
+`source.writer-stamp-unverified`, `source.dialect-unverified`, or
+`container.integrity-failure`?
+
+**Known.** `loss.rs:355-362` assigns `IntegrityFailure` (and
+`ObjectFramingUndecodable`) error severity, while `loss.rs:429-435` pins
+their strict floor to warning and leaves `SourceWriterStampUnverified` floorless; `SourceDialectUnverified` inherits its shared taxonomy floor. Under
+`strict_consequence` at `cadmpeg-ir/src/report/loss.rs:590-596`, strict mode
+rejects a loss whose severity reaches its floor and tolerates any loss with no
+floor. The missing-stamp loss stays at record level (`dialect.rs:59-69`), so strict mode always tolerates it, while the
+residual-dialect loss is charged once per archive at admission
+(`dialect.rs:140-158`) and follows the taxonomy floor. QA-15 settles only the
+non-strict `check` verdict, which ignores losses entirely; these strict-mode consequences are separate questions.
+
+**Need.** State the intended strict consequence for each of the three codes and
+tie each pin to its QA-15-independent verdict rule. If the missing-stamp loss
+must stay strict-tolerated while the residual-dialect loss can reject, the
+specification must state that asymmetry and its ground as a prose rule.
 
 ### TP-01. Decoder output fails geometric-consistency validation
 
@@ -795,9 +843,11 @@ outside the source-defined range.
 **Question.** Which current built-in Rhino object classes must have a typed
 geometry or annotation transfer?
 
-**Known.** `decode.rs:789-843` dispatches classes through the current family
-predicates, while `decode.rs:2404-2415` groups every object that remains in the
-retained state under `object.family-not-transferred`. Current built-in records
+**Known.** `decode.rs:728-797` dispatches classes through the current family
+predicates (`decode_geometry` supported-class chain), while
+`decode.rs:2591-2645` groups every object that remains in the retained state
+under `object.family-not-transferred` (omission notes at
+`decode.rs:2636-2646`). Current built-in records
 that reach that state include
 `ON_Text`, `ON_TextDot`, obsolete V2 text dots and annotation arrows, obsolete
 V5 text and leaders, instance references, the legacy `TL_Brep` alias, and
@@ -834,8 +884,8 @@ and do not present the annotation as fully styled neutral PMI.
 **Question.** How can Rhino quadrilateral and n-gon face identity survive in
 neutral tessellation?
 
-**Known.** `decode.rs:3220-3260` always emits triangles with an empty
-`triangle_groups` array. It reports every quad through
+**Known.** `mesh.rs:541-561` triangulates faces into a flat triangle list (`triangulate_faces` at `mesh.rs:705-745`), and
+`decode.rs:3529-3585` (`commit_mesh`) reports every quad through
 `mesh.quad-topology-triangulated` and every n-gon through
 `mesh.ngon-grouping-dropped`. A mesh with many quads produces one loss per
 mesh and no machine-readable relation from the emitted triangles back to the

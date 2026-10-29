@@ -702,7 +702,6 @@ pub(crate) struct ComponentDefinition {
 /// Local component definitions of one Design stream.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct StreamComponents {
-    /// Root entity of every component naming space in the stream.
     pub(crate) root_entities: std::collections::BTreeSet<u64>,
     /// Component definition record to the naming space whose binding it stores.
     pub(crate) roots: std::collections::BTreeMap<u64, ComponentDefinition>,

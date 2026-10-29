@@ -1909,8 +1909,8 @@ Other forms emit `drawing.center-line-not-transferred`. Cosmetic vertices remain
 native and emit `drawing.cosmetic-vertex-not-transferred` per record. Geometry
 format overrides remain native and emit `drawing.geometry-format-not-transferred`
 per record. Empty lists emit no loss. A model view stores its model references
-and view parameters, without projected hidden-line edges. No projected curves
-are generated from the model shape, and absent projected edges cause no loss.
+and view parameters, without projected hidden-line edges. Source B-rep edges and selected dimension caches are not complete projected
+visible/hidden edge collections.
 
 The semantic-annotation arena owns dimension category, measurement, format,
 replacement text, tolerances, and text position. A dimension drawing retains its
@@ -1919,7 +1919,8 @@ relationships but has no duplicate typed text position. The dimension `Type` pro
 labels indexed from zero by that selector. Labels `Distance`, `DistanceX`,
 `DistanceY`, `Radius`, `Diameter`, `Angle`, and `Angle3Pt` select distance,
 horizontal distance, vertical distance, radius, diameter, angle, and three-point
-angle. Without a custom list, selector 0 selects distance. Other selectors or
+angle. Without a custom list, selectors 0, 1, 2, 4, 5, and 6 select distance,
+horizontal distance, vertical distance, radius, diameter, and angle. Other selectors or
 labels select neutral `other` with the native selector or label and emit
 `drawing.dimension-kind-not-transferred`.
 
@@ -1938,7 +1939,106 @@ references retain their existing relationship roles.
 
 `SavedGeometry` is a `Part::PropertyTopoShapeList` with ordered `TopoShape` file
 references. An empty saved shape with `TShapes 0` and null root `*` supplies no
-measurement. A nonempty or untyped saved shape remains native, supplies no
-neutral measurement, and emits `drawing.dimension-geometry-not-transferred`.
-The dimension measurement is not inferred from reference geometry, format text,
-or an arbitrary property name.
+measurement. A saved shape is a reference cache, not an authoritative measurement. Its
+reference geometry must agree with the current source topology before it gives
+an exact value. Format text and arbitrary property names do not give measurements.
+
+### Template geometry and positioned text
+
+`Drawing.template_geometry` contains physical template geometry. Its coordinates
+are page millimetres, X right and Y up. `Drawing.curves` remains in the view frame.
+Template curves reuse the line, circle, and three-point arc geometry types. They
+have no hidden-line or view-source classification. Each template retains its
+sheet through `Drawing.sheet`; pages link to that template.
+
+The normalized SVG viewport has explicit `width` and `height` in `mm` and a
+matching `viewBox="0 0 width height"`. Coordinates are `(svg_x, height-svg_y)`.
+Ordered line segments represent `rect` without corner radii, `line`, `polyline`,
+and `polygon`. A closed chain includes its last-to-first segment. `circle`
+represents a complete circle. A path contains M/m, L/l, H/h, V/v, Z/z, and
+circular A/a segments. Path numbers have whitespace or comma separators;
+command letters can touch numbers. Exponent notation is outside this grammar.
+Circular arcs have equal positive radii, binary large-arc and sweep flags,
+distinct endpoints, and a chord no longer than the diameter. Their middle
+point selects the stored sweep after reflection into the page frame.
+
+Groups have no inherited presentation or transform. Root presentation overrides,
+transforms, CSS, elliptical arcs, other path commands, and positioned text spans
+are outside the normalized grammar. Stylesheets and scripts can change peer
+geometry and prevent static normalization of the whole template.
+
+Text has explicit X/Y baseline coordinates and a positive `font-size` in viewport
+units, hence millimetres. Plain text and unpositioned `tspan` children form one
+string. Each `EditableTexts` key replaces the content of a `text` element whose
+`freecad:editable` attribute equals that key. The attribute namespace is
+`http://www.freecadweb.org/wiki/index.php?title=Svg_Namespace`. Replacement text
+keeps its baseline and em height. An editable element requires a matching key.
+Stroke, fill, and remaining font appearance are separate from these primitives.
+
+### Orthographic view placement
+
+For `TechDraw::DrawViewPart`, `Direction` points from the model toward the viewer.
+Let `n` be its unit vector. Remove the component of `XDirection` parallel to `n`
+and normalize the result to obtain the rightward basis `u`. The upward basis is
+`v = n cross u`. For model point `p`, the uncentred projection is
+`r = (dot(p,u), dot(p,v))`. Let `c` be the centre of the axis-aligned bounds of the
+unrotated projected geometry. With `theta = rotation_degrees`, page position is
+`position + scale * R(theta) * (r-c)`, where `R` is a counterclockwise 2D rotation.
+Centring precedes rotation. The final rotated bounds need not be centred at
+`position`. X/Y are page millimetres and scale is dimensionless. `XDirection`
+supplies `Drawing.x_direction`, a finite nonzero model-space vector.
+
+`DrawProjGroup` X/Y is a page origin. A `DrawProjGroupItem` X/Y pair is an offset
+from that origin in page millimetres. Add the group position once to obtain the
+child page origin. Its stored Scale is the resolved child scale; it has no second
+factor from the group Scale. The group's ordered `Views` relationship identifies
+its children. Section and Detail X/Y pairs are page positions independent of
+BaseView. Perspective and section/detail construction have additional controls.
+
+### Exact saved reference measurements
+
+An exact reference measurement has `MeasureType=1` (projected) without a custom
+enumeration list, and `Bool value="false"` for `Arbitrary`, `Inverted`, and
+`AngleOverride`, and local `References2D` entries
+that all target one `DrawViewPart` with stored false `Perspective`. Horizontal
+and vertical distance require zero Rotation. Distance, radius, diameter, and
+the admitted right angle are rotation invariant. Each saved shape has one root
+edge with identity location, no degeneration, and one located-at-zero 3D curve
+representation with its trim interval. The reference subelement count equals
+the saved curve count.
+
+The current source projection consists of trimmed lines and full circles
+parallel to the view plane. Its edges have the same source-object ownership as
+the view's local Source targets. Body placements are absent. Curve translations
+apply before projection; other curve placements are outside this form. Edge
+carriers and the finite projected envelope are complete. Referenced faces are
+planar or axial cylinders whose axes are parallel to Direction. Other surfaces
+need silhouette bounds. The unrotated projected bounds give the view centre,
+with Y negated for the cache frame. Source line endpoints are stored edge vertex
+positions. Each saved line's endpoints, or circle's centre and radius, equals a
+current projected source primitive exactly. A cache that disagrees with that
+source does not establish a current measurement.
+
+One planar line gives distance, absolute X distance, or absolute Y distance
+from its trimmed endpoints. One planar circle gives radius or twice radius.
+Two perpendicular planar line directions with a positive first-cross-second
+component in the saved XY frame give a 90-degree angle. The annotation uses
+`dimension_kind` and the existing canonical units: millimetres for linear
+measurements and degrees for angular measurements.
+
+Saved reference coordinates are centred and unscaled, with Y down. At zero
+rotation, page anchors are `(view.X + view.Scale*reference.x,
+view.Y - view.Scale*reference.y)`. Position and positive scale are required for
+anchors. A value is independent of anchor placement. Line anchors are trimmed
+endpoints. Radius anchors are the centre and its positive reference-axis point.
+Diameter anchors are opposite points on that axis. Circular anchors require the
+full-circle interval `[0,2*pi]`. Angles have no point anchors. The annotation's
+`reference_anchors` is empty or contains two ordered page-space points. These
+are reference points, not dimension-line endpoints or a complete presentation.
+
+### Physical annotation text
+
+A TechDraw annotation's `TextSize` has physical millimetre units with the
+`App::PropertyLength` carrier. A positive value gives `text_style.height`.
+Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
+height. GUI point and pixel sizes are distinct from physical em height.

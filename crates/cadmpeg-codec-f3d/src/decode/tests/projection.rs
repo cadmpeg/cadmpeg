@@ -1298,22 +1298,24 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: resolved_tool,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(resolved_tool),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: FaceSelection::Native("native:tool".into()),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
+                "native:tool".into()
+            )),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: BodySelection::Native("native:target".into()),
-            tools: FaceSelection::Resolved {
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Resolved {
                 faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
                 native: "native:tool".into(),
-            },
+            }),
         })
     ));
 }
@@ -1417,4 +1419,99 @@ fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
     assert!(report.losses.iter().any(|loss| loss.code
         == F3dLossCode::FeatureScopePayloadUninterpreted.kind()
         && loss.message.starts_with("1 native feature scope(s)")));
+}
+
+#[test]
+fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let mut native = crate::native::F3dNative::default();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design1/BulkStream.dat:design-parameter-scope#0",
+        DesignFeatureKind::Emboss,
+        40,
+    );
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    native.design_parameter_scopes.push(scope.clone());
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::EmbossPrefixUnparsed.kind())
+            .count(),
+        1
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 430;
+            draft.paired_byte_offset = 430;
+            draft.reference_count_offset = 235;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                41, 44, 48, 51, 60, 63, 66, 69, 72,
+            ]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+            draft.payload = crate::records::feature::scope::DesignScopePayload::Emboss(Some(
+                serde_json::from_value(serde_json::json!({
+                    "control_words": [7, 9], "native_pair": [17, 23],
+                    "depth_owner": {"value": 60, "offset": 29},
+                    "auxiliary_group": {"value": 72, "offset": 40},
+                    "horizontal_owner": {"value": 63, "offset": 51},
+                    "rotation_owner": {"value": 69, "offset": 82},
+                    "face_group": {"value": 48, "offset": 93},
+                    "vertical_owner": {"value": 66, "offset": 104},
+                    "profile_group": {"value": 41, "offset": 119}
+                }))
+                .unwrap(),
+            ));
+        })
+        .unwrap();
+    native.design_parameter_scopes = vec![scope];
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::EmbossControlsNative.kind())
+            .count(),
+        1
+    );
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::EmbossPrefixUnparsed.kind()));
+    let retained = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::EmbossControlsNative.kind())
+        .unwrap();
+    assert!(retained
+        .message
+        .contains(&native.design_parameter_scopes[0].id));
+    for carrier in [
+        "control words",
+        "native pairs",
+        "scalar-owner links",
+        "selection links",
+        "contour membership",
+        "placement",
+    ] {
+        assert!(retained.message.contains(carrier));
+    }
 }

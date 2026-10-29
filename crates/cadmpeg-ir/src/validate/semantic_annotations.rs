@@ -44,8 +44,10 @@ pub(super) fn check_semantic_annotations(
             || annotation.text_override.is_some()
             || annotation.upper_tolerance.is_some()
             || annotation.lower_tolerance.is_some();
-        let numeric_valid = (!has_dimension_fields
-            || annotation.kind == crate::semantic_annotations::SemanticAnnotationKind::Dimension)
+        let numeric_valid = annotation.reference_anchors_are_valid()
+            && (!has_dimension_fields
+                || annotation.kind
+                    == crate::semantic_annotations::SemanticAnnotationKind::Dimension)
             && [annotation.upper_tolerance, annotation.lower_tolerance]
                 .iter()
                 .flatten()
@@ -105,6 +107,46 @@ mod tests {
             Some(crate::scalar::FiniteReal::new(0.0).unwrap());
         check_semantic_annotations(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
+    }
+
+    #[test]
+    fn reference_anchors_require_a_typed_dimension_and_one_pair() {
+        use crate::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
+        let mut ir = fixture();
+        ir.model.semantic_annotations.truncate(1);
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        let pair = vec![
+            crate::units::FiniteVector::new([35.0, 190.0]).unwrap(),
+            crate::units::FiniteVector::new([95.0, 190.0]).unwrap(),
+        ];
+        let annotation = &mut ir.model.semantic_annotations[0];
+        annotation.reference_anchors = pair.clone();
+        let mut findings = Vec::new();
+        check_semantic_annotations(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
+        ir.model.semantic_annotations[0].kind = SemanticAnnotationKind::Dimension;
+        findings.clear();
+        check_semantic_annotations(&ir, &ids, &mut findings);
+        assert_eq!(findings.len(), 1);
+        ir.model.semantic_annotations[0].dimension_kind =
+            Some(DimensionKind::HorizontalDistance {});
+        findings.clear();
+        check_semantic_annotations(&ir, &ids, &mut findings);
+        assert!(findings.is_empty());
+        for anchors in [
+            vec![],
+            pair[..1].to_vec(),
+            pair.clone(),
+            [pair.clone(), pair[..1].to_vec()].concat(),
+        ] {
+            let valid = anchors.is_empty() || anchors.len() == 2;
+            ir.model.semantic_annotations[0].reference_anchors = anchors;
+            findings.clear();
+            check_semantic_annotations(&ir, &ids, &mut findings);
+            assert_eq!(findings.is_empty(), valid);
+        }
     }
 
     #[test]

@@ -1033,6 +1033,14 @@ fn validate_features(
             property.header.context.index(),
         ];
         match &property.kind {
+            PmDcFeaturePropertyKind::Derived { definition } => {
+                references.extend(
+                    definition
+                        .references()
+                        .iter()
+                        .map(|reference| reference.index()),
+                );
+            }
             PmDcFeaturePropertyKind::SheetMetal { definition } => {
                 references.extend(
                     definition
@@ -1378,6 +1386,30 @@ fn validate_features(
             .iter()
             .map(|record| (record.id(), record)),
     );
+    let work_plane_records =
+        cadmpeg_core::decode::unique_index(data.pm_dc_work_planes.iter().map(|record| {
+            (
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                ),
+                record.id(),
+            )
+        }));
+    let datum_plane_features = cadmpeg_core::decode::unique_index(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::DatumPlane { .. }
+                    )
+                )
+            })
+            .filter_map(|feature| Some((feature.native_ref.as_deref()?, &feature.id))),
+    );
     let thicken_record_types =
         cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
             (
@@ -1433,6 +1465,27 @@ fn validate_features(
             model: &ir.model,
         },
     );
+    let loft_index = ir
+        .model
+        .features
+        .iter()
+        .any(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Loft { .. }
+                )
+            )
+        })
+        .then(|| {
+            crate::feature::loft_sweep::validation::ValidationIndex::new(
+                &ir.model,
+                &data.pm_dc_sketches,
+                &data.pm_dc_kernel_entity_links,
+                &data.pm_dc_entity_style_links,
+                &data.pm_dc_sketch_entities,
+            )
+        });
     let motion_index = crate::feature::motion::ValidationIndex::new(
         &data.pm_dc_feature_properties,
         &data.pm_dc_transforms,
@@ -1727,6 +1780,47 @@ fn validate_features(
             ));
             continue;
         };
+        if matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Loft { .. }
+            )
+        ) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let matches = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .is_some_and(|label| {
+                    loft_index.as_ref().is_some_and(|index| {
+                        index.matches(
+                            raw_feature,
+                            label,
+                            definition,
+                            |reference| {
+                                feature_properties
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()
+                                    .copied()
+                            },
+                            |reference| {
+                                let parameter = feature_parameters
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()?;
+                                let value = parameter_values
+                                    .get(parameter.id().as_str())?
+                                    .as_ref()?
+                                    .value
+                                    .as_ref()?;
+                                Some((*parameter, value))
+                            },
+                        )
+                    })
+                });
+            if !matches {
+                findings.push(finding(Check::NativeLinks,
+                    "Inventor solid loft does not match its positional operands or generated result".into(),
+                    Some(feature.id.as_str().to_owned())));
+            }
+        }
         if matches!(family, crate::feature::FeatureFamily::Extrusion)
             && !labels
                 .get(&(
@@ -1782,6 +1876,30 @@ fn validate_features(
                 "Inventor Combine operands, operation, or keep-tools state differs from its PmDc properties".into(),
                 Some(feature.id.as_str().to_owned()),
             ));
+        }
+        if matches!(family, crate::feature::FeatureFamily::Split) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::split::definition(
+                raw_feature,
+                |reference| {
+                    let ordinal = reference.checked_sub(1)?;
+                    properties_by_record.get(&(token, ordinal)).copied()
+                },
+                |ordinal| {
+                    let native = work_plane_records.get(&(token, ordinal))?.as_ref()?;
+                    datum_plane_features
+                        .get(native.as_str())?
+                        .as_ref()
+                        .map(|id| (*id).clone())
+                },
+            );
+            if expected.as_ref() != Some(definition) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral split does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
         }
         let output_slot = family.output_slot(raw_feature);
         let expected_collection = raw_feature
@@ -2837,12 +2955,9 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
     if let UfrxRecord::ParsedPrefix(payload) = record {
         if let Some(representation) = payload.representation.as_ref() {
             let representation_pair_present = representation.design_views.is_some();
-            let expected_pair = document_kind(ir).and_then(|kind| match kind {
-                "assembly" => Some(true),
-                "part" => Some(false),
-                _ => None,
-            });
-            if expected_pair.is_some_and(|expected| representation_pair_present != expected) {
+            if !representation_pair_present
+                && document_kind(ir).is_some_and(|kind| matches!(kind, "assembly" | "part"))
+            {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor UFRxDoc representation state is inconsistent".into(),

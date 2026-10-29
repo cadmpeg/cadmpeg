@@ -8,7 +8,7 @@ use crate::decode::feature_completeness::operands::{
     body_selection_is_incomplete, edge_selection_is_incomplete, extrude_extent_is_incomplete,
     extrude_start_is_incomplete, face_selection_is_incomplete, hole_feature_is_incomplete,
     loft_section_is_incomplete, path_ref_is_incomplete, pattern_feature_is_incomplete,
-    pattern_is_incomplete, pattern_occurrence_count, planar_profile_dependency_is_incomplete,
+    pattern_is_incomplete, planar_profile_dependency_is_incomplete,
     planar_profile_ref_is_incomplete, profile_dependency_is_incomplete, profile_ref_is_incomplete,
     revolve_feature_is_incomplete, rib_feature_is_incomplete, sweep_mode_is_incomplete,
     sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
@@ -413,9 +413,31 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
         count: 3,
         second: None,
+        omitted_instances: Vec::new(),
     })
     .unwrap();
     assert!(!pattern_is_incomplete(&linear));
+    let grid = PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
+        PatternTransform::Linear {
+            direction: Some(
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+            ),
+            spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
+            count: 1,
+            second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 1.0, 0.0,
+                ))
+                .unwrap(),
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                count: 2,
+            }),
+            omitted_instances: vec![[0, 1]],
+        },
+    )
+    .unwrap();
+    assert!(!pattern_is_incomplete(&grid));
+    assert_eq!(grid.occurrence_count(), Some(1));
     assert!(pattern_is_incomplete(
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Linear {
@@ -423,6 +445,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                 count: 3,
                 second: None,
+                omitted_instances: Vec::new(),
             }
         )
         .unwrap()
@@ -437,6 +460,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                 count: 1,
                 second: None,
+                omitted_instances: Vec::new(),
             }
         )
         .unwrap()
@@ -460,6 +484,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
                         spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
                         count: 3,
                         second: None,
+                        omitted_instances: Vec::new(),
                     })
                     .unwrap()
                 ),
@@ -493,7 +518,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
     })
     .unwrap();
     assert!(!pattern_is_incomplete(&composite));
-    assert_eq!(pattern_occurrence_count(&composite), Some(6));
+    assert_eq!(composite.occurrence_count(), Some(6));
 }
 
 #[test]

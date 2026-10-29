@@ -199,6 +199,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         designs: Vec::new(),
         references: vec![crate::records::xref::XrefReference {
             current_pose: None,
+            operation_pose: None,
             contained_poses: Vec::new(),
             owned_poses: Vec::new(),
             id: "f3d:xref:reference#0-occurrence-0".into(),
@@ -664,7 +665,7 @@ fn repeated_target_frames_accept_both_reference_and_separator_forms() {
 
 #[test]
 fn local_occurrence_paths_belong_to_the_local_component_decoder() {
-    let (bulk, _) = crate::test_support::streams_test::nested_local_component_design();
+    let (bulk, _) = crate::test_support::streams_test::nested_local_component_design(&[300]);
     let records = super::indexed_records(&bulk);
     let local_records: Vec<_> = records
         .into_iter()

@@ -652,6 +652,7 @@ fn decode_container<'a>(
             &container.rse,
             &feature_inventory,
             &design_inventory,
+            &sketch_inventory.transforms,
             &body_keys,
             &mut ir.model,
         )?;
@@ -846,6 +847,12 @@ fn decode_container<'a>(
                 unresolved.features
             )));
         }
+        losses.extend(crate::feature::derived::native_source_loss(
+            &feature_inventory.labels,
+        ));
+        losses.extend(crate::feature::derived::native_tagging_loss(
+            &feature_inventory.labels,
+        ));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,
@@ -855,6 +862,7 @@ fn decode_container<'a>(
         ));
         losses.extend(unresolved.extrusion_losses);
         losses.extend(unresolved.revolve_losses);
+        losses.extend(unresolved.loft_losses);
         losses.extend(unresolved.mirror_losses);
         losses.extend(crate::feature::work_plane::native_losses(
             &feature_inventory.work_planes,
@@ -888,24 +896,7 @@ fn decode_container<'a>(
                 "Transferred {partial_threads} Inventor thread annotation(s) with native face selections; sizing, handedness, and termination operands remain native."
             )));
         }
-        let native_thicken_operands = ir
-            .model
-            .features
-            .iter()
-            .filter(|feature| {
-                matches!(
-                    feature.evaluation.definition(),
-                    cadmpeg_ir::features::FeatureDefinition::Operation(
-                        cadmpeg_ir::features::FeatureOperation::Thicken { .. }
-                    )
-                )
-            })
-            .count();
-        if native_thicken_operands != 0 {
-            losses.push(InventorLossCode::FeatureThickenOperandsNative.note(format!(
-                "{native_thicken_operands} Inventor thicken operation(s) retain native surface selections and unresolved thickness side."
-            )));
-        }
+        losses.extend(crate::feature::thicken_operand_losses(&ir.model.features));
         let partial_shells = ir
             .model
             .features
@@ -1385,6 +1376,7 @@ struct UnresolvedDesign {
     sketch_construction: usize,
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     mirror_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -1461,6 +1453,7 @@ fn project_design(
         sketch_construction: sketches.unresolved_construction,
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
+        loft_losses: features.loft_losses,
         mirror_losses: features.mirror_losses,
     })
 }

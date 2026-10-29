@@ -35,8 +35,11 @@ fn scope() -> DesignParameterScope {
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
             draft.payload = DesignScopePayload::Emboss(Some(DesignEmbossConstruction {
-                control_words: [1, 0],
-                native_pair: [17, 23],
+                control_words: crate::records::feature::emboss::DesignEmbossControlWords::Two([
+                    1, 0,
+                ]),
+                native_pair: Some([17, 23]),
+                additional_native_pairs: None,
                 depth_owner: Located {
                     value: 60,
                     offset: 29,
@@ -339,4 +342,154 @@ fn emboss_auxiliary_members_require_record_headers_without_contour_frames() {
         super::super::validate_extrude_selection_groups(&ctx, &mut findings);
         assert_eq!(findings.len(), 1);
     });
+}
+
+fn counted_scope(
+    one_word: bool,
+    pair_count: usize,
+    reference_count: usize,
+) -> DesignParameterScope {
+    use crate::records::feature::emboss::DesignEmbossControlWords;
+    let ids = (0..reference_count)
+        .map(|index| 100_001 + 7 * u32::try_from(index).unwrap())
+        .collect::<Vec<_>>();
+    let mut scope = scope();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 2048;
+            draft.paired_byte_offset = 2048;
+            let head = if one_word { 61 } else { 65 };
+            let suffix = head + 16 * u64::try_from(pair_count).unwrap();
+            draft.reference_count_offset = suffix + 154;
+            draft.reference_members = ReferenceRun::unlocated(ids.clone());
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+            let DesignScopePayload::Emboss(Some(construction)) = &mut draft.payload else {
+                unreachable!()
+            };
+            construction.control_words = if one_word {
+                DesignEmbossControlWords::One([9])
+            } else {
+                DesignEmbossControlWords::Two([7, 9])
+            };
+            construction.native_pair = (pair_count > 0).then_some([8_000_003, 9_000_007]);
+            construction.additional_native_pairs = (pair_count > 1).then(|| {
+                (1..pair_count)
+                    .map(|index| {
+                        let ordinal = u64::try_from(index).unwrap();
+                        [8_000_003 + ordinal, 9_000_007 + ordinal]
+                    })
+                    .collect()
+            });
+            let control_bytes = if one_word { 4 } else { 8 };
+            construction.depth_owner = Located {
+                value: ids[0],
+                offset: 21 + control_bytes,
+            };
+            construction.auxiliary_group = Located {
+                value: ids[2],
+                offset: 32 + control_bytes,
+            };
+            construction.horizontal_owner = Located {
+                value: ids[4],
+                offset: 43 + control_bytes,
+            };
+            construction.rotation_owner = Located {
+                value: ids[6],
+                offset: suffix + 1,
+            };
+            construction.face_group = Located {
+                value: ids[8],
+                offset: suffix + 12,
+            };
+            construction.vertical_owner = Located {
+                value: ids[10],
+                offset: suffix + 23,
+            };
+            construction.profile_group = Located {
+                value: ids[12],
+                offset: suffix + 38,
+            };
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn emboss_counted_validator_keeps_other_operands_native() {
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        for (one_word, pair_count, reference_count) in [
+            (true, 0, 13),
+            (false, 0, 19),
+            (true, 2, 13),
+            (false, 2, 19),
+            (true, 5, 19),
+            (false, 5, 13),
+        ] {
+            let mut native = crate::native::F3dNative::default();
+            let scope = counted_scope(one_word, pair_count, reference_count);
+            assert!(scope.emboss_construction().unwrap().links_match(&scope));
+            assert!(scope.emboss_operand_construction().is_none());
+            native.design_parameter_scopes.push(scope);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::validate(&ctx, &mut findings);
+            assert!(findings.is_empty());
+        }
+    });
+}
+
+#[test]
+fn emboss_counted_validator_refuses_inconsistent_offsets_counts_and_order() {
+    for (one_word, pair_count) in [
+        (true, 0),
+        (false, 0),
+        (true, 2),
+        (false, 2),
+        (true, 5),
+        (false, 5),
+    ] {
+        let scope = counted_scope(one_word, pair_count, 13);
+        let source = serde_json::to_value(&scope).unwrap();
+        let decoded: DesignParameterScope = serde_json::from_value(source.clone()).unwrap();
+        assert_eq!(decoded, scope);
+        for field in [
+            "depth_owner",
+            "auxiliary_group",
+            "horizontal_owner",
+            "rotation_owner",
+            "face_group",
+            "vertical_owner",
+            "profile_group",
+        ] {
+            let mut changed = source.clone();
+            changed["emboss_construction"][field]["offset"] = serde_json::json!(1);
+            assert!(serde_json::from_value::<DesignParameterScope>(changed).is_err());
+        }
+        for field in ["native_pair", "additional_native_pairs"] {
+            let mut changed = source.clone();
+            changed["emboss_construction"][field] = serde_json::Value::Null;
+            let error = serde_json::from_value::<DesignParameterScope>(changed)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(field));
+        }
+        let mut changed = source.clone();
+        changed["emboss_construction"]["additional_native_pairs"] = serde_json::Value::Array(
+            (0..=pair_count)
+                .map(|_| serde_json::json!([31, 37]))
+                .collect(),
+        );
+        assert!(serde_json::from_value::<DesignParameterScope>(changed).is_err());
+        let mut changed = source.clone();
+        changed["reference_members"]
+            .as_array_mut()
+            .unwrap()
+            .swap(0, 1);
+        assert!(serde_json::from_value::<DesignParameterScope>(changed).is_err());
+        let mut changed = source;
+        changed["reference_members"][12] = changed["reference_members"][0].clone();
+        assert!(serde_json::from_value::<DesignParameterScope>(changed).is_err());
+    }
 }

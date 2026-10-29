@@ -104,3 +104,24 @@ jobs:
           name: iges-freecad-report-${{ github.run_id }}
           path: /home/runner/side2/tmp/iges-l9
           if-no-files-found: warn
+
+  schedule-alert:
+    needs: [iges-freecad]
+    if: ${{ always() && github.event_name == 'schedule' }}
+    name: report scheduled result
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Open, update, or close the failure issue
+        uses: ./.github/actions/schedule-alert
+        with:
+          result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          assignee: ${{ vars.SCHEDULE_ALERT_ASSIGNEE }}

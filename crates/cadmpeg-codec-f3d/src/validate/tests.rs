@@ -25,6 +25,7 @@ use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
 mod arithmetic;
+mod body_ownership;
 mod component_insert;
 mod component_occurrences;
 mod construction_group;
@@ -37,12 +38,14 @@ mod extrude_group;
 mod extrude_member;
 mod face_boundary;
 mod face_group;
+mod face_group_members;
 mod face_operand;
 mod fillet_group;
 mod history_transitions;
 mod operand_group_carrier;
 mod parameter_owner;
 mod parameter_scope;
+mod sweep_body_roles;
 mod timeline;
 mod xref;
 
@@ -1033,9 +1036,17 @@ fn validation_checks_generic_sweep_group_carriers() {
     // exists yet, so the independent carrier finding remains.
     assert_eq!(group_native_finding_count(&ir), 1);
 
+    // Both body roles are admitted Sweep roles; a role outside the Sweep set
+    // adds the frame finding.
     f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
+        );
+    assert_eq!(group_native_finding_count(&ir), 1);
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
         );
     assert_eq!(group_native_finding_count(&ir), 2);
 }
@@ -1918,3 +1929,24 @@ mod face_recipe_lengths;
 mod rigid_alignment;
 
 mod work_plane;
+
+#[test]
+fn loft_accepts_either_body_group_role() {
+    use crate::records::feature::extrude::DesignExtrudeOperation;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    for body in [DesignOperandRole::BODIES_A, DesignOperandRole::BODIES_B] {
+        let groups = [
+            (body, 1),
+            (DesignOperandRole::PROFILE, 1),
+            (DesignOperandRole::PROFILE, 1),
+        ];
+        assert!(super::loft_operand_roles_are_valid(
+            DesignExtrudeOperation::Join,
+            &groups
+        ));
+        assert!(!super::loft_operand_roles_are_valid(
+            DesignExtrudeOperation::NewBody,
+            &groups
+        ));
+    }
+}

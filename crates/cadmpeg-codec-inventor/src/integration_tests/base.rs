@@ -16,6 +16,8 @@ use crate::test_support::test_fixtures::{
 };
 use crate::InventorCodec;
 
+mod derived;
+
 fn list(bytes: &mut Vec<u8>, references: &[u32]) {
     push_u16(bytes, 2);
     push_u16(bytes, 0x3000);
@@ -133,6 +135,7 @@ fn fixtures() -> (SyntheticRecords, BaseEnvelopeRecords) {
     (
         design,
         BaseEnvelopeRecords {
+            design_version: 18,
             brep: vec![(
                 [
                     0x21, 0x75, 0x0f, 0xcc, 0xd1, 0x11, 0x27, 0x80, 0xe3, 0x86, 0x19, 0x96, 0x22,
@@ -463,8 +466,16 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
     }
     let mut valid_model = ir.model.clone();
     assert_eq!(
-        crate::feature::base::project(&ctx, &document, &features, &design, &keys, &mut valid_model)
-            .expect("valid Base projection"),
+        crate::feature::base::project(
+            &ctx,
+            &document,
+            &features,
+            &design,
+            &[],
+            &keys,
+            &mut valid_model
+        )
+        .expect("valid Base projection"),
         2
     );
     let target_id = document
@@ -483,8 +494,16 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
         }
     }
     assert_eq!(
-        crate::feature::base::project(&ctx, &document, &features, &design, &keys, &mut ir.model)
-            .expect("ambiguous Base projection"),
+        crate::feature::base::project(
+            &ctx,
+            &document,
+            &features,
+            &design,
+            &[],
+            &keys,
+            &mut ir.model
+        )
+        .expect("ambiguous Base projection"),
         0
     );
     assert!(ir.model.feature_result_topologies.is_empty());

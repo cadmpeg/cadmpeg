@@ -1,0 +1,94 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "4582",
+        "crc32": "3c8f77df",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 32781,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 3116
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4640",
+        "crc32": "ff78a55f",
+        "data_offset": "3201",
+        "header_offset": "3158"
+      },
+      "compression": "deflate",
+      "expanded": 8938,
+      "name": "Box.Shape.brp",
+      "role": "brep",
+      "stored": 731
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4699",
+        "crc32": "9ecedf81",
+        "data_offset": "3983",
+        "header_offset": "3932"
+      },
+      "compression": "deflate",
+      "expanded": 462,
+      "name": "techdraw-template.svg",
+      "role": "auxiliary",
+      "stored": 284
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4766",
+        "crc32": "86470692",
+        "data_offset": "4307",
+        "header_offset": "4267"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "4822",
+        "crc32": "00aacf32",
+        "data_offset": "4383",
+        "header_offset": "4327"
+      },
+      "compression": "deflate",
+      "expanded": 566,
+      "name": "Length.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 199
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R45039 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=drawing",
+    "object count=7",
+    "physical ledger spans=36 coverage=exact",
+    "ProgramVersion=1.1R45039 (Git)"
+  ]
+}

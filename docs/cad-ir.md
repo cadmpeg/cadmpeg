@@ -196,6 +196,8 @@ Neutral definitions include directly stored geometry, solid and surface construc
 
 Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. A solid primitive is defined in its feature frame: a cylinder or cone has its base centre at the frame origin and its axis along the frame z axis. Its optional `placement` is the rigid local-to-model transform of that frame; an absent placement leaves the frame unresolved. Extents are one-sided, two-sided, or symmetric around the profile plane. Each side carries a one-sided termination law: unresolved, blind, through-all, through-next, to-first, to-last, to-face, to-vertex, to-plane, offset-from-face, to-shape, or angular. A symmetric side is mirrored across the profile plane; its blind length or angular travel states the total travel split evenly around the plane. An extrusion side additionally carries an optional draft angle, measured from the profile plane outward along that side's travel, and an optional signed offset from its terminating geometry; an absent draft leaves that side's walls parallel. Revolution sides carry termination laws only. Holes travel on one side only and state a bare termination law. Boolean operations are join, cut, intersect, or new-body. Profiles reference unresolved, native, sketch, or solved-face identity. Paths reference unresolved, native, sketch, edge, or curve identity. Projected curves retain unresolved directionality independently of an absent explicit direction vector. Draft faces, neutral plane, pull direction, angle, and side state resolve independently. Filled-surface boundaries, supports, continuity, and merge state also resolve independently. Continuity is a nonempty ordered list of boundary conditions. Each condition is `contact`, `tangent`, or `curvature`; tangent and curvature carry an optional positive dimensionless weight. Contact carries no weight. An absent weight means the source weight is unresolved. Conditions serialize as objects with `kind` and, when resolved, `weight`. Uniformity of the complete condition includes its weight. Boundary surfaces retain their operation family when their directional curve networks are unresolved. Surface-knit operands, entity merging, solid conversion, and tolerance resolve independently. Edge fillets use constant or sampled variable radii. Full-round fillets keep a center-face selection and two side-face selections; each side is explicit, automatic, or unresolved. Chamfers use distance, two distances, or distance-angle and retain reference-side reversal only when resolved. Hole entry and optional exit shapes are simple, chamfered, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
+Linear pattern counts define grid positions, including the seed at `(0, 0)`. An absent second direction has one position. `omitted_instances` is an optional array of zero-based `[first, second]` grid coordinates. Each coordinate is in bounds and distinct, and `(0, 0)` is excluded. An absent or empty array omits no position. The retained instance count is the product of the direction counts minus the number of omitted coordinates. Length conversion preserves these coordinates.
+
 An extrusion starts on its profile plane, on a plane at a signed offset from the profile plane, on a selected face, or on a plane that has no face identity. A to-plane termination and a from-plane start each carry the model-space frame of that plane: an origin in millimeters, a normal, and a `u_axis` in the plane. The normal and `u_axis` are orthogonal and need not have unit length. Each also names the native record that stores the plane. This extrusion starts on the plane z = 40 mm and ends on the plane z = 100 mm:
 
 ```json
@@ -278,6 +280,32 @@ Native records retain typed references into the neutral model. Format-neutral co
 ## Presentation, attributes, and source fidelity
 
 Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to topology entities or native source carriers. A binding's optional `visible` field is `None` when the source provides no binding-level visibility value and is `false` when that binding is explicitly hidden; binding visibility does not change visibility on a shared geometry carrier. Drawings preserve page, view, and annotation entities. A drawing's optional `visible` field is `None` when the source provides no drawing-level visibility value and is `false` when that drawing entity is explicitly hidden; drawing visibility does not change visibility on its relationships or contents. PMI annotations preserve semantic and graphical annotation entities. A PMI annotation's optional `visible` field is `None` when the source provides no annotation-level visibility value and is `false` when that annotation occurrence is explicitly hidden; annotation visibility does not change visibility on a shared geometry or tessellation carrier. Presentation layers group model or presentation items. A layer's optional `visible` field is `None` when the source provides no layer-level visibility value and is `false` when the layer is explicitly hidden; layer visibility does not change visibility on its assigned items. Attributes attach source-native values to supported targets.
+
+A drawing's `sheet` holds positive width and height in millimetres and ordered,
+uniquely named title-block fields. A page can obtain its sheet through its
+`template` identity. `curves` is an ordered collection in the owning view frame:
+X right, Y up, millimetres before view scale and rotation. Each curve has required
+`visible` or `hidden` visibility and `projected_model_edge`, `cosmetic`, or
+`center_line` source. Its optional `displayed` flag is independent presentation
+visibility. Geometry is a finite line, a positive-radius circle, or an arc with
+three distinct points on its circle within relative radial error 1e-9.
+
+`template_geometry` belongs only to templates and holds ordered curves and
+baseline-positioned texts in physical page millimetres, X right and Y up. It
+reuses `DrawingCurveGeometry` in this page frame. Each text has a resolved string,
+finite baseline position, and positive em height in millimetres. `x_direction`
+belongs only to view, projection, section, or detail drawings and gives their
+finite nonzero horizontal model direction.
+
+A semantic dimension has one `dimension_kind`, optional `value`, format,
+`text_override`, signed nonzero `upper_tolerance` and `lower_tolerance`, and text
+position. Linear values and tolerances are millimetres; angular values and
+tolerances are degrees. Its `reference_anchors` is empty or contains two ordered
+finite page-space reference points in millimetres. A nonempty pair requires a
+typed dimension owner. Anchors do not define dimension lines, arrows, or text
+orientation. Annotation `text_style` holds an optional positive physical em
+height and optional stored font family without substitution. No second dimension
+kind, unit selector, or sheet-size field exists.
 
 `Tessellation.triangles` preserves source winding. Each triangle index addresses
 `vertices`. `feature_edges` is the

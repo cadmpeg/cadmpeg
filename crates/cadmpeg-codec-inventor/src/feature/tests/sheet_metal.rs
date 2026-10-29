@@ -274,7 +274,7 @@ fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
         .collect();
     assert_eq!(
         crate::feature::sheet_metal::native_kind_counts(&inventory, &features),
-        (1, 1)
+        (1, 1, 0)
     );
     let codes: Vec<_> = crate::feature::sheet_metal::native_kind_losses(&inventory, &features)
         .iter()
@@ -290,11 +290,11 @@ fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
     assert!(crate::feature::sheet_metal::native_kind_losses(&inventory, &[]).is_empty());
     assert_eq!(
         crate::feature::sheet_metal::native_kind_counts(&inventory, &[]),
-        (0, 0)
+        (0, 0, 0)
     );
     inventory.labels.push(inventory.labels[0].clone());
     assert_eq!(
         crate::feature::sheet_metal::native_kind_counts(&inventory, &features),
-        (0, 1)
+        (0, 1, 0)
     );
 }
