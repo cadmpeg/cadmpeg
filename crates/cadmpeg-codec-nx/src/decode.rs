@@ -26,6 +26,7 @@ use crate::parasolid::{self, Stream, StreamKind};
 
 mod blend;
 mod build;
+mod document_projection;
 pub(crate) mod emit;
 pub(crate) mod feature_completeness;
 mod geometry_work;
@@ -46,10 +47,30 @@ pub(crate) struct Scan<'a> {
     /// Parsed SPLMSSTR container.
     pub(crate) container: Container<'a>,
     /// Located and inflated Parasolid or preview streams.
-    pub(crate) streams: Vec<Stream>,
+    pub(crate) streams: Vec<Stream<'a>>,
+    source_untyped: std::cell::RefCell<cadmpeg_ir::ArenaClasses>,
+}
+
+impl<'a> Scan<'a> {
+    /// Build a scan over a parsed container and its located streams.
+    pub(crate) fn new(container: Container<'a>, streams: Vec<Stream<'a>>) -> Self {
+        Self {
+            container,
+            streams,
+            source_untyped: std::cell::RefCell::default(),
+        }
+    }
 }
 
 impl Scan<'_> {
+    pub(crate) fn source_untyped(&self) -> std::cell::RefMut<'_, cadmpeg_ir::ArenaClasses> {
+        self.source_untyped.borrow_mut()
+    }
+
+    pub(crate) fn mark_untyped(&self, class: cadmpeg_ir::ArenaClass) {
+        self.source_untyped.borrow_mut().insert(class);
+    }
+
     /// Count streams with the requested classification.
     pub(super) fn count(&self, kind: StreamKind) -> usize {
         self.streams.iter().filter(|s| s.kind() == kind).count()
@@ -74,7 +95,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         let streams = parasolid::extract_legacy_streams(ctx, part)?;
         (container, streams)
     };
-    Ok(Scan { container, streams })
+    Ok(Scan::new(container, streams))
 }
 
 /// Decode an NX `.prt` into IR and a loss report.
@@ -93,10 +114,21 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     if ctx.container_only() {
         let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
-        body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
+        body.transfer = cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::container(),
+            geometry_transferred: false,
+        };
         body.losses.extend(native_losses);
         report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
-        return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
+        return decoded(
+            ctx,
+            root,
+            &scan,
+            ir,
+            body,
+            (annotations, unknowns),
+            &mut admitted_entities,
+        );
     }
 
     if let Some((ir, body, annotations, unknowns)) = try_decode_geometry(
@@ -107,24 +139,69 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         &notes,
         &mut admitted_entities,
     )? {
-        return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
+        return decoded(
+            ctx,
+            root,
+            &scan,
+            ir,
+            body,
+            (annotations, unknowns),
+            &mut admitted_entities,
+        );
     }
 
-    let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
+    let (mut ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, &scan, &dialects)?;
+    // Absence of a B-rep route does not erase independently decoded document
+    // content (JT meshes, attributes, products, or design records).
+    ir.scope = cadmpeg_ir::ContentScope {
+        model: ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Model)
+            .is_some(),
+        design: ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design)
+            .is_some(),
+    };
     let mut body = build_container_body(&scan, dialect_losses, notes);
     body.losses.extend(native_losses);
     report_untransferred_streams(&scan, &mut body, TypedNative::Available);
-    decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
+    decoded(
+        ctx,
+        root,
+        &scan,
+        ir,
+        body,
+        (annotations, unknowns),
+        &mut admitted_entities,
+    )
 }
 
 fn decoded(
     ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    scan: &Scan<'_>,
     mut ir: CadIr,
-    body: DecodeBody,
-    annotations: cadmpeg_ir::Annotations,
-    unknowns: Vec<UnknownRecord>,
+    mut body: DecodeBody,
+    source: (cadmpeg_ir::Annotations, Vec<UnknownRecord>),
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
+    let (annotations, unknowns) = source;
+    if ctx.container_only() {
+        ir.scope = cadmpeg_ir::ContentScope::container();
+    } else {
+        document_projection::project(ctx, &mut ir, &mut body.losses)?;
+        ir.scope.model = body.transfer.geometry_transferred
+            || ir
+                .model
+                .populated_arena(cadmpeg_ir::ArenaClass::Model)
+                .is_some();
+        ir.scope.design |= ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design)
+            .is_some();
+    }
+    body.transfer.scope = ir.scope;
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         admitted_entities,
@@ -132,6 +209,22 @@ fn decoded(
     )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;
+    if ctx.container_only() && (!scan.container.entries.is_empty() || !scan.streams.is_empty()) {
+        scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+        scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
+    }
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(root.window().len()),
+        "retain NX source image outside CADIR",
+    )?;
+    source_fidelity.insert_retained_record(
+        cadmpeg_ir::ids::UnknownId::mint("nx:source:image#whole").map_err(CodecError::malformed)?,
+        cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole(
+            "nx:source",
+            root.window().to_vec(),
+        )
+        .with_untyped(scan.source_untyped.borrow().clone()),
+    )?;
     Ok(Decoded {
         ir,
         body,
@@ -142,10 +235,10 @@ fn decoded(
 fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native: TypedNative) {
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if classified_control_count != control_count {
-        body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
+        body.losses.push(NxLossCode::OffsetStoreControlUntyped.note({ scan.mark_untyped(cadmpeg_ir::ArenaClass::Design); scan.mark_untyped(cadmpeg_ir::ArenaClass::Model); format!(
                 "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
                 control_count - classified_control_count
-            )));
+            ) }));
     }
     for entry in &scan.container.entries {
         let content = entry.content();
@@ -154,28 +247,35 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
                 && content == EntryContent::SaveToggleInfo
                 && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
-            body.losses.push(NxLossCode::ContainerStreamOpaque.note(format!(
+            body.losses.push(NxLossCode::ContainerStreamOpaque.note({ scan.mark_untyped(cadmpeg_ir::ArenaClass::Design); scan.mark_untyped(cadmpeg_ir::ArenaClass::Model); format!(
                     "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
                     entry.name,
                     content.label()
-                )));
+                ) }));
         }
     }
     for entry in scan.container.bounded_indexed_om_entries() {
-        body.losses.push(NxLossCode::SourceScanBounded.note(format!(
-            "The indexed object-model section search in {} reached its work bound of {}; \
+        body.losses.push(NxLossCode::SourceScanBounded.note({
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+            format!(
+                "The indexed object-model section search in {} reached its work bound of {}; \
              its remaining sections were skipped.",
-            entry.name,
-            crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
-        )));
+                entry.name,
+                crate::om::MAX_INDEXED_SECTION_REGISTRY_WORK,
+            )
+        }));
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             body.losses
-                .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
-                    "Non-Parasolid {} stream #{index} was classified but not transferred.",
-                    stream.kind().label()
-                )));
+                .push(NxLossCode::NonParasolidStreamOmitted.note({
+                    scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+                    format!(
+                        "Non-Parasolid {} stream #{index} was classified but not transferred.",
+                        stream.kind().label()
+                    )
+                }));
         }
     }
 }
@@ -306,27 +406,29 @@ fn build_container_body(
     let assembly = scan.container.has_external_references() && !scan.has_parasolid();
 
     let loss = if assembly {
-        NxLossCode::AssemblyComponentsExternal.note(
+        NxLossCode::AssemblyComponentsExternal.note({
             "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
                       lives in external child .prt files named in EXTREFSTREAM, and the assembled \
                       solid's inputs (child partitions + constraint solve) are absent from this \
-                      file. This is an external-dependency boundary, not a decode gap.",
-        )
+                      file. This is an external-dependency boundary, not a decode gap."
+        })
     } else {
         NxLossCode::GeometryNotTransferred.note(
-            "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
+            { "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
                       in the embedded Parasolid streams (they may hold only B-spline/procedural \
                       geometry this codec does not yet type). The streams are preserved verbatim as \
-                      unknown passthrough records.",
+                      unknown passthrough records." },
         )
     };
 
     let mut body = DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: Vec::new(),
         notes,
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
     body.losses.push(loss);
     body.losses.extend(dialect_losses);

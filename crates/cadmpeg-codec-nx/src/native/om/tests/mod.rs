@@ -522,7 +522,8 @@ fn decode_retains_typed_nx_numeric_expression() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ParameterFormula>("expressions")
         .expect("required invariant");
     assert_eq!(expressions.len(), 1);
@@ -556,7 +557,8 @@ fn decode_retains_typed_nx_numeric_expression() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ExpressionDeclaration>("expression_declarations")
         .expect("required invariant");
     assert_eq!(declarations.len(), 1);
@@ -600,7 +602,8 @@ fn decode_retains_typed_nx_numeric_expression() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ObjectRecord>("object_records")
         .expect("required invariant");
     assert_eq!(object_records.len(), 2);
@@ -608,7 +611,8 @@ fn decode_retains_typed_nx_numeric_expression() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::StoreHeader>("store_headers")
         .expect("required invariant");
     assert_eq!(headers.len(), 1);
@@ -645,7 +649,8 @@ fn decode_retains_typed_nx_numeric_expression() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::StringValue>("string_values")
         .expect("required invariant");
     assert_eq!(strings.len(), 1);
@@ -656,7 +661,8 @@ fn decode_retains_typed_nx_numeric_expression() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ObjectReference>("object_references")
         .expect("required invariant");
     assert_eq!(references.len(), 3);
@@ -678,7 +684,8 @@ fn decode_retains_typed_nx_numeric_expression() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::PersistentHandle>("persistent_handles")
         .expect("required invariant");
     assert_eq!(handles.len(), 1);
@@ -698,7 +705,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     ));
     assert_eq!(result.ir().model.features[0].suppressed, Some(false));
     assert_eq!(result.ir().model.parameters.len(), 1);
-    assert_eq!(result.ir().model.parameters[0].expression, "120");
+    assert_eq!(result.ir().model.parameters[0].expression, "120".into());
     let parameter = &result.ir().model.parameters[0];
     assert_eq!(parameter.name, expressions[0].name.as_str());
     assert!(matches!(
@@ -777,7 +784,8 @@ fn decode_retains_length_framed_nx_class_definition() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ClassDefinition>("class_definitions")
         .expect("required invariant");
     assert_eq!(classes.len(), 1);
@@ -797,7 +805,8 @@ fn decode_retains_length_framed_nx_field_definitions() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::FieldDefinition>("field_definitions")
         .expect("required invariant");
     let fields: Vec<_> = fields
@@ -819,7 +828,8 @@ fn decode_retains_length_framed_nx_field_definitions() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ClassDefinition>("class_definitions")
         .expect("required invariant");
     let classes: Vec<_> = classes
@@ -909,7 +919,8 @@ fn decode_retains_nx_arrangement_configurations() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::Configuration>("configurations")
         .expect("required invariant");
     assert_eq!(configurations.len(), 2);
@@ -943,7 +954,8 @@ fn decode_retains_nx_arrangement_configurations() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ConfigurationAttributeUse>("configuration_attribute_uses")
         .expect("required invariant");
     assert_eq!(uses.len(), 1);
@@ -957,7 +969,8 @@ fn decode_retains_nx_arrangement_configurations() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::PartAttribute>("part_attributes")
         .expect("required invariant");
     let mut mismatch = attributes.clone();
@@ -982,7 +995,8 @@ fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
             .ir()
             .native
             .namespace("nx")
-            .expect("required invariant")
+            .expect("nx namespace")
+            .clone()
             .arena_as::<super::Configuration>("configurations")
             .expect("required invariant");
         assert!(native[0].is_default);
@@ -997,3 +1011,5 @@ fn nx_neutral_active_configuration_requires_the_exact_attribute_join() {
 mod material_and_external_records;
 
 mod expression_graph;
+
+mod provenance;

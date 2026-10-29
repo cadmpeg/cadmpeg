@@ -13,6 +13,8 @@ use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::fmt;
 
+pub(crate) mod parts;
+
 /// The stored directory fields shared by Binary and Compressed ASCII.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -59,8 +61,9 @@ impl DirectoryFieldSlot {
 /// Renders one right-justified eight-column Directory Entry field.
 pub(crate) fn render_field(bytes: &[u8]) -> Result<[u8; 8], cadmpeg_core::CodecError> {
     if bytes.len() > 8 {
-        return Err(cadmpeg_core::CodecError::malformed(
-            "IGES Directory field exceeds eight columns",
+        // (O-capacity) A Directory field has exactly eight text columns.
+        return Err(cadmpeg_core::CodecError::InvalidInput(
+            "IGES Directory field exceeds eight columns".into(),
         ));
     }
     let mut output = [b' '; 8];
@@ -247,37 +250,21 @@ impl DirectoryEntry {
     }
 }
 
+/// A Directory Entry status number that used blank padding the dialect does
+/// not define. An unreadable optional field is a given-up part of its
+/// representation and has its `record.unreadable` loss there.
 pub(crate) fn metadata_losses(entries: &[DirectoryEntry]) -> Vec<LossNote> {
     let mut losses = Vec::new();
-    for entry in entries {
-        if entry.status_padding_recovered {
-            let message = format!("Directory D{} status number used unambiguous leading blank padding; retained its dependency and use codes", entry.sequence);
-            losses.push(
-                IgesLossCode::DirectoryMetadataNoncanonical
-                    .note(message)
-                    .with_provenance(entry.loss_provenance()),
-            );
-        }
-        for (name, value) in [
-            ("line font", entry.line_font),
-            ("level", entry.level),
-            ("view", entry.view),
-            ("label display", entry.label_display),
-            ("line weight", entry.line_weight),
-            ("color", entry.color),
-            ("subscript", entry.subscript),
-        ] {
-            if value.is_none() {
-                let note = IgesLossCode::DirectoryMetadataUnreadable
-                    .note(format!(
-                        "Directory D{} {name} is unreadable; interpretation fields and exact \
-                         source cards remain available",
-                        entry.sequence
-                    ))
-                    .with_provenance(entry.loss_provenance());
-                losses.push(note);
-            }
-        }
+    for entry in entries
+        .iter()
+        .filter(|entry| entry.status_padding_recovered)
+    {
+        let message = format!("Directory D{} status number used unambiguous leading blank padding; retained its dependency and use codes", entry.sequence);
+        losses.push(
+            IgesLossCode::DirectoryMetadataNoncanonical
+                .note(message)
+                .with_provenance(entry.loss_provenance()),
+        );
     }
     losses
 }
@@ -291,6 +278,12 @@ pub(crate) enum DirectoryDefect {
     StatusNumberInvalid,
     RepeatedEntityTypeMismatch { declared: i64, repeated: i64 },
     UnpairedCard,
+}
+
+impl From<DirectoryDefect> for CodecError {
+    fn from(defect: DirectoryDefect) -> Self {
+        Self::malformed(defect)
+    }
 }
 
 impl Serialize for DirectoryDefect {
@@ -350,11 +343,6 @@ impl QuarantinedDirectoryRecord {
         self.bytes.len() / crate::card::CARD_WIDTH
     }
 
-    /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:directory#{}", self.sequence)
-    }
-
     pub(crate) fn loss_note(&self) -> LossNote {
         let message = format!("IGES directory-entry record D{} is quarantined because {}; its {} raw card(s) are retained and no typed field was interpreted",
         self.sequence,
@@ -382,7 +370,7 @@ fn fields(line: &PhysicalLine) -> [[u8; 8]; 9] {
     fields
 }
 
-fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
+pub(crate) fn integer(field: [u8; 8], name: &'static str) -> Result<i64, DirectoryDefect> {
     let text = std::str::from_utf8(&field)
         .map_err(|_| DirectoryDefect::FieldNotAscii(name))?
         .trim();
@@ -408,7 +396,7 @@ fn directory_integer(
     integer(field, name)
 }
 
-fn status(field: [u8; 8]) -> Result<SourceStatus, DirectoryDefect> {
+pub(crate) fn status(field: [u8; 8]) -> Result<SourceStatus, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
         return Ok(SourceStatus {
             blank: 0,
@@ -446,8 +434,40 @@ fn parse_pair(
     second: &PhysicalLine,
     global_table: GlobalTable,
 ) -> Result<DirectoryEntry, DirectoryDefect> {
-    let first_fields = fields(first);
-    let second_fields = fields(second);
+    admit_fields(
+        sequence,
+        first.offset,
+        fields(first),
+        fields(second),
+        global_table,
+    )
+}
+
+pub(crate) fn admit_fields(
+    sequence: u32,
+    source_offset: u64,
+    first_fields: [[u8; 8]; 9],
+    second_fields: [[u8; 8]; 9],
+    global_table: GlobalTable,
+) -> Result<DirectoryEntry, DirectoryDefect> {
+    admit_fields_with(
+        sequence,
+        source_offset,
+        first_fields,
+        second_fields,
+        global_table,
+        |field, name, number| Ok(directory_integer(field, name, number, global_table).ok()),
+    )
+}
+
+pub(crate) fn admit_fields_with<E: From<DirectoryDefect>>(
+    sequence: u32,
+    source_offset: u64,
+    first_fields: [[u8; 8]; 9],
+    second_fields: [[u8; 8]; 9],
+    global_table: GlobalTable,
+    mut optional: impl FnMut([u8; 8], &'static str, u8) -> Result<Option<i64>, E>,
+) -> Result<DirectoryEntry, E> {
     let entity_type = directory_integer(first_fields[0], "entity type", 1, global_table)?;
     let repeated_type =
         directory_integer(second_fields[0], "repeated entity type", 11, global_table)?;
@@ -455,10 +475,11 @@ fn parse_pair(
         return Err(DirectoryDefect::RepeatedEntityTypeMismatch {
             declared: entity_type,
             repeated: repeated_type,
-        });
+        }
+        .into());
     }
     Ok(DirectoryEntry {
-        source_offset: first.offset,
+        source_offset,
         sequence,
         entity_type,
         parameter_start: directory_integer(
@@ -468,19 +489,19 @@ fn parse_pair(
             global_table,
         )?,
         structure: directory_integer(first_fields[2], "structure", 3, global_table)?,
-        line_font: directory_integer(first_fields[3], "line font", 4, global_table).ok(),
-        level: directory_integer(first_fields[4], "level", 5, global_table).ok(),
-        view: directory_integer(first_fields[5], "view", 6, global_table).ok(),
+        line_font: optional(first_fields[3], "line font", 4)?,
+        level: optional(first_fields[4], "level", 5)?,
+        view: optional(first_fields[5], "view", 6)?,
         transform: directory_integer(first_fields[6], "transformation", 7, global_table)?,
-        label_display: directory_integer(first_fields[7], "label display", 8, global_table).ok(),
+        label_display: optional(first_fields[7], "label display", 8)?,
         status: status(first_fields[8])?,
         status_padding_recovered: !matches!(
             global_table,
             GlobalTable::Legacy | GlobalTable::V4_0 | GlobalTable::V5_0
         ) && first_fields[8][0] == b' '
             && first_fields[8].iter().any(u8::is_ascii_digit),
-        line_weight: directory_integer(second_fields[1], "line weight", 12, global_table).ok(),
-        color: directory_integer(second_fields[2], "color", 13, global_table).ok(),
+        line_weight: optional(second_fields[1], "line weight", 12)?,
+        color: optional(second_fields[2], "color", 13)?,
         parameter_line_count: directory_integer(
             second_fields[3],
             "Parameter Data count",
@@ -490,7 +511,7 @@ fn parse_pair(
         form: directory_integer(second_fields[4], "form", 15, global_table)?,
         reserved: [second_fields[5], second_fields[6]],
         label: second_fields[7],
-        subscript: directory_integer(second_fields[8], "entity subscript", 19, global_table).ok(),
+        subscript: optional(second_fields[8], "entity subscript", 19)?,
     })
 }
 
@@ -517,25 +538,39 @@ pub(crate) fn parse(
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
+    parse_with_keys(scan, global_table, ctx, Ok)
+}
+
+pub(crate) fn parse_with_keys(
+    scan: &CardScan<'_>,
+    global_table: GlobalTable,
+    ctx: &DecodeContext<'_>,
+    mut semantic_key: impl FnMut(u32) -> Result<u32, CodecError>,
+) -> Result<(Vec<DirectoryEntry>, Vec<QuarantinedDirectoryRecord>), CodecError> {
     let lines: Vec<_> = scan.section(Section::Directory).collect();
     let mut entries = Vec::new();
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
         ctx.charge_entities(1, "iges_directory_entries")?;
-        match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
+        let sequence = semantic_key(pair[0].0)?;
+        match parse_pair(sequence, pair[0].1, pair[1].1, global_table) {
             Ok(entry) => {
                 entries.push(entry);
             }
             Err(defect) => {
-                quarantined.push(quarantine(pair[0], &pair[1..], defect));
+                quarantined.push(quarantine((sequence, pair[0].1), &pair[1..], defect));
             }
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
         ctx.charge_entities(1, "iges_directory_entries")?;
 
-        quarantined.push(quarantine(*unpaired, &[], DirectoryDefect::UnpairedCard));
+        quarantined.push(quarantine(
+            (semantic_key(unpaired.0)?, unpaired.1),
+            &[],
+            DirectoryDefect::UnpairedCard,
+        ));
     }
     Ok((entries, quarantined))
 }

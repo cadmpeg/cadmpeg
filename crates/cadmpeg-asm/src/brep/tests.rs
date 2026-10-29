@@ -783,6 +783,7 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -874,6 +875,7 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
     let mut emitted = HashSet::new();
     let mut source = Vec::new();
     collect_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &entity,
         &AttributeTarget::Face(FaceId::mint("test:model:face#0").expect("identity grammar")),
         &by_index,
@@ -924,6 +926,7 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         )
         .unwrap()],
         loops: vec![Loop {
+            native_ref: None,
             id: LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar"),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -947,8 +950,15 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT)
-            .expect("finite attribute values"),
+        emit_attributes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut brep,
+            &records,
+            &by_index,
+            &reach,
+            FORMAT
+        )
+        .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
     assert!(brep.attributes.iter().any(|attribute| attribute.target
@@ -1013,6 +1023,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     let body_id = BodyId::mint(id(FORMAT, 1).into_string()).expect("identity grammar");
     let mut brep = AsmBrep {
         bodies: vec![Body {
+            native_ref: None,
             id: body_id.clone(),
             kind: BodyKind::Sheet,
             regions: vec![RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar")],
@@ -1022,6 +1033,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
             visible: None,
         }],
         regions: vec![Region {
+            native_ref: None,
             id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
             body: body_id.clone(),
             shells: Vec::new(),
@@ -1030,6 +1042,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     };
 
     let emitted = emit_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &mut brep,
         &records,
         &by_index,
@@ -1042,21 +1055,22 @@ fn lump_named_attributes_bind_to_their_owning_body() {
     assert_eq!(
         brep.attributes,
         vec![SourceAttribute {
+            native_ref: None,
             id: cadmpeg_ir::ids::AttributeId::mint("f3d:brep:attribute#3")
                 .expect("identity grammar"),
             target: AttributeTarget::Body(body_id),
             name: "name_attrib-gen-attrib".into(),
             values: vec![
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Integer(-1),
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Reference("f3d:brep:entity#-1".into()),
-                AttributeValue::Reference("f3d:brep:entity#2".into()),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(3),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(1),
-                AttributeValue::String("MBRD_ST_SHEETMETAL_LUMP".into()),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Integer(-1)),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::Reference("f3d:brep:entity#2".into())),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::Integer(3)),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::Integer(1)),
+                Some(AttributeValue::String("MBRD_ST_SHEETMETAL_LUMP".into()))
             ],
         }]
     );
@@ -1370,11 +1384,15 @@ fn the_join_projections_read_the_key_records() {
     brep.face_native_keys.push(records::FaceNativeKey {
         source_namespace: namespace,
         record_index: 1,
-        face: face.clone(),
         asm_face_key: Some(7),
     });
+    let mut example = cadmpeg_ir::examples::unit_cube().expect("valid unit cube fixture");
+    let mut projected = example.model.faces.remove(0);
+    projected.id = face.clone();
+    projected.native_ref = Some(brep.face_native_keys[0].id());
+    brep.faces.push(projected);
     assert_eq!(
-        super::key_maps::face_keys(&brep.face_native_keys),
+        super::key_maps::face_keys(&brep.faces, &brep.face_native_keys, &brep.face_sidedness),
         std::collections::HashMap::from([(face, 7)])
     );
 }
@@ -1435,8 +1453,13 @@ fn a_non_finite_attribute_double_is_refused() {
         offset: 0,
         len: 0,
     };
-    let error = source_attribute(&record, AttributeTarget::Document, FORMAT)
-        .expect_err("a NaN attribute double is refused");
+    let error = source_attribute(
+        &cadmpeg_test_support::service_decode_context(),
+        &record,
+        AttributeTarget::Document,
+        FORMAT,
+    )
+    .expect_err("a NaN attribute double is refused");
     assert_eq!(
         error.to_string(),
         "malformed container: attribute record 1 (real-st-attrib) holds a non-finite number"
@@ -1546,6 +1569,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
     // One full torus face: no loops, so no edges to count.
     let mut brep = AsmBrep {
         bodies: vec![Body {
+            native_ref: None,
             id: body_id.clone(),
             kind: BodyKind::Sheet,
             regions: vec![region_id.clone()],
@@ -1555,6 +1579,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             visible: None,
         }],
         regions: vec![Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id,
             shells: vec![shell_id.clone()],
@@ -1563,6 +1588,7 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             Shell::with_faces(shell_id.clone(), region_id, vec![face_id.clone()]).expect("shell"),
         ],
         faces: vec![Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell_id,
             surface: SurfaceId::mint(id(FORMAT, 5).into_string()).expect("identity grammar"),
@@ -1577,11 +1603,13 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
     classify_body_kinds(&mut brep, &HashSet::new());
     assert_eq!(brep.bodies[0].kind, BodyKind::Solid);
 
+    // #213: the held native row is associated through Face.native_ref.
+    brep.faces[0].native_ref = Some("f3d:asm:face-sidedness#4".into());
     // The same face stored double-sided is a sheet.
     brep.face_sidedness.push(records::FaceSidedness {
         source_namespace: records::identity::NativeRecordNamespace::new(FORMAT),
         record_index: 4,
-        face: face_id,
+        face_key: None,
         native_sense: Sense::Forward,
         carrier_flipped: false,
         containment: Some(records::FaceContainment::Out),

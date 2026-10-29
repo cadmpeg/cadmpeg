@@ -31,7 +31,7 @@ pub(crate) const EXTRUSION_CLASS: [u8; 16] = [
 pub(crate) const BREP_CLASS: [u8; 16] = [
     0xc5, 0xdb, 0xb5, 0x60, 0x60, 0xe6, 0xd3, 0x11, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
-const PLANE_SURFACE_CLASS: [u8; 16] = [
+pub(crate) const PLANE_SURFACE_CLASS: [u8; 16] = [
     0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
 
@@ -305,7 +305,7 @@ fn indexes(values: &[i32]) -> Vec<u8> {
     bytes
 }
 
-fn plane_surface_payload() -> Vec<u8> {
+pub(crate) fn plane_surface_payload() -> Vec<u8> {
     let mut payload = vec![0x10];
     payload.extend(
         [
@@ -657,4 +657,127 @@ fn archive_version_unit_with_user(
     );
     bytes[eof_offset..].copy_from_slice(&eof);
     bytes
+}
+
+pub(crate) struct NurbsCurveSource {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) knot_count_offset: usize,
+}
+
+pub(crate) fn rational_nurbs_curve_source(version: u8, weights: [f64; 2]) -> NurbsCurveSource {
+    let mut bytes = vec![version];
+    for value in [3_i32, 1, 2, 2, 0, 0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    bytes.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
+    let knot_count_offset = bytes.len();
+    bytes.extend(2_i32.to_le_bytes());
+    bytes.extend([2.0_f64, 5.0].into_iter().flat_map(f64::to_le_bytes));
+    bytes.extend(2_i32.to_le_bytes());
+    for (point, weight) in [[1.0_f64, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        .into_iter()
+        .zip(weights)
+    {
+        bytes.extend(
+            point
+                .into_iter()
+                .map(|value| value * weight)
+                .flat_map(f64::to_le_bytes),
+        );
+        bytes.extend(weight.to_le_bytes());
+    }
+    if version & 0x0f >= 1 {
+        bytes.push(1);
+    }
+    NurbsCurveSource {
+        bytes,
+        knot_count_offset,
+    }
+}
+
+pub(crate) struct NurbsSurfaceSource {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) u_knot_count_offset: usize,
+    pub(crate) v_knot_count_offset: usize,
+    pub(crate) cv_count_offset: usize,
+}
+
+pub(crate) fn nurbs_surface_source(weights: Option<[f64; 4]>) -> NurbsSurfaceSource {
+    let mut bytes = vec![0x10];
+    for value in [3_i32, i32::from(weights.is_some()), 2, 2, 2, 2, 0, 0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    bytes.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
+    let u_knot_count_offset = bytes.len();
+    bytes.extend(2_i32.to_le_bytes());
+    bytes.extend([-1.0_f64, 2.0].into_iter().flat_map(f64::to_le_bytes));
+    let v_knot_count_offset = bytes.len();
+    bytes.extend(2_i32.to_le_bytes());
+    bytes.extend([5.0_f64, 9.0].into_iter().flat_map(f64::to_le_bytes));
+    let cv_count_offset = bytes.len();
+    bytes.extend(4_i32.to_le_bytes());
+    for (index, point) in [
+        [0.0_f64, 0.0, 0.0],
+        [0.0, 2.0, 0.0],
+        [3.0, 0.0, 1.0],
+        [3.0, 2.0, 1.0],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let weight = weights.map_or(1.0, |values| values[index]);
+        bytes.extend(
+            point
+                .into_iter()
+                .map(|value| value * weight)
+                .flat_map(f64::to_le_bytes),
+        );
+        if weights.is_some() {
+            bytes.extend(weight.to_le_bytes());
+        }
+    }
+    NurbsSurfaceSource {
+        bytes,
+        u_knot_count_offset,
+        v_knot_count_offset,
+        cv_count_offset,
+    }
+}
+
+pub(crate) struct PolycurveSource {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) reserved: std::ops::Range<usize>,
+    pub(crate) parameter_array: std::ops::Range<usize>,
+    pub(crate) parameter_values: std::ops::Range<usize>,
+}
+
+pub(crate) fn polycurve_source(
+    parameters: &[f64],
+    children: &[([u8; 16], Vec<u8>)],
+) -> PolycurveSource {
+    use crate::chunks::BoundedReader;
+    let bytes = polycurve_payload(parameters, children);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("source builder");
+    reader.u8().expect("payload version");
+    reader.i32().expect("child count");
+    let reserved_start = reader.position();
+    reader
+        .skip(2 * std::mem::size_of::<i32>())
+        .expect("reserved integers");
+    reader
+        .skip(6 * std::mem::size_of::<f64>())
+        .expect("reserved bounds");
+    let parameter_array_start = reader.position();
+    reader.i32().expect("parameter count");
+    let parameter_values_start = reader.position();
+    reader
+        .skip(std::mem::size_of_val(parameters))
+        .expect("parameter values");
+    let parameter_end = reader.position();
+    PolycurveSource {
+        bytes,
+        reserved: reserved_start..parameter_array_start,
+        parameter_array: parameter_array_start..parameter_end,
+        parameter_values: parameter_values_start..parameter_end,
+    }
 }

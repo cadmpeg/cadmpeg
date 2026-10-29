@@ -22,9 +22,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use crate::container::ContainerScan;
 use crate::topology::HalfEdgeId;
 
-use super::super::expanded::half_edge_ref;
 use super::super::native::annotate;
-use super::super::records::CreoFaceAdmissionRejectionRecord;
 use super::super::sweep::profiles::line_pcurve;
 use super::super::uniqueness::{exactly_one, ExactIdPositions, NumberedIdentityPositions};
 use crate::decode::analytic::carriers::{
@@ -52,7 +50,6 @@ use super::{fc05_cap_pair_model_frame, fc05_model_frame, NativeSurfaceNamespaces
 
 const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1.0e-9;
-const FACE_REJECTION_SAMPLE_LIMIT: usize = 4;
 
 #[derive(Clone, Copy)]
 pub(in crate::decode) struct NativeBrepCurveEvidence<'a> {
@@ -96,19 +93,6 @@ impl FaceAdmissionRejection {
         Self::TwoEdgeParameterProof,
         Self::LoopOrdering,
     ];
-
-    const fn key(self) -> &'static str {
-        match self {
-            Self::MissingSurfaceCarrier => "missing_surface_carrier",
-            Self::MissingOrientation => "missing_orientation",
-            Self::AmbiguousSurfaceCarrier => "ambiguous_surface_carrier",
-            Self::MissingLoops => "missing_loops",
-            Self::UnresolvedBoundaryVertices => "unresolved_boundary_vertices",
-            Self::AmbiguousBoundaryCurve => "ambiguous_boundary_curve",
-            Self::TwoEdgeParameterProof => "two_edge_parameter_proof",
-            Self::LoopOrdering => "loop_ordering",
-        }
-    }
 
     const fn coverage_key(self) -> cadmpeg_ir::report::decode::CoverageKey {
         match self {
@@ -224,11 +208,11 @@ pub(in super::super) struct BrepTransferDiagnostics {
 }
 
 impl BrepTransferDiagnostics {
-    fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
+    pub(in super::super) fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
         self.reject_face_with_detail(reason, FaceAdmissionDetail::face(face_id));
     }
 
-    fn reject_face_with_detail(
+    pub(in super::super) fn reject_face_with_detail(
         &mut self,
         reason: FaceAdmissionRejection,
         detail: FaceAdmissionDetail,
@@ -237,7 +221,6 @@ impl BrepTransferDiagnostics {
             .push(FaceAdmissionDiagnostic { reason, detail });
     }
 
-    /// The rejection count and bounded detail samples for a reason.
     pub(in super::super) fn evidence(
         &self,
         reason: FaceAdmissionRejection,
@@ -248,38 +231,8 @@ impl BrepTransferDiagnostics {
             .filter(move |diagnostic| diagnostic.reason == reason);
         (
             matching.clone().count(),
-            matching
-                .take(FACE_REJECTION_SAMPLE_LIMIT)
-                .map(|diagnostic| &diagnostic.detail),
+            matching.map(|diagnostic| &diagnostic.detail),
         )
-    }
-
-    pub(in super::super) fn face_admission_rejection_records(
-        &self,
-    ) -> Vec<CreoFaceAdmissionRejectionRecord> {
-        let mut records = Vec::new();
-        for diagnostic in &self.face_rejection_diagnostics {
-            let detail = &diagnostic.detail;
-            let id = format!("creo:brep:face_admission_rejection#{}", detail.face_id);
-            let mut boundary_half_edges = Vec::new();
-            boundary_half_edges.extend(
-                detail
-                    .boundary_half_edges
-                    .iter()
-                    .copied()
-                    .map(half_edge_ref),
-            );
-            let mut vertex_ids = Vec::new();
-            vertex_ids.extend_from_slice(&detail.vertex_ids);
-            records.push(CreoFaceAdmissionRejectionRecord {
-                id,
-                face_id: detail.face_id,
-                reason: diagnostic.reason.key(),
-                boundary_half_edges,
-                vertex_ids,
-            });
-        }
-        records
     }
 
     pub(in super::super) fn record_coverage(
@@ -1929,10 +1882,6 @@ pub(in super::super) fn transfer_native_brep(
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         };
         let position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(*position))
@@ -2009,6 +1958,7 @@ pub(in super::super) fn transfer_native_brep(
         source_carriers.admit_vertex(
             ir,
             Vertex {
+                native_ref: None,
                 id: vertex,
                 point: point_id,
                 tolerance: None,
@@ -2095,6 +2045,7 @@ pub(in super::super) fn transfer_native_brep(
             ctx,
             ir,
             Edge {
+                native_ref: None,
                 id,
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(crate::identity::copy_checked_id(curve.as_str())?),
@@ -2123,6 +2074,7 @@ pub(in super::super) fn transfer_native_brep(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -2139,10 +2091,6 @@ pub(in super::super) fn transfer_native_brep(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -2254,6 +2202,7 @@ pub(in super::super) fn transfer_native_brep(
         source_carriers.admit_body(
             ir,
             Body {
+                native_ref: None,
                 id: crate::identity::copy_checked_id(body_id.as_str())?,
                 kind: if !wire_curves.is_empty() {
                     BodyKind::General
@@ -2271,6 +2220,7 @@ pub(in super::super) fn transfer_native_brep(
         )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
+            native_ref: None,
             id: crate::identity::copy_checked_id(region_id.as_str())?,
             body: body_id,
             shells: shell_ids,
@@ -2314,6 +2264,7 @@ pub(in super::super) fn transfer_native_brep(
                     ctx,
                     ir,
                     Surface {
+                        native_ref: None,
                         id: crate::identity::copy_checked_id(surface.as_str())?,
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                             record: geometry_section_record(scan, face_offset)?,
@@ -2329,10 +2280,6 @@ pub(in super::super) fn transfer_native_brep(
                                     "source object_id must not be empty",
                                 )
                             })?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                     },
@@ -2370,6 +2317,7 @@ pub(in super::super) fn transfer_native_brep(
             source_carriers.admit_face(
                 ir,
                 Face {
+                    native_ref: None,
                     id: crate::identity::copy_checked_id(face.as_str())?,
                     shell: shell_id,
                     surface,
@@ -2387,6 +2335,7 @@ pub(in super::super) fn transfer_native_brep(
                 let ring = native_loop_ring(native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
                 ir.model.loops.push(IrLoop {
+                    native_ref: None,
                     id: crate::identity::copy_checked_id(loop_id.as_str())?,
                     face: crate::identity::copy_checked_id(face.as_str())?,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -2541,7 +2490,7 @@ pub(in super::super) fn transfer_native_brep(
                                 source_carriers.admit_pcurve_indexed(
                                     ctx,
                                     ir,
-                                    Pcurve {
+                                    Pcurve { native_ref: None,
                                         id: crate::identity::copy_checked_id(
                                             pcurve.as_str())?,
                                         geometry,
@@ -2569,6 +2518,7 @@ pub(in super::super) fn transfer_native_brep(
                         ctx,
                         ir,
                         Coedge {
+                            native_ref: None,
                             id,
                             owner_loop: crate::identity::copy_checked_id(loop_id.as_str())?,
                             edge: crate::identity::compose_checked(
@@ -2636,6 +2586,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,
@@ -2647,10 +2598,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                         "VisibGeom:{}",
                         pair.surface_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -2716,6 +2663,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
@@ -2725,10 +2673,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{curve_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },

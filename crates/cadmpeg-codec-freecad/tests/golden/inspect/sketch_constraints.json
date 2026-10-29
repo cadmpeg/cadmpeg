@@ -309,7 +309,6 @@
     "document root=Document",
     "document kind=application-document",
     "object count=8",
-    "physical ledger spans=155 coverage=exact",
     "ProgramVersion=1.1R20260414 (Git shallow)"
   ]
 }

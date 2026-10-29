@@ -10,16 +10,20 @@ fn design_type(
     SegmentType::try_new(
         id.into(),
         crate::records::entity_header::SegmentTypeData {
-            byte_offset: id.rsplit_once('#').unwrap().1.parse().unwrap(),
+            class_tag: (256 + id.rsplit_once('#').unwrap().1.parse::<u32>().unwrap())
+                .to_string()
+                .try_into()
+                .unwrap(),
+            byte_offset: Some(id.rsplit_once('#').unwrap().1.parse().unwrap()),
             type_guid: type_guid.to_owned().try_into().unwrap(),
-            type_guid_offset: 4,
+            type_guid_offset: Some(4),
             base_type_guid: if is_timeline {
                 BaseTypeGuid::Guid {
                     value: crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID
                         .to_owned()
                         .try_into()
                         .unwrap(),
-                    offset: 8,
+                    offset: Some(8),
                 }
             } else {
                 BaseTypeGuid::Absent
@@ -29,7 +33,7 @@ fn design_type(
             } else {
                 1
             },
-            version_offset: 44,
+            version_offset: Some(44),
             module: DESIGN_MODULE_FUSION.into(),
             entities: crate::records::identity::ReferenceRun::located(
                 entities
@@ -108,7 +112,9 @@ fn history_scope(
 ) -> crate::records::feature::scope::DesignParameterScope {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
     let mut scope = DesignParameterScope::empty(
-        &format!("f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#{record_index}"),
+        &format!(
+            "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#{record_index}"
+        ),
         DesignFeatureKind::Hole,
         record_index,
     );

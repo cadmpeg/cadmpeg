@@ -99,7 +99,8 @@ fn world_vertices(ir: &CadIr) -> HashMap<String, Vec<[f64; 3]>> {
         while let Some(occurrence) = occurrences.get(id) {
             let local = occurrence
                 .effective_transform()
-                .expect("occurrence transform");
+                .expect("occurrence transform")
+                .expect("known occurrence placement");
             transform = local.compose(transform).expect("composed transform");
             match &occurrence.parent {
                 OccurrenceParent::Root {} => break,

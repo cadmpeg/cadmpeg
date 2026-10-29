@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Directory Entry quarantine: the two-list parse, its arena, and its ledger.
+//! Directory Entry quarantine: the two-list parse and its native arena.
 #![allow(clippy::unwrap_used)]
-
-use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::decode::TransferDisposition;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::card;
@@ -115,21 +112,14 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
         1
     );
-    let row = result
-        .report()
-        .transfer_ledger
-        .entries
-        .iter()
-        .find(|entry| entry.source == "D3")
-        .expect("quarantined directory ledger row");
-    assert_eq!(row.target(), Some("iges:quarantine:directory#3"));
-    assert_eq!(
-        wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(
-            &(row.outcome),
-            "disposition"
-        ),
-        TransferDisposition::Retained
-    );
+    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir()).contains(
+        "iges:quarantine:directory#3",
+        cadmpeg_ir::index::StandardIndex
+    ));
+    assert!(serde_json::to_value(result.report())
+        .unwrap()
+        .get("transfer_ledger")
+        .is_none());
 
     let summary = IgesCodec
         .inspect(
@@ -324,7 +314,10 @@ fn directory_quarantine_record_names_its_identity_and_defect() {
         bytes: Vec::new(),
         defect: super::DirectoryDefect::FieldNotAnInteger("level"),
     };
-    assert_eq!(record.identity(), "iges:quarantine:directory#3");
+    assert_eq!(
+        serde_json::to_value(&record).unwrap()["id"],
+        "iges:quarantine:directory#3"
+    );
     let loss = record.loss_note();
     assert_eq!(
         loss.provenance.unwrap().tag.as_deref(),

@@ -11,7 +11,6 @@ use cadmpeg_ir::features::{
     FeatureEvaluation, FeatureId, FeatureOperation, FinitePoint3, NativeFeatureKind,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveLength;
 
 fn feature() -> Feature {
     Feature {
@@ -22,6 +21,7 @@ fn feature() -> Feature {
         ordinal: 3,
         name: None,
         suppressed: Some(false),
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
@@ -62,8 +62,12 @@ fn mirror_construction_requires_mirror_pattern_transform() {
             seeds,
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
-                spacing: PositiveLength::new(1.0).expect("spacing"),
-                count: 2,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: cadmpeg_ir::scalar::Length::new(1.0)
+                        .expect("spacing")
+                        .into(),
+                },
+                count: 2.into(),
                 second: None,
                 omitted_instances: Vec::new(),
             })

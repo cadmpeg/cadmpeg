@@ -56,6 +56,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
         },
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     let mut approximator = Approximator::new(&ir);
     assert!(approximator.curve(curve.as_str()).is_none());

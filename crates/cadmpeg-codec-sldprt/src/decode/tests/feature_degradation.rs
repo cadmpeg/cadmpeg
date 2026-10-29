@@ -153,7 +153,7 @@ fn decode_degrades_nonpositive_feature_dimensions() {
         }) if matches!((shape.construction(), &shape.diameter(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 ..
-            }, None,) if actual_length.get() == 5.0)));
+            }, None,) if decoded.ir().dimension_value(actual_length).unwrap().get() == 5.0)));
     assert!(matches!(
         decoded.ir().model.features[5].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer {
@@ -216,7 +216,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
                 draft: cadmpeg_ir::features::RibDraft::None,
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
-        }) if actual_thickness.get() == 2.0
+        }) if decoded.ir().dimension_value(actual_thickness).unwrap().get() == 2.0
     ));
     assert!(matches!(
         decoded.ir().model.features[3].evaluation.definition(),

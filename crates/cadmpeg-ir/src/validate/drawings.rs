@@ -13,8 +13,11 @@ use crate::report::{
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid =
-            all_ids.contains(&drawing.object) && all_ids.contains(&drawing.native_ref);
+        let mut refs_valid = all_ids.contains(&drawing.object)
+            && drawing
+                .native_ref
+                .as_ref()
+                .is_none_or(|reference| all_ids.contains(reference));
         if refs_valid {
             if let Some(id) = &drawing.template {
                 refs_valid = all_ids.contains(id.as_str());
@@ -174,5 +177,24 @@ mod tests {
             findings[0].message,
             "invalid drawing reference, order, or numeric state"
         );
+    }
+
+    #[test]
+    fn optional_drawing_native_link_does_not_accept_a_neutral_identity() {
+        let mut ir = fixture();
+        ir.model.drawings.truncate(1);
+        let drawing = &mut ir.model.drawings[0];
+        drawing.order = 0;
+        drawing.object = drawing.id.as_str().to_owned();
+        drawing.native_ref = None;
+        let validation = crate::validate_neutral(&ir, Vec::new()).expect("unlinked drawing");
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+        ir.model.drawings[0].native_ref = Some(ir.model.drawings[0].id.as_str().to_owned());
+        let validation = crate::validate_neutral(&ir, Vec::new()).expect("check invalid link");
+        assert!(validation.findings.iter().any(|finding| {
+            finding.check == crate::report::check::Check::NativeLinks
+                && finding.entity.as_deref() == Some(ir.model.drawings[0].id.as_str())
+        }));
     }
 }

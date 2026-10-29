@@ -17,7 +17,7 @@ fn header(record_index: u32, byte_offset: u64) -> DesignRecordHeader {
         id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", byte_offset),
         record_index,
         class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
-        byte_offset,
+        byte_offset: Some(byte_offset),
     }
 }
 

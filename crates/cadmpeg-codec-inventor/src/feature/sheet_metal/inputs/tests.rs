@@ -72,6 +72,7 @@ fn paired_inputs_select_their_own_complete_independent_rows() {
         native_ref: Some(native_ref),
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,

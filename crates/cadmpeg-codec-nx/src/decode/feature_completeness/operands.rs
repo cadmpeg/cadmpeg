@@ -15,6 +15,7 @@ use cadmpeg_ir::{
 };
 
 pub(super) fn hole_feature_is_incomplete(
+    ir: &cadmpeg_ir::CadIr,
     profile: Option<&PlanarProfileRef>,
     face: Option<&FaceSelection>,
     placements: Option<&[cadmpeg_ir::features::holes::HolePlacement]>,
@@ -50,15 +51,22 @@ pub(super) fn hole_feature_is_incomplete(
         || placements_incomplete
         || location_unresolved
         || orientation_unresolved
-        || hole_kind_is_incomplete(kind, diameter)
-        || exit_kind.is_some_and(|kind| hole_kind_is_incomplete(kind, diameter))
+        || hole_kind_is_incomplete(ir, kind, diameter)
+        || exit_kind.is_some_and(|kind| hole_kind_is_incomplete(ir, kind, diameter))
         || diameter.is_none_or(|diameter| !positive_feature_length(diameter))
         || extent.is_none_or(termination_is_incomplete)
 }
 
-fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bool {
-    let treatment_diameter_is_incomplete = |diameter: cadmpeg_ir::scalar::PositiveLength| {
-        bore_diameter.is_none_or(|bore| diameter.get() <= bore.get())
+fn hole_kind_is_incomplete(
+    ir: &cadmpeg_ir::CadIr,
+    kind: &HoleKind,
+    bore_diameter: Option<Length>,
+) -> bool {
+    let treatment_diameter_is_incomplete = |diameter: &cadmpeg_ir::features::Dimension<
+        cadmpeg_ir::scalar::PositiveLength,
+    >| {
+        ir.dimension_value(diameter)
+            .is_none_or(|diameter| bore_diameter.is_none_or(|bore| diameter.get() <= bore.get()))
     };
     match kind {
         HoleKind::Unresolved(_)
@@ -66,13 +74,11 @@ fn hole_kind_is_incomplete(kind: &HoleKind, bore_diameter: Option<Length>) -> bo
         | HoleKind::PartialCountersink(..) => true,
         HoleKind::Simple => false,
         HoleKind::Chamfer { diameter, .. } | HoleKind::Countersink { diameter, .. } => {
-            treatment_diameter_is_incomplete(*diameter)
+            treatment_diameter_is_incomplete(diameter)
         }
         HoleKind::SimpleDrilled { .. } => false,
-        HoleKind::Counterbore { diameter, .. } => treatment_diameter_is_incomplete(*diameter),
-        HoleKind::CounterboreDrilled { diameter, .. } => {
-            treatment_diameter_is_incomplete(*diameter)
-        }
+        HoleKind::Counterbore { diameter, .. } => treatment_diameter_is_incomplete(diameter),
+        HoleKind::CounterboreDrilled { diameter, .. } => treatment_diameter_is_incomplete(diameter),
         HoleKind::Counterdrill { diameters, .. } => {
             treatment_diameter_is_incomplete(diameters.diameter())
         }
@@ -256,6 +262,7 @@ pub(super) fn sweep_orientation_is_incomplete(orientation: &SweepOrientation) ->
 }
 
 pub(super) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::CompositeStages>(
+    ir: &cadmpeg_ir::CadIr,
     pattern: &PatternKind<C>,
 ) -> bool {
     match pattern.definition() {
@@ -267,17 +274,27 @@ pub(super) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::Composite
             ..
         } => {
             direction.is_none()
-                || u64::from(*count) * u64::from(second.as_ref().map_or(1, |axis| axis.count)) < 2
+                || ir
+                    .dimension_value(count)
+                    .zip(
+                        second
+                            .as_ref()
+                            .map_or(Some(1), |axis| ir.dimension_value(&axis.count)),
+                    )
+                    .is_none_or(|(count, second)| u64::from(count) * u64::from(second) < 2)
         }
         PatternTransform::LinearOffsets { direction, offsets } => {
             direction.is_none() || offsets.len() < 2
         }
-        PatternTransform::Circular { count, .. } => *count < 2,
+        PatternTransform::Circular { count, .. } => {
+            ir.dimension_value(count).is_none_or(|count| count < 2)
+        }
         PatternTransform::CircularAngles { angles, .. } => angles.len() < 2,
         PatternTransform::Mirror { .. } => false,
         PatternTransform::MirrorReference { .. } => true,
         PatternTransform::CurveDriven { path, count, .. } => {
-            path.as_ref().is_none_or(path_ref_is_incomplete) || *count < 2
+            path.as_ref().is_none_or(path_ref_is_incomplete)
+                || ir.dimension_value(count).is_none_or(|count| count < 2)
         }
         PatternTransform::Scale { center, .. } => {
             matches!(
@@ -288,11 +305,12 @@ pub(super) fn pattern_is_incomplete<C: cadmpeg_ir::features::patterns::Composite
         PatternTransform::Composite { stages } => stages
             .stages()
             .iter()
-            .any(|stage| pattern_is_incomplete(&stage.pattern)),
+            .any(|stage| pattern_is_incomplete(ir, &stage.pattern)),
     }
 }
 
 pub(crate) fn pattern_feature_is_incomplete(
+    ir: &cadmpeg_ir::CadIr,
     seeds: &[cadmpeg_ir::features::patterns::PatternSeed],
     pattern: &PatternKind,
     dependencies: &[cadmpeg_ir::features::FeatureId],
@@ -316,7 +334,7 @@ pub(crate) fn pattern_feature_is_incomplete(
             .iter()
             .enumerate()
             .any(|(index, seed)| seeds[..index].contains(seed))
-        || pattern_is_incomplete(pattern)
+        || pattern_is_incomplete(ir, pattern)
 }
 
 pub(crate) fn body_selection_is_incomplete(selection: &BodySelection) -> bool {

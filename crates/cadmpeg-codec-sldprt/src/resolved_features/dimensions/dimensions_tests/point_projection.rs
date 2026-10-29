@@ -28,6 +28,7 @@ fn explicit_point_circle_input() -> (
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 42,
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
@@ -51,10 +52,12 @@ fn explicit_point_circle_input() -> (
         configuration: None,
         native_payload: vec![0].into(),
         classes: vec![FeatureInputClass {
+            sequence: 10,
+            offset: 10,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10,
             name: "sgEntHandle".into(),
         }],
         names: Vec::new(),
@@ -66,11 +69,12 @@ fn explicit_point_circle_input() -> (
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: vec![FeatureInputReference {
+            sequence: 20,
+            offset: 20,
             id: "reference".into(),
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: 0,
-            offset: 20,
             kind: FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x829a).unwrap()),
             class_ref: Some("class".into()),
             object_index: 0,
@@ -98,6 +102,7 @@ fn explicit_point_circle_input() -> (
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -106,6 +111,7 @@ fn explicit_point_circle_input() -> (
         native_ref: Some("feature".into()),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
@@ -113,7 +119,6 @@ fn explicit_point_circle_input() -> (
         expression: "<MOD-DIAM>4".into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

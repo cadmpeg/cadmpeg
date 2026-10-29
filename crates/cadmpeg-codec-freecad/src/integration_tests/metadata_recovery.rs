@@ -63,6 +63,8 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     let entry = snapshot.entry("Thumbnail.png").unwrap();
     let mut changed = original.clone();
     changed[usize::try_from(entry.header_start).unwrap()] ^= 1;
+    drop(snapshot);
+    drop(ctx);
     let baseline = FcstdCodec
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
@@ -74,34 +76,30 @@ fn damaged_late_optional_frame_validates_in_identity_sorted_native_arenas() {
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     crate::test_support::test_archive::assert_valid_document(decoded.ir());
     let namespace = decoded.ir().native.namespace("fcstd").unwrap();
-    let unreadable = namespace
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one given-up part: {parts:?}")
+    };
+    assert!(!namespace.arenas().contains_key("unreadable_entries"));
+    let start = usize::try_from(retained.offset()).unwrap();
+    let end = start + usize::try_from(retained.byte_len()).unwrap();
+    assert_eq!(retained.data(), Some(&changed[start..end]));
+    let archive_arena = DecodeArena::new();
+    let (archive_ctx, archive_root) =
+        DecodeContext::from_root_bytes(&changed, &archive_arena, &policy).unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&archive_ctx, archive_root).unwrap();
+    let original_span = archive
+        .entry("Thumbnail.png")
+        .unwrap()
+        .stored_range()
         .unwrap();
-    assert_eq!(unreadable.len(), 1);
-    let physical = namespace
-        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
-        .unwrap();
-    assert!(physical.last().unwrap().span.end() < unreadable[0].data_end);
-    let start = usize::try_from(unreadable[0].data_start).unwrap();
-    let end = usize::try_from(unreadable[0].data_end).unwrap();
-    assert_eq!(unreadable[0].stored_data, &changed[start..end]);
-
-    let mut shifted = unreadable;
-    shifted[0].data_start += 1;
-    shifted[0].data_end += 1;
-    let mut invalid = decoded.ir().clone();
-    invalid
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "unreadable_entries",
-            &shifted,
-        )
-        .unwrap();
-    assert!(crate::test_support::validate_native(&invalid)
-        .iter()
-        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+    let original_start = usize::try_from(original_span.start).unwrap();
+    let original_end = usize::try_from(original_span.end).unwrap();
+    assert_eq!(
+        &crate::source_archive::image(decoded.source_fidelity()).unwrap()
+            [original_start..original_end],
+        &changed[original_start..original_end]
+    );
 }
 
 #[test]
@@ -136,12 +134,16 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
         .native
         .namespace("fcstd")
         .expect("native graph");
-    let raw = namespace
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
-        .expect("source-only payload");
-    assert_eq!(raw.len(), 1);
-    assert_eq!(raw[0].name, "Thumbnail.png");
-    assert!(!raw[0].stored_data.is_empty());
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(id, retained)] = parts.as_slice() else {
+        panic!("one given-up part: {parts:?}")
+    };
+    assert_eq!(usize::try_from(retained.offset()).unwrap(), payload);
+    assert_eq!(
+        retained.data(),
+        Some(&changed[payload..payload + b"preview".len()])
+    );
+    assert!(!crate::test_support::source_fidelity::bytes(decoded.source_fidelity(), id).is_empty());
     let admitted = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("admitted entries");
@@ -162,35 +164,21 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
     let entry = snapshot.entry("Thumbnail.png").unwrap();
     let local = usize::try_from(entry.header_start).unwrap();
     let central = usize::try_from(entry.central_start).unwrap();
+    drop(snapshot);
+    drop(ctx);
     bytes[local + 8..local + 10].copy_from_slice(&12_u16.to_le_bytes());
     bytes[central + 10..central + 12].copy_from_slice(&12_u16.to_le_bytes());
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    let mut source = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .unwrap()
-        .arena_as::<crate::container::UnreadableEntry>("unreadable_entries")
-        .unwrap();
-    assert!(source[0].stored_data.is_empty());
-    source[0].name = "Absent.png".into();
-    source[0].id = "fcstd:native:unreadable_entry#Absent.png".into();
-    let mut changed = result.ir().clone();
-    changed
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "unreadable_entries",
-            &source,
-        )
-        .unwrap();
-    assert!(crate::test_support::validate_native(&changed)
-        .iter()
-        .any(|finding| finding.message == "invalid source-only FCStd entry"));
+    let parts = crate::test_support::source_fidelity::given_up(result.source_fidelity());
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one given-up part: {parts:?}")
+    };
+    assert_eq!(retained.byte_len(), 0);
+    assert_eq!(retained.data(), Some([].as_slice()));
+    assert!(crate::source_archive::image(result.source_fidelity()).is_ok());
 }
 
 #[test]
@@ -249,7 +237,34 @@ fn large_property_population_preserves_the_complete_checked_model() {
     let result = crate::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &options)
         .unwrap();
-    assert_eq!(result.ir().model, baseline.ir().model);
+    // Rule P gives every readable extra string a neutral attribute. Preserve
+    // the complete original model and add exactly the authored Stress values.
+    let mut expected = baseline.ir().model.clone();
+    let owner = crate::native::native_id("document", "0");
+    for index in 0..32_000 {
+        let name = format!("Stress{index}");
+        let property = crate::native::native_child_id("property", &owner, &name);
+        expected
+            .attributes
+            .push(cadmpeg_ir::attributes::SourceAttribute {
+                native_ref: Some(property.clone()),
+                id: cadmpeg_ir::ids::AttributeId::mint(crate::native::model_id(
+                    "attribute",
+                    &property,
+                    "property",
+                ))
+                .unwrap(),
+                target: cadmpeg_ir::attributes::AttributeTarget::Document,
+                name,
+                values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    String::new(),
+                ))],
+            });
+    }
+    expected
+        .attributes
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    assert_eq!(result.ir().model, expected);
     crate::test_support::test_archive::assert_valid_document(result.ir());
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &options.policy).unwrap();
@@ -322,7 +337,7 @@ fn dependency_and_extension_count_metadata_preserves_checked_geometry() {
 }
 
 #[test]
-fn source_only_properties_repack_without_inventing_values_or_attachments() {
+fn source_only_properties_synthesize_with_explicit_omissions() {
     for payload in [
         r#"<Property name="Unused" type="App::PropertyLink"><String value="wrong payload"/></Property>"#,
         r#"<Property name="Unused" type="App::PropertyFile"><File name="missing-notes.txt"/></Property>"#,
@@ -335,7 +350,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         let mut written = Vec::new();
-        FcstdCodec
+        let report = FcstdCodec
             .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut written))
             .unwrap();
@@ -350,10 +365,15 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
             .unwrap()
             .arena_as::<PropertyRecord>("properties")
             .unwrap();
-        assert_eq!(properties.len(), 1);
-        assert_eq!(properties[0].xml.text(), payload);
-        assert!(properties[0].links().is_empty());
-        assert!(properties[0].side_entries().is_empty());
+        assert!(properties.is_empty());
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "metadata.native-property-not-transferred"));
+        assert!(matches!(
+            report.write_path(),
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        ));
         assert!(crate::validate_native(
             &cadmpeg_test_support::service_decode_context(),
             roundtrip.ir()
@@ -361,4 +381,43 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
         .unwrap()
         .is_empty());
     }
+}
+
+#[test]
+fn a_bodiless_document_property_is_omitted_as_undecoded_source() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Properties Count="1"><Property name="Bad" type="App::PropertyInteger"><Integer/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(archive(xml)), &DecodeOptions::default())
+        .unwrap();
+    let property = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<PropertyRecord>("properties")
+        .unwrap()
+        .into_iter()
+        .find(|property| property.name == "Bad")
+        .unwrap();
+    assert!(property.body.is_none());
+    let mut written = Vec::new();
+    let report = FcstdCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut written))
+        .unwrap();
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message.contains(&property.id)
+                && loss.code.local_code() != "native.records-omitted"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(omitted.len(), 1);
+    assert_eq!(
+        omitted[0].code,
+        crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred
+            .note(String::new())
+            .code
+    );
 }

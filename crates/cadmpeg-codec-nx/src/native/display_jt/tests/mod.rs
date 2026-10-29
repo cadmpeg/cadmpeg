@@ -1192,7 +1192,12 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         ],
     };
     let tessellations = crate::test_support::with_decode_context(|ctx| {
-        super::display_jt_tessellations(ctx, &inputs, &mut Vec::new())
+        super::display_jt_tessellations(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            ctx,
+            &inputs,
+            &mut Vec::new(),
+        )
     })
     .expect("complete scene binding");
     assert_eq!(tessellations.len(), 2);
@@ -1222,12 +1227,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         ["instance-node"]
     );
     assert_eq!(
-        tessellations[0]
-            .0
-            .source_object
-            .as_ref()
-            .expect("required invariant")
-            .color,
+        tessellations[0].2,
         Some(Color::new(0.2, 0.3, 0.4, 0.5).expect("valid color"))
     );
     assert_eq!(
@@ -1291,7 +1291,12 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         crate::test_support::with_decode_context_over(
             &[],
             |policy| policy.limits.max_retained_bytes = limit,
-            |ctx| match super::display_jt_tessellations(ctx, &inputs, &mut Vec::new()) {
+            |ctx| match super::display_jt_tessellations(
+                &mut cadmpeg_ir::ArenaClasses::default(),
+                ctx,
+                &inputs,
+                &mut Vec::new(),
+            ) {
                 Ok(tessellations) => {
                     assert!(admitted);
                     assert_eq!(tessellations.len(), 2);
@@ -1864,7 +1869,12 @@ fn display_jt_lane_above_the_arithmetic_work_bound_reports_its_loss() {
         .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
         .expect("a bounded JT lane is not a decode error");
 
-    let namespace = result.ir().native.namespace("nx").expect("NX records");
+    let namespace = &result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone();
     assert!(!namespace.arenas()["display_jt_shape_lod_elements"].is_empty());
     assert!(namespace
         .arenas()

@@ -23,15 +23,15 @@ impl std::fmt::Display for BrepRejectionDetails<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first_reason = true;
         for reason in FaceAdmissionRejection::ALL {
-            let (count, samples) = self.0.evidence(reason);
+            let (count, faces) = self.0.evidence(reason);
             if count == 0 {
                 continue;
             }
             if !first_reason {
                 f.write_str(", ")?;
             }
-            write!(f, "{}={} (sample faces: ", reason.label(), count)?;
-            for (index, detail) in samples.enumerate() {
+            write!(f, "{}={} (faces: ", reason.label(), count)?;
+            for (index, detail) in faces.enumerate() {
                 if index != 0 {
                     f.write_str(",")?;
                 }
@@ -298,31 +298,30 @@ fn legacy_type_count(
 }
 
 pub(super) fn push_legacy_value_losses(
+    untyped: &mut cadmpeg_ir::ArenaClasses,
     losses: &mut Vec<LossNote>,
     coverage: &cadmpeg_ir::report::decode::Coverage,
 ) {
     let unresolved_legacy_reals = coverage_count(coverage, "unresolved_legacy_real_value_count");
     if unresolved_legacy_reals != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyRealValueUnresolved,
+        push_report_loss(losses, CreoLossCode::LegacyRealValueUnresolved, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{unresolved_legacy_reals} legacy type-2 value row(s) did not form a complete \
              finite scalar or dimension-complete real array."
-            ),
-        );
+            )
+        });
     }
     let unresolved_legacy_integers =
         coverage_count(coverage, "unresolved_legacy_integer_value_count");
     if unresolved_legacy_integers != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyIntegerValueUnresolved,
+        push_report_loss(losses, CreoLossCode::LegacyIntegerValueUnresolved, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{unresolved_legacy_integers} legacy type-1 value row(s) did not form a signed \
              32-bit scalar or dimension-complete integer array."
-            ),
-        );
+            )
+        });
     }
     for type_code in [3u8, 4] {
         let unresolved = legacy_type_count(
@@ -332,14 +331,13 @@ pub(super) fn push_legacy_value_losses(
             "_value_count",
         );
         if unresolved != 0 {
-            push_report_loss(
-                losses,
-                CreoLossCode::LegacyContinuationFormUndefined,
+            push_report_loss(losses, CreoLossCode::LegacyContinuationFormUndefined, {
+                untyped.insert(cadmpeg_ir::ArenaClass::Design);
                 format_args!(
                     "{unresolved} legacy type-{type_code} value row(s) use an undefined \
                  continuation form."
-                ),
-            );
+                )
+            });
         }
         let undecoded = legacy_type_count(
             coverage,
@@ -366,74 +364,68 @@ pub(super) fn push_legacy_value_losses(
             "_value_count",
         );
         if unresolved != 0 {
-            push_report_loss(
-                losses,
-                CreoLossCode::LegacyUnsignedValueUnresolved,
+            push_report_loss(losses, CreoLossCode::LegacyUnsignedValueUnresolved, {
+                untyped.insert(cadmpeg_ir::ArenaClass::Design);
                 format_args!(
                     "{unresolved} legacy type-{type_code} value row(s) did not form an unsigned \
                  32-bit scalar or dimension-complete unsigned array."
-                ),
-            );
+                )
+            });
         }
     }
     let unresolved_legacy_type_6 = coverage_count(coverage, "unresolved_legacy_type_6_value_count");
     if unresolved_legacy_type_6 != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyCompactRealUnresolved,
+        push_report_loss(losses, CreoLossCode::LegacyCompactRealUnresolved, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{unresolved_legacy_type_6} legacy type-6 value row(s) did not form a complete \
              finite compact-real scalar or dimension-complete real array."
-            ),
-        );
+            )
+        });
     }
     let incomplete_legacy_object_arrays =
         coverage_count(coverage, "incomplete_legacy_object_array_count");
     if incomplete_legacy_object_arrays != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyObjectArrayIncomplete,
+        push_report_loss(losses, CreoLossCode::LegacyObjectArrayIncomplete, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{incomplete_legacy_object_arrays} legacy type-0 object array(s) have a direct \
              element count that differs from their declared extents."
-            ),
-        );
+            )
+        });
     }
     let unresolved_legacy_objects =
         coverage_count(coverage, "unresolved_legacy_object_value_count");
     if unresolved_legacy_objects != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyObjectPayloadUndefined,
+        push_report_loss(losses, CreoLossCode::LegacyObjectPayloadUndefined, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{unresolved_legacy_objects} legacy type-0 value row(s) use an undefined object \
              payload form."
-            ),
-        );
+            )
+        });
     }
     let incomplete_legacy_string_arrays =
         coverage_count(coverage, "incomplete_legacy_string_array_count");
     if incomplete_legacy_string_arrays != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyStringArrayIncomplete,
+        push_report_loss(losses, CreoLossCode::LegacyStringArrayIncomplete, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{incomplete_legacy_string_arrays} legacy type-10 string array(s) have a direct \
              element count that differs from their first extent."
-            ),
-        );
+            )
+        });
     }
     let unresolved_legacy_strings =
         coverage_count(coverage, "unresolved_legacy_string_value_count");
     if unresolved_legacy_strings != 0 {
-        push_report_loss(
-            losses,
-            CreoLossCode::LegacyStringContinuationUndefined,
+        push_report_loss(losses, CreoLossCode::LegacyStringContinuationUndefined, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Design);
             format_args!(
                 "{unresolved_legacy_strings} legacy type-10 value row(s) use an undefined \
              continuation form."
-            ),
-        );
+            )
+        });
     }
     let undecoded_legacy_string_encodings =
         coverage_count(coverage, "undecoded_legacy_string_encoding_count");
@@ -465,16 +457,16 @@ pub(super) fn push_legacy_value_losses(
 }
 
 pub(super) fn push_brep_transfer_note(
+    untyped: &mut cadmpeg_ir::ArenaClasses,
     losses: &mut Vec<LossNote>,
     diagnostics: &BrepTransferDiagnostics,
     geometry_section_count: usize,
 ) {
     for (body_id, reason) in &diagnostics.rejected_extrusion_bodies {
-        push_report_loss(
-            losses,
-            CreoLossCode::ExtrusionBodyRejected,
-            format_args!("Extrusion body {body_id} was not transferred: {reason}"),
-        );
+        push_report_loss(losses, CreoLossCode::ExtrusionBodyRejected, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+            format_args!("Extrusion body {body_id} was not transferred: {reason}")
+        });
     }
     let rejected_face_count = diagnostics.face_rejection_diagnostics.len();
     let rejection_details = BrepRejectionDetails(diagnostics);
@@ -532,7 +524,9 @@ pub(super) fn push_brep_transfer_note(
     carrier_rejection_evidence,
     two_chart_mapping_evidence);
 
-    push_report_loss(losses, CreoLossCode::BrepTransferIncomplete, format_args!(
+    push_report_loss(losses, CreoLossCode::BrepTransferIncomplete, {
+        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+        format_args!(
         "General model B-rep transfer remains incomplete. Native face components transfer \
          when every boundary edge has solved vertex orbits, face orientation is unique, and \
          every loop is complete; a multi-loop face additionally requires strict parameter-space \
@@ -554,7 +548,8 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.admitted_face_count,
         diagnostics.emitted_face_count,
         rejected_face_count,
-    ));
+    )
+    });
 }
 
 pub(super) fn push_carrier_transfer_notes(
@@ -864,7 +859,11 @@ fn unstatable_vertex_orbit_note(orbits: &[crate::topology::HalfEdgeId]) -> Optio
     )
 }
 
-pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
+pub(super) fn push_structural_layer_notes(
+    untyped: &mut cadmpeg_ir::ArenaClasses,
+    losses: &mut Vec<LossNote>,
+    scan: &ContainerScan,
+) {
     struct CurveExpressionTransfer(usize);
     impl std::fmt::Display for CurveExpressionTransfer {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -899,31 +898,32 @@ pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &Con
         .iter()
         .chain(&scan.surfaces.nonvisible_prototype_field_refusals)
     {
-        push_report_loss(losses, CreoLossCode::SurfacePrototypeFieldRetained, refusal);
+        push_report_loss(losses, CreoLossCode::SurfacePrototypeFieldRetained, {
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+            refusal
+        });
     }
 
     // The specific undecoded PSB layers that gate per-instance geometry.
-    push_report_loss(
-        losses,
-        CreoLossCode::GeometryInstanceCarriersGated,
+    push_report_loss(losses, CreoLossCode::GeometryInstanceCarriersGated, {
+        untyped.insert(cadmpeg_ir::ArenaClass::Model);
         "Additional model-space carriers are gated by unresolved lane-specific scalar \
          prefixes, feature-local transform bindings, placement-incomplete or untagged \
          `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps \
          prevent transfer of the remaining non-plane per-instance surfaces, curves, and \
-         vertices.",
-    );
+         vertices."
+    });
 
     // Topology.
-    push_report_loss(
-        losses,
-        CreoLossCode::TopologyIncompleteComponents,
+    push_report_loss(losses, CreoLossCode::TopologyIncompleteComponents, {
+        untyped.insert(cadmpeg_ir::ArenaClass::Model);
         "Native curve half-edges and closed loops were decoded. Components with complete \
          solved boundaries and unique face orientations transfer as \
          body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use \
          strict containment in a placed or boundary-proven plane. Remaining components \
          require face-instance partitioning, surface parameter bindings, curve geometry, \
-         or vertex coordinates.",
-    );
+         or vertex coordinates."
+    });
 
     let configuration_gap = match scan.framing.family_table.map(|record| record.pointer) {
         Some(crate::container::FamilyTablePointer::Null) => "",
@@ -970,8 +970,75 @@ pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &Con
 #[cfg(test)]
 mod tests {
     use super::{push_brep_transfer_note, unstatable_vertex_orbit_note};
-    use crate::decode::surfaces::brep::BrepTransferDiagnostics;
+    use crate::decode::surfaces::brep::{
+        BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection,
+    };
     use crate::topology::{HalfEdgeId, Side};
+
+    #[test]
+    fn brep_rejection_loss_names_every_face_without_a_sample_limit() {
+        let mut diagnostics = BrepTransferDiagnostics::default();
+        diagnostics.candidate_face_count = 6;
+        diagnostics.admitted_face_count = 1;
+        diagnostics.emitted_face_count = 1;
+        for face_id in 10..16 {
+            diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
+        }
+        let mut losses = Vec::new();
+        push_brep_transfer_note(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            &mut losses,
+            &diagnostics,
+            0,
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "geometry.brep-incomplete");
+        assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Blocking);
+        let (_, rejection) = losses[0]
+            .message
+            .split_once("First-failure rejection counts are: ")
+            .expect("the loss states its rejection counts");
+        let (rejection, _) = rejection
+            .split_once(". Component admission gate: ")
+            .expect("the rejection counts precede the admission gate");
+        assert_eq!(rejection, "missing loops=6 (faces: 10,11,12,13,14,15)");
+    }
+
+    #[test]
+    fn brep_rejection_loss_keeps_nested_operands_in_the_report() {
+        let mut diagnostics = BrepTransferDiagnostics::default();
+        diagnostics.reject_face_with_detail(
+            FaceAdmissionRejection::UnresolvedBoundaryVertices,
+            FaceAdmissionDetail {
+                face_id: 17,
+                boundary_half_edges: vec![HalfEdgeId {
+                    curve_id: 4,
+                    side: Side::Zero,
+                }],
+                vertex_ids: vec![9],
+            },
+        );
+        let mut losses = Vec::new();
+        push_brep_transfer_note(
+            &mut cadmpeg_ir::ArenaClasses::default(),
+            &mut losses,
+            &diagnostics,
+            0,
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "geometry.brep-incomplete");
+        let (_, rejection) = losses[0]
+            .message
+            .split_once("First-failure rejection counts are: ")
+            .expect("the loss states its rejection counts");
+        let (rejection, _) = rejection
+            .split_once(". Component admission gate: ")
+            .expect("the rejection counts precede the admission gate");
+        assert_eq!(
+            rejection,
+            "unresolved boundary vertices=1 (faces: 17[edges:4:0;vertices:9])"
+        );
+    }
 
     #[test]
     fn brep_report_preserves_component_and_vertex_evidence() {
@@ -986,7 +1053,12 @@ mod tests {
         diagnostics.selected_body_count = Some(2);
         let losses = {
             let mut losses = Vec::new();
-            push_brep_transfer_note(&mut losses, &diagnostics, 4);
+            push_brep_transfer_note(
+                &mut cadmpeg_ir::ArenaClasses::default(),
+                &mut losses,
+                &diagnostics,
+                4,
+            );
             losses
         };
         let message = &losses[0].message;

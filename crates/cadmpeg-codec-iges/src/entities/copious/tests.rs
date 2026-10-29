@@ -402,12 +402,20 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
         bytes[usize::try_from(provenance.offset).expect("test offset fits memory") + 72],
         b'D'
     );
-    let transfer = &result.report().transfer_ledger.entries[0];
-    assert_eq!(transfer.source, "D1");
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(&(transfer.outcome), "note").as_deref(),
-        Some("native record retained; semantic projection omitted with an attributed loss")
-    );
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entities = &native.arenas()["entities"];
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0].id(), "iges:entity:directory#1");
+    let fields = entities[0].fields().unwrap();
+    assert_eq!(fields["directory_sequence"], 1);
+    assert_eq!(fields["entity_type"], 106);
+    assert_eq!(fields["form"], 11);
+    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir())
+        .contains("iges:entity:directory#1", cadmpeg_ir::index::StandardIndex));
+    assert!(serde_json::to_value(result.report())
+        .unwrap()
+        .get("transfer_ledger")
+        .is_none());
 }
 
 #[test]
@@ -530,14 +538,19 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(
-            &(witness.report().transfer_ledger.entries[0].outcome),
-            "note"
-        )
-        .as_deref(),
-        Some("native record retained; semantic projection omitted with an attributed loss")
-    );
+    let native = witness.ir().native.namespace("iges").unwrap();
+    let entities = &native.arenas()["entities"];
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0].id(), "iges:entity:directory#1");
+    let fields = entities[0].fields().unwrap();
+    assert_eq!(fields["entity_type"], 106);
+    assert_eq!(fields["form"], 40);
+    assert!(cadmpeg_ir::index::ModelIndex::build(witness.ir())
+        .contains("iges:entity:directory#1", cadmpeg_ir::index::StandardIndex));
+    assert!(serde_json::to_value(witness.report())
+        .unwrap()
+        .get("transfer_ledger")
+        .is_none());
     let validation =
         cadmpeg_ir::validate_neutral(witness.ir(), Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

@@ -273,8 +273,10 @@ pub(crate) fn enrich_history_extrusion_terminations(
                                 .scalars
                                 .iter()
                                 .filter(|scalar| {
-                                    scalar.offset > u64_from_index(offset)
-                                        && scalar.offset < u64_from_index(end)
+                                    {
+                                        scalar.offset > u64_from_index(offset)
+                                            && scalar.offset < u64_from_index(end)
+                                    }
                                 })
                                 .filter_map(|scalar| {
                                     let name = names_by_id.get(scalar.name.as_str())?;
@@ -710,7 +712,7 @@ pub(crate) fn enrich_history_sweep_paths(
                 {
                     continue;
                 }
-                let Ok(offset) = usize::try_from(class.offset) else {
+                let Some(offset) = usize::try_from(class.offset).ok() else {
                     continue;
                 };
                 observe_offset(offset);
@@ -793,7 +795,8 @@ fn history_object_offsets(
             continue;
         };
         let id = feature.id.clone();
-        objects.push((name.offset, id));
+        let position = name.offset;
+        objects.push((position, id));
     }
     objects.sort_unstable_by_key(|left| left.0);
     objects
@@ -858,8 +861,8 @@ pub(crate) fn project_surface_sweep_profiles(
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in &history_features {
-            if let Some(name) = names.of(feature) {
-                objects.push((name.offset, *feature));
+            if let Some(position) = names.of(feature).map(|name| name.offset) {
+                objects.push((position, *feature));
             }
         }
         objects.sort_unstable_by_key(|(left, _)| *left);

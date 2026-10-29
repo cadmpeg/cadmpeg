@@ -1338,6 +1338,8 @@ pub(super) fn sketch_plane_frames(
                     return None;
                 };
                 let frame = *frames_by_feature.get(reference.as_str())?;
+                let distance =
+                    crate::history::project::source_dimension_value(distance, histories)?;
                 Some(SketchPlaneFrame {
                     origin: Point3::new(
                         frame.origin.x + frame.normal.x * distance.get(),

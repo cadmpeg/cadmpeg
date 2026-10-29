@@ -148,6 +148,24 @@ pub struct ContainerSummary {
 }
 
 impl ContainerSummary {
+    /// Constructs a known codec format without an unreadable dialect declaration.
+    #[must_use]
+    pub fn unclassified(
+        format: crate::CodecFormat,
+        container_kind: ContainerKind,
+        entries: Vec<ContainerEntry>,
+        losses: Vec<LossNote>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            identity: FormatIdentity::unclassified(format.as_str()),
+            container_kind,
+            entries,
+            losses,
+            notes,
+        }
+    }
+
     /// Constructs a classified summary whose format is its primary layer's format.
     #[must_use]
     pub fn classified(
@@ -184,6 +202,40 @@ mod tests {
     use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 
     use super::{ContainerKind, ContainerSummary};
+
+    #[test]
+    fn typed_unclassified_source_and_summary_preserve_the_known_format_without_a_dialect() {
+        let source = crate::SourceMeta::unclassified(
+            crate::CodecFormat::Fcstd,
+            std::collections::BTreeMap::default(),
+        );
+        let summary = ContainerSummary::unclassified(
+            crate::CodecFormat::Fcstd,
+            ContainerKind::Zip,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_eq!(source.format(), "fcstd");
+        assert_eq!(summary.format(), "fcstd");
+        assert!(source.dialects().is_none());
+        assert!(summary.dialects().is_none());
+        let source_wire = serde_json::to_value(&source).unwrap();
+        let summary_wire = serde_json::to_value(&summary).unwrap();
+        assert_eq!(
+            source_wire["identity"],
+            serde_json::json!({"classification":"unclassified","format":"fcstd"})
+        );
+        assert_eq!(source_wire["identity"], summary_wire["identity"]);
+        assert_eq!(
+            serde_json::from_value::<crate::SourceMeta>(source_wire).unwrap(),
+            source
+        );
+        assert_eq!(
+            serde_json::from_value::<ContainerSummary>(summary_wire).unwrap(),
+            summary
+        );
+    }
 
     #[test]
     fn an_unclassified_summary_states_its_format_inside_the_identity() {

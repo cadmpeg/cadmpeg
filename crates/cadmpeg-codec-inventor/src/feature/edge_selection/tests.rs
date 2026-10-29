@@ -221,7 +221,8 @@ fn feature_with_generated_group(ctx: &DecodeContext<'_>) -> Vec<cadmpeg_ir::feat
                 .expect("valid edge selection fixture"),
                 radius: RadiusSpec::Constant {
                     radius: cadmpeg_ir::scalar::PositiveLength::new(1.0)
-                        .expect("positive radius fixture"),
+                        .expect("positive radius fixture")
+                        .into(),
                 },
                 tangency_weight: None,
             }),
@@ -328,7 +329,9 @@ fn base_flange_result_carries_the_selected_generated_edge() {
                 cadmpeg_ir::sketches::SketchId::mint("inventor:design:sketch#test-3")
                     .expect("sketch id"),
             ),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("thickness"),
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(3.0)
+                .expect("thickness")
+                .into(),
             side: SheetMetalThicknessSide::Forward,
         },
     ));

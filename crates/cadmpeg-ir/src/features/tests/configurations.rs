@@ -1,467 +1,350 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::collections::BTreeMap;
+
 use crate::examples::unit_cube;
-use crate::features::{ConfigurationEvaluation, DistinctMembers, FeatureContent};
-use crate::math::Point3;
+use crate::features::{
+    ConfigurationFeatureState as State, ConfigurationId, DesignConfiguration, DesignParameter,
+    Expression, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    ParameterId, ParameterValue,
+};
+use crate::scalar::{Angle, Length};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
-#[test]
-fn configuration_body_membership_round_trips_and_validates() {
-    use crate::ids::BodyId;
-    use crate::{
-        features::{
-            ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
-            DesignConfiguration, DesignParameter, Feature, FeatureDefinition, FeatureId,
-            FeatureOperation, ParameterId, ParameterValue,
-        },
-        scalar::{Angle, Length},
-    };
-    use std::collections::BTreeMap;
-
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    let configuration_id =
-        ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
-    let parameter_id =
-        ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
-    let body = ir.model.bodies[0].id.clone();
-    ir.model.parameters.push(DesignParameter {
-        id: parameter_id.clone(),
-        owner: None,
-        ordinal: 0,
-        name: "width".into(),
-        expression: "10 mm".into(),
-        display: None,
-        value: None,
-        dependencies: DistinctMembers::default(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    });
-    ir.model.configurations.push(DesignConfiguration {
-        id: configuration_id.clone(),
+fn configuration() -> DesignConfiguration {
+    DesignConfiguration {
+        id: ConfigurationId::mint("test:model:configuration#alternate").unwrap(),
         ordinal: 0,
         active: false,
         source_index: Some(7),
-        name: Some("Default".to_string()),
-        material: None,
-        properties: BTreeMap::new(),
-        parameter_overrides: BTreeMap::from([(parameter_id.clone(), "25 mm".into())]),
-        bodies: Some(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap()),
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::new(),
-        native_ref: None,
-    });
-    ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .is_ok());
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(
-        round_trip.model.configurations[0].bodies.as_deref(),
-        Some([body.clone()].as_slice())
-    );
-    assert_eq!(
-        round_trip.model.configurations[0].parameter_overrides[&parameter_id],
-        "25 mm"
-    );
-
-    ir.model.configurations[0].parameter_overrides = BTreeMap::from([(
-        ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
-        "30 mm".into(),
-    )]);
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("configuration parameter override")
-    }));
-    ir.model.configurations[0].parameter_overrides.clear();
-
-    ir.model.configurations[0].parameter_values = BTreeMap::from([(
-        ParameterId::mint("synthetic:test:parameter#missing-value").expect("identity grammar"),
-        ParameterValue::Real(crate::scalar::FiniteReal::new(1.0).unwrap()),
-    )]);
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![BodyId::mint(
-                    "synthetic:test:body#missing-output",
-                )
-                .expect("valid identity")])
-                .unwrap(),
-            },
-            dependencies: crate::features::DistinctMembers::try_from(vec![FeatureId::mint(
-                "synthetic:test:feature#missing-dependency",
-            )
-            .expect("identity grammar")])
-            .unwrap(),
-            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                construction: None,
-            }),
-        },
-    )]);
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    for reference in [
-        "configuration parameter value",
-        "configuration feature state",
-        "configuration feature dependency",
-        "configuration feature output",
-    ] {
-        assert!(report.findings.iter().any(|finding| {
-            finding.entity.as_deref() == Some(configuration_id.0.as_str())
-                && finding.message.contains(reference)
-        }));
-    }
-    ir.model.configurations[0].parameter_values.clear();
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.parameters[0].value = Some(ParameterValue::Length(Length::new(10.0).unwrap()));
-    ir.model.configurations[0].parameter_values = BTreeMap::from([(
-        parameter_id.clone(),
-        ParameterValue::Angle(Angle::new(1.0).unwrap()),
-    )]);
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message == "configuration parameter value is invalid"
-    }));
-    ir.model.configurations[0].parameter_values.clear();
-
-    ir.model.parameters[0].value = None;
-
-    let first_feature =
-        FeatureId::mint("synthetic:test:feature#configuration-first").expect("identity grammar");
-    let later_feature =
-        FeatureId::mint("synthetic:test:feature#configuration-later").expect("identity grammar");
-    for (ordinal, feature) in [first_feature.clone(), later_feature.clone()]
-        .into_iter()
-        .enumerate()
-    {
-        ir.model.features.push(Feature {
-            id: feature,
-            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
-            name: None,
-            suppressed: Some(false),
-            dependencies: DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: None,
-            source_text: None,
-            source_content: FeatureContent::default(),
-
-            evaluation: crate::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                    position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    construction: None,
-                }),
-            ),
-            native_ref: None,
-        });
-    }
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
-            },
-            dependencies: crate::features::DistinctMembers::try_from(vec![later_feature.clone()])
-                .unwrap(),
-            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                construction: None,
-            }),
-        },
-    )]);
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("does not precede")
-    }));
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Suppressed {},
-            dependencies: DistinctMembers::default(),
-            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                construction: None,
-            }),
-        },
-    )]);
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .is_ok());
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.configurations[0].active = true;
-    ir.model.features[0].suppressed = Some(true);
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == "active configuration suppression disagrees with current feature state"
-    }));
-    ir.model.configurations[0].active = false;
-    ir.model.features[0].suppressed = Some(false);
-
-    ir.model.configurations[0].feature_states = BTreeMap::from([(
-        later_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Active {
-                outputs: crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
-            },
-            dependencies: crate::features::DistinctMembers::try_from(vec![first_feature.clone()])
-                .unwrap(),
-            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                construction: None,
-            }),
-        },
-    )]);
-    // A dependency with no state in this configuration inherits its model-level
-    // state; `feature_states` is allowed to be sparse, so that is not a finding.
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .is_ok());
-    ir.model.configurations[0].feature_states.insert(
-        first_feature.clone(),
-        ConfigurationFeatureState {
-            evaluation: ConfigurationEvaluation::Suppressed {},
-            dependencies: DistinctMembers::default(),
-            definition: FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                construction: None,
-            }),
-        },
-    );
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message
-                == format!(
-                    "configuration state closure uses suppressed dependency state `{}`",
-                    first_feature.0
-                )
-    }));
-    ir.model.configurations[0]
-        .feature_states
-        .get_mut(&first_feature)
-        .expect("dependency state")
-        .evaluation = ConfigurationEvaluation::Active {
-        outputs: DistinctMembers::default(),
-    };
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .is_ok());
-    ir.model.configurations[0].feature_states.clear();
-
-    ir.model.configurations[0].bodies = Some(
-        crate::features::DistinctMembers::try_from(vec![BodyId::mint(
-            "synthetic:test:body#missing",
-        )
-        .expect("valid identity")])
-        .unwrap(),
-    );
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(configuration_id.0.as_str())
-            && finding.message.contains("missing configuration body")
-    }));
-
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("synthetic:test:configuration#1").expect("identity grammar"),
-        ordinal: 0,
-        active: false,
-        source_index: Some(7),
-        name: Some("Alternate".to_string()),
-        material: None,
-        properties: BTreeMap::new(),
-        parameter_overrides: BTreeMap::new(),
-        bodies: Some(DistinctMembers::default()),
-        parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::new(),
-        native_ref: None,
-    });
-    ir.model.configurations[0].active = true;
-    ir.model.configurations[1].active = true;
-    ir.finalize();
-    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("repeats configuration ordinal")));
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("multiple active configurations")));
-    assert!(report.findings.iter().any(|finding| finding
-        .message
-        .contains("repeats configuration source index")));
-}
-
-#[test]
-fn configuration_name_preserves_resolution_state() {
-    use crate::features::DesignConfiguration;
-
-    let configuration: DesignConfiguration = serde_json::from_value(serde_json::json!({
-        "id": "synthetic:test:configuration#0"
-    }))
-    .expect("legacy configuration");
-    assert_eq!(configuration.name, None);
-    assert!(!configuration.active);
-
-    let encoded = serde_json::to_value(&configuration).expect("unresolved configuration");
-    assert!(encoded.get("name").is_none());
-    assert!(encoded.get("active").is_none());
-    let round_trip: DesignConfiguration =
-        serde_json::from_value(encoded).expect("round-trip unresolved configuration");
-    assert_eq!(round_trip.name, None);
-    assert!(!round_trip.active);
-
-    // The absent key is the one spelling of an unresolved name; a stated null
-    // is refused by name, and so is a stated null body list.
-    for key in ["name", "bodies"] {
-        let error = serde_json::from_value::<DesignConfiguration>(serde_json::json!({
-            "id": "synthetic:test:configuration#0",
-            key: serde_json::Value::Null
-        }))
-        .expect_err("a stated null is not a second spelling of absence")
-        .to_string();
-        assert!(error.contains("does not state null"), "{key}: {error}");
-    }
-}
-
-#[test]
-fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted_key() {
-    use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId, FeatureOperation,
-    };
-    use std::collections::BTreeMap;
-
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    let feature = Feature {
-        id: FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
-        source_properties: std::collections::BTreeMap::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
-            FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                construction: None,
-            }),
-        ),
-        native_ref: None,
-    };
-    ir.model.features.push(feature.clone());
-    ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("synthetic:test:configuration#suppressed")
-            .expect("identity grammar"),
-        ordinal: 0,
-        active: false,
-        source_index: None,
-        name: Some("Suppressed".to_string()),
+        name: Some("Alternate".into()),
         material: None,
         properties: BTreeMap::new(),
         parameter_overrides: BTreeMap::new(),
         bodies: None,
         parameter_values: BTreeMap::new(),
-        feature_states: BTreeMap::from([(
-            feature.id.clone(),
-            ConfigurationFeatureState {
-                evaluation: ConfigurationEvaluation::Suppressed {},
-                dependencies: feature.dependencies.clone(),
-                definition: feature.evaluation.definition().clone(),
-            },
-        )]),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+fn feature(id: &str, ordinal: u64) -> Feature {
+    Feature {
+        id: FeatureId::mint(id).unwrap(),
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        needs_recompute: false,
+        dependencies: crate::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        native_ref: None,
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        )),
+    }
+}
+
+#[test]
+fn configuration_body_membership_round_trips_and_validates() {
+    let mut ir = unit_cube().unwrap();
+    let parameter = ParameterId::mint("test:model:parameter#width").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        id: parameter.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "width".into(),
+        expression: "10 mm".into(),
+        driving: true,
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(10.0).unwrap())),
+        properties: BTreeMap::new(),
+        pmi: None,
         native_ref: None,
     });
-
-    let wire = serde_json::to_value(&ir).unwrap();
-    let configuration = &wire["model"]["configurations"][0];
-    assert!(configuration.get("suppressed_features").is_none());
-    let round_trip = serde_json::from_value::<CadIr>(wire.clone()).unwrap();
+    let mut alternative = configuration();
+    alternative.bodies = Some(vec![ir.model.bodies[0].id.clone()].try_into().unwrap());
+    alternative
+        .parameter_overrides
+        .insert(parameter.clone(), "25 mm".into());
+    ir.model.configurations.push(alternative);
+    ir.finalize();
+    assert!(validate_neutral(&ir, vec![]).unwrap().is_ok());
+    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(round_trip.model.configurations, ir.model.configurations);
     assert_eq!(
-        round_trip.model.configurations[0]
+        round_trip.model.configurations[0].parameter_overrides[&parameter]
+            .literal_text()
+            .as_deref(),
+        Some("25 mm")
+    );
+
+    let missing = ParameterId::mint("test:model:parameter#missing").unwrap();
+    ir.model.configurations[0]
+        .parameter_overrides
+        .insert(missing.clone(), "30 mm".into());
+    assert!(validate_neutral(&ir, vec![])
+        .unwrap()
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("configuration parameter override")));
+    ir.model.configurations[0]
+        .parameter_overrides
+        .remove(&missing);
+    ir.model.configurations[0].parameter_values.insert(
+        parameter.clone(),
+        ParameterValue::Angle(Angle::new(1.0).unwrap()),
+    );
+    assert!(validate_neutral(&ir, vec![])
+        .unwrap()
+        .findings
+        .iter()
+        .any(|finding| finding.message == "configuration parameter value is invalid"));
+    ir.model.configurations[0].parameter_values.clear();
+    ir.model.configurations[0].bodies = Some(
+        vec![crate::ids::BodyId::mint("test:model:body#missing").unwrap()]
+            .try_into()
+            .unwrap(),
+    );
+    assert!(validate_neutral(&ir, vec![])
+        .unwrap()
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("missing configuration body")));
+}
+
+#[test]
+fn active_configuration_uses_the_base_state_without_copied_overrides() {
+    let mut ir = CadIr::empty();
+    let mut base = configuration();
+    base.active = true;
+    ir.model.configurations.push(base);
+    assert!(validate_neutral(&ir, vec![]).unwrap().is_ok());
+    let owner = feature("test:model:feature#owner", 0);
+    let owner_id = owner.id.clone();
+    ir.model.features.push(owner);
+    ir.model.configurations[0]
+        .feature_states
+        .insert(owner_id, State::Active {});
+    assert!(validate_neutral(&ir, vec![])
+        .unwrap()
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("base state without overrides")));
+    ir.model.configurations[0].feature_states.clear();
+    ir.model.features[0].suppressed = Some(true);
+    assert!(
+        validate_neutral(&ir, vec![]).unwrap().is_ok(),
+        "base suppression is canonical"
+    );
+}
+
+#[test]
+fn configuration_structural_references_resolve_independently_of_order_and_use_effective_suppression(
+) {
+    let mut ir = CadIr::empty();
+    let first = feature("test:model:feature#first", 0);
+    let second = feature("test:model:feature#second", 1);
+    let first_id = first.id.clone();
+    let second_id = second.id.clone();
+    ir.model.features = vec![first, second];
+    let mut alternative = configuration();
+    alternative.feature_states.insert(
+        second_id.clone(),
+        State::Definition {
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::DerivedGeometry {
+                    source: first_id.clone(),
+                },
+            )),
+        },
+    );
+    ir.model.configurations.push(alternative);
+    assert!(validate_neutral(&ir, vec![]).unwrap().is_ok());
+    ir.model.configurations[0]
+        .feature_states
+        .insert(first_id.clone(), State::Suppressed {});
+    assert!(validate_neutral(&ir, vec![])
+        .unwrap()
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("closure uses suppressed feature")));
+    ir.model.configurations[0].feature_states.remove(&first_id);
+    assert!(validate_neutral(&ir, vec![]).unwrap().is_ok());
+    ir.model.configurations[0].feature_states.clear();
+    ir.model.configurations[0].feature_states.insert(
+        first_id,
+        State::Definition {
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::DerivedGeometry { source: second_id },
+            )),
+        },
+    );
+    assert!(validate_neutral(&ir, vec![]).unwrap().is_ok());
+}
+
+#[test]
+fn configuration_expression_references_and_feature_state_targets_must_resolve() {
+    let mut ir = CadIr::empty();
+    let mut alternative = configuration();
+    alternative.feature_states.insert(
+        FeatureId::mint("test:model:feature#missing").unwrap(),
+        State::Suppressed {},
+    );
+    let missing = ParameterId::mint("test:model:parameter#missing").unwrap();
+    alternative.parameter_overrides.insert(
+        missing.clone(),
+        Expression {
+            tokens: vec![crate::features::ExpressionToken::Parameter(missing)],
+        },
+    );
+    ir.model.configurations.push(alternative);
+    let report = validate_neutral(&ir, vec![]).unwrap();
+    for message in [
+        "configuration feature state",
+        "configuration parameter override",
+        "configuration expression parameter",
+    ] {
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.message.contains(message)),
+            "{message}: {:?}",
+            report.findings
+        );
+    }
+}
+
+#[test]
+fn configuration_identity_censuses_reject_duplicate_order_source_index_and_active_state() {
+    let mut ir = CadIr::empty();
+    let mut first = configuration();
+    first.active = true;
+    let mut second = first.clone();
+    second.id = ConfigurationId::mint("test:model:configuration#second").unwrap();
+    ir.model.configurations = vec![first, second];
+    let report = validate_neutral(&ir, vec![]).unwrap();
+    for message in [
+        "repeats configuration ordinal",
+        "repeats configuration source index",
+        "multiple active configurations",
+    ] {
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains(message)));
+    }
+}
+
+#[test]
+fn configuration_name_preserves_resolution_state_and_refuses_stated_nulls() {
+    let configuration: DesignConfiguration =
+        serde_json::from_value(serde_json::json!({"id":"test:model:configuration#one"})).unwrap();
+    assert!(configuration.name.is_none());
+    assert!(!configuration.active);
+    let wire = serde_json::to_value(configuration).unwrap();
+    assert!(wire.get("name").is_none());
+    assert!(wire.get("active").is_none());
+    for key in ["name", "bodies"] {
+        let error = serde_json::from_value::<DesignConfiguration>(
+            serde_json::json!({"id":"test:model:configuration#one",key:null}),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("does not state null"), "{error}");
+    }
+}
+
+#[test]
+fn configuration_suppression_is_read_from_difference_states_and_refuses_the_deleted_key() {
+    let mut ir = CadIr::empty();
+    let owner = feature("test:model:feature#owner", 0);
+    let owner_id = owner.id.clone();
+    ir.model.features.push(owner);
+    let mut alternative = configuration();
+    alternative
+        .feature_states
+        .insert(owner_id.clone(), State::Suppressed {});
+    ir.model.configurations.push(alternative);
+    let mut wire = serde_json::to_value(&ir).unwrap();
+    assert_eq!(
+        wire["model"]["configurations"][0]["feature_states"][owner_id.as_str()],
+        serde_json::json!({"kind":"suppressed"})
+    );
+    let restored = serde_json::from_value::<CadIr>(wire.clone()).unwrap();
+    assert_eq!(
+        restored.model.configurations[0]
             .suppressed_features()
             .collect::<Vec<_>>(),
-        vec![&feature.id]
+        vec![&owner_id]
     );
-
-    let mut restated = wire;
-    restated["model"]["configurations"][0]
-        .as_object_mut()
-        .unwrap()
-        .insert(
-            "suppressed_features".into(),
-            serde_json::json!([feature.id.0.clone()]),
-        );
-    let error = serde_json::from_value::<CadIr>(restated).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("unknown field `suppressed_features`"),
-        "{error}"
-    );
+    wire["model"]["configurations"][0]["suppressed_features"] = serde_json::json!([owner_id]);
+    assert!(serde_json::from_value::<CadIr>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("unknown field `suppressed_features`"));
 }
 
 #[test]
-fn configuration_evaluation_wire_is_flat_and_strict() {
-    use crate::features::ConfigurationEvaluation;
-    use crate::ids::BodyId;
-
-    let body = BodyId::mint("synthetic:test:body#evaluation").expect("identity grammar");
-    let active = ConfigurationEvaluation::Active {
-        outputs: crate::features::DistinctMembers::try_from(vec![body]).unwrap(),
-    };
-    let wire = serde_json::to_value(&active).unwrap();
-    assert_eq!(
-        wire,
-        serde_json::json!({"kind": "active", "outputs": ["synthetic:test:body#evaluation"]})
-    );
-    assert_eq!(
-        serde_json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
-        active
-    );
-    assert!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
-            "kind": "suppressed",
-            "outputs": []
-        }))
-        .is_err()
-    );
-    assert!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
-            "kind": "active",
-            "outputs": [],
-            "suppressed": true
-        }))
-        .is_err()
-    );
-}
-
-#[test]
-fn active_configuration_evaluation_can_have_no_body_outputs() {
-    use crate::features::ConfigurationEvaluation;
-
-    let active = ConfigurationEvaluation::Active {
-        outputs: DistinctMembers::default(),
-    };
-    assert_eq!(
-        serde_json::to_value(&active).unwrap(),
-        serde_json::json!({"kind": "active"})
-    );
-    assert_eq!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({"kind": "active"}))
+fn inactive_dimension_resolution_uses_its_override_cache_and_never_the_base_cache() {
+    use crate::features::{BooleanOp, Dimension, PrimitiveSolid, PrimitiveSolidKind};
+    let mut ir = CadIr::empty();
+    let id = ParameterId::mint("test:model:parameter#width").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        id: id.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "width".into(),
+        expression: "2 mm".into(),
+        driving: true,
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(2.0).unwrap())),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    let mut box_feature = feature("test:model:feature#box", 0);
+    box_feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Primitive {
+            placement: None,
+            solid: PrimitiveSolid::new(PrimitiveSolidKind::Box {
+                length: Dimension::Parameter(id.clone()),
+                width: crate::features::Dimension::Literal(Length::new(3.0).unwrap()),
+                height: crate::features::Dimension::Literal(Length::new(4.0).unwrap()),
+            })
             .unwrap(),
-        active,
+            op: BooleanOp::NewBody,
+        }));
+    ir.model.features.push(box_feature);
+    let mut alternative = configuration();
+    alternative
+        .parameter_overrides
+        .insert(id.clone(), "-2 mm".into());
+    assert_eq!(
+        alternative.dimension_value(&ir, &Dimension::<Length>::Parameter(id.clone())),
+        None
+    );
+    ir.model.configurations.push(alternative);
+    assert!(
+        validate_neutral(&ir, vec![]).unwrap().is_ok(),
+        "unevaluated inactive dimension is legal"
+    );
+    ir.model.configurations[0].parameter_values.insert(
+        id.clone(),
+        ParameterValue::Length(Length::new(-2.0).unwrap()),
+    );
+    let report = validate_neutral(&ir, vec![]).unwrap();
+    assert!(report
+        .findings
+        .iter()
+        .any(
+            |finding| finding.entity.as_deref() == Some(ir.model.configurations[0].id.as_str())
+                && finding.message.contains("resolved dimensions violate")
+        ));
+    assert_eq!(
+        ir.dimension_value(&Dimension::<Length>::Parameter(id)),
+        Some(Length::new(2.0).unwrap())
     );
 }

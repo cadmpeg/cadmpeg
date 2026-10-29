@@ -38,16 +38,17 @@ fn native(valid: bool) -> crate::native::F3dNative {
             id: "f3d:Design/BulkStream.dat:design-record-header#102".into(),
             record_index: 102,
             class_tag: DesignClassTag::try_from("395".to_owned()).unwrap(),
-            byte_offset: 1_124,
+            byte_offset: Some(1_124),
         });
     }
     native.design_construction_operand_identities.push(
         DesignConstructionOperandIdentity::try_new(DesignConstructionOperandIdentityDraft {
+            ordinal: 0,
             id: "f3d:Design/BulkStream.dat:operand-identity#101".into(),
             group_record_index: 100,
             wrappers: vec![DesignIdentityWrapper {
                 record_index: 101,
-                byte_offset: 1_100,
+                byte_offset: Some(1_100),
                 class_tag: DesignClassTag::try_from("384".to_owned()).unwrap(),
             }],
             following_record_index: 102,
@@ -87,9 +88,10 @@ fn transform_native() -> crate::native::F3dNative {
     let mut identity = native
         .design_construction_operand_identities
         .remove(0)
-        .into_draft();
+        .into_draft()
+        .unwrap();
     identity.wrappers[0].record_index = 102;
-    identity.wrappers[0].byte_offset = 1_252;
+    identity.wrappers[0].byte_offset = Some(1_252);
     identity.following_record_index = 103;
     identity.following_byte_offset = 1_276;
     native
@@ -122,7 +124,7 @@ fn transform_native() -> crate::native::F3dNative {
         native.design_record_headers.push(DesignRecordHeader {
             id: format!("f3d:Design/BulkStream.dat:design-record-header#{record_index}"),
             record_index,
-            byte_offset,
+            byte_offset: Some(byte_offset),
             class_tag: class_tag.to_owned().try_into().unwrap(),
         });
     }
@@ -170,9 +172,7 @@ fn construction_identity_accepts_transform_wrapper_terminal_chain() {
 
 #[test]
 fn construction_identity_rejects_transform_chain_link_mutations() {
-    use crate::records::topology::construction::{
-        DesignConstructionOperandTransform, DesignConstructionOperandTransformDraft,
-    };
+    use crate::records::topology::construction::DesignConstructionOperandTransform;
     for (record_index, following_record_index, byte_offset, following_class_tag) in [
         (100, 102, 1_100, "384"),
         (101, 103, 1_100, "384"),
@@ -181,8 +181,7 @@ fn construction_identity_rejects_transform_chain_link_mutations() {
     ] {
         let mut native = transform_native();
         let frame = &mut native.design_construction_operand_groups[0].frame;
-        let mut draft =
-            DesignConstructionOperandTransformDraft::from(frame.trailing_transforms()[0].clone());
+        let mut draft = frame.trailing_transforms()[0].clone().into_draft().unwrap();
         draft.record_index = record_index;
         draft.following_record_index = following_record_index;
         draft.byte_offset = byte_offset;
@@ -204,7 +203,7 @@ fn construction_identity_rejects_transform_chain_link_mutations() {
                 .iter_mut()
                 .find(|header| header.record_index == record_index)
                 .unwrap();
-            header.byte_offset += offset_delta;
+            header.byte_offset = header.byte_offset.map(|offset| offset + offset_delta);
             if let Some(class_tag) = class_tag {
                 header.class_tag = class_tag.to_owned().try_into().unwrap();
             }

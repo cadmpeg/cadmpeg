@@ -294,6 +294,23 @@ impl<M> PmDcPairedReferenceList<M> {
         })
     }
 
+    /// Build current document content, including metadata with no remaining references.
+    pub(crate) fn from_document(
+        metadata: Option<M>,
+        references: Vec<PmDcReference>,
+    ) -> Option<Self> {
+        let items = match metadata {
+            Some(metadata) => Some((metadata, references)),
+            None if references.is_empty() => None,
+            None => return None,
+        };
+        Some(Self {
+            #[cfg(test)]
+            clone_probe: PmDcListCloneProbe,
+            items,
+        })
+    }
+
     pub(crate) fn metadata(&self) -> Option<&M> {
         self.items.as_ref().map(|(metadata, _)| metadata)
     }

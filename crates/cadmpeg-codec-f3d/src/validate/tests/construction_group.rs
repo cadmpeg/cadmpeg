@@ -77,7 +77,7 @@ pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
                 id: format!("{stream}:design-record-header#{index}"),
                 record_index: index,
                 class_tag: "277".to_owned().try_into().unwrap(),
-                byte_offset: offset,
+                byte_offset: Some(offset),
             });
         }
     }
@@ -132,32 +132,33 @@ fn reference_findings(
             frame
                 .try_set_trailing_flags(vec![DesignConstructionOperandFlag {
                     record_index: 102,
-                    byte_offset,
+                    byte_offset: Some(byte_offset),
                     class_tag: class_tag.clone(),
                     value: true,
-                    value_offset: byte_offset.saturating_add(22),
+                    value_offset: Some(byte_offset.saturating_add(22)),
                 }])
                 .unwrap();
         } else {
             frame
                 .try_set_trailing_dual_transforms(vec![DesignConstructionOperandDualTransform {
                     record_index: 102,
-                    byte_offset,
+                    byte_offset: Some(byte_offset),
                     class_tag: class_tag.clone(),
                     first_transform: SketchPlacementMatrix::IDENTITY,
-                    first_transform_offset: byte_offset.saturating_add(21),
+                    first_transform_offset: Some(byte_offset.saturating_add(21)),
                     second_transform: SketchPlacementMatrix::IDENTITY,
-                    second_transform_offset: byte_offset.saturating_add(149),
+                    second_transform_offset: Some(byte_offset.saturating_add(149)),
                 }])
                 .unwrap();
         }
         native.design_construction_operand_groups[0].frame = frame;
-        native.design_construction_operand_groups[0].paired_byte_offset = 1_070 + reference_span;
+        native.design_construction_operand_groups[0].paired_byte_offset =
+            Some(1_070 + reference_span);
         native.design_record_headers.push(DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:design-record-header#102".into(),
             record_index: 102,
             class_tag,
-            byte_offset,
+            byte_offset: Some(byte_offset),
         });
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();

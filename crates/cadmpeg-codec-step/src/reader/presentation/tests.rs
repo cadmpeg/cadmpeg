@@ -90,7 +90,7 @@ fn presentation_layer_expands_all_product_definition_views() {
         .iter()
         .any(|definition| {
             definition.id.as_str() == "step:product:product#3-definition-8"
-                && definition.native_ref.as_deref() == Some("#8")
+                && definition.native_ref.is_none()
         }));
     assert!(result
         .ir()
@@ -99,8 +99,14 @@ fn presentation_layer_expands_all_product_definition_views() {
         .iter()
         .any(|definition| {
             definition.id.as_str() == "step:product:product#3-definition-6"
-                && definition.native_ref.as_deref() == Some("#6")
+                && definition.native_ref.is_none()
         }));
+    if let Some(namespace) = result.ir().native.namespace("step") {
+        assert!(namespace
+            .arenas()
+            .keys()
+            .all(|arena| super::super::NATIVE_ARENAS.contains(&arena.as_str())));
+    }
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1352,6 +1358,8 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     ir.model.regions.push(region);
     ir.model.bodies[0].visible = Some(false);
     ir.model.presentation_layers.push(PresentationLayer {
+        native_ref: None,
+        parent: None,
         id: LayerId::mint("test:model:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
         description: None,
@@ -1575,6 +1583,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
         name: None,
@@ -1591,6 +1600,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#face"
             .try_into()
             .expect("valid identity"),
@@ -1625,6 +1635,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: AppearanceId::mint("test:model:appearance#vertex".to_string())
             .expect("identity grammar"),
         name: Some("vertex green".to_string()),
@@ -1641,6 +1652,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#vertex"
             .try_into()
             .expect("valid identity"),
@@ -1681,6 +1693,8 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let point = ir.model.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
+        native_ref: None,
+        parent: None,
         id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
@@ -1753,9 +1767,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
             name: Some("Root assembly".into()),
             visible: None,
             link: None,
@@ -1768,14 +1782,16 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             },
             parent: OccurrenceParent::Occurrence { occurrence: root },
             ordinal: 0,
-            transform: Transform::affine([
-                [1.0, 0.0, 0.0, 25.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-            ])
-            .expect("affine transform"),
+            transform: Some(
+                Transform::affine([
+                    [1.0, 0.0, 0.0, 25.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ])
+                .expect("affine transform"),
+            ),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
             name: Some("Child occurrence".into()),
             visible: None,
             link: None,
@@ -1784,6 +1800,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     ]);
     let annotation = PmiId::mint("test:model:pmi#note").expect("identity grammar");
     ir.model.pmi.push(PmiAnnotation {
+        native_ref: None,
         id: annotation.clone(),
         name: Some("inspection note".into()),
         visible: None,
@@ -1795,6 +1812,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         },
     });
     ir.model.presentation_layers.push(PresentationLayer {
+        native_ref: None,
+        parent: None,
         id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
         name: "mixed layer".into(),
         description: None,
@@ -1858,6 +1877,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
         name: None,
@@ -1874,6 +1894,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
         id: "test:model:appearance-binding#face"
             .try_into()
             .expect("valid identity"),

@@ -17,11 +17,14 @@ fn token_record(sequence: u32, values: &[TokenValue]) -> ParameterRecord {
         directory_sequence: sequence,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .iter()
             .cloned()
             .map(|value| Token { value, span: 0..0 })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     }

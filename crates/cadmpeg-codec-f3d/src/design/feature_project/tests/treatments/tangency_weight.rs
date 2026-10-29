@@ -63,7 +63,14 @@ fn indexed_tangency_weight_with_a_unit_retains_the_native_feature(
         assert_eq!(
             expressions
                 .iter()
-                .map(|(name, expression)| (name.as_str(), expression.as_str()))
+                .map(|(name, control)| (
+                    name.as_str(),
+                    parameters
+                        .iter()
+                        .find(|parameter| control.parameter()
+                            == Some(&crate::ids::neutral_parameter_id(parameter)))
+                        .map_or("", |parameter| parameter.expression())
+                ))
                 .collect::<Vec<_>>(),
             [("d1", "value"), ("w1", "value")]
         );

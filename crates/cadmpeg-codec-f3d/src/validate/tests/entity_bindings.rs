@@ -9,16 +9,22 @@ fn validation_entity_header(
     use crate::records::identity::{DesignEntityId, ReferenceRun};
     DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity-header#1".into(),
-        byte_offset: 10,
+        byte_offset: Some(10),
         entity_id: DesignEntityId::from_parts("sketch", 1),
         class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned()).unwrap(),
-        optional_slot_present: false,
+        optional_slot_present: Some(false),
         registration: DesignEntityRegistration::new(
             Some(crate::records::entity_header::DESIGN_MODULE_SKETCH.into()),
             (!references.is_empty()).then_some(SketchHeaderReferences {
                 record_reference: None,
-                record_reference_offset: 10,
-                references,
+                record_reference_offset: Some(10),
+                references: references
+                    .into_iter()
+                    .map(|reference| crate::records::identity::Located {
+                        value: reference.value,
+                        offset: Some(reference.offset),
+                    })
+                    .collect(),
             }),
             ReferenceRun::unlocated(Vec::new()),
         )
@@ -57,6 +63,7 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
     if with_binding {
         native.design_body_bindings.push(
             DesignBodyBinding::try_from(DesignBodyBindingWire {
+                map_ordinal: 0,
                 component_owner: None,
                 component_owner_unresolved: false,
                 id: binding_id.into(),
@@ -75,11 +82,11 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
         );
         native.design_entity_headers.push(DesignEntityHeader {
             id: "f3d:Design/BulkStream.dat:entity-header#1".into(),
-            byte_offset: 10,
+            byte_offset: Some(10),
             entity_id: DesignEntityId::from_parts("body", 1),
             class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned())
                 .unwrap(),
-            optional_slot_present: false,
+            optional_slot_present: Some(false),
             registration: DesignEntityRegistration::new(
                 Some(DESIGN_MODULE_BODY.into()),
                 None,
@@ -191,7 +198,7 @@ fn two_sketch_placements(
     {
         let mut header = validation_entity_header(Vec::new());
         header.id = format!("f3d:Design/BulkStream.dat:entity-header#{header_offset}");
-        header.byte_offset = header_offset;
+        header.byte_offset = Some(header_offset);
         header.entity_id = crate::records::identity::DesignEntityId::from_parts("sketch", suffix);
         native.design_entity_headers.push(header);
         let mut placement = validation_placement(None, Some(1), true);
@@ -370,21 +377,22 @@ fn add_ordinal_collection_types(native: &mut crate::native::F3dNative) {
         SegmentType::try_new(
             "f3d:Design/MetaStream.dat:design-type#0".into(),
             SegmentTypeData {
-                byte_offset: 0,
+                byte_offset: Some(0),
+                class_tag: "256".to_owned().try_into().unwrap(),
                 type_guid: "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF"
                     .to_owned()
                     .try_into()
                     .unwrap(),
-                type_guid_offset: 4,
+                type_guid_offset: Some(4),
                 base_type_guid: BaseTypeGuid::Guid {
                     value: "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081"
                         .to_owned()
                         .try_into()
                         .unwrap(),
-                    offset: 44,
+                    offset: Some(44),
                 },
                 version: 4,
-                version_offset: 80,
+                version_offset: Some(80),
                 module: "Geometry".into(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![100, 200]),
             },

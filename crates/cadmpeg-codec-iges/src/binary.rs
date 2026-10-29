@@ -9,10 +9,13 @@
 //! passed to the reader, so normalization does not replace source fidelity.
 
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use cadmpeg_ir::source_fidelity::parts::PartOutput;
+use std::collections::{BTreeMap, BTreeSet};
+
+pub(crate) mod parts;
 
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
@@ -45,10 +48,11 @@ struct SectionDisplacements {
 
 #[derive(Debug)]
 struct BinarySections<'a> {
-    start: &'a [u8],
-    global: &'a [u8],
-    directory: &'a [u8],
-    parameter: &'a [u8],
+    start: View<'a>,
+    global: View<'a>,
+    directory: View<'a>,
+    parameter: View<'a>,
+    terminate: View<'a>,
     lengths: PrimitiveLengths,
 }
 
@@ -64,22 +68,53 @@ enum BinaryValue {
 #[derive(Debug)]
 struct BinaryDirectory {
     offset: u32,
+    source_sequence: u32,
     entity_type: i64,
     parameter_pointer: i64,
     /// Retains the wire fields in shared slot order for rendering beside the checked entity discriminator.
     values: [BinaryValue; 15],
+    /// Body-relative byte range of each wire value, in shared slot order.
+    value_extents: [std::ops::Range<usize>; 15],
 }
 
+/// The optional Directory fields (4, 5, 6, 8, 12, 13 and 19): shared slot and
+/// field name.
+const OPTIONAL_DIRECTORY_FIELDS: [(DirectoryFieldSlot, &str); 7] = [
+    (DirectoryFieldSlot::LineFont, "line font"),
+    (DirectoryFieldSlot::Level, "level"),
+    (DirectoryFieldSlot::View, "view"),
+    (DirectoryFieldSlot::LabelDisplay, "label display"),
+    (DirectoryFieldSlot::LineWeight, "line weight"),
+    (DirectoryFieldSlot::Color, "color"),
+    (DirectoryFieldSlot::Subscript, "entity subscript"),
+];
+
+/// Rendered text of an optional value whose part is given up. It is not a
+/// decimal integer, so the Directory admission states no value for the field.
+const UNREADABLE_OPTIONAL_FIELD: &[u8] = b"*";
+
 impl BinaryDirectory {
-    fn new(offset: u32, values: [BinaryValue; 16]) -> Result<Self, CodecError> {
+    fn new(
+        offset: u32,
+        source_sequence: u32,
+        values: [BinaryValue; 16],
+        extents: [std::ops::Range<usize>; 16],
+    ) -> Result<Self, CodecError> {
         #[rustfmt::skip]
         let [
             entity_type, parameter_pointer, structure, line_font, level, view, transform,
             label_display, status, line_weight, color, form, reserved_first, reserved_second,
             label, subscript,
         ] = values;
+        #[rustfmt::skip]
+        let [
+            entity_type_at, _, structure_at, line_font_at, level_at, view_at, transform_at,
+            label_display_at, status_at, line_weight_at, color_at, form_at, reserved_first_at,
+            reserved_second_at, label_at, subscript_at,
+        ] = extents;
         Ok(Self {
             offset,
+            source_sequence,
             entity_type: integer_value(&entity_type, "Directory entity type")?,
             parameter_pointer: pointer_value(&parameter_pointer, "Directory Parameter Data")?,
             values: [
@@ -99,7 +134,40 @@ impl BinaryDirectory {
                 label,
                 subscript,
             ],
+            value_extents: [
+                entity_type_at,
+                structure_at,
+                line_font_at,
+                level_at,
+                view_at,
+                transform_at,
+                label_display_at,
+                status_at,
+                line_weight_at,
+                color_at,
+                form_at,
+                reserved_first_at,
+                reserved_second_at,
+                label_at,
+                subscript_at,
+            ],
         })
+    }
+
+    /// Admit one optional field: its rendered text is a decimal integer.
+    fn admit_optional_field(
+        &self,
+        slot: DirectoryFieldSlot,
+        name: &'static str,
+    ) -> Result<(), CodecError> {
+        let field = render_field(&self.values[slot.slot()], FieldRendering::Plain)?;
+        crate::directory::integer(field, name).map_err(|error| malformed(error.to_string()))?;
+        Ok(())
+    }
+
+    /// State no value for an optional field whose part is given up.
+    fn give_up_optional_field(&mut self, slot: DirectoryFieldSlot) {
+        self.values[slot.slot()] = BinaryValue::String(UNREADABLE_OPTIONAL_FIELD.to_vec());
     }
 
     fn entity_type(&self) -> i64 {
@@ -109,6 +177,40 @@ impl BinaryDirectory {
     fn parameter_pointer(&self) -> i64 {
         self.parameter_pointer
     }
+
+    /// State no Parameter Data for a record whose Parameter Data record is
+    /// given up or absent.
+    fn detach_parameter_data(&mut self) {
+        self.parameter_pointer = 0;
+    }
+
+    fn admit_directory_fields(&self) -> Result<(), CodecError> {
+        for (slot, name) in [
+            (DirectoryFieldSlot::Structure, "structure"),
+            (DirectoryFieldSlot::Form, "form"),
+        ] {
+            let value = &self.values[slot.slot()];
+            if !matches!(value, BinaryValue::Pointer(_)) {
+                let field = render_field(value, FieldRendering::Plain)?;
+                crate::directory::integer(field, name)
+                    .map_err(|error| malformed(error.to_string()))?;
+            }
+        }
+        let value = &self.values[DirectoryFieldSlot::Status.slot()];
+        if !matches!(value, BinaryValue::Pointer(_)) {
+            let field = render_field(value, FieldRendering::Status)?;
+            crate::directory::status(field).map_err(|error| malformed(error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn has_point_parameters(&self) -> bool {
+        self.entity_type == 116
+            && matches!(
+                self.values[DirectoryFieldSlot::Form.slot()],
+                BinaryValue::Default | BinaryValue::Integer(0)
+            )
+    }
 }
 
 #[derive(Debug)]
@@ -117,6 +219,28 @@ struct BinaryParameter {
     entity_type: i64,
     directory_pointer: i64,
     values: Vec<BinaryValue>,
+    /// The `iges.binary_parameter_value` groups after the Directory pointer.
+    groups: Vec<ParameterGroup>,
+    admitted: Option<AdmittedBinaryParameter>,
+}
+
+/// One value group of a Binary Parameter record after its Directory pointer:
+/// one `iges.binary_parameter_value` part.
+#[derive(Debug)]
+struct ParameterGroup {
+    /// The group bytes, relative to the start of the record body.
+    bytes: std::ops::Range<usize>,
+    /// The positions in `BinaryParameter::values` that the group fills.
+    values: std::ops::Range<usize>,
+    /// Why the group is given up. A group whose values do not parse leaves
+    /// every later boundary unknown, so its bytes run to the record end.
+    failure: Option<CodecError>,
+}
+
+#[derive(Debug)]
+struct AdmittedBinaryParameter {
+    lines: Vec<Vec<u8>>,
+    content: crate::parameter::AdmittedParameter,
 }
 
 #[derive(Debug)]
@@ -125,11 +249,12 @@ struct NormalizedParameter {
     directory_sequence: u32,
     lines: Vec<Vec<u8>>,
     first_sequence: u32,
+    admitted: crate::parameter::AdmittedParameter,
 }
 
 #[derive(Debug)]
 struct BitReader<'a> {
-    bytes: &'a [u8],
+    input: &'a [u8],
     byte: usize,
     bit: u8,
 }
@@ -137,14 +262,14 @@ struct BitReader<'a> {
 impl<'a> BitReader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         Self {
-            bytes,
+            input: bytes,
             byte: 0,
             bit: 0,
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.byte == self.bytes.len() && self.bit == 0
+        self.byte == self.input.len() && self.bit == 0
     }
 
     fn read_bits(&mut self, count: u8) -> Result<u64, CodecError> {
@@ -154,7 +279,7 @@ impl<'a> BitReader<'a> {
         let mut value = 0_u64;
         for _ in 0..count {
             let byte = *self
-                .bytes
+                .input
                 .get(self.byte)
                 .ok_or_else(|| malformed("a Binary primitive is truncated"))?;
             let shift = 7_u8
@@ -266,7 +391,7 @@ impl<'a> BitReader<'a> {
             let count = usize::try_from(count.unsigned_abs())
                 .map_err(|_| malformed("a Binary string count is out of range"))?;
             let remaining = self
-                .bytes
+                .input
                 .len()
                 .checked_sub(self.byte)
                 .ok_or_else(|| malformed("a Binary string offset is out of range"))?;
@@ -290,10 +415,21 @@ impl<'a> BitReader<'a> {
     }
 }
 
+enum RepeatValue {
+    Physical(u8),
+    Shared(BinaryValue, std::ops::Range<usize>),
+}
+
+struct Repeat {
+    value: RepeatValue,
+    remaining: usize,
+}
+
 struct ValueStream<'a> {
     bits: BitReader<'a>,
     lengths: PrimitiveLengths,
-    pending: VecDeque<BinaryValue>,
+    repeat: Option<Repeat>,
+    value_extent: std::ops::Range<usize>,
 }
 
 impl<'a> ValueStream<'a> {
@@ -301,7 +437,8 @@ impl<'a> ValueStream<'a> {
         Self {
             bits: BitReader::new(bytes),
             lengths,
-            pending: VecDeque::new(),
+            repeat: None,
+            value_extent: 0..0,
         }
     }
 
@@ -331,7 +468,23 @@ impl<'a> ValueStream<'a> {
     }
 
     fn next(&mut self) -> Result<Option<BinaryValue>, CodecError> {
-        if let Some(value) = self.pending.pop_front() {
+        if let Some(mut repeat) = self.repeat.take() {
+            let value = match &repeat.value {
+                RepeatValue::Physical(format) => {
+                    let start = self.bits.byte;
+                    let value = self.one(*format)?;
+                    self.value_extent = start..self.bits.byte;
+                    value
+                }
+                RepeatValue::Shared(value, extent) => {
+                    self.value_extent = extent.clone();
+                    value.clone()
+                }
+            };
+            repeat.remaining -= 1;
+            if repeat.remaining > 0 {
+                self.repeat = Some(repeat);
+            }
             return Ok(Some(value));
         }
         if self.bits.is_empty() {
@@ -345,22 +498,24 @@ impl<'a> ValueStream<'a> {
         let physically_present = control >> 7 == 1;
         let repeat = usize::from((control >> 3) & 0x0f) + 1;
         let format = control & 0x07;
+        let start = self.bits.byte;
         let first = self.one(format)?;
-        if physically_present {
-            for _ in 1..repeat {
-                let value = self.one(format)?;
-                self.pending.push_back(value);
-            }
-        } else {
-            for _ in 1..repeat {
-                self.pending.push_back(first.clone());
-            }
+        self.value_extent = start..self.bits.byte;
+        if repeat > 1 {
+            self.repeat = Some(Repeat {
+                value: if physically_present {
+                    RepeatValue::Physical(format)
+                } else {
+                    RepeatValue::Shared(first.clone(), self.value_extent.clone())
+                },
+                remaining: repeat - 1,
+            });
         }
         Ok(Some(first))
     }
 
     fn finish(&self) -> Result<(), CodecError> {
-        if !self.pending.is_empty() || !self.bits.is_empty() {
+        if self.repeat.is_some() || !self.bits.is_empty() {
             return Err(malformed(
                 "a Binary section has values outside its declared fields",
             ));
@@ -398,18 +553,19 @@ fn padding_is_zero(bytes: &[u8], range: std::ops::Range<usize>) -> Result<(), Co
 }
 
 fn section_payload(
-    source: &[u8],
+    source: View<'_>,
     start: usize,
     expected: u8,
     next_start: usize,
-) -> Result<&[u8], CodecError> {
-    if source.get(start) != Some(&expected) {
+) -> Result<View<'_>, CodecError> {
+    let bytes = source.window();
+    if bytes.get(start) != Some(&expected) {
         return Err(malformed(format!(
             "Binary section at byte {start} is not {:?}",
             char::from(expected)
         )));
     }
-    let count = usize::try_from(u32_at(source, start + 1)?)
+    let count = usize::try_from(u32_at(bytes, start + 1)?)
         .map_err(|_| malformed("a Binary section count is out of range"))?;
     let payload_start = start
         .checked_add(SECTION_HEADER_WIDTH)
@@ -420,8 +576,16 @@ fn section_payload(
     if payload_end > next_start {
         return Err(malformed("a Binary section overlaps its successor"));
     }
+    let absolute_start = source
+        .start()
+        .checked_add(payload_start)
+        .ok_or_else(|| malformed("a Binary section start overflows"))?;
+    let absolute_end = source
+        .start()
+        .checked_add(payload_end)
+        .ok_or_else(|| malformed("a Binary section end overflows"))?;
     source
-        .get(payload_start..payload_end)
+        .child(absolute_start, absolute_end)
         .ok_or_else(|| malformed("a Binary section payload is truncated"))
 }
 
@@ -498,9 +662,10 @@ fn parse_header(source: &[u8]) -> Result<(PrimitiveLengths, SectionDisplacements
     Ok((lengths, section_displacements))
 }
 
-fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
-    let (lengths, offsets) = parse_header(source)?;
-    if offsets.end > source.len() {
+fn parse_sections(source: View<'_>) -> Result<BinarySections<'_>, CodecError> {
+    let bytes = source.window();
+    let (lengths, offsets) = parse_header(bytes)?;
+    if offsets.end > bytes.len() {
         return Err(malformed(
             "Binary Terminate displacement exceeds the source",
         ));
@@ -513,22 +678,22 @@ fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
     let start_end = offsets
         .start
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(start.len()))
+        .and_then(|offset| offset.checked_add(start.window().len()))
         .ok_or_else(|| malformed("Binary Start section count overflows"))?;
     let global_end = offsets
         .global
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(global.len()))
+        .and_then(|offset| offset.checked_add(global.window().len()))
         .ok_or_else(|| malformed("Binary Global section count overflows"))?;
     let directory_end = offsets
         .directory
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(directory.len()))
+        .and_then(|offset| offset.checked_add(directory.window().len()))
         .ok_or_else(|| malformed("Binary Directory section count overflows"))?;
     let parameter_end = offsets
         .parameter
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(parameter.len()))
+        .and_then(|offset| offset.checked_add(parameter.window().len()))
         .ok_or_else(|| malformed("Binary Parameter section count overflows"))?;
     for (payload_end, next_start) in [
         (start_end, offsets.global),
@@ -536,25 +701,25 @@ fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
         (directory_end, offsets.parameter),
         (parameter_end, offsets.terminate),
     ] {
-        padding_is_zero(source, payload_end..next_start)?;
+        padding_is_zero(bytes, payload_end..next_start)?;
     }
     let terminate_end = offsets
         .terminate
         .checked_add(SECTION_HEADER_WIDTH)
-        .and_then(|offset| offset.checked_add(terminate.len()))
+        .and_then(|offset| offset.checked_add(terminate.window().len()))
         .ok_or_else(|| malformed("Binary Terminate section count overflows"))?;
-    padding_is_zero(source, terminate_end..offsets.end)?;
+    padding_is_zero(bytes, terminate_end..offsets.end)?;
     validate_terminate(
-        terminate,
+        terminate.window(),
         [
             BINARY_FLAG_WIDTH,
-            SECTION_HEADER_WIDTH + start.len(),
-            SECTION_HEADER_WIDTH + global.len(),
-            SECTION_HEADER_WIDTH + directory.len(),
-            SECTION_HEADER_WIDTH + parameter.len(),
+            SECTION_HEADER_WIDTH + start.window().len(),
+            SECTION_HEADER_WIDTH + global.window().len(),
+            SECTION_HEADER_WIDTH + directory.window().len(),
+            SECTION_HEADER_WIDTH + parameter.window().len(),
         ],
     )?;
-    if source.get(offsets.end) != Some(&b'E') {
+    if bytes.get(offsets.end) != Some(&b'E') {
         return Err(malformed(
             "Binary Terminate displacement does not lead to the end marker",
         ));
@@ -564,6 +729,7 @@ fn parse_sections(source: &[u8]) -> Result<BinarySections<'_>, CodecError> {
         global,
         directory,
         parameter,
+        terminate,
         lengths,
     })
 }
@@ -618,48 +784,100 @@ fn positive_pointer(value: i64, what: &str) -> Result<u32, CodecError> {
     u32::try_from(value).map_err(|_| malformed(format!("Binary {what} pointer is out of range")))
 }
 
-fn read_global(payload: &[u8], lengths: PrimitiveLengths) -> Result<Vec<BinaryValue>, CodecError> {
+/// The payload ranges of the value groups of one Binary section, in order,
+/// through the first group whose values do not parse. That group starts at
+/// the returned offset, and its end is unknown.
+fn value_groups(
+    payload: &[u8],
+    lengths: PrimitiveLengths,
+    mut group: impl FnMut(std::ops::Range<usize>) -> Result<(), CodecError>,
+) -> Result<Option<(usize, CodecError)>, CodecError> {
     let mut stream = ValueStream::new(payload, lengths);
+    loop {
+        let start = stream.bits.byte;
+        if stream.bits.is_empty() {
+            return Ok(None);
+        }
+        loop {
+            match stream.next() {
+                Ok(Some(_)) if stream.repeat.is_some() => {}
+                Ok(_) => break,
+                Err(error) => return Ok(Some((start, error))),
+            }
+        }
+        group(start..stream.bits.byte)?;
+    }
+}
+
+/// The values of one value group.
+fn read_group(bytes: &[u8], lengths: PrimitiveLengths) -> Result<Vec<BinaryValue>, CodecError> {
+    let mut stream = ValueStream::new(bytes, lengths);
     let mut values = Vec::new();
-    for _ in 0..24 {
-        values.push(one_value(&mut stream, "Global")?);
+    while let Some(value) = stream.next()? {
+        values.push(value);
     }
     stream.finish()?;
     Ok(values)
 }
 
-fn read_directory(
-    payload: &[u8],
-    lengths: PrimitiveLengths,
-) -> Result<Vec<BinaryDirectory>, CodecError> {
-    let mut records = Vec::new();
-    let mut cursor = 0_usize;
-    while cursor < payload.len() {
-        let offset = u32::try_from(cursor + 1)
-            .map_err(|_| malformed("Binary Directory pointer exceeds u32"))?;
-        let byte_count = usize::try_from(u32_at(payload, cursor)?)
-            .map_err(|_| malformed("Binary Directory entity count is out of range"))?;
-        let body_start = cursor
-            .checked_add(4)
-            .ok_or_else(|| malformed("Binary Directory entity start overflows"))?;
-        let body_end = body_start
-            .checked_add(byte_count)
-            .ok_or_else(|| malformed("Binary Directory entity count overflows"))?;
-        if body_end > payload.len() {
-            return Err(malformed("Binary Directory entity exceeds its section"));
-        }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
-        let mut values = std::array::from_fn(|_| BinaryValue::Default);
-        for value in &mut values {
-            *value = one_value(&mut stream, "Directory")?;
-        }
-        stream.finish()?;
-        let record = BinaryDirectory::new(offset, values)?;
-
-        records.push(record);
-        cursor = body_end;
+fn counted_record<'a>(
+    payload: View<'a>,
+    cursor: usize,
+    section: &str,
+) -> Result<(u32, View<'a>, View<'a>), CodecError> {
+    let offset = cursor
+        .checked_add(1)
+        .and_then(|offset| u32::try_from(offset).ok())
+        .ok_or_else(|| malformed(format!("Binary {section} pointer exceeds u32")))?;
+    let byte_count = usize::try_from(u32_at(payload.window(), cursor)?)
+        .map_err(|_| malformed(format!("Binary {section} entity count is out of range")))?;
+    let body_start = cursor
+        .checked_add(4)
+        .ok_or_else(|| malformed(format!("Binary {section} entity start overflows")))?;
+    let body_end = body_start
+        .checked_add(byte_count)
+        .ok_or_else(|| malformed(format!("Binary {section} entity count overflows")))?;
+    if body_end > payload.window().len() {
+        return Err(malformed(format!(
+            "Binary {section} entity exceeds its section"
+        )));
     }
-    Ok(records)
+    let start = payload
+        .start()
+        .checked_add(cursor)
+        .ok_or_else(|| malformed(format!("Binary {section} record start overflows")))?;
+    let body_start = payload
+        .start()
+        .checked_add(body_start)
+        .ok_or_else(|| malformed(format!("Binary {section} body start overflows")))?;
+    let end = payload
+        .start()
+        .checked_add(body_end)
+        .ok_or_else(|| malformed(format!("Binary {section} record end overflows")))?;
+    let extent = payload
+        .child(start, end)
+        .ok_or_else(|| malformed(format!("Binary {section} entity exceeds its section")))?;
+    let body = extent
+        .child(body_start, end)
+        .ok_or_else(|| malformed(format!("Binary {section} entity exceeds its section")))?;
+    Ok((offset, extent, body))
+}
+
+fn parse_directory_record(
+    offset: u32,
+    source_sequence: u32,
+    body: View<'_>,
+    lengths: PrimitiveLengths,
+) -> Result<BinaryDirectory, CodecError> {
+    let mut stream = ValueStream::new(body.window(), lengths);
+    let mut values = std::array::from_fn(|_| BinaryValue::Default);
+    let mut extents = std::array::from_fn(|_| 0..0);
+    for (value, extent) in values.iter_mut().zip(extents.iter_mut()) {
+        *value = one_value(&mut stream, "Directory")?;
+        *extent = stream.value_extent.clone();
+    }
+    stream.finish()?;
+    BinaryDirectory::new(offset, source_sequence, values, extents)
 }
 
 struct StackText {
@@ -942,64 +1160,182 @@ fn normalize_global(values: &[BinaryValue]) -> Result<Vec<u8>, CodecError> {
     Ok(output)
 }
 
-fn read_parameters(
-    payload: &[u8],
-    lengths: PrimitiveLengths,
-    directory_by_offset: &BTreeMap<u32, usize>,
-) -> Result<Vec<BinaryParameter>, CodecError> {
-    let mut records = Vec::new();
-    let mut cursor = 0_usize;
-    while cursor < payload.len() {
-        let offset = u32::try_from(cursor + 1)
-            .map_err(|_| malformed("Binary Parameter pointer exceeds u32"))?;
-        let byte_count = usize::try_from(u32_at(payload, cursor)?)
-            .map_err(|_| malformed("Binary Parameter entity count is out of range"))?;
-        let body_start = cursor
-            .checked_add(4)
-            .ok_or_else(|| malformed("Binary Parameter entity start overflows"))?;
-        let body_end = body_start
-            .checked_add(byte_count)
-            .ok_or_else(|| malformed("Binary Parameter entity count overflows"))?;
-        if body_end > payload.len() {
-            return Err(malformed("Binary Parameter entity exceeds its section"));
-        }
-        let mut stream = ValueStream::new(&payload[body_start..body_end], lengths);
-        let entity_type = integer_value(
-            &one_value(&mut stream, "Parameter")?,
-            "Parameter entity type",
-        )?;
-        let directory_pointer = pointer_value(
-            &one_value(&mut stream, "Parameter Directory pointer")?,
-            "Parameter Directory pointer",
-        )?;
-        let mut values = Vec::new();
-        while let Some(value) = stream.next()? {
-            values.push(value);
-        }
-        stream.finish()?;
-        let directory_pointer = positive_pointer(directory_pointer, "Parameter Directory")?;
-        if !directory_by_offset.contains_key(&directory_pointer) {
-            return Err(malformed(
-                "Binary Parameter Directory pointer does not resolve",
-            ));
-        }
+struct ParameterPrefix<'a> {
+    stream: ValueStream<'a>,
+    entity_type: i64,
+    directory_pointer: i64,
+}
 
-        records.push(BinaryParameter {
-            offset,
-            entity_type,
-            directory_pointer: i64::from(directory_pointer),
-            values,
-        });
-        cursor = body_end;
+fn parameter_prefix(
+    body: View<'_>,
+    lengths: PrimitiveLengths,
+) -> Result<ParameterPrefix<'_>, CodecError> {
+    prefix_from_stream(ValueStream::new(body.window(), lengths))
+}
+
+fn prefix_from_stream(mut stream: ValueStream<'_>) -> Result<ParameterPrefix<'_>, CodecError> {
+    let entity_type = integer_value(
+        &one_value(&mut stream, "Parameter")?,
+        "Parameter entity type",
+    )?;
+    let directory_pointer = pointer_value(
+        &one_value(&mut stream, "Parameter Directory pointer")?,
+        "Parameter Directory pointer",
+    )?;
+    Ok(ParameterPrefix {
+        stream,
+        entity_type,
+        directory_pointer,
+    })
+}
+
+fn finish_parameter_record(
+    offset: u32,
+    prefix: ParameterPrefix<'_>,
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<BinaryParameter, CodecError> {
+    let ParameterPrefix {
+        mut stream,
+        entity_type,
+        directory_pointer,
+    } = prefix;
+    let mut values = Vec::new();
+    // Values that repeat the Directory pointer's group belong to that group,
+    // which is record framing.
+    while stream.repeat.is_some() {
+        let value = stream
+            .next()?
+            .ok_or_else(|| malformed("Binary Parameter pointer group ends early"))?;
+        values.push(value);
     }
-    Ok(records)
+    let groups = parameter_groups(&mut stream, &mut values)?;
+    let directory_pointer = positive_pointer(directory_pointer, "Parameter Directory")?;
+    if !directory_by_offset.contains_key(&directory_pointer) {
+        return Err(malformed(
+            "Binary Parameter Directory pointer does not resolve",
+        ));
+    }
+    Ok(BinaryParameter {
+        offset,
+        entity_type,
+        directory_pointer: i64::from(directory_pointer),
+        values,
+        groups,
+        admitted: None,
+    })
+}
+
+/// Read the value groups that remain in `stream`, each one
+/// `iges.binary_parameter_value`. A group whose values do not
+/// parse is the last group: its slots are `Default` placeholders, one for
+/// each value its control byte states, and no later value is read.
+fn parameter_groups(
+    stream: &mut ValueStream<'_>,
+    values: &mut Vec<BinaryValue>,
+) -> Result<Vec<ParameterGroup>, CodecError> {
+    let mut groups = Vec::new();
+    while !stream.bits.is_empty() {
+        let start = stream.bits.byte;
+        let first = values.len();
+        let read = (|| {
+            while let Some(value) = stream.next()? {
+                values.push(value);
+                if stream.repeat.is_none() {
+                    break;
+                }
+            }
+            Ok::<_, CodecError>(())
+        })();
+        match read {
+            Ok(()) => groups.push(ParameterGroup {
+                bytes: start..stream.bits.byte,
+                values: first..values.len(),
+                failure: None,
+            }),
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) => {
+                let control = stream
+                    .bits
+                    .input
+                    .get(start)
+                    .copied()
+                    .ok_or_else(|| malformed("a Binary control byte is absent"))?;
+                values.truncate(first);
+                values.extend(std::iter::repeat_n(
+                    BinaryValue::Default,
+                    usize::from((control >> 3) & 0x0f) + 1,
+                ));
+                groups.push(ParameterGroup {
+                    bytes: start..stream.bits.input.len(),
+                    values: first..values.len(),
+                    failure: Some(error),
+                });
+                return Ok(groups);
+            }
+        }
+    }
+    stream.finish()?;
+    Ok(groups)
+}
+
+fn parameter_owner<'a>(
+    parameter: &BinaryParameter,
+    directory: &'a [BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<&'a BinaryDirectory, CodecError> {
+    let directory_pointer = positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
+    directory_by_offset
+        .get(&directory_pointer)
+        .and_then(|index| directory.get(*index))
+        .ok_or_else(|| malformed("Binary Parameter Directory pointer does not resolve"))
+}
+
+/// The resolved Directory reference held at one Parameter value position.
+fn parameter_reference(
+    value: &BinaryValue,
+    index: usize,
+    point_owner: bool,
+    directory: &[BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<Option<BinaryValue>, CodecError> {
+    match value {
+        BinaryValue::Pointer(_) => resolve_value(value, directory, directory_by_offset).map(Some),
+        BinaryValue::Integer(pointer) if point_owner && index == 3 && *pointer != 0 => {
+            resolve_value(
+                &BinaryValue::Pointer(*pointer),
+                directory,
+                directory_by_offset,
+            )
+            .map(Some)
+        }
+        _ => Ok(None),
+    }
+}
+
+fn parameter_lines(
+    parameter: &mut BinaryParameter,
+    directory: &[BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<Vec<Vec<u8>>, CodecError> {
+    let point_owner =
+        parameter_owner(parameter, directory, directory_by_offset)?.has_point_parameters();
+    for (index, value) in parameter.values.iter_mut().enumerate() {
+        if let Some(resolved) =
+            parameter_reference(value, index, point_owner, directory, directory_by_offset)?
+        {
+            *value = resolved;
+        }
+    }
+    let text = parameter_text(parameter.entity_type, &parameter.values)?;
+    render_parameter_lines(&text, parameter.entity_type == 306)
 }
 
 fn normalize_directory_and_parameters(
     output: &mut Vec<u8>,
     directory: &[BinaryDirectory],
     parameters: Vec<BinaryParameter>,
-) -> Result<(usize, usize), CodecError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<(usize, usize, Admitted), CodecError> {
     let mut directory_by_offset = BTreeMap::new();
     for (index, record) in directory.iter().enumerate() {
         directory_by_offset.insert(record.offset, index);
@@ -1007,7 +1343,7 @@ fn normalize_directory_and_parameters(
     let mut referenced_parameters = BTreeSet::new();
     let mut normalized = Vec::new();
     let mut parameter_sequence = 1_u32;
-    for parameter in parameters {
+    for mut parameter in parameters {
         let directory_pointer =
             positive_pointer(parameter.directory_pointer, "Parameter Directory")?;
         let directory_index = *directory_by_offset
@@ -1018,16 +1354,14 @@ fn normalize_directory_and_parameters(
                 "Binary Directory and Parameter entity types disagree",
             ));
         }
-        let directory_sequence = 1_u32
-            .checked_add(
-                u32::try_from(directory_index)
-                    .map_err(|_| malformed("normalized Directory index exceeds u32"))?
-                    .checked_mul(2)
-                    .ok_or_else(|| malformed("normalized Directory sequence overflows"))?,
-            )
-            .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
-        let text = parameter_text(parameter.entity_type, &parameter.values)?;
-        let lines = render_parameter_lines(&text, parameter.entity_type == 306)?;
+        let directory_sequence = directory[directory_index].source_sequence;
+        let AdmittedBinaryParameter {
+            lines,
+            content: admitted,
+        } = parameter
+            .admitted
+            .take()
+            .ok_or_else(|| malformed("Binary Parameter record was not lexed in its part"))?;
         let first_sequence = parameter_sequence;
         parameter_sequence = parameter_sequence
             .checked_add(
@@ -1040,6 +1374,7 @@ fn normalize_directory_and_parameters(
             directory_sequence,
             lines,
             first_sequence,
+            admitted,
         });
     }
     let mut parameter_by_offset = BTreeMap::new();
@@ -1077,8 +1412,18 @@ fn normalize_directory_and_parameters(
             .checked_add(1)
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
         let values = &directory_record.values;
+        let render_source_field = |value: &BinaryValue, rendering| {
+            if matches!(value, BinaryValue::Pointer(_)) {
+                render_field(
+                    &resolve_value(value, directory, &directory_by_offset)?,
+                    rendering,
+                )
+            } else {
+                render_field(value, rendering)
+            }
+        };
         let first = [
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::EntityType.slot()],
                 FieldRendering::Plain,
             )?,
@@ -1086,45 +1431,47 @@ fn normalize_directory_and_parameters(
                 &BinaryValue::Pointer(i64::from(parameter_starts[index])),
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::Structure.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::LineFont.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::Level.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::View.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
-                &values[DirectoryFieldSlot::Transform.slot()],
-                FieldRendering::Plain,
-            )?,
-            render_field(
+            match &values[DirectoryFieldSlot::Transform.slot()] {
+                BinaryValue::Integer(pointer) if *pointer != 0 => {
+                    render_source_field(&BinaryValue::Pointer(*pointer), FieldRendering::Plain)?
+                }
+                value => render_source_field(value, FieldRendering::Plain)?,
+            },
+            render_source_field(
                 &values[DirectoryFieldSlot::LabelDisplay.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::Status.slot()],
                 FieldRendering::Status,
             )?,
         ];
         let second = [
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::EntityType.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::LineWeight.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::Color.slot()],
                 FieldRendering::Plain,
             )?,
@@ -1134,23 +1481,23 @@ fn normalize_directory_and_parameters(
                 })?),
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::Form.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::ReservedFirst.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::ReservedSecond.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::Label.slot()],
                 FieldRendering::Plain,
             )?,
-            render_field(
+            render_source_field(
                 &values[DirectoryFieldSlot::Subscript.slot()],
                 FieldRendering::Plain,
             )?,
@@ -1172,7 +1519,21 @@ fn normalize_directory_and_parameters(
             .ok_or_else(|| malformed("normalized Directory sequence overflows"))?;
     }
     let mut parameter_sequence = 1_u32;
-    for parameter in &normalized {
+    let mut admitted = Vec::new();
+    let storage = normalized
+        .len()
+        .checked_mul(size_of::<crate::parameter::ParameterRecord>())
+        .ok_or_else(|| malformed("Binary admitted Parameter storage overflows"))?;
+    admitted.try_reserve_exact(normalized.len()).map_err(|_| {
+        ResourceLimit::allocation_failed(
+            ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            u64_from_index(storage),
+            "IGES Binary admitted Parameter storage",
+        )
+    })?;
+    for parameter in normalized {
+        let first = parameter_sequence;
         for line in &parameter.lines {
             render_parameter_line(
                 output,
@@ -1184,6 +1545,7 @@ fn normalize_directory_and_parameters(
                 .checked_add(1)
                 .ok_or_else(|| malformed("normalized Parameter Data sequence overflows"))?;
         }
+        admitted.push(parameter.admitted.bind_range(first..parameter_sequence));
     }
     let directory_count = directory
         .len()
@@ -1196,7 +1558,13 @@ fn normalize_directory_and_parameters(
         directory_count,
         usize::try_from(parameter_count)
             .map_err(|_| malformed("normalized Parameter Data count is out of range"))?,
+        Admitted { records: admitted },
     ))
+}
+
+/// The normalized Parameter records, each lexed inside its part.
+struct Admitted {
+    records: Vec<crate::parameter::ParameterRecord>,
 }
 
 fn render_parameter_lines(data: &[u8], language: bool) -> Result<Vec<Vec<u8>>, CodecError> {
@@ -1258,19 +1626,109 @@ fn append_output_card(output: &mut Vec<u8>, card: &[u8; CARD_WIDTH]) {
     output.push(b'\n');
 }
 
+pub(crate) struct NormalizedBinary {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) identities: BinaryIdentities,
+    pub(crate) admission: BinaryAdmission,
+}
+
+pub(crate) struct BinaryAdmission {
+    pub(crate) global: crate::global::ResolvedGlobal,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The Parameter records, each lexed inside its
+    /// `iges.binary_parameter_record` part.
+    pub(crate) parameters: Vec<crate::parameter::ParameterRecord>,
+}
+
+pub(crate) struct BinaryIdentities(Vec<u32>);
+
+impl BinaryIdentities {
+    pub(crate) fn semantic_sequence(&self, grammar_sequence: u32) -> Result<u32, CodecError> {
+        if grammar_sequence == 0 || grammar_sequence.is_multiple_of(2) {
+            return Err(malformed(
+                "normalized Directory key is not an odd record position",
+            ));
+        }
+        let index = usize::try_from((grammar_sequence - 1) / 2)
+            .map_err(|_| malformed("normalized Directory index exceeds usize"))?;
+        self.0
+            .get(index)
+            .copied()
+            .ok_or_else(|| malformed("normalized Directory key has no Binary source identity"))
+    }
+}
+
+fn source_sequence(ordinal: usize) -> Result<u32, CodecError> {
+    u32::try_from(ordinal)
+        .ok()
+        .and_then(|value| value.checked_mul(2))
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| malformed("Binary Directory ordinal exceeds u32"))
+}
+
+fn resolve_value(
+    value: &BinaryValue,
+    directory: &[BinaryDirectory],
+    directory_by_offset: &BTreeMap<u32, usize>,
+) -> Result<BinaryValue, CodecError> {
+    let BinaryValue::Pointer(pointer) = value else {
+        return Ok(value.clone());
+    };
+    if *pointer == 0 {
+        return Ok(value.clone());
+    }
+    let offset = u32::try_from(pointer.unsigned_abs())
+        .map_err(|_| malformed("Binary Directory reference offset exceeds u32"))?;
+    let target = directory_by_offset
+        .get(&offset)
+        .and_then(|index| directory.get(*index))
+        .ok_or_else(|| malformed("Binary Directory reference has no surviving source target"))?;
+    let sequence = i64::from(target.source_sequence);
+    Ok(BinaryValue::Pointer(if *pointer < 0 {
+        -sequence
+    } else {
+        sequence
+    }))
+}
+
 /// Normalize one Binary IGES source into the Fixed ASCII image consumed by the
 /// typed reader.
-pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn normalize_with_records<T>(
+    source: View<'_>,
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+    parse: impl FnOnce(
+        &BinarySections<'_>,
+        &crate::global::ResolvedGlobal,
+        &mut PartOutput,
+    ) -> Result<(Vec<BinaryDirectory>, Vec<BinaryParameter>), CodecError>,
+    finish: impl FnOnce(Vec<u8>, Vec<BinaryDirectory>, BinaryAdmission) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
     let sections = parse_sections(source)?;
-    let start_text = normalize_start(sections.start, sections.lengths)?;
-    let global_values = read_global(sections.global, sections.lengths)?;
+    let start_text = normalize_start(sections.start.window(), sections.lengths)?;
+    let global_values = parts::read_global(source, &sections, ctx, output)?;
     let global_text = normalize_global(&global_values)?;
-    let directory = read_directory(sections.directory, sections.lengths)?;
-    let mut directory_by_offset = BTreeMap::new();
-    for (index, record) in directory.iter().enumerate() {
-        directory_by_offset.insert(record.offset, index);
+    let global_cards = crate::global::layout_global_cards(&global_text)?;
+    let global_byte_len = global_cards
+        .len()
+        .checked_mul(CARD_DATA_WIDTH)
+        .ok_or_else(|| malformed("Binary normalized Global payload size overflows"))?;
+    let mut global_payload = ctx.alloc_filled(
+        global_byte_len,
+        b' ',
+        "IGES Binary normalized Global payload",
+    )?;
+    for (card, payload) in global_cards
+        .iter()
+        .zip(global_payload.chunks_exact_mut(CARD_DATA_WIDTH))
+    {
+        payload
+            .get_mut(..card.len())
+            .ok_or_else(|| malformed("Binary normalized Global card exceeds its payload"))?
+            .copy_from_slice(card);
     }
-    let parameters = read_parameters(sections.parameter, sections.lengths, &directory_by_offset)?;
+    let (global, losses) = crate::global::parse_binary_stream(&global_payload)?;
+    let (directory, parameters) = parse(&sections, &global, output)?;
     let mut output = Vec::new();
     let mut start_sequence = 1_u32;
     render_start_cards(&mut output, &start_text, &mut start_sequence)?;
@@ -1281,7 +1739,6 @@ pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
     )
     .map_err(|_| malformed("a Binary Start count does not fit memory"))?;
     let mut global_sequence = 1_u32;
-    let global_cards = crate::global::layout_global_cards(&global_text)?;
     for card in &global_cards {
         render_cards(&mut output, card, b'G', &mut global_sequence)?;
     }
@@ -1291,8 +1748,13 @@ pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
             .ok_or_else(|| malformed("a Binary Global sequence is zero"))?,
     )
     .map_err(|_| malformed("a Binary Global count does not fit memory"))?;
-    let (directory_count, parameter_count) =
-        normalize_directory_and_parameters(&mut output, &directory, parameters)?;
+    let (
+        directory_count,
+        parameter_count,
+        Admitted {
+            records: parameters,
+        },
+    ) = normalize_directory_and_parameters(&mut output, &directory, parameters, ctx)?;
     render_terminate(
         &mut output,
         start_count,
@@ -1300,11 +1762,22 @@ pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
         directory_count,
         parameter_count,
     )?;
-    Ok(output)
+    finish(
+        output,
+        directory,
+        BinaryAdmission {
+            global,
+            losses,
+            parameters,
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    mod global_numeric_context;
+    mod normalized_global;
+    mod source_values;
     #[test]
     fn parameter_card_refuses_an_unrenderable_directory_sequence() {
         let mut output = Vec::new();
@@ -1416,7 +1889,7 @@ mod tests {
         }
     }
 
-    use super::{normalize, BinaryValue, PrimitiveLengths, ValueStream};
+    use super::{BinaryValue, PrimitiveLengths, ValueStream};
     use cadmpeg_core::decode::InspectOptions;
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1424,8 +1897,54 @@ mod tests {
 
     const EPS_POINT: f64 = 1.0e-12;
 
+    /// Every counted Directory record of `payload`, read without parts.
+    pub(super) fn read_directory(
+        payload: cadmpeg_core::decode::View<'_>,
+        lengths: PrimitiveLengths,
+    ) -> Result<Vec<super::BinaryDirectory>, cadmpeg_core::CodecError> {
+        let mut records = Vec::new();
+        let mut cursor = 0_usize;
+        while cursor < payload.window().len() {
+            let (offset, extent, body) = super::counted_record(payload, cursor, "Directory")?;
+            let sequence = super::source_sequence(records.len())?;
+            records.push(super::parse_directory_record(
+                offset, sequence, body, lengths,
+            )?);
+            cursor = extent.end() - payload.start();
+        }
+        Ok(records)
+    }
+
+    /// One counted Parameter record, read without parts.
+    pub(super) fn parse_parameter_record(
+        offset: u32,
+        body: cadmpeg_core::decode::View<'_>,
+        lengths: PrimitiveLengths,
+        directory_by_offset: &std::collections::BTreeMap<u32, usize>,
+    ) -> Result<super::BinaryParameter, cadmpeg_core::CodecError> {
+        super::finish_parameter_record(
+            offset,
+            super::parameter_prefix(body, lengths)?,
+            directory_by_offset,
+        )
+    }
+
     fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
-        normalize(source)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            source,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )?;
+        normalize(root, &ctx)
+    }
+
+    /// Normalize through the decode path; the normalized text only.
+    fn normalize(
+        source: cadmpeg_core::decode::View<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+        super::parts::normalize(source, ctx).map(|(normalized, _)| normalized.bytes)
     }
 
     #[derive(Debug, Default)]
@@ -1535,6 +2054,20 @@ mod tests {
         }
     }
 
+    /// The Global values of a Binary file whose every value group parses.
+    pub(crate) fn global_values(sections: &super::BinarySections<'_>) -> Vec<super::BinaryValue> {
+        let payload = sections.global.window();
+        let mut values = Vec::new();
+        let failed = super::value_groups(payload, sections.lengths, |range| {
+            values.extend(super::read_group(&payload[range], sections.lengths)?);
+            Ok(())
+        })
+        .expect("actual Binary Global groups");
+        assert!(failed.is_none());
+        assert_eq!(values.len(), 24);
+        values
+    }
+
     fn lengths() -> PrimitiveLengths {
         PrimitiveLengths {
             single_integer: 32,
@@ -1558,7 +2091,10 @@ mod tests {
         writer.integer(value, lengths.single_integer);
     }
 
-    fn global_payload(lengths: PrimitiveLengths) -> Vec<u8> {
+    /// Global fields 7 through 11 of the Binary fixture.
+    const NEUTRAL_NUMERIC_FIELDS: [i64; 5] = [32, 38, 6, 308, 15];
+
+    fn global_payload(lengths: PrimitiveLengths, numeric_fields: [i64; 5]) -> Vec<u8> {
         let mut writer = BitWriter::default();
         writer.control(0);
         writer.control(0);
@@ -1571,7 +2107,7 @@ mod tests {
             writer.control(format);
             writer.string(value, lengths);
         }
-        for value in [32, 38, 6, 308, 15] {
+        for value in numeric_fields {
             writer.control(1);
             writer.integer(value, lengths.single_integer);
         }
@@ -1665,9 +2201,13 @@ mod tests {
     }
 
     fn binary_file_with_start(start_text: &[u8]) -> Vec<u8> {
+        binary_file(start_text, NEUTRAL_NUMERIC_FIELDS)
+    }
+
+    fn binary_file(start_text: &[u8], numeric_fields: [i64; 5]) -> Vec<u8> {
         let lengths = lengths();
         let start = section(b'S', &primitive_string(start_text, lengths));
-        let global = section(b'G', &global_payload(lengths));
+        let global = section(b'G', &global_payload(lengths, numeric_fields));
         let directory = section(b'D', &directory_payload(lengths));
         let parameter = section(b'P', &parameter_payload(lengths));
         let terminate_payload = {
@@ -1871,7 +2411,7 @@ mod tests {
                 .ir()
                 .source
                 .as_ref()
-                .expect("Binary decode retains source metadata")
+                .expect("IGES source metadata")
                 .attributes["representation"],
             "binary"
         );
@@ -1914,5 +2454,117 @@ mod tests {
     #[test]
     fn binary_start_rejects_a_lone_line_feed() {
         assert!(normalize_for_test(&binary_file_with_start(b"first\nsecond")).is_err());
+    }
+
+    #[test]
+    fn counted_binary_records_keep_the_actual_prefixed_source_and_no_framing_read_credit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let original = binary_point_file();
+        let mut bytes = b"pre".to_vec();
+        bytes.extend_from_slice(&original);
+        bytes.extend_from_slice(b"post");
+        let arena = DecodeArena::new();
+        let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("the prefixed fixture fits the service policy");
+        let source = root
+            .child(3, bytes.len() - 4)
+            .expect("the source window lies inside the root");
+        let sections =
+            super::parse_sections(source).expect("the source window splits into binary sections");
+        let normalized_arena = DecodeArena::new();
+        let (normalized_ctx, normalized_root) =
+            DecodeContext::from_root_bytes(&bytes, &normalized_arena, &DecodePolicy::service())
+                .expect("the prefixed fixture fits the service policy");
+        assert_eq!(
+            normalize(
+                normalized_root
+                    .child(3, bytes.len() - 4)
+                    .expect("the source window lies inside the root"),
+                &normalized_ctx
+            )
+            .expect("the source window normalizes"),
+            normalize_for_test(&original).expect("the original fixture normalizes")
+        );
+        for (name, payload) in [
+            ("Directory", sections.directory),
+            ("Parameter", sections.parameter),
+        ] {
+            let (offset, extent, body) =
+                super::counted_record(payload, 0, name).expect("the first counted record reads");
+            assert_eq!(offset, 1);
+            assert_eq!(extent.start(), payload.start());
+            assert_eq!(extent.end(), payload.end());
+            assert_eq!(body.start(), extent.start() + 4);
+            assert_eq!(body.end(), extent.end());
+            let count = u32::from_be_bytes(
+                extent.window()[..4]
+                    .try_into()
+                    .expect("the count prefix has four bytes"),
+            );
+            assert_eq!(
+                usize::try_from(count).expect("the count fits usize"),
+                body.window().len()
+            );
+            assert_eq!(extent.window(), &bytes[extent.start()..extent.end()]);
+            assert_eq!(body.window(), &bytes[body.start()..body.end()]);
+            let cut = payload
+                .child(payload.start(), payload.end() - 1)
+                .expect("the truncated payload lies inside the section");
+            let error = super::counted_record(cut, 0, name)
+                .expect_err("a truncated counted record is refused");
+            assert!(error.to_string().contains("entity exceeds its section"));
+        }
+    }
+
+    #[test]
+    fn counted_binary_record_bounds_never_borrow_bytes_from_an_adjacent_source_record() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let original = binary_point_file();
+        let arena = DecodeArena::new();
+        let (_ctx, root) =
+            DecodeContext::from_root_bytes(&original, &arena, &DecodePolicy::service())
+                .expect("the fixture fits the service policy");
+        let sections =
+            super::parse_sections(root).expect("the fixture splits into binary sections");
+        for (name, payload) in [
+            ("Directory", sections.directory),
+            ("Parameter", sections.parameter),
+        ] {
+            let mut bytes = payload.window().to_vec();
+            bytes.extend_from_slice(payload.window());
+            let paired_arena = DecodeArena::new();
+            let (_ctx, paired) =
+                DecodeContext::from_root_bytes(&bytes, &paired_arena, &DecodePolicy::service())
+                    .expect("the paired payload fits the service policy");
+            let (first_offset, first, first_body) =
+                super::counted_record(paired, 0, name).expect("the first counted record reads");
+            let cursor = first.end() - paired.start();
+            let (second_offset, second, second_body) = super::counted_record(paired, cursor, name)
+                .expect("the second counted record reads");
+            assert_eq!(first_offset, 1);
+            assert_eq!(
+                second_offset,
+                u32::try_from(cursor + 1).expect("the cursor offset fits u32")
+            );
+            assert_eq!(first.end(), second.start());
+            assert_eq!(second.end(), paired.end());
+            assert_eq!(first.window(), payload.window());
+            assert_eq!(second.window(), payload.window());
+            assert_eq!(first_body.window(), second_body.window());
+            let cut = paired
+                .child(paired.start(), second.end() - 1)
+                .expect("the truncated pair lies inside the payload");
+            assert!(super::counted_record(cut, 0, name).is_ok());
+            assert!(super::counted_record(cut, cursor, name).is_err());
+            let short_count = paired
+                .child(paired.start(), paired.start() + 3)
+                .expect("the short count window lies inside the payload");
+            assert!(super::counted_record(short_count, 0, name)
+                .expect_err("a three byte count prefix is refused")
+                .to_string()
+                .contains("u32 field is truncated"));
+        }
     }
 }

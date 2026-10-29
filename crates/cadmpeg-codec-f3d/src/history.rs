@@ -393,7 +393,7 @@ impl DeltaStateHeader {
         AsmDeltaState {
             id,
             parent: history_id.to_owned(),
-            byte_offset: u64_from_index(self.offset),
+            byte_offset: Some(u64_from_index(self.offset)),
             state_id: self.state_id,
             version_flag: self.version_flag,
             state_flag: self.state_flag,
@@ -710,13 +710,19 @@ pub(crate) fn decode_record_archive(
         let Some(revision_id) = record.revision_id else {
             return Ok(None);
         };
-        let Some(offset) = usize::try_from(record.byte_offset).ok() else {
+        let Some(offset) = record
+            .byte_offset
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             return Ok(None);
         };
-        let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
+        let Some(raw) = record.raw_bytes.data() else {
             return Ok(None);
         };
-        if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
+        let Some(limit) = offset.checked_add(raw.len()) else {
+            return Ok(None);
+        };
+        if bytes.get(offset..limit) != Some(raw) {
             return Ok(None);
         }
         let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width, None) {
@@ -1130,6 +1136,8 @@ pub(crate) fn bind_sweep_result_modes(
 
 /// Native history and neutral topology used to resolve feature body operands.
 pub(crate) struct FeatureBodySelectionInputs<'a> {
+    /// Canonical parameter caches used by bound count controls.
+    pub(crate) parameters: &'a [cadmpeg_ir::features::DesignParameter],
     /// Decoded Design feature scopes.
     pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     /// Counted Design construction-operand groups.
@@ -1196,7 +1204,20 @@ pub(crate) fn bind_feature_body_selections(
         let [seed_body] = seed_bodies.as_slice() else {
             continue;
         };
-        let Ok(expected_count) = usize::try_from(*count) else {
+        let count = match count {
+            cadmpeg_ir::features::Dimension::Literal(value) => Some(*value),
+            cadmpeg_ir::features::Dimension::Parameter(id) => inputs
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .and_then(|parameter| match parameter.value {
+                    Some(cadmpeg_ir::features::ParameterValue::Integer(value)) => {
+                        u32::try_from(value).ok()
+                    }
+                    _ => None,
+                }),
+        };
+        let Some(expected_count) = count.and_then(|count| usize::try_from(count).ok()) else {
             continue;
         };
         if feature.evaluation.outputs().len().checked_add(1) != Some(expected_count) {
@@ -5118,10 +5139,7 @@ fn resolve_bounded_face_recipe_target<'a>(
     let first_clause_len = operand
         .recipe_references
         .iter()
-        .take_while(|reference| {
-            reference.selector_offset == first.selector_offset
-                && reference.token_offset == first.token_offset
-        })
+        .take_while(|reference| reference.clause_index == first.clause_index)
         .count();
     let first_clause = &operand.recipe_references[..first_clause_len];
     let topology_faces = selection::FamilySlots::new(&preceding.faces);
@@ -5644,26 +5662,19 @@ fn resolve_direct_face_recipe_clauses(
     topology: &crate::history_records::AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Vec<i64> {
-    let mut clauses = Vec::<(
-        u64,
-        u64,
-        Vec<&crate::records::dimensions::DesignRecipeReference>,
-    )>::new();
+    let mut clauses = Vec::<(u32, Vec<&crate::records::dimensions::DesignRecipeReference>)>::new();
     for reference in references {
-        let key = (reference.selector_offset, reference.token_offset);
-        if let Some((_, _, references)) = clauses
-            .iter_mut()
-            .find(|(selector, token, _)| (*selector, *token) == key)
-        {
+        let key = reference.clause_index;
+        if let Some((_, references)) = clauses.iter_mut().find(|(clause, _)| *clause == key) {
             references.push(reference);
         } else {
             let grouped = vec![reference];
-            clauses.push((key.0, key.1, grouped));
+            clauses.push((key, grouped));
         }
     }
     let topology_faces = selection::FamilySlots::new(&topology.faces);
     let mut resolved = Vec::new();
-    for (_, _, references) in clauses {
+    for (_, references) in clauses {
         let mut intersection = None::<HashSet<i64>>;
         for reference in references {
             let candidates = if reference.candidate_faces.is_empty() {
@@ -6239,10 +6250,13 @@ impl FaceBoundaryArena {
         topology_queries: &mut TopologyQueryCache<'a>,
     ) -> Vec<String> {
         let mut ids = Vec::new();
+        let Some(byte_offset) = state.byte_offset else {
+            return ids;
+        };
         for face_slot in face_slots {
             let Some(id) = crate::records::topology::historical_context::AsmFaceBoundary::identity(
                 &state.id,
-                state.byte_offset,
+                byte_offset,
                 *face_slot,
             ) else {
                 continue;
@@ -8198,7 +8212,7 @@ fn decode_bulletin_boards(
             boards.push(AsmBulletinBoard {
                 id,
                 parent: state_id.to_owned(),
-                byte_offset: u64_from_index(offset),
+                byte_offset: Some(u64_from_index(offset)),
                 owner_ref,
                 number,
                 changes: Vec::new(),
@@ -8218,7 +8232,7 @@ fn decode_bulletin_boards(
             board.changes.push(AsmEntityChange {
                 id,
                 parent,
-                byte_offset: u64_from_index(offset),
+                byte_offset: Some(u64_from_index(offset)),
                 kind,
             });
         }
@@ -8277,7 +8291,7 @@ fn decode_history_records(
                     id,
                     parent,
                     revision_id: None,
-                    byte_offset: u64_from_index(record.offset),
+                    byte_offset: Some(u64_from_index(record.offset)),
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                         index: u64_from_index(record.index),
                         name: record.name,
@@ -8306,7 +8320,7 @@ fn decode_history_records(
                 id,
                 parent,
                 revision_id: None,
-                byte_offset: u64_from_index(start),
+                byte_offset: Some(u64_from_index(start)),
                 framing: crate::history_records::AsmHistoryRecordFraming::Opaque { error },
                 raw_bytes: raw_bytes.into(),
             });

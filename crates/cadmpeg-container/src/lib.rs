@@ -6,4 +6,10 @@ pub mod compound;
 pub mod compression;
 mod layout;
 
-pub use archive::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
+pub use archive::{
+    ArchiveSnapshot, EntryRecord, MemberFrame, MemberPayload, PhysicalSpan, ZipCompression,
+    ZipSpanRole,
+};
+
+#[cfg(test)]
+mod integration_tests;

@@ -21,7 +21,7 @@ use zip::CompressionMethod;
 
 use crate::loss::F3dLossCode;
 use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
+use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
 use crate::test_support::protein_test::generated_instance_properties_for;
 use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_attribute_smbh,
@@ -62,6 +62,7 @@ fn raw_body_map_pair(
 }
 
 fn resolved_body_binding(
+    map_ordinal: u32,
     stream: &str,
     asm_key_offset: u64,
     entity_suffix: u64,
@@ -70,6 +71,7 @@ fn resolved_body_binding(
 ) -> crate::records::bodies::DesignBodyBinding {
     crate::records::bodies::DesignBodyBinding::try_from(
         crate::records::bodies::DesignBodyBindingWire {
+            map_ordinal,
             component_owner: None,
             component_owner_unresolved: false,
             id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
@@ -407,6 +409,7 @@ fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
 fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let first = resolved_body_binding(
+        0,
         stream,
         25,
         100,
@@ -415,10 +418,18 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     );
     let second_body =
         cadmpeg_ir::ids::BodyId::mint("f3d:brep/second/brep:entity#1").expect("identity grammar");
-    let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", second_body.as_str());
+    let second = resolved_body_binding(
+        1,
+        stream,
+        125,
+        200,
+        "BREP.second.smbh",
+        second_body.as_str(),
+    );
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second")
             .expect("identity grammar"),
         name: None,
@@ -433,19 +444,24 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         textures: Vec::new(),
     };
     let assignment = crate::records::references::DesignMaterialAssignment {
+        body_binding_id: second
+            .id()
+            .clone()
+            .try_into()
+            .expect("typed binding identity"),
         id: owner,
         asm_body_key: 7,
-        asm_body_key_offset: 125,
+        asm_body_key_offset: Some(125),
 
-        entity_suffix_offset: 133,
+        entity_suffix_offset: Some(133),
         entity_id: crate::records::identity::DesignEntityId::try_from("0_200".to_owned())
             .expect("valid entity ID"),
-        entity_id_offset: 500,
+        entity_id_offset: Some(500),
         visual_guid: crate::records::references::DesignVisualToken::try_from(
             visual_guid.to_owned(),
         )
         .unwrap(),
-        visual_guid_offset: 600,
+        visual_guid_offset: Some(600),
         physical_token: None,
         visual_preset: None,
     };
@@ -470,6 +486,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
 fn presetless_assignment_matches_only_its_visual_guid() {
     let appearance_guid = "11111111-2222-3333-4444-555555555555";
     let mut appearance = cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#catalog")
             .expect("identity grammar"),
         name: None,
@@ -484,19 +501,23 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         textures: Vec::new(),
     };
     let mut assignment = crate::records::references::DesignMaterialAssignment {
+        body_binding_id: "f3d:design:design-body-binding#25"
+            .to_owned()
+            .try_into()
+            .expect("typed binding identity"),
         id: "f3d:design:material-assignment#1".into(),
         asm_body_key: 7,
-        asm_body_key_offset: 25,
+        asm_body_key_offset: Some(25),
 
-        entity_suffix_offset: 33,
+        entity_suffix_offset: Some(33),
         entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
             .expect("valid entity ID"),
-        entity_id_offset: 500,
+        entity_id_offset: Some(500),
         visual_guid: crate::records::references::DesignVisualToken::try_from(
             "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_owned(),
         )
         .unwrap(),
-        visual_guid_offset: 600,
+        visual_guid_offset: Some(600),
         physical_token: None,
         visual_preset: None,
     };
@@ -522,7 +543,7 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     .unwrap();
     assignment.visual_preset = Some(crate::records::identity::RecordedValue {
         value: "Prism-017".into(),
-        offset: 0,
+        offset: None,
     });
     appearance.name = Some("Prism-017".into());
     assert!(
@@ -537,6 +558,7 @@ fn complete_visual_token_selects_one_revision_record() {
     let base_token = "11111111-2222-3333-4444-555555555555";
     let revised_token = "11111111-2222-3333-4444-555555555555_Post2015";
     let appearance = |id: &str, token: &str| cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: None,
         asset_guid: Some(token.into()),
@@ -581,6 +603,7 @@ fn complete_visual_token_selects_one_revision_record() {
 #[test]
 fn visual_preset_fallback_requires_one_record() {
     let appearance = |id: &str| cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint(id).expect("identity grammar"),
         name: Some("Prism-017".into()),
         asset_guid: None,
@@ -869,18 +892,20 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         "test:model:face#3",
     ] {
         ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1)
                 .try_into()
                 .expect("valid identity"),
             target: AttributeTarget::Face(face.try_into().expect("valid identity")),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
         });
     }
     let appearance = |id: &str, token: &str| Appearance {
+        native_ref: None,
         id: id.try_into().expect("valid identity"),
         name: None,
         asset_guid: None,
@@ -949,9 +974,11 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .windows(2)
         .all(|pair| pair[0].id < pair[1].id));
 
-    ir.model.attributes[0].values.push(AttributeValue::String(
-        "cccccccc-1111-2222-3333-dddddddddddd".into(),
-    ));
+    ir.model.attributes[0]
+        .values
+        .push(Some(AttributeValue::String(
+            "cccccccc-1111-2222-3333-dddddddddddd".into(),
+        )));
     let error = crate::decode::resolve_face_appearance_bindings(
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
@@ -983,17 +1010,19 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let face = ir.model.faces[0].id.clone();
         ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id: "f3d:test:attribute#face-material"
                 .try_into()
                 .expect("valid identity"),
             target: AttributeTarget::Face(face),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(face_guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(face_guid.into())),
             ],
         });
         ir.model.appearances.push(Appearance {
+            native_ref: None,
             id: "test:model:appearance#face"
                 .try_into()
                 .expect("valid identity"),
@@ -1154,7 +1183,7 @@ fn decode_transfers_generated_custom_attribute() {
             attribute.values.iter().any(|value| {
                 matches!(
                     value,
-                    cadmpeg_ir::attributes::AttributeValue::String(text)
+                    Some(cadmpeg_ir::attributes::AttributeValue::String(text))
                         if text == "generic_tag_attrib_def"
                 )
             })
@@ -1167,7 +1196,7 @@ fn decode_transfers_generated_custom_attribute() {
     ));
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "322"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "322"
     )));
     assert_eq!(f3d_native(result.ir()).persistent_design_links.len(), 2);
     assert_eq!(
@@ -1193,7 +1222,7 @@ fn decode_transfers_generated_custom_attribute() {
     );
     assert!(attribute.values.iter().any(|value| matches!(
         value,
-        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "900"
+        Some(cadmpeg_ir::attributes::AttributeValue::String(text)) if text == "900"
     )));
     assert_eq!(f3d_native(result.ir()).creation_timestamps.len(), 1);
     assert_eq!(
@@ -1216,6 +1245,14 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     let vertex = source.model.vertices[0].id.clone();
     source.model.vertices[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
+    source
+        .model
+        .attributes
+        .push(crate::test_support::native_test::timestamp_attribute(
+            0,
+            AttributeTarget::Vertex(vertex.clone()),
+            cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_037.0).unwrap(),
+        ));
     f3d_native_mut(&mut source).creation_timestamps =
         vec![crate::records::recipes::CreationTimestamp {
             id: "f3d:asm:creation-timestamp#generated".into(),
@@ -1277,6 +1314,12 @@ fn generated_f3d_rewrites_creation_timestamp() {
             cadmpeg_ir::scalar::FiniteReal::new(expected).unwrap();
     });
 
+    let timestamp = f3d_native(&edited).creation_timestamps[0].clone();
+    crate::test_support::native_test::edit_timestamp_attribute(
+        &mut edited,
+        &timestamp.target,
+        timestamp.unix_microseconds,
+    );
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
         .expect("timestamp regeneration");
@@ -1373,6 +1416,7 @@ fn a_sketch_link_decodes_in_every_payload_form() {
 #[test]
 fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     use crate::records::sketch_links::SketchCurveLink;
+    use crate::test_support::native_test::TestEncode;
 
     let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
         SketchLinkForm::Tagged("113 0 4294967295 0 2 3"),
@@ -1403,6 +1447,55 @@ fn an_unconstrained_sketch_link_sense_round_trips_in_its_source_spelling() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less sketch-link encode");
+    assert!(
+        encoded
+            .windows(b"113 0 4294967295 0 2 3".len())
+            .any(|window| window == b"113 0 4294967295 0 2 3"),
+        "the writer must re-emit the disabled sense in its source spelling"
+    );
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less sketch-link round trip");
+    let link = &f3d_native(round_trip.ir()).sketch_curve_links[0];
+    assert_eq!(
+        (link.sketch_curve_id, link.sense.map(i64::from)),
+        (113, None)
+    );
+    assert_eq!((link.role, link.closure), (2, 3));
+}
+
+#[test]
+fn an_unconstrained_sketch_link_serializer_retains_its_source_spelling() {
+    use crate::records::sketch_links::SketchCurveLink;
+
+    let f3d = f3d_with_smbh(&synthetic_geometry_with_sketch_link_smbh(
+        SketchLinkForm::Tagged("113 0 4294967295 0 2 3"),
+    ));
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        f3d_native(decoded.ir()).sketch_curve_links[0]
+            .sense
+            .map(i64::from),
+        None,
+        "4294967295 is the disabled sense, not a stored one"
+    );
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let coedge = source_less.model.coedges[0].id.clone();
+    f3d_native_mut(&mut source_less).sketch_curve_links = vec![SketchCurveLink {
+        id: "f3d:generated:sketch-curve-link#0".into(),
+        target: cadmpeg_ir::attributes::AttributeTarget::Coedge(coedge),
+        sketch_curve_id: 113,
+        ref_b: 0,
+        sense: None,
+        role: 2,
+        closure: 3,
+    }];
+    let mut encoded = Vec::new();
+    crate::writer::generate::write_new(&source_less, &mut encoded)
+        .expect("typed sketch-link serializer");
     assert!(
         encoded
             .windows(b"113 0 4294967295 0 2 3".len())
@@ -1592,19 +1685,22 @@ fn protein_revision_suffix_distinguishes_visual_record_identity() {
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: vec![F3dLossCode::MaterialNotTransferred.note(
             "Materials/appearances (.protein assets, ACT/design assignments) were not \
              transferred.",
         )],
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
 fn opaque_appearance(guid: &str) -> cadmpeg_ir::appearance::Appearance {
     cadmpeg_ir::appearance::Appearance {
+        native_ref: None,
         id: cadmpeg_ir::ids::AppearanceId::mint(format!("f3d:design:appearance#{guid}"))
             .expect("identity grammar"),
         name: Some("Prism-Opaque".to_owned()),

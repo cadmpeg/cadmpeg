@@ -123,6 +123,7 @@ pub(super) fn emit_vertices(
         annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
@@ -166,6 +167,7 @@ pub(super) fn emit_vertices(
         annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),

@@ -86,10 +86,8 @@ pub(crate) struct StepWriteOutcome {
 
 /// Writes STEP bytes and returns the facts measured by the writer.
 ///
-/// A real the writer computes that is not finite, and a replica transform
-/// that is not a similarity, refuse the file before any byte is written:
-/// Part 21 states no such number, and its transformation operator states
-/// only a similarity.
+/// Unsupported carriers are omitted or reduced with loss notes. Each geometric
+/// carrier is staged before its instances are admitted to the DATA section.
 pub(crate) fn write_step_outcome(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
@@ -111,23 +109,6 @@ pub(crate) fn write_step_outcome(
             "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
         )));
     }
-    for surface in &ir.model.surfaces {
-        match surface.geometry.solved().and_then(unwritable_cone) {
-            Some(UnwritableCone::SemiAngle(half_angle)) => {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "STEP conical_surface cannot represent surface '{}' with semi-angle {half_angle} outside (0, pi/2)",
-                    surface.id
-                )));
-            }
-            Some(UnwritableCone::Line) => {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "STEP cannot represent surface '{}': a cone of semi-angle 0 with a zero section radius is a line",
-                    surface.id
-                )));
-            }
-            None => {}
-        }
-    }
     let mut b = Builder::new(ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
@@ -147,33 +128,40 @@ pub(crate) fn write_step_outcome(
     Ok(outcome)
 }
 
-/// Why a cone carrier has no STEP surface record.
-enum UnwritableCone {
-    /// A semi-angle of magnitude `pi/2` or more, outside `conical_surface`.
-    SemiAngle(f64),
-    /// A zero semi-angle over a zero section radius: the surface is a line.
-    Line,
-}
-
-/// Why no STEP surface record holds the cone under `geometry`, or `None` when
-/// one does. A semi-angle 0 cone over a positive section is a cylinder, which
-/// [`crate::geometry::surface`] writes.
-fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> Option<UnwritableCone> {
+/// Whether the cone carrier has no valid STEP surface encoding. A zero-angle
+/// cone over a positive section is a cylinder and is encodable.
+fn unwritable_cone(mut geometry: &SolvedSurfaceGeometry) -> bool {
     loop {
         match geometry {
             SolvedSurfaceGeometry::Cone(cone) => {
                 let angle = cone.half_angle().get();
-                if angle.abs() >= std::f64::consts::FRAC_PI_2 {
-                    return Some(UnwritableCone::SemiAngle(angle));
-                }
                 let radius = cone.radius().get();
-                let minor_radius = radius * cone.ratio().get();
-                return (angle == 0.0 && (radius <= 0.0 || minor_radius <= 0.0))
-                    .then_some(UnwritableCone::Line);
+                return angle.abs() >= std::f64::consts::FRAC_PI_2
+                    || (angle == 0.0 && (radius <= 0.0 || radius * cone.ratio().get() <= 0.0));
             }
             SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
-            _ => return None,
+            _ => return false,
         }
+    }
+}
+
+struct AttributeOmission<'a>(&'a cadmpeg_ir::attributes::SourceAttribute);
+
+impl std::fmt::Display for AttributeOmission<'_> {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.write_str("1 source attribute record(s) were not written to STEP")?;
+        if self.0.values.iter().any(Option::is_none) {
+            out.write_str("; None positions (zero-based) [")?;
+            let mut separator = "";
+            for (position, value) in self.0.values.iter().enumerate() {
+                if value.is_none() {
+                    write!(out, "{separator}{position}")?;
+                    separator = ", ";
+                }
+            }
+            out.write_str("]")?;
+        }
+        write!(out, ": {}", self.0.id)
     }
 }
 
@@ -703,15 +691,10 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         if !has_model_items && self.tessellation_step_refs.is_empty() {
-            if !self.ir.model.bodies.is_empty() {
-                self.loss(
-                    StepLossCode::NoExportableSolids,
-                    "no body geometry could be placed in a STEP representation".to_string(),
-                );
-            }
             self.loss(
-                StepLossCode::NoGeometryWritten,
-                "no geometry was written to a STEP representation".to_string(),
+                StepLossCode::NoExportableSolids,
+                "no exportable solids or standalone geometry; the STEP representation is empty"
+                    .to_string(),
             );
         }
         self.emit_presentation(context);
@@ -778,12 +761,30 @@ impl<'a> Builder<'a> {
                         .or_default()
                         .push((spec, &binding.id));
                 }
-                AppearanceTarget::Surface(_)
+                AppearanceTarget::Record { arena, id }
+                    if arena.as_str() == "bodies" && ir.model.contains_record(*arena, id) =>
+                {
+                    body_candidates
+                        .entry(id.as_str())
+                        .or_default()
+                        .push((spec, &binding.id));
+                }
+                AppearanceTarget::Record { arena, id }
+                    if arena.as_str() == "faces" && ir.model.contains_record(*arena, id) =>
+                {
+                    face_candidates
+                        .entry(id.as_str())
+                        .or_default()
+                        .push((spec, &binding.id));
+                }
+                AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
                 | AppearanceTarget::Point(_)
                 | AppearanceTarget::Edge(_)
                 | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
+                | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Source { .. } => {}
             }
         }
@@ -843,24 +844,48 @@ impl<'a> Builder<'a> {
         self.appearance_binding_target_conflicts
             .extend(target_conflicts);
         for body in &ir.model.bodies {
-            if !conflicting_body_targets.contains(body.id.as_str()) {
-                if let Some(color) = body.color {
-                    body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
-                        color,
-                        appearance: None,
-                        hidden: false,
-                    });
+            let target = AppearanceTarget::Body(body.id.clone());
+            if let Some(color) = ir.effective_display_color(&target) {
+                if body.color.is_some() {
+                    conflicting_body_targets.remove(body.id.as_str());
+                } else if conflicting_body_targets.contains(body.id.as_str()) {
+                    continue;
                 }
+                let appearance = body_colors
+                    .get(body.id.as_str())
+                    .and_then(|spec| spec.appearance);
+                body_colors.insert(
+                    body.id.as_str(),
+                    ColorSpec {
+                        color,
+                        appearance,
+                        hidden: ir.effective_visibility(&target) == Some(false),
+                    },
+                );
             }
         }
         for face in &ir.model.faces {
-            if !conflicting_face_targets.contains(face.id.as_str()) {
-                if let Some(color) = face.color {
-                    face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
-                        color,
-                        appearance: None,
-                        hidden: false,
-                    });
+            // Only an explicit face display colour or face material overrides
+            // its body's display colour. Inherited style is handled below.
+            let target = AppearanceTarget::Face(face.id.clone());
+            if face.color.is_some() || face_colors.contains_key(face.id.as_str()) {
+                if let Some(color) = ir.effective_display_color(&target) {
+                    if face.color.is_some() {
+                        conflicting_face_targets.remove(face.id.as_str());
+                    } else if conflicting_face_targets.contains(face.id.as_str()) {
+                        continue;
+                    }
+                    let appearance = face_colors
+                        .get(face.id.as_str())
+                        .and_then(|spec| spec.appearance);
+                    face_colors.insert(
+                        face.id.as_str(),
+                        ColorSpec {
+                            color,
+                            appearance,
+                            hidden: ir.effective_visibility(&target) == Some(false),
+                        },
+                    );
                 }
             }
         }
@@ -909,13 +934,21 @@ impl<'a> Builder<'a> {
             }
             if own.is_some() {
                 if let Some(binding_ids) = face_candidates.get(face_id.as_str()) {
-                    self.written_appearance_bindings
-                        .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
+                    self.written_appearance_bindings.extend(
+                        binding_ids
+                            .iter()
+                            .filter(|(candidate, _)| candidate.color == spec.color)
+                            .map(|(_, id)| (*id).clone()),
+                    );
                 }
             } else if let Some(body_id) = body {
                 if let Some(binding_ids) = body_candidates.get(body_id) {
-                    self.written_appearance_bindings
-                        .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
+                    self.written_appearance_bindings.extend(
+                        binding_ids
+                            .iter()
+                            .filter(|(candidate, _)| candidate.color == spec.color)
+                            .map(|(_, id)| (*id).clone()),
+                    );
                 }
             }
             let name = spec
@@ -938,7 +971,23 @@ impl<'a> Builder<'a> {
             let Some(color) = appearance.base_color else {
                 continue;
             };
-            let (target, style_kind) = match &binding.target {
+            let typed_target = binding.target.typed_record_target(&ir.model);
+            let binding_target = typed_target.as_ref().unwrap_or(&binding.target);
+            if let AppearanceTarget::Face(id) = binding_target {
+                if ir
+                    .model
+                    .faces
+                    .iter()
+                    .find(|face| face.id == *id)
+                    .and_then(|face| face.color)
+                    .is_some_and(|display| display != color)
+                {
+                    // The material colour is independent of the display
+                    // override. Report its reduction; never overwrite display.
+                    continue;
+                }
+            }
+            let (target, style_kind) = match binding_target {
                 AppearanceTarget::Face(id) => (
                     self.face_step_refs.get(id.as_str()).copied(),
                     StyleKind::Surface,
@@ -965,6 +1014,11 @@ impl<'a> Builder<'a> {
                     self.tessellation_step_refs.get(id).copied(),
                     StyleKind::Surface,
                 ),
+                AppearanceTarget::Occurrence(id) => (
+                    self.occurrence_step_refs.get(id.as_str()).copied(),
+                    StyleKind::Surface,
+                ),
+                AppearanceTarget::Record { .. } => (None, StyleKind::Surface),
                 AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
@@ -976,6 +1030,8 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Point(id) => id.as_str().to_owned(),
                     AppearanceTarget::Vertex(id) => id.as_str().to_owned(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
+                    AppearanceTarget::Occurrence(id) => id.as_str().to_owned(),
+                    AppearanceTarget::Record { id, .. } => id.clone(),
                     AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
@@ -1014,8 +1070,12 @@ impl<'a> Builder<'a> {
                 continue;
             }
             if let Some(binding_ids) = body_candidates.get(body_id) {
-                self.written_appearance_bindings
-                    .extend(binding_ids.iter().map(|(_, id)| (*id).clone()));
+                self.written_appearance_bindings.extend(
+                    binding_ids
+                        .iter()
+                        .filter(|(candidate, _)| candidate.color == spec.color)
+                        .map(|(_, id)| (*id).clone()),
+                );
             }
             let name = spec
                 .appearance
@@ -1411,16 +1471,15 @@ impl<'a> Builder<'a> {
         let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
             matches!(occurrence.parent, OccurrenceParent::Root {})
                 && occurrence_products.contains_key(&occurrence.id)
-                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| transform.is_proper_rigid())
+                && occurrence.effective_transform().is_ok_and(|transform| {
+                    transform.is_some_and(|transform| transform.is_proper_rigid())
+                })
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
             placed_root(occurrence)
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| !is_identity(&transform.rows()))
+                && occurrence.effective_transform().is_ok_and(|transform| {
+                    transform.is_some_and(|transform| !is_identity(&transform.rows()))
+                })
         });
         let product_names = distinct_names(
             &products
@@ -1457,10 +1516,24 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let unknown_placements = occurrences
+            .iter()
+            .filter(|occurrence| graph.effective_transform(&occurrence.id).is_none())
+            .map(|occurrence| occurrence.id.clone())
+            .collect::<BTreeSet<_>>();
+        for id in &unknown_placements {
+            self.loss(
+                StepLossCode::OccurrencePlacementUnknown,
+                format!("occurrence '{id}' omitted because its placement or an ancestor placement is unknown"),
+            );
+        }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
+            if unknown_placements.contains(&occurrence.id) {
+                continue;
+            }
             let parent_product = match &occurrence.parent {
                 OccurrenceParent::Occurrence { occurrence: parent } => {
                     let Some(parent_product) = occurrence_products.get(parent) else {
@@ -1478,7 +1551,8 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = match occurrence.effective_transform() {
-                Ok(transform) => transform,
+                Ok(Some(transform)) => transform,
+                Ok(None) => continue,
                 Err(error) => {
                     self.loss(
                         StepLossCode::AssemblyGraphInvalid,
@@ -1490,9 +1564,6 @@ impl<'a> Builder<'a> {
             let Some(frame) = transform.proper_rigid_frame() else {
                 continue;
             };
-            if occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3] {
-                continue;
-            }
             let rows = transform.rows();
             let to = geometry::placement(
                 &mut self.emitter,
@@ -1595,6 +1666,9 @@ impl<'a> Builder<'a> {
         self.emit_unclaimed_body_representation(context, root_representation);
 
         for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+            if unknown_placements.contains(&occurrence.id) {
+                continue;
+            }
             let parent = match (&occurrence.parent, assembly_root) {
                 (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
                     let Some(parent_occurrence) = graph.occurrence(parent) else {
@@ -1624,7 +1698,8 @@ impl<'a> Builder<'a> {
                 }
                 (OccurrenceParent::Root {}, _) => {
                     let transform = match occurrence.effective_transform() {
-                        Ok(transform) => transform,
+                        Ok(Some(transform)) => transform,
+                        Ok(None) => continue,
                         Err(error) => {
                             self.loss(
                                 StepLossCode::AssemblyGraphInvalid,
@@ -1634,9 +1709,7 @@ impl<'a> Builder<'a> {
                         }
                     };
                     if occurrence_products.contains_key(&occurrence.id)
-                        && (!is_identity(&transform.rows())
-                            || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get)
-                                != [1.0; 3])
+                        && !is_identity(&transform.rows())
                     {
                         self.loss(
                             StepLossCode::RootOccurrencePlacementNotRepresentable,
@@ -1667,7 +1740,8 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let transform = match occurrence.effective_transform() {
-                Ok(transform) => transform,
+                Ok(Some(transform)) => transform,
+                Ok(None) => continue,
                 Err(error) => {
                     self.loss(
                         StepLossCode::AssemblyGraphInvalid,
@@ -1676,9 +1750,7 @@ impl<'a> Builder<'a> {
                     return;
                 }
             };
-            if !transform.is_proper_rigid()
-                || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
-            {
+            if !transform.is_proper_rigid() {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -3981,8 +4053,8 @@ impl<'a> Builder<'a> {
                     geometry::surface(&mut self.emitter, &SolvedSurfaceGeometry::Nurbs(fitted))?;
                 self.fitted_helix_surfaces.insert(id.to_owned());
                 (reference, false)
-            } else if let Some(solved) =
-                solved.filter(|solved| geometry::surface_is_supported(solved))
+            } else if let Some(solved) = solved
+                .filter(|solved| geometry::surface_is_supported(solved) && !unwritable_cone(solved))
             {
                 // The basis is taken before the record is emitted, so the
                 // census cannot miss a record the writer put in the file.
@@ -4035,6 +4107,9 @@ impl<'a> Builder<'a> {
         match definition {
             ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
                 let direction = definition_payload.direction();
+                if !direction.norm().is_finite() {
+                    return None;
+                }
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
                 let direction_ref = geometry::direction(&mut self.emitter, *direction);
                 let vector = self.emitter.emit(
@@ -4096,7 +4171,7 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Replica { source, transform } => {
                 let source = self.emit_surface(source.as_str())?;
-                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
                 Some(
                     self.emitter
                         .emit("SURFACE_REPLICA", &format!("'',{source},{operator}")),
@@ -4356,7 +4431,7 @@ impl<'a> Builder<'a> {
             }
             ProceduralCurveDefinition::Replica { source, transform } => {
                 let source = self.emit_curve(source.as_str())?;
-                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform)?;
                 Some(
                     self.emitter
                         .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
@@ -4690,7 +4765,7 @@ impl<'a> Builder<'a> {
             match &annotation.definition {
                 PmiDefinition::Dimension(relation) => {
                     let dimension = relation.kind();
-                    let nominal = relation.nominal();
+                    let nominal = relation.resolved_nominal(self.ir);
                     let tolerance = relation.tolerance();
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let name = annotation.name.as_deref().unwrap_or("");
@@ -4723,7 +4798,7 @@ impl<'a> Builder<'a> {
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
                     if let Some(value) = nominal {
-                        let measure = self.emit_pmi_measure_representation_item(*value, name);
+                        let measure = self.emit_pmi_measure_representation_item(value, name);
                         let representation = self.emitter.emit(
                             "SHAPE_DIMENSION_REPRESENTATION",
                             &format!("'',({measure}),{context}"),
@@ -5894,8 +5969,8 @@ impl<'a> Builder<'a> {
         }
         // STEP-native source associations identify records already represented
         // by the writer's own STEP graph. They are not lossy foreign-source
-        // metadata. Keep strict-mode rejection for associations from other
-        // codecs, which this writer cannot reproduce.
+        // metadata. Associations from other codecs are omitted with a loss
+        // because this writer cannot reproduce their source semantics.
         let source_object_count = self
             .ir
             .model
@@ -5962,20 +6037,6 @@ impl<'a> Builder<'a> {
                 format!(
                     "{source_object_count} source-object association(s) were not represented in STEP"
                 ),
-            );
-        }
-        let unknown_count = self
-            .ir
-            .native
-            .loss_counts()
-            .into_iter()
-            .filter(|count| count.kind == "unknowns")
-            .map(|count| count.count.get())
-            .sum::<usize>();
-        if unknown_count > 0 {
-            self.loss(
-                StepLossCode::PassthroughRecordOmitted,
-                format!("{unknown_count} uninterpreted passthrough record(s) were not represented in STEP"),
             );
         }
         if self.unstyled_colors > 0 {
@@ -6053,8 +6114,8 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::AppearanceReducedToBaseColor,
                 format!(
-                    "{lossy_appearances} appearance asset(s) were reduced to STYLED_ITEM base colors; \
-                     unsupported schemas, textures, and shader properties were not written to STEP"
+                    "{lossy_appearances} appearance asset(s) were not fully encoded by STEP presentation; \
+                     display overrides take precedence, and unsupported schemas, textures, and shader properties were not written"
                 ),
             );
         }
@@ -6073,14 +6134,9 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.attributes.is_empty() {
-            self.loss(
-                StepLossCode::SourceAttributeNotWritten,
-                format!(
-                    "{} source attribute record(s) were not written to STEP",
-                    self.ir.model.attributes.len()
-                ),
-            );
+        for index in 0..self.ir.model.attributes.len() {
+            let message = format!("{}", AttributeOmission(&self.ir.model.attributes[index]));
+            self.loss(StepLossCode::SourceAttributeNotWritten, message);
         }
         let reduced_surfaces: BTreeSet<_> = self
             .procedural_surfaces
@@ -6200,22 +6256,6 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::ProceduralDefinitionNotWritten,
                 format!("{omitted_surface_count} procedural surface definition(s) and {omitted_curve_count} procedural curve definition(s) had no emitted STEP construction or solved carrier"),
-            );
-        }
-        let source_native_records: usize = self
-            .ir
-            .native
-            .loss_counts()
-            .iter()
-            .filter(|loss| loss.kind != "unknowns")
-            .map(|loss| loss.count.get())
-            .sum();
-        if source_native_records > 0 {
-            self.loss(
-                StepLossCode::SourceNativeRecordOmitted,
-                format!(
-                    "{source_native_records} source-native record(s) were not represented in STEP"
-                ),
             );
         }
     }

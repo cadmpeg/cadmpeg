@@ -52,11 +52,13 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
     let mut ir = cadmpeg_ir::CadIr::empty();
     let vertex = VertexId::mint("fcstd:test:vertex#shape:0").expect("vertex id");
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex.clone(),
         point: PointId::mint("fcstd:test:point#0").expect("point id"),
         tolerance: None,
     });
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::mint("fcstd:test:edge#shape:0").expect("edge id"),
         carrier: EdgeCarrier::unbounded(None),
         start: vertex.clone(),
@@ -66,11 +68,13 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
     let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
     super::transfer_primitive_appearance(
+        &cadmpeg_test_support::service_decode_context(),
         &ir,
         &super::TopologyIndex::new(&ir),
         &mut plan,
         &mut losses,
         super::PrimitiveAppearanceSource {
+            native_origin: None,
             provider_name: "Model",
             object_id: "fcstd:object#Model",
             packed_color: 0xff00_00ff,
@@ -140,6 +144,7 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("v1")),
     );
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex_id.clone(),
         point: cadmpeg_ir::ids::PointId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
@@ -148,6 +153,7 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         tolerance: None,
     });
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
             cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("e1")),
@@ -164,11 +170,13 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
         super::transfer_primitive_appearance(
+            &cadmpeg_test_support::service_decode_context(),
             &ir,
             &super::TopologyIndex::new(&ir),
             &mut plan,
             &mut losses,
             super::PrimitiveAppearanceSource {
+                native_origin: None,
                 provider_name: "Model",
                 object_id: "shape",
                 packed_color: 0x1122_3344,
@@ -348,9 +356,17 @@ fn retains_missing_and_ambiguous_cameras_in_schema_one_gui_document() {
             )
             .expect("independent persistence survives malformed GUI metadata");
 
-        assert!(assert_gui_metadata_recovery(&recovered)
-            .message
-            .contains("camera selection is unresolved"));
+        if camera_records.is_empty() {
+            assert!(recovered.report().losses.is_empty());
+            assert!(recovered.source_fidelity().unrepresented().is_empty());
+            assert!(recovered.ir().model.presentation_documents[0]
+                .states()
+                .is_empty());
+        } else {
+            assert!(assert_gui_metadata_recovery(&recovered)
+                .message
+                .contains("camera selection is unresolved"));
+        }
     }
 }
 
@@ -609,16 +625,24 @@ fn keeps_registered_non_presentation_properties_native() {
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.5)
     );
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert!(
+        view.properties.is_empty(),
+        "GUI source properties have their native records"
+    );
     for name in [
         "ShowInTree",
         "OnTopWhenSelected",
         "BoundingBox",
         "Selectable",
         "DrawStyle",
-        "LineMaterial",
-        "PointMaterial",
         "ShowPlacement",
-        "TransformOrigin",
         "AngularDeflection",
         "Deviation",
         "Transparency",
@@ -627,18 +651,20 @@ fn keeps_registered_non_presentation_properties_native() {
         "PointColor",
     ] {
         assert!(
-            view.properties.contains_key(name),
+            properties
+                .iter()
+                .any(|property| property.name == name && !property.values.is_empty()),
             "missing native property {name}"
         );
     }
-    let properties = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .expect("namespace")
-        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
-        .expect("GUI properties");
+
     assert_eq!(properties.len(), 20);
+    for name in ["LineMaterial", "PointMaterial", "TransformOrigin"] {
+        assert!(!view.properties.contains_key(name));
+        assert!(properties
+            .iter()
+            .any(|property| property.name == name && !property.values.is_empty()));
+    }
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
@@ -816,12 +842,22 @@ Co 1001000 +2 0 *
                 &DecodeOptions::default(),
             )
             .expect("producer-accepted topology color mismatch");
-        assert_eq!(result.report().losses.len(), 1);
-        let loss = &result.report().losses[0];
+        assert_eq!(result.report().losses.len(), 2);
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "source.model-payload-unrepresented"));
         assert_eq!(
-            loss.code.local_code(),
-            "appearance.topology-color-count-mismatch"
+            result.source_fidelity().unrepresented(),
+            cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
         );
+        let loss = result
+            .report()
+            .losses
+            .iter()
+            .find(|loss| loss.code.local_code() == "appearance.topology-color-count-mismatch")
+            .unwrap();
         assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
         assert!(loss.message.contains(kind));
         assert!(loss.provenance.as_ref().is_some_and(|source| {
@@ -1153,14 +1189,6 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
             .collect::<Vec<_>>(),
         ["VisualLayerList", "VisualLayer", "VisualLayer"]
     );
-    let logical = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
-    let span = logical
-        .iter()
-        .find(|span| span.classification.owner() == Some(property.id.as_str()))
-        .expect("visual layer span");
-    assert_eq!(span.classification.as_str(), "typed");
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     for value in [
@@ -1651,16 +1679,6 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-
-    let logical = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
-    assert!(properties.iter().all(|property| {
-        logical.iter().any(|span| {
-            span.classification.owner() == Some(property.id.as_str())
-                && span.classification.as_str() == "typed"
-        })
-    }));
 }
 
 #[test]
@@ -1749,17 +1767,10 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .find(|entry| entry.name() == "state.bin")
         .expect("state entry");
     assert_eq!(entry.referenced_by(), std::slice::from_ref(&property.id));
-    assert_eq!(entry.data(), payload);
-
-    let logical = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
-    let span = logical
-        .iter()
-        .find(|span| span.entry == entry.name())
-        .expect("state span");
-    assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(entry.id()));
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+        payload
+    );
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -1859,7 +1870,20 @@ fn a_blank_gui_property_key_is_charged_and_the_presentation_graph_survives() {
         .first()
         .expect("the provider's view presentation survives");
     assert_eq!(view.visible, Some(true));
-    assert!(view.properties.contains_key("Visibility"));
+    let native = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("GUI native namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert!(native
+        .iter()
+        .any(|property| property.name == "Visibility" && !property.values.is_empty()));
+    assert!(
+        !view.properties.contains_key("Visibility"),
+        "the visibility field is canonical"
+    );
 }
 
 /// Decodes one shape whose view provider states `shininess` as its
@@ -1927,3 +1951,18 @@ fn assert_gui_metadata_recovery(
 mod metadata_recovery;
 
 mod topology_appearance;
+
+mod list_payload_dispatch;
+
+mod native_linkage;
+
+/// Test adapter for source-less GUI fixture transfer; production source transfer
+/// keeps its genuine Source/DOM, and typed writer projections carry origins.
+pub(crate) fn transfer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    bytes: &[u8],
+    sources: &super::GuiSources<'_, '_>,
+) -> Result<super::Graph, cadmpeg_core::CodecError> {
+    super::transfer_with_origins(ctx, ir, bytes, sources, super::GuiOrigins::Admitted)
+}

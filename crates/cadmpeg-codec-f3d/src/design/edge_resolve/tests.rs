@@ -27,6 +27,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use crate::records::topology::edge_identity::DesignEdgeOperand;
+use crate::test_support::record_access::EdgeIdentityGuids;
 use cadmpeg_ir::ids::EdgeId;
 
 fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
@@ -36,15 +37,10 @@ fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityO
         "group_record_index": 2,
         "group_member_ordinal": record_index,
         "record_index": record_index,
-        "byte_offset": 0,
         "class_tag": "277",
-        "compact_layout": true,
         "local_id": record_index,
-        "local_id_offset": 23,
         "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
-        "asset_id_offset": 41,
         "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
-        "context_id_offset": 117,
         "transition_edge_candidates": candidates
             .iter()
             .map(|(edge, _)| *edge)
@@ -58,6 +54,39 @@ fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityO
             .collect::<Vec<_>>()
     }))
     .expect("edge identity")
+}
+
+fn with_source_layout(
+    identity: DesignEdgeIdentityOperand,
+    layout: crate::records::topology::edge_identity::DesignEdgeIdentityLayout,
+) -> DesignEdgeIdentityOperand {
+    use crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft;
+    let asset_id_offset = layout.local_id_offset() + 18;
+    let record_index = identity.record_index();
+    let asset_id = identity.asset_id().clone();
+    let context_id = identity.context_id().clone();
+    DesignEdgeIdentityOperand::try_new(DesignEdgeIdentityOperandDraft {
+        id: identity.id,
+        scope_record_index: identity.scope_record_index,
+        group_record_index: identity.group_record_index,
+        group_member_ordinal: identity.group_member_ordinal,
+        record_index,
+        byte_offset: 0,
+        class_tag: identity.class_tag,
+        layout,
+        local_id: identity.local_id,
+        asset_id,
+        asset_id_offset,
+        context_id,
+        context_id_offset: asset_id_offset + 76,
+        historical: identity.historical,
+        treatment_radius_candidates: identity.treatment_radius_candidates,
+        transition_edge_candidates: identity.transition_edge_candidates,
+        resolved_edge_slots: identity.resolved_edge_slots,
+        resolved_edge_slot: identity.resolved_edge_slot,
+        resolution_identity_id: identity.resolution_identity_id,
+    })
+    .expect("actual source-layout fixture")
 }
 
 #[test]
@@ -87,7 +116,7 @@ fn identity_radius_candidates_require_member_local_evidence() {
 }
 
 fn fixed_scope() -> DesignParameterScope {
-    serde_json::from_value(serde_json::json!({
+    crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
         "id": "f3d:test:scope",
         "byte_offset": 0,
         "class_tag": "300",
@@ -122,7 +151,6 @@ fn fixed_scope() -> DesignParameterScope {
         "paired_class_tag": "261",
         "paired_byte_offset": 200
     }))
-    .expect("fixed Fillet scope")
 }
 
 fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
@@ -131,31 +159,22 @@ fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
         "scope_record_index": 1,
         "scope_reference_ordinal": 0,
         "record_index": record_index,
-        "byte_offset": 0,
         "class_tag": "300",
         "members": [member],
-        "member_offsets": [0],
         "frame": {
-            "layout": "counted",
-            "member_count_offset": 0,
-            "identity_record_index": 9,
-            "identity_record_offset": 0,
+            "trailing_record_indices": [9],
             "opaque_index": 1,
-            "opaque_index_offset": 18,
             "opaque_scalar": 1.0,
-            "opaque_scalar_offset": 22,
             "variant": false
         },
         "role": 0x10_0000_0000u64,
-        "role_offset": 0,
-        "paired_class_tag": "258",
-        "paired_byte_offset": 0
+        "paired_class_tag": "258"
     }))
     .expect("construction operand group")
 }
 
 #[test]
-fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
+fn sole_identity_group_projects_fixed_fillet_transition_chain() {
     let scope = fixed_scope();
     let group = group(2, 10);
     let identity = identity(10, &[(17, 3.0), (18, 5.0), (19, 3.0)]);
@@ -163,7 +182,7 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
         project_fixed_fillet(&scope, &[group], &[], &[identity], decode_ctx)
     })
     .unwrap()
-    .expect("fixed Fillet from sole compact identity group");
+    .expect("fixed Fillet from sole identity group");
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Fillet { groups },
     ) = definition
@@ -178,7 +197,7 @@ fn sole_compact_identity_group_projects_fixed_fillet_transition_chain() {
                 radius: actual_radius
             },
             tangency_weight: Some(weight),
-        }] if weight.get() == 1.0 && (edges.len() == 2) && actual_radius.get() == 3.0
+        }] if weight.literal().unwrap().get() == 1.0 && (edges.len() == 2) && actual_radius.literal().is_some_and(|value| value.get() == 3.0)
     ));
 }
 
@@ -187,12 +206,10 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
     let scope = fixed_scope();
     let group = group(2, 10);
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    let mut draft = identity.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    identity =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    identity = with_source_layout(
+        identity,
+        crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
+    );
 
     assert!(
         crate::test_support::with_decode_context(|decode_ctx| project_fixed_fillet(
@@ -211,12 +228,10 @@ fn full_layout_identity_does_not_assign_the_fixed_fillet_edge_role() {
 fn only_edge_treatments_use_single_member_transition_chains() {
     let group = group(2, 10);
     let mut generic_identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    let mut draft = generic_identity.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    generic_identity =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    generic_identity = with_source_layout(
+        generic_identity,
+        crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
+    );
     generic_identity.treatment_radius_candidates.clear();
     let generic_feature_id =
         cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#ruled-surface")
@@ -238,12 +253,10 @@ fn only_edge_treatments_use_single_member_transition_chains() {
     let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
-    let mut draft = identity.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    identity =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    identity = with_source_layout(
+        identity,
+        crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
+    );
     identity.treatment_radius_candidates.clear();
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -264,7 +277,7 @@ fn only_edge_treatments_use_single_member_transition_chains() {
 }
 
 #[test]
-fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
+fn multiple_full_layout_members_use_a_uniform_proven_transition_chain() {
     let mut selection_group = group(2, 10);
     selection_group
         .try_set_members(vec![
@@ -279,35 +292,55 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
         ])
         .unwrap();
     let mut first = identity(10, &[(17, 1.0), (18, 1.0), (19, 1.0)]);
-    let mut draft = first.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    first =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    first = with_source_layout(
+        first,
+        crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
+    );
     let mut second = identity(11, &[(17, 1.0), (18, 1.0), (19, 1.0)]);
-    let mut draft = second.into_draft();
-    draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
-    draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
-    draft.context_id_offset = draft.asset_id_offset + 76;
-    second =
-        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
+    second = with_source_layout(
+        second,
+        crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full,
+    );
     second.group_member_ordinal = 1;
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
 
+    // Uniform identity candidates alone do not prove why two source members
+    // select three edges. Preserve that original no-recipe case as a refusal.
     assert!(matches!(
         resolved_edge_treatment_group(
             &selection_group,
             std::slice::from_ref(&selection_group),
             &[],
-            &[first, second],
+            &[first.clone(), second.clone()],
             Some(7),
             &feature_id,
             None,
         )
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
+    let recipes = [
+        recipe_edge_operand(10, &[17, 18, 19], &[17]),
+        recipe_edge_operand(11, &[17, 18, 19], &[18]),
+    ];
+    assert!(transition_chain_is_supported_by_recipe(
+        &[17, 18, 19],
+        2,
+        &[&recipes[0], &recipes[1]],
+    ));
+    assert!(matches!(
+        resolved_edge_treatment_group(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            &recipes,
+            &[first, second],
+            Some(7),
+            &feature_id,
+            None,
+        )
+        .unwrap(),
+        cadmpeg_ir::features::EdgeSelection::Historical { edges, .. } if edges.len() == 3
     ));
 }
 
@@ -495,7 +528,7 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         AsmDeltaState {
             id: "f3d:test:state#7".into(),
             parent: "f3d:test:history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id: 7,
             version_flag: 1,
             state_flag: 0,
@@ -567,12 +600,13 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
 
 fn recipe_reference(candidate_edges: &[i64]) -> DesignRecipeReference {
     DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 0,
+        selector_offset: Some(0),
         token: "97".into(),
-        token_offset: 0,
+        token_offset: Some(0),
         design_reference: 1,
-        design_reference_offset: 0,
+        design_reference_offset: Some(0),
         candidate_faces: Vec::new(),
         candidate_edges: candidate_edges
             .iter()

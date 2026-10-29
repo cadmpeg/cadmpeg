@@ -82,24 +82,28 @@ pub(super) fn operation(
     let operation = legacy_edge_flange_operation_at(bytes, start, paired_at, references, LAYOUT)?;
     operation_holds(
         &operation,
-        u64::try_from(start).ok()?,
-        u64::try_from(paired_at.checked_sub(start)?).ok()?,
+        Some(u64::try_from(start).ok()?),
+        Some(u64::try_from(paired_at.checked_sub(start)?).ok()?),
     )
     .then_some(operation)
 }
 
+/// Whether the operation has the corner-flange form; the frame layout is
+/// checked where the scope is located.
 pub(crate) fn operation_holds(
     operation: &DesignEdgeFlangeOperation,
-    start: u64,
-    frame_length: u64,
+    start: Option<u64>,
+    frame_length: Option<u64>,
 ) -> bool {
     use crate::records::feature::sheet_metal::{
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeShape,
         DesignSheetMetalHeightDatum,
     };
-    frame_length == u64_from_index(layout::LEN)
-        && start.checked_add(u64_from_index(layout::INSIDE_BEND_RADIUS))
-            == Some(operation.bend_radius_offset)
+    frame_length.is_none_or(|length| length == u64_from_index(layout::LEN))
+        && start.is_none_or(|start| {
+            start.checked_add(u64_from_index(layout::INSIDE_BEND_RADIUS))
+                == operation.bend_radius_offset
+        })
         && operation.bend_position == DesignBendPosition::Inside
         && operation.height_datum == DesignSheetMetalHeightDatum::OuterFaces
         && matches!(operation.selection.shape(), DesignEdgeFlangeShape::FullEdge { edges, height: DesignEdgeFlangeHeightExtent::Distance } if u32::try_from(edges.len()).ok() == Some(layout::EDGE_COUNT_VALUE))

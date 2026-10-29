@@ -75,6 +75,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
     ir.model
         .surfaces
         .extend(surface_ids.iter().cloned().map(|id| Surface {
+            native_ref: None,
             id,
             geometry: sphere_geometry.clone(),
             source_object: None,
@@ -280,6 +281,7 @@ fn sphere_section_circle_attaches_one_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -318,6 +320,7 @@ fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(

@@ -49,6 +49,7 @@ pub(crate) fn named_scalars(
             parent: parent.to_owned(),
             feature_ref: None,
             ordinal,
+            sequence: ordinal,
             offset: u64_from_index(value_offset),
             object_id,
             name: name.id.clone(),
@@ -126,6 +127,12 @@ fn ulp_distance(left: f64, right: f64) -> u64 {
     ordered(left).abs_diff(ordered(right))
 }
 
+struct OperandCell {
+    offset: usize,
+    kind: FeatureInputOperandKind,
+    entity_index: u16,
+}
+
 fn scalar_operands(
     payload: &[u8],
     trailer_offset: usize,
@@ -135,20 +142,17 @@ fn scalar_operands(
     operand_cells(payload, trailer_offset)
         .into_iter()
         .flatten()
-        .map(|(offset, kind, entity_index)| FeatureInputOperand {
-            offset: u64_from_index(offset),
-            reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
-            kind,
-            entity_index,
+        .map(|cell| FeatureInputOperand {
+            offset: u64_from_index(cell.offset),
+            reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{}", cell.offset),
+            kind: cell.kind,
+            entity_index: cell.entity_index,
             entity_ref: None,
         })
         .collect()
 }
 
-fn operand_cells(
-    payload: &[u8],
-    trailer_offset: usize,
-) -> [Option<(usize, FeatureInputOperandKind, u16)>; 2] {
+fn operand_cells(payload: &[u8], trailer_offset: usize) -> [Option<OperandCell>; 2] {
     let compact = compact_scalar_layout(payload, trailer_offset);
     let first = if compact || !legacy_scalar_layout(payload, trailer_offset) {
         35
@@ -162,31 +166,27 @@ fn operand_cells(
     };
     [first, second].map(|relative| {
         let offset = trailer_offset.checked_add(relative)?;
+        let len = if compact { 8 } else { operand_cell::LEN };
+        let end = offset.checked_add(len)?;
+        let cell = payload.get(offset..end)?;
         if compact {
-            let cell = payload.get(offset..offset.checked_add(8)?)?;
             if cell[4..8] != [0xff; 4] {
                 return None;
             }
-            return Some((
-                offset,
-                operand_kind([cell[0], cell[1]])?,
-                View::u16_le_at(cell, 2)?,
-            ));
-        }
-        let cell = payload.get(offset..offset.checked_add(operand_cell::LEN)?)?;
-        if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
+        } else if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
             || cell[operand_cell::ZERO_TRAILER..operand_cell::LEN] != [0; 4]
         {
             return None;
         }
-        Some((
+        Some(OperandCell {
             offset,
-            operand_kind([
-                cell[operand_cell::CLASS_TOKEN],
-                cell[operand_cell::CLASS_TOKEN + 1],
-            ])?,
-            View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
-        ))
+            kind: operand_kind(
+                cell[operand_cell::CLASS_TOKEN..operand_cell::MARKER_ADDRESS]
+                    .try_into()
+                    .ok()?,
+            )?,
+            entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
+        })
     })
 }
 
@@ -264,7 +264,10 @@ impl FeatureObjectStarts {
 
     /// End of the feature object named at `start`: the next feature object
     /// start after it, else `payload_len`.
-    pub(crate) fn end(&self, start: u64, payload_len: usize) -> usize {
+    pub(crate) fn end(&self, start: impl Into<Option<u64>>, payload_len: usize) -> usize {
+        let Some(start) = start.into() else {
+            return payload_len;
+        };
         self.0
             .get(self.0.partition_point(|offset| *offset <= start))
             .and_then(|offset| usize::try_from(*offset).ok())

@@ -4,7 +4,7 @@
 use crate::bytes::lp_utf16_bounded;
 use crate::records::feature::emboss::DesignEmbossConstruction;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use cadmpeg_core::decode::{u64_from_index, View};
 
 pub(super) fn exact_emboss_construction(
@@ -14,8 +14,8 @@ pub(super) fn exact_emboss_construction(
     if scope.kind() != DesignFeatureKind::Emboss || scope.reference_members().len() != 9 {
         return None;
     }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
+    let end = usize::try_from(scope.paired_byte_offset()?).ok()?;
     let frame = bytes.get(start..end)?;
     let mut view = View::over_retained(frame);
     if view.u32_le()? != 3
@@ -54,9 +54,11 @@ pub(super) fn exact_emboss_construction(
     view.seek(after_guid)?;
     if view.take(3)? != [0; 3]
         || scope.reference_count_offset()
-            != scope
-                .byte_offset()
-                .checked_add(u64_from_index(view.position()))?
+            != Some(
+                scope
+                    .byte_offset()?
+                    .checked_add(u64_from_index(view.position()))?,
+            )
     {
         return None;
     }
@@ -75,7 +77,7 @@ pub(super) fn exact_emboss_construction(
     construction.links_match(scope).then_some(construction)
 }
 
-fn reference(view: &mut View<'_>, start: usize) -> Option<Located<u32>> {
+fn reference(view: &mut View<'_>, start: usize) -> Option<Sourced<u32>> {
     if view.u8()? != 1 {
         return None;
     }
@@ -84,7 +86,7 @@ fn reference(view: &mut View<'_>, start: usize) -> Option<Located<u32>> {
     if value == 0 || view.take(2)? != [0; 2] {
         return None;
     }
-    Some(Located { value, offset })
+    Some(Sourced::at(value, offset))
 }
 
 #[cfg(test)]

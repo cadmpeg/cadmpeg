@@ -1238,13 +1238,13 @@ fn decode_types_round_with_labeled_edge_selection() {
             }
         )
     );
-    assert_eq!(
-        feature
-            .source_properties
-            .get("native_parameter.affected_edge_ids")
-            .map(String::as_str),
-        Some("44,45")
-    );
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_affected_ids"];
+    let affected = records
+        .iter()
+        .map(|record| record.fields().unwrap())
+        .find(|fields| fields["owner_feature_id"] == 4 && fields["kind"] == "edges")
+        .expect("native affected edge selection");
+    assert_eq!(affected["ids"], serde_json::json!([44, 45]));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
@@ -1292,7 +1292,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
                     termination: cadmpeg_ir::features::AngularTermination::Angle {
                         angle
                     }
-                }) if (angle.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
+                }) if (angle.literal().expect("literal dimension").get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN_REVOLUTION)
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas()["feature_revolution_extents"];

@@ -58,24 +58,31 @@ fn metadata_projection_maps_stable_fields_without_overwriting_conflicts() {
 }
 
 #[test]
-fn metadata_bom_property_keeps_an_unmapped_name() {
+fn non_bom_metadata_waits_for_the_typed_attribute_projection() {
     let mut projection = MetadataProjection::default();
     projection.consider(&[0; 16], 99, Some("Custom"), Some("value"), "custom");
-    assert_eq!(
-        projection.bom_properties.get("Custom").map(String::as_str),
-        Some("value")
-    );
+    assert!(!projection.bom_properties.contains_key("Custom"));
 }
 
 #[test]
-fn metadata_attribute_records_the_title() {
+fn title_has_a_single_neutral_product_home() {
     let projection = MetadataProjection {
         title: Some("Drawing".into()),
         ..MetadataProjection::default()
     };
-    let mut attributes = std::collections::BTreeMap::new();
-    projection.apply_attributes(&mut attributes);
-    assert_eq!(attributes.get("title").map(String::as_str), Some("Drawing"));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("projection context");
+    let product = super::project_root_product(
+        &ctx,
+        &crate::rse::DocumentKind::Part,
+        &projection,
+        0,
+        &mut 0,
+    )
+    .expect("project title");
+    assert_eq!(product.source_name.as_deref(), Some("Drawing"));
+    assert!(product.label.is_none());
 }
 
 #[test]
@@ -125,6 +132,15 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .expect("synthetic Inventor container decodes structurally");
     assert_eq!(decoded.report().format(), "inventor");
     assert!(!decoded.report().container_only());
+    assert!(
+        !decoded.ir().scope.model,
+        "a failed kernel delivered no other model records"
+    );
+    assert!(
+        decoded.ir().scope.design,
+        "the completed design projection holds an empty design"
+    );
+    assert_eq!(decoded.report().scope(), decoded.ir().scope);
     assert!(decoded
         .report()
         .losses
@@ -145,7 +161,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
     };
     let container_only = EditableDecodeResult::from(
         InventorCodec
-            .decode(&mut std::io::Cursor::new(source), &options)
+            .decode(&mut std::io::Cursor::new(&source), &options)
             .expect("container-only Inventor decode succeeds"),
     );
     assert_eq!(
@@ -201,24 +217,42 @@ fn design_records_project_only_at_full_depth() {
     let geometry = decode(DecodeDepth::Geometry);
     let container = decode(DecodeDepth::Container);
 
-    assert_eq!(full.report().depth(), DecodeDepth::Full);
+    assert_eq!(full.report().scope(), cadmpeg_ir::ContentScope::full());
     let [parameter] = full.ir().model.parameters.as_slice() else {
         panic!("one projected parameter: {:#?}", full.ir().model.parameters)
     };
     assert_eq!(parameter.name, "ratio");
     assert_eq!(full.ir().model.faces.len(), 1);
 
-    // A geometry request stops before design projection: the same geometry,
+    // A geometry request excludes design from scope: the same geometry,
     // no design records.
-    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
-    assert_eq!(geometry.ir().decode_depth(), DecodeDepth::Geometry);
-    assert_eq!(geometry.ir().model.populated_design_arena(), None);
+    assert_eq!(
+        geometry.report().scope(),
+        cadmpeg_ir::ContentScope::geometry()
+    );
+    assert_eq!(geometry.ir().scope, cadmpeg_ir::ContentScope::geometry());
+    assert_eq!(
+        geometry
+            .ir()
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design),
+        None
+    );
     assert!(geometry.ir().model.parameters.is_empty());
     assert_eq!(geometry.ir().model.faces, full.ir().model.faces);
 
-    assert_eq!(container.report().depth(), DecodeDepth::Container);
-    assert_eq!(container.ir().decode_depth(), DecodeDepth::Container);
-    assert_eq!(container.ir().model.populated_design_arena(), None);
+    assert_eq!(
+        container.report().scope(),
+        cadmpeg_ir::ContentScope::container()
+    );
+    assert_eq!(container.ir().scope, cadmpeg_ir::ContentScope::container());
+    assert_eq!(
+        container
+            .ir()
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design),
+        None
+    );
     let native = container
         .ir()
         .native
@@ -232,31 +266,14 @@ fn design_records_project_only_at_full_depth() {
         1,
         "the native record survives the container decode"
     );
-    assert_eq!(
-        outside_design(container.ir()),
-        outside_design(full.ir()),
-        "the container decode keeps every non-design arena"
-    );
+    assert_eq!(container.ir().model, cadmpeg_ir::document::Model::default());
+    assert!(!container.report().geometry_transferred());
 
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
         &InventorCodec,
         &[("design", source.clone())],
     );
     assert_eq!(summary.cut, 1, "{summary:?}");
-}
-
-/// The model as JSON without its design arenas.
-fn outside_design(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
-    let mut model = serde_json::to_value(&ir.model).expect("serialize model");
-    let serde_json::Value::Object(arenas) = &mut model else {
-        panic!("a model serializes as a JSON object");
-    };
-    for arena in cadmpeg_ir::ArenaName::ALL {
-        if arena.class() == cadmpeg_ir::ArenaClass::Design {
-            arenas.remove(arena.as_str());
-        }
-    }
-    model
 }
 
 #[test]
@@ -571,4 +588,52 @@ fn an_unverified_acis_carrier_recovers_the_same_solid_as_a_verified_one() {
     };
     assert!(charged(&unverified));
     assert!(!charged(&verified));
+}
+
+#[test]
+fn unclosed_parameter_reference_keeps_typed_source_semantics() {
+    let mut design = crate::design::ratio_parameter_records();
+    let parameter = &mut design[3].1;
+    // The final scalar caches and tolerance occupy twenty bytes. The preceding
+    // u32 is this public fixture's formula reference, changed to an absent node.
+    let formula = parameter.len() - 24;
+    parameter[formula..formula + 4].copy_from_slice(&99_u32.to_le_bytes());
+    let source = primary_envelope_fixture_with_design(&acis_sphere_kernel_stream(21_800), &design);
+    let result = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(&source),
+            &DecodeOptions::default(),
+        )
+        .expect("typed open formula graph remains a partial decode");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == InventorLossCode::ParameterGraphOpen.kind()));
+    let namespace = result
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("native inventory");
+    for arena in ["pm_dc_parameters", "pm_dc_expressions", "pm_dc_units"] {
+        assert!(
+            !namespace.arenas()[arena].is_empty(),
+            "semantic inventory {arena} survives"
+        );
+    }
+    let parameters = namespace
+        .arena_as::<crate::design::PmDcParameter>("pm_dc_parameters")
+        .expect("typed native parameters");
+    let ratio = parameters
+        .iter()
+        .find(|parameter| parameter.name == "ratio")
+        .expect("original named parameter survives");
+    assert_eq!(ratio.formula.index(), 99);
+    assert_eq!(ratio.nominal_value.get(), 1.0);
+    assert_eq!(ratio.model_value.get(), 1.0);
+    assert!(!namespace.arenas()["segment_pairs"].is_empty());
+    assert!(!result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Design));
 }

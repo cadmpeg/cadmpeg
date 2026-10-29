@@ -93,7 +93,7 @@ pub(crate) struct DecodedParameterScopes {
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ContainerScan<'_>,
     sources: &ParameterScopeSources<'_>,
 ) -> Result<DecodedParameterScopes, CodecError> {
     let &ParameterScopeSources {
@@ -111,7 +111,10 @@ pub(crate) fn decode_parameter_scopes(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("parameter-scope source View is missing"))?;
+        let bytes = source.window();
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
@@ -119,12 +122,15 @@ pub(crate) fn decode_parameter_scopes(
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
+            let Some(header_offset) = header.byte_offset else {
+                continue;
+            };
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
                 bytes,
                 &records,
                 header.record_index,
                 &header.class_tag,
-                header.byte_offset,
+                header_offset,
                 header
                     .class_tag
                     .as_str()
@@ -138,16 +144,21 @@ pub(crate) fn decode_parameter_scopes(
                     bytes,
                     &records,
                     header.record_index,
-                    header.byte_offset,
+                    header_offset,
                 ) {
                     losses.push(crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
-                        format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
+                        format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header_offset),
                     ));
                 }
                 continue;
             };
-            scope.id =
-                design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
+            scope.id = design_record_id(
+                &entry.name,
+                ":design-parameter-scope#",
+                scope
+                    .byte_offset()
+                    .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+            );
             let normal = super::super::patch::surface_patch_normal(
                 bytes,
                 &scope,
@@ -166,8 +177,18 @@ pub(crate) fn decode_parameter_scopes(
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
-                let start = usize::try_from(scope.byte_offset()).ok();
-                let end = usize::try_from(scope.paired_byte_offset()).ok();
+                let start = usize::try_from(
+                    scope
+                        .byte_offset()
+                        .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+                )
+                .ok();
+                let end = usize::try_from(
+                    scope
+                        .paired_byte_offset()
+                        .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+                )
+                .ok();
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
@@ -199,6 +220,7 @@ pub(crate) fn decode_parameter_scopes(
                 {
                     let Some(entity_reference_offset) = scope
                         .byte_offset()
+                        .ok_or_else(crate::records::feature::scope::unlocated_scope)?
                         .checked_add(u64_from_index(relative_offset))
                     else {
                         continue;
@@ -211,7 +233,7 @@ pub(crate) fn decode_parameter_scopes(
                         let entity_id = entity.entity_id.clone();
                         *slot = Some(scope::DesignSketchEntityBinding {
                             entity_id,
-                            entity_reference_offset,
+                            entity_reference_offset: Some(entity_reference_offset),
                         });
                     }
                 }
@@ -221,11 +243,11 @@ pub(crate) fn decode_parameter_scopes(
                     if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignWorkPlaneTransform {
                             work_plane_transform: frame.transform,
-                            work_plane_transform_offset: frame.transform_offset,
+                            work_plane_transform_offset: Some(frame.transform_offset),
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignWorkPlaneReference {
                                     work_plane_reference: record_index,
-                                    work_plane_reference_offset: offset,
+                                    work_plane_reference_offset: Some(offset),
                                 }
                             }),
                             work_plane_construction: None,
@@ -243,11 +265,11 @@ pub(crate) fn decode_parameter_scopes(
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,
-                            joint_origin_transform_offset: frame.transform_offset,
+                            joint_origin_transform_offset: Some(frame.transform_offset),
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignJointOriginReference {
                                     joint_origin_reference: record_index,
-                                    joint_origin_reference_offset: offset,
+                                    joint_origin_reference_offset: Some(offset),
                                 }
                             }),
                         });
@@ -472,7 +494,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_assembly_alignment_with_types(
-                    bytes,
+                    source,
                     &records,
                     &scope,
                     parameter_owners,
@@ -682,7 +704,9 @@ pub(crate) fn admit_history_bound_scope_variants(
         let mut primary = indices.iter().copied().filter(|index| {
             let scope = &scopes[*index];
             native_stream(&scope.id).is_some_and(|stream| {
-                primary_frames.contains(&(stream.to_owned(), scope.byte_offset()))
+                scope
+                    .byte_offset()
+                    .is_some_and(|offset| primary_frames.contains(&(stream.to_owned(), offset)))
             })
         });
         let primary_indexed = match (primary.next(), primary.next()) {
@@ -796,15 +820,16 @@ fn strip_scope_variant_provenance(
         }
         serde_json::Value::Object(fields) => {
             fields.retain(|key, _| {
-                if key.ends_with("_offset") || key.ends_with("_offsets") {
+                if key.ends_with("_offset") || key.ends_with("_offsets") || key.ends_with("_stored")
+                {
                     return false;
                 }
                 if top_level
                     && matches!(
                         key.as_str(),
                         "id" | "class_tag"
+                            | "generation"
                             | "source_kind"
-                            | "frame_length"
                             | "history_state_id"
                             | "previous_history_state_id"
                             | "paired_class_tag"
@@ -841,7 +866,7 @@ pub(super) struct PayloadPrologue {
     pub(super) end: usize,
     pub(super) property_count: u32,
     pub(super) saved_hole_depth:
-        Option<crate::records::identity::Located<cadmpeg_ir::scalar::FiniteReal>>,
+        Option<crate::records::identity::Sourced<cadmpeg_ir::scalar::FiniteReal>>,
 }
 
 pub(super) fn read_payload_prologue(
@@ -888,10 +913,10 @@ pub(super) fn read_payload_prologue(
                     cadmpeg_ir::scalar::FiniteReal::try_from(View::f64_le_at(bytes, after_type)?)
                         .ok()?;
                 if saved_hole_depth
-                    .replace(crate::records::identity::Located {
+                    .replace(crate::records::identity::Sourced::at(
                         value,
-                        offset: u64::try_from(after_type).ok()?,
-                    })
+                        u64::try_from(after_type).ok()?,
+                    ))
                     .is_some()
                 {
                     return None;
@@ -932,7 +957,7 @@ pub(super) fn parameter_scope_candidate_headers(
             headers.push(RecordFrame {
                 record_index,
                 class_tag,
-                byte_offset,
+                byte_offset: Some(byte_offset),
             });
         }
     }
@@ -1484,7 +1509,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 operation: coil_discriminators.as_ref().map(|fields| {
                     crate::records::identity::RecordedValue {
                         value: fields.operation,
-                        offset: fields.operation_offset,
+                        offset: Some(fields.operation_offset),
                     }
                 }),
                 extent: coil_discriminators
@@ -1496,7 +1521,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
                                 value: fields.section,
-                                offset,
+                                offset: Some(offset),
                             },
                         ),
                         None => {
@@ -1508,7 +1533,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
                                 value: fields.section_placement,
-                                offset,
+                                offset: Some(offset),
                             },
                         ),
                         None => crate::records::identity::MaybeRecordedValue::Unlocated(
@@ -1521,7 +1546,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
                                 value: fields.clockwise,
-                                offset,
+                                offset: Some(offset),
                             },
                         ),
                         None => crate::records::identity::MaybeRecordedValue::Unlocated(
@@ -1789,7 +1814,7 @@ pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Op
     let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
         .ok()?
         .checked_mul(2)?;
-    scope.frame_length().checked_sub(kind_bytes)
+    scope.frame_length()?.checked_sub(kind_bytes)
 }
 
 fn extrude_extent_native_loss(

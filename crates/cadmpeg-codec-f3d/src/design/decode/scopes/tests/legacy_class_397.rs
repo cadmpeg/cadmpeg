@@ -70,20 +70,20 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
     assert_eq!(
         prologue,
         DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker_offset: None,
+            operation_prefix_marker: None,
             operation: DesignExtrudeOperation::Cut,
-            operation_offset: 27,
+            operation_offset: Some(27),
             direction_face_extend_values: [3, 2],
             side_extent_discriminators: [1, 1],
-            side_extent_discriminator_offsets: [126, 139],
+            side_extent_discriminator_offsets: Some([126, 139]),
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
-            direction_face_extend_offsets: [31, 35],
+            direction_face_extend_offsets: Some([31, 35]),
             direction_reversed: false,
-            direction_reversed_offset: 39,
+            direction_reversed_offset: Some(39),
             solid_operation: true,
-            solid_operation_offset: 40,
+            solid_operation_offset: Some(40),
             start: DesignExtrudeStart::OffsetProfilePlane,
-            start_offset: 41,
+            start_offset: Some(41),
         }
     );
 

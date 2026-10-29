@@ -541,7 +541,7 @@ pub(super) fn parasolid_deltas_events_from_records(
             .get_mut(ordinal)
             .and_then(Option::take)
             .ok_or_else(|| CodecError::Malformed("missing NX Deltas source owner".into()))?;
-        if owner.source() != stream.inflated.as_slice() {
+        if owner.source() != stream.inflated.as_ref() {
             return Err(CodecError::Malformed(
                 "NX Deltas owner source differs from retained stream".into(),
             ));

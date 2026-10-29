@@ -62,7 +62,7 @@ fn fixture() -> (
     .unwrap();
     let input = DesignWorkPointInput::try_new(
         record_index,
-        0,
+        Some(0),
         Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
             selection,
         })),
@@ -76,14 +76,15 @@ fn fixture() -> (
     if let DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 41,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([1.0, 2.0, 3.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: DesignWorkPointRule::try_from(DesignWorkPointRuleForm::Vertex { input }).unwrap(),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#f3d:feature:work-point").unwrap(),
         ordinal: 0,
         name: None,

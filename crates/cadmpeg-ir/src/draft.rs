@@ -31,6 +31,9 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 
+mod append_transaction;
+pub use append_transaction::{AnnotatedModelAppendTransaction, ModelAppendTransaction};
+
 mod private {
     pub trait Sealed {}
 }
@@ -1202,6 +1205,7 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft
             .insert(Vertex {
+                native_ref: None,
                 id: id.try_into().expect("valid identity"),
                 point: point.try_into().expect("valid identity"),
                 tolerance: None,
@@ -1292,6 +1296,7 @@ mod tests {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -1339,6 +1344,7 @@ mod tests {
                     source_tag: None,
                     source_text: None,
                     source_content: crate::features::FeatureContent::default(),
+                    needs_recompute: false,
                     evaluation: crate::features::FeatureEvaluation::from_definition(
                         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                     ),
@@ -1415,6 +1421,7 @@ mod tests {
         let target = "test:model:point#direct-missing";
         let mut draft = ModelDraft::new();
         draft.model_mut().vertices.push(Vertex {
+            native_ref: None,
             id: owner.try_into().expect("valid identity"),
             point: target.try_into().expect("valid identity"),
             tolerance: None,
@@ -1607,6 +1614,7 @@ mod tests {
         let mut rejected = ModelDraft::new();
         rejected
             .insert(Vertex {
+                native_ref: None,
                 id: rejected_identity.try_into().expect("valid identity"),
                 point: "test:model:point#missing"
                     .try_into()

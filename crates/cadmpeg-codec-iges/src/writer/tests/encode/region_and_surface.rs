@@ -19,6 +19,15 @@ use cadmpeg_ir::CadIr;
 use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
+fn display_color(
+    ir: &CadIr,
+    body: &cadmpeg_ir::topology::Body,
+) -> Option<cadmpeg_ir::topology::Color> {
+    ir.effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Body(
+        body.id.clone(),
+    ))
+}
+
 fn emitted_label(ir: &CadIr, entity_type: i64) -> String {
     let record = ir.native.namespace("iges").expect("IGES native").arenas()["entities"]
         .iter()
@@ -142,7 +151,10 @@ fn synthesized_solid_preserves_long_name_color_and_visibility() {
         .expect("round-trip body");
     assert_eq!(emitted_label(round_trip.ir(), 186), "SOLID");
     assert_eq!(body.name.as_deref(), Some("Hidden Red Body"));
-    assert_eq!(body.color, ir.model.bodies[0].color);
+    assert_eq!(
+        display_color(round_trip.ir(), body),
+        display_color(&ir, &ir.model.bodies[0])
+    );
     assert_eq!(body.visible, Some(false));
 }
 
@@ -312,7 +324,7 @@ fn synthesized_solid_writes_custom_rgb_and_reports_opacity() {
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
     assert_eq!(
-        round_trip.ir().model.bodies[0].color,
+        display_color(round_trip.ir(), &round_trip.ir().model.bodies[0]),
         cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
     );
     assert!(!round_trip.report().losses.iter().any(|loss| {
@@ -354,7 +366,7 @@ fn synthesized_trimmed_sheet_writes_custom_rgb_in_legacy_versions() {
             .find(|body| body.kind == BodyKind::Sheet)
             .expect("round-trip sheet");
         assert_eq!(
-            body.color,
+            display_color(round_trip.ir(), body),
             cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
         );
     }
@@ -423,13 +435,15 @@ fn synthesized_trimmed_sheet_presents_owning_body() {
         .find(|body| body.kind == BodyKind::Sheet)
         .expect("round-trip sheet");
     assert_eq!(
-        body.color,
-        ir.model
-            .bodies
-            .iter()
-            .find(|body| body.kind == BodyKind::Sheet)
-            .expect("source sheet")
-            .color
+        display_color(round_trip.ir(), body),
+        display_color(
+            &ir,
+            ir.model
+                .bodies
+                .iter()
+                .find(|body| body.kind == BodyKind::Sheet)
+                .expect("source sheet")
+        )
     );
     assert_eq!(body.visible, Some(false));
     assert_eq!(body.name.as_deref(), Some("SHEET_A"));
@@ -467,13 +481,15 @@ fn synthesized_brep_sheet_presents_owning_shell() {
         .expect("round-trip sheet");
     assert_eq!(body.name.as_deref(), Some("SHELL_A"));
     assert_eq!(
-        body.color,
-        ir.model
-            .bodies
-            .iter()
-            .find(|body| body.kind == BodyKind::Sheet)
-            .expect("source sheet")
-            .color
+        display_color(round_trip.ir(), body),
+        display_color(
+            &ir,
+            ir.model
+                .bodies
+                .iter()
+                .find(|body| body.kind == BodyKind::Sheet)
+                .expect("source sheet")
+        )
     );
     assert_eq!(body.visible, Some(false));
 }
@@ -610,6 +626,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
     for (name, nurbs, expected) in cases {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint(format!("test:model:curve#{name}")).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),

@@ -34,7 +34,7 @@ fn placement_ordered_owner_count_and_references_match_the_frame() {
         assembly::{DesignAssemblyAlignment, DesignAssemblyOwnerRun},
         scope::{DesignFeatureKind, DesignParameterScope},
     };
-    use crate::records::identity::{Located, ReferenceRun};
+    use crate::records::identity::ReferenceRun;
     let owners = [(0, 50), (1, 51), (2, 52), (3, 53), (4, 54), (5, 55)];
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -54,24 +54,17 @@ fn placement_ordered_owner_count_and_references_match_the_frame() {
     let mut alignment = DesignAssemblyAlignment::try_new(
         0.0,
         [0.0; 3],
-        (50..54).map(|value| Located { value, offset: 0 }).collect(),
+        (50..54)
+            .map(|value| crate::records::identity::Sourced::at(value, 0))
+            .collect(),
         None,
     )
     .unwrap();
     alignment.additional_owner_run = Some(DesignAssemblyOwnerRun {
-        count: Located {
-            value: 2,
-            offset: scope.byte_offset() + 43,
-        },
+        count: crate::records::identity::Sourced::at(2, scope.byte_offset().unwrap() + 43),
         references: vec![
-            Located {
-                value: 54,
-                offset: scope.byte_offset() + 47,
-            },
-            Located {
-                value: 55,
-                offset: scope.byte_offset() + 58,
-            },
+            crate::records::identity::Sourced::at(54, scope.byte_offset().unwrap() + 47),
+            crate::records::identity::Sourced::at(55, scope.byte_offset().unwrap() + 58),
         ],
     });
     let holds = |alignment: &DesignAssemblyAlignment| {
@@ -90,10 +83,12 @@ fn placement_ordered_owner_count_and_references_match_the_frame() {
     changed.additional_owner_run.as_mut().unwrap().references[1].value = 54;
     assert!(!holds(&changed));
     let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().references[0].offset += 1;
+    let run = changed.additional_owner_run.as_mut().unwrap();
+    run.references[0].offset = run.references[0].offset.map(|offset| offset + 1);
     assert!(!holds(&changed));
     let mut changed = alignment.clone();
-    changed.additional_owner_run.as_mut().unwrap().count.offset += 1;
+    let run = changed.additional_owner_run.as_mut().unwrap();
+    run.count.offset = run.count.offset.map(|offset| offset + 1);
     assert!(!holds(&changed));
     let mut changed = alignment.clone();
     changed
@@ -188,7 +183,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
         "aggregate_operand_record_indices":[104,108], "height_owner_record_index":81,
         "angle_owner_record_index":91, "width_mode":"full_edge",
         "width_distance_owner_record_indices":[], "settings_record_index":141,
-        "bend_radius":0.35, "bend_radius_offset":scope.byte_offset() + cadmpeg_core::decode::u64_from_index(layout::INSIDE_BEND_RADIUS),
+        "bend_radius":0.35, "bend_radius_offset":scope.byte_offset().unwrap() + cadmpeg_core::decode::u64_from_index(layout::INSIDE_BEND_RADIUS),
         "reference_side_code":4, "height_datum":"outer_faces", "bend_position":"inside"
     })).unwrap();
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
@@ -214,7 +209,9 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
                     byte_offset: if record_index == scope.record_index {
                         scope.byte_offset()
                     } else {
-                        scope.paired_byte_offset() + u64::from(record_index) * 21
+                        scope
+                            .paired_byte_offset()
+                            .map(|paired| paired + u64::from(record_index) * 21)
                     },
                 })
                 .collect();
@@ -232,7 +229,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
     assert!(findings(decoded).is_empty());
     let mut invalid = scope.clone();
     if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
-        operation.bend_radius_offset += 1;
+        operation.bend_radius_offset = operation.bend_radius_offset.map(|offset| offset + 1);
     }
     assert!(!findings(invalid).is_empty());
     let mut invalid = scope.clone();

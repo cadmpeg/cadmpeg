@@ -144,12 +144,20 @@ enum GripVertexMarker {
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<(Vec<SubdSurface>, Vec<cadmpeg_ir::report::loss::LossNote>), CodecError> {
+) -> Result<
+    (
+        Vec<SubdSurface>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        bool,
+    ),
+    CodecError,
+> {
     let Some(folder) = scan.design_asset_folder() else {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok((Vec::new(), Vec::new(), false));
     };
     let mut cages = Vec::new();
     let mut losses = Vec::new();
+    let mut untyped = false;
     for entry in scan.entries.iter().filter(|entry| {
         std::path::Path::new(&entry.name)
             .extension()
@@ -162,6 +170,7 @@ pub(crate) fn decode(
         match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
             Ok(parsed) => {
                 if !parsed.unknown_record_kinds.is_empty() {
+                    untyped = true;
                     let message = format!("{}", UntypedRecords(&parsed.unknown_record_kinds));
                     losses.push(F3dLossCode::TsplineRecordUntyped.note(message));
                 }
@@ -175,12 +184,13 @@ pub(crate) fn decode(
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
+                untyped = true;
                 let message = format!("T-spline control cage not decoded: {error}");
                 losses.push(F3dLossCode::TsplineCageUndecoded.note(message));
             }
         }
     }
-    Ok((cages, losses))
+    Ok((cages, losses, untyped))
 }
 
 fn malformed(name: &str, message: impl std::fmt::Display) -> CodecError {
@@ -1712,6 +1722,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .unwrap_or(name);
     Ok(ParsedCage {
         surface: SubdSurface {
+            native_ref: None,
             id: subd_id(name, source_key)?,
             scheme: SubdScheme::CatmullClark,
             source_object: Some(SourceObjectAssociation {
@@ -1719,10 +1730,6 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 format: cadmpeg_ir::CodecFormat::F3d,
                 object_id: cadmpeg_core::text::NonBlankString::new(name.to_owned())
                     .ok_or_else(|| malformed(name, "source object_id must not be empty"))?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
                 instance_path: Vec::new(),
             }),
             cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)

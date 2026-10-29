@@ -9,10 +9,10 @@ use cadmpeg_ir::transform::Transform;
 /// Returns `None` if the fixture does not contain the occurrence.
 pub fn resolved_transform(graph: &AssemblyGraph<'_>, id: &OccurrenceId) -> Option<Transform> {
     let mut occurrence = graph.occurrence(id)?;
-    let mut chain = vec![occurrence.effective_transform().ok()?];
+    let mut chain = vec![occurrence.effective_transform().ok()??];
     while let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
         occurrence = graph.occurrence(parent)?;
-        chain.push(occurrence.effective_transform().ok()?);
+        chain.push(occurrence.effective_transform().ok()??);
     }
     chain
         .into_iter()

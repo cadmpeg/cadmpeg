@@ -2,18 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 18484,
-      "payload_sha256": "4881e24d792dd7d312b8cbc1629baf664941a488578c08846740933f7fb84c82"
+      "payload_len": 2973,
+      "payload_sha256": "3ea0b70235e80f6cbac80425608542526a0ecd0327be08a2da4cc55322586ba5"
     },
     {
-      "name": "techdraw-template.svg",
-      "payload_len": 462,
-      "payload_sha256": "72d5cf7f1b02f68d56ddd6a29b9f4fe443c45be385234abfa923fd724054ec9b"
-    },
-    {
-      "name": "techdraw-template1.svg",
-      "payload_len": 462,
-      "payload_sha256": "72d5cf7f1b02f68d56ddd6a29b9f4fe443c45be385234abfa923fd724054ec9b"
+      "name": "Cadmpeg.StringHasher.0.txt",
+      "payload_len": 22,
+      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
     }
   ],
   "report": {
@@ -24,7 +19,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 37,
         "bodies": 0,
         "coedges": 0,
         "configurations": 0,
@@ -38,13 +33,10 @@
         "loops": 0,
         "native.fcstd.annotations": 2,
         "native.fcstd.applications": 6,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.document": 1,
         "native.fcstd.drawings": 6,
         "native.fcstd.entries": 3,
-        "native.fcstd.logical_ledger": 199,
         "native.fcstd.objects": 6,
-        "native.fcstd.physical_ledger": 22,
         "native.fcstd.properties": 98,
         "native.fcstd.string_tables": 1,
         "occurrences": 0,
@@ -75,20 +67,492 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "written",
+        "appearances": "written",
+        "assembly_joints": "written",
+        "assets": "dropped",
+        "attributes": "reported",
+        "bodies": "written",
+        "coedges": "written",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "written",
+        "loops": "written",
+        "occurrences": "written",
+        "parameters": "written",
+        "pcurves": "written",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "written",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "written",
+        "regions": "written",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "written",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "written"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#First:KeepUpdated:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#First:Label2:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#First:Label:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#First:NextBalloonIndex:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#First:Visibility:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FirstTemplate:Height:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FirstTemplate:Label2:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FirstTemplate:Label:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FirstTemplate:Orientation:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FirstTemplate:Template:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FirstTemplate:Visibility:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#FirstTemplate:Width:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Second:KeepUpdated:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Second:Label2:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Second:Label:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Second:NextBalloonIndex:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Second:Visibility:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#SecondTemplate:Height:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#SecondTemplate:Label2:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#SecondTemplate:Label:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#SecondTemplate:Orientation:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#SecondTemplate:Template:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#SecondTemplate:Visibility:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#SecondTemplate:Width:property target has no emitted object",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd does not represent 6 record(s) in neutral arena `drawings`",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd does not represent 2 record(s) in neutral arena `semantic_annotations`",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.annotations`: fcstd:native:annotation#FirstNote, fcstd:native:annotation#SecondNote",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.applications`: fcstd:native:application#First, fcstd:native:application#FirstNote, fcstd:native:application#FirstTemplate, fcstd:native:application#Second, fcstd:native:application#SecondNote, fcstd:native:application#SecondTemplate",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.drawings`: fcstd:native:drawing#First, fcstd:native:drawing#FirstNote, fcstd:native:drawing#FirstTemplate, fcstd:native:drawing#Second, fcstd:native:drawing#SecondNote, fcstd:native:drawing#SecondTemplate",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.entries`: fcstd:native:entry#techdraw-template.svg, fcstd:native:entry#techdraw-template1.svg",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 6 native record(s) from `fcstd.objects`: fcstd:native:object#First, fcstd:native:object#FirstNote, fcstd:native:object#FirstTemplate, fcstd:native:object#Second, fcstd:native:object#SecondNote, fcstd:native:object#SecondTemplate",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 78 native record(s) from `fcstd.properties`: fcstd:native:property#First:ExpressionEngine, fcstd:native:property#First:KeepUpdated, fcstd:native:property#First:Label, fcstd:native:property#First:Label2, fcstd:native:property#First:NextBalloonIndex, fcstd:native:property#First:ProjectionType, fcstd:native:property#First:Scale, fcstd:native:property#First:Template, fcstd:native:property#First:Views, fcstd:native:property#First:Visibility, fcstd:native:property#FirstNote:Caption, fcstd:native:property#FirstNote:ExpressionEngine, fcstd:native:property#FirstNote:Font, fcstd:native:property#FirstNote:Label, fcstd:native:property#FirstNote:Label2, fcstd:native:property#FirstNote:LineSpace, fcstd:native:property#FirstNote:LockPosition, fcstd:native:property#FirstNote:MaxWidth, fcstd:native:property#FirstNote:Owner, fcstd:native:property#FirstNote:Rotation, fcstd:native:property#FirstNote:Scale, fcstd:native:property#FirstNote:ScaleType, fcstd:native:property#FirstNote:Text, fcstd:native:property#FirstNote:TextColor, fcstd:native:property#FirstNote:TextSize, fcstd:native:property#FirstNote:TextStyle, fcstd:native:property#FirstNote:Visibility, fcstd:native:property#FirstNote:X, fcstd:native:property#FirstNote:Y, fcstd:native:property#FirstTemplate:EditableTexts, fcstd:native:property#FirstTemplate:ExpressionEngine, fcstd:native:property#FirstTemplate:Height, fcstd:native:property#FirstTemplate:Label, fcstd:native:property#FirstTemplate:Label2, fcstd:native:property#FirstTemplate:Orientation, fcstd:native:property#FirstTemplate:PageResult, fcstd:native:property#FirstTemplate:Template, fcstd:native:property#FirstTemplate:Visibility, fcstd:native:property#FirstTemplate:Width, fcstd:native:property#Second:ExpressionEngine, fcstd:native:property#Second:KeepUpdated, fcstd:native:property#Second:Label, fcstd:native:property#Second:Label2, fcstd:native:property#Second:NextBalloonIndex, fcstd:native:property#Second:ProjectionType, fcstd:native:property#Second:Scale, fcstd:native:property#Second:Template, fcstd:native:property#Second:Views, fcstd:native:property#Second:Visibility, fcstd:native:property#SecondNote:Caption, fcstd:native:property#SecondNote:ExpressionEngine, fcstd:native:property#SecondNote:Font, fcstd:native:property#SecondNote:Label, fcstd:native:property#SecondNote:Label2, fcstd:native:property#SecondNote:LineSpace, fcstd:native:property#SecondNote:LockPosition, fcstd:native:property#SecondNote:MaxWidth, fcstd:native:property#SecondNote:Owner, fcstd:native:property#SecondNote:Rotation, fcstd:native:property#SecondNote:Scale, fcstd:native:property#SecondNote:ScaleType, fcstd:native:property#SecondNote:Text, fcstd:native:property#SecondNote:TextColor, fcstd:native:property#SecondNote:TextSize, fcstd:native:property#SecondNote:TextStyle, fcstd:native:property#SecondNote:Visibility, fcstd:native:property#SecondNote:X, fcstd:native:property#SecondNote:Y, fcstd:native:property#SecondTemplate:EditableTexts, fcstd:native:property#SecondTemplate:ExpressionEngine, fcstd:native:property#SecondTemplate:Height, fcstd:native:property#SecondTemplate:Label, fcstd:native:property#SecondTemplate:Label2, fcstd:native:property#SecondTemplate:Orientation, fcstd:native:property#SecondTemplate:PageResult, fcstd:native:property#SecondTemplate:Template, fcstd:native:property#SecondTemplate:Visibility, fcstd:native:property#SecondTemplate:Width",
+        "severity": "info"
+      }
     ],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "dropped"
+            },
+            "applications": {
+              "disposition": "dropped"
+            },
+            "attachments": {
+              "disposition": "dropped"
+            },
+            "carrier_census": {
+              "disposition": "dropped"
+            },
+            "design_census": {
+              "disposition": "dropped"
+            },
+            "document": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
+            },
+            "drawings": {
+              "disposition": "dropped"
+            },
+            "element_maps": {
+              "disposition": "dropped"
+            },
+            "entries": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated"
+              }
+            },
+            "extensions": {
+              "disposition": "dropped"
+            },
+            "gui_documents": {
+              "disposition": "dropped"
+            },
+            "gui_properties": {
+              "disposition": "dropped"
+            },
+            "gui_view_providers": {
+              "disposition": "dropped"
+            },
+            "joints": {
+              "disposition": "dropped"
+            },
+            "objects": {
+              "disposition": "dropped"
+            },
+            "product_nodes": {
+              "disposition": "dropped"
+            },
+            "properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:UseHasher": "regenerated"
+              }
+            },
+            "shape_payloads": {
+              "disposition": "dropped"
+            },
+            "string_tables": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped"
+            },
+            "unknowns": {
+              "disposition": "dropped"
+            }
+          }
+        }
+      }
+    },
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "source_unrepresented",
+      "classes": [
+        "model"
+      ]
+    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

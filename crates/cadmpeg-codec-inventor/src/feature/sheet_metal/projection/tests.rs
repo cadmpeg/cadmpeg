@@ -35,6 +35,7 @@ fn attached(fixture: &Fixture) -> Feature {
         ordinal: 1,
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,

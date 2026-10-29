@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -25,6 +24,7 @@
           },
           "id": "creo:model:sketch_feature#40",
           "native_ref": "creo:featdefs:sketch#40",
+          "needs_recompute": false,
           "ordinal": 0,
           "source_tag": "section",
           "suppressed": false
@@ -158,6 +158,10 @@
           }
         ]
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -661,7 +665,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -702,6 +709,22 @@
           "tag": "section_sketch_feature"
         }
       }
-    }
+    },
+    "retained_records": {
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNGZWF0RGVmcwpmZWF0X2RlZnNfNDAAdmFyX2FycgD4AvcB++JzY2hlbWHx9wHiAQfkDwEAA+ICB0YIAAAAAAAADwEABOI=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

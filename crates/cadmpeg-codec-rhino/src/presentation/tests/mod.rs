@@ -628,7 +628,6 @@ fn light_record_attributes_use_the_object_attribute_projection() {
         value.attributes.attribute_user_strings[0].value,
         "attribute value"
     );
-    assert!(value.source_offset > 0);
 }
 
 #[test]
@@ -928,7 +927,6 @@ fn legacy_text_style_preserves_font_identity_and_characteristics() {
         value.font.weight,
         FontWeight::Legacy { italic: true, .. }
     ));
-    assert_eq!(value.source_offset, 42);
 }
 
 #[test]
@@ -988,7 +986,6 @@ fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
     assert_eq!(value.font_description, "ArialMT");
     assert_eq!(value.source_uuid, Some(id.to_string()));
     assert_eq!(value.font.windows_logfont_name, "Arial");
-    assert_eq!(value.source_offset, 99);
 }
 
 #[test]
@@ -1029,7 +1026,6 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
         value.details.controls()["font_characteristics"]["byte_len"],
         serde_json::json!(24)
     );
-    assert_eq!(value.source_offset, 321);
 }
 
 #[test]
@@ -1052,7 +1048,6 @@ fn dimension_style_current_minor_transfers_new_text_controls() {
         value.details.controls()["line_space_scale"],
         serde_json::json!(1.75)
     );
-    assert_eq!(value.source_offset, 654);
 }
 
 #[test]
@@ -1709,7 +1704,6 @@ fn texture_reads_minor_gates_before_future_suffix() {
         Some("/full/source.3dm")
     );
     assert_eq!(value.treat_as_linear, Some(true));
-    assert_eq!(value.source_offset, 42);
     assert!(losses.is_empty(), "{losses:?}");
 }
 

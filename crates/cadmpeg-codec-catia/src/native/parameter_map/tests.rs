@@ -99,7 +99,8 @@ fn unresolved_a8_maps_create_no_neutral_geometry() {
             .ir()
             .native
             .namespace("catia")
-            .expect("native")
+            .expect("catia namespace")
+            .clone()
             .arenas()["sampled_parameter_maps"]
             .len(),
         1

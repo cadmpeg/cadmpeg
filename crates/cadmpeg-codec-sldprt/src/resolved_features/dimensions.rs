@@ -939,7 +939,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             };
             let entity_text = format!(
                 "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
             let Ok(entity_id) = SketchEntityId::mint(entity_text) else {
                 continue;
@@ -1117,7 +1117,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }
             let entity_id = format!(
                 "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
             let Ok(entity_id) = SketchEntityId::mint(entity_id) else {
                 continue;
@@ -1864,7 +1864,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             let lane = group.lane;
             let mut range: Option<(usize, usize)> = None;
             for marker in &group.markers {
-                let offset = usize::try_from(marker.offset()).map_err(|_| {
+                let offset = usize::try_from(marker.offset()).ok().ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
                         "SLDPRT sketch marker offset exceeds the address space",
                     )

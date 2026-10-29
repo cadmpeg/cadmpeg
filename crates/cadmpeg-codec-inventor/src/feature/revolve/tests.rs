@@ -76,7 +76,8 @@ fn neutral_revolve_axes_extents_and_output_modes_must_match_the_native_operands(
         extent: RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
-                    .expect("full turn"),
+                    .expect("full turn")
+                    .into(),
             },
         },
         op: BooleanOp::Cut,
@@ -115,7 +116,9 @@ fn neutral_revolve_axes_extents_and_output_modes_must_match_the_native_operands(
             "extent" => {
                 *extent = RevolveExtent::OneSided {
                     termination: AngularTermination::Angle {
-                        angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("partial turn"),
+                        angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0)
+                            .expect("partial turn")
+                            .into(),
                     },
                 }
             }

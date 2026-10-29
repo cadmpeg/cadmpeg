@@ -211,7 +211,7 @@ fn corner_round_without_continuity_uses_its_exact_radius_and_edges() {
         .expect("corner round")
         .expect("projection");
     assert!(
-        matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) if groups.len() == 1 && matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 3.0))
+        matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) if groups.len() == 1 && matches!(&groups[0].radius, RadiusSpec::Constant { radius } if radius.value_from(std::slice::from_ref(&neutral)).expect("bound radius").get() == 3.0))
     );
     let label = test_label(100, 2, FILLET_CLASS_ID, &[]);
     assert!(project_fillet(&ctx, &source, &label, &index).is_none());

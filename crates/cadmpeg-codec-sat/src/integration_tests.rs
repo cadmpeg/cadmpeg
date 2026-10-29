@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+mod scope;
+
 use crate::loss::SatLossCode;
 use crate::SatCodec;
 use cadmpeg_ir::codec::{Codec, DecodeResult};
@@ -13,6 +15,43 @@ fn decode_bytes(bytes: &[u8]) -> DecodeResult {
         )
         .unwrap()
 }
+
+#[test]
+fn kernel_entity_count_is_inspection_data_not_document_source_content() {
+    use crate::test_support::test_streams::{
+        binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
+    };
+
+    for (bytes, family, version) in [
+        (text_sphere_stream(1.0), "asm", "23200"),
+        (binary_sphere_stream(BinaryFixtureKind::Asm), "asm", "23200"),
+        (
+            binary_sphere_stream(BinaryFixtureKind::Acis),
+            "acis",
+            "21800",
+        ),
+    ] {
+        let inspected = SatCodec
+            .inspect(
+                &mut std::io::Cursor::new(&bytes),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(inspected.entries[0].attributes["kernel_entity_count"], "2");
+        let decoded = decode_bytes(&bytes);
+        let source = decoded.ir().source.as_ref().unwrap();
+        assert!(!source.attributes.contains_key("kernel_entity_count"));
+        assert_eq!(source.attributes["kernel_family"], family);
+        assert_eq!(source.attributes["acis_save_format_version"], version);
+        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().model.surfaces.len(), 1);
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+            .unwrap()
+            .is_ok());
+    }
+}
+
 #[test]
 fn concatenated_sat_tables_preserve_each_independent_sphere() {
     let sphere = |x, radius, terminator: &str| {
@@ -224,4 +263,65 @@ End-of-ACIS-data\n";
             .data(),
         Some(source.as_slice())
     );
+}
+
+#[test]
+fn face_key_native_reference_resolves_in_text_and_both_binary_kernel_forms() {
+    use crate::test_support::test_streams::{
+        binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
+    };
+    for bytes in [
+        text_sphere_stream(1.0),
+        binary_sphere_stream(BinaryFixtureKind::Asm),
+        binary_sphere_stream(BinaryFixtureKind::Acis),
+    ] {
+        let decoded = decode_bytes(&bytes);
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        let keys: Vec<cadmpeg_asm::brep::records::FaceNativeKey> = decoded
+            .ir()
+            .native
+            .namespace("sat")
+            .unwrap()
+            .arena_as("face_native_keys")
+            .unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(
+            decoded.ir().model.faces[0].native_ref.as_deref(),
+            Some(keys[0].id().as_str())
+        );
+        assert_eq!(keys[0].asm_face_key, None);
+        assert!(serde_json::to_value(&keys[0])
+            .unwrap()
+            .get("face")
+            .is_none());
+    }
+}
+
+#[test]
+fn face_sidedness_native_reference_resolves_in_text_and_both_binary_kernel_forms() {
+    use crate::test_support::test_streams::{
+        binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
+    };
+    for bytes in [
+        text_sphere_stream(1.0),
+        binary_sphere_stream(BinaryFixtureKind::Asm),
+        binary_sphere_stream(BinaryFixtureKind::Acis),
+    ] {
+        let decoded = decode_bytes(&bytes);
+        let namespace = decoded.ir().native.namespace("sat").unwrap();
+        let keys: Vec<cadmpeg_asm::brep::records::FaceNativeKey> =
+            namespace.arena_as("face_native_keys").unwrap();
+        let sides: Vec<cadmpeg_asm::brep::records::FaceSidedness> =
+            namespace.arena_as("face_sidedness").unwrap();
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(sides.len(), 1);
+        assert!(sides[0].owns_native_ref(decoded.ir().model.faces[0].native_ref.as_deref(), &keys));
+        assert_eq!(sides[0].record_index, keys[0].record_index);
+        assert_eq!(sides[0].source_namespace, keys[0].source_namespace);
+        assert!(serde_json::to_value(&sides[0])
+            .unwrap()
+            .get("face")
+            .is_none());
+        assert_eq!(sides[0].containment, None);
+    }
 }

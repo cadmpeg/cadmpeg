@@ -153,6 +153,14 @@ pub enum BodyKind {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Body {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: BodyId,
     /// The dimensional kind of topology contained by the body.
@@ -160,7 +168,8 @@ pub struct Body {
     pub kind: BodyKind,
     /// Constituent regions.
     pub regions: Vec<RegionId>,
-    /// Optional world placement of the body's geometry.
+    /// Optional placement within the owning product definition.
+    /// World placement is computed by composing an occurrence transform.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -174,7 +183,7 @@ pub struct Body {
         deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
-    /// Optional display color.
+    /// Optional display colour, independent of the bound material appearance.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -196,6 +205,14 @@ pub struct Body {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Region {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: RegionId,
     /// Owning body.
@@ -266,6 +283,14 @@ impl From<NonEmptyMembers<ShellMember>> for ShellMembers {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Shell {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: ShellId,
     /// Owning region.
@@ -293,6 +318,7 @@ impl Shell {
             free_vertices,
         };
         Ok(Self {
+            native_ref: None,
             id,
             region,
             members,
@@ -302,6 +328,7 @@ impl Shell {
     /// Constructs a shell with one face.
     pub fn with_face(id: ShellId, region: RegionId, face: FaceId) -> Self {
         Self {
+            native_ref: None,
             id,
             region,
             members: ShellMembers {
@@ -315,6 +342,7 @@ impl Shell {
     /// Constructs a shell with one wire edge.
     pub fn with_wire_edge(id: ShellId, region: RegionId, edge: EdgeId) -> Self {
         Self {
+            native_ref: None,
             id,
             region,
             members: ShellMembers {
@@ -328,6 +356,7 @@ impl Shell {
     /// Constructs a shell with one free vertex.
     pub fn with_free_vertex(id: ShellId, region: RegionId, vertex: VertexId) -> Self {
         Self {
+            native_ref: None,
             id,
             region,
             members: ShellMembers {
@@ -348,6 +377,7 @@ impl Shell {
             return Err(BodySelectionError::Empty);
         }
         Ok(Self {
+            native_ref: None,
             id,
             region,
             members: ShellMembers {
@@ -368,6 +398,7 @@ impl Shell {
             return Err(BodySelectionError::Empty);
         }
         Ok(Self {
+            native_ref: None,
             id,
             region,
             members: ShellMembers {
@@ -445,6 +476,14 @@ impl Shell {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Face {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: FaceId,
     /// Owning shell.
@@ -463,7 +502,7 @@ pub struct Face {
         deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
-    /// Optional display color.
+    /// Optional display colour, independent of the bound material appearance.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -629,6 +668,14 @@ pub enum LoopBoundaryRole {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Loop {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: LoopId,
     /// Owning face.
@@ -965,6 +1012,14 @@ pub struct AnchoredVertexUse {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Coedge {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: CoedgeId,
     /// Owning loop.
@@ -1309,6 +1364,14 @@ impl TryFrom<EdgeCarrierWire> for EdgeCarrier {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Edge {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: EdgeId,
     /// Carrier and its admitted parameter range.
@@ -1362,6 +1425,14 @@ impl Edge {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Vertex {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: VertexId,
     /// Position carrier.
@@ -1377,6 +1448,14 @@ pub struct Vertex {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PointWire")]
 pub struct Point {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: PointId,
     /// Coordinates in the document's length unit.
@@ -1394,6 +1473,14 @@ pub struct Point {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PointWire {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
+
     /// Arena id.
     id: PointId,
     /// Coordinates in the document's length unit.
@@ -1404,6 +1491,13 @@ struct PointWire {
 }
 
 impl Point {
+    /// Attach the typed native carrier that supplies this record.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
     /// The refusal of a position with a non-finite coordinate.
     pub const NON_FINITE_POSITION: &'static str = "point position coordinates must be finite";
 
@@ -1415,6 +1509,7 @@ impl Point {
         source_object: Option<crate::provenance::SourceObjectAssociation>,
     ) -> Self {
         Self {
+            native_ref: None,
             id,
             position,
             source_object,
@@ -1437,7 +1532,12 @@ impl TryFrom<PointWire> for Point {
     type Error = &'static str;
     fn try_from(wire: PointWire) -> Result<Self, Self::Error> {
         let position = FinitePoint3::new(wire.position).ok_or(Self::NON_FINITE_POSITION)?;
-        Ok(Self::new(wire.id, position, wire.source_object))
+        Ok(Self {
+            id: wire.id,
+            position,
+            source_object: wire.source_object,
+            native_ref: wire.native_ref,
+        })
     }
 }
 
@@ -1989,6 +2089,7 @@ mod tests {
     fn replacing_a_ring_rejects_invalid_contents_without_changing_the_loop() {
         let coedge: super::CoedgeId = "test:model:coedge#0".try_into().unwrap();
         let mut loop_ = Loop {
+            native_ref: None,
             id: "test:model:loop#0".try_into().unwrap(),
             face: "test:model:face#0".try_into().unwrap(),
             boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
@@ -2034,6 +2135,7 @@ mod tests {
             })
         );
         let loop_ = Loop {
+            native_ref: None,
             id: coedge.owner_loop.clone(),
             face: "test:model:face#0".try_into().expect("valid identity"),
             boundary: LoopBoundary::Ring(
@@ -2360,6 +2462,7 @@ mod tests {
         ] {
             assert_eq!(
                 Point::try_from(PointWire {
+                    native_ref: None,
                     id: id.clone(),
                     position: coordinates,
                     source_object: None,
@@ -2391,6 +2494,7 @@ mod tests {
         // number it would be read into, and the parser refuses it first.
         assert_eq!(
             Point::try_from(PointWire {
+                native_ref: None,
                 id: PointId::mint("t:model:point#0").expect("identity grammar"),
                 position: Point3::new(f64::INFINITY, 0.0, 0.0),
                 source_object: None,
@@ -2492,3 +2596,5 @@ cadmpeg_core::named_optional_field!(
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

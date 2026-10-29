@@ -248,6 +248,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id: surface_id,
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
@@ -263,10 +264,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                                 segment.external_id
                             ))?
                         },
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -315,6 +312,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     ctx,
                     ir,
                     Surface {
+                        native_ref: None,
                         id: surface_id,
                         geometry: surface,
                         source_object: Some(SourceObjectAssociation {
@@ -323,10 +321,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                             object_id: crate::identity::source_object_id_checked(format_args!(
                                 "VisibGeom:{native_surface}"
                             ))?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                     },
@@ -424,6 +418,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id: surface_id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
@@ -432,10 +427,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{native_surface}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -567,6 +558,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry,
@@ -580,10 +572,6 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                             )
                         },
                     )?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -665,6 +653,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry,
@@ -678,10 +667,6 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                             )
                         },
                     )?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },

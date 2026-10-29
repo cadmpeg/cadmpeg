@@ -96,6 +96,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     let coedge = CoedgeId::mint("test:model:coedge#collapsed").unwrap();
     if !curveless {
         source.model.curves.push(Curve {
+            native_ref: None,
             id: curve.clone(),
             parameter_range: None,
             source_object: None,
@@ -105,6 +106,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         });
     }
     source.model.edges.push(Edge {
+        native_ref: None,
         id: edge.clone(),
         carrier: EdgeCarrier::unbounded((!curveless).then_some(curve)),
         start: if same_vertex { corner.clone() } else { other },
@@ -112,6 +114,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         tolerance: None,
     });
     source.model.coedges.push(Coedge {
+        native_ref: None,
         id: coedge.clone(),
         owner_loop: source.model.loops[loop_index].id.clone(),
         edge,
@@ -133,6 +136,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     if ring_kind == Ring::AloneWithPcurves {
         let pcurve = PcurveId::mint("test:model:pcurve#collapsed").unwrap();
         source.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve.clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
@@ -194,6 +198,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         };
         let pcurve = PcurveId::mint("test:model:pcurve#collapsed").unwrap();
         source.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve.clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
@@ -225,6 +230,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         let circle_edge = EdgeId::mint("test:model:edge#closed-circle").unwrap();
         let circle_coedge = CoedgeId::mint("test:model:coedge#closed-circle").unwrap();
         source.model.curves.push(Curve {
+            native_ref: None,
             id: circle.clone(),
             parameter_range: None,
             source_object: None,
@@ -239,6 +245,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             )),
         });
         source.model.edges.push(Edge {
+            native_ref: None,
             id: circle_edge.clone(),
             carrier: EdgeCarrier::unbounded(Some(circle)),
             start: corner_vertex.clone(),
@@ -246,6 +253,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             tolerance: None,
         });
         source.model.coedges.push(Coedge {
+            native_ref: None,
             id: circle_coedge.clone(),
             owner_loop: source.model.loops[loop_index].id.clone(),
             edge: circle_edge,
@@ -490,6 +498,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     let seam = EdgeId::mint("test:model:edge#seam").unwrap();
     let pole = EdgeId::mint("test:model:edge#pole").unwrap();
     source.model.edges.push(Edge {
+        native_ref: None,
         id: seam.clone(),
         carrier: EdgeCarrier::unbounded(line.curve().cloned()),
         start: line.start.clone(),
@@ -497,6 +506,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
         tolerance: None,
     });
     source.model.edges.push(Edge {
+        native_ref: None,
         id: pole.clone(),
         carrier: EdgeCarrier::unbounded(None),
         start: line.end.clone(),
@@ -510,6 +520,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     };
     let pcurve = PcurveId::mint("test:model:pcurve#pole").unwrap();
     source.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: pcurve.clone(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::new(
@@ -533,6 +544,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     .map(|(name, edge, sense, pcurve)| {
         let id = CoedgeId::mint(format!("test:model:coedge#{name}")).unwrap();
         source.model.coedges.push(Coedge {
+            native_ref: None,
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge.clone(),
@@ -571,6 +583,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     }
     if beside {
         source.model.loops.push(Loop {
+            native_ref: None,
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).unwrap()),

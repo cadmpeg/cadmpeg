@@ -22,11 +22,11 @@ fn sweep_input() -> (
             draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
                 construction: Some(DesignSweepConstruction {
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: 128,
+                    operation_offset: Some(128),
                     values: [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
                         .map(|value| FiniteReal::new(value).unwrap()),
                     record_indexes: [0; 6],
-                    value_offsets: [128; 6],
+                    value_offsets: Some([128; 6]),
                 }),
                 sweep_profile: None,
             }));
@@ -80,7 +80,7 @@ fn guide_surface_input() -> (
     selected
         .try_set_members(vec![crate::records::identity::Located {
             value: 2788,
-            offset: selected.members()[0].offset,
+            offset: selected.members()[0].offset.expect("retained test source"),
         }])
         .unwrap();
     let mut carrier = profile_group(102, 3);
@@ -88,7 +88,7 @@ fn guide_surface_input() -> (
     carrier
         .try_set_members(vec![crate::records::identity::Located {
             value: 2795,
-            offset: carrier.members()[0].offset,
+            offset: carrier.members()[0].offset.expect("retained test source"),
         }])
         .unwrap();
     let mut guide = profile_group(103, 4);

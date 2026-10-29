@@ -27,7 +27,7 @@ use crate::history::pattern_combine_tool_slots;
 use crate::history::profile_face_group_cardinality_candidates;
 use crate::history::selection::bind_edge_identity_history;
 use crate::history::selection::bind_hole_selection_history;
-use crate::history::selection::complete_compact_edge_treatment_deletions;
+use crate::history::selection::complete_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
 use crate::history::singleton_body_revision_across_state_chain;
 use crate::history::singleton_revised_input_body_across_state_chain;
@@ -48,7 +48,7 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
             AsmDeltaState {
                 id: format!("{parent}-state-{state_id}"),
                 parent: parent.into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -128,7 +128,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         AsmDeltaState {
             id: "selected-state-2".into(),
             parent: "selected".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id: 2,
             version_flag: 1,
             state_flag: 0,
@@ -166,42 +166,42 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         crate::test_support::history::history("selected".into(), 0, None, false, vec![state]);
     let face_selection = crate::records::feature::hole::DesignHoleFaceSelection {
         record_index: 100,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned()).unwrap(),
         asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
             .to_owned()
             .try_into()
             .unwrap(),
-        asset_id_offset: 0,
+        asset_id_offset: Some(0),
         context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
             .to_owned()
             .try_into()
             .unwrap(),
-        context_id_offset: 0,
+        context_id_offset: Some(0),
         identity_record_index: 103,
-        identity_record_offset: 0,
+        identity_record_offset: Some(0),
         primary_identity: 18044,
-        primary_identity_offset: 0,
+        primary_identity_offset: Some(0),
         secondary: None,
         historical_face_candidates: Vec::new(),
         next_record_index: 104,
-        next_byte_offset: 0,
+        next_byte_offset: Some(0),
     };
     let construction = crate::records::feature::hole::DesignHoleConstruction {
         point_record_index: 55,
-        point_record_byte_offset: 0,
+        point_record_byte_offset: Some(0),
         position: crate::test_support::reals([0.0; 3]),
-        position_offset: 0,
+        position_offset: Some(0),
         direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-        direction_offset: 0,
+        direction_offset: Some(0),
         point_parameters: crate::test_support::reals([0.0; 2]),
-        point_parameter_offsets: [0, 0],
+        point_parameter_offsets: Some([0, 0]),
         reference_type: 0,
-        reference_type_offset: 0,
+        reference_type_offset: Some(0),
         tangent_point_data: None,
-        input_records: vec![crate::records::identity::Located {
+        input_records: vec![crate::records::identity::Sourced {
             value: 55,
-            offset: 0,
+            offset: Some(0),
         }],
         face_selection: Some(face_selection),
     };
@@ -240,18 +240,18 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
 #[test]
 fn compact_edge_treatment_deletions_require_exact_cardinality() {
     assert_eq!(
-        complete_compact_edge_treatment_deletions(true, Some(2), &[17, 19]),
+        complete_edge_treatment_deletions(true, Some(2), &[17, 19]),
         [17, 19]
     );
-    assert!(complete_compact_edge_treatment_deletions(true, Some(2), &[17, 18, 19]).is_empty());
-    assert!(complete_compact_edge_treatment_deletions(false, Some(2), &[17, 19]).is_empty());
-    assert!(complete_compact_edge_treatment_deletions(true, None, &[17, 19]).is_empty());
+    assert!(complete_edge_treatment_deletions(true, Some(2), &[17, 18, 19]).is_empty());
+    assert!(complete_edge_treatment_deletions(false, Some(2), &[17, 19]).is_empty());
+    assert!(complete_edge_treatment_deletions(true, None, &[17, 19]).is_empty());
 }
 
 #[test]
 fn compact_transition_fallback_is_scoped_to_each_operand_group() {
     let scope: crate::records::feature::scope::DesignParameterScope =
-        serde_json::from_value(serde_json::json!({
+        crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
             "id": "f3d:test:scope",
             "byte_offset": 0,
             "class_tag": "300",
@@ -270,8 +270,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
             "reference_member_offsets": [14],
             "paired_class_tag": "261",
             "paired_byte_offset": 200
-        }))
-        .expect("Fillet scope");
+        }));
     let identity = |group_record_index, group_member_ordinal, record_index| {
         serde_json::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
             "id": format!("f3d:test:identity#{record_index}"),
@@ -279,15 +278,10 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
             "group_record_index": group_record_index,
             "group_member_ordinal": group_member_ordinal,
             "record_index": record_index,
-            "byte_offset": 0,
             "class_tag": "277",
-            "compact_layout": true,
             "local_id": record_index,
-            "local_id_offset": 23,
             "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
-            "asset_id_offset": 41,
             "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
-            "context_id_offset": 117
         }))
         .expect("edge identity")
     };
@@ -297,7 +291,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
             AsmDeltaState {
                 id: format!("history:state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -393,7 +387,7 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
             AsmDeltaState {
                 id: format!("state-{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -543,22 +537,22 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
     let stream = "f3d:Design/BulkStream.dat";
     let recipe = |record_index, design_id: &str, selector| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
-        byte_offset: 0,
+        byte_offset: Some(0),
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: design_id.into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(ConstructionRecipeSelector {
                 value: selector,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let recipes = [
@@ -605,9 +599,9 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                     } else {
                         409
                     },
-                    design_reference_offset: 25,
+                    design_reference_offset: Some(25),
                     form: 3,
-                    form_offset: 33,
+                    form_offset: Some(33),
                     candidate_faces: Vec::new(),
                     preceding_candidate_faces: Vec::new(),
                     preceding_body_slots: candidates.to_vec(),
@@ -685,7 +679,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
 fn combine_external_identity(
     occurrence_reference: u64,
 ) -> crate::records::feature::combine::DesignCombineExternalBodyIdentity {
-    crate::records::feature::combine::DesignCombineExternalBodyIdentityWire {
+    crate::records::feature::combine::DesignCombineExternalBodyIdentityDraft {
         selector_asset_id: "11111111-1111-4111-8111-111111111111"
             .to_owned()
             .try_into()
@@ -739,9 +733,9 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
         *slot = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::ExtendedReference,
             operation: cadmpeg_ir::features::BooleanKind::Join,
-            operation_offset: 0,
+            operation_offset: Some(0),
             keep_tools: false,
-            keep_tools_offset: 0,
+            keep_tools_offset: Some(0),
             target_record_index: 11,
             tools: crate::records::feature::combine::DesignCombineTools {
                 first: tool(12, 500),
@@ -805,7 +799,7 @@ fn historical_transition_separates_membership_and_revision_changes() {
             AsmDeltaState {
                 id: format!("state-{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -888,7 +882,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
     let mut state = AsmDeltaState {
         id: state_id.clone(),
         parent: history_id,
-        byte_offset: 0,
+        byte_offset: Some(0),
         state_id: 1,
         version_flag: 1,
         state_flag: 0,
@@ -900,7 +894,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
         bulletin_boards: vec![AsmBulletinBoard {
             id: board_id.clone(),
             parent: state_id.clone(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             owner_ref: 0,
             number: 2,
             changes: [7, 5, 6]
@@ -909,7 +903,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                 .map(|(index, old_ref)| AsmEntityChange {
                     id: format!("change-{index}"),
                     parent: board_id.clone(),
-                    byte_offset: u64_from_index(index),
+                    byte_offset: Some(u64_from_index(index)),
                     kind: AsmEntityChangeKind::Update {
                         old: old_ref,
                         new: i64::try_from(index).expect("fixture value fits i64"),
@@ -922,7 +916,7 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                 id: format!("record-{index}"),
                 parent: state_id.clone(),
                 revision_id: None,
-                byte_offset: index,
+                byte_offset: Some(index),
                 framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                     index,
                     name: "edge".into(),
@@ -955,7 +949,9 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
             AsmDeltaState {
                 id: state_id.clone(),
                 parent: "history".into(),
-                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                byte_offset: Some(
+                    u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                ),
                 state_id: 10 - node_index,
                 version_flag: 1,
                 state_flag: 0,
@@ -967,8 +963,9 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                 bulletin_boards: vec![AsmBulletinBoard {
                     id: board_id.clone(),
                     parent: state_id.clone(),
-                    byte_offset: u64::try_from(node_index)
-                        .expect("fixture reference is nonnegative"),
+                    byte_offset: Some(
+                        u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                    ),
                     owner_ref: 0,
                     number: 2,
                     changes: inserted
@@ -977,7 +974,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                         .map(|(index, new_ref)| AsmEntityChange {
                             id: format!("change-{node_index}-{index}"),
                             parent: board_id.clone(),
-                            byte_offset: u64_from_index(index),
+                            byte_offset: Some(u64_from_index(index)),
                             kind: AsmEntityChangeKind::Insert { new: *new_ref },
                         })
                         .collect(),
@@ -986,8 +983,9 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                     id: format!("record-{node_index}"),
                     parent: state_id,
                     revision_id: None,
-                    byte_offset: u64::try_from(node_index)
-                        .expect("fixture reference is nonnegative"),
+                    byte_offset: Some(
+                        u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                    ),
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                         index: 0,
                         name: "End-of-ASM-History-Section".into(),
@@ -1063,7 +1061,7 @@ fn insert_only_history_rejects_gaps_and_updates() {
     let mut state = AsmDeltaState {
         id: "state".into(),
         parent: "history".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         state_id: 1,
         version_flag: 1,
         state_flag: 0,
@@ -1077,7 +1075,7 @@ fn insert_only_history_rejects_gaps_and_updates() {
             id: "record".into(),
             parent: "state".into(),
             revision_id: None,
-            byte_offset: 0,
+            byte_offset: Some(0),
             framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                 index: 0,
                 name: "End-of-ASM-History-Section".into(),
@@ -1090,20 +1088,20 @@ fn insert_only_history_rejects_gaps_and_updates() {
     let board = AsmBulletinBoard {
         id: "board".into(),
         parent: state.id.clone(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         owner_ref: 0,
         number: 2,
         changes: vec![
             AsmEntityChange {
                 id: "gap-a".into(),
                 parent: "board".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 kind: AsmEntityChangeKind::Insert { new: 1 },
             },
             AsmEntityChange {
                 id: "gap-b".into(),
                 parent: "board".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 kind: AsmEntityChangeKind::Insert { new: 3 },
             },
         ],
@@ -1129,7 +1127,7 @@ fn materialized_record_table_normalizes_revision_references() {
         AsmDeltaState {
             id: state_id.clone(),
             parent: "history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id: 1,
             version_flag: 1,
             state_flag: 0,
@@ -1141,13 +1139,13 @@ fn materialized_record_table_normalizes_revision_references() {
             bulletin_boards: vec![AsmBulletinBoard {
                 id: board_id.clone(),
                 parent: state_id.clone(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 owner_ref: 0,
                 number: 2,
                 changes: vec![AsmEntityChange {
                     id: "change".into(),
                     parent: board_id,
-                    byte_offset: 0,
+                    byte_offset: Some(0),
                     kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
                 }],
             }],
@@ -1155,7 +1153,7 @@ fn materialized_record_table_normalizes_revision_references() {
                 id: "record".into(),
                 parent: state_id,
                 revision_id: Some(2),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                     index: 0,
                     name: "edge".into(),
@@ -1240,7 +1238,7 @@ fn qualified_history_marker_remains_an_archived_record() {
         AsmDeltaState {
             id: state_id.clone(),
             parent: "history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id: 1,
             version_flag: 1,
             state_flag: 0,
@@ -1252,13 +1250,13 @@ fn qualified_history_marker_remains_an_archived_record() {
             bulletin_boards: vec![AsmBulletinBoard {
                 id: board_id.clone(),
                 parent: state_id.clone(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 owner_ref: 0,
                 number: 2,
                 changes: vec![AsmEntityChange {
                     id: "change".into(),
                     parent: board_id,
-                    byte_offset: 0,
+                    byte_offset: Some(0),
                     kind: AsmEntityChangeKind::Update { old: 2, new: 1 },
                 }],
             }],
@@ -1266,7 +1264,7 @@ fn qualified_history_marker_remains_an_archived_record() {
                 id: "record".into(),
                 parent: state_id,
                 revision_id: Some(2),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                     index: 0,
                     name: "End-of-ASM-History-Section".into(),
@@ -1330,7 +1328,9 @@ fn reverse_history_builds_complete_entity_version_maps() {
             AsmDeltaState {
                 id: format!("state-{node_index}"),
                 parent: "history".into(),
-                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                byte_offset: Some(
+                    u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                ),
                 state_id: 10 - node_index,
                 version_flag: 1,
                 state_flag: 0,
@@ -1342,15 +1342,17 @@ fn reverse_history_builds_complete_entity_version_maps() {
                 bulletin_boards: vec![AsmBulletinBoard {
                     id: board_id.clone(),
                     parent: format!("state-{node_index}"),
-                    byte_offset: u64::try_from(node_index)
-                        .expect("fixture reference is nonnegative"),
+                    byte_offset: Some(
+                        u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                    ),
                     owner_ref: 0,
                     number: 2,
                     changes: vec![AsmEntityChange {
                         id: format!("change-{node_index}"),
                         parent: board_id,
-                        byte_offset: u64::try_from(node_index)
-                            .expect("fixture reference is nonnegative"),
+                        byte_offset: Some(
+                            u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                        ),
                         kind: match (old_ref, new_ref) {
                             (Some(old), Some(new)) => AsmEntityChangeKind::Update { old, new },
                             (None, Some(new)) => AsmEntityChangeKind::Insert { new },
@@ -1377,7 +1379,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
             id: format!("record-{revision_id}"),
             parent: states[0].id.clone(),
             revision_id: Some(revision_id),
-            byte_offset: 0,
+            byte_offset: Some(0),
             framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                 index: u64::try_from(revision_id).expect("fixture reference is nonnegative") - 3,
                 name: "edge".into(),

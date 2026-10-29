@@ -120,6 +120,8 @@ fn coordinate_system_record(
             native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: format!("{lane_id}-name"),
                 parent: lane_id.into(),
                 ordinal: 0,
@@ -190,7 +192,7 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
         Some(&"125mm,-250mm,500mm".to_string())
     );
     assert!(matches!(
-        crate::history::project::project_features(&histories).unwrap()[0].evaluation.definition(),
+        crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap()[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin().get(), Point3 {
                 x: 125.0,
                 y: -250.0,

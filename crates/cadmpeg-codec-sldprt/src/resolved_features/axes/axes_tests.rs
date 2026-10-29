@@ -944,6 +944,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
 #[test]
 fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
     let cylinder = |id: &str, origin: Point3| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1092,6 +1093,8 @@ fn revolution_consumes_the_preceding_profile_object() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 100,
+                feature_ref: None,
                 id: "profile-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -1100,6 +1103,8 @@ fn revolution_consumes_the_preceding_profile_object() {
                 value: "profile".into(),
             },
             FeatureInputName {
+                sequence: 200,
+                feature_ref: None,
                 id: "revolution-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -1108,6 +1113,8 @@ fn revolution_consumes_the_preceding_profile_object() {
                 value: "revolution".into(),
             },
             FeatureInputName {
+                sequence: 220,
+                feature_ref: None,
                 id: "cut-profile-name".into(),
                 parent: "lane".into(),
                 ordinal: 2,
@@ -1116,6 +1123,8 @@ fn revolution_consumes_the_preceding_profile_object() {
                 value: "cut-profile".into(),
             },
             FeatureInputName {
+                sequence: 240,
+                feature_ref: None,
                 id: "cut-name".into(),
                 parent: "lane".into(),
                 ordinal: 3,

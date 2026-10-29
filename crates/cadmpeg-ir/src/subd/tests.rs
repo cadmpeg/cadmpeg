@@ -16,6 +16,7 @@ use crate::CadIr;
 fn subd_round_trip_and_directed_ring_validation() {
     let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
+        native_ref: None,
         id: SubdId::mint("synthetic:subd:surface#0").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         source_object: None,

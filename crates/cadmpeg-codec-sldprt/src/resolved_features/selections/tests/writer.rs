@@ -14,7 +14,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn semantic_writer_rejects_compact_edge_selection_edits() {
+fn semantic_writer_synthesizes_compact_edge_selection_edits() {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let reference_arena = cadmpeg_core::decode::DecodeArena::new();
@@ -71,7 +71,7 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
                     id: "sldprt:test:edge-selection#0".into(),
                     parent: lane.id.clone(),
                     ordinal: 0,
-                    offset: cadmpeg_core::decode::u64_from_index(marker),
+                    sequence: 0,
                     object_name_ref: lane.names[0].id.clone(),
                     feature_ref,
                     local_edge_ids: vec![7],
@@ -96,22 +96,16 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let reason =
+        crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes a compact edge selection"),
-        "{error}"
+        reason.contains("changes a compact edge selection"),
+        "{reason}"
     );
 }
 
 #[test]
-fn semantic_writer_rejects_compact_surface_selection_edits() {
+fn semantic_writer_synthesizes_compact_surface_selection_edits() {
     use cadmpeg_ir::features::{
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination,
     };
@@ -161,6 +155,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
                     id: "sldprt:test:surface-selection#0".into(),
                     parent: lane.id.clone(),
                     ordinal: 0,
+                    sequence: 0,
                     offset: cadmpeg_core::decode::u64_from_index(marker),
                     selector: 0,
                     kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -203,16 +198,10 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
         updated_feature_evaluation.set_definition(updated_feature_definition);
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    let reason =
+        crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes a compact surface selection"),
-        "{error}"
+        reason.contains("changes a compact surface selection"),
+        "{reason}"
     );
 }

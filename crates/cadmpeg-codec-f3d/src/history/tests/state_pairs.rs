@@ -113,7 +113,7 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
             AsmDeltaState {
                 id: format!("{history}:state#{state_id}"),
                 parent: history.into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -190,7 +190,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             AsmDeltaState {
                 id: format!("{history}:asm-delta-state#{state_id}"),
                 parent: history.into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -237,6 +237,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         200,
     );
     let binding = DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
+        map_ordinal: 0,
         component_owner: None,
         component_owner_unresolved: false,
         id: format!("{stream}:design-body-binding#0"),
@@ -288,9 +289,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
 
             references: vec![DesignBodyRecipeReference {
                 design_reference: 1,
-                design_reference_offset: 25,
+                design_reference_offset: Some(25),
                 form: 4,
-                form_offset: 33,
+                form_offset: Some(33),
                 candidate_faces: vec![
                     FaceId::mint("f3d:brep/second.smbh/brep:entity#1").expect("identity grammar")
                 ],
@@ -321,7 +322,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
             AsmDeltaState {
                 id: format!("history:state-{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -633,7 +634,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
             AsmDeltaState {
                 id: "state".into(),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id: 1,
                 version_flag: 1,
                 state_flag: 0,
@@ -705,7 +706,7 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
 
     let missing_carrier = crate::test_support::history::history(
         history.id.clone(),
-        history.byte_offset,
+        history.byte_offset.expect("retained test source"),
         history.preamble,
         false,
         vec![
@@ -756,7 +757,7 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
         id: format!("record-{index}-{name}"),
         parent: "state".into(),
         revision_id,
-        byte_offset: 0,
+        byte_offset: Some(0),
         framing: crate::history_records::AsmHistoryRecordFraming::Framed {
             index,
             name: name.into(),
@@ -774,7 +775,7 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
                 AsmDeltaState {
                     id: "state".into(),
                     parent: "history".into(),
-                    byte_offset: 0,
+                    byte_offset: Some(0),
                     state_id: 1,
                     version_flag: 1,
                     state_flag: 0,
@@ -886,12 +887,13 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
 
     let reference = |candidate_faces, alternate_selector_faces| {
         crate::records::dimensions::DesignRecipeReference {
+            clause_index: 0,
             selector: 1,
-            selector_offset: 0,
+            selector_offset: Some(0),
             token: "1".into(),
-            token_offset: 0,
+            token_offset: Some(0),
             design_reference: 1,
-            design_reference_offset: 0,
+            design_reference_offset: Some(0),
             candidate_faces,
             candidate_edges: Vec::new(),
             alternate_selector_faces,
@@ -970,7 +972,7 @@ fn bound_state_pair_keeps_repeated_numeric_ids_in_one_history() {
             AsmDeltaState {
                 id: format!("{parent}:state-{state_id}"),
                 parent: parent.into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -1072,7 +1074,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
             AsmDeltaState {
                 id: format!("state-{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -1271,6 +1273,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     let id = |slot| format!("f3d:brep:entity#{slot}");
     let mut brep = cadmpeg_asm::brep::AsmBrep::default();
     brep.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint(id(1)).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
@@ -1280,6 +1283,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         visible: None,
     });
     brep.regions.push(Region {
+        native_ref: None,
         id: RegionId::mint(id(2)).expect("identity grammar"),
         body: BodyId::mint(id(1)).expect("identity grammar"),
         shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
@@ -1290,6 +1294,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         FaceId::mint(id(4)).expect("identity grammar"),
     ));
     brep.faces.push(Face {
+        native_ref: None,
         id: FaceId::mint(id(4)).expect("identity grammar"),
         shell: ShellId::mint(id(3)).expect("identity grammar"),
         surface: SurfaceId::mint(id(20)).expect("identity grammar"),
@@ -1302,6 +1307,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         tolerance: None,
     });
     brep.loops.push(Loop {
+        native_ref: None,
         id: LoopId::mint(id(5)).expect("identity grammar"),
         face: FaceId::mint(id(4)).expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1313,6 +1319,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ),
     });
     brep.coedges.push(Coedge {
+        native_ref: None,
         id: CoedgeId::mint(id(6)).expect("identity grammar"),
         owner_loop: LoopId::mint(id(5)).expect("identity grammar"),
         edge: EdgeId::mint(id(7)).expect("identity grammar"),
@@ -1322,6 +1329,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         use_curve: None,
     });
     brep.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::mint(id(7)).expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
             CurveId::mint(id(21)).expect("identity grammar"),
@@ -1332,6 +1340,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     });
     for slot in [8, 9] {
         brep.vertices.push(Vertex {
+            native_ref: None,
             id: VertexId::mint(id(slot)).expect("identity grammar"),
             point: PointId::mint(id(slot + 20)).expect("identity grammar"),
             tolerance: None,
@@ -1502,12 +1511,13 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         [FaceId::mint(id(4)).expect("identity grammar")]
     );
     let mut reference = crate::records::dimensions::DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 0,
+        selector_offset: Some(0),
         token: "1".into(),
-        token_offset: 0,
+        token_offset: Some(0),
         design_reference: 1,
-        design_reference_offset: 1,
+        design_reference_offset: Some(1),
         candidate_faces: vec![FaceId::mint(id(4)).expect("identity grammar")],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -1515,7 +1525,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     };
     let boundary_state = |state_id: i64, byte_offset: u64| AsmDeltaState {
         id: format!("f3d:test:asm-delta-state#{byte_offset:010}"),
-        byte_offset,
+        byte_offset: Some(byte_offset),
         ..change_state(state_id)
     };
     let result_state = boundary_state(2, 20);
@@ -1557,7 +1567,12 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     };
     let face_boundaries = face_boundaries.into_records();
     let stored = |state: &AsmDeltaState| AsmFaceBoundary {
-        id: AsmFaceBoundary::identity(&state.id, state.byte_offset, 4).unwrap(),
+        id: AsmFaceBoundary::identity(
+            &state.id,
+            state.byte_offset.expect("retained test source"),
+            4,
+        )
+        .unwrap(),
         parent: state.id.clone(),
         face_slot: boundary.face_slot,
         loops: boundary.loops.clone(),
@@ -1740,7 +1755,7 @@ fn change_state(state_id: i64) -> crate::history_records::AsmDeltaState {
     AsmDeltaState {
         id: format!("state-{state_id}"),
         parent: "history".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         state_id,
         version_flag: 1,
         state_flag: 0,

@@ -44,8 +44,10 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(34.0)
-                            .expect("nonzero length fixture")
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(34.0)
+                                .expect("nonzero length fixture")
+                        )
                     },
                     draft: None,
                 }
@@ -199,6 +201,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         };
         scan.surfaces.parameters.push(parameter);
         let plane = |id, y, normal| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -215,6 +218,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             plane(31, 4.0, Vector3::new(0.0, 1.0, 0.0)),
             plane(32, -4.0, Vector3::new(0.0, -1.0, 0.0)),
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#33".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -234,8 +238,9 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                            .expect("nonzero length fixture"),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture"))
+                        .into(),
                     },
                     draft: None,
                 },
@@ -287,6 +292,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             .rows
             .push(row(34, crate::surface::SurfaceKind::Plane));
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#34".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -307,6 +313,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             .rows
             .push(row(35, crate::surface::SurfaceKind::Cylinder));
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#35".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -377,8 +384,10 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
                 ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                                .expect("nonzero length fixture"),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                                    .expect("nonzero length fixture")
+                            ),
                         },
                         draft: None,
                     },

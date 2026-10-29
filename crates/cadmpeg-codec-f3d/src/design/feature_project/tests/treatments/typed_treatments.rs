@@ -11,6 +11,7 @@ use crate::records::feature::scope::DesignParameterScopeDraft;
 use crate::records::feature::scope::DesignScopePayloadMut;
 use crate::records::identity::Located;
 use crate::records::identity::ReferenceRun;
+use crate::records::identity::Sourced;
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::parameters::DesignParameterOwnerWire;
 use crate::records::parameters::DesignParameterSource;
@@ -64,7 +65,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             .into_record("Design/BulkStream.dat", 0)
             .unwrap();
         {
-            let mut wire = DesignParameterOwnerWire::from(owner.clone());
+            let mut wire = DesignParameterOwnerWire::try_from(owner.clone()).unwrap();
             wire.id = format!("f3d:native/BulkStream.dat:owner#{record_index}");
             wire.record_index = record_index;
             wire.scope_record_index = scope_record_index;
@@ -122,25 +123,25 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         });
         slot.point = Some(DesignHoleConstruction {
             point_record_index: 378,
-            point_record_byte_offset: 10,
+            point_record_byte_offset: Some(10),
             position: crate::test_support::reals([1.25, -2.5, 3.75]),
-            position_offset: 35,
+            position_offset: Some(35),
             direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-            direction_offset: 59,
+            direction_offset: Some(59),
             point_parameters: crate::test_support::reals([0.125, -0.25]),
-            point_parameter_offsets: [83, 91],
+            point_parameter_offsets: Some([83, 91]),
             reference_type: 19,
-            reference_type_offset: 99,
+            reference_type_offset: Some(99),
             tangent_point_data: Some(DesignHoleTangentPoint {
                 prefix: 0,
-                data: Located {
+                data: Sourced {
                     value: crate::test_support::reals([-1.0, -1.0, -1.0]),
-                    offset: 104,
+                    offset: Some(104),
                 },
             }),
-            input_records: vec![Located {
+            input_records: vec![Sourced {
                 value: 378,
-                offset: 129,
+                offset: Some(129),
             }],
             face_selection: None,
         });
@@ -234,31 +235,36 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .unwrap()
     };
     let chamfer_edge_group = construction_group(70, 1);
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = &scopes;
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &[
-                        parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
-                        parameter(54, 55, "Distance 1", "d2", "1 mm", 0.1),
-                        parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
-                    ],
-                    owners: &[
-                        owner(44, 12, 45, 0),
-                        owner(54, 22, 55, 0),
-                        owner(64, 22, 65, 1),
-                    ],
-                    scopes,
-                    construction_groups: std::slice::from_ref(&chamfer_edge_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &scopes;
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[
+                    parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
+                    parameter(54, 55, "Distance 1", "d2", "1 mm", 0.1),
+                    parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
+                ],
+                owners: &[
+                    owner(44, 12, 45, 0),
+                    owner(54, 22, 55, 0),
+                    owner(64, 22, 65, 1),
+                ],
+                scopes,
+                construction_groups: std::slice::from_ref(&chamfer_edge_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
 
     let fillet = features
         .iter()
@@ -275,7 +281,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             edges: EdgeSelection::Native(selection),
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
-        }] if selection == &scopes[0].id && radius.get() == 5.0
+        }] if selection == &scopes[0].id && ir.dimension_value(radius).unwrap().get() == 5.0
     ));
     let chamfer = features
         .iter()
@@ -287,7 +293,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             if matches!(groups.as_slice(), [ChamferGroup {
                 edges: EdgeSelection::Native(selection),
                 spec: ChamferSpec::TwoDistances { first, second },
-            }] if selection == &chamfer_edge_group.id && first.get() == 1.0 && second.get() == 2.0)
+            }] if selection == &chamfer_edge_group.id && ir.dimension_value(first).unwrap().get() == 1.0 && ir.dimension_value(second).unwrap().get() == 2.0)
     ));
 
     let mut distance_angle_parameters = [
@@ -304,30 +310,35 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     distance_angle_parameters[1]
         .try_set_unit_value("deg".to_owned())
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[1]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &distance_angle_parameters,
-                    owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
-                    scopes,
-                    construction_groups: std::slice::from_ref(&chamfer_edge_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[1]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &distance_angle_parameters,
+                owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+                scopes,
+                construction_groups: std::slice::from_ref(&chamfer_edge_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
                 ..
-            }] if distance.get() == 1.6 && angle.get() == 25.0_f64.to_radians())
+            }] if ir.dimension_value(distance).unwrap().get() == 1.6 && ir.dimension_value(angle).unwrap().get() == 25.0_f64.to_radians())
     ));
 
     distance_angle_parameters[0]
@@ -335,7 +346,12 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             DesignParameterSource::new(
                 "leftDistance".into(),
                 distance_angle_parameters[0].owner_record_index(),
-                distance_angle_parameters[0].family_discriminator(),
+                distance_angle_parameters[0]
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
@@ -345,35 +361,45 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             DesignParameterSource::new(
                 "rotateAngle".into(),
                 distance_angle_parameters[1].owner_record_index(),
-                distance_angle_parameters[1].family_discriminator(),
+                distance_angle_parameters[1]
+                    .family_discriminator()
+                    .map(|located| crate::records::identity::Located {
+                        value: located.value,
+                        offset: located.offset.expect("retained test discriminator"),
+                    }),
             )
             .unwrap(),
         )
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[1]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &distance_angle_parameters,
-                    owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
-                    scopes,
-                    construction_groups: std::slice::from_ref(&chamfer_edge_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[1]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &distance_angle_parameters,
+                owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+                scopes,
+                construction_groups: std::slice::from_ref(&chamfer_edge_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::DistanceAngle { distance, angle },
                 ..
-            }] if distance.get() == 1.6 && angle.get() == 25.0_f64.to_radians())
+            }] if ir.dimension_value(distance).unwrap().get() == 1.6 && ir.dimension_value(angle).unwrap().get() == 25.0_f64.to_radians())
     ));
 
     let mut hole_parameters = [
@@ -384,27 +410,32 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     hole_parameters[2]
         .try_set_unit_value("deg".to_owned())
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[2]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &hole_parameters,
-                    owners: &[
-                        owner(94, 32, 95, 0),
-                        owner(104, 32, 105, 1),
-                        owner(114, 32, 115, 2),
-                    ],
-                    scopes,
-                    face_operands: &hole_face_operands,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[2]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &hole_parameters,
+                owners: &[
+                    owner(94, 32, 95, 0),
+                    owner(104, 32, 105, 1),
+                    owner(114, 32, 115, 2),
+                ],
+                scopes,
+                face_operands: &hole_face_operands,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
@@ -422,31 +453,36 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             && placements == &vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
                 position: cadmpeg_ir::features::FinitePoint3::new(Point3 { x: 12.5, y: -25.0, z: 37.5 }).unwrap(),
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3 { x: 0.0, y: 0.0, z: 1.0 }).unwrap(),
-            }]) && actual_diameter.get() == 4.0 && actual_length.get() == 10.0)));
+            }]) && ir.dimension_value(actual_diameter).unwrap().get() == 4.0 && ir.dimension_value(actual_length).unwrap().get() == 10.0)));
 
     hole_parameters[2]
         .try_set_evaluated_value(118.0_f64.to_radians())
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[2]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &hole_parameters,
-                    owners: &[
-                        owner(94, 32, 95, 0),
-                        owner(104, 32, 105, 1),
-                        owner(114, 32, 115, 2),
-                    ],
-                    scopes,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[2]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &hole_parameters,
+                owners: &[
+                    owner(94, 32, 95, 0),
+                    owner(104, 32, 105, 1),
+                    owner(114, 32, 115, 2),
+                ],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -455,35 +491,40 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::SimpleDrilled { drill_point_angle },
                 ..
-            },) if drill_point_angle.get() == 118.0_f64.to_radians())));
+            },) if ir.dimension_value(drill_point_angle).unwrap().get() == 118.0_f64.to_radians())));
 
     let mut counterbore_parameters = hole_parameters.to_vec();
     counterbore_parameters.extend([
         parameter(124, 125, "CBDepth", "d7", "3 mm", 0.3),
         parameter(134, 135, "CBDiameter", "d8", "8 mm", 0.8),
     ]);
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[2]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &counterbore_parameters,
-                    owners: &[
-                        owner(94, 32, 95, 0),
-                        owner(104, 32, 105, 1),
-                        owner(114, 32, 115, 2),
-                        owner(124, 32, 125, 3),
-                        owner(134, 32, 135, 4),
-                    ],
-                    scopes,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[2]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &counterbore_parameters,
+                owners: &[
+                    owner(94, 32, 95, 0),
+                    owner(104, 32, 105, 1),
+                    owner(114, 32, 115, 2),
+                    owner(124, 32, 125, 3),
+                    owner(134, 32, 135, 4),
+                ],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -496,33 +537,38 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     drill_point_angle,
                 },
                 ..
-            },) if (drill_point_angle.get() == 118.0_f64.to_radians()) && actual_diameter.get() == 8.0 && actual_depth.get() == 3.0)));
+            },) if (ir.dimension_value(drill_point_angle).unwrap().get() == 118.0_f64.to_radians()) && ir.dimension_value(actual_diameter).unwrap().get() == 8.0 && ir.dimension_value(actual_depth).unwrap().get() == 3.0)));
 
     counterbore_parameters[2]
         .try_set_evaluated_value(std::f64::consts::PI)
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[2]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &counterbore_parameters,
-                    owners: &[
-                        owner(94, 32, 95, 0),
-                        owner(104, 32, 105, 1),
-                        owner(114, 32, 115, 2),
-                        owner(124, 32, 125, 3),
-                        owner(134, 32, 135, 4),
-                    ],
-                    scopes,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[2]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &counterbore_parameters,
+                owners: &[
+                    owner(94, 32, 95, 0),
+                    owner(104, 32, 105, 1),
+                    owner(114, 32, 115, 2),
+                    owner(124, 32, 125, 3),
+                    owner(134, 32, 135, 4),
+                ],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -534,61 +580,71 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     depth: actual_depth,
                 },
                 ..
-            },) if actual_diameter.get() == 8.0 && actual_depth.get() == 3.0)));
+            },) if ir.dimension_value(actual_diameter).unwrap().get() == 8.0 && ir.dimension_value(actual_depth).unwrap().get() == 3.0)));
 
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[1]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &[
-                        parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1),
-                        parameter(64, 65, "rightDistance", "d3", "2 mm", 0.2),
-                    ],
-                    owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
-                    scopes,
-                    construction_groups: std::slice::from_ref(&chamfer_edge_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[1]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[
+                    parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1),
+                    parameter(64, 65, "rightDistance", "d3", "2 mm", 0.2),
+                ],
+                owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+                scopes,
+                construction_groups: std::slice::from_ref(&chamfer_edge_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::TwoDistances { first, second },
                 ..
-            }] if first.get() == 1.0 && second.get() == 2.0)
+            }] if ir.dimension_value(first).unwrap().get() == 1.0 && ir.dimension_value(second).unwrap().get() == 2.0)
     ));
 
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&scopes[1]);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
-                    owners: &[owner(54, 22, 55, 0)],
-                    scopes,
-                    construction_groups: std::slice::from_ref(&chamfer_edge_group),
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&scopes[1]);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
+                owners: &[owner(54, 22, 55, 0)],
+                scopes,
+                construction_groups: std::slice::from_ref(&chamfer_edge_group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
             if matches!(groups.as_slice(), [ChamferGroup {
                 spec: ChamferSpec::Distance { distance },
                 ..
-            }] if distance.get() == 1.0)
+            }] if ir.dimension_value(distance).unwrap().get() == 1.0)
     ));
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
@@ -714,26 +770,31 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = std::slice::from_ref(&chamfer_scope);
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            crate::design::feature_project::project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    native: &[
-                        parameter(74, 75, "Distance", "d5", "2 mm", 0.2),
-                        parameter(84, 85, "Distance", "d4", "2.5 mm", 0.25),
-                    ],
-                    owners: &[owner(74, 22, 75, 1), owner(84, 22, 85, 0)],
-                    scopes,
-                    construction_groups: &construction_groups,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let crate::design::feature_project::ProjectedParameterDesign {
+        features,
+        parameters,
+        ..
+    } = crate::test_support::with_decode_context(|ctx| {
+        let scopes = std::slice::from_ref(&chamfer_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[
+                    parameter(74, 75, "Distance", "d5", "2 mm", 0.2),
+                    parameter(84, 85, "Distance", "d4", "2.5 mm", 0.25),
+                ],
+                owners: &[owner(74, 22, 75, 1), owner(84, 22, 85, 0)],
+                scopes,
+                construction_groups: &construction_groups,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters;
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
@@ -746,6 +807,6 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     edges: EdgeSelection::Native(selection),
                     spec: ChamferSpec::Distance { distance: actual_distance_2 },
                 },
-            ] if (selection == &construction_groups[0].id) && actual_distance.get() == 2.5 && actual_distance_2.get() == 2.0)
+            ] if (selection == &construction_groups[0].id) && ir.dimension_value(actual_distance).unwrap().get() == 2.5 && ir.dimension_value(actual_distance_2).unwrap().get() == 2.0)
     ));
 }

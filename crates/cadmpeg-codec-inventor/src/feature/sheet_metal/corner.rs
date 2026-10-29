@@ -276,7 +276,18 @@ pub(in crate::feature) fn project(
         else {
             continue;
         };
-        let parameters = values.parameters()?;
+        let parameters = values
+            .parameters()?
+            .into_iter()
+            .map(|(name, value)| {
+                (
+                    name,
+                    cadmpeg_ir::features::Dimension::Literal(
+                        cadmpeg_ir::features::Expression::text(value),
+                    ),
+                )
+            })
+            .collect();
         item.feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::Native {
                 parameters: target,

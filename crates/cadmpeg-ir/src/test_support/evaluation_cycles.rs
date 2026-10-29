@@ -27,6 +27,7 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
         (other.clone(), Vector3::new(0.0, -1.0, 0.0)),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -40,6 +41,7 @@ pub(crate) fn cyclic_model() -> (CadIr, CurveId, SurfaceId) {
         });
     }
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(

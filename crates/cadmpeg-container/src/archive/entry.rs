@@ -135,7 +135,7 @@ pub(super) fn read(
     )))
 }
 
-fn local_data_start(
+pub(super) fn local_data_start(
     bytes: &[u8],
     start: u64,
     directory: u64,
@@ -144,6 +144,15 @@ fn local_data_start(
     if signature_at(bytes, start) != Some(*b"PK\x03\x04") {
         return Err("invalid ZIP local header signature");
     }
+    local_data_boundary(bytes, start, directory, compressed)
+}
+
+pub(super) fn local_data_boundary(
+    bytes: &[u8],
+    start: u64,
+    directory: u64,
+    compressed: u64,
+) -> Result<u64, &'static str> {
     let fixed_end = start
         .checked_add(cadmpeg_core::decode::u64_from_index(local_header::LEN))
         .filter(|end| *end <= directory)

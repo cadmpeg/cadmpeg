@@ -31,6 +31,7 @@ fn procedural_surface_points_read_the_callers_index() {
     let unknown_id = SurfaceId::mint("test:model:entity#indexed-unknown").unwrap();
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -46,6 +47,7 @@ fn procedural_surface_points_read_the_callers_index() {
         |surface: &SurfaceId, construction: &str, definition: ProceduralSurfaceDefinition| {
             let construction = ProceduralSurfaceId::mint(construction).unwrap();
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: construction.clone(),

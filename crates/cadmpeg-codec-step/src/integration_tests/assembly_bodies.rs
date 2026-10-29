@@ -9,7 +9,6 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -54,9 +53,8 @@ fn occurrence(name: &str, parent: Option<&str>, x: f64) -> Occurrence {
             }
         }),
         ordinal: 0,
-        transform: translation(x),
+        transform: Some(translation(x)),
         linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
         name: Some(name.into()),
         visible: None,
         link: None,
@@ -306,7 +304,7 @@ fn assert_assembly(claim_first: bool, body_placement: bool) {
                 .iter()
                 .find(|occurrence| occurrence.name.as_deref() == Some(name))
                 .expect("decoded child occurrence");
-            assert_eq!(occurrence.transform, translation(x));
+            assert_eq!(occurrence.transform, Some(translation(x)));
         }
         expected.model.occurrences.clear();
         actual.model.occurrences.clear();

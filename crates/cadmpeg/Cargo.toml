@@ -95,3 +95,11 @@ cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [lints]
 workspace = true
+
+[[test]]
+name = "document_contract"
+path = "tests/document_contract/mod.rs"
+
+[[test]]
+name = "contract"
+path = "tests/contract/mod.rs"

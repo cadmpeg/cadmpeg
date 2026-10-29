@@ -11,27 +11,31 @@ Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may u
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
 independently optional.
 
-The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
-retained document write regenerates the ZIP container deterministically, writes `Document.xml`
-first, preserves the physical order of the retained side entries, preserves every unedited XML
-record and every named side entry, and serializes checked
-leaf-value edits with XML escaping. It writes the band the retained `Document.xml` already
-declares, so a preserving write reproduces schemas 2 and 3 as well. An edit to a nested value
-without a typed serializer is refused rather than flattening or discarding children.
-Retained-document transcoding across bands is explicitly refused: the writer regenerates no
-`Document.xml`, so an explicit `fcstd:schema-4` target on a schema-2 or schema-3 source is refused
-by name rather than emitted. A schema-2 object-input edit that requires recomputation is refused because its `Feature`
-declaration has no persisted pending-recompute flag. Document and cosmetic label edits remain
-available. A preserving write of a source whose retained document graph is
-unusable is refused with the source's own dialect and the catalog, never silently rewritten to
-schema 4.
+The synthesis catalog contains `fcstd:schema-2`, `fcstd:schema-3`, and
+`fcstd:schema-4`; schema 4 is the default for authored or foreign documents.
+An unchanged, represented source with its fidelity record can use the existing
+patched archive path. The document-local digest, typed native validation, and
+`SourceFidelity::unrepresented()` guard admit that optimization. A changed document,
+an unavailable layout, an opaque source record, or a patch that cannot express the
+edit selects synthesis and reports `PatchDeclined` where applicable.
 
-Source-less construction declares application objects, runtime types, ordered dependencies,
-recursive typed property values, and named side entries. New object declarations carry
-`Touched="1"` so ordinary native recomputation executes their construction. It materializes the
-same native graph used by decoded documents before encoding. This permits general extension-object retention and
-parametric core objects without requiring a source archive; unsupported semantics must be supplied
-as named records or rejected, never silently approximated.
+Synthesis generates `Document.xml`, `GuiDocument.xml`, and exact-shape side entries
+from CADIR. Neutral arenas own every value with a neutral form. The writer's typed
+native records supply application values that have no neutral form; retained XML,
+archive bytes, and unreadable payloads never supply synthesized content. Vendor
+application objects with independently typed properties remain writable. An object
+with an unreadable property is omitted, and independent neutral geometry remains
+available for export. Unsupported arenas and entities produce export losses; only
+malformed input, capacity limits, and an unresolved target can refuse a write.
+
+Source-less construction and synthesis share the structured document writer.
+Typed property value trees include parent indices, so nested values are rebuilt
+with XML escaping rather than copied or flattened. JSON-mode Python properties
+are decoded into editable `decoded_json` values and regenerated without executing
+Python. Pickles and other opaque embedded or side payloads are unrepresented:
+their served classes enter source fidelity and force synthesis. Geometry requests
+retain typed native design records; this permits patching only when every source
+record is typed, rather than when its filename and bytes were retained.
 
 Schema 2 has one `Features` declaration section and one `FeatureData` value section. Schema 3 and
 schema 4 have one `Objects` declaration section and one `ObjectData` value section. The section and
@@ -84,7 +88,7 @@ this stream; central-directory order does not.
 payloads belong to its local reader and follow it. Independent named records can be skipped
 without advancing the request stream. A retained archive keeps these physical order relations,
 including records whose internal request grammar is opaque. An identity-sorted native record
-arena does not define member order; local-header positions in the physical ledger do.
+arena does not define member order; local-header positions do.
 
 A source-less document uses its emitted property order as its request order. Named payloads for
 these requests precede `GuiDocument.xml`; its payloads follow it in GUI request order. Unreferenced
@@ -192,6 +196,13 @@ has no other element children, and each direct `Sub` is a leaf. Other carrier na
 `sub` and `count` carriers are invalid. A property type outside this registry retains its XML but
 does not infer link targets from nested tag names.
 
+An empty local `value` is a readable empty object name. With one or more
+subelement names it is a link with no object and those ordered subelement
+names. With no subelement it is an empty local link slot. A local link-list
+retains an empty slot between its neighboring values. An external `XLink`
+retains the exact `file` text; an empty `name` is an absent external object.
+Neither empty form denotes an unreadable value slot.
+
 ## 4. Identity and retention
 
 Every document object has a stable identity composed from the document identity and its persisted
@@ -213,20 +224,7 @@ are millimetres. Angles retain whether the native value is radians or degrees. P
 placements, orientation, tolerance values, and display-unit settings are distinct fields; display
 units do not rescale model geometry.
 
-## 6. Byte accounting
-
-The physical archive and every decompressed logical entry each have an independent byte ledger.
-Ledger spans are ordered, non-overlapping, and cover the complete stream.
-
-Physical ZIP spans classify local headers, names, extra fields, compressed payloads, data
-descriptors, central-directory records, end records, archive comments, and legal padding.
-Compressed bytes and the corresponding logical entry bytes belong to different ledgers.
-
-Logical XML spans classify declarations, delimiters, comments, whitespace, and escaping as
-structural bytes. Typed values own their exact lexical spans. A retained record owns one named
-opaque span with its declared length and digest. No byte may be both typed and opaque.
-
-## 7. Exact shapes
+## 6. Exact shapes
 
 The exact-shape runtime type is `Part::PropertyPartShape`. Other runtime types do not select
 exact-shape or persistent element-map parsing. Part shape properties reference text or binary
@@ -453,7 +451,7 @@ CADIR decision: a face wire whose oriented edge uses form no closed chain, or mo
 whose traversal search examines more than `MAX_WIRE_TRAVERSAL_STEPS` candidate edge uses, keeps its
 serialized order, reversed when the face use and wire use orientations compose to `Reversed`.
 
-## 8. Design-history transfer
+## 7. Design-history transfer
 
 Construction objects retain source order and native identity independently of their cached shape.
 Planar sketch geometry is transferred in persisted entity order. The one-based position of each
@@ -545,8 +543,9 @@ an expression alias only when that label is unique in the sketch. A one-entity a
 entity from the horizontal sketch axis. In a two-operand angle, negative geometry indices identify
 the horizontal or vertical sketch axis independently of their position field. A one-locus
 horizontal or vertical distance measures the
-locus from the sketch root point. The persisted endpoint-one selector of an isolated point resolves
-to the point entity, not to a nonexistent curve endpoint. Negative indices resolve through the
+locus from the sketch root point. For an isolated `Part::GeomPoint`, position codes `1` (start),
+`2` (end), and `3` (mid) all select the same point entity. They do not define distinct curve
+endpoints or a second center position. Negative indices resolve through the
 ordered external-reference entities. Invalid indices, unresolved operands, and future family codes
 remain explicit native relations rather than being guessed.
 CADIR decision: a missing or malformed `Type` is retained as a native constraint with kind
@@ -589,7 +588,7 @@ not a carrier. Each root's `Count` equals its direct records. Duplicate matching
 value roots are malformed. A vendor-qualified runtime type or another property name does not
 select a spreadsheet carrier.
 
-## 9. Product structure
+## 8. Product structure
 
 The native `product_nodes` arena retains groups, parts, link groups, and placed link objects exactly
 as application records. Product dispatch uses the exact runtime registry: `Assembly::AssemblyObject`,
@@ -647,9 +646,9 @@ authoritative. A uniform `ScaleVector` takes the scalar `Scale` value on all axe
 has the built-in default one. Both original carriers remain independently persisted properties. `VisibilityList` is an `App::PropertyBoolList` with one `BoolList` root and
 a `value` bit string. Its characters are ordered most-significant bit first: for a string of length
 `n`, character `n - 1 - i` is `1` when `ElementList` element `i` is visible and `0` when it is
-hidden. The typed native property record retains the complete bit string. CADIR decision:
-`VisibilityList` remains a native product carrier and does not populate `Occurrence.visible`; that
-neutral field remains unset for product occurrences. `PlacementList` and
+hidden. The typed native property record retains the complete bit string. For array elements,
+`VisibilityList` populates `Occurrence.visible`. For other occurrences, the object's view-provider
+`Visibility` populates `Occurrence.visible`. `PlacementList` and
 `ScaleList` are respectively `App::PropertyPlacementList` and `App::PropertyVectorList`, each
 with one `PlacementList` or `VectorList` root and at most one named side entry. `LinkPlacement`,
 `Placement`, and the inherited component placement are `App::PropertyPlacement` properties with
@@ -770,7 +769,7 @@ independent fields.
 Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
 
-## 10. Drawing graph
+## 9. Drawing graph
 
 The native namespace holds a `drawings` arena for every TechDraw page, template, view,
 dimension, and annotation subtype. Pages retain ordered view membership and template identity.
@@ -963,14 +962,16 @@ sketch geometry family that remains only in the native lane produces its own blo
 the object or property identity and `Document.xml` provenance. Successfully neutralized geometry
 does not inherit a format-wide placeholder loss.
 
-## 11. Presentation and application records
+## 10. Presentation and application records
 
 Format-neutral document and view presentation arenas represent GUI state. A GUI archive produces
 one document presentation record; a headless archive produces none. The GUI root accepts the
 canonical `SchemaVersion` attribute only; the lowercase alias is invalid. The neutral document record
-contains the schema version, one camera, ordered document state, and resolved display-asset
-references. GUI schema 1 has exactly one direct `Camera` element. Its required `settings`
-attribute is the serialized camera state. A non-empty state is one Inventor `OrthographicCamera` or
+contains the schema version, optional camera, ordered document state, and resolved display-asset
+references. GUI schema 1 may have no direct `Camera` element when no camera was saved;
+that is complete-and-empty camera state and does not lose a source record. More than
+one camera leaves selection unresolved and is reported. A saved camera's required
+`settings` attribute is the serialized camera state. A non-empty state is one Inventor `OrthographicCamera` or
 `PerspectiveCamera` node enclosed by braces. FreeCAD writes `viewportMapping`, one `position`
 field with three scalars, one `orientation` field with four axis-angle scalars in X, Y, Z, angle
 order, `nearDistance`, `farDistance`, `aspectRatio`, `focalDistance`, and the subtype field
@@ -1012,13 +1013,13 @@ registered tags and attributes are mandatory. The GUI property registry is the s
 type registry used for application properties; GUI persistence does not introduce a second value
 grammar. A registered property family remains typed even when no neutral presentation field uses
 it. An unregistered GUI runtime type retains its exact ordered XML values without semantic
-dispatch, and its XML span is `named_opaque` in the logical ledger.
+dispatch.
 
 The application registry also uses these GUI property forms. `App::PropertyFont` contains
 `String`; `App::PropertyStringList` contains `StringList` with a count and ordered `String`
 elements; `App::PropertyIntegerList` contains `IntegerList` with a count and ordered `I` elements;
 `App::PropertyIntegerSet` contains `IntegerSet` with a count and sorted, unique `I` elements;
-`App::PropertyMap` contains `Map` with a count and key-sorted `Item` key/value pairs;
+`App::PropertyMap` contains `Map` with a count and ordered `Item` key/value pairs; repeated keys remain separate entries in source order;
 `App::PropertyMatrix` contains `PropertyMatrix` with attributes `a11` through `a44`;
 `App::PropertyVectorDistance`, `App::PropertyPosition`, and `App::PropertyDirection` contain
 `PropertyVector`; `App::PropertyPrecision` and every registered quantity subtype contain `Float`;
@@ -1065,7 +1066,16 @@ or descendant file attributes are malformed. A `PropertyFileIncluded` value is a
 exactly one of `file` or `data`: `file` names a side entry, while `data` carries the basename of the
 inline binary payload between the root tags. An empty selected name is valid and both attributes or nested
 elements are malformed. A Python-object
-value is one inert `Python` value with its serialized attributes; decoding never executes it. A
+value is one inert `Python` value with its serialized attributes; decoding never executes it.
+In JSON mode it has `encoded="yes"`, `json="yes"`, and a `value` containing
+standard padded base64 of UTF-8 JSON text. The JSON values are null, boolean,
+text, signed 64-bit integers, unsigned 64-bit integers above the signed range,
+finite floating-point values, ordered arrays, and objects with text keys.
+Integer tokens outside both integer ranges have no decoded JSON value; an
+integer is not rounded to floating point. Python values without decoded JSON,
+including module or class proxies and pickles, remain inert values without a
+neutral attribute. A decoded JSON tree is one typed JSON attribute value.
+A
 `PropertyExpressionEngine` value is one `ExpressionEngine` root whose `count` equals the ordered
 `Expression` children; each child has `path` and `expression` attributes and may have `comment`.
 An expression root may also carry the producer's cross-link records. `PropertyPath` uses `Path`
@@ -1280,8 +1290,7 @@ and consist of source or resource bytes. These producer grammars are documented 
 but are not typed CADIR transfer grammars. CADIR therefore retains each member as the complete
 named native application payload linked to its owning property. It does not create a neutral mesh,
 result, point, material, inspection, or toolpath value from these bytes. The exact runtime
-property, XML value, and complete member remain authoritative, and the logical member span remains
-`named_opaque`.
+property, XML value, and complete member remain authoritative.
 
 `Mesh::PropertyMeshKernel` contains exactly one direct `Mesh` value root. A duplicate or missing
 root is malformed. That root has zero or one non-empty lowercase `file` attribute; a non-empty
@@ -1449,24 +1458,6 @@ every document-level element outside `ViewProviderData` in source order. These n
 cover the camera, unrecognized active-view data, clipping or section state, and future GUI state
 without treating it as an application-object property. Each retains its exact XML span, ordered
 descendant values, and display-asset references.
-
-Logical byte accounting consumes the records emitted by each bounded parser. Exact-shape,
-side-entry string-table, and side-entry element-map payloads are wholly typed after successful
-framing. `Document.xml` properties and `GuiDocument.xml` state/property spans are typed while the
-intervening XML syntax is structural. Each side-entry span is owned by its archive entry record.
-The entry's ordered `referenced_by` relation independently retains every application property, GUI
-property, or GUI state that references the bytes. Uninterpreted embedded assets remain named
-opaque. These claims are sorted and rejected on overlap before the ledger is emitted; validation
-then requires every logical entry to close without gaps.
-
-The native namespace holds a deterministic `byte_coverage` report. It records physical
-archive length and span count, logical entry length and span count, byte totals by the closed
-`structural`, `typed`, and `named_opaque` classes, and the sorted entries containing opaque bytes.
-Its `exact` flag is true only when the physical archive and every nonempty logical entry partition
-from zero through the declared length with positive, contiguous, nonoverlapping spans. Validation
-re-derives the report, rejects missing or unknown logical entries, validates every typed or opaque
-span owner, requires structural spans to be ownerless, and rechecks retained entry lengths and
-SHA-256 digests. Zero-length entries are represented by an empty partition and still counted.
 
 A zero-byte exact-shape side entry has the typed `empty` payload
 form. This is FreeCAD's persisted representation of a null or suppressed `PropertyPartShape`, not
@@ -1756,9 +1747,10 @@ disabled, and fuzzy tolerance distinguishes modeling-kernel default, automatic d
 an explicit positive tolerance. Wrapping an attributable native operation does not suppress its
 design-domain loss report.
 
-Plain Part and PartDesign features are direct stored geometry rather than unknown parametric
-operations. Their exact shape payload supplies the feature outputs when present; no replay
-construction is fabricated when a stored feature is empty or frozen. A PartDesign base feature is
+A plain `Part::Feature` is a dumb geometry carrier and creates no neutral history
+node. Generic `PartDesign::Feature` objects represent stored geometry; their exact
+shape payload supplies feature outputs when present. No replay construction is
+fabricated when a stored feature is empty or frozen. A PartDesign base feature is
 instead a derived-geometry operation whose input is the earlier linked feature. Its `BaseFeature`
 carrier is one `App::PropertyLink` with exactly one target. Another runtime type or multiple targets
 leave the feature attributable and native; duplicate named carriers are malformed. The decoder does
@@ -1776,7 +1768,7 @@ family, native-versus-neutral status, and post-processing composition. Native va
 the census again from the object and feature graphs; missing projections and stale classifications
 are errors rather than coverage-report omissions.
 
-Native document, object, property, payload, ledger, product, drawing, and application identities
+Native document, object, property, payload, product, drawing, and application identities
 use canonical CADIR ids. Persisted names form percent-escaped id keys while the exact unescaped
 name remains in its typed record. Child records derive their key from the owning record instead of
 embedding a second id delimiter. Neutral topology and carrier ids use the shape-payload key under
@@ -1839,6 +1831,81 @@ two-distance, and distance-angle dimensions plus the persisted reference-side re
 linear dimensions must be finite and positive, and their angle must lie strictly between zero and
 180 degrees. An absent selection or invalid dimensional law remains an attributable native
 operation rather than an unresolved neutral dress-up feature.
+
+
+## 11. Writing from CADIR
+
+Native property selectors may differ from canonical parameter names, for example
+when a name contains spaces or a diameter drives a radius control. Small typed
+selector records preserve those current names. For generic scalar and spreadsheet
+parameters they also encode the canonical `driving` flag, for which FreeCAD has no
+corresponding solver field; sketch constraints use native `isDriving` instead.
+These records are regenerated from current neutral parameters. Native UI
+read-only flags are not substitutes for solver-driving semantics.
+
+The synthesized application graph includes primitive solids, boolean operations,
+extrusions and revolutions, sweeps and lofts, holes and thread controls, patterns,
+dress-up operations, datum/construction objects, binders, body groups and tips.
+Planar sketches include decoded conics, rational B-splines, construction flags,
+constraints, dimensional values, and representable external references. A native
+sketch geometry or relation may use its independently typed native record when it
+has no neutral form. Unsupported relations and operations are omitted with losses.
+
+Operation dimensions bind to canonical parameters by identity. Parameters write
+their current evaluated values and token-rendered `ExpressionEngine` formulas on
+their owning object. Constraint expressions bind to `Constraints[n]`. A parameter
+whose semantic name differs from a built-in control drives that control through
+a live native expression; a diameter driving `Radius` uses a division by two.
+Small typed selector/measurement records are accepted on read only when the
+current expression and quantity agree. They carry no original definitions,
+parameter IDs, source hashes, or cached values.
+Ownerless parameters use a generated `App::VarSet` named `Parameters` (uniquified
+when needed), and decode back as ownerless parameters. This keeps globals separate
+from spreadsheet cells. Spreadsheets write expressions, aliases, retained cell
+styles, merged ranges, column widths, and row heights. Features use `Label` for
+neutral display names while stable declaration names carry references.
+XML 1.0-forbidden characters in emitted labels and scalar text are replaced with
+U+FFFD, with a Warning naming the affected output property and reported arena
+coverage. Legal tabs, newlines, and literal character-reference text are preserved.
+Independent names for multiple BRep roots use the typed `CadmpegBodyNames` string-list property;
+a plain `Part::Feature` remains a geometry carrier and creates no feature-history node.
+Typed hidden CADIR properties preserve neutral order, optional names, independent
+fallback body styles and fixed native parameter selectors without embedding a
+CADIR document. Product projection controls distinguish definitions and placed uses from
+objects used only to carry shapes. Occurrence effective placements are written
+physically while typed matrix properties preserve their local and optional linked
+prototype decomposition independently of the prototype object's placement.
+Removing neutral products or presentation state
+therefore does not resurrect their old typed native counterparts.
+
+Exact shapes use generated OCCT text BRep tables with subshape-first topology and
+independent roots. Analytic and NURBS carriers, supported procedural trim/offset/
+extrusion/revolution forms, pcurves, coedge senses, and placements come from the
+neutral model. The writer does not invoke a modeling kernel: feature or parameter
+edits retain the document's stored BRep. The canonical `needs_recompute` flag is
+read from and written to the object declaration's `Touched` attribute; it does
+not become a parallel application property.
+An unsupported required carrier omits its containing body with an Error loss while
+other bodies remain writable.
+
+Products, nested occurrences, supported joints, visibility, and neutral appearance
+bindings generate application/GUI records. Neutral presentation overrides conflicting
+typed native GUI values. Typed native attachments, element maps, string tables,
+application properties, and GUI records are rebuilt when their referents exist;
+opaque side payloads and dangling native referents are omitted and reported.
+Omitting an unreadable object also removes references to it from dependencies and
+properties, with an Error loss, so independent content still forms a valid archive.
+
+The current synthesized writer drops subds, assets, feature topology bindings,
+configurations, spatial sketches and their entities/constraints, drawings, semantic
+annotations, tessellations, PMI, and presentation layers. Unconsumed admitted
+scalar, vector, and simple-reference properties project to neutral attributes
+and are written from those attributes. Other admitted typed property forms
+remain native content and receive a named projection loss. Opaque payloads stay
+in fidelity and mark their served classes unrepresented. Each populated
+dropped arena has an export loss. Geometry omissions use Error severity; unsupported
+nonstructural metadata uses Warning. Omitted native namespaces use the shared
+informational `export/native.records-omitted` loss.
 
 ## 12. Semantic validation
 

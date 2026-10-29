@@ -34,13 +34,16 @@ fn type114_entity_table_boundary_uses_segment_dimensions() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
         };
@@ -83,13 +86,16 @@ fn type114_entity_table_boundary_precedes_valid_generic_alternative() {
         directory_sequence: 3,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: 204,
         comment: Vec::new(),
     };
@@ -132,13 +138,16 @@ fn type114_malformed_segment_dimensions_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: 204,
             comment: Vec::new(),
         };
@@ -237,13 +246,16 @@ fn type128_entity_table_boundary_uses_surface_indices() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
         };
@@ -280,13 +292,16 @@ fn type128_entity_table_boundary_precedes_valid_generic_alternative() {
         directory_sequence: 5,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: 41,
         comment: Vec::new(),
     };
@@ -327,13 +342,16 @@ fn type128_malformed_indices_do_not_enable_generic_recovery() {
             directory_sequence: 5,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: 41,
             comment: Vec::new(),
         };
@@ -433,13 +451,16 @@ fn type144_entity_table_boundary_uses_inner_boundary_count() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
         };
@@ -472,13 +493,16 @@ fn type144_entity_table_boundary_precedes_valid_generic_alternative() {
         directory_sequence: 5,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     };
@@ -514,13 +538,16 @@ fn type144_malformed_inner_counts_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -655,13 +682,16 @@ fn type143_entity_table_boundary_uses_boundary_count() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
         };
@@ -694,13 +724,16 @@ fn type143_entity_table_boundary_precedes_valid_generic_alternative() {
         directory_sequence: 5,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     };
@@ -736,13 +769,16 @@ fn type143_malformed_boundary_counts_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };

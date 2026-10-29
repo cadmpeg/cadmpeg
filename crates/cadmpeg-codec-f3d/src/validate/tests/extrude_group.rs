@@ -71,7 +71,7 @@ pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
                     id: format!("f3d:Design/BulkStream.dat:design-record-header#{index}"),
                     record_index: index,
                     class_tag: tag.to_owned().try_into().unwrap(),
-                    byte_offset: offset,
+                    byte_offset: Some(offset),
                 });
         }
     }

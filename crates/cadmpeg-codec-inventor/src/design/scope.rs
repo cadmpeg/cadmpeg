@@ -402,6 +402,7 @@ pub(crate) fn project_model_features(
         let native_ref = root.id();
         features.push(Feature {
             id: model_feature_id(root)?,
+            needs_recompute: false,
             ordinal,
             name: None,
             suppressed: None,

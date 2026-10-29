@@ -2,6 +2,39 @@
 
 Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/rhino.md`](../layouts/rhino.md), generated from `docs/layouts/rhino.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
 
+## cadmpeg output contract
+
+The cadmpeg writer synthesizes a Rhino archive from neutral model arenas and
+the typed Rhino records it can encode. A nonempty `native.rhino` namespace is
+not a refusal condition. Neutral geometry and edits take precedence over
+native counterparts. Retained archive bytes, unknown blobs, and callback-owned
+opaque payloads supply no output content.
+
+Unsupported neutral arenas are dropped with export losses. Unsupported
+geometry is degraded to an available solved carrier, omitted as an entity, or
+omitted with its containing body when that is required for a valid Brep; a
+structural omission reports an Error-severity loss. Supported independent
+objects remain writable. Empty output reports `NoExportableSolids`. Malformed or inconsistent input,
+format capacities, and an unresolvable archive target can still refuse output.
+Rigid body placements are baked into emitted geometry. A nonrigid placement
+that cannot be applied is omitted; geometry is written in its local frame with
+`BodyTransformNotApplied`. Solved procedural carriers and compound curves can
+be written with any reduction reported. Unsupported extra mesh channels are
+omitted with a warning while the mesh geometry remains writable.
+
+Neutral arena coverage is verified against one bounded decode of the newly
+synthesized archive. A populated topology or carrier arena is marked `Written`
+only when its complete records and references agree under one consistent,
+injective identity mapping. Numeric geometry uses the shared comparison
+tolerance; text remains exact. An unavailable verification or a difference
+keeps that arena `Reported`. This adds one decode to export planning and reads
+only the generated output.
+
+Native coverage marks only regenerated default document settings, byte-span
+layout records, default layers, and supported default object presentation as
+written. Other typed Rhino arenas are omitted with informational native
+losses.
+
 ## 1. Archive bands
 
 Rhino 3DM is a little-endian chunk stream. Archive versions select these
@@ -2057,7 +2090,8 @@ trim count × {
   2 × i32 vertex indices
   i32 reversed-3D flag
   i32 trim type (1 boundary, 2 mated, 3 seam, 4 singular)
-  i32 legacy isocurve flag
+  i32 isocurve flag (0 none, 1 constant U interior, 2 constant V interior,
+                    3 west, 4 south, 5 east, 6 north)
   i32 loop index
   2 × f64 tolerances
   2 × 3 × f64 old trim points
@@ -2892,9 +2926,14 @@ typed admission requires finite distinct endpoints, a finite strictly
 increasing domain, and dimension 2 or 3. A source-writable equal-domain line
 is retained as a native object record when it fails that CADIR gate.
 
-CADIR transfers a line as a degree-one NURBS curve with control points
-`from`, `to` and knots `[t0,t0,t1,t1]`. Endpoint coordinates are converted to
-millimetres; domain parameters and `dimension` are not converted.
+Endpoint coordinates are converted to millimetres; domain parameters and
+`dimension` are not converted. For a 3D curve record, the endpoint derivative
+is `(to-from)/(t1-t0)`. If that derivative is an admitted unit direction and
+`origin = from - t0*direction` is finite and reproduces both endpoints, CADIR
+transfers an analytic line and stores `[t0,t1]` as its parameter range. Other
+parameterizations transfer as a degree-one NURBS curve with control points
+`from`, `to` and knots `[t0,t0,t1,t1]`. Parameter-space C2 curves use this NURBS
+representation.
 
 ### 12.4 Arc curve
 
@@ -3612,9 +3651,10 @@ The native trim record has no repeated C2-use list or alternate parameter-space
 curve slot.
 
 CADIR writer decision: a neutral coedge with more than one ordered pcurve use
-is not representable by this trim record. The Rhino writer rejects that
-coedge before output; it does not select the first use or discard the other
-carriers, ranges, or tolerances.
+is not representable by this trim record. The Rhino writer reports an
+Error-severity export loss and omits the affected Brep when no valid exact
+encoding is available. It does not silently select the first use; independent
+objects can still be written.
 
 Each stored tolerance is a finite nonnegative value or an explicit unset
 sentinel. The unset sentinels are `-1.23432101234321e308` and
@@ -4927,10 +4967,12 @@ archive >= 80:
 archive >= 70: component additions
 ```
 
-Edge tags are 0 unset, 1 smooth, 2 crease, and 4 smooth-X. Pointer type bits
-are 0x2 vertex, 0x4 edge, and 0x6 face; bit 0 is direction. A null pointer has
-archive ID zero. Edge and face directions reverse traversal; vertex direction
-is reserved.
+Edge tags are 0 unset, 1 smooth, 2 crease, and 4 smooth-X. A pointer in a
+vertex, edge, face, or saved-limit-point field serializes only direction bit 0;
+the field determines the component type. Generic component pointers in
+size-tagged additions also use bits 1 and 2 for type: 0x2 vertex, 0x4 edge,
+and 0x6 face. A null pointer has archive ID zero and flags zero. Edge and face
+directions reverse traversal; vertex direction is reserved.
 
 Face record:
 

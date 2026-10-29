@@ -12,8 +12,7 @@ use std::collections::HashMap;
 
 use crate::history::classify::{feature_input_class, loft_op};
 use crate::history::literals::{
-    parse_angle_rad, parse_bool, parse_boolean_op, parse_point3_mm, parse_positive_angle_rad,
-    parse_positive_length_mm, parse_valid_direction,
+    parse_bool, parse_boolean_op, parse_point3_mm, parse_valid_direction,
 };
 
 pub(super) fn project_rib(
@@ -34,8 +33,7 @@ pub(super) fn project_rib(
         .get("Direction")
         .and_then(|value| parse_valid_direction(value));
     let draft = match feature.parameters.get("Draft") {
-        Some(value) => parse_angle_rad(value)
-            .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok())
+        Some(_) => super::parameter_dimension(feature, &["Draft"])
             .map_or(RibDraft::Unresolved, RibDraft::Angle),
         None => RibDraft::None,
     };
@@ -43,11 +41,7 @@ pub(super) fn project_rib(
         construction: RibConstruction {
             profile,
             direction,
-            thickness: feature
-                .parameters
-                .get("Thickness")
-                .or_else(|| feature.parameters.get("D1"))
-                .and_then(|value| parse_positive_length_mm(value)),
+            thickness: super::parameter_dimension(feature, &["Thickness", "D1"]),
             side: feature
                 .properties
                 .get("BothSides")
@@ -177,23 +171,11 @@ pub(super) fn project_sweep(
     } else {
         SweepMode::Unresolved {}
     };
-    let (twist, scale) = (|| {
-        let twist = match feature.parameters.get("Twist") {
-            Some(value) => Some(parse_angle_rad(value)?),
-            None => None,
-        };
-        let scale = match feature.parameters.get("Scale") {
-            Some(value) => Some(
-                value
-                    .trim()
-                    .parse::<f64>()
-                    .ok()
-                    .and_then(cadmpeg_ir::scalar::PositiveReal::new)?,
-            ),
-            None => None,
-        };
-        Some((twist, scale))
-    })()?;
+    let twist = super::parameter_dimension(feature, &["Twist"]);
+    let scale = super::parameter_dimension(feature, &["Scale"]);
+    if feature.parameters.contains_key("Scale") && scale.is_none() {
+        return None;
+    }
     Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape: cadmpeg_ir::features::SweepShape::sheet_sections(
             mode,
@@ -266,23 +248,21 @@ pub(super) fn project_revolve(
             .content
             .iter()
             .filter_map(|content| match content {
-                FeatureContent::Dimension(name) => feature.parameters.get(name.as_str()),
-                FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
-            })
-            .filter_map(|value| parse_positive_angle_rad(value))
-            .nth(ordinal)
-    };
-    let angle = |name, ordinal| {
-        feature
-            .parameters
-            .get(name)
-            .or_else(|| match name {
-                "Angle" => feature.parameters.get("D1"),
-                "Angle2" => feature.parameters.get("D2"),
+                FeatureContent::Dimension(name) => Some(name.as_str()),
                 _ => None,
             })
-            .and_then(|value| parse_positive_angle_rad(value))
-            .or_else(|| ordered_angle(ordinal))
+            .nth(ordinal)
+            .and_then(|name| {
+                super::parameter_dimension::<cadmpeg_ir::scalar::PositiveAngle>(feature, &[name])
+            })
+    };
+    let angle = |name, ordinal| {
+        let names = match name {
+            "Angle" => &["Angle", "D1"][..],
+            "Angle2" => &["Angle2", "D2"][..],
+            _ => &[],
+        };
+        super::parameter_dimension(feature, names).or_else(|| ordered_angle(ordinal))
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("OneSided") => angle("Angle", 0).map(|angle| RevolveExtent::OneSided {

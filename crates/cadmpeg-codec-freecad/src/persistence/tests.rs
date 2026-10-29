@@ -52,7 +52,7 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
         .expect("bounded invalid link");
         assert!(matches!(
             graph.properties[0].body,
-            crate::native::PropertyBody::Unreadable(_)
+            Some(crate::native::PropertyBody::Unreadable(_))
         ));
         assert!(graph
             .losses
@@ -62,7 +62,7 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
 }
 
 #[test]
-fn x63_decode_counts_object_copies_in_retained_budget() {
+fn x63_decode_counts_source_image_in_retained_budget() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let bytes = archive(document);
     FcstdCodec
@@ -74,14 +74,14 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
         &bytes,
         &mut DecodeOptions::default(),
         cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        "retain FCStd entry",
+        "retain FCStd source image",
         0,
     );
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::RetainedBytes
     );
-    assert_eq!(limit.operation, "retain FCStd entry");
+    assert_eq!(limit.operation, "retain FCStd source image");
 }
 
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
@@ -178,16 +178,83 @@ fn rejects_duplicate_root_property_containers() {
 <Properties Count="1"><Property name="First" type="App::PropertyString"><String value="one"/></Property></Properties>
 <Properties Count="1"><Property name="Second" type="App::PropertyString"><String value="two"/></Property></Properties>
 <Objects Count="0"/><ObjectData Count="0"/></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("duplicate root Properties containers");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    // #215 §4.5: the ambiguous root gives up, while its ZIP declaration survives.
+    let bytes = archive(document);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the duplicate root containers have a bounded document recovery home");
+    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
+    assert_eq!(decoded.ir().model.entity_count(), 0);
+    assert!(!decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| matches!(attribute.name.as_str(), "First" | "Second")));
+    let native = decoded.ir().native.namespace("fcstd").unwrap();
+    assert!(native
+        .arena_as::<crate::native::DocumentFacts>("document")
+        .unwrap()
+        .is_empty());
+    assert!(native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap()
+        .is_empty());
+    let entries = native
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let [entry] = entries.as_slice() else {
+        panic!("the independently admitted Document.xml entry survives: {entries:?}")
+    };
+    assert_eq!(entry.name(), "Document.xml");
+    assert_eq!(
+        entry.id(),
+        crate::native::native_id("entry", "Document.xml")
+    );
+    assert!(entry.referenced_by().is_empty());
+
+    assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
+    let fidelity = decoded.source_fidelity();
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one failed document root: {parts:?}")
+    };
+    assert_eq!(
+        fidelity.unrepresented(),
+        cadmpeg_ir::ArenaClasses::from([
+            cadmpeg_ir::ArenaClass::Model,
+            cadmpeg_ir::ArenaClass::Design
+        ])
+    );
+    assert_eq!(retained.data(), Some(document.as_bytes()));
+    assert_eq!(retained.offset(), 0);
+    assert_eq!(retained.byte_len(), u64::try_from(document.len()).unwrap());
+    assert_eq!(
+        retained.sha256(),
+        cadmpeg_ir::hash::sha256_hex(document.as_bytes())
+    );
+    let failures = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    let [failure] = failures.as_slice() else {
+        panic!("one duplicate-root diagnostic: {failures:?}")
+    };
+    assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
+    assert!(failure
+        .message
+        .contains("Document.xml has multiple root Properties containers"));
+    let location = failure.provenance.as_ref().unwrap();
+    assert_eq!(location.stream_name(), Some("Document.xml"));
+    assert_eq!(location.offset, retained.offset());
+    assert_eq!(location.byte_len(), Some(retained.byte_len()));
+    assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
 }
 
 #[test]
@@ -198,17 +265,64 @@ fn rejects_duplicate_property_names_for_one_owner() {
  <Property name="Label" type="App::PropertyString"><String value="one"/></Property>
  <Property name="Label" type="App::PropertyString"><String value="two"/></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let error = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect_err("duplicate object property names");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message))
-            if message.contains("duplicate property name Label")
-    ));
+    let bytes = archive(document);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the duplicate property container has its own bounded recovery home");
+    let native = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = native
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let [object] = objects.as_slice() else {
+        panic!("the independently framed Part declaration survives")
+    };
+    assert_eq!(object.name(), "Part");
+    assert_eq!(object.type_name, "App::Part");
+    assert!(native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap()
+        .is_empty());
+    assert!(!decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "Label"));
+
+    let fidelity = decoded.source_fidelity();
+    let parts = crate::test_support::source_fidelity::given_up(fidelity);
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one failed Properties container: {parts:?}")
+    };
+    let start = document.find("<Properties Count=\"2\">").unwrap();
+    let end = document.find("</Properties>").unwrap() + "</Properties>".len();
+    assert_eq!(retained.data(), Some(&document.as_bytes()[start..end]));
+    assert_eq!(retained.offset(), u64::try_from(start).unwrap());
+    assert_eq!(retained.byte_len(), u64::try_from(end - start).unwrap());
+    assert_eq!(
+        retained.sha256(),
+        cadmpeg_ir::hash::sha256_hex(&document.as_bytes()[start..end])
+    );
+    let failures = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    let [failure] = failures.as_slice() else {
+        panic!("one duplicate-name diagnostic: {failures:?}")
+    };
+    assert_eq!(failure.severity, cadmpeg_ir::report::Severity::Error);
+    assert!(failure.message.contains("duplicate document property name"));
+    let location = failure.provenance.as_ref().unwrap();
+    assert_eq!(location.stream_name(), Some("Document.xml"));
+    assert_eq!(location.offset, retained.offset());
+    assert_eq!(location.byte_len(), Some(retained.byte_len()));
+    assert_eq!(crate::source_archive::image(fidelity).unwrap(), bytes);
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .unwrap()
+        .is_ok());
 }
 
 #[test]
@@ -251,7 +365,7 @@ fn retains_nested_xlink_value_children_as_unreadable_source() {
             .expect("properties");
         assert!(matches!(
             properties[0].body,
-            crate::native::PropertyBody::Unreadable(_)
+            Some(crate::native::PropertyBody::Unreadable(_))
         ));
         assert!(decoded.report().losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
@@ -352,7 +466,12 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         support.links()[0].as_ref().expect("link").subelements(),
         vec!["Face1"]
     );
-    let crate::native::PropertyBody::Persisted { dynamic, .. } = &support.body else {
+    assert!(matches!(
+        &support.body,
+        Some(crate::native::PropertyBody::Persisted { .. })
+    ));
+    let dynamic = &support.dynamic;
+    let Some(_) = &support.body else {
         panic!("support property is not persisted");
     };
     assert_eq!(dynamic.as_ref().and_then(|meta| meta.read_only), Some(true));
@@ -500,84 +619,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
     assert_eq!(payload_entry.referenced_by(), vec![payload.id.clone()]);
-    assert_eq!(payload_entry.data(), b"payload");
-    let ledger = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
-    for entry in &entries {
-        let mut spans = ledger
-            .iter()
-            .filter(|span| span.entry == entry.name())
-            .collect::<Vec<_>>();
-        spans.sort_by_key(|span| span.span.start());
-        assert_eq!(spans.first().map(|span| span.span.start()), Some(0));
-        assert_eq!(
-            spans.last().map(|span| span.span.end()),
-            Some(entry.byte_len())
-        );
-        assert!(spans
-            .windows(2)
-            .all(|pair| pair[0].span.end() == pair[1].span.start()));
-    }
-    assert!(ledger
-        .iter()
-        .filter(|span| span.entry == "Shape.brp")
-        .all(|span| span.classification.as_str() == "typed"));
-    assert!(ledger
-        .iter()
-        .filter(|span| span.entry == "Payload.bin")
-        .all(|span| span.classification.as_str() == "named_opaque"));
-    assert!(ledger
-        .iter()
-        .any(|span| span.entry == "Document.xml" && span.classification.as_str() == "typed"));
-    assert!(ledger.iter().any(|span| {
-        span.entry == "Document.xml" && span.classification.as_str() == "structural"
-    }));
-    let coverage = namespace
-        .arena_as::<crate::native::ByteCoverageRecord>("byte_coverage")
-        .expect("byte coverage");
-    assert_eq!(coverage.len(), 1);
-    assert!(coverage[0].exact);
-    assert_eq!(coverage[0].logical_entry_count, entries.len());
     assert_eq!(
-        coverage[0].logical_byte_len,
-        entries
-            .iter()
-            .map(super::super::native::EntryRecord::byte_len)
-            .sum::<u64>()
+        crate::test_support::source_fidelity::entry_bytes(
+            result.source_fidelity(),
+            payload_entry.id()
+        ),
+        b"payload"
     );
-    assert_eq!(
-        coverage[0].classification_bytes.values().sum::<u64>(),
-        coverage[0].logical_byte_len
-    );
-    assert!(coverage[0]
-        .named_opaque_entries
-        .contains(&"Payload.bin".to_owned()));
     let findings = crate::test_support::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
-
-    let mut corrupted = result.ir().clone();
-    let missing_payload = ledger
-        .iter()
-        .filter(|span| span.entry != "Payload.bin")
-        .cloned()
-        .collect::<Vec<_>>();
-    corrupted
-        .native
-        .namespace_mut("fcstd")
-        .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
-            "logical_ledger",
-            &missing_payload,
-        )
-        .expect("replace logical ledger");
-    assert!(crate::test_support::validate_native(&corrupted)
-        .iter()
-        .any(|finding| {
-            finding
-                .message
-                .contains("logical ledger omits nonempty entry Payload.bin")
-        }));
 }
 
 #[test]
@@ -786,21 +836,23 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
     let xml = roxmltree::Document::parse(&document).expect("XML");
     let mut properties = Vec::new();
     let mut losses = Vec::new();
+    let mut property_sources = std::collections::BTreeMap::new();
     super::parse_properties(
-        &document,
         xml.root_element(),
         "owner",
         &mut properties,
+        &mut property_sources,
         &mut losses,
+        None,
     )
     .expect("a value copy above the bound skips the values");
     assert!(matches!(
         &properties[0].body,
-        crate::native::PropertyBody::Unreadable(detail)
+        Some(crate::native::PropertyBody::Unreadable(detail))
             if detail.contains("value copy bound")
     ));
     assert_eq!(
-        properties[0].xml.text(),
+        &document[property_sources[&properties[0].id].record_range()],
         &document[xml
             .root_element()
             .first_element_child()

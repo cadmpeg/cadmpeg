@@ -8,7 +8,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
@@ -23,6 +22,7 @@ fn placed_point_product() -> CadIr {
     let vertex = cadmpeg_ir::ids::VertexId::mint("cadir:model:vertex#pin").expect("identity");
     let point = cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity");
     ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        native_ref: None,
         id: body.clone(),
         kind: cadmpeg_ir::topology::BodyKind::General,
         regions: vec![region.clone()],
@@ -32,6 +32,7 @@ fn placed_point_product() -> CadIr {
         visible: None,
     });
     ir.model.regions.push(cadmpeg_ir::topology::Region {
+        native_ref: None,
         id: region.clone(),
         body: body.clone(),
         shells: vec![shell.clone()],
@@ -47,6 +48,7 @@ fn placed_point_product() -> CadIr {
         .expect("free-vertex shell"),
     );
     ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
+        native_ref: None,
         id: vertex,
         point: point.clone(),
         tolerance: None,
@@ -82,11 +84,10 @@ fn placed_point_product() -> CadIr {
             },
             parent: OccurrenceParent::Root {},
             ordinal,
-            transform: Transform::identity().with_translation(
+            transform: Some(Transform::identity().with_translation(
                 FiniteVector3::new(Vector3::new(x, 0.0, 0.0)).expect("finite offset"),
-            ),
+            )),
             linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -115,13 +116,25 @@ fn unrepresented_product_structure_is_an_export_loss() {
         .losses
         .iter()
         .filter(|loss| loss.code.namespace() == "export")
-        .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(
-        omitted,
-        [
-            "the rhino write does not represent model arena `product_definitions`: 1 record(s) omitted",
-            "the rhino write does not represent model arena `occurrences`: 2 record(s) omitted",
-        ]
-    );
+    let expected: [(&str, &[&str]); 2] = [
+        ("product_definitions", &["cadir:model:product#pin"]),
+        (
+            "occurrences",
+            &[
+                "cadir:model:occurrence#pin.0",
+                "cadir:model:occurrence#pin.1",
+            ],
+        ),
+    ];
+    assert_eq!(omitted.len(), expected.len(), "{omitted:?}");
+    for (loss, (arena, ids)) in omitted.iter().zip(expected) {
+        assert_eq!(loss.code.local_code(), "arena.omitted", "{loss:?}");
+        assert!(loss.message.contains(arena), "{loss:?}");
+        assert_eq!(
+            crate::test_support::omitted_record_ids(&loss.message),
+            ids,
+            "{loss:?}"
+        );
+    }
 }

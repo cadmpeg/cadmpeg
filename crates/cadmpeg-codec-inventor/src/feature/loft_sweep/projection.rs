@@ -77,6 +77,7 @@ pub(in crate::feature) fn project(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties: boolean_properties(source, &[2, 9], index),
             source_tag: Some(

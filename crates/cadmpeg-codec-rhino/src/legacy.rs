@@ -19,7 +19,6 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
@@ -1854,6 +1853,7 @@ fn append_legacy_brep(
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
         model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: (tolerance > 0.0)
@@ -1890,6 +1890,7 @@ fn append_legacy_brep(
             );
             let domain = curve_domain(&curve)?;
             model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1907,6 +1908,7 @@ fn append_legacy_brep(
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
         model.edges.push(Edge {
+            native_ref: None,
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 curve_id.as_ref().map(|value| value.0.clone()),
@@ -1941,6 +1943,7 @@ fn append_legacy_brep(
             legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
         );
         model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
@@ -1995,7 +1998,7 @@ fn append_legacy_brep(
                         }
                     }
                 }
-                model.pcurves.push(Pcurve {
+                model.pcurves.push(Pcurve { native_ref: None,
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_checked_lanes(
@@ -2037,6 +2040,7 @@ fn append_legacy_brep(
                     .push(coedge_id.clone());
                 coedge_ids.push(coedge_id.clone());
                 model.coedges.push(Coedge {
+                    native_ref: None,
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: group_edges[&root].clone(),
@@ -2061,6 +2065,7 @@ fn append_legacy_brep(
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -2094,6 +2099,7 @@ fn append_legacy_brep(
             cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
         };
         model.faces.push(Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: surface_id,
@@ -2133,11 +2139,13 @@ fn append_legacy_brep(
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
     model.regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
     });
     model.bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::General,
         regions: vec![region_id],
@@ -2558,6 +2566,10 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     // table, so no openNURBS writer-version stamp is declared.
     let primary = ArchiveVersion::V1.classify(None);
 
+    if ctx.container_only() {
+        return container_result(ctx, data, offset, primary);
+    }
+
     let mut ir = CadIr::decoded(crate::container::source_meta(
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
@@ -2578,16 +2590,21 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut diagnostics = Vec::new();
     let mut tolerance_losses = Vec::new();
     let mut scale = MillimeterScale::IDENTITY;
+    let mut model_part_seen = false;
     while offset < data.len() {
         let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
             .map_err(|error| malformed(&error))?;
-        if chunk.typecode == TCODE_ENDOFFILE {
+        if matches!(
+            chunk.typecode,
+            TCODE_ENDOFFILE | crate::chunks::TCODE_ENDOFFILE
+        ) {
             break;
         }
         if chunk.typecode == TCODE_ENDOFTABLE {
             offset = chunk.next_offset();
             continue;
         }
+        model_part_seen = true;
         if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(|error| malformed(&error))?;
@@ -2675,6 +2692,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 .points
                 .push(Point::new(point_id.clone(), position, None));
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
@@ -2685,11 +2703,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 vertex_id,
             ));
             ir.model.regions.push(Region {
+                native_ref: None,
                 id: region_id.clone(),
                 body: body_id.clone(),
                 shells: vec![shell_id],
             });
             ir.model.bodies.push(Body {
+                native_ref: None,
                 id: body_id,
                 kind: BodyKind::General,
                 regions: vec![region_id],
@@ -2815,6 +2835,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let start = evaluate_nurbs(&segment, parameter_range[0])?;
                         let end = evaluate_nurbs(&segment, parameter_range[1])?;
                         ir.model.curves.push(Curve {
+                            native_ref: None,
                             parameter_range: None,
                             id: curve_id.clone(),
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
@@ -2832,17 +2853,20 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         ]);
                         ir.model.vertices.extend([
                             Vertex {
+                                native_ref: None,
                                 id: start_vertex.clone(),
                                 point: start_point,
                                 tolerance: None,
                             },
                             Vertex {
+                                native_ref: None,
                                 id: end_vertex.clone(),
                                 point: end_point,
                                 tolerance: None,
                             },
                         ]);
                         ir.model.edges.push(Edge {
+                            native_ref: None,
                             id: edge_id.clone(),
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
@@ -2859,11 +2883,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             edge_id,
                         ));
                         ir.model.regions.push(Region {
+                            native_ref: None,
                             id: region_id.clone(),
                             body: body_id.clone(),
                             shells: vec![shell_id],
                         });
                         ir.model.bodies.push(Body {
+                            native_ref: None,
                             id: body_id,
                             kind: BodyKind::General,
                             regions: vec![region_id],
@@ -3026,22 +3052,82 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     ] {
         coverage.record(key, count);
     }
+    let scope = crate::container::scope_from_parts(&ir, model_part_seen, false);
+    ir.scope = scope;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let untyped_ids = opaque_records
+        .iter()
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     source_fidelity.retain_unknown_records(
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
     )?;
+    for id in untyped_ids {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+    }
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(
-                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
-            ),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+                scope,
+                geometry_transferred: decoded > 0
+                    || decoded_curves > 0
+                    || decoded_meshes > 0
+                    || decoded_breps > 0,
+            },
             coverage,
             losses,
             notes,
-            transfer_ledger: TransferLedger::default(),
         },
+        source_fidelity,
+    })
+}
+
+/// Read flat chunk boundaries without projecting their geometry or design.
+fn container_result(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    mut offset: usize,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> Result<Decoded, CodecError> {
+    let mut records = Vec::new();
+    let mut retained_bytes = 0;
+    let mut untyped_ids = Vec::new();
+    while offset < data.len() {
+        let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
+            .map_err(|error| malformed(&error))?;
+        if matches!(
+            chunk.typecode,
+            TCODE_ENDOFFILE | crate::chunks::TCODE_ENDOFFILE
+        ) {
+            break;
+        }
+        let untyped = !matches!(chunk.typecode, TCODE_ENDOFTABLE | TCODE_UNIT_AND_TOLERANCES);
+        let before = records.len();
+        push_v1_record(ctx, &mut records, data, &chunk, &mut retained_bytes)?;
+        if untyped {
+            untyped_ids.extend(records[before..].iter().map(|record| record.id().clone()));
+        }
+        offset = chunk.next_offset();
+    }
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    source_fidelity.retain_unknown_records("rhino", records)?;
+    for id in untyped_ids {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+    }
+    let mut ir = CadIr::decoded(crate::container::source_meta(
+        primary,
+        crate::container::SourceMetaDetail::FlatLegacyArchive,
+    )?);
+    let scope = cadmpeg_ir::ContentScope::container();
+    ir.scope = scope;
+    Ok(Decoded {
+        ir,
+        body: DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope,
+            geometry_transferred: false,
+        }),
         source_fidelity,
     })
 }
@@ -3921,6 +4007,53 @@ mod tests {
             decode_v1(&missing).is_err(),
             "unbounded chunk is still refused"
         );
+    }
+
+    #[test]
+    fn v1_container_request_keeps_geometry_only_as_source_bytes() {
+        let data = archive(&[[1.0, 2.0, 3.0]]);
+        let comment = chunk_at(
+            &data,
+            crate::layout::file_header::LEN,
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("bounded V1 comment");
+        assert_eq!(comment.typecode, TCODE_COMMENT);
+        let point = chunk_at(
+            &data,
+            comment.next_offset(),
+            data.len(),
+            ArchiveVersion::V1,
+            false,
+        )
+        .expect("bounded V1 point part");
+        assert_eq!(point.typecode, TCODE_RH_POINT);
+        assert_eq!(point.next_offset(), data.len());
+        assert_eq!(
+            cadmpeg_ir::document::ArenaName::parse("points")
+                .expect("registered geometry arena")
+                .class(),
+            cadmpeg_ir::ArenaClass::Model
+        );
+        let decoded = cadmpeg_ir::codec::Codec::decode(
+            &crate::RhinoCodec,
+            &mut std::io::Cursor::new(data),
+            &cadmpeg_ir::DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..cadmpeg_ir::DecodeOptions::default()
+            },
+        )
+        .expect("a V1 container request reads chunk boundaries");
+        assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
+        assert_eq!(decoded.ir().model, cadmpeg_ir::document::Model::default());
+        assert!(!decoded.report().geometry_transferred());
+        assert!(decoded
+            .source_fidelity()
+            .unrepresented()
+            .contains(&cadmpeg_ir::ArenaClass::Model));
+        assert!(!decoded.source_fidelity().retained_records().is_empty());
     }
 
     #[test]

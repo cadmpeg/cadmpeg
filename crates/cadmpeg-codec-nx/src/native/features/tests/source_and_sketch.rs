@@ -405,11 +405,12 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = result
+    let namespace = &result
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant");
+        .expect("nx namespace")
+        .clone();
     let links = namespace
         .arena_as::<crate::native::segments::SegmentOmLink>("segment_om_links")
         .expect("required invariant");
@@ -481,7 +482,8 @@ fn decoded_feature_ids_preserve_source_order_and_ordinals_reverse_history() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureOperationLabel>("feature_operation_labels")
         .expect("required invariant");
 
@@ -518,7 +520,8 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<crate::native::om::OmRecordArea>("om_record_areas")
         .expect("required invariant");
     assert_eq!(areas.len(), 1);
@@ -534,7 +537,8 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureOperationLabel>("feature_operation_labels")
         .expect("required invariant");
     assert_eq!(labels.len(), 1);
@@ -549,7 +553,8 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
@@ -560,7 +565,8 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureBooleanOperation>("feature_boolean_operations")
         .expect("required invariant");
     assert_eq!(booleans.len(), 1);
@@ -578,7 +584,8 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureBodyReference>("feature_body_references")
         .expect("required invariant");
     assert_eq!(body_references.len(), 1);
@@ -588,7 +595,8 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureBodyReference>("feature_body_reference_occurrences")
         .expect("required invariant");
     assert_eq!(body_reference_occurrences.len(), 1);
@@ -637,7 +645,8 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureInputBlock>("feature_input_blocks")
         .expect("required invariant");
     assert_eq!(inputs.len(), 1);
@@ -656,7 +665,8 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<crate::native::om::DataBlockReference>("data_block_references")
         .expect("required invariant");
     assert_eq!(references.len(), 1);

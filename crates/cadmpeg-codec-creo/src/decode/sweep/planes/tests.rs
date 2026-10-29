@@ -27,8 +27,9 @@ fn expected_linear_plane_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },
@@ -51,6 +52,7 @@ fn plane_row(id: u32) -> crate::surface::SurfaceRow {
 
 fn plane_surface(id: u32, z: f64) -> Surface {
     Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -76,6 +78,7 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
 
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
     Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -156,8 +159,10 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(6.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(6.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -202,6 +207,7 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
     .is_none());
 
     ir.model.surfaces[1] = Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -396,8 +402,9 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(34.0)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(34.0)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },

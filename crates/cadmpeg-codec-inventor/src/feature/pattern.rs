@@ -18,7 +18,7 @@ use crate::record_identity::{Located, RecordPayload, RecordTypeId};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::patterns::{
-    LinearPatternDirection, PatternKind, PatternSeed, PatternTransform,
+    LinearPatternDirection, PatternDistance, PatternKind, PatternSeed, PatternTransform,
 };
 use cadmpeg_ir::features::FeatureDirection3;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, FeatureResultTopology};
@@ -613,12 +613,12 @@ fn axis(
         12
     };
     let count = count_at(source, base + axis, index)?;
-    let spacing = PositiveLength::try_from(length_reference(
+    let spacing = length_reference(
         source.identity.segment_token.as_str(),
         slot(source, base + 2 + axis)?.index(),
         index,
-    )?)
-    .ok()?;
+    )?;
+    PositiveLength::try_from(spacing).ok()?;
     let direction = direction(source, base + 4 + axis, index, operands)?;
     if [6, 8, 10, 12]
         .into_iter()
@@ -628,8 +628,10 @@ fn axis(
     }
     Some(LinearPatternDirection {
         direction,
-        spacing,
-        count,
+        distance: PatternDistance::Spacing {
+            distance: spacing.into(),
+        },
+        count: count.into(),
     })
 }
 
@@ -722,9 +724,12 @@ fn construction<'a>(
     } else {
         Some(axis(source, 1, index, operands)?)
     };
-    let count = first
-        .count
-        .checked_mul(second.as_ref().map_or(1, |axis| axis.count))?;
+    let first_count = *first.count.literal()?;
+    let second_count = match &second {
+        Some(axis) => *axis.count.literal()?,
+        None => 1,
+    };
+    let count = first_count.checked_mul(second_count)?;
     if !fixed_extensions(source, count) || count < 2 {
         return None;
     }
@@ -732,8 +737,8 @@ fn construction<'a>(
     if suppressed.iter().any(|pair| {
         pair.contains(&0)
             || *pair == [1, 1]
-            || pair[0] > first.count
-            || pair[1] > second.as_ref().map_or(1, |axis| axis.count)
+            || pair[0] > first_count
+            || pair[1] > second_count
             || !distinct.insert(*pair)
     }) {
         return None;
@@ -767,7 +772,7 @@ impl LinearConstruction<'_> {
         }
         Ok(PatternKind::new(PatternTransform::Linear {
             direction: Some(self.first.direction),
-            spacing: self.first.spacing,
+            distance: self.first.distance,
             count: self.first.count,
             second: self.second,
             omitted_instances,
@@ -778,7 +783,7 @@ impl LinearConstruction<'_> {
     fn matches(&self, pattern: &PatternKind) -> bool {
         let PatternTransform::Linear {
             direction,
-            spacing,
+            distance,
             count,
             second,
             omitted_instances,
@@ -787,7 +792,7 @@ impl LinearConstruction<'_> {
             return false;
         };
         direction.as_ref() == Some(&self.first.direction)
-            && spacing == &self.first.spacing
+            && distance == &self.first.distance
             && count == &self.first.count
             && second == &self.second
             && omitted_instances.len() == self.suppressed.len()

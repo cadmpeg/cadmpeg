@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -37,7 +36,10 @@
               "side": {
                 "termination": {
                   "kind": "blind",
-                  "length": 12.5
+                  "length": {
+                    "kind": "parameter",
+                    "value": "sldprt:model:parameter#247:0:0"
+                  }
                 }
               }
             },
@@ -54,6 +56,7 @@
           "id": "sldprt:model:feature#247:0",
           "name": "Boss",
           "native_ref": "sldprt:history:feature#247:0",
+          "needs_recompute": false,
           "ordinal": 0,
           "source_content": [
             {
@@ -65,9 +68,6 @@
               "value": "sldprt:model:feature#247:1"
             }
           ],
-          "source_properties": {
-            "Scope": "Body1"
-          },
           "source_tag": "Extrusion",
           "suppressed": false
         },
@@ -79,6 +79,7 @@
           "id": "sldprt:model:feature#247:1",
           "name": "Profile",
           "native_ref": "sldprt:history:feature#247:1",
+          "needs_recompute": false,
           "ordinal": 1,
           "regeneration_parent": "sldprt:model:feature#247:0",
           "source_tag": "EquationDrivenCurve",
@@ -89,7 +90,15 @@
       "occurrences": [],
       "parameters": [
         {
-          "expression": "12.5mm",
+          "driving": true,
+          "expression": {
+            "tokens": [
+              {
+                "kind": "text",
+                "value": "12.5mm"
+              }
+            ]
+          },
           "id": "sldprt:model:parameter#247:0:0",
           "name": "Depth",
           "ordinal": 0,
@@ -137,6 +146,7 @@
             }
           }
         ],
+        "document_metadata": [],
         "feature_histories": [
           {
             "configurations": [],
@@ -217,25 +227,13 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": false
+    },
     "source": {
       "attributes": {
-        "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "2",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
-        "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_native_configuration_sha256": "a6a9e3af32106ac486286c5b0526863edbbfe38f7659acb8e5325933fd8e4e66",
-        "sldprt_native_history_sha256": "4813e18a77f366ff5f17995bb17623fb92d2d53e66d6c33f119b4bfef16588b1",
-        "sldprt_native_parameter_sha256": "1269173203e9b534703f9d9bdd7ab433dbd9e1ebe660d240782ee509b6ec3898",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "parasolid_schema": "SCH_SW_33103_11000"
       },
       "identity": {
         "classification": "classified",
@@ -362,16 +360,6 @@
       },
       {
         "code": {
-          "code": "config.incomplete-snapshot",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "feature.unresolved-output-scope",
           "kind": "feature_history_retained",
           "namespace": "sldprt",
@@ -389,6 +377,17 @@
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the sldprt decoder did not deliver classes: model",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -398,7 +397,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -442,6 +444,15 @@
         }
       }
     },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "brep_local_sha256": "887f8427f935ae19a9d4f6884ea91064eec57c60abae9e3bcdc4054c4807e910",
+      "document_local_sha256": "4d1c02ce876901a3495c4036d8f350fb95b6631695f2485b38f4a6884d35460e",
+      "outer_version": "0x00000004",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "retained_records": {
       "sldprt:file:block#8": {
         "bytes": {
@@ -449,7 +460,10 @@
           "retention": "inline"
         },
         "offset": 8,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -457,8 +471,12 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

@@ -22,8 +22,10 @@ fn is_linear_pattern_accepts_linear_and_rejects_mirror_and_native_features() {
         (
             PatternTransform::Linear {
                 direction: None,
-                spacing: PositiveLength::new(1.0).expect("positive spacing"),
-                count: 2,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: Length::new(1.0).expect("positive spacing").into(),
+                },
+                count: 2.into(),
                 second: None,
                 omitted_instances: Vec::new(),
             },
@@ -672,7 +674,7 @@ fn project_fixture_with_spacings(
         let mut transform = pattern.definition().clone();
         let PatternTransform::Linear {
             direction,
-            spacing,
+            distance: spacing,
             second,
             count,
             omitted_instances,
@@ -683,7 +685,18 @@ fn project_fixture_with_spacings(
         match field {
             "direction" => *direction = Some(direction.expect("direction").reversed()),
             "spacing" => {
-                *spacing = PositiveLength::new(spacing.get() + 1.0).expect("positive spacing");
+                *spacing = cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: Length::new(
+                        spacing
+                            .dimension()
+                            .literal()
+                            .expect("literal spacing")
+                            .get()
+                            + 1.0,
+                    )
+                    .expect("positive spacing")
+                    .into(),
+                };
             }
             "second_direction" => {
                 let Some(axis) = second else {
@@ -695,21 +708,33 @@ fn project_fixture_with_spacings(
                 let Some(axis) = second else {
                     continue;
                 };
-                axis.count += 1;
+                axis.count = (axis.count.literal().expect("literal count") + 1).into();
             }
             "second_spacing" => {
                 let Some(axis) = second else {
                     continue;
                 };
-                axis.spacing =
-                    PositiveLength::new(axis.spacing.get() + 1.0).expect("positive spacing");
+                axis.distance = cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: Length::new(
+                        axis.distance
+                            .dimension()
+                            .literal()
+                            .expect("literal spacing")
+                            .get()
+                            + 1.0,
+                    )
+                    .expect("positive spacing")
+                    .into(),
+                };
             }
             "omitted_first" | "omitted_second" => {
                 let Some(original) = omitted_instances.first().copied() else {
                     continue;
                 };
                 let coordinate = usize::from(field != "omitted_first");
-                let second_count = second.as_ref().map_or(1, |axis| axis.count);
+                let second_count = second
+                    .as_ref()
+                    .map_or(1, |axis| *axis.count.literal().expect("literal count"));
                 let replacement = [0, 1, 2]
                     .into_iter()
                     .map(|value| {
@@ -719,7 +744,7 @@ fn project_fixture_with_spacings(
                     })
                     .find(|position| {
                         *position != [0, 0]
-                            && position[0] < *count
+                            && position[0] < *count.literal().expect("literal count")
                             && position[1] < second_count
                             && !omitted_instances.contains(position)
                     });
@@ -730,7 +755,11 @@ fn project_fixture_with_spacings(
             }
             "omitted_instances" => {
                 if omitted_instances.is_empty() {
-                    omitted_instances.push(if *count > 1 { [1, 0] } else { [0, 1] });
+                    omitted_instances.push(if *count.literal().expect("literal count") > 1 {
+                        [1, 0]
+                    } else {
+                        [0, 1]
+                    });
                 } else {
                     omitted_instances.clear();
                 }
@@ -955,7 +984,7 @@ fn project_fixture_with_spacings(
     let PatternTransform::Linear { count, .. } = &mut transform else {
         panic!("linear");
     };
-    *count += 1;
+    *count = (count.literal().expect("literal count") + 1).into();
     changed.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: seeds.clone(),
@@ -1019,7 +1048,7 @@ fn rectangular_patterns_keep_exact_seeds_and_both_directions() {
             );
             let PatternTransform::Linear {
                 direction,
-                spacing,
+                distance: spacing,
                 count,
                 second: actual,
                 omitted_instances,
@@ -1028,16 +1057,31 @@ fn rectangular_patterns_keep_exact_seeds_and_both_directions() {
                 panic!("linear pattern");
             };
             assert!(omitted_instances.is_empty());
-            assert_eq!(*count, 3);
-            assert_eq!(spacing.get(), 6.0);
+            assert_eq!(*count, 3.into());
+            assert_eq!(
+                spacing
+                    .dimension()
+                    .literal()
+                    .expect("literal spacing")
+                    .get(),
+                6.0
+            );
             assert_eq!(
                 direction.expect("valid synthetic pattern fixture"),
                 Vector3::new(1.0, 0.0, 0.0)
             );
             assert_eq!(actual.is_some(), second);
             if let Some(actual) = actual {
-                assert_eq!(actual.count, 2);
-                assert_eq!(actual.spacing.get(), 4.0);
+                assert_eq!(actual.count, 2.into());
+                assert_eq!(
+                    actual
+                        .distance
+                        .dimension()
+                        .literal()
+                        .expect("literal spacing")
+                        .get(),
+                    4.0
+                );
                 assert_eq!(actual.direction, Vector3::new(0.0, -1.0, 0.0));
             }
         }

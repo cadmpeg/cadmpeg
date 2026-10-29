@@ -4,9 +4,6 @@
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
-use cadmpeg_ir::native::bytes::NativeBytes;
-
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{
@@ -357,17 +354,13 @@ pub(crate) struct AssemblyOccurrenceRecord {
 }
 
 impl AssemblyOccurrenceRecord {
-    pub(crate) fn from_occurrence(
-        ctx: &DecodeContext<'_>,
-        occurrence: &crate::assembly::AssemblyOccurrence,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_entities(1, "admit Inventor native assembly occurrence")?;
+    pub(crate) fn from_parsed_occurrence(occurrence: &crate::assembly::AssemblyOccurrence) -> Self {
         let id = format!(
             "inventor:assembly:occurrence#{}-{}",
             occurrence.segment_token, occurrence.record_ordinal
         );
         let segment_token = occurrence.segment_token.clone();
-        Ok(Self {
+        Self {
             id,
             segment_token,
             record_ordinal: occurrence.record_ordinal,
@@ -382,7 +375,7 @@ impl AssemblyOccurrenceRecord {
             related_references: occurrence.related_references.clone(),
             child_reference: occurrence.child_reference,
             occurrence_id: occurrence.occurrence_id,
-        })
+        }
     }
 }
 
@@ -494,11 +487,9 @@ pub(crate) struct DesignViewRepresentationRecord {
 
 impl DesignViewRepresentationRecord {
     pub(crate) fn from_representation(
-        ctx: &DecodeContext<'_>,
         representation: &crate::assembly::DesignViewRepresentation<'_>,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_entities(1, "admit Inventor design-view representation")?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             id: format!(
                 "inventor:design-view:representation#{}-{}",
                 representation.segment_token, representation.record_ordinal
@@ -511,7 +502,7 @@ impl DesignViewRepresentationRecord {
             suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                 representation.suffix.window(),
             ),
-        })
+        }
     }
 }
 
@@ -526,12 +517,8 @@ pub(crate) struct DesignViewVisibilityOffRecord {
 }
 
 impl DesignViewVisibilityOffRecord {
-    pub(crate) fn from_state(
-        ctx: &DecodeContext<'_>,
-        state: &crate::assembly::DesignViewVisibilityOff<'_>,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_entities(1, "admit Inventor design-view visibility state")?;
-        Ok(Self {
+    pub(crate) fn from_state(state: &crate::assembly::DesignViewVisibilityOff<'_>) -> Self {
+        Self {
             id: format!(
                 "inventor:design-view:visibility#{}-{}",
                 state.segment_token, state.record_ordinal
@@ -541,7 +528,7 @@ impl DesignViewVisibilityOffRecord {
             occurrence_path: state.occurrence_path.clone(),
             suffix_len: cadmpeg_core::decode::u64_from_index(state.suffix.window().len()),
             suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(state.suffix.window()),
-        })
+        }
     }
 }
 
@@ -559,12 +546,8 @@ pub(crate) struct AssemblyGroundingRecord {
 }
 
 impl AssemblyGroundingRecord {
-    pub(crate) fn from_grounding(
-        ctx: &DecodeContext<'_>,
-        grounding: &crate::assembly::OccurrenceGrounding<'_>,
-    ) -> Result<Self, CodecError> {
-        ctx.charge_entities(1, "admit Inventor assembly grounding")?;
-        Ok(Self {
+    pub(crate) fn from_grounding(grounding: &crate::assembly::OccurrenceGrounding<'_>) -> Self {
+        Self {
             id: format!(
                 "inventor:assembly:grounding#{}-{}",
                 grounding.segment_token, grounding.record_ordinal
@@ -579,7 +562,7 @@ impl AssemblyGroundingRecord {
             suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                 grounding.suffix.window(),
             ),
-        })
+        }
     }
 }
 
@@ -1000,7 +983,7 @@ impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionR
                 .map_err(|error| error.to_string())?,
             wire.record_ordinal,
             wire.segment_version_major,
-            PmDcPairedReferenceList::new(
+            PmDcPairedReferenceList::from_document(
                 wire.list_metadata,
                 PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
             )
@@ -1017,7 +1000,7 @@ pub(crate) struct PmGraphicsPrimaryColorStyleRecord {
     pub(crate) segment_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) controls: [u16; 7],
-    pub(crate) color_header: NativeBytes<[u8; 2]>,
+    pub(crate) color_header_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     pub(crate) colors: [[cadmpeg_ir::scalar::FiniteBinary32; 4]; 4],
     pub(crate) color_tail: [u16; 2],
     pub(crate) state: u8,
@@ -1270,8 +1253,7 @@ pub(crate) struct RseRecordRecord {
     selector: u32,
     type_index: u8,
     pub(crate) type_id: String,
-    pub(crate) payload_offset: u64,
-    pub(crate) payload_len: u64,
+    payload_len: u64,
     payload_sha256: String,
     trailing_payload_len: u32,
     trailer_len: u64,
@@ -1290,7 +1272,6 @@ impl RseRecordRecord {
             selector: frame.selector,
             type_index: frame.type_index()?,
             type_id: { crate::pmdc::type_id_string(frame.type_id) },
-            payload_offset: frame.payload_offset,
             payload_len: u64::from(frame.payload_len()?),
             payload_sha256: cadmpeg_ir::hash::sha256_hex(frame.payload.window()),
             trailing_payload_len: frame.trailing_payload_len()?,
@@ -1318,7 +1299,6 @@ struct RseRecordRecordWire {
     selector: u32,
     type_index: u8,
     type_id: String,
-    payload_offset: u64,
     payload_len: u64,
     payload_sha256: String,
     trailing_payload_len: u32,
@@ -1347,7 +1327,6 @@ impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
             selector: wire.selector,
             type_index: wire.type_index,
             type_id: wire.type_id,
-            payload_offset: wire.payload_offset,
             payload_len: wire.payload_len,
             payload_sha256: wire.payload_sha256,
             trailing_payload_len: wire.trailing_payload_len,
@@ -1378,7 +1357,6 @@ pub(crate) enum ActiveCarrierRecord {
         header_value: u32,
         schema: u32,
         carrier_len: std::num::NonZeroU64,
-        carrier_offset: u64,
         carrier_sha256: String,
         selected_key: u32,
         enabled: bool,
@@ -1400,7 +1378,6 @@ struct ActiveCarrierRecordView<'a> {
     header_value: Option<u32>,
     schema: Option<u32>,
     carrier_len: Option<u64>,
-    carrier_offset: Option<u64>,
     carrier_sha256: Option<&'a str>,
     selected_key: Option<u32>,
     enabled: Option<bool>,
@@ -1428,7 +1405,6 @@ struct ActiveCarrierRecordWire {
     header_value: Option<u32>,
     schema: Option<u32>,
     carrier_len: Option<u64>,
-    carrier_offset: Option<u64>,
     carrier_sha256: Option<String>,
     selected_key: Option<u32>,
     enabled: Option<bool>,
@@ -1460,7 +1436,6 @@ impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
                 header_value: None,
                 schema: None,
                 carrier_len: None,
-                carrier_offset: None,
                 carrier_sha256: None,
                 selected_key: None,
                 enabled: None,
@@ -1480,7 +1455,6 @@ impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
                 header_value: None,
                 schema: None,
                 carrier_len: None,
-                carrier_offset: None,
                 carrier_sha256: None,
                 selected_key: None,
                 enabled: None,
@@ -1499,7 +1473,6 @@ impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
                 header_value,
                 schema,
                 carrier_len,
-                carrier_offset,
                 carrier_sha256,
                 selected_key,
                 enabled,
@@ -1517,7 +1490,6 @@ impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
                 header_value: Some(*header_value),
                 schema: Some(*schema),
                 carrier_len: Some(carrier_len.get()),
-                carrier_offset: Some(*carrier_offset),
                 carrier_sha256: Some(carrier_sha256),
                 selected_key: Some(*selected_key),
                 enabled: Some(*enabled),
@@ -1542,7 +1514,6 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
             || wire.header_value.is_some()
             || wire.schema.is_some()
             || wire.carrier_len.is_some()
-            || wire.carrier_offset.is_some()
             || wire.carrier_sha256.is_some()
             || wire.selected_key.is_some()
             || wire.enabled.is_some()
@@ -1602,9 +1573,6 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
                         .schema
                         .ok_or_else(|| "selected active carrier requires schema".to_owned())?,
                     carrier_len,
-                    carrier_offset: wire.carrier_offset.ok_or_else(|| {
-                        "selected active carrier requires carrier_offset".to_owned()
-                    })?,
                     carrier_sha256: wire.carrier_sha256.ok_or_else(|| {
                         "selected active carrier requires carrier_sha256".to_owned()
                     })?,
@@ -1646,7 +1614,6 @@ impl ActiveCarrierRecord {
                 header_value: carrier.header_value,
                 schema: carrier.schema,
                 carrier_len: carrier.carrier_len,
-                carrier_offset: carrier.carrier_offset,
                 carrier_sha256: cadmpeg_ir::hash::sha256_hex(carrier.bytes.window()),
                 selected_key: carrier.selected_key,
                 enabled: carrier.enabled,
@@ -1845,7 +1812,7 @@ mod tests {
         let expected = serde_json::json!({
             "id": "inventor:rse:record#1", "token": "segment", "ordinal": 0,
             "selector": 0, "type_index": 0, "type_id": "type",
-            "payload_offset": 0, "payload_len": 0, "payload_sha256": "0",
+            "payload_len": 0, "payload_sha256": "0",
             "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0"
         });
         let record: super::RseRecordRecord =
@@ -1865,7 +1832,7 @@ mod tests {
                 "segment_token": null, "record_ordinal": null,
                 "segment_version_major": null, "family": null,
                 "header_state": null, "header_kind": null, "header_value": null,
-                "schema": null, "carrier_len": null, "carrier_offset": null,
+                "schema": null, "carrier_len": null,
                 "carrier_sha256": null, "selected_key": null,
                 "enabled": null, "delta_state": null,
                 "history_reference": null, "detail": null

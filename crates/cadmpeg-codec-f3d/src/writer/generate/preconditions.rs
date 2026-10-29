@@ -19,6 +19,31 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 use super::attributes::source_less_body_key;
+/// Each face has one signed native key slot; keys are not globally unique.
+pub(super) fn validate_source_less_face_keys(native: &F3dNative) -> Result<(), CodecError> {
+    let mut records = BTreeSet::new();
+    for record in &native.face_native_keys {
+        if !records.insert(record.id()) {
+            return Err(CodecError::InvalidInput(format!(
+                "multiple F3D native face key records have identity {}",
+                record.id(),
+            )));
+        }
+    }
+    for record in &native.face_native_keys {
+        if record
+            .asm_face_key
+            .is_some_and(|key| i64::try_from(key).is_err())
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D native face key {} exceeds its signed 64-bit native slot",
+                record.id(),
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
@@ -44,7 +69,7 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 SolvedSurfaceGeometry::Nurbs(_) | SolvedSurfaceGeometry::Unknown { .. }
             )
         }) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
                 procedural.id, surface.id
             )));
@@ -80,7 +105,7 @@ pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 )))
             }
             Some(_) => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                 "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
                 procedural.id, curve.id
             )))
@@ -100,7 +125,7 @@ pub(super) fn validate_source_less_topology_tolerances(
         .iter()
         .find(|face| face.tolerance.is_some())
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D cannot serialize face {} tolerance losslessly",
             face.id
         )));
@@ -125,7 +150,7 @@ pub(super) fn validate_source_less_topology_tolerances(
         .iter()
         .find(|coedge| coedge.use_curve.is_some() && !tolerant.contains(coedge.id.as_str()))
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D coedge {} use curve lacks a cache-local tolerant extension",
             coedge.id
         )));
@@ -135,7 +160,7 @@ pub(super) fn validate_source_less_topology_tolerances(
 
 pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecError> {
     if let Some(tessellation) = target.model.tessellations.first() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D cannot serialize neutral tessellation {} losslessly",
             tessellation.id
         )));
@@ -146,7 +171,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
         .iter()
         .find(|surface| surface.source_object.is_some())
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D cannot serialize source-object association on surface {} losslessly",
             surface.id
         )));
@@ -157,7 +182,7 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
         .iter()
         .find(|curve| curve.source_object.is_some())
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D cannot serialize source-object association on curve {} losslessly",
             curve.id
         )));
@@ -165,18 +190,15 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
     Ok(())
 }
 
-pub(super) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
-    if native.construction_recipes.windows(2).any(|pair| {
-        pair[0].record_index.map(|index| index.value)
-            > pair[1].record_index.map(|index| index.value)
-    }) {
-        return Err(CodecError::InvalidInput(
-            "F3D construction recipes must be ordered by record index".into(),
-        ));
-    }
-    let mut group_counts = HashMap::new();
+pub(in crate::writer) fn validate_source_less_recipes(
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    // Native arenas use identity order. Source indices choose wire layout and
+    // need not be monotonic in that order; explicit group ordinals are unique
+    // and contiguous independently of storage order.
+    let mut groups = HashMap::new();
     for recipe in &native.construction_recipes {
-        let expected = group_counts
+        groups
             .entry((
                 recipe.kind,
                 recipe
@@ -184,14 +206,19 @@ pub(super) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
                     .as_ref()
                     .map(|design| design.id.value.as_str()),
             ))
-            .or_insert(0_u64);
-        if u64::from(recipe.recipe_index) != *expected {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D construction recipe {} has noncontiguous group index {}",
-                recipe.id, recipe.recipe_index
-            )));
+            .or_insert_with(Vec::new)
+            .push(recipe);
+    }
+    for group in groups.values_mut() {
+        group.sort_by_key(|recipe| recipe.recipe_index);
+        for (index, recipe) in group.iter().enumerate() {
+            if usize::try_from(recipe.recipe_index) != Ok(index) {
+                return Err(CodecError::InvalidInput(format!(
+                    "F3D construction recipe {} has noncontiguous group index {}",
+                    recipe.id, recipe.recipe_index,
+                )));
+            }
         }
-        *expected += 1;
     }
     Ok(())
 }
@@ -203,13 +230,13 @@ fn source_less_design_record_type<'a>(
     record_kind: &str,
 ) -> Result<&'a SegmentType, CodecError> {
     let type_ordinal = class_tag.dynamic_ordinal().ok_or_else(|| {
-        CodecError::InvalidInput(format!(
+        CodecError::UnsupportedContent(format!(
             "F3D {record_kind} class tag {} is below the dynamic type range",
             class_tag.as_str()
         ))
     })?;
     let design_type = native.design_types.get(type_ordinal).ok_or_else(|| {
-        CodecError::InvalidInput(format!(
+        CodecError::UnsupportedContent(format!(
             "F3D {record_kind} class tag {} is outside the Design type table",
             class_tag.as_str()
         ))
@@ -219,7 +246,7 @@ fn source_less_design_record_type<'a>(
         .values()
         .any(|registered| *registered == u64::from(record_index))
     {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "F3D {record_kind} {record_index} is not registered by class tag {}",
             class_tag.as_str()
         )));
@@ -236,7 +263,9 @@ fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -
         && design_type.module == expected.2
 }
 
-pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
+pub(in crate::writer) fn validate_source_less_sketch_graph(
+    native: &F3dNative,
+) -> Result<(), CodecError> {
     let sketch_owners = native
         .design_entity_headers
         .iter()
@@ -302,7 +331,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             point_type,
             crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE,
         ) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "source-less F3D sketch point {} requires the current point record type",
                 point.id
             )));
@@ -313,7 +342,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 crate::records::sketch_geometry::SketchPointRecordForm::Version11 { .. }
             )
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "source-less F3D sketch point {} requires the version-11 member sequence",
                 point.id
             )));
@@ -328,7 +357,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             )));
         }
         let owner_reference = point.owner_reference.ok_or_else(|| {
-            CodecError::InvalidInput(format!(
+            CodecError::UnsupportedContent(format!(
                 "F3D sketch point {} has no direct sketch owner",
                 point.id
             ))
@@ -416,20 +445,20 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 crate::design::decode::sketch::CURRENT_SKETCH_NURBS_TYPE
             }
             None => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "source-less F3D sketch curve {} has no writable geometry",
                     curve.id
                 )))
             }
         };
         if !design_type_matches(curve_type, expected_type) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "source-less F3D sketch curve {} requires its current geometry record type",
                 curve.id
             )));
         }
         let owner_reference = curve.owner_reference.ok_or_else(|| {
-            CodecError::InvalidInput(format!(
+            CodecError::UnsupportedContent(format!(
                 "F3D sketch curve {} has no direct sketch owner",
                 curve.id
             ))
@@ -500,7 +529,7 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             )));
         }
         if !reachable_headers.contains(&header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "F3D Design record header {} is unreachable from the sketch graph",
                 header.id
             )));
@@ -509,7 +538,9 @@ pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     Ok(())
 }
 
-pub(super) fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
+pub(in crate::writer) fn validate_source_less_design_ownership(
+    native: &F3dNative,
+) -> Result<(), CodecError> {
     let mut types_by_guid = BTreeMap::new();
     let mut entity_types = BTreeMap::new();
     let mut entity_modules = BTreeMap::new();
@@ -612,7 +643,7 @@ pub(super) fn validate_source_less_design_bindings(
         Ok(())
     };
     if let Some(assignment) = native.design_material_assignments.first() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D material assignment {} requires a typed body-presentation B-rep and scene graph",
             assignment.id
         )));
@@ -627,7 +658,7 @@ pub(super) fn validate_source_less_design_bindings(
     Ok(DesignBindingsValidated { native })
 }
 
-pub(super) fn validate_source_less_history_graph(
+pub(in crate::writer) fn validate_source_less_history_graph(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
@@ -695,7 +726,7 @@ pub(super) fn validate_source_less_history_graph(
         .iter()
         .find(|history| history.binding_budget_exceeded)
     {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D cannot serialize ASM history {} whose bulletin boards and records were not retained",
             history.id
         )));
@@ -735,7 +766,7 @@ pub(super) fn validate_source_less_design_links(
     attributes: &super::attributes::AttributeIndex<'_>,
 ) -> Result<(), CodecError> {
     if let Some(sentinel) = native.mesh_surface_sentinels.first() {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less F3D cannot serialize mesh-surface sentinel {} without its retained ASM record",
             sentinel.id()
         )));
@@ -761,7 +792,7 @@ pub(super) fn validate_source_less_design_links(
             )));
         }
         if !linked_coedges.insert(coedge) {
-            return Err(CodecError::InvalidInput(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "source-less F3D generation supports one sketch-curve link per coedge: {}",
                 coedge.as_str()
             )));
@@ -895,7 +926,7 @@ pub(super) fn validate_source_less_design_links(
                     curve.geometry,
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
                 ) {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(CodecError::UnsupportedContent(format!(
                         "source-less F3D tolerant-coedge extension {} requires a NURBS use curve",
                         parameters.id()
                     )));
@@ -914,7 +945,7 @@ pub(super) fn validate_source_less_design_links(
                 target: Some(_),
                 ..
             } => {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "source-less F3D cannot relocate tolerant-coedge extension {}",
                     parameters.id()
                 )));
@@ -1006,7 +1037,33 @@ pub(super) fn validate_source_less_design_links(
         vertices,
         "vertex-ownership"
     );
-    validate_unique_targets!(&native.face_sidedness, face, faces, "face-sidedness");
+    for face in &target.model.faces {
+        if native
+            .face_sidedness
+            .iter()
+            .filter(|record| {
+                record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
+            })
+            .take(2)
+            .count()
+            > 1
+        {
+            return Err(CodecError::InvalidInput(format!(
+                "multiple F3D face-sidedness records target {}",
+                face.id
+            )));
+        }
+    }
+    for record in &native.face_sidedness {
+        if !target.model.faces.iter().any(|face| {
+            record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
+        }) {
+            return Err(CodecError::InvalidInput(format!(
+                "F3D face-sidedness metadata {} has no linked face",
+                record.id()
+            )));
+        }
+    }
     validate_unique_targets!(
         &native.tolerant_edge_tails,
         edge,
@@ -1351,5 +1408,50 @@ mod tests {
         assert!(error
             .to_string()
             .contains("requires finite fields and a tolerant vertex"));
+    }
+    #[test]
+    fn sidedness_precondition_preserves_missing_and_ambiguous_owner_refusals() {
+        use cadmpeg_asm::brep::records::{FaceNativeKey, FaceSidedness};
+        use cadmpeg_ir::topology::Sense;
+        let mut target = cadmpeg_ir::examples::unit_cube().unwrap();
+        let key = FaceNativeKey {
+            source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+            record_index: 17,
+            asm_face_key: Some(7),
+        };
+        let side = FaceSidedness {
+            source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+            record_index: 17,
+            face_key: Some(key.id()),
+            native_sense: Sense::Forward,
+            carrier_flipped: false,
+            containment: None,
+        };
+        let mut native = F3dNative {
+            face_native_keys: vec![key.clone()],
+            face_sidedness: vec![side.clone()],
+            ..F3dNative::default()
+        };
+        let attributes = AttributeIndex::new(&target, &native);
+        assert!(
+            validate_source_less_design_links(&target, &native, &attributes)
+                .unwrap_err()
+                .to_string()
+                .contains("has no linked face")
+        );
+        target.model.faces[0].native_ref = Some(key.id());
+        target.model.faces[1].native_ref = Some(key.id());
+        let attributes = AttributeIndex::new(&target, &native);
+        validate_source_less_design_links(&target, &native, &attributes).unwrap();
+        let mut second = side;
+        second.record_index = 18;
+        native.face_sidedness.push(second);
+        let attributes = AttributeIndex::new(&target, &native);
+        assert!(
+            validate_source_less_design_links(&target, &native, &attributes)
+                .unwrap_err()
+                .to_string()
+                .contains("multiple F3D face-sidedness records target")
+        );
     }
 }

@@ -290,11 +290,9 @@ fn point_display_symbol_valid(
                     })
             })
         }
-        Some(
-            crate::parameter::TokenValue::Real(_)
-            | crate::parameter::TokenValue::String(_)
-            | crate::parameter::TokenValue::Unreadable(_),
-        ) => false,
+        Some(crate::parameter::TokenValue::Real(_) | crate::parameter::TokenValue::String(_)) => {
+            false
+        }
     }
 }
 
@@ -1296,26 +1294,6 @@ pub(super) fn admit<T>(
     }
 }
 
-/// The Directory sequence a source-object association names.
-///
-/// The sole producer of the `D{sequence}` object-id spelling. Nothing reads the
-/// sequence back out of that text: every consumer holds the sequence itself,
-/// through [`SourceSequences`] or through the entry it is projecting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SourceObjectId(u32);
-
-impl SourceObjectId {
-    /// Names the Directory entry a projected record was decoded from.
-    pub(crate) const fn new(sequence: u32) -> Self {
-        Self(sequence)
-    }
-
-    /// The object-id text every source association carries.
-    pub(crate) fn text(self) -> String {
-        format!("D{}", self.0)
-    }
-}
-
 /// The Directory sequence each projected body and face was decoded from.
 ///
 /// Recorded where the id is minted, so appearance binding reads the sequence
@@ -1360,11 +1338,11 @@ impl SourceSequences {
         }
     }
 
-    pub(super) fn body(&self, id: &BodyId) -> Option<u32> {
+    pub(crate) fn body(&self, id: &BodyId) -> Option<u32> {
         self.bodies.get(id).copied()
     }
 
-    pub(super) fn face(&self, id: &FaceId) -> Option<u32> {
+    pub(crate) fn face(&self, id: &FaceId) -> Option<u32> {
         self.faces.get(id).copied()
     }
 
@@ -1393,12 +1371,6 @@ pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     let object_id = format!("D{}", entry.sequence);
-    let name = std::str::from_utf8(&entry.label)
-        .ok()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    let layer = entry.level.map(|level| level.to_string());
     Ok(SourceObjectAssociation {
         geometry_role: Some(if entry.status.is_physically_dependent() {
             cadmpeg_ir::SourceGeometryRole::Support
@@ -1409,10 +1381,6 @@ pub(super) fn source_object(
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name,
-        color: None,
-        visible: Some(entry.status.is_visible()),
-        layer,
         instance_path: Vec::new(),
     })
 }
@@ -1737,11 +1705,13 @@ pub(crate) fn project_geometry(
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -1751,6 +1721,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -1775,6 +1746,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, angle]))
                 .map_err(CodecError::malformed)?,
@@ -1786,11 +1758,29 @@ pub(crate) fn project_geometry(
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }
+    let mut staged_points = BTreeSet::new();
+    for point in &ir.model.points {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(size_of::<PointId>() + point.id.as_str().len()),
+            "IGES staged point index",
+        )?;
+        staged_points.insert(point.id.clone());
+    }
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
-        let factor = global.length_factor_mm();
+        let point_id = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        if staged_points.contains(&point_id) {
+            sequences.record_point(&point_id, &crate::ids::Stem::directory(entry.sequence));
+            if !entry.status.is_physically_dependent() {
+                free_vertices.push(crate::ids::vertex(&crate::ids::Stem::directory(
+                    entry.sequence,
+                )));
+            }
+            decoded.insert(entry.sequence);
+            continue;
+        }
         let Some(record) = records.get(&entry.sequence).copied() else {
             super::push_geometry_loss(
                 &mut losses,
@@ -1799,67 +1789,33 @@ pub(crate) fn project_geometry(
             );
             continue;
         };
-        let coordinates = [record.number(1), record.number(2), record.number(3)];
-        let [Some(x), Some(y), Some(z)] = coordinates else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("X, Y, or Z is not numeric"),
-            );
-            continue;
-        };
-        if !point_display_symbol_valid(record, &entries, global.global_table()) {
-            super::push_attributed_loss(&mut losses, entry, IgesLossCode::DisplayDataNotProjected,
-                format_args!("Type 116 display symbol pointer is invalid for the effective specification family"));
-        }
-        let transform = match resolve_transform(
-            entry.transform,
+        let point = match point::project(
+            entry,
+            record,
             &entries,
             &records,
-            factor,
-            global.real_precision(),
-            &mut BTreeSet::new(),
+            (global, analytic_surface_locations.contains(&entry.sequence)),
             ctx,
+            &mut losses,
         ) {
-            Ok(transform) => transform,
-            Err(error) => {
-                let message = error.non_resource()?;
+            Ok(Some(point)) => point,
+            Ok(None) => continue,
+            Err(CodecError::Malformed(message)) => {
                 super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
             }
+            Err(error) => return Err(error),
         };
-        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
-        else {
-            super::push_geometry_loss(
-                &mut losses,
-                entry,
-                format_args!("placement produces a non-finite point"),
-            );
-            continue;
-        };
-        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
-        sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
-
+        sequences.record_point(
+            &point.point.id,
+            &crate::ids::Stem::directory(entry.sequence),
+        );
         ctx.charge_entities(1, "iges_geometry_primitives")?;
-        ir.model.points.push(Point::new(
-            point.clone(),
-            position,
-            Some(source_object(entry)?),
-        ));
-        if !entry.status.is_physically_dependent()
-            && (entry.status.subordinate() == Some(Subordinate::Independent)
-                || !analytic_surface_locations.contains(&entry.sequence))
-        {
-            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
-
+        ir.model.points.push(point.point);
+        if let Some(vertex) = point.vertex {
             ctx.charge_entities(1, "iges_geometry_primitives")?;
-            ir.model.vertices.push(Vertex {
-                id: vertex.clone(),
-                point,
-                tolerance: None,
-            });
-
-            free_vertices.push(vertex);
+            free_vertices.push(vertex.id.clone());
+            ir.model.vertices.push(vertex);
         }
         decoded.insert(entry.sequence);
     }
@@ -1970,6 +1926,7 @@ pub(crate) fn project_geometry(
 
             ctx.charge_entities(1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertex.clone(),
                 point,
                 tolerance: None,
@@ -2064,7 +2021,18 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
-            parameter_range: None,
+            native_ref: None,
+            parameter_range: if entry.form == 0 {
+                Some(
+                    IncreasingParameterInterval::new([0.0, length]).ok_or_else(|| {
+                        CodecError::malformed(
+                            "IGES finite line has no increasing physical interval",
+                        )
+                    })?,
+                )
+            } else {
+                None
+            },
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
@@ -2092,11 +2060,13 @@ pub(crate) fn project_geometry(
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -2105,6 +2075,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, length]))
                 .map_err(CodecError::malformed)?,
@@ -2506,11 +2477,13 @@ pub(crate) fn project_geometry(
         ctx.charge_entities(2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -2520,6 +2493,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -2528,6 +2502,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_interval.into()),
             start: start_vertex,
@@ -2599,6 +2574,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         ir.model.bodies.push(Body {
+            native_ref: None,
             id: body.clone(),
             kind: BodyKind::Wire,
             regions: body_regions,
@@ -2611,6 +2587,7 @@ pub(crate) fn project_geometry(
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         ir.model.regions.push(Region {
+            native_ref: None,
             id: region.clone(),
             body,
             shells: region_shells,
@@ -2649,6 +2626,19 @@ pub(crate) fn project_geometry(
         free_geometry::retain_independent(ir, &shell, &entries, &mut sequences)?;
     }
 
+    let mut vertex_points = BTreeSet::new();
+    for vertex in &ir.model.vertices {
+        vertex_points.insert(&vertex.point);
+    }
+    ir.model.points.retain(|point| {
+        !sequences
+            .point(&point.id)
+            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
+            || vertex_points.contains(&point.id)
+    });
+    let live_points: BTreeSet<_> = ir.model.points.iter().map(|point| &point.id).collect();
+    sequences.points.retain(|id, _| live_points.contains(id));
+
     super::presentation::project(
         ir,
         directory,
@@ -2673,16 +2663,6 @@ pub(crate) fn project_geometry(
     super::annotation::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
 
-    let mut vertex_points = BTreeSet::new();
-    for vertex in &ir.model.vertices {
-        vertex_points.insert(&vertex.point);
-    }
-    ir.model.points.retain(|point| {
-        !sequences
-            .point(&point.id)
-            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
-            || vertex_points.contains(&point.id)
-    });
     Ok(Projection {
         placement_rejections,
         decoded,
@@ -2694,6 +2674,7 @@ pub(crate) fn project_geometry(
 }
 
 mod free_geometry;
+pub(crate) mod point;
 
 #[cfg(test)]
 mod tests;

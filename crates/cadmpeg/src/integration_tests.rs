@@ -97,6 +97,7 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     };
     let pcurve = PcurveId::mint("test:recovery:pcurve#edge").unwrap();
     ir.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: pcurve.clone(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(

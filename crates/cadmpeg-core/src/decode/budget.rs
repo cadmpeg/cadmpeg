@@ -2,15 +2,18 @@
 //! Resource ceilings for one decode session, and the local work counter.
 //!
 //! A session counts input bytes, decompressed bytes, retained output bytes,
-//! entities, and recursion depth. A refusal in any of them fuses the session:
-//! every later charge fails and `finish_session` returns the refusal.
+//! entities, and recursion depth. A session refusal permanently fuses the
+//! budget. A part refusal blocks further work until its owning part runner
+//! acknowledges it after rollback; cumulative resource charges remain.
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::sync::Arc;
 
+use crate::operation_budget::OperationBudget;
 use crate::CodecError;
 
-use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
+use super::error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, RETAINED_BASE,
     RETAINED_PER_INPUT_BYTE,
@@ -23,9 +26,8 @@ pub(super) struct DecodeBudget {
     input_bytes: Cell<u64>,
     decompressed: Cell<u64>,
     retained: Cell<u64>,
-    entities: Cell<u64>,
     recursion_depth: Cell<u64>,
-    fuse: Cell<Option<ResourceLimit>>,
+    account: Arc<OperationBudget>,
 }
 
 impl DecodeBudget {
@@ -40,14 +42,24 @@ impl DecodeBudget {
             input_bytes: Cell::new(input_bytes),
             decompressed: Cell::new(0),
             retained: Cell::new(0),
-            entities: Cell::new(0),
             recursion_depth: Cell::new(0),
-            fuse: Cell::new(None),
+            account: Arc::new(OperationBudget::new(policy.limits, input_bytes)),
+        }
+    }
+
+    pub(super) fn from_account(policy: DecodePolicy, account: Arc<OperationBudget>) -> Self {
+        Self {
+            policy,
+            input_bytes: Cell::new(0),
+            decompressed: Cell::new(0),
+            retained: Cell::new(0),
+            recursion_depth: Cell::new(0),
+            account,
         }
     }
 
     pub(super) fn fused(&self) -> Option<ResourceLimit> {
-        self.fuse.get()
+        self.account.fused()
     }
 
     /// The smaller of a policy ceiling and `base + per_input_byte * input`.
@@ -128,10 +140,32 @@ impl DecodeBudget {
         amount: u64,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        if let Some(resource) = self.fuse.get() {
+        let before = used.get();
+        self.admit(dimension, before, limit, amount, operation)?;
+        match dimension {
+            ResourceDimension::InputBytes => self.account.charge_input(amount, operation)?,
+            ResourceDimension::DecompressedBytes => {
+                self.account.charge_decompressed(amount, operation)?;
+            }
+            _ => {}
+        }
+        used.set(before + amount);
+        #[cfg(feature = "test-support")]
+        super::test_support::record_charge(dimension, operation, amount);
+        Ok(())
+    }
+
+    fn admit(
+        &self,
+        dimension: ResourceDimension,
+        before: u64,
+        limit: u64,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        if let Some(resource) = self.account.fused() {
             return Err(resource);
         }
-        let before = used.get();
         #[cfg(feature = "test-support")]
         let limit = super::test_support::charge_limit(
             &self.policy.limits,
@@ -141,23 +175,8 @@ impl DecodeBudget {
             amount,
         )
         .map_or(limit, |probe| limit.min(probe));
-        if limit
-            .checked_sub(before)
-            .is_none_or(|remaining| amount > remaining)
-        {
-            return Err(self.refuse_limit(
-                dimension,
-                ResourceFailure::BudgetExceeded,
-                limit,
-                before,
-                amount,
-                operation,
-            ));
-        }
-        used.set(before + amount);
-        #[cfg(feature = "test-support")]
-        super::test_support::record_charge(dimension, operation, amount);
-        Ok(())
+        self.account
+            .admit(dimension, limit, before, amount, operation)
     }
 
     pub(super) fn refuse_limit(
@@ -170,6 +189,7 @@ impl DecodeBudget {
         operation: &'static str,
     ) -> ResourceLimit {
         let resource = ResourceLimit {
+            scope: LimitScope::for_dimension(dimension),
             dimension,
             reason,
             limit,
@@ -177,8 +197,19 @@ impl DecodeBudget {
             additional,
             operation,
         };
-        self.fuse.set(Some(resource));
-        resource
+        self.refuse_resource(resource)
+    }
+
+    pub(super) fn refuse_resource(&self, resource: ResourceLimit) -> ResourceLimit {
+        self.account.refuse(resource)
+    }
+
+    pub(super) fn recover_part(&self, expected: ResourceLimit) -> Result<(), ResourceLimit> {
+        self.account.recover_part(expected)
+    }
+
+    pub(super) fn operation_budget(&self) -> Arc<OperationBudget> {
+        Arc::clone(&self.account)
     }
 
     pub(super) fn refuse(
@@ -201,25 +232,37 @@ impl DecodeBudget {
         bytes: u64,
         operation: &'static str,
     ) -> Result<(), ResourceLimit> {
-        self.charge(
+        let before = self.retained.get();
+        self.admit(
             ResourceDimension::RetainedBytes,
-            &self.retained,
+            before,
             self.retained_allowance(),
             bytes,
             operation,
-        )
+        )?;
+        self.account.charge_retained(bytes, operation)?;
+        self.retained.set(before + bytes);
+        #[cfg(feature = "test-support")]
+        super::test_support::record_charge(ResourceDimension::RetainedBytes, operation, bytes);
+        Ok(())
     }
 
     /// Retained bytes the session can still charge before `retain_bytes` refuses.
     pub(super) fn retained_bytes_available(&self) -> u64 {
-        if self.fuse.get().is_some() {
+        if self.account.fused().is_some() {
             return 0;
         }
         // A session that retained past its allowance can afford nothing more.
         let Some(remaining) = self.retained_allowance().checked_sub(self.retained.get()) else {
             return 0;
         };
-        remaining
+        remaining.min(
+            self.policy
+                .limits
+                .max_retained_bytes
+                .checked_sub(self.account.retained_used())
+                .unwrap_or(0),
+        )
     }
 
     /// Reports an allocator refusal for `requested` bytes or slots.
@@ -244,14 +287,18 @@ impl DecodeBudget {
         count: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        self.charge(
+        let limit = self.policy.limits.max_entities;
+        self.admit(
             ResourceDimension::Entities,
-            &self.entities,
-            self.policy.limits.max_entities,
+            self.account.entities_used(),
+            limit,
             count,
             operation,
-        )
-        .map_err(Into::into)
+        )?;
+        self.account.charge_entities(limit, count, operation)?;
+        #[cfg(feature = "test-support")]
+        super::test_support::record_charge(ResourceDimension::Entities, operation, count);
+        Ok(())
     }
 
     pub(super) fn enter_nested(
@@ -641,7 +688,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_entities = 1;
         let session = DecodeBudget::new(policy, 1);
-        session.entities.set(2);
+        session.account.state().entities = 2;
         let error = session.charge_entities(0, "entities");
         assert!(matches!(
             error,

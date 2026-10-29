@@ -205,8 +205,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
                     result: result.clone(),
                     source_reversed: false,
                 }],
-                distance: Length::new(2.0).unwrap(),
-                parameter: None,
+                distance: crate::features::Dimension::Literal(Length::new(2.0).unwrap()),
             },
         )
         .unwrap(),
@@ -533,11 +532,11 @@ fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
     };
     let arc_angle = |name: &str| SketchConstraintDefinitionInput::ArcAngle {
         entity: entity(name),
-        angle: quarter,
+        angle: crate::features::Dimension::Literal(quarter),
     };
     let ellipse_angle = |name: &str| SketchConstraintDefinitionInput::EllipseAngle {
         entity: entity(name),
-        angle: quarter,
+        angle: crate::features::Dimension::Literal(quarter),
     };
     let midpoint_refusal =
         "sketch midpoint constraint references an entity that is not a bounded curve";
@@ -898,6 +897,8 @@ fn sketch_feature_ownership_and_order_are_validated() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id.clone())),
@@ -906,7 +907,9 @@ fn sketch_feature_ownership_and_order_are_validated() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: crate::scalar::NonZeroLength::new(1.0).unwrap(),
+                            length: crate::features::Dimension::Literal(
+                                crate::scalar::NonZeroLength::new(1.0).unwrap(),
+                            ),
                         },
                         draft: None,
                     },
@@ -923,6 +926,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
     });
     for (ordinal, suffix) in [(1, "owner"), (2, "duplicate-owner")] {
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint(format!("synthetic:test:feature#{suffix}"))
                 .expect("identity grammar"),
             ordinal,
@@ -945,7 +949,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
     let findings = validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings;
-    assert!(findings.iter().any(|finding| finding
+    assert!(!findings.iter().any(|finding| finding
         .message
         .contains("does not precede its profile consumer")));
     assert!(findings
@@ -978,6 +982,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         native_ref: None,
     });
     let feature = |suffix: &str, ordinal, profile| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(format!("synthetic:test:feature#{suffix}")).expect("identity grammar"),
         ordinal,
         name: None,
@@ -996,7 +1001,9 @@ fn sketch_profile_subselections_are_bounds_checked() {
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: crate::scalar::NonZeroLength::new(1.0).unwrap(),
+                            length: crate::features::Dimension::Literal(
+                                crate::scalar::NonZeroLength::new(1.0).unwrap(),
+                            ),
                         },
                         draft: None,
                     },
@@ -1079,6 +1086,8 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id),
@@ -1143,9 +1152,9 @@ fn spatial_distance_validation_rejects_overflowed_squared_norms() {
         ordinal: 0,
         name: "distance".into(),
         expression: "1 mm".into(),
+        driving: true,
         display: None,
         value: Some(ParameterValue::Length(Length::new(1.0).unwrap())),
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -1159,7 +1168,7 @@ fn spatial_distance_validation_rejects_overflowed_squared_norms() {
                 SpatialSketchConstraintDefinitionInput::PointDistance {
                     first,
                     second,
-                    parameter,
+                    parameter: crate::features::Dimension::Parameter(parameter),
                 },
             )
             .unwrap(),
@@ -1288,10 +1297,10 @@ fn diameter_constraints_check_the_bound_circular_radius() {
         owner: None,
         ordinal: 0,
         name: "diameter".into(),
-        expression: String::new(),
+        expression: "".into(),
+        driving: true,
         display: Some(DimensionDisplay::Diameter),
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
@@ -1301,7 +1310,10 @@ fn diameter_constraints_check_the_bound_circular_radius() {
         id: id.clone(),
         sketch,
         definition: SketchConstraintDefinition::try_from(
-            SketchConstraintDefinitionInput::Diameter { entity, parameter },
+            SketchConstraintDefinitionInput::Diameter {
+                entity,
+                parameter: crate::features::Dimension::Parameter(parameter),
+            },
         )
         .unwrap(),
         name: None,

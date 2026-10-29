@@ -90,7 +90,7 @@ pub(super) fn fixed_kind_tail_operations(
     )
     .expect("class-368 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, u64_from_index(move_at + 48));
+    assert_eq!(decoded.transform_offset, Some(u64_from_index(move_at + 48)));
     assert_eq!(u32::from(decoded.form), 5);
 
     let compact_move_at = bytes.len();
@@ -129,11 +129,14 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
-        u64_from_index(compact_move_at + 48)
+        Some(u64_from_index(compact_move_at + 48))
     );
     assert_eq!(decoded.transform_record_index, 91);
     assert_eq!(u32::from(decoded.form), 1);
-    assert_eq!(decoded.form_offset, u64_from_index(compact_move_at + 43));
+    assert_eq!(
+        decoded.form_offset,
+        Some(u64_from_index(compact_move_at + 43))
+    );
     bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
     bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
@@ -181,7 +184,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
-        u64_from_index(class_433_move_at + 48)
+        Some(u64_from_index(class_433_move_at + 48))
     );
     assert_eq!(decoded.transform_record_index, 92);
     assert_eq!(u32::from(decoded.form), 5);
@@ -223,7 +226,7 @@ pub(super) fn fixed_kind_tail_operations(
             center_position: None,
             uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(1.5)
                 .expect("checked fixture value"),
-            uniform_factor_offset: u64_from_index(scale_at + 25),
+            uniform_factor_offset: Some(u64_from_index(scale_at + 25)),
         })
     );
 
@@ -621,7 +624,7 @@ pub(super) fn fixed_kind_tail_operations(
             faces: cadmpeg_ir::features::FaceSelection::Native(native),
             thickness: Some(actual_thickness),
             side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
-        })) if (native == "thicken-group") && actual_thickness.get() == 10.0
+        })) if (native == "thicken-group") && actual_thickness.literal().unwrap().get() == 10.0
     ));
     let mut bounded_face_thicken_group = thicken_group.clone();
     bounded_face_thicken_group.operand_role =
@@ -724,7 +727,7 @@ pub(super) fn fixed_kind_tail_operations(
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        })) if (native == "shell-group") && actual_thickness.get() == 5.0
+        })) if (native == "shell-group") && actual_thickness.literal().unwrap().get() == 5.0
     ));
     let compact_shell_at = bytes.len();
     let mut compact_shell = vec![0; 268];
@@ -777,7 +780,7 @@ pub(super) fn fixed_kind_tail_operations(
             outward: true,
             outward_offset,
             ..
-        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(compact_shell_at + 21)
+        })) if thickness.get() == 0.25 && outward_offset == Some(u64_from_index(compact_shell_at + 21))
     ));
     let shifted_shell_at = bytes.len();
     let mut shifted_shell = vec![0; 278];
@@ -814,7 +817,7 @@ pub(super) fn fixed_kind_tail_operations(
             outward: false,
             outward_offset,
             ..
-        })) if thickness.get() == 0.25 && outward_offset == u64_from_index(shifted_shell_at + 21)
+        })) if thickness.get() == 0.25 && outward_offset == Some(u64_from_index(shifted_shell_at + 21))
     ));
     {
         let construction = exact_direct_face_operation(
@@ -856,7 +859,7 @@ pub(super) fn fixed_kind_tail_operations(
             thickness: Some(actual_thickness),
             outward: Some(true),
             ..
-        })) if (body == "shell-group" && removed.is_empty()) && actual_thickness.get() == 2.5
+        })) if (body == "shell-group" && removed.is_empty()) && actual_thickness.literal().unwrap().get() == 2.5
     ));
     {
         let construction = exact_direct_face_operation(
@@ -900,7 +903,7 @@ pub(super) fn fixed_kind_tail_operations(
             motion: cadmpeg_ir::features::FaceMotion::Offset {
                 distance: actual_distance
             },
-        })) if (native == "offset-group") && actual_distance.get() == 2.54
+        })) if (native == "offset-group") && actual_distance.literal().unwrap().get() == 2.54
     ));
     bytes[compact_thicken_at + 46] = 0;
     assert_eq!(
@@ -943,19 +946,19 @@ pub(super) fn fixed_kind_tail_operations(
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 28,
+                operation_offset: Some(28),
                 direction_face_extend_values: [1, 2],
                 side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [77, 90],
+                side_extent_discriminator_offsets: Some([77, 90]),
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [32, 36],
+                direction_face_extend_offsets: Some([32, 36]),
                 direction_reversed: false,
-                direction_reversed_offset: 40,
+                direction_reversed_offset: Some(40),
                 solid_operation: true,
-                solid_operation_offset: 41,
+                solid_operation_offset: Some(41),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 42,
+                start_offset: Some(42),
             });
     }
     extrude_scope
@@ -981,13 +984,13 @@ pub(super) fn fixed_kind_tail_operations(
                 DesignFixedExtrudeScalar {
                     value: cadmpeg_ir::scalar::NonZeroReal::new(-2.0).unwrap(),
                     record_index: 75,
-                    value_offset: u64_from_index(bytes.len() - 2 * 115 + 40),
+                    value_offset: Some(u64_from_index(bytes.len() - 2 * 115 + 40)),
                 },
             )),
             taper_angle: Some(DesignFixedExtrudeScalar {
                 value: crate::test_support::real(0.0),
                 record_index: 76,
-                value_offset: u64_from_index(bytes.len() - 115 + 40),
+                value_offset: Some(u64_from_index(bytes.len() - 115 + 40)),
             }),
             against_distance: None,
             side_two_taper_angle: None,
@@ -1019,7 +1022,7 @@ pub(super) fn fixed_kind_tail_operations(
                 DesignFixedExtrudeScalar {
                     value: cadmpeg_ir::scalar::NonZeroReal::new(-2.0).unwrap(),
                     record_index: 75,
-                    value_offset: u64_from_index(bytes.len() - 2 * 115 + 40),
+                    value_offset: Some(u64_from_index(bytes.len() - 2 * 115 + 40)),
                 },
             )),
             taper_angle: None,
@@ -1157,19 +1160,23 @@ pub(super) fn fixed_kind_tail_operations(
         operation,
         DesignSurfaceExtendOperation {
             distance: crate::test_support::real(0.04),
-            distance_offset: u64_from_index(extend_distance_at + 40),
+            distance_offset: Some(u64_from_index(extend_distance_at + 40)),
             distance_record_index: extend_distance_record_index,
             method: DesignSurfaceExtendMethod::Tangent,
-            method_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 2),
+            method_offset: Some(u64_from_index(
+                extend_boundary_at + extend_boundary_tail + 2
+            )),
             boundary_record_index: extend_boundary_record_index,
             boundary_reference_record_index: 900,
-            boundary_reference_offset: u64_from_index(
+            boundary_reference_offset: Some(u64_from_index(
                 extend_boundary_at + extend_boundary_tail + 6
-            ),
+            )),
             edge_record_indices: extend_edge_record_indices.to_vec(),
             tolerance: cadmpeg_ir::scalar::PositiveReal::new(1.0e-6)
                 .expect("checked fixture value"),
-            tolerance_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 39),
+            tolerance_offset: Some(u64_from_index(
+                extend_boundary_at + extend_boundary_tail + 39
+            )),
         }
     );
     if let crate::records::feature::scope::DesignScopePayloadMut::SurfaceExtend(slot) =
@@ -1199,7 +1206,7 @@ pub(super) fn fixed_kind_tail_operations(
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
                 method: cadmpeg_ir::features::SurfaceExtension::Linear,
-            }),) if native.ends_with(":design-record#500") && distance.get() == 0.4)));
+            }),) if native.ends_with(":design-record#500") && distance.literal().unwrap().get() == 0.4)));
 
     bytes[extend_distance_at + 40..extend_distance_at + 48]
         .copy_from_slice(&(-0.4f64).to_le_bytes());
@@ -1228,18 +1235,20 @@ pub(super) fn fixed_kind_tail_operations(
         operation,
         DesignSurfaceOffsetOperation {
             distance: crate::test_support::real(-0.4),
-            distance_offset: u64_from_index(extend_distance_at + 40),
+            distance_offset: Some(u64_from_index(extend_distance_at + 40)),
             distance_record_index: extend_distance_record_index,
             support: DesignSurfaceOffsetSupport::BoundaryCarrier {
                 boundary_record_index: extend_boundary_record_index,
                 boundary_reference_record_index: 900,
-                boundary_reference_offset: u64_from_index(
+                boundary_reference_offset: Some(u64_from_index(
                     extend_boundary_at + extend_boundary_tail + 6
-                ),
+                )),
                 edge_record_indices: extend_edge_record_indices.to_vec(),
                 tolerance: cadmpeg_ir::scalar::PositiveReal::new(1.0e-6)
                     .expect("checked fixture value"),
-                tolerance_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 39),
+                tolerance_offset: Some(u64_from_index(
+                    extend_boundary_at + extend_boundary_tail + 39
+                )),
             },
         }
     );
@@ -1269,7 +1278,7 @@ pub(super) fn fixed_kind_tail_operations(
         }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Native(native),
                 distance: Some(distance),
-            }),) if native.ends_with(":design-record#500") && distance.get() == -4.0)));
+            }),) if native.ends_with(":design-record#500") && distance.literal().unwrap().get() == -4.0)));
 
     let grouped_record_index = 600u32;
     let grouped_member_record_index = 601u32;
@@ -1330,7 +1339,7 @@ pub(super) fn fixed_kind_tail_operations(
         grouped_operation,
         DesignSurfaceOffsetOperation {
             distance: crate::test_support::real(-0.4),
-            distance_offset: u64_from_index(extend_distance_at + 40),
+            distance_offset: Some(u64_from_index(extend_distance_at + 40)),
             distance_record_index: extend_distance_record_index,
             support: DesignSurfaceOffsetSupport::FaceGroups {
                 group_record_indices: vec![grouped_record_index],
@@ -1416,13 +1425,13 @@ pub(super) fn fixed_kind_tail_operations(
                 DesignFixedExtrudeScalar {
                     value: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
                     record_index: embedded_distance_record_index,
-                    value_offset: u64_from_index(embedded_distance_at + 51),
+                    value_offset: Some(u64_from_index(embedded_distance_at + 51)),
                 },
             )),
             taper_angle: Some(DesignFixedExtrudeScalar {
                 value: crate::test_support::real(0.0),
                 record_index: 274,
-                value_offset: u64_from_index(embedded_default_at + 115 + 40),
+                value_offset: Some(u64_from_index(embedded_default_at + 115 + 40)),
             }),
             against_distance: None,
             side_two_taper_angle: None,

@@ -410,6 +410,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         let mut ir = CadIr::empty();
         ir.model.curves.extend([
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: first_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
@@ -421,6 +422,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                 source_object: None,
             },
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: second_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(test_nurbs(
@@ -432,6 +434,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                 source_object: None,
             },
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: composite_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -455,6 +458,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         ]);
         for (index, curve) in [first_id, second_id].into_iter().enumerate() {
             ir.model.edges.push(Edge {
+                native_ref: None,
                 id: EdgeId::mint(format!("test:model:edge#edge-{index}"))
                     .expect("identity grammar"),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0]))

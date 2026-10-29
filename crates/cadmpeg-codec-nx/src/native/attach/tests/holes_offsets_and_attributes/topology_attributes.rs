@@ -75,6 +75,7 @@ fn string_attribute_output_preserves_value() {
         }))
         .unwrap();
         attach_parasolid_topology_string_attributes(
+            &cadmpeg_test_support::service_decode_context(),
             &mut ir,
             &ParasolidStringAttributeSources {
                 string_uses: &[value_use],
@@ -206,6 +207,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         let mut annotations = AnnotationBuilder::new();
 
         attach_parasolid_topology_numeric_attributes(
+            &cadmpeg_test_support::service_decode_context(),
             &mut ir,
             &sources,
             &topology_attribute_index,
@@ -232,8 +234,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         assert_eq!(
             attributes[0].values,
             [
-                AttributeValue::Integer(4),
-                AttributeValue::Integer(i64::from(u32::MAX))
+                Some(AttributeValue::Integer(4)),
+                Some(AttributeValue::Integer(i64::from(u32::MAX)))
             ]
         );
         for (attributes, target) in [
@@ -256,8 +258,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             assert_eq!(
                 attributes[1].values,
                 [
-                    AttributeValue::float(0.25).expect("finite"),
-                    AttributeValue::float(7.5).expect("finite")
+                    Some(AttributeValue::float(0.25).expect("finite")),
+                    Some(AttributeValue::float(7.5).expect("finite"))
                 ]
             );
         }
@@ -682,8 +684,14 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             doubles: &doubles,
         };
         let mut annotations = AnnotationBuilder::new();
-        attach_parasolid_topology_numeric_attributes(&mut ir, &sources, &index, &mut annotations)
-            .expect("valid exactness fields");
+        attach_parasolid_topology_numeric_attributes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+            &sources,
+            &index,
+            &mut annotations,
+        )
+        .expect("valid exactness fields");
         let attributes = ir
             .model
             .attributes
@@ -698,10 +706,10 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         }));
         assert_ne!(attributes[0].id, attributes[1].id);
         assert!(attributes.iter().any(|attribute| {
-            attribute.values == [AttributeValue::float(1.0).expect("finite")]
+            attribute.values == [Some(AttributeValue::float(1.0).expect("finite"))]
         }));
         assert!(attributes.iter().any(|attribute| {
-            attribute.values == [AttributeValue::float(2.0).expect("finite")]
+            attribute.values == [Some(AttributeValue::float(2.0).expect("finite"))]
         }));
     });
 }
@@ -822,6 +830,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
             &[],
         );
         attach_parasolid_topology_structured_attributes(
+            &cadmpeg_test_support::service_decode_context(),
             &mut ir,
             &sources,
             &topology_attribute_index,
@@ -851,19 +860,23 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
             .collect::<BTreeMap<_, _>>();
         assert_eq!(
             values["parasolid_type_85_point_reference_5"],
-            [AttributeValue::vector([1.0, 2.0, 3.0]).expect("finite")]
+            [Some(
+                AttributeValue::vector([1.0, 2.0, 3.0]).expect("finite")
+            )]
         );
         assert_eq!(
             values["parasolid_type_87_axis_reference_8"],
-            [AttributeValue::vector([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]).expect("finite")]
+            [Some(
+                AttributeValue::vector([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]).expect("finite")
+            )]
         );
         assert_eq!(
             values["parasolid_type_88_tag_reference_9"],
-            [AttributeValue::Integer(i64::from(u32::MAX))]
+            [Some(AttributeValue::Integer(i64::from(u32::MAX)))]
         );
         assert_eq!(
             values["parasolid_type_98_unicode_reference_10"],
-            [AttributeValue::String("μ".into())]
+            [Some(AttributeValue::String("μ".into()))]
         );
     });
 }

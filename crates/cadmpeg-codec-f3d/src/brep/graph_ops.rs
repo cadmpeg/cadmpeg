@@ -27,7 +27,8 @@ fn add_dependencies<T: RewriteIdentities>(
     owner: &str,
     row: &T,
 ) -> Result<(), CodecError> {
-    row.visit_identity_references(ctx, &mut |target| {
+    row.visit_dependency_references(ctx, &mut |reference| {
+        let target = reference.target;
         if owner != target {
             insert_brep_adjacency(adjacency, owner, target);
         }
@@ -78,10 +79,18 @@ impl Brep {
                 )*};
             }
             native_dependencies!(edge_continuities => edge, edge_ownerships => edge,
-                vertex_ownerships => vertex, face_sidedness => face, face_native_keys => face,
+                vertex_ownerships => vertex,
                 tolerant_coedge_parameters => coedge, tolerant_edge_tails => edge,
                 tolerant_vertex_tails => vertex, mesh_surface_sentinels => surface,
                 transform_hints => body, body_native_keys => body, wire_topologies => shell);
+            for row in &self.asm.face_sidedness {
+                add_dependencies(ctx, &mut adjacency, &row.id(), row)?;
+                for face in &self.asm.faces {
+                    if row.owns_native_ref(face.native_ref.as_deref(), &self.asm.face_native_keys) {
+                        insert_brep_adjacency(&mut adjacency, face.id.as_str(), &row.id());
+                    }
+                }
+            }
             for row in &self.asm.unknowns {
                 add_dependencies(ctx, &mut adjacency, row.id().as_str(), row)?;
             }
@@ -112,11 +121,17 @@ impl Brep {
             loops => id, coedges => id, edges => id, vertices => id,
             points => id, surfaces => id, curves => id, pcurves => id,
             edge_continuities => edge, edge_ownerships => edge,
-            vertex_ownerships => vertex, face_sidedness => face,
-            face_native_keys => face, tolerant_coedge_parameters => coedge,
+            vertex_ownerships => vertex,
+            tolerant_coedge_parameters => coedge,
             tolerant_edge_tails => edge, tolerant_vertex_tails => vertex,
             mesh_surface_sentinels => surface, transform_hints => body,
             body_native_keys => body, wire_topologies => shell);
+        self.asm
+            .face_sidedness
+            .retain(|row| reachable.contains(&row.id()));
+        self.asm
+            .face_native_keys
+            .retain(|row| reachable.contains(&row.id()));
         self.asm.unknowns =
             select_rows(std::mem::take(&mut self.asm.unknowns), &reachable, |row| {
                 row.id().as_str()
@@ -238,6 +253,7 @@ mod tests {
         Brep {
             asm: AsmBrep {
                 bodies: vec![Body {
+                    native_ref: None,
                     id: BodyId::mint("f3d:brep:entity#1").unwrap(),
                     kind: BodyKind::default(),
                     regions: vec![],
@@ -260,6 +276,79 @@ mod tests {
             },
             ..Brep::default()
         }
+    }
+
+    #[test]
+    fn face_native_key_inverse_link_qualifies_with_its_actual_source_row() {
+        use cadmpeg_asm::brep::records::{identity::NativeRecordNamespace, FaceNativeKey};
+        let mut brep = graph();
+        let key = FaceNativeKey {
+            source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+            record_index: 17,
+            asm_face_key: Some(7),
+        };
+        let mut example = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut face = example.model.faces.remove(0);
+        face.id = "f3d:brep:entity#3".try_into().unwrap();
+        face.shell = "f3d:brep:entity#4".try_into().unwrap();
+        face.surface = "f3d:brep:entity#5".try_into().unwrap();
+        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+        face.native_ref = Some(key.id());
+        brep.asm.faces.push(face);
+        brep.asm.face_native_keys.push(key);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        brep.qualify_ids(&ctx, crate::ids::ID_FORMAT, "source")
+            .unwrap();
+        assert_eq!(
+            brep.asm.faces[0].native_ref.as_deref(),
+            Some(brep.asm.face_native_keys[0].id().as_str())
+        );
+        assert_eq!(
+            brep.asm.face_native_keys[0].id(),
+            "f3d:brep/source/asm:face-native-key#17"
+        );
+        assert_eq!(brep.asm.face_native_keys[0].asm_face_key, Some(7));
+    }
+
+    #[test]
+    fn selecting_a_face_keeps_only_the_key_its_native_reference_names() {
+        use cadmpeg_asm::brep::records::{identity::NativeRecordNamespace, FaceNativeKey};
+        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+        let key = |index| FaceNativeKey {
+            source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+            record_index: index,
+            asm_face_key: Some(7),
+        };
+        model.faces[0].native_ref = Some(key(17).id());
+        let mut brep = Brep {
+            asm: AsmBrep {
+                bodies: model.bodies,
+                regions: model.regions,
+                shells: model.shells,
+                faces: model.faces,
+                loops: model.loops,
+                coedges: model.coedges,
+                edges: model.edges,
+                vertices: model.vertices,
+                points: model.points,
+                surfaces: model.surfaces,
+                curves: model.curves,
+                pcurves: model.pcurves,
+                face_native_keys: vec![key(17), key(18)],
+                ..AsmBrep::default()
+            },
+            ..Brep::default()
+        };
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        brep.retain_body_keys(&ctx, &HashSet::new()).unwrap();
+        assert_eq!(brep.asm.faces.len(), 6);
+        assert_eq!(brep.asm.face_native_keys.len(), 1);
+        assert_eq!(brep.asm.face_native_keys[0].record_index, 17);
+        assert_eq!(brep.asm.face_native_keys[0].asm_face_key, Some(7));
     }
 
     #[test]
@@ -329,6 +418,7 @@ mod tests {
         let carrier = model.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();
         model.surfaces.push(Surface {
+            native_ref: None,
             id: support.clone(),
             geometry: model.surfaces[0].geometry.clone(),
             source_object: None,
@@ -371,5 +461,87 @@ mod tests {
             .iter()
             .any(|surface| surface.id == support));
         ctx.finish_session().unwrap();
+    }
+    #[test]
+    fn sidedness_inverse_qualifies_and_selects_actual_rows_after_reordering() {
+        use cadmpeg_asm::brep::records::{
+            identity::NativeRecordNamespace, FaceContainment, FaceNativeKey, FaceSidedness,
+        };
+        use cadmpeg_ir::topology::Sense;
+        for keyed in [false, true] {
+            let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+            let side = |index| FaceSidedness {
+                source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+                record_index: index,
+                face_key: None,
+                native_sense: Sense::Reversed,
+                carrier_flipped: true,
+                containment: Some(FaceContainment::Out),
+            };
+            let key = |index| FaceNativeKey {
+                source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+                record_index: index,
+                asm_face_key: Some(7),
+            };
+            model.faces[0].native_ref = Some(if keyed { key(17).id() } else { side(17).id() });
+            let mut brep = Brep {
+                asm: AsmBrep {
+                    bodies: model.bodies,
+                    regions: model.regions,
+                    shells: model.shells,
+                    faces: model.faces,
+                    loops: model.loops,
+                    coedges: model.coedges,
+                    edges: model.edges,
+                    vertices: model.vertices,
+                    points: model.points,
+                    surfaces: model.surfaces,
+                    curves: model.curves,
+                    pcurves: model.pcurves,
+                    face_native_keys: if keyed {
+                        vec![key(18), key(17)]
+                    } else {
+                        Vec::new()
+                    },
+                    face_sidedness: vec![side(18), side(17)],
+                    ..AsmBrep::default()
+                },
+                ..Brep::default()
+            };
+            let arena = DecodeArena::new();
+            let policy = DecodePolicy::service();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if keyed {
+                for row in &mut brep.asm.face_sidedness {
+                    row.face_key = Some(key(row.record_index).id());
+                }
+            }
+            brep.qualify_ids(&ctx, crate::ids::ID_FORMAT, "actual-source-scope")
+                .unwrap();
+            let reference = brep.asm.faces[0].native_ref.as_deref();
+            assert!(
+                brep.asm.face_sidedness[1].owns_native_ref(reference, &brep.asm.face_native_keys)
+            );
+            assert!(
+                !brep.asm.face_sidedness[0].owns_native_ref(reference, &brep.asm.face_native_keys)
+            );
+            assert_ne!(
+                brep.asm.face_sidedness[1].source_namespace.as_str(),
+                "f3d:asm"
+            );
+            brep.retain_body_keys(&ctx, &HashSet::new()).unwrap();
+            assert_eq!(brep.asm.face_sidedness.len(), 1);
+            assert_eq!(brep.asm.face_sidedness[0].record_index, 17);
+            assert!(brep.asm.face_sidedness[0].carrier_flipped);
+            assert_eq!(
+                brep.asm.face_sidedness[0].containment,
+                Some(FaceContainment::Out)
+            );
+            assert!(brep.asm.face_sidedness[0].owns_native_ref(
+                brep.asm.faces[0].native_ref.as_deref(),
+                &brep.asm.face_native_keys
+            ));
+            assert_eq!(brep.asm.face_native_keys.len(), usize::from(keyed));
+        }
     }
 }

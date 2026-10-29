@@ -169,6 +169,8 @@ pub(crate) enum StepLossCode {
     OccurrenceNoLocalProduct,
     /// An occurrence placement is not rigid.
     OccurrencePlacementNotRigid,
+    /// An occurrence has no source placement to write.
+    OccurrencePlacementUnknown,
     /// A body carries a non-rigid transform.
     BodyNonRigidTransform,
     /// Hidden body visibility assignments are unsupported by the target schema.
@@ -272,8 +274,6 @@ pub(crate) enum StepLossCode {
     PmiAnnotationNotWritten,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
-    /// Uninterpreted passthrough records were not represented.
-    PassthroughRecordOmitted,
     /// Display colors had no emitted STEP item.
     DisplayColorUnstyled,
     /// A wire body's direct color alpha was omitted from RGB curve styling.
@@ -297,8 +297,6 @@ pub(crate) enum StepLossCode {
     HelixFitFailed,
     /// A procedural definition has no emitted native construction or solved carrier.
     ProceduralDefinitionNotWritten,
-    /// Source-native records were not represented.
-    SourceNativeRecordOmitted,
     /// A region has no writable outer shell.
     RegionNoWritableOuterShell,
     /// A region omitted a void shell with no writable faces.
@@ -309,8 +307,6 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
-    /// No geometry was placed in the output representations.
-    NoGeometryWritten,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -458,6 +454,7 @@ impl StepLossCode {
         Self::OccurrenceUnresolvedParent,
         Self::OccurrenceNoLocalProduct,
         Self::OccurrencePlacementNotRigid,
+        Self::OccurrencePlacementUnknown,
         Self::BodyNonRigidTransform,
         Self::HiddenBodyVisibilityUnsupported,
         Self::HiddenAppearanceVisibilityUnsupported,
@@ -509,7 +506,6 @@ impl StepLossCode {
         Self::OccurrenceMetadataOmitted,
         Self::PmiAnnotationNotWritten,
         Self::SourceAssociationOmitted,
-        Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
         Self::WireBodyTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
@@ -520,13 +516,11 @@ impl StepLossCode {
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
         Self::ProceduralDefinitionNotWritten,
-        Self::SourceNativeRecordOmitted,
         Self::RegionNoWritableOuterShell,
         Self::RegionOmittedVoidShell,
         Self::RegionSolidReducedToSheet,
         Self::RegionVerticesRecovered,
         Self::RegionEdgesRecovered,
-        Self::NoGeometryWritten,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
@@ -646,6 +640,7 @@ impl StepLossCode {
             }
             Self::OccurrenceUnresolvedParent => "occurrence.unresolved-parent",
             Self::OccurrenceNoLocalProduct => "occurrence.no-local-product",
+            Self::OccurrencePlacementUnknown => "occurrence.placement-unknown",
             Self::OccurrencePlacementNotRigid => "occurrence.placement-not-rigid",
             Self::BodyNonRigidTransform => "body.non-rigid-transform",
             Self::HiddenBodyVisibilityUnsupported => "body.hidden-visibility-unsupported",
@@ -704,7 +699,6 @@ impl StepLossCode {
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::SourceAssociationOmitted => "source.association-omitted",
-            Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
@@ -715,13 +709,11 @@ impl StepLossCode {
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
             Self::ProceduralDefinitionNotWritten => "geometry.procedural-definition-not-written",
-            Self::SourceNativeRecordOmitted => "native.source-record-omitted",
             Self::RegionNoWritableOuterShell => "topology.region-no-writable-outer-shell",
             Self::RegionOmittedVoidShell => "topology.region-omitted-void-shell",
             Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
             Self::RegionVerticesRecovered => "topology.region-vertices-recovered",
             Self::RegionEdgesRecovered => "topology.region-edges-recovered",
-            Self::NoGeometryWritten => "export.no-geometry-written",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
@@ -781,11 +773,11 @@ impl StepLossCode {
             | Self::RegionSolidReducedToSheet
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
-            | Self::NoGeometryWritten
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
             | Self::FaceOmittedUnclassifiedLoop
+            | Self::FaceOmittedInnerLoop
             | Self::FaceNoWritableBounds
             | Self::FaceIncompleteBounds
             | Self::FaceImplicitOuterBoundUnwritable
@@ -794,7 +786,12 @@ impl StepLossCode {
             | Self::LoopDuplicateCoedge
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
-            | Self::LoopNoContinuousOrdering => Severity::Error,
+            | Self::LoopNoContinuousOrdering
+            | Self::UnknownSurfaceFaceOmitted
+            | Self::CurvelessEdgeOmitted
+            | Self::EdgeCurveUnsupported
+            | Self::GeometryCarrierNotWritten
+            | Self::ProceduralDefinitionNotWritten => Severity::Error,
             Self::TessellationMetadataReduced
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
@@ -808,7 +805,6 @@ impl StepLossCode {
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceMetadataOmitted
             | Self::SourceAssociationOmitted
-            | Self::PassthroughRecordOmitted
             | Self::DisplayColorUnstyled
             | Self::WireBodyTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
@@ -817,7 +813,6 @@ impl StepLossCode {
             | Self::ProceduralReducedToCarrier
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
-            | Self::SourceNativeRecordOmitted
             | Self::NonManifoldEdgeSplit => Severity::Info,
             _ => Severity::Warning,
         }
@@ -825,6 +820,7 @@ impl StepLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::OccurrencePlacementUnknown => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::ContainerMemberNoncanonical
             | Self::ParseNoncanonicalSyntax
             | Self::ParsePreambleOmitted
@@ -962,7 +958,6 @@ impl StepLossCode {
             | Self::AssemblyOccurrenceOmittedNoParentProduct
             | Self::AssemblyJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
-            Self::NoGeometryWritten => LossTaxonomy::GeometryNotTransferred,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
@@ -982,16 +977,13 @@ impl StepLossCode {
             | Self::AppearanceBindingTargetConflict
             | Self::WireBodyTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
-            Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
-                LossTaxonomy::ParametricRecordOmitted
-            }
+            Self::ParametricDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
             | Self::PmiDatumSystemInvalid => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
-            Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
@@ -1017,8 +1009,223 @@ impl StepLossCode {
     }
 }
 
+/// Classes with source records represented only by bytes, rather than typed records.
+///
+/// Codes absent from this table describe retained typed content, metadata, or export
+/// loss. Native retention below is checked separately from neutral projection.
+#[cfg(test)]
+const UNREPRESENTED: &[(StepLossCode, cadmpeg_ir::ArenaClass)] = &[
+    (
+        StepLossCode::ParseRecordOmitted,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (StepLossCode::DecodeWarning, cadmpeg_ir::ArenaClass::Model),
+    (
+        StepLossCode::ByteAccountingUnclassified,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::OpaqueRecordPreserved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::AttributeStringInvalid,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::ConflictingRepresentationUnits,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::LineParameterScaleUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::TopologyRootRejected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::TopologyRootIncomplete,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::SeamEdgePcurveUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::EdgeNoSurfaceOrCurveForPcurve,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PcurveEndpointsDiscontinuous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PcurveLocusDiscontinuous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PcurveGlobalFidelityUnproved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PcurveAssociationAmbiguous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PcurveCandidatesCarrierUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::NauoPlacementUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::NauoPlacementAmbiguous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::BodyConflictingMappedPlacements,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PresentationAnnotationTextUnordered,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PresentationAnnotationPlacementAmbiguous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DimensionalNominalAmbiguous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DimensionalUnnamedMeasureAmbiguous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PmiLengthUnitUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PmiAngleUnitUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::PmiDatumSystemInvalid,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::ContextDependentStyleUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DrawingRecordTooFewParameters,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DrawingOrderUnstatable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DrawingRelationshipUntypedTarget,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DrawingRelationshipTargetAmbiguous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DrawingSheetRevisionUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DrawingRevisionSheetUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DraughtingSemanticDefinitionUntyped,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::DraughtingAssociatedItemUntyped,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::TessellationItemBodyUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::TessellationInvalidPayload,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::TessellationItemUndeclared,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::TessellationPlacementUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::TessellationPlacementAmbiguous,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::ValidationMeasureUnitUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::ParseExpansionBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::OccurrenceExpansionOutputTruncated,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        StepLossCode::OccurrenceExpansionDepthTruncated,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+];
+
+/// Classify this codec's own loss vocabulary after native records have been stored.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
+) -> cadmpeg_ir::ArenaClasses {
+    let mut classes = cadmpeg_ir::ArenaClasses::default();
+    for (code, class) in UNREPRESENTED {
+        if losses.iter().any(|loss| loss.code == code.kind()) {
+            classes.insert(*class);
+        }
+    }
+    classes
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
+        let losses = [
+            super::StepLossCode::PlacementReferenceInferred.note("typed record retained"),
+            super::StepLossCode::SourceDialectUnverified.note("decode diagnostic"),
+        ];
+        assert!(super::unrepresented(&losses, None).is_empty());
+    }
+
+    #[test]
+    fn source_only_losses_declare_their_classes() {
+        for (code, class) in super::UNREPRESENTED {
+            let losses = [code.note("source record is not typed")];
+            let classes = super::unrepresented(&losses, None);
+            assert!(classes.contains(class), "{code:?} must declare {class:?}");
+        }
+        assert!(super::unrepresented(&[], None).is_empty());
+    }
+
     use super::StepLossCode;
     use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
     use std::collections::BTreeSet;
@@ -1100,6 +1307,7 @@ mod tests {
                 "occurrence.unresolved-parent",
                 "occurrence.no-local-product",
                 "occurrence.placement-not-rigid",
+                "occurrence.placement-unknown",
                 "body.non-rigid-transform",
                 "body.hidden-visibility-unsupported",
                 "presentation.hidden-appearance-visibility-unsupported",
@@ -1151,7 +1359,6 @@ mod tests {
                 "occurrence.metadata-omitted",
                 "pmi.annotation-not-written",
                 "source.association-omitted",
-                "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
                 "appearance.wire-body-transparency-omitted",
                 "appearance.reduced-to-base-color",
@@ -1162,13 +1369,11 @@ mod tests {
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
                 "geometry.procedural-definition-not-written",
-                "native.source-record-omitted",
                 "topology.region-no-writable-outer-shell",
                 "topology.region-omitted-void-shell",
                 "topology.region-solid-reduced-to-sheet",
                 "topology.region-vertices-recovered",
                 "topology.region-edges-recovered",
-                "export.no-geometry-written",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",

@@ -60,7 +60,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.parameters.push(
             serde_json::from_value(serde_json::json!({
-                "id": "test:model:parameter#cell", "name": "cell", "expression": "7"
+                "id": "test:model:parameter#cell", "name": "cell", "driving": true, "expression": {"tokens":[{"kind":"text", "value":"7"}]}
             }))
             .unwrap(),
         );

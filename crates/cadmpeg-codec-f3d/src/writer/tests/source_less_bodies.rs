@@ -78,16 +78,26 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 }
 
 #[test]
-fn generated_source_less_rejects_translucent_direct_color() {
+fn generated_source_less_reduces_translucent_direct_color_with_a_loss() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.1, 0.2, 0.3, 0.5).expect("valid color"));
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (output, report) = super::source_less_analytic::synthesize_document(&source_less, None);
+    let original = source_less.model.bodies[0].color.unwrap();
+    let output_color = output.ir().model.bodies[0].color.unwrap();
+    assert_eq!(
+        [output_color.r(), output_color.g(), output_color.b()],
+        [original.r(), original.g(), original.b()]
+    );
+    assert_eq!(output_color.a(), 1.0);
+    assert_eq!(
+        output.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
+    assert!(report.losses.iter().any(
+        |loss| loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
+    ));
 }
 
 #[test]
@@ -194,10 +204,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 
     drop(native);
     let mut encoded = Vec::new();
-    F3dCodec
+    let export = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less provenance attribute encode");
+    super::source_less_analytic::assert_native_omission(&export);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less provenance attribute round trip");
@@ -215,8 +226,8 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             suffix_index(attribute.id.as_str())
         }
 
-        fn reference_index(value: &AttributeValue) -> i64 {
-            let AttributeValue::Reference(value) = value else {
+        fn reference_index(value: Option<&AttributeValue>) -> i64 {
+            let Some(AttributeValue::Reference(value)) = value else {
                 panic!("generated attribute link is not a reference");
             };
             suffix_index(value)
@@ -238,16 +249,16 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         assert!(!attributes.is_empty());
         for attribute in attributes {
             assert!(attribute.values.len() >= 5);
-            assert_eq!(reference_index(&attribute.values[0]), -1);
-            assert_eq!(attribute.values[1], AttributeValue::Integer(-1));
+            assert_eq!(reference_index(attribute.values[0].as_ref()), -1);
+            assert_eq!(attribute.values[1], Some(AttributeValue::Integer(-1)));
             assert_eq!(
-                reference_index(&attribute.values[4]),
+                reference_index(attribute.values[4].as_ref()),
                 target_index(&attribute.target)
             );
 
             let index = attribute_index(attribute);
             for (field, reciprocal) in [(2usize, 3usize), (3, 2)] {
-                let linked = reference_index(&attribute.values[field]);
+                let linked = reference_index(attribute.values[field].as_ref());
                 if linked < 0 {
                     continue;
                 }
@@ -256,7 +267,10 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
                     .find(|candidate| attribute_index(candidate) == linked)
                     .expect("generated attribute link resolves");
                 assert_eq!(linked_attribute.target, attribute.target);
-                assert_eq!(reference_index(&linked_attribute.values[reciprocal]), index);
+                assert_eq!(
+                    reference_index(linked_attribute.values[reciprocal].as_ref()),
+                    index
+                );
             }
         }
         for (ordinal, attribute) in attributes.iter().enumerate() {
@@ -272,57 +286,41 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             assert_eq!(
                 owned
                     .clone()
-                    .filter(|candidate| reference_index(&candidate.values[3]) == -1)
+                    .filter(|candidate| reference_index(candidate.values[3].as_ref()) == -1)
                     .count(),
                 1
             );
             assert_eq!(
                 owned
-                    .filter(|candidate| reference_index(&candidate.values[2]) == -1)
+                    .filter(|candidate| reference_index(candidate.values[2].as_ref()) == -1)
                     .count(),
                 1
             );
         }
     }
     let native = f3d_native(round_trip.ir());
-    assert_eq!(native.persistent_design_links.len(), 2);
-    assert_eq!(native.persistent_design_links[0].design_id.as_str(), "311");
-    assert_eq!(native.persistent_design_links[0].design_reference, 7);
-    assert_eq!(native.persistent_design_links[1].design_id.as_str(), "322");
-    assert_eq!(native.persistent_design_links[1].design_reference, 8);
-    assert_eq!(
-        crate::records::sketch_links::current_persistent_design_links(
-            &native.persistent_design_links
-        )
-        .values()
-        .map(|link| link.design_id.as_str())
-        .collect::<Vec<_>>(),
-        ["322"]
+    assert!(
+        native.persistent_design_links.is_empty(),
+        "positive design references cannot survive their omitted design targets"
     );
-    assert_eq!(native.persistent_subentity_tags.len(), 3);
-    assert!(native.persistent_subentity_tags.iter().any(|tag| {
-        tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
-    }));
+    assert!(
+        native.sketch_curve_links.is_empty(),
+        "sketch links cannot reference omitted sketch records"
+    );
+    assert_eq!(native.persistent_subentity_tags.len(), 1);
+    let tag = &native.persistent_subentity_tags[0];
+    assert_eq!(
+        tag.ordinal, 0,
+        "remaining layout ordinals are normalized after filtering"
+    );
+    assert_eq!(tag.token, "42");
+    assert!(tag.design_references.is_empty());
+    assert!(matches!(tag.target, AttributeTarget::Face(_)));
     assert!(crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, round_trip.ir())
             .expect("validate the native namespace")
     })
     .is_empty());
-    assert!(native.persistent_subentity_tags.iter().any(|tag| {
-        tag.token == "-1"
-            && tag.design_references == [511]
-            && matches!(tag.target, AttributeTarget::Edge(_))
-    }));
-    assert!(native.persistent_subentity_tags.iter().any(|tag| {
-        tag.token == "42"
-            && tag.design_references.is_empty()
-            && matches!(tag.target, AttributeTarget::Face(_))
-    }));
-    assert_eq!(native.sketch_curve_links.len(), 1);
-    assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);
-    assert_eq!(native.sketch_curve_links[0].sense.map(i64::from), Some(1));
-    assert_eq!(native.sketch_curve_links[0].role, 2);
-    assert_eq!(native.sketch_curve_links[0].closure, 3);
     assert_eq!(native.creation_timestamps.len(), 5);
     assert!(native.creation_timestamps.iter().any(|timestamp| {
         matches!(timestamp.target, AttributeTarget::Vertex(_))
@@ -351,7 +349,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 }
 
 #[test]
-fn generated_source_less_rejects_lossy_design_link_metadata() {
+fn generated_source_less_reports_unsupported_links_and_rejects_incoherent_ordinals() {
     use crate::records::sketch_links::{PersistentDesignLink, SketchCurveLink};
     use cadmpeg_ir::attributes::AttributeTarget;
 
@@ -359,14 +357,6 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
     let body = source_less.model.bodies[0].id.clone();
     let coedge = source_less.model.coedges[0].id.clone();
     let mut native = f3d_native_mut(&mut source_less);
-    native.persistent_design_links = vec![PersistentDesignLink {
-        id: "f3d:generated:persistent-design-link#0".into(),
-        target: AttributeTarget::Body(body),
-        design_id: "311".to_owned().try_into().unwrap(),
-
-        design_reference: 7,
-        ordinal: 1,
-    }];
     native.sketch_curve_links = [0, 1]
         .map(|ordinal| SketchCurveLink {
             id: format!("f3d:generated:sketch-curve-link#{ordinal}"),
@@ -380,15 +370,21 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
         .into();
     drop(native);
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("duplicate sketch links must not be collapsed");
-    assert!(error
-        .to_string()
-        .contains("one sketch-curve link per coedge"));
+    let (output, report) = super::source_less_analytic::synthesize_document(&source_less, None);
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(output.ir().model.faces.len(), source_less.model.faces.len());
+    assert!(f3d_native(output.ir()).sketch_curve_links.is_empty());
+    super::source_less_analytic::assert_native_omission(&report);
 
     f3d_native_mut(&mut source_less).sketch_curve_links.pop();
+    f3d_native_mut(&mut source_less).persistent_design_links = vec![PersistentDesignLink {
+        id: "f3d:generated:persistent-design-link#0".into(),
+        target: AttributeTarget::Body(body),
+        design_id: "311".to_owned().try_into().unwrap(),
+
+        design_reference: 7,
+        ordinal: 1,
+    }];
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -443,13 +439,17 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             },
         }];
     }
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("tolerant metadata on an ordinary vertex must not be dropped");
-    assert!(error
-        .to_string()
-        .contains("requires finite fields and a tolerant vertex"));
+    let (output, report) = super::source_less_analytic::synthesize_document(&source_less, None);
+    assert!(output
+        .ir()
+        .model
+        .vertices
+        .iter()
+        .all(|vertex| vertex.tolerance.is_none()));
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .tolerant_vertex_tails
+        .is_empty());
+    super::source_less_analytic::assert_native_omission(&report);
 }
 
 #[test]
@@ -656,7 +656,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 }
 
 #[test]
-fn generated_source_less_rejects_a_history_skipped_under_the_retained_allowance() {
+fn generated_source_less_omits_a_history_skipped_under_the_retained_allowance() {
     let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -667,11 +667,10 @@ fn generated_source_less_rejects_a_history_skipped_under_the_retained_allowance(
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
     f3d_native_mut(&mut skipped).asm_histories[0].binding_budget_exceeded = true;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&skipped, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a history kept as state headers must not be written in place of the source");
-    assert!(error
-        .to_string()
-        .contains("whose bulletin boards and records were not retained"));
+    let (output, report) = super::source_less_analytic::synthesize_document(&skipped, None);
+    super::source_less_analytic::assert_native_omission(&report);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .asm_histories
+        .is_empty());
+    assert_eq!(output.ir().model.bodies.len(), skipped.model.bodies.len());
 }

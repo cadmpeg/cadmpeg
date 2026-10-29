@@ -185,7 +185,9 @@ impl DecodedProceduralSurface {
                             angular_interval,
                             None,
                             Some(parameter_interval),
-                            transposed,
+                            // Rhino's untransposed tensor is angle × profile;
+                            // CADIR's untransposed revolution is profile × angle.
+                            !transposed,
                             cadmpeg_ir::geometry::CacheContract::from_form(None),
                         )
                     })
@@ -228,7 +230,7 @@ pub(crate) fn decode(
         NURBS_SURFACE | NURBS_SURFACE_TL | NURBS_SURFACE_LEGACY
     ) {
         DecodedSurface::Typed {
-            geometry: TypedSurface::Nurbs(read_nurbs_surface(&mut reader, scale)?),
+            geometry: TypedSurface::Nurbs(read_nurbs_surface_in(ctx, &mut reader, scale)?),
             derived: true,
         }
     } else if class == PLANE_SURFACE {
@@ -829,20 +831,104 @@ pub(crate) fn read_nurbs_curve(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<NurbsCurve, GeometryError> {
-    read_nurbs_curve_inner(reader, scale, None)
+    read_nurbs_curve_inner(
+        reader,
+        scale,
+        None,
+        |_| Ok(Vec::new()),
+        |_| Ok(Vec::new()),
+        |_| Ok(Vec::new()),
+        checked_curve_poles,
+    )
+}
+
+/// Reads a NURBS curve with fallible lanes allocated by the caller session.
+pub(crate) fn read_nurbs_curve_in(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<NurbsCurve, GeometryError> {
+    read_nurbs_curve_inner(
+        reader,
+        scale,
+        None,
+        |count| curve_lane(ctx, count, FiniteReal::ZERO, "Rhino NURBS curve knots"),
+        |count| curve_lane(ctx, count, FinitePoint3::ZERO, "Rhino NURBS curve points"),
+        |count| curve_lane(ctx, count, NonZeroReal::ONE, "Rhino NURBS curve weights"),
+        |points, weights, _| allocated_curve_poles(ctx, points, weights),
+    )
+}
+
+fn checked_curve_poles(
+    points: Vec<FinitePoint3>,
+    weights: Option<Vec<NonZeroReal>>,
+    offset: usize,
+) -> Result<NurbsPoles3<FinitePoint3>, GeometryError> {
+    NurbsPoles3::from_checked_lanes(points, weights)
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+}
+
+fn allocated_curve_poles(
+    ctx: &DecodeContext<'_>,
+    points: Vec<FinitePoint3>,
+    weights: Option<Vec<NonZeroReal>>,
+) -> Result<NurbsPoles3<FinitePoint3>, GeometryError> {
+    let Some(weights) = weights else {
+        return Ok(NurbsPoles3::Polynomial { points });
+    };
+    debug_assert_eq!(points.len(), weights.len());
+    let mut rows = ctx.alloc_filled(
+        points.len(),
+        cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+            point: FinitePoint3::ZERO,
+            weight: NonZeroReal::ONE,
+        },
+        "Rhino NURBS curve rational poles",
+    )?;
+    for ((row, point), weight) in rows.iter_mut().zip(points).zip(weights) {
+        *row = cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight };
+    }
+    Ok(NurbsPoles3::Rational { points: rows })
+}
+
+fn curve_lane<T: Clone>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    value: T,
+    operation: &'static str,
+) -> Result<Vec<T>, GeometryError> {
+    let mut lane = ctx.alloc_filled(count, value, operation)?;
+    lane.clear();
+    Ok(lane)
 }
 
 /// Reads a Rhino NURBS curve whose poles are two-dimensional UV values.
 pub(crate) fn read_nurbs_curve_2d(
     reader: &mut BoundedReader<'_>,
 ) -> Result<NurbsCurve, GeometryError> {
-    read_nurbs_curve_inner(reader, MillimeterScale::IDENTITY, Some(2))
+    read_nurbs_curve_inner(
+        reader,
+        MillimeterScale::IDENTITY,
+        Some(2),
+        |_| Ok(Vec::new()),
+        |_| Ok(Vec::new()),
+        |_| Ok(Vec::new()),
+        checked_curve_poles,
+    )
 }
 
 fn read_nurbs_curve_inner(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     expected_dimension: Option<i32>,
+    mut knot_lane: impl FnMut(usize) -> Result<Vec<FiniteReal>, GeometryError>,
+    mut point_lane: impl FnMut(usize) -> Result<Vec<FinitePoint3>, GeometryError>,
+    mut weight_lane: impl FnMut(usize) -> Result<Vec<NonZeroReal>, GeometryError>,
+    make_poles: impl FnOnce(
+        Vec<FinitePoint3>,
+        Option<Vec<NonZeroReal>>,
+        usize,
+    ) -> Result<NurbsPoles3<FinitePoint3>, GeometryError>,
 ) -> Result<NurbsCurve, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
@@ -876,7 +962,7 @@ fn read_nurbs_curve_inner(
     if stored_knot_count != expected_knot_count {
         return Err(error(reader.position(), "NURBS curve knot count mismatch"));
     }
-    let knots = read_knots(reader, stored_knot_count)?;
+    let knots = read_knots_into(reader, stored_knot_count, knot_lane(stored_knot_count)?)?;
     validate_stored_domain(&knots, order, cv_count, reader.position())?;
     let stored_cv_count = crate::wire::element_count(
         reader,
@@ -887,16 +973,30 @@ fn read_nurbs_curve_inner(
     if stored_cv_count != cv_count {
         return Err(error(reader.position(), "NURBS curve CV count mismatch"));
     }
-    let (control_points, weights) =
-        read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
+    let weights = if rational != 0 {
+        Some(weight_lane(stored_cv_count)?)
+    } else {
+        None
+    };
+    let (control_points, weights) = read_poles_into(
+        reader,
+        stored_cv_count,
+        dimension,
+        scale,
+        point_lane(stored_cv_count)?,
+        weights,
+    )?;
     if minor >= 1 {
         reader.bool()?;
     }
     let periodic = periodic_knots_checked(&knots, order, cv_count);
-    let full_knots = reconstruct_checked_knots(&knots, order, cv_count)?;
+    let full_count = stored_knot_count
+        .checked_add(2)
+        .ok_or_else(|| GeometryError::unpositioned("NURBS knot arithmetic overflow"))?;
+    let full_knots =
+        reconstruct_checked_knots_into(&knots, order, cv_count, knot_lane(full_count)?)?;
     reader.skip_remaining()?;
-    let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
-        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    let poles = make_poles(control_points, weights, reader.position())?;
     NurbsCurve::new(
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
@@ -919,6 +1019,154 @@ pub(crate) fn read_nurbs_surface(
 pub(crate) fn read_nurbs_surface_prefix(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
+) -> Result<NurbsSurface, GeometryError> {
+    read_nurbs_surface_prefix_inner(
+        reader,
+        scale,
+        read_knots,
+        read_poles,
+        reconstruct_checked_knots,
+        checked_surface_poles,
+    )
+}
+
+fn read_nurbs_surface_in(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<NurbsSurface, GeometryError> {
+    let surface = read_nurbs_surface_prefix_inner(
+        reader,
+        scale,
+        |reader, count| {
+            read_knots_into(
+                reader,
+                count,
+                curve_lane(ctx, count, FiniteReal::ZERO, "Rhino NURBS surface knots")?,
+            )
+        },
+        |reader, count, rational, dimension, scale| {
+            let points = curve_lane(ctx, count, FinitePoint3::ZERO, "Rhino NURBS surface points")?;
+            let weights = if rational {
+                Some(curve_lane(
+                    ctx,
+                    count,
+                    NonZeroReal::ONE,
+                    "Rhino NURBS surface weights",
+                )?)
+            } else {
+                None
+            };
+            read_poles_into(reader, count, dimension, scale, points, weights)
+        },
+        |knots, order, count| {
+            let full_count = knots
+                .len()
+                .checked_add(2)
+                .ok_or_else(|| GeometryError::unpositioned("NURBS knot arithmetic overflow"))?;
+            reconstruct_checked_knots_into(
+                knots,
+                order,
+                count,
+                curve_lane(
+                    ctx,
+                    full_count,
+                    FiniteReal::ZERO,
+                    "Rhino NURBS surface full knots",
+                )?,
+            )
+        },
+        |points, weights, row_len, _| allocated_surface_poles(ctx, points, weights, row_len),
+    )?;
+    reader.skip_remaining()?;
+    Ok(surface)
+}
+
+fn checked_surface_poles(
+    points: &[FinitePoint3],
+    weights: Option<&[NonZeroReal]>,
+    row_len: usize,
+    offset: usize,
+) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError> {
+    let point_rows = copy_rows(points, row_len)?;
+    let weight_rows = weights
+        .map(|values| copy_rows(values, row_len))
+        .transpose()?;
+    NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))
+}
+
+fn allocated_surface_poles(
+    ctx: &DecodeContext<'_>,
+    points: &[FinitePoint3],
+    weights: Option<&[NonZeroReal]>,
+    row_len: usize,
+) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError> {
+    debug_assert!(row_len > 0 && points.len().is_multiple_of(row_len));
+    let row_count = points.len() / row_len;
+    if let Some(weights) = weights {
+        debug_assert_eq!(points.len(), weights.len());
+        let mut rows =
+            ctx.alloc_filled(row_count, Vec::new(), "Rhino NURBS surface rational rows")?;
+        for ((target, points), weights) in rows
+            .iter_mut()
+            .zip(points.chunks(row_len))
+            .zip(weights.chunks(row_len))
+        {
+            let mut row = ctx.alloc_filled(
+                row_len,
+                cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                    point: FinitePoint3::ZERO,
+                    weight: NonZeroReal::ONE,
+                },
+                "Rhino NURBS surface rational poles",
+            )?;
+            for ((target, point), weight) in row.iter_mut().zip(points).zip(weights) {
+                *target = cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                    point: *point,
+                    weight: *weight,
+                };
+            }
+            *target = row;
+        }
+        Ok(NurbsPoleGrid::Rational { rows })
+    } else {
+        let mut rows = ctx.alloc_filled(row_count, Vec::new(), "Rhino NURBS surface rows")?;
+        for (target, points) in rows.iter_mut().zip(points.chunks(row_len)) {
+            let mut row = ctx.alloc_filled(
+                row_len,
+                FinitePoint3::ZERO,
+                "Rhino NURBS surface row points",
+            )?;
+            row.copy_from_slice(points);
+            *target = row;
+        }
+        Ok(NurbsPoleGrid::Polynomial { rows })
+    }
+}
+
+fn read_nurbs_surface_prefix_inner(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+    mut knots_reader: impl FnMut(
+        &mut BoundedReader<'_>,
+        usize,
+    ) -> Result<Vec<FiniteReal>, GeometryError>,
+    poles_reader: impl FnOnce(
+        &mut BoundedReader<'_>,
+        usize,
+        bool,
+        i32,
+        MillimeterScale,
+    )
+        -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError>,
+    mut reconstruct: impl FnMut(&[FiniteReal], usize, usize) -> Result<KnotVector, GeometryError>,
+    make_grid: impl FnOnce(
+        &[FinitePoint3],
+        Option<&[NonZeroReal]>,
+        usize,
+        usize,
+    ) -> Result<NurbsPoleGrid<FinitePoint3>, GeometryError>,
 ) -> Result<NurbsSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
@@ -952,7 +1200,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     if u_knot_count != expected_u {
         return Err(error(reader.position(), "surface U knot count mismatch"));
     }
-    let u_knots = read_knots(reader, u_knot_count)?;
+    let u_knots = knots_reader(reader, u_knot_count)?;
     validate_stored_domain(&u_knots, u_order, u_count, reader.position())?;
     let v_knot_count = crate::wire::element_count(reader, 8)?;
     let expected_v = v_order
@@ -962,7 +1210,7 @@ pub(crate) fn read_nurbs_surface_prefix(
     if v_knot_count != expected_v {
         return Err(error(reader.position(), "surface V knot count mismatch"));
     }
-    let v_knots = read_knots(reader, v_knot_count)?;
+    let v_knots = knots_reader(reader, v_knot_count)?;
     validate_stored_domain(&v_knots, v_order, v_count, reader.position())?;
     let u_periodic = periodic_knots_checked(&u_knots, u_order, u_count);
     let v_periodic = periodic_knots_checked(&v_knots, v_order, v_count);
@@ -979,17 +1227,15 @@ pub(crate) fn read_nurbs_surface_prefix(
         return Err(error(reader.position(), "NURBS surface CV count mismatch"));
     }
     let (control_points, weights) =
-        read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
-    let u_knots = reconstruct_checked_knots(&u_knots, u_order, u_count)?;
-    let v_knots = reconstruct_checked_knots(&v_knots, v_order, v_count)?;
-    let row_len = v_count;
-    let point_rows = copy_rows(&control_points, row_len)?;
-    let weight_rows = weights
-        .as_deref()
-        .map(|values| copy_rows(values, row_len))
-        .transpose()?;
-    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
-        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+        poles_reader(reader, stored_cv_count, rational != 0, dimension, scale)?;
+    let u_knots = reconstruct(&u_knots, u_order, u_count)?;
+    let v_knots = reconstruct(&v_knots, v_order, v_count)?;
+    let poles = make_grid(
+        &control_points,
+        weights.as_deref(),
+        v_count,
+        reader.position(),
+    )?;
     NurbsSurface::new(
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)
@@ -1089,7 +1335,14 @@ fn read_knots(
     reader: &mut BoundedReader<'_>,
     count: usize,
 ) -> Result<Vec<FiniteReal>, GeometryError> {
-    let mut knots = Vec::new();
+    read_knots_into(reader, count, Vec::new())
+}
+
+fn read_knots_into(
+    reader: &mut BoundedReader<'_>,
+    count: usize,
+    mut knots: Vec<FiniteReal>,
+) -> Result<Vec<FiniteReal>, GeometryError> {
     for _ in 0..count {
         let knot_offset = reader.position();
         let value = reader.f64()?;
@@ -1111,8 +1364,24 @@ fn read_poles(
     dimension: i32,
     scale: MillimeterScale,
 ) -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError> {
-    let mut points = Vec::new();
-    let mut weights = if rational { Some(Vec::new()) } else { None };
+    read_poles_into(
+        reader,
+        count,
+        dimension,
+        scale,
+        Vec::new(),
+        rational.then(Vec::new),
+    )
+}
+
+fn read_poles_into(
+    reader: &mut BoundedReader<'_>,
+    count: usize,
+    dimension: i32,
+    scale: MillimeterScale,
+    mut points: Vec<FinitePoint3>,
+    mut weights: Option<Vec<NonZeroReal>>,
+) -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError> {
     for _ in 0..count {
         let pole_offset = reader.position();
         let x = reader.f64()?;
@@ -1162,14 +1431,30 @@ fn reconstruct_checked_knots(
     order: usize,
     cv_count: usize,
 ) -> Result<KnotVector, GeometryError> {
+    reconstruct_checked_knots_into(knots, order, cv_count, Vec::new())
+}
+
+fn reconstruct_checked_knots_into(
+    knots: &[FiniteReal],
+    order: usize,
+    cv_count: usize,
+    output: Vec<FiniteReal>,
+) -> Result<KnotVector, GeometryError> {
     let endpoints =
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
-    KnotVector::from_finite_lanes(reconstructed_knots(knots, endpoints))
+    KnotVector::from_finite_lanes(reconstructed_knots_into(knots, endpoints, output))
         .map_err(|_| GeometryError::unpositioned("NURBS reconstructed knots are invalid"))
 }
 
 fn reconstructed_knots<T: Copy>(knots: &[T], [start, end]: [T; 2]) -> Vec<T> {
-    let mut output = Vec::new();
+    reconstructed_knots_into(knots, [start, end], Vec::new())
+}
+
+fn reconstructed_knots_into<T: Copy>(
+    knots: &[T],
+    [start, end]: [T; 2],
+    mut output: Vec<T>,
+) -> Vec<T> {
     output.push(start);
     output.extend_from_slice(knots);
     output.push(end);

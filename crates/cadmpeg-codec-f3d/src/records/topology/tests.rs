@@ -67,39 +67,16 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     ] {
         member.as_object_mut().unwrap().remove(field);
     }
+    for field in [
+        "byte_offset",
+        "local_id_offset",
+        "asset_id_offset",
+        "context_id_offset",
+    ] {
+        member.as_object_mut().unwrap().remove(field);
+    }
     member["scope_record_index"] = serde_json::json!(4);
-    member["compact_layout"] = serde_json::json!(false);
-    member["local_id_offset"] = serde_json::json!(34);
-    member["asset_id_offset"] = serde_json::json!(52);
-    member["context_id_offset"] = serde_json::json!(128);
     check::<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>(&member);
-    for (compact, local_id_offset) in [(true, 32), (true, 33), (false, 34)] {
-        let mut framed = member.clone();
-        framed["compact_layout"] = compact.into();
-        framed["local_id_offset"] = local_id_offset.into();
-        framed["asset_id_offset"] = (local_id_offset + 18).into();
-        framed["context_id_offset"] = (local_id_offset + 94).into();
-        let operand = serde_json::from_value::<
-            crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
-        >(framed)
-        .expect("edge-identity prologue framing");
-        assert_eq!(operand.local_id_offset(), local_id_offset);
-        assert_eq!(operand.layout().is_compact(), compact);
-    }
-    for (compact, local_id_offset) in [(false, 32), (false, 33), (true, 34), (false, 20)] {
-        let mut framed = member.clone();
-        framed["compact_layout"] = compact.into();
-        framed["local_id_offset"] = local_id_offset.into();
-        framed["asset_id_offset"] = (local_id_offset + 18).into();
-        framed["context_id_offset"] = (local_id_offset + 94).into();
-        assert!(
-            serde_json::from_value::<
-                crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
-            >(framed)
-            .is_err(),
-            "compact_layout {compact} with local_id_offset {local_id_offset}"
-        );
-    }
     for field in ["asset_id", "context_id"] {
         let mut invalid = member.clone();
         invalid[field] = serde_json::json!("asset");

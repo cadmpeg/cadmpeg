@@ -29,7 +29,7 @@ fn recipe_linear_dimension_candidates_resolve_unique_vertical_distance() {
         [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
             if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
                 && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
-                && *actual == parameter
+                && *actual == cadmpeg_ir::Dimension::Parameter(parameter.clone())
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(

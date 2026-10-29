@@ -24,6 +24,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     ];
     for support in &supports {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -45,6 +46,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
             ProceduralSurfaceId::mint(format!("test:model:entity#offset-construction-{ordinal}"))
                 .expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
@@ -73,6 +75,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     }
     let carrier = CurveId::mint("test:model:entity#curve").expect("identity grammar");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: carrier.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -203,6 +206,7 @@ fn cyclic_offset_supports_are_not_parameterization_equivalent() {
             ProceduralSurfaceId::mint(format!("test:model:entity#cycle-construction-{index}"))
                 .expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),

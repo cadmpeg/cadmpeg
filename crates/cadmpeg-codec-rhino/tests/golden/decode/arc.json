@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -57,8 +56,7 @@
           "id": "rhino:object:curve#record-000000-offset-177",
           "source_object": {
             "format": "rhino",
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -112,8 +110,7 @@
             "current_material_source": null,
             "current_wire_density": null,
             "id": "rhino:document:settings#current",
-            "model_url": null,
-            "writer_version": null
+            "model_url": null
           }
         ],
         "embedded_images": [],
@@ -148,17 +145,14 @@
         "windows_bitmaps": []
       }
     },
+    "scope": {
+      "design": false,
+      "model": true
+    },
     "source": {
       "attributes": {
-        "absolute_tolerance_millimeters": "0.01",
-        "absolute_tolerance_native": "0.01",
-        "angular_tolerance": "0.1",
         "archive_version": "50",
-        "container_kind": "3dm-chunks",
-        "millimeters_per_unit": "1",
-        "relative_tolerance": "0.001",
-        "unit_system": "standard:2",
-        "unit_value": "2"
+        "container_kind": "3dm-chunks"
       },
       "identity": {
         "classification": "classified",
@@ -227,6 +221,27 @@
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "record.neutral-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "rhino",
+          "scope": "namespaced"
+        },
+        "message": "rhino:object:record#record-000000-offset-177: layer index -1 is absent or ambiguous",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "parametric_record_omitted",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the rhino decoder did not deliver classes: design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -234,7 +249,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -253,8 +271,10 @@
           "retention": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

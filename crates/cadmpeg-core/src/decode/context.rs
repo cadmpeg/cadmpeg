@@ -9,7 +9,7 @@ use crate::{CodecError, ReadSeek};
 use super::arena::DecodeArena;
 use super::budget::{DecodeBudget, DepthGuard};
 use super::depth::DecodeDepth;
-use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
+use super::error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
 };
@@ -17,7 +17,7 @@ use super::space::{ByteRange, SpaceId};
 use super::view::{u64_from_index, View};
 
 #[derive(Clone, Copy)]
-enum LimitScope {
+enum AllowanceScope {
     Global,
     PerExpand,
 }
@@ -30,19 +30,65 @@ const RESERVE_CLAMP: usize = 8 * 1024 * 1024;
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     depth: DecodeDepth,
+    encoding: bool,
     pub(super) budget: DecodeBudget,
     derived_spaces: Cell<usize>,
 }
 
 impl<'a> DecodeContext<'a> {
+    pub(crate) fn operation_budget(
+        &self,
+    ) -> std::sync::Arc<crate::operation_budget::OperationBudget> {
+        self.budget.operation_budget()
+    }
+
     /// Creates one session before input acquisition and detection.
     pub fn new(arena: &'a DecodeArena, policy: &DecodePolicy, depth: DecodeDepth) -> Self {
         Self {
             arena,
             depth,
+            encoding: false,
             budget: DecodeBudget::new(*policy, 0),
             derived_spaces: Cell::new(0),
         }
+    }
+
+    /// Creates source-free encode helpers under the caller's absolute ceilings.
+    ///
+    /// Retained helper output shares the account used by
+    /// [`crate::encode::EncodeSession::from_context`]. No source byte length
+    /// or source stream is invented to obtain an encode allowance.
+    pub fn for_encode(arena: &'a DecodeArena, policy: &DecodePolicy) -> Self {
+        let mut ctx = Self::new(arena, policy, DecodeDepth::Full);
+        ctx.encoding = true;
+        ctx
+    }
+
+    /// Opens an independent source domain on an existing encode caller account.
+    ///
+    /// Caller policy and ceilings are inherited from the session. This neither
+    /// registers source bytes nor borrows another context or its arena. Input,
+    /// decompressed bytes, retained output, entities and the first refusal are
+    /// shared; local work stays separate.
+    pub fn for_encode_session(
+        arena: &'a DecodeArena,
+        session: &crate::encode::EncodeSession,
+    ) -> Result<Self, ResourceLimit> {
+        session.finish()?;
+        let policy = session.policy;
+        let budget = DecodeBudget::from_account(policy, session.account());
+        Ok(Self {
+            arena,
+            depth: DecodeDepth::Full,
+            encoding: true,
+            budget,
+            derived_spaces: Cell::new(0),
+        })
+    }
+
+    /// Whether this context owns temporary projections for an encode operation.
+    pub const fn is_encoding(&self) -> bool {
+        self.encoding
     }
 
     /// Starts post-decode processing with the measured byte length of an already
@@ -126,6 +172,7 @@ impl<'a> DecodeContext<'a> {
         let ctx = DecodeContext {
             arena,
             depth,
+            encoding: false,
             budget: DecodeBudget::new(*policy, length),
             derived_spaces: Cell::new(0),
         };
@@ -170,21 +217,27 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
-    /// Charges bytes that decoded output keeps for the rest of the session.
+    /// Charges bytes kept in output for the rest of the operation.
     ///
-    /// This is the one retained-bytes chokepoint: native record text, arena
-    /// buffers, and retained copies of source bytes call it. Temporary and
-    /// derived storage is not charged.
+    /// Decode uses its input-proportional allowance. Encode helpers use the
+    /// shared account's absolute caller ceiling. Temporary and derived storage
+    /// is not charged.
     pub fn retain_bytes(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
+        if self.encoding {
+            return self
+                .operation_budget()
+                .charge_retained(bytes, operation)
+                .map_err(Into::into);
+        }
         self.budget
             .retain_bytes(bytes, operation)
             .map_err(Into::into)
     }
 
-    /// Retained bytes the session can still afford: the retained-byte
-    /// allowance (the smaller of `max_retained_bytes` and the
-    /// input-proportional allowance) minus the bytes already retained, or zero
-    /// after a refusal fused the session.
+    /// Retained bytes the operation can still afford, or zero after a refusal.
+    ///
+    /// Decode uses its input-proportional allowance. Encode helpers use the
+    /// absolute caller ceiling. Both include actual live serialized output.
     ///
     /// A codec uses this only to decide whether to skip optional enrichment
     /// before it builds the enrichment, and reports the skip as a loss. It
@@ -192,7 +245,27 @@ impl<'a> DecodeContext<'a> {
     /// through [`DecodeContext::retain_bytes`], which can still refuse.
     #[must_use]
     pub fn retained_bytes_available(&self) -> u64 {
+        if self.encoding {
+            return self.operation_budget().retained_bytes_available();
+        }
         self.budget.retained_bytes_available()
+    }
+
+    fn allocation_failed(&self, requested: u64, operation: &'static str) -> CodecError {
+        if !self.encoding {
+            return self.budget.retained_allocation_failed(requested, operation);
+        }
+        let account = self.operation_budget();
+        let failure = ResourceLimit {
+            scope: LimitScope::Session,
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: account.limits.max_retained_bytes,
+            used: account.retained_used(),
+            additional: requested,
+            operation,
+        };
+        account.refuse(failure).into()
     }
 
     fn allocate_space(&self) -> Result<SpaceId, CodecError> {
@@ -205,26 +278,36 @@ impl<'a> DecodeContext<'a> {
         Ok(SpaceId::from_index(index))
     }
 
-    /// Records a permanent fuse and returns the resource error to propagate.
+    /// Records a scoped refusal and returns the resource error to propagate.
     fn fuse(
         &self,
         reason: ResourceFailure,
-        scope: LimitScope,
+        scope: AllowanceScope,
+        local_used: u64,
         amount: u64,
         operation: &'static str,
     ) -> CodecError {
         let limit = match scope {
-            LimitScope::Global => self.decompression_allowance(),
-            LimitScope::PerExpand => self.per_expand_allowance(),
+            AllowanceScope::Global => self.decompression_allowance(),
+            AllowanceScope::PerExpand => self.per_expand_allowance(),
         };
-        self.budget.refuse(
-            ResourceDimension::DecompressedBytes,
-            reason,
-            limit,
-            self.budget.decompressed_used(),
-            amount,
-            operation,
-        )
+        self.budget
+            .refuse_resource(ResourceLimit {
+                scope: match scope {
+                    AllowanceScope::Global => LimitScope::Session,
+                    AllowanceScope::PerExpand => LimitScope::Part,
+                },
+                dimension: ResourceDimension::DecompressedBytes,
+                reason,
+                limit,
+                used: match scope {
+                    AllowanceScope::Global => self.budget.decompressed_used(),
+                    AllowanceScope::PerExpand => local_used,
+                },
+                additional: amount,
+                operation,
+            })
+            .into()
     }
 
     /// Allocates `count` copies of `value` with fallible allocation.
@@ -238,13 +321,73 @@ impl<'a> DecodeContext<'a> {
         value: T,
         operation: &'static str,
     ) -> Result<Vec<T>, CodecError> {
+        if self.encoding {
+            if let Some(refusal) = self.resource_refusal() {
+                return Err(refusal.into());
+            }
+        }
         let mut values = Vec::new();
-        values.try_reserve_exact(count).map_err(|_| {
-            self.budget
-                .retained_allocation_failed(u64_from_index(count), operation)
-        })?;
+        values
+            .try_reserve_exact(count)
+            .map_err(|_| self.allocation_failed(u64_from_index(count), operation))?;
         values.resize(count, value);
         Ok(values)
+    }
+
+    /// Reserves temporary vector storage without charging retained output.
+    pub fn reserve_working<T>(
+        &self,
+        values: &mut Vec<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(refusal) = self.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let bytes = additional
+            .checked_mul(size_of::<T>())
+            .ok_or_else(|| self.allocation_failed(u64::MAX, operation))?;
+        values
+            .try_reserve_exact(additional)
+            .map_err(|_| self.allocation_failed(u64_from_index(bytes), operation))?;
+        Ok(())
+    }
+
+    /// Move a value into fallible working heap storage.
+    ///
+    /// This does not charge retained output or consume an entity slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns the caller's existing refusal, or records an allocation failure.
+    pub fn alloc_box_working<T>(
+        &self,
+        value: T,
+        operation: &'static str,
+    ) -> Result<Box<T>, CodecError> {
+        if let Some(refusal) = self.resource_refusal() {
+            return Err(refusal.into());
+        }
+        if size_of::<T>() == 0 {
+            return Ok(Box::new(value));
+        }
+        trybox::or_drop(value)
+            .map_err(|_| self.allocation_failed(u64_from_index(size_of::<T>()), operation))
+    }
+
+    /// Reserves temporary UTF-8 string storage without charging retained output.
+    pub fn reserve_text_working(
+        &self,
+        text: &mut String,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(refusal) = self.resource_refusal() {
+            return Err(refusal.into());
+        }
+        text.try_reserve_exact(additional)
+            .map_err(|_| self.allocation_failed(u64_from_index(additional), operation))?;
+        Ok(())
     }
 
     /// Charges admitted entities.
@@ -285,7 +428,7 @@ impl<'a> DecodeContext<'a> {
         self.budget.enter_nested(operation)
     }
 
-    /// Returns the resource refusal that has fused this decode session.
+    /// Returns the pending part or session resource refusal.
     pub fn resource_refusal(&self) -> Option<ResourceLimit> {
         self.budget.fused()
     }
@@ -303,7 +446,8 @@ impl<'a> DecodeContext<'a> {
             if size > per_expand {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
-                    LimitScope::PerExpand,
+                    AllowanceScope::PerExpand,
+                    0,
                     size,
                     "begin_expand",
                 ));
@@ -315,7 +459,8 @@ impl<'a> DecodeContext<'a> {
             {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
-                    LimitScope::Global,
+                    AllowanceScope::Global,
+                    0,
                     size,
                     "begin_expand",
                 ));
@@ -335,7 +480,8 @@ impl<'a> DecodeContext<'a> {
             buffer.try_reserve(reserve).map_err(|_| {
                 self.fuse(
                     ResourceFailure::AllocationFailed,
-                    LimitScope::PerExpand,
+                    AllowanceScope::PerExpand,
+                    0,
                     u64_from_index(reserve),
                     "begin_expand",
                 )
@@ -467,6 +613,7 @@ impl<'a> DecodeContext<'a> {
 fn root_limit(reason: ResourceFailure, limit: u64, used: u64) -> ResourceLimit {
     if used <= limit {
         return ResourceLimit {
+            scope: LimitScope::Session,
             dimension: ResourceDimension::InputBytes,
             reason,
             limit,
@@ -477,6 +624,7 @@ fn root_limit(reason: ResourceFailure, limit: u64, used: u64) -> ResourceLimit {
     }
     let additional = used - limit;
     ResourceLimit {
+        scope: LimitScope::Session,
         dimension: ResourceDimension::InputBytes,
         reason,
         limit,
@@ -510,7 +658,8 @@ impl<'a> ExpandWriter<'_, 'a> {
         let new_written = self.written().checked_add(len).ok_or_else(|| {
             self.ctx.fuse(
                 ResourceFailure::BudgetExceeded,
-                LimitScope::PerExpand,
+                AllowanceScope::PerExpand,
+                self.written(),
                 len,
                 "expand_write",
             )
@@ -527,7 +676,8 @@ impl<'a> ExpandWriter<'_, 'a> {
         if new_written > per_expand {
             return Err(self.ctx.fuse(
                 ResourceFailure::BudgetExceeded,
-                LimitScope::PerExpand,
+                AllowanceScope::PerExpand,
+                self.written(),
                 len,
                 "expand_write",
             ));
@@ -536,7 +686,8 @@ impl<'a> ExpandWriter<'_, 'a> {
         self.buffer.try_reserve(data.len()).map_err(|_| {
             self.ctx.fuse(
                 ResourceFailure::AllocationFailed,
-                LimitScope::PerExpand,
+                AllowanceScope::PerExpand,
+                self.written(),
                 len,
                 "expand_write",
             )
@@ -580,6 +731,11 @@ impl<'a> ExpandWriter<'_, 'a> {
 
 #[cfg(test)]
 mod tests {
+    mod shared_encode;
+    mod working_box;
+    mod working_storage;
+    mod working_text;
+
     use super::{ByteRange, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 
     use std::io::{self, Cursor, Read, Seek, SeekFrom};

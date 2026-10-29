@@ -181,7 +181,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         if let AttributeTarget::Edge(edge) = &attribute.target {
             let naming = attribute.name == NAMING_ATTRIBUTE
                 || (attribute.name == CUSTOM_NAMING_ATTRIBUTE
-                    && matches!(attribute.values.get(5), Some(AttributeValue::String(family))
+                    && matches!(attribute.values.get(5), Some(Some(AttributeValue::String(family)))
                         if family == CUSTOM_NAMING_FAMILY));
             if !naming {
                 continue;
@@ -312,7 +312,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
 }
 
 /// The naming-type and associative-id integers of an edge naming attribute.
-fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
+fn edge_name(attribute: &str, values: &[Option<AttributeValue>]) -> Option<EdgeName> {
     let [_, _, _, _, _, rest @ ..] = values else {
         return None;
     };
@@ -320,14 +320,14 @@ fn edge_name(attribute: &str, values: &[AttributeValue]) -> Option<EdgeName> {
         (NAMING_ATTRIBUTE, rest) => rest,
         (
             CUSTOM_NAMING_ATTRIBUTE,
-            [AttributeValue::String(family), AttributeValue::Integer(1), rest @ ..],
+            [Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), rest @ ..],
         ) if family == CUSTOM_NAMING_FAMILY => rest,
         _ => return None,
     };
     let integers = rest
         .iter()
         .map(|value| match value {
-            AttributeValue::Integer(value) => Some(*value),
+            Some(AttributeValue::Integer(value)) => Some(*value),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;

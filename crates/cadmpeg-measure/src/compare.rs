@@ -449,6 +449,7 @@ pub fn compare(
     let count = bodies.len();
     let Some(allowance) = options.work.pair_allowance(count) else {
         return Err(ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::Session,
             dimension: ResourceDimension::Entities,
             reason: ResourceFailure::BudgetExceeded,
             limit: 0,

@@ -241,29 +241,128 @@ fn element_map_declared_count_is_independent_xml_metadata() {
 
 #[test]
 fn topology_binding_preserves_empty_indexed_name_slots() {
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let mapped_name = || ElementMappedName {
         encoded: ";stable.0".into(),
         resolved: Some("stable".into()),
         string_ids: Vec::new(),
-        topology_ids: Vec::new(),
     };
     let group = ElementMapGroup {
         indexed_name: "Edge".into(),
         children: Vec::new(),
         names: vec![Vec::new(), vec![mapped_name()], Vec::new()],
     };
-    let mut nodes = ElementMapNodes::try_from(vec![ElementMapNode {
+    let nodes = ElementMapNodes::try_from(vec![ElementMapNode {
         map_id: 0,
         groups: vec![group],
     }])
     .expect("valid name group");
-    nodes.bind_root_topology("Edge", 1, "edge-first-placement");
-    nodes.bind_root_topology("Edge", 2, "unmapped-edge");
-    nodes.bind_root_topology("Edge", 1, "edge-second-placement");
+    let native_before = serde_json::to_value(&nodes).unwrap();
+    // The placement labels become typed key segments of the neutral identities;
+    // the native name and its empty slots stay unchanged.
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 4
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +4 0 -3 0 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +4 0 -3 0 *
++2 0 +2 0 +1 0 *";
+    let bytes = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", document),
+        ("Shape.brp", brep),
+    ]);
+    let decoded = crate::FcstdCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let labels = [
+        "edge-first-placement",
+        "edge-second-placement",
+        "unmapped-edge",
+    ];
+    assert_eq!(ir.model.edges.len(), labels.len());
+    let rename = ir
+        .model
+        .edges
+        .iter()
+        .zip(labels)
+        .map(|(edge, label)| {
+            (
+                edge.id.as_str().to_owned(),
+                format!("test:model:edge#{label}"),
+            )
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut identities =
+        IdentityMap::new(|id: &str| Ok(rename.get(id).cloned().unwrap_or_else(|| id.to_owned())));
+    ir.model.edges = std::mem::take(&mut ir.model.edges)
+        .rewrite_identities(&ctx, &mut identities)
+        .unwrap();
+    ir.model.shells = std::mem::take(&mut ir.model.shells)
+        .rewrite_identities(&ctx, &mut identities)
+        .unwrap();
+    ir.model.coedges = std::mem::take(&mut ir.model.coedges)
+        .rewrite_identities(&ctx, &mut identities)
+        .unwrap();
+    identities.finish().unwrap();
+    let payloads = ir
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let inverse = crate::topology_transfer::current_bindings(&ctx, &ir).unwrap();
     let group = &nodes.root().groups[0];
-
+    let (linked, placements) =
+        inverse.selected_records(&payloads[0].property, &group.indexed_name, 1);
+    assert!(linked);
+    let placements = placements.collect::<Vec<_>>();
     assert_eq!(
-        group.names[1][0].topology_ids,
-        ["edge-first-placement", "edge-second-placement"]
+        placements,
+        [
+            "test:model:edge#edge-first-placement",
+            "test:model:edge#edge-second-placement"
+        ]
     );
+    assert!(ir.model.edges.iter().all(|edge| edge.native_ref.is_some()));
+    assert!(group.names[0].is_empty());
+    assert!(group.names[2].is_empty());
+    let (linked, unmapped) =
+        inverse.selected_records(&payloads[0].property, &group.indexed_name, 2);
+    assert!(linked);
+    assert_eq!(
+        unmapped.collect::<Vec<_>>(),
+        ["test:model:edge#unmapped-edge"]
+    );
+    assert_eq!(group.names[1][0].encoded, ";stable.0");
+    assert_eq!(group.names[1][0].resolved.as_deref(), Some("stable"));
+    assert_eq!(serde_json::to_value(&nodes).unwrap(), native_before);
+}
+
+#[test]
+fn native_mapped_names_reject_the_removed_neutral_backlink_field() {
+    // A native mapped name has no second link home.
+    let native = ElementMappedName {
+        encoded: ";stable.0".to_owned(),
+        resolved: Some("stable".to_owned()),
+        string_ids: Vec::new(),
+    };
+    let mut wire = serde_json::to_value(&native).unwrap();
+    assert_eq!(wire["encoded"], ";stable.0");
+    assert_eq!(wire["resolved"], "stable");
+    wire["topology_ids"] = serde_json::json!(["fcstd:model:edge#source"]);
+    assert!(serde_json::from_value::<ElementMappedName>(wire).is_err());
 }

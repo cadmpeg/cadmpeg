@@ -74,11 +74,14 @@ fn malformed_unused_links_remain_explicitly_source_only() {
         .expect("source-only link");
         assert!(matches!(
             graph.properties[0].body,
-            PropertyBody::Unreadable(_)
+            Some(PropertyBody::Unreadable(_))
         ));
         assert!(graph.properties[0].links().is_empty());
         assert!(graph.properties[0].values().is_empty());
-        assert!(graph.properties[0].xml.text().contains(payload));
+        assert!(
+            document[graph.property_sources[&graph.properties[0].id].record_range()]
+                .contains(payload)
+        );
         assert!(graph.losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
                 .note(String::new())
@@ -86,6 +89,18 @@ fn malformed_unused_links_remain_explicitly_source_only() {
         let wire = serde_json::to_value(&graph.properties[0]).expect("serialize");
         let property: crate::native::PropertyRecord =
             serde_json::from_value(wire).expect("deserialize source-only property");
+        let decoded = cadmpeg_ir::Codec::decode(
+            &crate::FcstdCodec,
+            &mut std::io::Cursor::new(crate::test_support::test_archive::archive(&document)),
+            &cadmpeg_ir::DecodeOptions::default(),
+        )
+        .expect("source-only property with its fidelity");
+        assert!(!decoded
+            .source_fidelity()
+            .retained_record(&property.id)
+            .expect("source-only property record")
+            .untyped()
+            .is_empty());
         assert_eq!(property, graph.properties[0]);
     }
 }
@@ -110,7 +125,6 @@ fn many_unique_object_names_decode() {
         super::parse(document.as_bytes(), "4", ctx).unwrap()
     });
     assert_eq!(graph.objects.len(), count);
-    assert!(graph.objects.iter().all(|object| object.data.is_some()));
 }
 
 #[test]

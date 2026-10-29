@@ -11,6 +11,29 @@ use crate::resolved_features::scalars::FeatureObjectNames;
 use crate::resolved_features::selections::enrich_feature_object_sources;
 use std::collections::BTreeMap;
 
+impl<'a> FeatureSources<'a> {
+    pub(crate) fn for_lane(features: &'a [Feature], lane: &FeatureInputLane) -> Self {
+        Self::for_lane_iter(features.iter(), lane)
+    }
+
+    pub(crate) fn for_lane_iter(
+        features: impl IntoIterator<Item = &'a Feature>,
+        lane: &FeatureInputLane,
+    ) -> Self {
+        let mut view = Self::from_refs(features);
+        if !lane.edge_selections.is_empty() || !lane.surface_selections.is_empty() {
+            let names = FeatureObjectNames::new(&lane.names);
+            view.added = view
+                .features
+                .iter()
+                .enumerate()
+                .filter_map(|(index, feature)| Some((index, lane_added_source(feature, &names)?)))
+                .collect();
+        }
+        view
+    }
+}
+
 fn feature(name: &str, source_id: Option<FeatureSource>, ordinal: u32) -> Feature {
     Feature {
         id: name.into(),
@@ -40,9 +63,11 @@ fn lane(names: &[(&str, Option<u32>)]) -> FeatureInputLane {
         names: names
             .iter()
             .map(|(name, source)| FeatureInputName {
+                feature_ref: None,
                 id: format!("name:{name}"),
                 parent: "lane".into(),
                 ordinal: 0,
+                sequence: 0,
                 offset: 0,
                 object_id: source.and_then(ObjectId::from_value),
                 value: (*name).into(),
@@ -54,6 +79,7 @@ fn lane(names: &[(&str, Option<u32>)]) -> FeatureInputLane {
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: vec![FeatureInputSurfaceSelection {
+            sequence: 0,
             id: "selection".into(),
             parent: "lane".into(),
             ordinal: 0,

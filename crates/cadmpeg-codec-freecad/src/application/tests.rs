@@ -34,16 +34,60 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         ("analysis.dat", b"finite-element-results"),
     ]);
     let result = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("application census");
     let namespace = result.ir().native.namespace("fcstd").expect("native");
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
         .expect("applications");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let document_view = archive.open(&ctx, "Document.xml").unwrap();
+    let document_bytes = document_view.window();
+    assert_eq!(document_bytes, document.as_bytes());
+    let original_xml = roxmltree::Document::parse(document).unwrap();
+    let object_data = original_xml
+        .root_element()
+        .children()
+        .find(|node| node.has_tag_name("ObjectData"))
+        .unwrap();
     let xml_bytes = |record: &serde_json::Value| {
-        let start = usize::try_from(record["byte_start"].as_u64().unwrap()).unwrap();
-        let end = usize::try_from(record["byte_end"].as_u64().unwrap()).unwrap();
-        &document.as_bytes()[start..end]
+        let object_id = record["object"].as_str().unwrap();
+        let object = object_data
+            .children()
+            .find(|node| {
+                node.has_tag_name("Object")
+                    && crate::native::native_id("object", node.attribute("name").unwrap())
+                        == object_id
+            })
+            .unwrap();
+        let source = if let Some(property_id) = record["property"].as_str() {
+            let properties = object
+                .children()
+                .find(|node| node.has_tag_name("Properties"))
+                .unwrap();
+            let property = properties
+                .children()
+                .find(|node| {
+                    node.has_tag_name("Property")
+                        && crate::native::native_child_id(
+                            "property",
+                            object_id,
+                            node.attribute("name").unwrap(),
+                        ) == property_id
+                })
+                .unwrap();
+            property
+        } else {
+            object
+        };
+        &document_bytes[source.range()]
     };
     assert_eq!(records.len(), 5);
     let by_domain = records
@@ -63,24 +107,30 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     assert_eq!(by_domain["Unqualified"]["type_name"], "LocalType");
     let report = &by_domain["Fem"]["property_records"][0];
     assert_eq!(report["object"], by_domain["Fem"]["object"]);
-    assert!(report["byte_start"].as_u64().unwrap() < report["byte_end"].as_u64().unwrap());
-    assert_eq!(
-        report["byte_len"],
-        cadmpeg_core::decode::u64_from_index(xml_bytes(report).len())
-    );
-    assert_eq!(
-        report["sha256"],
-        cadmpeg_ir::hash::sha256_hex(xml_bytes(report))
-    );
+    for key in ["data", "byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(report.get(key).is_none());
+    }
     assert_eq!(report["payloads"].as_array().unwrap().len(), 1);
     let payload = &report["payloads"][0];
     assert_eq!(payload["name"], "analysis.dat");
-    assert_eq!(payload["byte_len"], b"finite-element-results".len());
-    assert!(payload.get("data").is_none());
+    let payload_bytes = crate::test_support::source_fidelity::entry_bytes(
+        result.source_fidelity(),
+        payload["entry"].as_str().unwrap(),
+    );
+    assert_eq!(payload_bytes, b"finite-element-results");
+    let entry_id = crate::native::native_id("entry", "analysis.dat");
+    assert_eq!(payload["entry"], entry_id);
+    let payload_view = archive.open(&ctx, "analysis.dat").unwrap();
+    assert_eq!(payload_bytes, payload_view.window());
+    assert_eq!(payload_bytes.len(), b"finite-element-results".len());
     assert_eq!(
-        payload["sha256"],
+        cadmpeg_ir::hash::sha256_hex(&payload_bytes),
         cadmpeg_ir::hash::sha256_hex(b"finite-element-results")
     );
+    assert!(payload.get("data").is_none());
+    for key in ["byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(payload.get(key).is_none());
+    }
     let python = &by_domain["Path"]["property_records"][0];
     assert_eq!(python["inert"], true);
     assert!(String::from_utf8_lossy(xml_bytes(python)).contains("serialized-but-inert"));
@@ -90,15 +140,23 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|property| property.get("data").is_none()));
-        record["byte_start"].as_u64().unwrap() < record["byte_end"].as_u64().unwrap()
-            && record["byte_len"] == cadmpeg_core::decode::u64_from_index(xml_bytes(record).len())
-            && record["sha256"] == cadmpeg_ir::hash::sha256_hex(xml_bytes(record))
+            .all(
+                |property| ["data", "byte_start", "byte_end", "byte_len", "sha256"]
+                    .iter()
+                    .all(|key| property.get(*key).is_none())
+            ));
+        assert!(
+            record.get("byte_start").is_none()
+                && record.get("byte_end").is_none()
+                && record.get("byte_len").is_none()
+                && record.get("sha256").is_none()
+        );
+        true
     }));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 
-    let mut altered = records;
+    let mut altered = records.clone();
     let payload = &mut altered
         .iter_mut()
         .find(|record| record["domain"] == "Fem")
@@ -116,13 +174,46 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             &altered,
         )
         .unwrap();
-    assert!(crate::test_support::validate_native(&edited)
-        .iter()
-        .any(|finding| {
-            finding
-                .message
-                .contains("application preservation records do not match authoritative bytes")
-        }));
+    let findings = crate::test_support::validate_native(&edited);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::PayloadIntegrity
+    );
+    assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert_eq!(
+        findings[0].message,
+        "FCStd application records do not match their typed objects and evidence"
+    );
+
+    let mut misplaced = records;
+    let payload = &mut misplaced
+        .iter_mut()
+        .find(|record| record["domain"] == "Fem")
+        .unwrap()["property_records"][0]["payloads"][0];
+    payload["entry"] = crate::native::native_id("entry", "Document.xml").into();
+    payload["name"] = "Document.xml".into();
+    let mut cross_owned = result.ir().clone();
+    cross_owned
+        .native
+        .namespace_mut("fcstd")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "applications",
+            &misplaced,
+        )
+        .unwrap();
+    let findings = crate::test_support::validate_native(&cross_owned);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::PayloadIntegrity
+    );
+    assert_eq!(findings[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert_eq!(
+        findings[0].message,
+        "FCStd application records do not match their typed objects and evidence"
+    );
 }
 
 #[test]
@@ -140,7 +231,6 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
-        data: None,
     }];
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     super::install(
@@ -151,15 +241,28 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
         &[],
     )
     .unwrap();
-    assert!(objects[0].data.is_none());
     let records = namespace
         .arena_as::<serde_json::Value>("applications")
         .unwrap();
     assert!(records[0].get("data").is_none());
-    assert_eq!(records[0]["byte_start"], 0);
-    assert_eq!(records[0]["byte_end"], 0);
-    assert_eq!(records[0]["byte_len"], 0);
-    assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
+    assert_eq!(
+        records,
+        [serde_json::json!({
+            "id": "fcstd:native:application#Absent",
+            "object": "fcstd:native:object#Absent",
+            "type_name": "Vendor::Feature",
+            "domain": "Vendor",
+            "properties": [],
+            "dependencies": [],
+            "side_entries": [],
+            "inert_payload": false,
+            "order": 0,
+            "property_records": []
+        })]
+    );
+    for key in ["byte_start", "byte_end", "byte_len", "sha256"] {
+        assert!(records[0].get(key).is_none());
+    }
     assert!(super::matches_native(
         &cadmpeg_test_support::service_decode_context(),
         &namespace,
@@ -202,21 +305,10 @@ fn unregistered_application_payloads_remain_whole_named_opaque_entries() {
         .iter()
         .find(|entry| entry.name() == "Payload.bin")
         .expect("payload entry");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
-    let span = spans
-        .iter()
-        .find(|span| span.entry == entry.name())
-        .expect("payload span");
-    assert_eq!(span.span.start(), 0);
     assert_eq!(
-        span.span.end(),
-        cadmpeg_core::decode::u64_from_index(payload.len())
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+        payload
     );
-    assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(entry.id()));
-    assert_eq!(entry.data(), payload);
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
@@ -327,36 +419,21 @@ fn producer_specific_side_entries_remain_whole_until_their_grammar_is_registered
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
     for (name, _, _, payload) in cases {
         let entry = entries
             .iter()
             .find(|entry| entry.name() == name)
             .expect("side entry");
-        assert_eq!(entry.data(), payload);
         assert_eq!(
-            entry.byte_len(),
-            cadmpeg_core::decode::u64_from_index(payload.len())
+            crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), entry.id()),
+            payload
         );
-        let span = spans
-            .iter()
-            .find(|span| span.entry == name)
-            .expect("side-entry span");
-        assert_eq!(span.span.start(), 0);
-        assert_eq!(
-            span.span.end(),
-            cadmpeg_core::decode::u64_from_index(payload.len())
-        );
-        assert_eq!(span.classification.as_str(), "named_opaque");
-        assert_eq!(span.classification.owner(), Some(entry.id()));
     }
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
-fn application_repeated_payloads_borrow_the_cached_digest() {
+fn repeated_application_payloads_borrow_entry_identity_without_source_evidence() {
     let object = crate::native::ObjectRecord {
         identity: crate::native::object_identity::ObjectIdentity::try_new(
             "fcstd:native:object#Owner".into(),
@@ -370,37 +447,84 @@ fn application_repeated_payloads_borrow_the_cached_digest() {
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
-        data: None,
     };
-    let properties = ["First", "Second"].map(|name| crate::native::PropertyRecord {
-        id: format!("fcstd:native:property#Owner:{name}"),
-        owner: object.id().clone(),
-        name: name.into(),
-        type_name: "App::PropertyFileIncluded".into(),
-        family: crate::native::PropertyFamily::File,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["shared.bin".into()],
+    let properties = ["First", "Second"].map(|name| {
+        let property = crate::native::PropertyRecord {
             dynamic: None,
-        },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).expect("XML"),
+            id: format!("fcstd:native:property#Owner:{name}"),
+            owner: object.id().clone(),
+            name: name.into(),
+            type_name: "App::PropertyFileIncluded".into(),
+            family: crate::native::PropertyFamily::File,
+            status: None,
+            body: Some(crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["shared.bin".into()],
+            }),
+            order: 0,
+        };
+        property
     });
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "fcstd:native:entry#shared.bin".into(),
         "shared.bin".into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
         vec![7; 4096],
     );
-    let digest = entry.sha256().as_ptr();
+    let identity = entry.id().as_ptr();
     let objects = [object];
-    let entries = [entry];
+    let entries = [entry.record];
     let records = super::wire_records(&objects, &properties, &entries);
     for property in &records[0].property_records {
-        assert_eq!(property.payloads[0].sha256.as_ptr(), digest);
-        assert_eq!(property.payloads[0].sha256, entries[0].sha256());
+        assert_eq!(property.payloads[0].entry.as_ptr(), identity);
+        assert_eq!(property.payloads[0].entry, entries[0].id());
+        assert_eq!(property.payloads[0].name, entries[0].name());
+        let wire = serde_json::to_value(&property.payloads[0]).unwrap();
+        assert!(wire.get("sha256").is_none());
+        assert!(wire.get("byte_len").is_none());
+        assert!(wire.get("data").is_none());
     }
+}
+
+#[test]
+fn external_component_census_matches_its_typed_native_records() {
+    let input = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/external_component.FCStd"
+    ));
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .unwrap();
+    let mut expected = super::wire_records(&objects, &properties, &entries);
+    expected.sort_by(|left, right| left.id.cmp(&right.id));
+    let actual = namespace.arenas().get("applications").unwrap();
+    let expected_json = serde_json::to_value(&expected).unwrap();
+    let actual_json = serde_json::to_value(actual).unwrap();
+    assert_eq!(
+        actual_json, expected_json,
+        "application census must use only its current typed sources"
+    );
+    assert!(
+        super::matches_native(
+            &cadmpeg_test_support::service_decode_context(),
+            namespace,
+            &objects,
+            &properties,
+            &entries
+        )
+        .unwrap(),
+        "equal typed census values must match their native serialization: {expected_json:#}"
+    );
 }

@@ -2,6 +2,7 @@
 //! Transfer of `GuiDocument.xml` object appearance into neutral presentation records.
 
 mod schema;
+pub(crate) mod source;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -33,13 +34,17 @@ use schema::Admission as GuiSchemaAdmission;
 pub(crate) struct Graph {
     pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
+    pub(crate) property_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
+    /// The GUI stream was not admitted into typed records.
+    pub(crate) untyped: bool,
 }
 
 #[derive(Default)]
 struct AppearancePlan {
     body_updates: Vec<BodyUpdate>,
+    body_visibility_owners: HashSet<String>,
     appearances: Vec<Appearance>,
     bindings: Vec<AppearanceBinding>,
     remove_appearances: HashSet<AppearanceId>,
@@ -177,13 +182,24 @@ pub(crate) struct GuiSources<'a, 'b> {
     pub(crate) requires_alpha_conversion: bool,
 }
 
-pub(crate) fn transfer(
+pub(crate) fn transfer_rendered(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
+    origins: &RenderedGuiOrigins,
 ) -> Result<Graph, CodecError> {
-    match transfer_xml(ctx, ir, bytes, sources) {
+    transfer_with_origins(ctx, ir, bytes, sources, GuiOrigins::Rendered(origins))
+}
+
+fn transfer_with_origins(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    bytes: &[u8],
+    sources: &GuiSources<'_, '_>,
+    origins: GuiOrigins<'_>,
+) -> Result<Graph, CodecError> {
+    match transfer_xml(ctx, ir, bytes, sources, origins) {
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
             Ok(source_only_graph(None, &error))
         }
@@ -192,7 +208,10 @@ pub(crate) fn transfer(
 }
 
 fn source_only_graph(schema_declaration: Option<&str>, error: &CodecError) -> Graph {
-    let mut graph = Graph::default();
+    let mut graph = Graph {
+        untyped: true,
+        ..Graph::default()
+    };
     graph.documents.push(GuiDocumentRecord {
         id: ("fcstd:gui:document#0").to_owned(),
         schema_version: schema_declaration.map(ToOwned::to_owned),
@@ -212,31 +231,70 @@ fn transfer_xml(
     ir: &mut CadIr,
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
+    origins: GuiOrigins<'_>,
 ) -> Result<Graph, CodecError> {
+    let xml = parse_xml(ctx, bytes)?;
+    transfer_document(ctx, ir, &xml, sources, None, origins)
+}
+
+fn parse_xml<'input>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'input [u8],
+) -> Result<roxmltree::Document<'input>, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
-    let xml = ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
+    ctx.parse_xml(text, "FreeCAD XML tree").map_err(|error| {
         let CodecError::Malformed(error) = error else {
             return error;
         };
         CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}"))
-    })?;
+    })
+}
+
+fn transfer_document(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    xml: &roxmltree::Document<'_>,
+    sources: &GuiSources<'_, '_>,
+    source: Option<&crate::persistence::source::Source<'_>>,
+    origins: GuiOrigins<'_>,
+) -> Result<Graph, CodecError> {
     let schema_declaration = crate::container::canonical_attribute(
         xml.root_element(),
         "SchemaVersion",
         "schemaVersion",
     )?;
     let admission = schema::classify(schema_declaration.as_deref());
-    let neutral_schema_version = admission.neutral_schema_version();
-    let transferred = transfer_schema_one(
-        ir,
-        text,
-        &xml,
-        schema_declaration.as_deref(),
-        neutral_schema_version,
-        sources,
-    );
-    let mut graph = match transferred {
+    let parse = || {
+        let selected = match source {
+            Some(source) => {
+                let root = xml.root_element();
+                let key = if root.attribute("SchemaVersion").is_some() {
+                    "SchemaVersion"
+                } else {
+                    "schemaVersion"
+                };
+                root.attributes()
+                    .find(|attribute| attribute.namespace().is_none() && attribute.name() == key)
+                    .map(|attribute| source.attribute(&attribute))
+                    .transpose()?
+            }
+            None => schema_declaration.clone(),
+        };
+        let neutral_schema_version = schema::classify(selected.as_deref()).neutral_schema_version();
+        transfer_schema_one(
+            ctx,
+            ir,
+            xml,
+            selected.as_deref(),
+            neutral_schema_version,
+            sources,
+            origins,
+        )
+    };
+    // The source value constructs the kept GUI document and presentation schema.
+    // A rejected provider transfer rolls this scope back before source-only recovery.
+    let mut graph = match parse() {
         Ok((graph, plan)) => {
             plan.apply(ir);
             graph
@@ -258,13 +316,17 @@ fn transfer_xml(
 }
 
 fn transfer_schema_one(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
-    text: &str,
     xml: &roxmltree::Document<'_>,
     schema_declaration: Option<&str>,
     neutral_schema_version: Option<u32>,
     sources: &GuiSources<'_, '_>,
+    origins: GuiOrigins<'_>,
 ) -> Result<(Graph, AppearancePlan), CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
     let entries = sources.entries;
     let objects = sources.objects;
     let properties = sources.properties;
@@ -283,7 +345,7 @@ fn transfer_schema_one(
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
     {
-        states.push(gui_state(text, order, node)?);
+        states.push(gui_state(order, node)?);
     }
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
@@ -299,9 +361,11 @@ fn transfer_schema_one(
         objects_by_name.insert(object.name().as_str(), object.id().as_str());
     }
     let mut native_providers = Vec::new();
+    let mut property_sources = BTreeMap::new();
     let mut native_properties = Vec::new();
     let mut losses = Vec::new();
-    if camera_count != 1 {
+    // Absence declares no camera state; it does not omit a source record.
+    if camera_count > 1 {
         losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
             format!("GuiDocument.xml contains {camera_count} Camera records; camera selection is unresolved")
         ));
@@ -325,6 +389,7 @@ fn transfer_schema_one(
     let lookups = GuiLookups {
         shapes: ShapeIndex::new(properties, payloads, sources.topology_occurrences),
         topology: TopologyIndex::new(ir),
+        origins,
     };
     let mut provider_names = HashSet::new();
     let mut view_provider_data = xml
@@ -365,23 +430,26 @@ fn transfer_schema_one(
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
-                text,
                 provider,
                 provider_order,
                 None,
                 &mut native_providers,
                 &mut native_properties,
+                &mut property_sources,
             )?;
             continue;
         };
         append_native_provider(
-            text,
             provider,
             provider_order,
             Some(object_id),
             &mut native_providers,
             &mut native_properties,
+            &mut property_sources,
         )?;
+        let native_provider = native_providers
+            .last()
+            .ok_or_else(|| CodecError::malformed("admitted GUI provider is absent"))?;
         let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
             CodecError::malformed(format_args!("ViewProvider {name} has no Properties"))
         })?;
@@ -391,18 +459,31 @@ fn transfer_schema_one(
                 .children()
                 .filter(|node| node.has_tag_name("Property")),
         );
-        let mut values = HashMap::new();
-        for property in property_nodes.iter().copied().filter(|property| {
-            property
-                .attribute("name")
-                .and_then(presentation_property_type)
-                .is_some_and(|expected| property.attribute("type") == Some(expected))
-        }) {
+        let mut values = SelectedGuiValues::default();
+        for (property_order, property) in
+            property_nodes
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, property)| {
+                    property
+                        .attribute("name")
+                        .and_then(presentation_property_type)
+                        .is_some_and(|expected| property.attribute("type") == Some(expected))
+                })
+        {
             if let (Some(name), Some(value)) = (
                 property.attribute("name"),
                 property.children().find(roxmltree::Node::is_element),
             ) {
-                values.insert(name, value);
+                values.insert(
+                    ctx,
+                    name,
+                    SelectedGuiValue {
+                        value,
+                        property_order,
+                    },
+                )?;
             }
         }
         let property_provenance = |property_name: &str, type_name: &str| {
@@ -442,14 +523,18 @@ fn transfer_schema_one(
         let body_ids = lookups
             .topology
             .bodies_under(ir, shape_payloads.iter().copied());
+        if !body_ids.is_empty() {
+            plan.body_visibility_owners.insert(object_id.to_owned());
+        }
+        let color = packed_color
+            .map(|packed| decode_color(packed, transparency))
+            .transpose()?;
         for body_id in &body_ids {
             push_body_update(
                 &mut plan,
                 body_id,
                 visibility.map_or(Assignment::Keep, |visible| Assignment::Set(Some(visible))),
-                packed_color
-                    .map(|packed| decode_color(packed, transparency))
-                    .transpose(),
+                Ok(color),
             )?;
         }
         if let Some(file) = values
@@ -457,6 +542,7 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
+                ctx,
                 ir,
                 &mut plan,
                 TopologyColorRequest {
@@ -465,6 +551,14 @@ fn transfer_schema_one(
                     object_id,
                     entry_name: file,
                     kind: TopologyColorKind::Face,
+                    native_origin: origins.property(
+                        projection_property(
+                            &native_properties,
+                            &native_provider.id,
+                            values.get("DiffuseColor"),
+                        )?,
+                        native_provider.order,
+                    )?,
                     provenance: property_provenance("DiffuseColor", "App::PropertyColorList"),
                 },
                 sources,
@@ -482,6 +576,7 @@ fn transfer_schema_one(
                 .get("LineWidth")
                 .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
+                ctx,
                 ir,
                 &lookups.topology,
                 &mut plan,
@@ -491,6 +586,14 @@ fn transfer_schema_one(
                     object_id,
                     packed_color: color,
                     style: PrimitiveStyle::Line(PrimitiveSize::from_source(width)),
+                    native_origin: Some(origins.property(
+                        projection_property(
+                            &native_properties,
+                            &native_provider.id,
+                            values.get("LineColor"),
+                        )?,
+                        native_provider.order,
+                    )?),
                     payload_ids: &shape_payloads,
                     provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
                 },
@@ -501,6 +604,7 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
+                ctx,
                 ir,
                 &mut plan,
                 TopologyColorRequest {
@@ -509,6 +613,14 @@ fn transfer_schema_one(
                     object_id,
                     entry_name: file,
                     kind: TopologyColorKind::Edge,
+                    native_origin: origins.property(
+                        projection_property(
+                            &native_properties,
+                            &native_provider.id,
+                            values.get("LineColorArray"),
+                        )?,
+                        native_provider.order,
+                    )?,
                     provenance: property_provenance("LineColorArray", "App::PropertyColorList"),
                 },
                 sources,
@@ -526,6 +638,7 @@ fn transfer_schema_one(
                 .get("PointSize")
                 .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
+                ctx,
                 ir,
                 &lookups.topology,
                 &mut plan,
@@ -535,6 +648,14 @@ fn transfer_schema_one(
                     object_id,
                     packed_color: color,
                     style: PrimitiveStyle::Point(PrimitiveSize::from_source(size)),
+                    native_origin: Some(origins.property(
+                        projection_property(
+                            &native_properties,
+                            &native_provider.id,
+                            values.get("PointColor"),
+                        )?,
+                        native_provider.order,
+                    )?),
                     payload_ids: &shape_payloads,
                     provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
                 },
@@ -545,6 +666,7 @@ fn transfer_schema_one(
             .and_then(|value| value.attribute("file"))
         {
             transfer_topology_colors(
+                ctx,
                 ir,
                 &mut plan,
                 TopologyColorRequest {
@@ -553,6 +675,14 @@ fn transfer_schema_one(
                     object_id,
                     entry_name: file,
                     kind: TopologyColorKind::Vertex,
+                    native_origin: origins.property(
+                        projection_property(
+                            &native_properties,
+                            &native_provider.id,
+                            values.get("PointColorArray"),
+                        )?,
+                        native_provider.order,
+                    )?,
                     provenance: property_provenance("PointColorArray", "App::PropertyColorList"),
                 },
                 sources,
@@ -560,12 +690,28 @@ fn transfer_schema_one(
                 &mut losses,
             )?;
         }
-        let Some(packed_color) = packed_color else {
+        // ShapeColor is the display colour stored on each body. A physical
+        // material has a distinct colour and must not inherit that display fact.
+        let Some(material) = material else {
             continue;
         };
+        let material_source = origins.property(
+            projection_property(
+                &native_properties,
+                &native_provider.id,
+                values.get("ShapeMaterial"),
+            )?,
+            native_provider.order,
+        )?;
+        let material_color = material
+            .attribute("diffuseColor")
+            .and_then(|value| value.parse::<u32>().ok())
+            .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
+            .map(|packed| decode_color(packed, None))
+            .transpose()?;
         let appearance_id = object_appearance_id(&provider_key)?;
         let mut material_properties = BTreeMap::new();
-        if let Some(material) = material {
+        {
             for (source, target) in [
                 ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
                 (
@@ -583,6 +729,7 @@ fn transfer_schema_one(
             }
         }
         plan.appearances.push(Appearance {
+            native_ref: projection_native_ref(ctx, Some(material_source))?,
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
@@ -591,12 +738,13 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: Some(decode_color(packed_color, transparency)?),
+            base_color: material_color,
             textures: Vec::new(),
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
+                native_ref: projection_native_ref(ctx, Some(material_source))?,
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
@@ -612,13 +760,16 @@ fn transfer_schema_one(
     let mut graph = Graph {
         documents: vec![document],
         providers: native_providers,
+        property_sources,
         properties: native_properties,
         losses,
+        untyped: false,
     };
     let material_lists =
         validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
+        ctx,
         ir,
         &mut plan,
         &graph,
@@ -640,6 +791,159 @@ fn transfer_schema_one(
 
 fn append_graph_losses(graph: &mut Graph, losses: Vec<LossNote>) {
     graph.losses.extend(losses);
+}
+
+/// Last accepted value per property name, retaining its actual DOM slot.
+/// Only the fixed presentation-property vocabulary can add rows.
+#[derive(Default)]
+struct SelectedGuiValues<'a, 'input> {
+    rows: Vec<(&'a str, SelectedGuiValue<'a, 'input>)>,
+}
+
+impl<'a, 'input> SelectedGuiValues<'a, 'input> {
+    fn insert(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        name: &'a str,
+        value: SelectedGuiValue<'a, 'input>,
+    ) -> Result<(), CodecError> {
+        if let Some((_, previous)) = self.rows.iter_mut().find(|(key, _)| *key == name) {
+            *previous = value;
+        } else {
+            ctx.reserve_working(&mut self.rows, 1, "FreeCAD selected GUI property slots")?;
+            self.rows.push((name, value));
+        }
+        Ok(())
+    }
+
+    fn get(&self, name: &str) -> Option<&SelectedGuiValue<'a, 'input>> {
+        self.rows
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SelectedGuiValue<'a, 'input> {
+    value: roxmltree::Node<'a, 'input>,
+    property_order: usize,
+}
+
+impl<'a, 'input> std::ops::Deref for SelectedGuiValue<'a, 'input> {
+    type Target = roxmltree::Node<'a, 'input>;
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+/// Ephemeral provenance from the existing typed GUI XML renderer. A property
+/// slot is appended only when that actual native row was emitted as XML.
+#[derive(Default)]
+pub(crate) struct RenderedGuiOrigins {
+    properties: Vec<Vec<String>>,
+}
+
+impl RenderedGuiOrigins {
+    pub(crate) fn provider(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        ctx.reserve_working(&mut self.properties, 1, "FreeCAD rendered GUI providers")?;
+        self.properties.push(Vec::new());
+        Ok(())
+    }
+
+    pub(crate) fn property(&mut self, ctx: &DecodeContext<'_>, id: &str) -> Result<(), CodecError> {
+        let properties = self.properties.last_mut().ok_or_else(|| {
+            CodecError::malformed("rendered GUI property has no producer provider")
+        })?;
+        ctx.reserve_working(properties, 1, "FreeCAD rendered GUI properties")?;
+        let mut actual = String::new();
+        ctx.reserve_text_working(&mut actual, id.len(), "FreeCAD rendered GUI identity")?;
+        actual.push_str(id);
+        properties.push(actual);
+        Ok(())
+    }
+
+    pub(crate) fn property_id(&self, provider: usize, property: usize) -> Option<&str> {
+        self.properties
+            .get(provider)?
+            .get(property)
+            .map(String::as_str)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum GuiOrigins<'a> {
+    Admitted,
+    Rendered(&'a RenderedGuiOrigins),
+}
+
+#[derive(Clone, Copy)]
+enum GuiPropertyOrigin<'a> {
+    Admitted(&'a str),
+    Rendered(&'a str),
+}
+
+impl GuiOrigins<'_> {
+    fn property<'a>(
+        &'a self,
+        property: &'a GuiPropertyRecord,
+        provider: usize,
+    ) -> Result<GuiPropertyOrigin<'a>, CodecError> {
+        Ok(match self {
+            Self::Admitted => GuiPropertyOrigin::Admitted(property.id.as_str()),
+            Self::Rendered(origins) => GuiPropertyOrigin::Rendered(
+                origins
+                    .property_id(provider, property.order)
+                    .ok_or_else(|| {
+                        CodecError::malformed(
+                            "GUI renderer provenance differs from emitted property slots",
+                        )
+                    })?,
+            ),
+        })
+    }
+}
+
+/// The producer's exact selected DOM slot; no name or type uniqueness policy.
+fn projection_property<'a>(
+    properties: &'a [GuiPropertyRecord],
+    provider: &str,
+    selected: Option<&SelectedGuiValue<'_, '_>>,
+) -> Result<&'a GuiPropertyRecord, CodecError> {
+    let selected = selected.ok_or_else(|| {
+        CodecError::malformed("projected GUI value has no selected property slot")
+    })?;
+    properties
+        .iter()
+        .find(|record| record.owner == provider && record.order == selected.property_order)
+        .ok_or_else(|| CodecError::malformed("projected GUI slot has no admitted native property"))
+}
+
+/// Admit each retained neutral reference before allocating or applying the plan.
+fn projection_native_ref(
+    ctx: &DecodeContext<'_>,
+    property: Option<GuiPropertyOrigin<'_>>,
+) -> Result<Option<String>, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let Some(property) = property else {
+        return Ok(None);
+    };
+    let id = match property {
+        GuiPropertyOrigin::Admitted(id) => {
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(id.len()),
+                "FreeCAD GUI native reference",
+            )?;
+            id
+        }
+        GuiPropertyOrigin::Rendered(id) => id,
+    };
+    let mut owned = String::new();
+    ctx.reserve_text_working(&mut owned, id.len(), "FreeCAD GUI native reference")?;
+    owned.push_str(id);
+    Ok(Some(owned))
 }
 
 fn push_gui_appearance_loss(
@@ -810,13 +1114,15 @@ fn transfer_neutral_presentation(
                 })
             })
             .transpose()?;
-        let (provider_properties, refused) = gui_named_entries(
+        let (_, refused) = gui_named_entries(
             || provider.id.clone(),
-            owned.iter().map(|property| {
-                (
-                    property.name.as_str(),
-                    gui_property_value(property).unwrap_or_else(|| property.xml.text()),
-                )
+            owned.iter().filter_map(|property| {
+                // Dedicated neutral fields own these values. Keeping another
+                // textual copy would make independent edits disagree.
+                if presentation_property_type(&property.name).is_some() {
+                    return None;
+                }
+                gui_property_value(property).map(|value| (property.name.as_str(), value))
             }),
         );
         note_refused_gui_keys(losses, &refused);
@@ -838,14 +1144,24 @@ fn transfer_neutral_presentation(
                 ))
             })?,
             expanded: provider.expanded,
-            visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
+            visible: if provider
+                .object
+                .as_ref()
+                .is_some_and(|object| plan.body_visibility_owners.contains(object.as_str()))
+            {
+                None
+            } else {
+                property_value("Visibility", "App::PropertyBool").and_then(parse_bool)
+            },
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
             selection_style: property_value("SelectionStyle", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
             line_width,
             point_size,
-            properties: provider_properties,
+            // Every original property remains typed in gui_properties. Neutral
+            // presentation owns only its dedicated semantic fields (§8).
+            properties: BTreeMap::new(),
             native_ref: Some(provider.id.clone()),
         });
     }
@@ -1024,6 +1340,7 @@ impl PrimitiveSize {
 }
 
 struct PrimitiveAppearanceSource<'a> {
+    native_origin: Option<GuiPropertyOrigin<'a>>,
     provider_name: &'a str,
     object_id: &'a str,
     packed_color: u32,
@@ -1033,6 +1350,7 @@ struct PrimitiveAppearanceSource<'a> {
 }
 
 fn transfer_primitive_appearance(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     topology: &TopologyIndex<'_>,
     plan: &mut AppearancePlan,
@@ -1040,6 +1358,7 @@ fn transfer_primitive_appearance(
     source: PrimitiveAppearanceSource<'_>,
 ) -> Result<(), CodecError> {
     let PrimitiveAppearanceSource {
+        native_origin,
         provider_name,
         object_id,
         packed_color,
@@ -1103,6 +1422,7 @@ fn transfer_primitive_appearance(
         );
     }
     plan.appearances.push(Appearance {
+        native_ref: projection_native_ref(ctx, native_origin)?,
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
         asset_guid: None,
@@ -1132,6 +1452,7 @@ fn transfer_primitive_appearance(
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
+            native_ref: projection_native_ref(ctx, native_origin)?,
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
@@ -1150,26 +1471,27 @@ fn transfer_primitive_appearance(
     Ok(())
 }
 
-fn gui_state(
-    text: &str,
-    order: usize,
-    node: roxmltree::Node<'_, '_>,
-) -> Result<GuiStateRecord, CodecError> {
+fn gui_state(order: usize, node: roxmltree::Node<'_, '_>) -> Result<GuiStateRecord, CodecError> {
     let mut values = Vec::new();
+    let mut value_indices = HashMap::new();
     for (value_order, value) in node
         .descendants()
         .filter(|value| value.is_element() && *value != node)
         .enumerate()
     {
+        value_indices.insert(value.id(), value_order);
         values.push(ValueRecord {
+            parent: value
+                .parent()
+                .and_then(|parent| value_indices.get(&parent.id()).copied()),
             tag: value.tag_name().name().to_owned(),
             order: value_order,
             attributes: value
                 .attributes()
                 .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
                 .collect::<Result<_, CodecError>>()?,
+            decoded_json: None,
             text: value.text().map(ToOwned::to_owned),
-            raw_xml: text[value.range()].to_owned(),
         });
     }
     let mut side_entries = Vec::new();
@@ -1188,10 +1510,6 @@ fn gui_state(
         .attributes()
         .map(|attribute| Ok((attribute.name().to_owned(), attribute.value().to_owned())))
         .collect::<Result<_, CodecError>>()?;
-    let xml = crate::native::RetainedXml::from_source(
-        &text[node.range()],
-        cadmpeg_core::decode::u64_from_index(node.range().start),
-    )?;
     let key = format!("{kind}:{order}");
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", &key),
@@ -1199,7 +1517,6 @@ fn gui_state(
         attributes,
         values,
         side_entries,
-        xml,
     })
 }
 
@@ -1222,12 +1539,12 @@ fn unique_child<'a, 'input>(
 }
 
 fn append_native_provider(
-    text: &str,
     provider: roxmltree::Node<'_, '_>,
     order: usize,
     object: Option<&str>,
     providers: &mut Vec<GuiViewProviderRecord>,
     properties: &mut Vec<GuiPropertyRecord>,
+    property_sources: &mut BTreeMap<String, crate::fidelity::ValueSourceRanges>,
 ) -> Result<(), CodecError> {
     let name = provider
         .attribute("name")
@@ -1246,7 +1563,6 @@ fn append_native_provider(
         name: name.to_owned(),
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
-        raw_xml: text[provider.range()].to_owned(),
     });
     let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::malformed(format_args!(
@@ -1295,12 +1611,17 @@ fn append_native_provider(
         })?;
         validate_gui_property(property, property_name, type_name)?;
         let mut values = Vec::new();
+        let mut value_indices = HashMap::new();
         for (value_order, value) in property
             .descendants()
             .filter(|value| value.is_element() && *value != property)
             .enumerate()
         {
+            value_indices.insert(value.id(), value_order);
             values.push(ValueRecord {
+                parent: value
+                    .parent()
+                    .and_then(|parent| value_indices.get(&parent.id()).copied()),
                 tag: value.tag_name().name().to_owned(),
                 order: value_order,
                 attributes: value
@@ -1309,8 +1630,8 @@ fn append_native_provider(
                         Ok((attribute.name().to_owned(), attribute.value().to_owned()))
                     })
                     .collect::<Result<_, CodecError>>()?,
+                decoded_json: None,
                 text: value.text().map(ToOwned::to_owned),
-                raw_xml: text[value.range()].to_owned(),
             });
         }
         let mut side_entries = Vec::new();
@@ -1326,7 +1647,7 @@ fn append_native_provider(
         {
             side_entries.push(value.to_owned());
         }
-        properties.push(GuiPropertyRecord {
+        let record = GuiPropertyRecord {
             id: crate::native::native_child_id("gui-property", &id, property_name),
             owner: id.clone(),
             name: property_name.to_owned(),
@@ -1337,11 +1658,12 @@ fn append_native_provider(
             order: property_order,
             values,
             side_entries,
-            xml: crate::native::RetainedXml::from_source(
-                &text[property.range()],
-                cadmpeg_core::decode::u64_from_index(property.range().start),
-            )?,
-        });
+        };
+        property_sources.insert(
+            record.id.clone(),
+            crate::fidelity::property_source(property),
+        );
+        properties.push(record);
     }
     Ok(())
 }
@@ -3392,6 +3714,9 @@ fn validate_gui_list_payloads(
         if property.side_entries.is_empty() {
             continue;
         }
+        if !has_registered_property_grammar(&property.name, &property.type_name) {
+            continue;
+        }
         if property.type_name == "Part::PropertyTopoShapeList" {
             for entry_name in &property.side_entries {
                 entries.get(entry_name).ok_or_else(|| {
@@ -3740,6 +4065,7 @@ fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String
 }
 
 fn transfer_shape_appearances(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     graph: &Graph,
@@ -3770,6 +4096,7 @@ fn transfer_shape_appearances(
         let Some(materials) = material_lists.get(&property.id) else {
             continue;
         };
+        let native_origin = lookups.origins.property(property, provider.order)?;
         let body_ids = match displayed_shape_payload(object_id, &lookups.shapes)? {
             Some(payload) => lookups
                 .topology
@@ -3796,7 +4123,11 @@ fn transfer_shape_appearances(
                     ), SourceProvenance::in_stream(
                         "fcstd",
                         cadmpeg_ir::stream_name!("GuiDocument.xml"),
-                        property.xml.start(),
+                        cadmpeg_core::decode::u64_from_index(
+                            graph.property_sources.get(&property.id).ok_or_else(|| {
+                                CodecError::malformed("GUI property has no original source range")
+                            })?.record_range().start,
+                        ),
                     )
                     .with_tag(property.id.clone()));
                 continue;
@@ -3805,6 +4136,8 @@ fn transfer_shape_appearances(
         for (index, material) in materials.iter().enumerate() {
             let appearance_id = shape_material_appearance_id(&provider_key, index)?;
             plan.appearances.push(material_appearance(
+                ctx,
+                native_origin,
                 appearance_id.clone(),
                 &provider.name,
                 index,
@@ -3819,6 +4152,7 @@ fn transfer_shape_appearances(
                         decode_color(material.diffuse, Some(material.transparency.get())).map(Some),
                     )?;
                     plan.bindings.push(AppearanceBinding {
+                        native_ref: projection_native_ref(ctx, Some(native_origin))?,
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
@@ -3832,12 +4166,17 @@ fn transfer_shape_appearances(
                 }
             } else {
                 bind_material_faces(
+                    ctx,
                     ir,
                     &lookups.topology,
                     plan,
                     &group[index],
-                    &appearance_id,
-                    (&provider_key, object_id),
+                    &MaterialFaceBinding {
+                        origin: native_origin,
+                        appearance_id: &appearance_id,
+                        provider_key: &provider_key,
+                        object_id,
+                    },
                 )?;
             }
         }
@@ -3848,6 +4187,7 @@ fn transfer_shape_appearances(
 struct GuiLookups<'s, 'i> {
     shapes: ShapeIndex<'s>,
     topology: TopologyIndex<'i>,
+    origins: GuiOrigins<'s>,
 }
 
 struct ShapeIndex<'s> {
@@ -4042,6 +4382,8 @@ fn displayed_shape_topology<'s>(
 }
 
 fn material_appearance(
+    ctx: &DecodeContext<'_>,
+    origin: GuiPropertyOrigin<'_>,
     id: AppearanceId,
     provider_name: &str,
     index: usize,
@@ -4052,6 +4394,7 @@ fn material_appearance(
             .ok_or_else(|| CodecError::malformed(format_args!("GUI material {name} is non-finite")))
     };
     Ok(Appearance {
+        native_ref: projection_native_ref(ctx, Some(origin))?,
         id,
         name: Some(format!("{provider_name} face {} material", index + 1)),
         asset_guid: (!material.uuid.is_empty()).then(|| material.uuid.clone()),
@@ -4091,15 +4434,27 @@ fn material_appearance(
     })
 }
 
+struct MaterialFaceBinding<'a> {
+    origin: GuiPropertyOrigin<'a>,
+    appearance_id: &'a AppearanceId,
+    provider_key: &'a IdentityKey,
+    object_id: &'a str,
+}
+
 fn bind_material_faces(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     topology: &TopologyIndex<'_>,
     plan: &mut AppearancePlan,
     topology_ids: &[&str],
-    appearance_id: &AppearanceId,
-    provider: (&IdentityKey, &str),
+    binding: &MaterialFaceBinding<'_>,
 ) -> Result<(), CodecError> {
-    let (provider_key, object_id) = provider;
+    let MaterialFaceBinding {
+        origin,
+        appearance_id,
+        provider_key,
+        object_id,
+    } = *binding;
     let mut bound = HashSet::new();
     for &topology_id in topology_ids {
         if !bound.insert(topology_id) {
@@ -4111,6 +4466,7 @@ fn bind_material_faces(
         let face = ir.model.faces[index].id.clone();
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
         plan.bindings.push(AppearanceBinding {
+            native_ref: projection_native_ref(ctx, Some(origin))?,
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
@@ -4163,6 +4519,7 @@ impl TopologyColorKind {
 }
 
 struct TopologyColorRequest<'a> {
+    native_origin: GuiPropertyOrigin<'a>,
     provider_name: &'a str,
     provider_key: &'a IdentityKey,
     object_id: &'a str,
@@ -4172,6 +4529,7 @@ struct TopologyColorRequest<'a> {
 }
 
 fn transfer_topology_colors(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     request: TopologyColorRequest<'_>,
@@ -4180,6 +4538,7 @@ fn transfer_topology_colors(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let TopologyColorRequest {
+        native_origin,
         provider_name,
         provider_key,
         object_id,
@@ -4277,6 +4636,7 @@ fn transfer_topology_colors(
             };
             if !emitted_appearance {
                 plan.appearances.push(Appearance {
+                    native_ref: projection_native_ref(ctx, Some(native_origin))?,
                     id: appearance_id.clone(),
                     name: Some(format!(
                         "{provider_name} {}{} appearance",
@@ -4311,6 +4671,7 @@ fn transfer_topology_colors(
             let topology_key = crate::native::id_key(topology_id);
             let kind_key = topology_binding_kind(kind);
             plan.bindings.push(AppearanceBinding {
+                native_ref: projection_native_ref(ctx, Some(native_origin))?,
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",
                     index + 1,
@@ -4450,20 +4811,19 @@ mod shape_association_tests {
 
     fn shape_property(id: &str) -> PropertyRecord {
         PropertyRecord {
+            dynamic: None,
             id: id.into(),
             owner: "object".into(),
             name: "Shape".into(),
             type_name: "Part::PropertyPartShape".into(),
             family: PropertyFamily::Geometry,
             status: None,
-            body: crate::native::PropertyBody::Persisted {
+            body: Some(crate::native::PropertyBody::Persisted {
                 values: Vec::new(),
                 links: Vec::new(),
                 side_entries: Vec::new(),
-                dynamic: None,
-            },
+            }),
             order: 0,
-            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
         }
     }
 
@@ -4479,6 +4839,7 @@ mod shape_association_tests {
     fn shape_ir() -> cadmpeg_ir::CadIr {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.bodies.push(cadmpeg_ir::topology::Body {
+            native_ref: None,
             id: cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#payload:1").expect("body identity"),
             kind: cadmpeg_ir::topology::BodyKind::default(),
             regions: Vec::new(),

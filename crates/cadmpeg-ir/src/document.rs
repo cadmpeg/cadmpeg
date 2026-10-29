@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned document structure and canonical arena ordering.
 
+mod edit;
+mod legacy;
+mod references;
+pub use edit::DimensionEditError;
+mod topology_edit;
+pub use topology_edit::TopologyEditError;
+
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -14,7 +21,7 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
 use cadmpeg_core::CodecError;
 
@@ -48,6 +55,7 @@ use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
 pub(crate) mod census;
+mod effective;
 pub(crate) mod feature_parents;
 pub mod procedural;
 
@@ -88,8 +96,8 @@ macro_rules! classified_arena_registry {
             curves: Curve, model, "Curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<Curve>"))];
             subds: SubdSurface, model, "Subdivision surface arena.", [];
             pcurves: Pcurve, model, "Pcurve arena.", [];
-            procedural_surfaces: ProceduralSurface, model, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurface>"))];
-            procedural_curves: ProceduralCurve, model, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurve>"))];
+            procedural_surfaces: ProceduralSurface, model, "Procedural surface arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralSurfaceRow>"))];
+            procedural_curves: ProceduralCurve, model, "Procedural curve arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<ProceduralCurveRow>"))];
             assets: crate::assets::Asset, model, "Embedded and externally referenced document resources.", [serde(default, skip_serializing_if = "Vec::is_empty")];
             features: Feature, design, "Feature arena.", [], [cfg_attr(feature = "schema", schemars(with = "Vec<FeatureRowWire>"))];
             feature_input_topologies: FeatureInputTopology, design, "Feature input-topology arena.", [serde(default, skip_serializing_if = "Vec::is_empty")];
@@ -150,16 +158,7 @@ macro_rules! arena_class {
 }
 pub(crate) use arena_class;
 
-/// Whether a model arena holds the product model or the design that built it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ArenaClass {
-    /// B-rep, tessellation, product structure, placements, appearance, PMI,
-    /// attributes, and the assets they reference.
-    Model,
-    /// Features, sketches, parameters, configurations, spreadsheets, and the
-    /// feature topology bindings. Empty below [`DecodeDepth::Full`].
-    Design,
-}
+pub use cadmpeg_core::decode::{ArenaClass, ArenaClasses, ContentScope};
 
 struct SurfaceWire<'a>(&'a Surface);
 
@@ -168,8 +167,11 @@ impl Serialize for SurfaceWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Surface", 3)?;
+        let mut state = serializer.serialize_struct("Surface", 4)?;
         state.serialize_field("id", &self.0.id)?;
+        if let Some(native_ref) = &self.0.native_ref {
+            state.serialize_field("native_ref", native_ref)?;
+        }
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
@@ -188,8 +190,11 @@ impl Serialize for CurveWire<'_> {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("Curve", 4)?;
+        let mut state = serializer.serialize_struct("Curve", 5)?;
         state.serialize_field("id", &self.0.id)?;
+        if let Some(native_ref) = &self.0.native_ref {
+            state.serialize_field("native_ref", native_ref)?;
+        }
         match self.0.geometry.solved_cache() {
             Some(cache) => state.serialize_field("geometry", cache)?,
             None => state.serialize_field("geometry", &self.0.geometry)?,
@@ -707,10 +712,18 @@ macro_rules! declare_arena_name {
         }
 
         impl Model {
-            /// The first registered design arena that holds a record.
+            /// Tests identity membership in exactly the registered neutral arena.
+            pub fn contains_record(&self, arena: ArenaName, id: &str) -> bool {
+                $(if arena.as_str() == stringify!($field) {
+                    return self.$field.iter().any(|record| crate::schema::EntitySchema::identity(record) == id);
+                })*
+                false
+            }
+
+            /// The first registered arena of this class that holds a record.
             #[must_use]
-            pub fn populated_design_arena(&self) -> Option<ArenaName> {
-                $(if matches!(arena_class!($class), ArenaClass::Design) && !self.$field.is_empty() {
+            pub fn populated_arena(&self, class: ArenaClass) -> Option<ArenaName> {
+                $(if arena_class!($class) == class && !self.$field.is_empty() {
                     return Some(ArenaName::registered(stringify!($field), arena_class!($class)));
                 })*
                 None
@@ -732,7 +745,7 @@ macro_rules! declare_arena_name {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "9";
+pub const IR_VERSION: &str = "10";
 
 /// The current IR wire version. Every value writes [`IR_VERSION`].
 /// Deserialization refuses any other version.
@@ -743,6 +756,36 @@ arena_registry!(declare_model);
 arena_registry!(assert_entity_schemas);
 arena_registry!(declare_model_view);
 classified_arena_registry!(declare_arena_name);
+
+impl Serialize for ArenaName {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ArenaName {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Self::parse(&name)
+            .ok_or_else(|| serde::de::Error::custom(format!("unregistered neutral arena {name}")))
+    }
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for ArenaName {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ArenaName".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let names = Self::ALL
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>();
+        schemars::json_schema!({"type":"string", "enum": names})
+    }
+}
+
+rewrite_scalar!(ArenaName);
 
 /// Borrowed geometry and topology arenas for an embedded semantic record.
 pub struct GeometrySnapshot<'a> {
@@ -833,8 +876,11 @@ impl Serialize for ProceduralSurfaceRows<'_> {
         }
         impl Serialize for Row<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                let mut state = serializer.serialize_struct("ProceduralSurfaceRow", 4)?;
+                let mut state = serializer.serialize_struct("ProceduralSurfaceRow", 5)?;
                 state.serialize_field("id", &self.procedural.id)?;
+                if let Some(native_ref) = &self.procedural.native_ref {
+                    state.serialize_field("native_ref", native_ref)?;
+                }
                 state.serialize_field("surface", self.owner)?;
                 state.serialize_field("definition", self.procedural.definition())?;
                 if let Some(bounds) = self.procedural.record_bounds() {
@@ -867,8 +913,11 @@ impl Serialize for ProceduralCurveRows<'_> {
         }
         impl Serialize for Row<'_> {
             fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                let mut state = serializer.serialize_struct("ProceduralCurveRow", 3)?;
+                let mut state = serializer.serialize_struct("ProceduralCurveRow", 4)?;
                 state.serialize_field("id", &self.procedural.id)?;
+                if let Some(native_ref) = &self.procedural.native_ref {
+                    state.serialize_field("native_ref", native_ref)?;
+                }
                 state.serialize_field("curve", self.owner)?;
                 state.serialize_field("definition", self.procedural.definition())?;
                 state.end()
@@ -1394,9 +1443,7 @@ impl Model {
 fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) -> Result<(), E> {
     let version = version.and_then(serde_json::Value::as_str);
     if version != Some(IR_VERSION) {
-        return Err(E::custom(format!(
-            "unsupported ir_version {version:?}; expected {IR_VERSION}"
-        )));
+        return Err(E::custom(legacy::unsupported_version(version)));
     }
     Ok(())
 }
@@ -1445,8 +1492,7 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
 /// `ir_version` is a serialized constant checked by the read adapter.
-/// A document below [`DecodeDepth::Full`] holds no record in any
-/// [`ArenaClass::Design`] arena; serialization and parsing refuse one that does.
+/// Every populated neutral arena belongs to a class held by [`Self::scope`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct CadIr {
     /// Source-container metadata.
@@ -1457,16 +1503,17 @@ pub struct CadIr {
     pub model: Model,
     /// Per-format native namespaces, each an arena map.
     pub native: Native,
-    decode_depth: DecodeDepth,
+    /// Classes whose neutral arenas the document holds.
+    pub scope: ContentScope,
 }
 
-/// A document below full decode depth that holds a design record.
+/// A populated arena belongs to a class excluded from the document scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("a {depth}-depth document holds records in design arena `{arena}`")]
-pub struct DesignBelowFullDepth {
-    /// The depth the document records.
-    pub depth: DecodeDepth,
-    /// The first design arena that holds a record.
+#[error("the document's scope excludes {class} but {class} arena `{arena}` holds records")]
+pub struct ScopeViolation {
+    /// The excluded class.
+    pub class: ArenaClass,
+    /// The first populated arena of that class.
     pub arena: ArenaName,
 }
 
@@ -1474,8 +1521,8 @@ pub struct DesignBelowFullDepth {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct CadIrWriteWire<'a> {
     ir_version: IrVersion,
-    /// How much of the source the decode transferred.
-    decode_depth: DecodeDepth,
+    /// Classes held by the document.
+    scope: ContentScope,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
@@ -1492,8 +1539,8 @@ struct CadIrReadWire {
         rename = "ir_version",
         deserialize_with = "deserialize_ir_version"
     )]
-    ir_version: Option<serde_json::Value>,
-    decode_depth: DecodeDepth,
+    ir_version: Option<IrVersion>,
+    scope: ContentScope,
     #[serde(default, deserialize_with = "deserialize_source")]
     source: Option<SourceMeta>,
     #[serde(default, rename = "units")]
@@ -1506,11 +1553,10 @@ struct CadIrReadWire {
 
 impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.check_decode_depth()
-            .map_err(serde::ser::Error::custom)?;
+        self.check_scope().map_err(serde::ser::Error::custom)?;
         CadIrWriteWire {
             ir_version: IrVersion,
-            decode_depth: self.decode_depth,
+            scope: self.scope,
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
@@ -1524,13 +1570,15 @@ impl Serialize for CadIr {
 impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
-        check_ir_version(wire.ir_version.as_ref())?;
+        if wire.ir_version.is_none() {
+            check_ir_version(None)?;
+        }
         wire.try_into().map_err(serde::de::Error::custom)
     }
 }
 
 impl TryFrom<CadIrReadWire> for CadIr {
-    type Error = DesignBelowFullDepth;
+    type Error = ScopeViolation;
 
     fn try_from(wire: CadIrReadWire) -> Result<Self, Self::Error> {
         let ir = Self {
@@ -1538,9 +1586,9 @@ impl TryFrom<CadIrReadWire> for CadIr {
             tolerances: wire.tolerances,
             model: wire.model,
             native: wire.native,
-            decode_depth: wire.decode_depth,
+            scope: wire.scope,
         };
-        ir.check_decode_depth()?;
+        ir.check_scope()?;
         Ok(ir)
     }
 }
@@ -1733,21 +1781,20 @@ impl CadIr {
             tolerances: Tolerances::default(),
             model: Model::default(),
             native: Native::default(),
-            decode_depth: DecodeDepth::Full,
+            scope: ContentScope::full(),
         }
     }
 
     /// Construct a decoded document with classified source metadata.
     ///
-    /// The document records [`DecodeDepth::Full`] until the sealed decode
-    /// wrapper records the depth the backend reported.
+    /// The codec must declare its delivered scope before computing a digest.
     pub fn decoded(source: SourceMeta) -> Self {
         Self {
             source: Some(source),
             tolerances: Tolerances::default(),
             model: Model::default(),
             native: Native::default(),
-            decode_depth: DecodeDepth::Full,
+            scope: ContentScope::full(),
         }
     }
 
@@ -1756,34 +1803,35 @@ impl CadIr {
         IR_VERSION
     }
 
-    /// How much of the source the decode that produced this document
-    /// transferred.
-    #[must_use]
-    pub const fn decode_depth(&self) -> DecodeDepth {
-        self.decode_depth
-    }
-
-    pub(crate) fn set_decode_depth(&mut self, depth: DecodeDepth) {
-        self.decode_depth = depth;
-    }
-
-    /// Refuses a document below [`DecodeDepth::Full`] that holds a record in
-    /// an [`ArenaClass::Design`] arena.
+    /// Declare which neutral arena classes the document holds.
     ///
     /// # Errors
     ///
-    /// Names the recorded depth and the first populated design arena.
-    pub fn check_decode_depth(&self) -> Result<(), DesignBelowFullDepth> {
-        if self.decode_depth == DecodeDepth::Full {
-            return Ok(());
+    /// Refuses to exclude a class that has a populated arena, without changing scope.
+    pub fn set_scope(&mut self, scope: ContentScope) -> Result<(), ScopeViolation> {
+        self.check_scope_value(scope)?;
+        self.scope = scope;
+        Ok(())
+    }
+
+    /// Check that every populated neutral arena belongs to a held class.
+    ///
+    /// # Errors
+    ///
+    /// Names the excluded class and its first populated arena.
+    pub fn check_scope(&self) -> Result<(), ScopeViolation> {
+        self.check_scope_value(self.scope)
+    }
+
+    fn check_scope_value(&self, scope: ContentScope) -> Result<(), ScopeViolation> {
+        for class in ContentScope::full().classes() {
+            if !scope.holds(class) {
+                if let Some(arena) = self.model.populated_arena(class) {
+                    return Err(ScopeViolation { class, arena });
+                }
+            }
         }
-        match self.model.populated_design_arena() {
-            Some(arena) => Err(DesignBelowFullDepth {
-                depth: self.decode_depth,
-                arena,
-            }),
-            None => Ok(()),
-        }
+        Ok(())
     }
 
     /// Serialize a finalized, identity-sorted view as pretty JSON.
@@ -1833,14 +1881,8 @@ impl CadIr {
     }
 }
 
-/// Source-container metadata preserved for reporting.
-///
-/// Attribute keys ending in [`crate::compare::LOCAL_DIGEST_SUFFIX`] hold
-/// machine-local digests over decoded content for the write-path edit oracle.
-/// Not portable across platforms; not tolerance-aware. Digests over retained
-/// source bytes must not use that suffix. See
-/// [`crate::hash::document_local_sha256`] and
-/// [`crate::compare::is_local_digest_attribute`].
+/// Source identity and content attributes preserved by the document.
+/// Source layout, retained-byte digests and decode-run metadata live in fidelity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1854,6 +1896,18 @@ pub struct SourceMeta {
 }
 
 impl SourceMeta {
+    /// Records a known codec format when no dialect declaration was decoded.
+    #[must_use]
+    pub fn unclassified(
+        format: crate::CodecFormat,
+        attributes: BTreeMap<NonBlankString, String>,
+    ) -> Self {
+        Self {
+            identity: FormatIdentity::unclassified(format.as_str()),
+            attributes,
+        }
+    }
+
     /// Constructs metadata with dialect layers whose primary format is authoritative.
     #[must_use]
     pub fn classified(
@@ -1864,13 +1918,6 @@ impl SourceMeta {
             identity: FormatIdentity::classified(dialects),
             attributes,
         }
-    }
-
-    pub(crate) fn normalized_digest_copy(&self) -> Self {
-        let mut copy = self.clone();
-        copy.attributes
-            .remove(crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-        copy
     }
 
     /// The complete source identity: format plus classified layers, if any.
@@ -1906,7 +1953,7 @@ impl SourceMeta {
 mod tests;
 
 // Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "ir_version");
+cadmpeg_core::named_optional_field!(deserialize_ir_version, IrVersion, "ir_version");
 cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
 
 mod identity_rewrite;

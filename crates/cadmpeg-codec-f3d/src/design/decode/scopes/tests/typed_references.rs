@@ -49,14 +49,14 @@ fn parse(bytes: &[u8]) -> Option<crate::records::feature::scope::DesignParameter
         id: "generated:scope-header#0".into(),
         record_index: 226,
         class_tag: crate::records::references::DesignClassTag::try_from("336".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     parse_parameter_scope(
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("source header offset"),
     )
     .unwrap()
 }
@@ -134,7 +134,7 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
         panic!("typed prologue is reference-aware");
     };
     assert_eq!(operation, DesignExtrudeOperation::Cut);
-    assert_eq!(operation_offset, 22);
+    assert_eq!(operation_offset, Some(22));
     assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
     assert!(reference.is_none());
 
@@ -174,7 +174,7 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
         panic!("shifted typed prologue is reference-aware");
     };
     assert_eq!(operation, DesignExtrudeOperation::Cut);
-    assert_eq!(operation_offset, 26);
+    assert_eq!(operation_offset, Some(26));
     assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
     shifted[20] = 2;
     assert!(
@@ -230,7 +230,7 @@ fn typed_zero_body_base_feature_reads_its_typed_metadata_reference() {
 
     let bytes = typed_zero_body_base_feature_frame();
     let scope = parse(&bytes).expect("typed Base Feature scope");
-    assert_eq!(scope.kind_offset(), 237);
+    assert_eq!(scope.kind_offset(), Some(237));
     let construction = super::super::base_feature::exact_base_feature_construction(&bytes, &scope)
         .unwrap()
         .expect("typed zero-body Base Feature");

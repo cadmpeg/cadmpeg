@@ -31,8 +31,8 @@ pub(super) fn feature_intervals(
             if metadata.contains(feature) {
                 continue;
             }
-            if let Some(name) = names.of(feature) {
-                starts.push((name.offset, feature.id.clone()));
+            if let Some(position) = names.of(feature).map(|name| name.offset) {
+                starts.push((position, feature.id.clone()));
             }
         }
     }
@@ -52,9 +52,10 @@ pub(super) fn feature_intervals(
 /// the only interval that can contain `offset` is the last one starting at or
 /// before it.
 fn feature_at_offset(
-    offset: u64,
+    offset: impl Into<Option<u64>>,
     intervals: &[(u64, Option<u64>, String)],
 ) -> Option<&(u64, Option<u64>, String)> {
+    let offset = offset.into()?;
     let after = intervals.partition_point(|(start, _, _)| *start <= offset);
     intervals
         .get(after.checked_sub(1)?)
@@ -62,7 +63,10 @@ fn feature_at_offset(
 }
 
 /// The feature that owns `offset`, if one does.
-fn feature_name_at_offset(offset: u64, intervals: &[(u64, Option<u64>, String)]) -> Option<&str> {
+fn feature_name_at_offset(
+    offset: impl Into<Option<u64>>,
+    intervals: &[(u64, Option<u64>, String)],
+) -> Option<&str> {
     feature_at_offset(offset, intervals).map(|(_, _, feature)| feature.as_str())
 }
 
@@ -481,6 +485,7 @@ pub(super) fn relation_instances(
             id: format!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"),
             parent: lane.id.clone(),
             ordinal,
+            sequence: ordinal,
             offset,
             family: group.family,
             class_ref: group.class_ref.to_owned(),
@@ -518,13 +523,14 @@ pub(super) fn relation_instances(
             continue;
         }
         claimed_scalar_refs.insert(binding.scalar_ref.as_str());
+        let position = scalar.offset;
         instances.push(FeatureInputRelationInstance {
-            id: format!(
-                "sldprt:feature-input:relation-instance#{lane_key}:{}",
-                scalar.offset
-            ),
+            id: format!("sldprt:feature-input:relation-instance#{lane_key}:{position}"),
             parent: lane.id.clone(),
             ordinal: u32::try_from(instances.len()).map_err(|_| {
+                CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
+            })?,
+            sequence: u32::try_from(instances.len()).map_err(|_| {
                 CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
             })?,
             offset: scalar.offset,
@@ -656,11 +662,11 @@ fn same_scalar_operands(left: &FeatureInputScalar, right: &FeatureInputScalar) -
 /// same name, feature and operands, after a declared entity handle and before
 /// the next relation class.
 pub(super) struct CircleHandleDrivers<'a> {
-    /// The first scalar with each id, in offset order.
+    /// The first scalar with each id, in typed content order.
     scalars: HashMap<&'a str, &'a FeatureInputScalar>,
-    relation_starts: Vec<u64>,
-    handles: Vec<u64>,
-    /// Adjacent display and driving scalars in offset order, by their shared
+    relation_starts: Vec<u32>,
+    handles: Vec<u32>,
+    /// Adjacent display and driving scalars in typed content order, by their shared
     /// feature and operands.
     pairs: HashMap<HandlePairKey<'a>, Vec<(&'a FeatureInputScalar, &'a FeatureInputScalar)>>,
 }
@@ -688,7 +694,7 @@ fn handle_pair_key(scalar: &FeatureInputScalar) -> HandlePairKey<'_> {
 impl<'a> CircleHandleDrivers<'a> {
     pub(super) fn new(lane: &'a FeatureInputLane) -> Self {
         let mut sorted = lane.scalars.iter().collect::<Vec<_>>();
-        sorted.sort_unstable_by_key(|left| left.offset);
+        sorted.sort_unstable_by_key(|left| left.sequence);
         let mut names = HashMap::new();
         for name in &lane.names {
             names.insert(name.id.as_str(), name.value.as_str());
@@ -726,7 +732,7 @@ impl<'a> CircleHandleDrivers<'a> {
                 .classes
                 .iter()
                 .filter(|class| keep(class))
-                .map(|class| class.offset)
+                .map(|class| class.sequence)
                 .collect::<Vec<_>>();
             offsets.sort_unstable();
             offsets
@@ -755,18 +761,18 @@ impl<'a> CircleHandleDrivers<'a> {
             .and_then(|id| self.scalars.get(id.as_str()))
             .copied()
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)?;
-        let next_after = |offsets: &[u64]| {
+        let next_after = |offsets: &[u32]| {
             offsets
-                .get(offsets.partition_point(|offset| *offset <= first.offset))
+                .get(offsets.partition_point(|offset| *offset <= first.sequence))
                 .copied()
         };
         let handle = next_after(&self.handles)?;
         // No following relation class states no upper bound on this relation.
         let next_relation = next_after(&self.relation_starts);
         let pairs = self.pairs.get(&handle_pair_key(first))?;
-        let start = pairs.partition_point(|(display, _)| display.offset <= handle);
+        let start = pairs.partition_point(|(display, _)| display.sequence <= handle);
         let end = next_relation.map_or(pairs.len(), |limit| {
-            pairs.partition_point(|(_, driving)| driving.offset < limit)
+            pairs.partition_point(|(_, driving)| driving.sequence < limit)
         });
         let [(_, driving)] = pairs.get(start..end)? else {
             return None;
@@ -1031,7 +1037,7 @@ impl<'a> RelationOperandIndex<'a> {
         }
         for entities in feature_entities.values_mut() {
             entities.sort_unstable_by(|left, right| {
-                (left.offset(), left.ordinal()).cmp(&(right.offset(), right.ordinal()))
+                (left.sequence(), left.ordinal()).cmp(&(right.sequence(), right.ordinal()))
             });
         }
         Self {
@@ -1622,6 +1628,7 @@ mod binary_relation_operand_tests {
             id: "relation#0".to_string(),
             parent: "lane#0".to_string(),
             ordinal: 0,
+            sequence: 0,
             offset: 0,
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class#0".to_string(),
@@ -1708,17 +1715,41 @@ mod relation_records_tests {
     };
     use std::collections::BTreeMap;
 
-    fn class(offset: u64, name: &str) -> FeatureInputClass {
-        FeatureInputClass {
+    /// A class declared at the source position `offset`, with that position.
+    fn class(offset: u64, name: &str) -> (FeatureInputClass, u64) {
+        class_with_sequence(
+            offset,
+            name,
+            u32::try_from(offset).expect("fixture source order fits u32"),
+        )
+    }
+
+    fn class_with_sequence(offset: u64, name: &str, sequence: u32) -> (FeatureInputClass, u64) {
+        let class = FeatureInputClass {
+            feature_ref: None,
             id: format!("class-{offset}"),
             parent: "lane".into(),
             ordinal: 0,
+            sequence,
             offset,
             name: name.into(),
-        }
+        };
+        (class, offset)
     }
 
     fn scalar(offset: u64, role: FeatureInputScalarRole) -> FeatureInputScalar {
+        scalar_with_sequence(
+            offset,
+            role,
+            u32::try_from(offset).expect("fixture source order fits u32"),
+        )
+    }
+
+    fn scalar_with_sequence(
+        offset: u64,
+        role: FeatureInputScalarRole,
+        sequence: u32,
+    ) -> FeatureInputScalar {
         let operands = [0_u16, 1]
             .into_iter()
             .enumerate()
@@ -1735,6 +1766,7 @@ mod relation_records_tests {
             parent: "lane".into(),
             feature_ref: Some("sketch".into()),
             ordinal: 0,
+            sequence,
             offset,
             object_id: 1,
             name: "dimension".into(),
@@ -1882,15 +1914,17 @@ mod relation_records_tests {
             (2_500, None, "a".to_string()),
         ];
         let mut classes = Vec::new();
+        let mut positions = Vec::new();
         for index in 0..300 {
             let name = if next(3) == 0 {
                 "sgEntHandle"
             } else {
                 "sgPntPntHorDist"
             };
-            let mut declared = class(next(3_200), name);
+            let (mut declared, position) = class(next(3_200), name);
             declared.id = format!("class-{index}");
             classes.push(declared);
+            positions.push(position);
         }
         let mut scalars = Vec::new();
         for index in 0..600 {
@@ -1930,9 +1964,9 @@ mod relation_records_tests {
     fn declaration_search_is_linear_in_classes_and_scalars() {
         const RELATIONS: u64 = 1 << 14;
         let intervals = [(0, None, "sketch".to_string())];
-        let classes = (0..RELATIONS)
+        let (classes, _): (Vec<_>, Vec<_>) = (0..RELATIONS)
             .map(|index| class(index * 100, "sgPntPntHorDist"))
-            .collect::<Vec<_>>();
+            .unzip();
         let scalars = (0..RELATIONS)
             .map(|index| scalar(index * 100 + 50, FeatureInputScalarRole::Driving))
             .collect::<Vec<_>>();
@@ -1954,6 +1988,7 @@ mod relation_records_tests {
             parent: "lane".into(),
             feature_ref: Some("sketch".into()),
             ordinal: 0,
+            sequence: u32::try_from(offset).expect("fixture source order fits u32"),
             offset,
             object_id: 1,
             name: name.into(),
@@ -1970,7 +2005,12 @@ mod relation_records_tests {
         }
     }
 
-    fn lane(classes: Vec<FeatureInputClass>, scalars: Vec<FeatureInputScalar>) -> FeatureInputLane {
+    /// A lane that declares `classes`, with the class positions it states.
+    fn lane(
+        classes: Vec<(FeatureInputClass, u64)>,
+        scalars: Vec<FeatureInputScalar>,
+    ) -> FeatureInputLane {
+        let classes = classes.into_iter().map(|(class, _)| class).collect();
         FeatureInputLane {
             id: "lane".into(),
             configuration: None,
@@ -2137,8 +2177,8 @@ mod relation_records_tests {
     /// offset the span can name and declares one.
     #[test]
     fn a_class_whose_unknown_feature_span_is_unstatable_declares_no_relation() {
-        let unstatable = class(u64::MAX - 100, "sgPntPntHorDist");
-        let following = scalar(u64::MAX - 50, FeatureInputScalarRole::Driving);
+        let (unstatable, _) = class_with_sequence(u64::MAX - 100, "sgPntPntHorDist", 0);
+        let following = scalar_with_sequence(u64::MAX - 50, FeatureInputScalarRole::Driving, 1);
         assert!(relation_declaration_candidates(
             std::slice::from_ref(&unstatable),
             std::slice::from_ref(&following),
@@ -2146,7 +2186,7 @@ mod relation_records_tests {
         )
         .is_empty());
 
-        let stated = class(1_000, "sgPntPntHorDist");
+        let (stated, _) = class(1_000, "sgPntPntHorDist");
         let within = scalar(1_050, FeatureInputScalarRole::Driving);
         assert_eq!(
             relation_declaration_candidates(
@@ -2185,9 +2225,11 @@ mod relation_records_tests {
         let driving = scalar(200, FeatureInputScalarRole::Driving);
         let mut lane = lane(vec![relation_class], vec![driving.clone()]);
         lane.names.push(FeatureInputName {
+            feature_ref: None,
             id: "name-sketch".into(),
             parent: "lane".into(),
             ordinal: 0,
+            sequence: 0,
             offset: 0,
             object_id: None,
             value: "Sketch".into(),
@@ -2211,9 +2253,11 @@ mod relation_records_tests {
         let driving = scalar(200, FeatureInputScalarRole::Driving);
         let mut lane = lane(vec![first, second.clone()], vec![driving]);
         lane.names.push(FeatureInputName {
+            feature_ref: None,
             id: "name-sketch".into(),
             parent: "lane".into(),
             ordinal: 0,
+            sequence: 0,
             offset: 0,
             object_id: None,
             value: "Sketch".into(),
@@ -2223,7 +2267,7 @@ mod relation_records_tests {
         let [relation] = instances.as_slice() else {
             panic!("one relation instance");
         };
-        assert_eq!(relation.class_ref, second.id);
+        assert_eq!(relation.class_ref, second.0.id);
         assert_eq!(
             relation.family,
             FeatureInputRelationFamily::PointPointVerticalDistance
@@ -2250,7 +2294,7 @@ mod relation_records_tests {
             relation.family,
             FeatureInputRelationFamily::PointPointHorizontalDistance
         );
-        assert_eq!(relation.class_ref, horizontal.id);
+        assert_eq!(relation.class_ref, horizontal.0.id);
         assert_eq!(
             relation.scalar_refs(),
             vec![display.id.clone(), driving.id.clone()]
@@ -2324,6 +2368,8 @@ mod relation_records_tests {
         );
         lane.names = vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name-first".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -2332,6 +2378,8 @@ mod relation_records_tests {
                 value: "First".into(),
             },
             FeatureInputName {
+                sequence: 200,
+                feature_ref: None,
                 id: "name-second".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -2364,11 +2412,14 @@ mod relation_records_tests {
         let history = sketch_history();
         let mut relation_scalar = scalar(10, FeatureInputScalarRole::Driving);
         relation_scalar.offset = u64::MAX;
+        relation_scalar.sequence = 2;
         let mut lane = lane(
-            vec![class(u64::MAX - 1, "sgPntPntHorDist")],
+            vec![class_with_sequence(u64::MAX - 1, "sgPntPntHorDist", 1)],
             vec![relation_scalar],
         );
         lane.names = vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "name-sketch".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -2402,6 +2453,8 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![relation_scalar]);
         lane.names = vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name-first".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -2410,6 +2463,8 @@ mod relation_records_tests {
                 value: "First".into(),
             },
             FeatureInputName {
+                sequence: 100,
+                feature_ref: None,
                 id: "name-second".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -2440,6 +2495,8 @@ mod relation_records_tests {
         let mut lane = lane(vec![class(110, "sgPntPntDist")], vec![relation_scalar]);
         lane.names = vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name-sketch".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -2448,6 +2505,8 @@ mod relation_records_tests {
                 value: "Sketch".into(),
             },
             FeatureInputName {
+                sequence: 100,
+                feature_ref: None,
                 id: "name-attribute".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -2502,10 +2561,11 @@ mod relation_records_tests {
         bound.role = FeatureInputScalarRole::Display;
         let mut lane = lane(vec![class(10, "sgLLDist")], vec![dynamic, bound.clone()]);
         lane.relation_bindings = vec![FeatureInputRelationBinding {
+            sequence: 10,
+            offset: 10,
             id: "binding-10".into(),
             parent: lane.id.clone(),
             ordinal: 0,
-            offset: 10,
             class_ref: "class-10".into(),
             family: FeatureInputRelationFamily::LineLineDistance,
             scalar_ref: bound.id,
@@ -2515,6 +2575,7 @@ mod relation_records_tests {
             id: "binding-11".into(),
             parent: lane.id.clone(),
             ordinal: 1,
+            sequence: 1,
             offset: 11,
             class_ref: "class-11".into(),
             family: FeatureInputRelationFamily::LineLineDistance,
@@ -2545,6 +2606,8 @@ mod relation_records_tests {
         );
         lane.names = vec![
             FeatureInputName {
+                sequence: 20,
+                feature_ref: None,
                 id: "name-first".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -2553,6 +2616,8 @@ mod relation_records_tests {
                 value: "D1".into(),
             },
             FeatureInputName {
+                sequence: 40,
+                feature_ref: None,
                 id: "name-nested".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -2592,9 +2657,11 @@ mod relation_records_tests {
             .into_iter()
             .enumerate()
             .map(|(ordinal, (id, value))| FeatureInputName {
+                feature_ref: None,
                 id: id.into(),
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).expect("test index fits u32"),
+                sequence: u32::try_from(ordinal).expect("test index fits u32"),
                 offset: 20 + cadmpeg_core::decode::u64_from_index(ordinal) * 10,
                 object_id: None,
                 value: value.into(),
@@ -2720,9 +2787,11 @@ mod relation_records_tests {
             let mut lane = lane(classes, scalars);
             lane.names = (0..5)
                 .map(|ordinal| FeatureInputName {
+                    feature_ref: None,
                     id: format!("name-{}", ordinal % 4),
                     parent: "lane".into(),
                     ordinal,
+                    sequence: ordinal,
                     offset: u64::from(ordinal),
                     object_id: None,
                     value: format!("D{}", next(2)),
@@ -2739,6 +2808,7 @@ mod relation_records_tests {
                     id: format!("relation-{ordinal}"),
                     parent: "lane".into(),
                     ordinal,
+                    sequence: ordinal,
                     offset: 0,
                     family: if next(10) == 0 {
                         FeatureInputRelationFamily::LineLineDistance
@@ -2865,6 +2935,8 @@ mod relation_records_tests {
         );
         lane.names = vec![
             FeatureInputName {
+                sequence: 20,
+                feature_ref: None,
                 id: "name-d1".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -2873,6 +2945,8 @@ mod relation_records_tests {
                 value: "D1".into(),
             },
             FeatureInputName {
+                sequence: 50,
+                feature_ref: None,
                 id: "name-d2".into(),
                 parent: "lane".into(),
                 ordinal: 1,

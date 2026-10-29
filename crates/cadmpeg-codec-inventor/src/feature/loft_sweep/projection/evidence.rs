@@ -28,7 +28,7 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
         let AttributeTarget::Face(face) = &attribute.target else {
             continue;
         };
-        let [_, _, _, _, _, AttributeValue::String(family), AttributeValue::Integer(1), AttributeValue::Integer(44), AttributeValue::Integer(1), AttributeValue::Integer(source), AttributeValue::Integer(-1), rest @ ..] =
+        let [_, _, _, _, _, Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(44)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(source)), Some(AttributeValue::Integer(-1)), rest @ ..] =
             attribute.values.as_slice()
         else {
             continue;
@@ -45,7 +45,7 @@ fn owned_faces(model: &Model, generator: u32) -> Option<Vec<NamedFace<'_>>> {
         let values = rest
             .iter()
             .map(|value| match value {
-                AttributeValue::Integer(value) => Some(*value),
+                Some(AttributeValue::Integer(value)) => Some(*value),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()?;

@@ -34,7 +34,7 @@ base64.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 # The hand-written-`Deserialize` census parses the wire crates' source.
-syn.workspace = true
+syn = { workspace = true, features = ["visit"] }
 proc-macro2.workspace = true
 # The unknown-key sweep walks this crate's own document shapes; the shared
 # walker lives with the other test-only helpers.

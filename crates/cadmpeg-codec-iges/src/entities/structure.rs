@@ -1776,6 +1776,7 @@ fn plane_face_draft(
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
+            native_ref: None,
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -1791,6 +1792,7 @@ fn plane_face_draft(
 
         ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
+            native_ref: None,
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -1806,6 +1808,7 @@ fn plane_face_draft(
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
@@ -1831,6 +1834,7 @@ fn plane_face_draft(
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id.clone(),
         shells: region_shells,
@@ -1839,6 +1843,7 @@ fn plane_face_draft(
 
     ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: body_regions,
@@ -2587,9 +2592,7 @@ pub(super) fn project(
                         .then_some(count)
                     })
                 }
-                Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
-                    None
-                }
+                Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
             };
             cursor += 3;
             attributes_valid &=
@@ -2797,21 +2800,28 @@ pub(super) fn project(
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
+        // The neutral membership holds only the members whose target record
+        // exists in the decode. A pointer that names a given-up or absent
+        // Directory Entry is absent from it and charges no loss here (#222
+        // Group count ruling, rules 2-3).
         let members_valid = count.is_some_and(|count| {
             (0..count).all(|index| {
-                record
+                let Some(sequence) = record
                     .integer(2 + index)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
-                    .is_some_and(|sequence| {
-                        !matches!(entry.form, 1 | 14)
-                            || records.get(&sequence).is_some_and(|member_record| {
-                                has_association_back_pointer(
-                                    member_record,
-                                    entry.sequence,
-                                    trailing_pointer_analysis,
-                                )
-                            })
+                    .and_then(crate::graph::directory_pointer_sequence)
+                else {
+                    return false;
+                };
+                if !entries.contains_key(&sequence) {
+                    return true;
+                }
+                !matches!(entry.form, 1 | 14)
+                    || records.get(&sequence).is_some_and(|member_record| {
+                        has_association_back_pointer(
+                            member_record,
+                            entry.sequence,
+                            trailing_pointer_analysis,
+                        )
                     })
             })
         });

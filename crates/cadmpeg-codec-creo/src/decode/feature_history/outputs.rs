@@ -444,6 +444,22 @@ fn replace_feature_parameter(
     }
 }
 
+pub(in super::super) fn native_parameter_expressions(
+    values: BTreeMap<String, String>,
+) -> BTreeMap<String, cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>> {
+    values
+        .into_iter()
+        .map(|(name, value)| {
+            (
+                name,
+                cadmpeg_ir::features::Dimension::Literal(cadmpeg_ir::features::Expression::text(
+                    value,
+                )),
+            )
+        })
+        .collect()
+}
+
 pub(in super::super) fn feature_parameters(
     scan: &ContainerScan,
     feature_id: u32,

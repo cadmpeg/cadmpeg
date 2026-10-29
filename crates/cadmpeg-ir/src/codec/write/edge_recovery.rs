@@ -258,6 +258,7 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
                 geometry,
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             });
             if let Some(construction) = fit_construction {
                 fitted_candidates.push((ordinal, curve_index, curve.clone(), construction));

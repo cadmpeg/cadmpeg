@@ -218,6 +218,7 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         let declared_end = evaluated_end.translated(Vector3::new(0.0, 0.0005, 0.0), 1.0);
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -244,17 +245,20 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         ]);
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_id,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_id,
                 tolerance: None,
             },
         ]);
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(interval))
                 .unwrap(),

@@ -251,10 +251,10 @@ fn decode_does_not_infer_a_source_header_for_unresolved_partition_sites() {
         .unwrap();
     let attributes = &result.ir().source.as_ref().unwrap().attributes;
 
-    assert_eq!(
-        attributes.get("sldprt_active_partition_unresolved"),
-        Some(&"true".to_string())
-    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "config.active-identity-unresolved"
+            && loss.message == "the source does not resolve an active geometry partition"
+    }));
     assert!(!attributes.contains_key("parasolid_schema"));
     assert!(!attributes.contains_key("parasolid_description"));
     assert!(result
@@ -295,7 +295,7 @@ fn decode_uses_the_active_configuration_source_site() {
         .iter()
         .all(|point| point.position().get().x >= 10_000.0));
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
+        result.source_fidelity().metadata["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
     assert!(
@@ -348,7 +348,7 @@ fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
         "Second"
     );
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
+        result.source_fidelity().metadata["active_parasolid_block"],
         "Contents/Config-1-Partition"
     );
     assert!(!result.report().losses.iter().any(|loss| loss

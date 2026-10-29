@@ -85,18 +85,6 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
             cadmpeg_ir::features::FeatureOperation::Extrude { .. }
         )
     ));
-    assert_eq!(
-        feature.source_properties["native_parameter.generated_entity.7.source_section_entity_id"],
-        "1"
-    );
-    assert_eq!(
-        feature.source_properties["native_parameter.generated_entity.7.entry_class"],
-        "200"
-    );
-    assert_eq!(
-        feature.source_properties["native_parameter.generated_entity.9.source_section_entity_id"],
-        "2"
-    );
     let tables = &result.ir().native.namespace("creo").unwrap().arenas()["feature_entity_tables"];
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].fields().unwrap()["owner_feature_id"], 4);
@@ -109,6 +97,10 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         1
     );
     assert_eq!(tables[0].fields().unwrap()["entries"][1]["prefixed"], true);
+    assert_eq!(
+        tables[0].fields().unwrap()["entries"][1]["source_entity_id"],
+        2
+    );
     assert_annotation(
         &result.source_fidelity().annotations,
         tables[0].id(),
@@ -407,14 +399,21 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
             if matches!(group.edges, cadmpeg_ir::features::EdgeSelection::Unresolved)
                 && group.radius.is_unresolved())
     ));
-    assert_eq!(
-        feature.source_properties["native_parameter.choice.blend_choice.count"],
-        "7"
-    );
-    assert_eq!(
-        feature.source_properties["native_parameter.choice.blend_choice.refs"],
-        "3,4"
-    );
+    let fields = &result.ir().native.namespace("creo").unwrap().arenas()["feature_choice_fields"];
+    let count = fields
+        .iter()
+        .map(|record| record.fields().unwrap())
+        .find(|fields| fields["name"] == "count")
+        .expect("native choice count");
+    assert_eq!(count["choice_label"], "blend_choice");
+    assert_eq!(count["value"]["value"], 7);
+    let refs = fields
+        .iter()
+        .map(|record| record.fields().unwrap())
+        .find(|fields| fields["name"] == "refs")
+        .expect("native choice references");
+    assert_eq!(refs["choice_label"], "blend_choice");
+    assert_eq!(refs["value"]["values"], serde_json::json!([3, 4]));
 }
 
 #[test]
@@ -730,9 +729,18 @@ fn scan_decodes_allfeatur_loop_restore_direction_compact_integers() {
     else {
         panic!("native feature");
     };
-    assert_eq!(parameters["loop_restore.direction"], "0");
-    assert_eq!(parameters["loop_restore.direction#2"], "1");
-    assert_eq!(parameters["loop_restore.direction2"], "167");
+    assert_eq!(
+        parameters["loop_restore.direction"],
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("0"))
+    );
+    assert_eq!(
+        parameters["loop_restore.direction#2"],
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("1"))
+    );
+    assert_eq!(
+        parameters["loop_restore.direction2"],
+        cadmpeg_ir::Dimension::Literal(cadmpeg_ir::features::Expression::text("167"))
+    );
     assert_eq!(
         wire::coverage_count(
             result.report(),

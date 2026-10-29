@@ -106,6 +106,7 @@ fn limit_curve_binding_keeps_a_finite_midpoint_on_large_same_sign_domains() {
         }
         let surface_id = SurfaceId::mint("catia:test:surface#wide-binding").expect("id");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

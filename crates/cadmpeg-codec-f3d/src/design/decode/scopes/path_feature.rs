@@ -25,7 +25,7 @@ pub(super) fn exact_path_feature_construction(
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignPathFeatureConstruction> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
     let operation = |offset| {
         Some(match View::u32_le_at(bytes, offset)? {
             1 => DesignExtrudeOperation::Join,
@@ -48,16 +48,16 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
-                    operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
+                    operation_offset: Some(u64::try_from(start + revolve::OPERATION).ok()?),
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index: angle.record_index(),
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: Some(angle.evaluated_value_offset()?),
                     opposite_angle: None,
                 },
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.frame_length() == 365
+            if scope.frame_length() == Some(365)
                 && scope.reference_members().len() == 6
                 && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
@@ -74,10 +74,12 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + referenced_revolve::OPERATION)?,
-                    operation_offset: u64::try_from(start + referenced_revolve::OPERATION).ok()?,
+                    operation_offset: Some(
+                        u64::try_from(start + referenced_revolve::OPERATION).ok()?,
+                    ),
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: Some(angle.evaluated_value_offset()?),
                     opposite_angle: None,
                 },
             ))
@@ -111,13 +113,13 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
-                    operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
+                    operation_offset: Some(u64::try_from(start + revolve::OPERATION).ok()?),
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.value.get())?,
                     angle_record_index,
-                    angle_offset: angle.value_offset,
-                    opposite_angle: Some(crate::records::identity::Located {
+                    angle_offset: Some(angle.value_offset),
+                    opposite_angle: Some(crate::records::identity::Sourced {
                         value: opposite_angle_record_index,
-                        offset: opposite.value_offset,
+                        offset: Some(opposite.value_offset),
                     }),
                 },
             ))
@@ -142,10 +144,10 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
-                    operation_offset: u64::try_from(start + 21).ok()?,
+                    operation_offset: Some(u64::try_from(start + 21).ok()?),
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: Some(angle.evaluated_value_offset()?),
                     opposite_angle: None,
                 },
             ))
@@ -153,7 +155,7 @@ pub(super) fn exact_path_feature_construction(
         DesignFeatureFamily::Revolve
             if scope.class_tag.as_str() == "403"
                 && scope.paired_class_tag.as_str() == "258"
-                && scope.frame_length() == 387
+                && scope.frame_length() == Some(387)
                 && scope.reference_members().len() == 8
                 && View::u32_le_at(bytes, start + class_403_revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + class_403_revolve::DIRECTION_KIND..start + 31)
@@ -166,10 +168,12 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
-                    operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
+                    operation_offset: Some(
+                        u64::try_from(start + class_403_revolve::OPERATION).ok()?,
+                    ),
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
-                    angle_offset: angle.evaluated_value_offset(),
+                    angle_offset: Some(angle.evaluated_value_offset()?),
                     opposite_angle: None,
                 },
             ))
@@ -187,7 +191,7 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Loft(
                 path_features::DesignLoftConstruction {
                     operation: operation(start + compact_loft::OPERATION)?,
-                    operation_offset: u64::try_from(start + compact_loft::OPERATION).ok()?,
+                    operation_offset: Some(u64::try_from(start + compact_loft::OPERATION).ok()?),
                 },
             ))
         }
@@ -197,7 +201,7 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Loft(
                 path_features::DesignLoftConstruction {
                     operation: operation(start + 29)?,
-                    operation_offset: u64::try_from(start + 29).ok()?,
+                    operation_offset: Some(u64::try_from(start + 29).ok()?),
                 },
             ))
         }
@@ -232,10 +236,10 @@ pub(super) fn exact_path_feature_construction(
             Some(DesignPathFeatureConstruction::Sweep(
                 path_features::DesignSweepConstruction {
                     operation: operation(start + 25)?,
-                    operation_offset: u64::try_from(start + 25).ok()?,
+                    operation_offset: Some(u64::try_from(start + 25).ok()?),
                     values: lanes.map(|(_, scalar)| scalar.value),
                     record_indexes: lanes.map(|(record_index, _)| record_index),
-                    value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
+                    value_offsets: Some(lanes.map(|(_, scalar)| scalar.value_offset)),
                 },
             ))
         }

@@ -4,8 +4,6 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use super::assembly::DesignAssemblyAlignment;
-#[cfg(test)]
-use crate::records::identity::serialize_absent_u64_offset;
 
 use super::assembly_features::{
     DesignComponentInsertConstruction, DesignCopyPasteComponentOperation,
@@ -50,12 +48,16 @@ use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
     DesignWorkAxisConstruction, DesignWorkPlaneConstruction, DesignWorkPointConstruction,
 };
-use crate::records::identity::{deserialize_absent_u64_offset, DesignEntityId, ReferenceRun};
+use crate::records::identity::{DesignEntityId, ReferenceRun};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use serde::{Deserialize, Serialize};
+
+pub(crate) mod generation;
+
+use generation::{DesignAssemblyFrame, DesignScopeGeneration, ScopeFrameFacts};
 
 cadmpeg_core::named_optional_field!(
     deserialize_hole_extent,
@@ -135,11 +137,6 @@ cadmpeg_core::named_optional_field!(
     "edge_flange_operation"
 );
 cadmpeg_core::named_optional_field!(deserialize_entity_id, String, "entity_id");
-cadmpeg_core::named_optional_field!(
-    deserialize_entity_reference_offset,
-    u64,
-    "entity_reference_offset"
-);
 cadmpeg_core::named_optional_field!(deserialize_entity_suffix, u64, "entity_suffix");
 cadmpeg_core::named_optional_field!(
     deserialize_extrude_profile,
@@ -183,19 +180,9 @@ cadmpeg_core::named_optional_field!(
     "joint_origin_reference"
 );
 cadmpeg_core::named_optional_field!(
-    deserialize_joint_origin_reference_offset,
-    u64,
-    "joint_origin_reference_offset"
-);
-cadmpeg_core::named_optional_field!(
     deserialize_joint_origin_transform,
     SketchPlacementMatrix,
     "joint_origin_transform"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_joint_origin_transform_offset,
-    u64,
-    "joint_origin_transform_offset"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_mirror_construction,
@@ -283,19 +270,9 @@ cadmpeg_core::named_optional_field!(
     "work_plane_reference"
 );
 cadmpeg_core::named_optional_field!(
-    deserialize_work_plane_reference_offset,
-    u64,
-    "work_plane_reference_offset"
-);
-cadmpeg_core::named_optional_field!(
     deserialize_work_plane_transform,
     SketchPlacementMatrix,
     "work_plane_transform"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_work_plane_transform_offset,
-    u64,
-    "work_plane_transform_offset"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_work_point_construction,
@@ -642,6 +619,12 @@ impl std::fmt::Display for DesignParameterScopePayloadError {
 
 impl std::error::Error for DesignParameterScopePayloadError {}
 
+/// The refusal of a decode step that reads the source frame of a scope that
+/// has none. A decoded scope always has its source frame.
+pub(crate) fn unlocated_scope() -> cadmpeg_core::CodecError {
+    cadmpeg_core::CodecError::malformed("decoded scope has no source frame")
+}
+
 /// Distance in bytes from the state word to the length-prefixed kind name of a
 /// parameter scope.
 const HISTORY_STATE_ID_BACK_OFFSET: u64 = 8;
@@ -671,35 +654,23 @@ pub(crate) struct DesignParameterScope {
     clone_probe: ScopeCloneProbe,
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
-    /// Byte offset of the primary indexed record header.
-    byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub(crate) class_tag: DesignClassTag,
     /// Shared logical record identity.
     pub(crate) record_index: u32,
-    /// Byte length from the primary header to the paired header.
-    frame_length: u64,
+    /// Grammar generation of the scope frame.
+    generation: DesignScopeGeneration,
     /// Stored family spelling when it differs from the selected family.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) source_kind: Option<String>,
-    /// Byte offset of the kind's UTF-16LE code units.
-    kind_offset: u64,
-    /// Byte offset of the state word before the length-prefixed kind name.
-    history_state_id_offset: u64,
     /// One-based ordinal among scopes of the same feature family.
     pub(crate) feature_ordinal: std::num::NonZeroU32,
-    /// Byte offset of `feature_ordinal`.
-    feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
     /// ASM delta-state identity immediately preceding this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     previous_history_state_id: Option<i64>,
-    /// Byte offset of the encoded preceding-state identity, when present.
-    previous_history_state_id_offset: Option<u64>,
-    /// Byte offset of the ordered reference-table count.
-    reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
     reference_members: ReferenceRun<u32>,
     /// Component ownership and placement recorded by paste operations.
@@ -712,8 +683,31 @@ pub(crate) struct DesignParameterScope {
     pub(crate) unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
+    /// Source frame of the scope.
+    #[serde(skip)]
+    source: DesignScopeSource,
+}
+
+/// Source frame offsets and length of a decoded parameter scope. They are
+/// not on the document wire; a scope read from the wire has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct DesignScopeSource {
+    /// Byte offset of the primary indexed record header.
+    byte_offset: Option<u64>,
+    /// Byte length from the primary header to the paired header.
+    frame_length: Option<u64>,
+    /// Byte offset of the kind's UTF-16LE code units.
+    kind_offset: Option<u64>,
+    /// Byte offset of the state word before the length-prefixed kind name.
+    history_state_id_offset: Option<u64>,
+    /// Byte offset of `feature_ordinal`.
+    feature_ordinal_offset: Option<u64>,
+    /// Byte offset of the encoded preceding-state identity, when present.
+    previous_history_state_id_offset: Option<u64>,
+    /// Byte offset of the ordered reference-table count.
+    reference_count_offset: Option<u64>,
     /// Byte offset of the paired indexed record header.
-    paired_byte_offset: u64,
+    paired_byte_offset: Option<u64>,
 }
 
 /// Unadmitted parameter-scope fields.
@@ -768,14 +762,12 @@ struct DesignParameterScopeSerde {
     occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
     /// Globally unique deterministic identifier for this native record.
     id: String,
-    /// Byte offset of the primary indexed record header.
-    byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     class_tag: String,
     /// Shared logical record identity.
     record_index: u32,
-    /// Byte length from the primary header to the paired header.
-    frame_length: u64,
+    /// Grammar generation of the scope frame.
+    generation: DesignScopeGeneration,
     /// Selected feature family.
     kind: DesignFeatureKind,
     /// Stored family spelling when it differs from the selected family.
@@ -785,8 +777,6 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_source_kind"
     )]
     source_kind: Option<String>,
-    /// Byte offset of the kind's UTF-16LE code units.
-    kind_offset: u64,
     /// Extrude prologue, fixed parameters, and profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -799,8 +789,6 @@ struct DesignParameterScopeSerde {
     coil: Option<DesignCoilScope>,
     /// One-based ordinal among scopes of the same feature family.
     feature_ordinal: u32,
-    /// Byte offset of `feature_ordinal`.
-    feature_ordinal_offset: u64,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -808,8 +796,6 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_history_state_id"
     )]
     history_state_id: Option<i64>,
-    /// Byte offset of the encoded history-state identity or null sentinel.
-    history_state_id_offset: u64,
     /// ASM delta-state identity immediately preceding this scope, when active.
     #[serde(
         default,
@@ -817,19 +803,8 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_previous_history_state_id"
     )]
     previous_history_state_id: Option<i64>,
-    /// Byte offset of the encoded preceding-state identity, when present.
-    #[serde(
-        default,
-        serialize_with = "serialize_absent_u64_offset",
-        deserialize_with = "deserialize_absent_u64_offset"
-    )]
-    previous_history_state_id_offset: Option<u64>,
-    /// Byte offset of the ordered reference-table count.
-    reference_count_offset: u64,
     /// Ordered indexed-record references carried by the scope.
     reference_members: Vec<u32>,
-    /// Byte offsets parallel to `reference_members`.
-    reference_member_offsets: Vec<u64>,
     /// Exact solid-primitive construction carried by this scope.
     #[serde(
         default,
@@ -1077,8 +1052,6 @@ struct DesignParameterScopeSerde {
     sketch_entity: Option<DesignSketchEntityBinding>,
     /// Per-file dynamic class tag of the paired header.
     paired_class_tag: String,
-    /// Byte offset of the paired indexed record header.
-    paired_byte_offset: u64,
 }
 
 // Deserialize the payload itself: flattened Option<T> suppresses T's errors.
@@ -1096,15 +1069,9 @@ struct WorkPlaneFrameWire {
     #[serde(default, deserialize_with = "deserialize_work_plane_transform")]
     #[serde(rename = "work_plane_transform")]
     transform: Option<SketchPlacementMatrix>,
-    #[serde(default, deserialize_with = "deserialize_work_plane_transform_offset")]
-    #[serde(rename = "work_plane_transform_offset")]
-    transform_offset: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_work_plane_reference")]
     #[serde(rename = "work_plane_reference")]
     reference: Option<u32>,
-    #[serde(default, deserialize_with = "deserialize_work_plane_reference_offset")]
-    #[serde(rename = "work_plane_reference_offset")]
-    reference_offset: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_work_plane_construction")]
     #[serde(rename = "work_plane_construction")]
     construction: Option<DesignWorkPlaneConstruction>,
@@ -1117,29 +1084,23 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = WorkPlaneFrameWire::deserialize(deserializer)?;
-    let reference = match (wire.reference, wire.reference_offset) {
-        (None, None) => None,
-        (Some(work_plane_reference), Some(work_plane_reference_offset)) => {
-            Some(DesignWorkPlaneReference {
-                work_plane_reference,
-                work_plane_reference_offset,
-            })
-        }
-        _ => {
-            return Err(serde::de::Error::custom(
-                "work_plane_reference and work_plane_reference_offset must occur together",
-            ))
-        }
-    };
-    match (wire.transform, wire.transform_offset) {
-        (None, None) if reference.is_none() && wire.construction.is_none() => Ok(None),
-        (Some(work_plane_transform), Some(work_plane_transform_offset)) => Ok(Some(DesignWorkPlaneTransform {
+    let reference = wire
+        .reference
+        .map(|work_plane_reference| DesignWorkPlaneReference {
+            work_plane_reference,
+            work_plane_reference_offset: None,
+        });
+    match wire.transform {
+        None if reference.is_none() && wire.construction.is_none() => Ok(None),
+        Some(work_plane_transform) => Ok(Some(DesignWorkPlaneTransform {
             work_plane_transform,
-            work_plane_transform_offset,
+            work_plane_transform_offset: None,
             reference,
             work_plane_construction: wire.construction,
         })),
-        _ => Err(serde::de::Error::custom("work_plane_transform and work_plane_transform_offset are required for work_plane frame data")),
+        None => Err(serde::de::Error::custom(
+            "work_plane_transform is required for work_plane frame data",
+        )),
     }
 }
 
@@ -1156,21 +1117,9 @@ struct JointOriginFrameWire {
     #[serde(default, deserialize_with = "deserialize_joint_origin_transform")]
     #[serde(rename = "joint_origin_transform")]
     transform: Option<SketchPlacementMatrix>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_joint_origin_transform_offset"
-    )]
-    #[serde(rename = "joint_origin_transform_offset")]
-    transform_offset: Option<u64>,
     #[serde(default, deserialize_with = "deserialize_joint_origin_reference")]
     #[serde(rename = "joint_origin_reference")]
     reference: Option<u32>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_joint_origin_reference_offset"
-    )]
-    #[serde(rename = "joint_origin_reference_offset")]
-    reference_offset: Option<u64>,
 }
 
 fn deserialize_joint_origin_frame<'de, D>(
@@ -1180,28 +1129,22 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = JointOriginFrameWire::deserialize(deserializer)?;
-    let reference = match (wire.reference, wire.reference_offset) {
-        (None, None) => None,
-        (Some(joint_origin_reference), Some(joint_origin_reference_offset)) => {
-            Some(DesignJointOriginReference {
-                joint_origin_reference,
-                joint_origin_reference_offset,
-            })
-        }
-        _ => {
-            return Err(serde::de::Error::custom(
-                "joint_origin_reference and joint_origin_reference_offset must occur together",
-            ))
-        }
-    };
-    match (wire.transform, wire.transform_offset) {
-        (None, None) if reference.is_none() => Ok(None),
-        (Some(joint_origin_transform), Some(joint_origin_transform_offset)) => Ok(Some(DesignJointOriginTransform {
+    let reference = wire
+        .reference
+        .map(|joint_origin_reference| DesignJointOriginReference {
+            joint_origin_reference,
+            joint_origin_reference_offset: None,
+        });
+    match wire.transform {
+        None if reference.is_none() => Ok(None),
+        Some(joint_origin_transform) => Ok(Some(DesignJointOriginTransform {
             joint_origin_transform,
-            joint_origin_transform_offset,
+            joint_origin_transform_offset: None,
             reference,
         })),
-        _ => Err(serde::de::Error::custom("joint_origin_transform and joint_origin_transform_offset are required for joint_origin frame data")),
+        None => Err(serde::de::Error::custom(
+            "joint_origin_transform is required for joint_origin frame data",
+        )),
     }
 }
 
@@ -1221,9 +1164,6 @@ struct SketchEntityWire {
     #[serde(default, deserialize_with = "deserialize_entity_suffix")]
     #[serde(rename = "entity_suffix")]
     suffix: Option<u64>,
-    #[serde(default, deserialize_with = "deserialize_entity_reference_offset")]
-    #[serde(rename = "entity_reference_offset")]
-    reference_offset: Option<u64>,
 }
 
 fn deserialize_sketch_entity<'de, D>(
@@ -1233,19 +1173,18 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = SketchEntityWire::deserialize(deserializer)?;
-    match (wire.id, wire.suffix, wire.reference_offset) {
-        (None, None, None) => Ok(None),
-        (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => {
+    match (wire.id, wire.suffix) {
+        (None, None) => Ok(None),
+        (Some(entity_id), Some(entity_suffix)) => {
             DesignSketchEntityBinding::try_from(DesignSketchEntityBindingWire {
                 id: entity_id,
                 suffix: entity_suffix,
-                reference_offset: entity_reference_offset,
             })
             .map(Some)
             .map_err(serde::de::Error::custom)
         }
         _ => Err(serde::de::Error::custom(
-            "entity_id, entity_suffix, and entity_reference_offset must occur together",
+            "entity_id and entity_suffix must occur together",
         )),
     }
 }
@@ -1386,8 +1325,8 @@ struct DesignPathFeatureWire {
 pub(crate) struct DesignSketchEntityBinding {
     /// Full Design entity id of a sketch scope.
     pub(crate) entity_id: DesignEntityId,
-    /// Byte offset of the sketch entity suffix.
-    pub(crate) entity_reference_offset: u64,
+    /// Byte offset of the sketch entity suffix of a located scope.
+    pub(crate) entity_reference_offset: Option<u64>,
 }
 
 #[cfg(test)]
@@ -1415,9 +1354,6 @@ struct DesignSketchEntityBindingWire {
     /// Numeric suffix of `entity_id`.
     #[serde(rename = "entity_suffix")]
     suffix: u64,
-    /// Byte offset of the sketch entity suffix.
-    #[serde(rename = "entity_reference_offset")]
-    reference_offset: u64,
 }
 
 impl Serialize for DesignSketchEntityBinding {
@@ -1428,13 +1364,10 @@ impl Serialize for DesignSketchEntityBinding {
             id: &'a str,
             #[serde(rename = "entity_suffix")]
             suffix: u64,
-            #[serde(rename = "entity_reference_offset")]
-            reference_offset: u64,
         }
         WireRef {
             id: self.entity_id.as_str(),
             suffix: self.entity_id.suffix(),
-            reference_offset: self.entity_reference_offset,
         }
         .serialize(serializer)
     }
@@ -1450,7 +1383,7 @@ impl TryFrom<DesignSketchEntityBindingWire> for DesignSketchEntityBinding {
         }
         Ok(Self {
             entity_id,
-            entity_reference_offset: wire.reference_offset,
+            entity_reference_offset: None,
         })
     }
 }
@@ -1462,7 +1395,6 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
         Self {
             id: value.entity_id.into_string(),
             suffix: entity_suffix,
-            reference_offset: value.entity_reference_offset,
         }
     }
 }
@@ -1472,8 +1404,10 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
 pub(crate) struct DesignWorkPlaneTransform {
     /// Exact row-major local-to-model frame.
     pub(crate) work_plane_transform: SketchPlacementMatrix,
-    /// Byte offset of the matrix or its implicit-identity marker.
-    pub(crate) work_plane_transform_offset: u64,
+    /// Byte offset of the matrix or its implicit-identity marker of a located
+    /// scope.
+    #[serde(skip)]
+    pub(crate) work_plane_transform_offset: Option<u64>,
     /// Construction record referenced by the frame, when present.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1488,8 +1422,10 @@ pub(crate) struct DesignWorkPlaneTransform {
 pub(crate) struct DesignWorkPlaneReference {
     /// Construction record referenced by the `WorkPlane` frame.
     pub(crate) work_plane_reference: u32,
-    /// Byte offset of the `WorkPlane` construction reference.
-    pub(crate) work_plane_reference_offset: u64,
+    /// Byte offset of the `WorkPlane` construction reference of a located
+    /// scope.
+    #[serde(skip)]
+    pub(crate) work_plane_reference_offset: Option<u64>,
 }
 
 /// Explicit 16-f64 frame carried by a `JointOrigin` scope.
@@ -1497,8 +1433,9 @@ pub(crate) struct DesignWorkPlaneReference {
 pub(crate) struct DesignJointOriginTransform {
     /// Exact row-major local-to-model frame.
     pub(crate) joint_origin_transform: SketchPlacementMatrix,
-    /// Byte offset of the explicit 16-f64 matrix.
-    pub(crate) joint_origin_transform_offset: u64,
+    /// Byte offset of the explicit 16-f64 matrix of a located scope.
+    #[serde(skip)]
+    pub(crate) joint_origin_transform_offset: Option<u64>,
     /// Construction record referenced by the frame, when present.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1510,8 +1447,10 @@ pub(crate) struct DesignJointOriginTransform {
 pub(crate) struct DesignJointOriginReference {
     /// Construction record referenced by the `JointOrigin` frame.
     pub(crate) joint_origin_reference: u32,
-    /// Byte offset of the `JointOrigin` construction reference.
-    pub(crate) joint_origin_reference_offset: u64,
+    /// Byte offset of the `JointOrigin` construction reference of a located
+    /// scope.
+    #[serde(skip)]
+    pub(crate) joint_origin_reference_offset: Option<u64>,
 }
 
 impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
@@ -1522,8 +1461,6 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             let units = u64::try_from(source.encode_utf16().count()).ok();
             if !units.is_some_and(|count| (1..=256).contains(&count))
                 || source.chars().any(char::is_control)
-                || units.and_then(|count| count.checked_mul(2))
-                    != wire.feature_ordinal_offset.checked_sub(wire.kind_offset)
             {
                 return Err(DesignParameterScopePayloadError(
                     "invalid source_kind".into(),
@@ -2011,45 +1948,27 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 wire.kind
             )));
         }
-        if wire.kind_offset.checked_sub(HISTORY_STATE_ID_BACK_OFFSET)
-            != Some(wire.history_state_id_offset)
-        {
-            return Err(DesignParameterScopePayloadError(
-                "history_state_id_offset disagrees with kind_offset".into(),
-            ));
-        }
         let occurrence_transfer = wire.occurrence_transfer.take();
-        let mut admitted = Self::try_new(DesignParameterScopeDraft {
+        let mut admitted = Self::from_wire(DesignParameterScopeWireFields {
             id: wire.id,
-            byte_offset: wire.byte_offset,
             class_tag: wire
                 .class_tag
                 .try_into()
                 .map_err(DesignParameterScopePayloadError)?,
             record_index: wire.record_index,
-            frame_length: wire.frame_length,
-            kind_offset: wire.kind_offset,
+            generation: wire.generation,
             feature_ordinal: std::num::NonZeroU32::new(wire.feature_ordinal).ok_or_else(|| {
                 DesignParameterScopePayloadError("feature_ordinal must be nonzero".into())
             })?,
-            feature_ordinal_offset: wire.feature_ordinal_offset,
             history_state_id: wire.history_state_id,
             previous_history_state_id: wire.previous_history_state_id,
-            previous_history_state_id_offset: wire.previous_history_state_id_offset,
-            reference_count_offset: wire.reference_count_offset,
-            reference_members: ReferenceRun::from_columns(
-                wire.reference_members,
-                wire.reference_member_offsets,
-                "reference_members/reference_member_offsets",
-            )
-            .map_err(DesignParameterScopePayloadError)?,
+            reference_members: ReferenceRun::unlocated(wire.reference_members),
             payload,
             unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
             paired_class_tag: wire
                 .paired_class_tag
                 .try_into()
                 .map_err(DesignParameterScopePayloadError)?,
-            paired_byte_offset: wire.paired_byte_offset,
         })?;
         if occurrence_transfer
             .as_ref()
@@ -2065,33 +1984,40 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
     }
 }
 
+/// The document fields of a parameter scope read from the wire.
+struct DesignParameterScopeWireFields {
+    id: String,
+    class_tag: DesignClassTag,
+    record_index: u32,
+    generation: DesignScopeGeneration,
+    feature_ordinal: std::num::NonZeroU32,
+    history_state_id: Option<i64>,
+    previous_history_state_id: Option<i64>,
+    reference_members: ReferenceRun<u32>,
+    payload: DesignScopePayload,
+    unclosed_construction_operand_groups: Vec<u32>,
+    paired_class_tag: DesignClassTag,
+}
+
 #[cfg(test)]
 impl From<DesignParameterScope> for DesignParameterScopeSerde {
     fn from(scope: DesignParameterScope) -> Self {
         let kind = scope.kind();
-        let history_state_id_offset = scope.history_state_id_offset();
-        let (reference_members, reference_member_offsets) = scope.reference_members.into_wire();
+        let (reference_members, _) = scope.reference_members.into_wire();
         let mut wire = DesignParameterScopeSerde {
             occurrence_transfer: scope.occurrence_transfer,
             id: scope.id,
-            byte_offset: scope.byte_offset,
             class_tag: scope.class_tag.into(),
             record_index: scope.record_index,
-            frame_length: scope.frame_length,
+            generation: scope.generation,
             kind,
             source_kind: scope.source_kind,
-            kind_offset: scope.kind_offset,
             extrude: None,
             coil: None,
             feature_ordinal: scope.feature_ordinal.get(),
-            feature_ordinal_offset: scope.feature_ordinal_offset,
             history_state_id: scope.history_state_id,
-            history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
-            previous_history_state_id_offset: scope.previous_history_state_id_offset,
-            reference_count_offset: scope.reference_count_offset,
             reference_members,
-            reference_member_offsets,
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
@@ -2130,7 +2056,6 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             hole_extent: None,
             sketch_entity: None,
             paired_class_tag: scope.paired_class_tag.into(),
-            paired_byte_offset: scope.paired_byte_offset,
         };
         match scope.payload {
             DesignScopePayload::Extrude(value)
@@ -2296,10 +2221,29 @@ fn reference_table_stride(draft: &DesignParameterScopeDraft) -> Option<usize> {
         })
 }
 
-impl DesignParameterScope {
-    pub(crate) fn try_new(
-        draft: DesignParameterScopeDraft,
-    ) -> Result<Self, DesignParameterScopePayloadError> {
+impl DesignParameterScopeDraft {
+    /// The frame facts that select the scope generation, when the
+    /// reference count and the kind follow the primary header.
+    fn frame_facts<'a>(&'a self, kind: &'a DesignFeatureKind) -> Option<ScopeFrameFacts<'a>> {
+        Some(ScopeFrameFacts {
+            kind,
+            class_tag: self.class_tag.as_str(),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            frame_length: self.frame_length,
+            reference_count_delta: self.reference_count_offset.checked_sub(self.byte_offset)?,
+            kind_delta: self.kind_offset.checked_sub(self.byte_offset)?,
+            reference_count: self.reference_members.len(),
+            tail_length: self
+                .paired_byte_offset
+                .checked_sub(self.feature_ordinal_offset)?,
+        })
+    }
+
+    /// Admit the frame arithmetic of a located scope: the frame length, the
+    /// field order, the tail form, the history-state lanes and the
+    /// reference-table entries.
+    pub(crate) fn check_frame_layout(&self) -> Result<(), DesignParameterScopePayloadError> {
+        let draft = self;
         let fail = |field: &str| {
             DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
         };
@@ -2311,8 +2255,10 @@ impl DesignParameterScope {
         {
             let relative =
                 u64_from_index(crate::layout::surface_patch_v7_normal_flip_prefix::NORMAL_FLIP);
-            if draft.byte_offset.checked_add(relative) != Some(reversed.offset)
-                || reversed.offset >= draft.paired_byte_offset
+            if draft.byte_offset.checked_add(relative) != reversed.offset
+                || reversed
+                    .offset
+                    .is_none_or(|offset| offset >= draft.paired_byte_offset)
             {
                 return Err(fail("surface_patch_normal"));
             }
@@ -2327,7 +2273,7 @@ impl DesignParameterScope {
         {
             return Err(fail("kind_offset/feature_ordinal_offset"));
         }
-        let history_state_id_offset = draft
+        draft
             .kind_offset
             .checked_sub(HISTORY_STATE_ID_BACK_OFFSET)
             .ok_or_else(|| fail("kind_offset"))?;
@@ -2339,7 +2285,7 @@ impl DesignParameterScope {
         // The reference-table stride shows the reference spelling: 11-byte
         // plain references or 51-byte typed references.
         // A table that fits neither width falls through to the plain checks.
-        let stride = reference_table_stride(&draft).unwrap_or(11);
+        let stride = reference_table_stride(draft).unwrap_or(11);
         let typed = stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN
             || (draft.reference_members.is_empty()
                 && kind == "As-built"
@@ -2440,29 +2386,98 @@ impl DesignParameterScope {
                 return Err(fail("Pipe prefix offsets"));
             }
         }
-        let scope = Self {
-            #[cfg(test)]
-            clone_probe: ScopeCloneProbe,
+        Ok(())
+    }
+}
+
+impl DesignParameterScope {
+    /// Admit a decoded scope: its frame arithmetic, and its document fields
+    /// with the generation its frame selects.
+    pub(crate) fn try_new(
+        draft: DesignParameterScopeDraft,
+    ) -> Result<Self, DesignParameterScopePayloadError> {
+        draft.check_frame_layout()?;
+        let kind = draft.payload.kind();
+        let generation =
+            DesignScopeGeneration::derive(&draft.frame_facts(&kind).ok_or_else(|| {
+                DesignParameterScopePayloadError(
+                    "invalid parameter scope reference_count_offset/kind_offset".into(),
+                )
+            })?);
+        let source = DesignScopeSource {
+            byte_offset: Some(draft.byte_offset),
+            frame_length: Some(draft.frame_length),
+            kind_offset: Some(draft.kind_offset),
+            history_state_id_offset: draft.kind_offset.checked_sub(HISTORY_STATE_ID_BACK_OFFSET),
+            feature_ordinal_offset: Some(draft.feature_ordinal_offset),
+            previous_history_state_id_offset: draft.previous_history_state_id_offset,
+            reference_count_offset: Some(draft.reference_count_offset),
+            paired_byte_offset: Some(draft.paired_byte_offset),
+        };
+        let mut scope = Self::from_wire(DesignParameterScopeWireFields {
             id: draft.id,
-            byte_offset: draft.byte_offset,
             class_tag: draft.class_tag,
             record_index: draft.record_index,
-            frame_length: draft.frame_length,
-            kind_offset: draft.kind_offset,
-            source_kind: None,
-            history_state_id_offset,
+            generation,
             feature_ordinal: draft.feature_ordinal,
-            feature_ordinal_offset: draft.feature_ordinal_offset,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
-            previous_history_state_id_offset: draft.previous_history_state_id_offset,
-            reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
-            occurrence_transfer: None,
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             paired_class_tag: draft.paired_class_tag,
-            paired_byte_offset: draft.paired_byte_offset,
+        })?;
+        scope.source = source;
+        if scope
+            .emboss_construction()
+            .is_some_and(|construction| !construction.links_match(&scope))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "invalid parameter scope emboss_construction".into(),
+            ));
+        }
+        Ok(scope)
+    }
+
+    /// Admit the document fields of a scope. Only the rigid `As-built` scope
+    /// stores an empty reference table; the generation belongs to the scope's
+    /// family.
+    fn from_wire(
+        fields: DesignParameterScopeWireFields,
+    ) -> Result<Self, DesignParameterScopePayloadError> {
+        let fail = |field: &str| {
+            DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
+        };
+        let kind = fields.payload.kind();
+        if !fields.generation.admits_kind(&kind) {
+            return Err(fail("generation/kind"));
+        }
+        let rigid_as_built = kind == DesignFeatureKind::AsBuilt
+            && fields
+                .generation
+                .assembly()
+                .and_then(DesignAssemblyFrame::rigid_members)
+                .is_some();
+        if fields.reference_members.is_empty() && !rigid_as_built {
+            return Err(fail("reference_members"));
+        }
+        let scope = Self {
+            #[cfg(test)]
+            clone_probe: ScopeCloneProbe,
+            id: fields.id,
+            class_tag: fields.class_tag,
+            record_index: fields.record_index,
+            generation: fields.generation,
+            source_kind: None,
+            feature_ordinal: fields.feature_ordinal,
+            history_state_id: fields.history_state_id,
+            previous_history_state_id: fields.previous_history_state_id,
+            reference_members: fields.reference_members,
+            occurrence_transfer: None,
+            payload: fields.payload,
+            unclosed_construction_operand_groups: fields.unclosed_construction_operand_groups,
+            paired_class_tag: fields.paired_class_tag,
+            source: DesignScopeSource::default(),
         };
         if scope
             .emboss_construction()
@@ -2473,27 +2488,35 @@ impl DesignParameterScope {
         Ok(scope)
     }
 
+    /// The located draft of a decoded scope, whose source frame is complete.
     #[cfg(test)]
-    pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
-        DesignParameterScopeDraft {
-            id: self.id,
-            byte_offset: self.byte_offset,
-            class_tag: self.class_tag,
+    fn located_draft(&self) -> Option<DesignParameterScopeDraft> {
+        let source = self.source;
+        Some(DesignParameterScopeDraft {
+            id: self.id.clone(),
+            byte_offset: source.byte_offset?,
+            class_tag: self.class_tag.clone(),
             record_index: self.record_index,
-            frame_length: self.frame_length,
-            kind_offset: self.kind_offset,
+            frame_length: source.frame_length?,
+            kind_offset: source.kind_offset?,
             feature_ordinal: self.feature_ordinal,
-            feature_ordinal_offset: self.feature_ordinal_offset,
+            feature_ordinal_offset: source.feature_ordinal_offset?,
             history_state_id: self.history_state_id,
             previous_history_state_id: self.previous_history_state_id,
-            previous_history_state_id_offset: self.previous_history_state_id_offset,
-            reference_count_offset: self.reference_count_offset,
-            reference_members: self.reference_members,
-            payload: self.payload,
-            unclosed_construction_operand_groups: self.unclosed_construction_operand_groups,
-            paired_class_tag: self.paired_class_tag,
-            paired_byte_offset: self.paired_byte_offset,
-        }
+            previous_history_state_id_offset: source.previous_history_state_id_offset,
+            reference_count_offset: source.reference_count_offset?,
+            reference_members: self.reference_members.clone(),
+            payload: self.payload.clone(),
+            unclosed_construction_operand_groups: self.unclosed_construction_operand_groups.clone(),
+            paired_class_tag: self.paired_class_tag.clone(),
+            paired_byte_offset: source.paired_byte_offset?,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
+        self.located_draft()
+            .expect("a test draft edits a decoded scope, whose source frame is complete")
     }
 
     #[cfg(test)]
@@ -2511,17 +2534,22 @@ impl DesignParameterScope {
         self.payload.fields_mut()
     }
 
-    pub(crate) fn byte_offset(&self) -> u64 {
-        self.byte_offset
+    /// Byte offset of the primary indexed record header of a located scope.
+    pub(crate) fn byte_offset(&self) -> Option<u64> {
+        self.source.byte_offset
     }
-    pub(crate) fn frame_length(&self) -> u64 {
-        self.frame_length
+    /// Byte length from the primary header to the paired header of a
+    /// located scope.
+    pub(crate) fn frame_length(&self) -> Option<u64> {
+        self.source.frame_length
     }
-    pub(crate) fn kind_offset(&self) -> u64 {
-        self.kind_offset
+    /// Byte offset of the kind's UTF-16LE code units of a located scope.
+    pub(crate) fn kind_offset(&self) -> Option<u64> {
+        self.source.kind_offset
     }
-    pub(crate) fn feature_ordinal_offset(&self) -> u64 {
-        self.feature_ordinal_offset
+    /// Byte offset of `feature_ordinal` of a located scope.
+    pub(crate) fn feature_ordinal_offset(&self) -> Option<u64> {
+        self.source.feature_ordinal_offset
     }
     pub(crate) fn history_state_id(&self) -> Option<i64> {
         self.history_state_id
@@ -2529,11 +2557,14 @@ impl DesignParameterScope {
     pub(crate) fn previous_history_state_id(&self) -> Option<i64> {
         self.previous_history_state_id
     }
+    /// Byte offset of the encoded preceding-state identity of a located
+    /// scope, when the tail stores one.
     pub(crate) fn previous_history_state_id_offset(&self) -> Option<u64> {
-        self.previous_history_state_id_offset
+        self.source.previous_history_state_id_offset
     }
-    pub(crate) fn reference_count_offset(&self) -> u64 {
-        self.reference_count_offset
+    /// Byte offset of the ordered reference-table count of a located scope.
+    pub(crate) fn reference_count_offset(&self) -> Option<u64> {
+        self.source.reference_count_offset
     }
     pub(crate) fn reference_members(&self) -> &ReferenceRun<u32> {
         &self.reference_members
@@ -2544,7 +2575,7 @@ impl DesignParameterScope {
         &self,
         owner: &crate::records::parameters::DesignParameterOwner,
     ) -> bool {
-        self.record_index == owner.scope_record_index()
+        owner.scope_record_index() == Some(self.record_index)
             && self
                 .reference_members
                 .values()
@@ -2553,17 +2584,21 @@ impl DesignParameterScope {
     pub(crate) fn payload(&self) -> &DesignScopePayload {
         &self.payload
     }
-    pub(crate) fn paired_byte_offset(&self) -> u64 {
-        self.paired_byte_offset
+    /// Byte offset of the paired indexed record header of a located scope.
+    pub(crate) fn paired_byte_offset(&self) -> Option<u64> {
+        self.source.paired_byte_offset
+    }
+    /// Grammar generation of the scope frame.
+    pub(crate) fn generation(&self) -> DesignScopeGeneration {
+        self.generation
+    }
+    /// The assembly frame of an assembly-family scope with a fixed frame.
+    pub(crate) fn assembly_frame(&self) -> Option<DesignAssemblyFrame> {
+        self.generation.assembly()
     }
 }
 
 impl DesignParameterScope {
-    /// Byte offset of the state word before the length-prefixed kind name.
-    fn history_state_id_offset(&self) -> u64 {
-        self.history_state_id_offset
-    }
-
     /// Source feature-family name, derived from its construction variant.
     pub(crate) fn kind(&self) -> DesignFeatureKind {
         self.payload.kind()
@@ -2987,9 +3022,18 @@ impl DesignParameterScope {
             .and_then(|coil| coil.operation.map(|field| field.value))
     }
 
+    /// Whether the scope is the long `Coil` form, whose envelope fixes the
+    /// section settings that the compact form stores.
+    pub(crate) fn coil_long_form(&self) -> bool {
+        self.coil()
+            .and_then(|coil| coil.section.as_ref())
+            .is_some_and(|section| !section.is_stored())
+    }
+
+    #[cfg(test)]
     pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
         self.coil()
-            .and_then(|coil| coil.operation.map(|field| field.offset))
+            .and_then(|coil| coil.operation.and_then(|field| field.offset))
     }
 
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
@@ -3092,9 +3136,10 @@ impl DesignParameterScope {
             .map(|frame| frame.joint_origin_transform)
     }
 
+    #[cfg(test)]
     pub(crate) fn joint_origin_transform_offset(&self) -> Option<u64> {
         self.joint_origin_frame()
-            .map(|frame| frame.joint_origin_transform_offset)
+            .and_then(|frame| frame.joint_origin_transform_offset)
     }
 
     #[cfg(test)]
@@ -3113,7 +3158,7 @@ impl DesignParameterScope {
             frame
                 .reference
                 .as_ref()
-                .map(|reference| reference.joint_origin_reference_offset)
+                .and_then(|reference| reference.joint_origin_reference_offset)
         })
     }
 }
@@ -3124,7 +3169,7 @@ impl DesignParameterScope {
     pub(crate) fn with_work_plane_transform(&mut self, transform: SketchPlacementMatrix) {
         self.payload = DesignScopePayload::WorkPlane(Some(DesignWorkPlaneTransform {
             work_plane_transform: transform,
-            work_plane_transform_offset: 0,
+            work_plane_transform_offset: Some(0),
             reference: None,
             work_plane_construction: None,
         }));
@@ -3134,7 +3179,7 @@ impl DesignParameterScope {
         if let Some(frame) = self.work_plane_frame_mut() {
             frame.reference = Some(DesignWorkPlaneReference {
                 work_plane_reference: record_index,
-                work_plane_reference_offset: 0,
+                work_plane_reference_offset: Some(0),
             });
         }
     }
@@ -3142,7 +3187,7 @@ impl DesignParameterScope {
     pub(crate) fn with_joint_origin_transform(&mut self, transform: SketchPlacementMatrix) {
         self.payload = DesignScopePayload::JointOrigin(Some(DesignJointOriginTransform {
             joint_origin_transform: transform,
-            joint_origin_transform_offset: 0,
+            joint_origin_transform_offset: Some(0),
             reference: None,
         }));
     }

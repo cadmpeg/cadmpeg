@@ -36,6 +36,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: profile_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -51,6 +52,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
             source_object: None,
         },
         Curve {
+            native_ref: None,
             parameter_range: None,
             id: spine_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -67,6 +69,7 @@ fn fixture(scale: f64) -> (crate::CadIr, SurfaceId) {
         },
     ];
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),

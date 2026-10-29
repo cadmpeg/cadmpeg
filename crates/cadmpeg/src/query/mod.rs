@@ -10,10 +10,12 @@
 //! view's help states which artifact kinds it accepts.
 
 mod document;
+mod effective;
 mod fidelity;
 mod graph;
 mod item;
 mod join;
+mod native_links;
 mod output;
 mod schema;
 mod schema_infer;
@@ -75,6 +77,18 @@ pub(crate) enum QueryView {
     /// list every addressable arena and its entry count. Which arenas a
     /// given document actually has also comes from `query counts FILE`.
     Schema(SchemaArgs),
+    /// Read declared native projection links from a strictly admitted CADIR document.
+    NativeLinks(QueryArgs),
+    /// Values the IR resolvers compute for a strictly admitted CADIR document.
+    ///
+    /// Each record's effective display colour, visibility, presentation-layer
+    /// names and, for an occurrence, its local effective transform; each
+    /// parameter's expression rendered with source parameter names; each
+    /// configuration's resolved parameter expressions, values and feature
+    /// suppression; and each feature and sketch-constraint definition with its
+    /// dimensions resolved. `--json` prints every value; the table lists the
+    /// per-record values.
+    Effective(QueryArgs),
     /// Walk identity references from start records.
     ///
     /// Accepts a CADIR document. Arena names and ID selection match
@@ -331,12 +345,11 @@ struct DecodeReportProbe {
     dialects: Option<DialectLayers>,
 }
 
-/// Lenient decode-transfer state: the tag reads as a string so a future state
-/// does not break projection.
+/// Decode content scope accepts future classes without breaking projection.
 #[derive(Deserialize)]
 struct DecodeTransferProbe {
     #[serde(default)]
-    transfer: Option<String>,
+    scope: BTreeMap<String, bool>,
     #[serde(default)]
     geometry_transferred: Option<bool>,
 }
@@ -459,6 +472,8 @@ mod tests {
 struct CadirProbe {
     ir_version: String,
     #[serde(default)]
+    scope: BTreeMap<String, bool>,
+    #[serde(default)]
     source: Option<SourceMeta>,
     #[serde(default)]
     model: BTreeMap<String, ArenaLen>,
@@ -541,6 +556,8 @@ pub(crate) fn run(view: &QueryView) -> Result<()> {
         QueryView::Item(args) => item::run(args),
         QueryView::Schema(args) => schema::run(args),
         QueryView::Graph(args) => graph::run(args),
+        QueryView::NativeLinks(args) => native_links::run(args),
+        QueryView::Effective(args) => effective::run(args),
         QueryView::Join(args) => join::run(args),
         QueryView::Fidelity(args) => fidelity::run(&args.file, args.mode()?),
     }
@@ -755,12 +772,10 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     if let Some(format) = &decode.format {
                         rows.push(("decode_format".to_owned(), cell(format).into()));
                     }
-                    if let Some(transfer) = decode
-                        .transfer
-                        .as_ref()
-                        .and_then(|state| state.transfer.as_ref())
-                    {
-                        rows.push(("decode_transfer".to_owned(), cell(transfer).into()));
+                    if let Some(scope) = decode.transfer.as_ref().map(|state| &state.scope) {
+                        for (class, held) in scope {
+                            rows.push((format!("decode_scope.{class}"), held.to_string().into()));
+                        }
                     }
                     if let Some(geometry) = decode
                         .transfer
@@ -833,6 +848,9 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
         Artifact::Cadir(cadir) => {
             rows.push(("ir_version".to_owned(), cell(&cadir.ir_version).into()));
+            for (class, held) in &cadir.scope {
+                rows.push((format!("scope.{class}"), held.to_string().into()));
+            }
             match &cadir.source {
                 Some(source) => {
                     rows.push(("source_format".to_owned(), cell(source.format()).into()));
@@ -879,6 +897,11 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 Some(decode) => {
                     if let Some(format) = &decode.format {
                         rows.push(("decode_format".to_owned(), cell(format).into()));
+                    }
+                    if let Some(transfer) = &decode.transfer {
+                        for (class, held) in &transfer.scope {
+                            rows.push((format!("decode_scope.{class}"), held.to_string().into()));
+                        }
                     }
                     rows.push((
                         "coverage_rows".to_owned(),

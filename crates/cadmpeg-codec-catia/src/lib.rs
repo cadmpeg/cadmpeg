@@ -102,6 +102,56 @@ pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(
+        ctx: &DecodeContext<'_>,
+        ir: &cadmpeg_ir::CadIr,
+        _source: Option<&cadmpeg_ir::SourceFidelity>,
+    ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+        let Some(namespace) = ir.native.namespace("catia") else {
+            return Ok(Vec::new());
+        };
+        let mut findings = Vec::new();
+        for (stored, typed) in namespace
+            .arenas()
+            .get("display_colors")
+            .into_iter()
+            .flatten()
+            .zip(
+                namespace.arena_iter_as_for_decode::<native::CatiaDisplayColorRecord>(
+                    ctx,
+                    "display_colors",
+                ),
+            )
+        {
+            let record = typed?;
+            let valid = match record.source_kind.as_str() {
+                "value-packet" => record
+                    .source_record
+                    .as_ref()
+                    .is_some_and(|source| !source.is_empty()),
+                "fbb-face-color" => record.source_record.is_none(),
+                _ => false,
+            };
+            let duplicate_projection = ir
+                .model
+                .appearances
+                .iter()
+                .filter(|appearance| appearance.native_ref.as_deref() == Some(record.id.as_str()))
+                .nth(1)
+                .is_some();
+            if !valid || duplicate_projection {
+                findings.push(cadmpeg_ir::report::check::Finding {
+                    check: cadmpeg_ir::report::check::Check::NativeLinks,
+                    severity: cadmpeg_ir::report::Severity::Error,
+                    message: "invalid CATIA display-color source record".into(),
+                    entity: Some(stored.id().to_owned()),
+                    related: Vec::new(),
+                });
+            }
+        }
+        Ok(findings)
+    }
     fn detect_impl(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,

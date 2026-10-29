@@ -288,6 +288,7 @@ dependencies = [
 name = "cadmpeg-codec-freecad"
 version = "0.6.7"
 dependencies = [
+ "base64",
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
@@ -455,6 +456,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "toml",
+ "trybox",
 ]
 
 [[package]]
@@ -543,6 +545,7 @@ version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "flate2",
  "serde",
  "serde_json",
  "thiserror",
@@ -1552,6 +1555,12 @@ name = "toml_writer"
 version = "1.1.3+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
+
+[[package]]
+name = "trybox"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff79c0d8cb778aeae16f06b64e7f7844c6fe653e61a912563e56276729ba1af0"
 
 [[package]]
 name = "twox-hash"

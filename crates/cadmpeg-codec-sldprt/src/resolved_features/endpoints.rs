@@ -2841,7 +2841,7 @@ pub(super) fn legacy_coordinate_circle_radius(
     let mut radial = None;
     for marker in markers.iter().copied() {
         if marker.feature_ref == circle.feature_ref
-            && marker.offset() == circle.offset() + 162
+            && Some(marker.offset()) == circle.offset().checked_add(162)
             && marker.object_index() == Some(radial_index)
             && marker.kind() == SketchInputKind::Point
             && marker.coordinates_m.is_some()

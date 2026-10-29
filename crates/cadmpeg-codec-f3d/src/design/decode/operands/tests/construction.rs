@@ -91,7 +91,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned()).unwrap(),
         record_index: 100,
     };
@@ -143,11 +143,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .iter()
             .map(|member| member.offset)
             .collect::<Vec<_>>(),
-        [26, 37]
+        [Some(26), Some(37)]
     );
     assert_eq!(group.role(), DesignOperandRole::BODIES_B);
     assert_eq!(group.extrude_role(), Some(DesignExtrudeOperandRole::Bodies));
-    assert_eq!(group.frame.member_count_offset, 21);
+    assert_eq!(group.frame.member_count_offset, Some(21));
     assert!(group.frame.auxiliary_records.is_empty());
     assert_eq!(
         group
@@ -161,12 +161,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(group.frame.opaque_index.get(), 180);
     assert_eq!(group.frame.opaque_scalar().get(), 0.125);
     assert!(group.frame.variant);
-    assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
+    assert_eq!(group.paired_byte_offset, Some(u64_from_index(paired_at)));
 
     let mut whole_body_bytes = bytes.clone();
-    whole_body_bytes[usize::try_from(group.role_offset())
+    whole_body_bytes[usize::try_from(group.role_offset().expect("actual scanner role location"))
         .expect("fixture offset fits address space")
-        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
+        ..usize::try_from(group.role_offset().expect("actual scanner role location"))
+            .expect("fixture offset fits address space")
+            + 8]
         .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
     let whole_body =
         parse_construction_operand_group(&whole_body_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -198,7 +200,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .expect("operation-flagged counted operand group");
     assert_eq!(
         flagged.frame.member_count_offset,
-        u64_from_index(flagged_count_at)
+        Some(u64_from_index(flagged_count_at))
     );
     assert_eq!(
         flagged
@@ -211,9 +213,11 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(flagged.role(), DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
-    start_face_bytes[usize::try_from(group.role_offset())
+    start_face_bytes[usize::try_from(group.role_offset().expect("actual scanner role location"))
         .expect("fixture offset fits address space")
-        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
+        ..usize::try_from(group.role_offset().expect("actual scanner role location"))
+            .expect("fixture offset fits address space")
+            + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let retained_role_five =
         parse_construction_operand_group(&start_face_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -231,19 +235,19 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: 1028,
+                operation_offset: Some(1028),
                 direction_face_extend_values: [1, 2],
                 side_extent_discriminators: [1, 0],
-                side_extent_discriminator_offsets: [1077, 1090],
+                side_extent_discriminator_offsets: Some([1077, 1090]),
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
-                direction_face_extend_offsets: [1032, 1036],
+                direction_face_extend_offsets: Some([1032, 1036]),
                 direction_reversed: false,
-                direction_reversed_offset: 1040,
+                direction_reversed_offset: Some(1040),
                 solid_operation: true,
-                solid_operation_offset: 1041,
+                solid_operation_offset: Some(1041),
                 start: DesignExtrudeStart::FromFace,
-                start_offset: 1042,
+                start_offset: Some(1042),
             });
     }
     let mut start_face = parse_construction_operand_group(
@@ -277,24 +281,27 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: 1028,
+                operation_offset: Some(1028),
                 direction_face_extend_values: [1, 2],
                 side_extent_discriminators: [2, 0],
-                side_extent_discriminator_offsets: [1077, 1090],
+                side_extent_discriminator_offsets: Some([1077, 1090]),
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::OneSidedToFace,
-                direction_face_extend_offsets: [1032, 1036],
+                direction_face_extend_offsets: Some([1032, 1036]),
                 direction_reversed: false,
-                direction_reversed_offset: 1040,
+                direction_reversed_offset: Some(1040),
                 solid_operation: true,
-                solid_operation_offset: 1041,
+                solid_operation_offset: Some(1041),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 1042,
+                start_offset: Some(1042),
             });
     }
     let mut to_face_bytes = bytes.clone();
-    to_face_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")
-        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
+    to_face_bytes[usize::try_from(group.role_offset().expect("actual scanner role location"))
+        .expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset().expect("actual scanner role location"))
+            .expect("fixture offset fits address space")
+            + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
     let mut legacy_to_face = parse_construction_operand_group(
         &to_face_bytes,
@@ -344,7 +351,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(!flagless.frame.variant);
     assert_eq!(
         flagless.paired_byte_offset,
-        u64::try_from(flagless_paired_at).unwrap()
+        Some(u64::try_from(flagless_paired_at).unwrap())
     );
 
     let mut bombed = bytes.clone();
@@ -419,7 +426,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .iter()
             .map(|member| member.offset)
             .collect::<Vec<_>>(),
-        [26]
+        [Some(26)]
     );
     assert_eq!(
         auxiliary
@@ -437,7 +444,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .iter()
             .map(|record| record.offset)
             .collect::<Vec<_>>(),
-        [37, 48]
+        [Some(37), Some(48)]
     );
     assert!(auxiliary.frame.trailing_records().is_empty());
     assert_eq!(auxiliary.role(), DesignOperandRole::FACES);
@@ -454,7 +461,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
     assert_eq!(
         auxiliary.paired_byte_offset,
-        u64_from_index(auxiliary_paired_at)
+        Some(u64_from_index(auxiliary_paired_at))
     );
 
     let mut split_scope = scope.clone();
@@ -811,12 +818,13 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     historical_split_tool.preceding_candidate_faces =
         vec![FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")];
     historical_split_tool.recipe_references = vec![DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 0,
+        selector_offset: Some(0),
         token: "23".into(),
-        token_offset: 0,
+        token_offset: Some(0),
         design_reference: 332,
-        design_reference_offset: 0,
+        design_reference_offset: Some(0),
         candidate_faces: Vec::new(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: vec![
@@ -936,7 +944,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             3 => {
                 tool.try_set_members(vec![crate::records::identity::Located {
                     value: 201,
-                    offset: tool.members()[0].offset,
+                    offset: tool.members()[0].offset.expect("retained test source"),
                 }])
                 .unwrap();
             }
@@ -959,7 +967,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 target
                     .try_set_members(vec![crate::records::identity::Located {
                         value: 501,
-                        offset: target.members()[0].offset,
+                        offset: target.members()[0].offset.expect("retained test source"),
                     }])
                     .unwrap();
             }
@@ -1459,7 +1467,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.payload = crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
                 DesignSurfaceStitchOperation {
                     gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
-                    gap_tolerance_offset: 40,
+                    gap_tolerance_offset: Some(40),
                     tolerance_record_index: 300,
                     settings_record_index: 301,
                 },
@@ -1497,7 +1505,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
                 merge_entities: Some(true),
                 create_solid: Some(true),
-                gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
+                gap_tolerance: Some(cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()
+                )),
             }
         ))
     );
@@ -1601,7 +1611,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             .unwrap();
         let record = DesignRecordHeader {
             id: format!("f3d:test:legacy-body-record#{group_record_index}"),
-            byte_offset: frame_at,
+            byte_offset: Some(frame_at),
             class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
                 .unwrap(),
             record_index: group_record_index,
@@ -1621,7 +1631,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         );
         assert_eq!(group.role(), DesignOperandRole::BODIES_A);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
-        assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
+        assert_eq!(group.paired_byte_offset, Some(u64_from_index(paired_at)));
     }
 }
 

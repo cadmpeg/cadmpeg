@@ -64,17 +64,18 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "cadmpeg-asm"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "serde",
  "serde-value",
+ "serde_json",
 ]
 
 [[package]]
 name = "cadmpeg-codec-catia"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -86,17 +87,18 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-creo"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "regex",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "cadmpeg-codec-f3d"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
@@ -116,8 +118,9 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-freecad"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
+ "base64",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -130,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-iges"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -143,7 +146,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-inventor"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
@@ -157,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-nx"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -172,7 +175,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-pvz"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -183,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-rhino"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -200,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-sat"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-asm",
  "cadmpeg-core",
@@ -209,7 +212,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-sldprt"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -226,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-codec-step"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "base64",
  "cadmpeg-container",
@@ -241,7 +244,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-container"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
  "crc32fast",
@@ -251,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-core"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "flate2",
  "memchr",
@@ -260,6 +263,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "trybox",
 ]
 
 [[package]]
@@ -291,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-ir"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "base64",
  "cadmpeg-core",
@@ -304,14 +308,14 @@ dependencies = [
 
 [[package]]
 name = "cadmpeg-parasolid"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-core",
 ]
 
 [[package]]
 name = "cadmpeg-protein"
-version = "0.6.5"
+version = "0.6.7"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
@@ -866,6 +870,12 @@ name = "toml_writer"
 version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
+
+[[package]]
+name = "trybox"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff79c0d8cb778aeae16f06b64e7f7844c6fe653e61a912563e56276729ba1af0"
 
 [[package]]
 name = "twox-hash"

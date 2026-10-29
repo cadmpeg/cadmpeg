@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Individual records in written arenas must appear, charge loss, or refuse.
+//! Individual records in written arenas appear or charge an export loss.
 #![allow(clippy::unwrap_used)]
 
 use crate::{loss::SldprtLossCode, SldprtCodec};
 use cadmpeg_ir::{
     appearance::{Appearance, AppearanceBinding, AppearanceTarget},
-    codec::write::{target::TargetRequest, EncodeInput, Encoder},
+    codec::{
+        write::{target::TargetRequest, EncodeInput, Encoder},
+        Codec, DecodeOptions,
+    },
     geometry::{
         pcurve::{LinePcurve, Pcurve, PcurveGeometry},
         CurveGeometry, SolvedCurveGeometry,
@@ -29,6 +32,7 @@ fn cube() -> CadIr {
 
 fn appearance(schema: Option<&str>) -> Appearance {
     Appearance {
+        native_ref: None,
         id: "test:model:appearance#asset".try_into().unwrap(),
         name: Some("test".into()),
         asset_guid: None,
@@ -53,23 +57,64 @@ fn assert_loss(ir: &CadIr, code: SldprtLossCode, prefix: &str) {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == code.kind())
+        .find(|loss| loss.code == code.kind() && loss.message.starts_with(prefix))
         .unwrap();
     assert!(loss.message.starts_with(prefix), "{}", loss.message);
 }
 
 #[test]
-fn attributes_outside_sldprt_namespace_have_counted_export_loss() {
+fn document_string_attribute_is_preserved_outside_sldprt_namespace() {
     let mut ir = cube();
     ir.model
         .attributes
         .push(cadmpeg_ir::attributes::SourceAttribute {
+            native_ref: None,
             id: "test:model:attribute#other".try_into().unwrap(),
             target: cadmpeg_ir::attributes::AttributeTarget::Document {},
             name: "other".into(),
-            values: vec![cadmpeg_ir::attributes::AttributeValue::String(
+            values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
                 "value".into(),
-            )],
+            ))],
+        });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SldprtLossCode::WriterAttributesOmitted.kind()));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(written
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "other"
+            && attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+            && attribute.values
+                == vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    "value".into()
+                ))]));
+}
+
+#[test]
+fn unsupported_face_attribute_has_counted_export_loss() {
+    let mut ir = cube();
+    ir.model
+        .attributes
+        .push(cadmpeg_ir::attributes::SourceAttribute {
+            native_ref: None,
+            id: "test:model:attribute#other".try_into().unwrap(),
+            target: cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone()),
+            name: "other".into(),
+            values: vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                "value".into(),
+            ))],
         });
     assert_loss(
         &ir,
@@ -87,6 +132,7 @@ fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
         let mut ir = cube();
         let appearance = appearance(Some("moVisualProperties_c"));
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: "test:model:appearance-binding#other".try_into().unwrap(),
             target,
             appearance: appearance.id.clone(),
@@ -183,6 +229,7 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     )
     .unwrap();
     let pcurve = Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#use".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
@@ -239,13 +286,10 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
         format: cadmpeg_ir::CodecFormat::Sldprt,
         geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("sphere-seam"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     });
     ir.model.curves.push(curve);
+    ir.model.finalize();
     assert_loss(
         &ir,
         SldprtLossCode::WriterSphereSeamCurvesOmitted,
@@ -254,15 +298,31 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
 }
 
 #[test]
-fn opaque_carriers_require_a_retained_partition_before_generated_accounting() {
+fn opaque_carrier_omits_its_body_with_error_and_writes_a_valid_document() {
     let mut ir = cube();
     ir.model.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
-    let error = SldprtCodec
+    let body = ir.model.bodies[0].id.to_string();
+    let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .err()
         .unwrap();
-    assert!(error
-        .to_string()
-        .contains("without a retained native partition"));
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == SldprtLossCode::WriterEntityOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error
+        && loss.message.contains(&body)));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == SldprtLossCode::WriterNoExportableSolids.kind()));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(written.ir().model.bodies.is_empty());
 }

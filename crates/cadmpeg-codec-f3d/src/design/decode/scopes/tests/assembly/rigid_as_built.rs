@@ -58,7 +58,7 @@ fn rigid_as_built_stream() -> Vec<u8> {
 
 #[test]
 fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use super::compact_wide::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     let bytes = rigid_as_built_stream();
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
@@ -72,7 +72,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
         scope.kind(),
         crate::records::feature::scope::DesignFeatureKind::AsBuilt
     );
-    assert_eq!(scope.frame_length(), 257);
+    assert_eq!(scope.frame_length(), Some(257));
     assert_eq!(scope.reference_members().len(), 0);
     // Class tags are per-file dynamic values: the same scope under other tags
     // is the same rigid form, and the kind and frame length identify it.
@@ -91,7 +91,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     )
     .unwrap()
     .expect("the rigid form under other class tags");
-    assert_eq!(retagged_scope.frame_length(), 257);
+    assert_eq!(retagged_scope.frame_length(), Some(257));
     assert_eq!(retagged_scope.reference_members().len(), 0);
     // The empty table is read only for the `As-built` kind.
     let mut other = bytes.clone();
@@ -137,7 +137,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     );
     let paths = alignment.operand_path_refs().expect("both operand paths");
     assert_eq!(
-        paths.map(|path| path.occurrence_guids()[0].value.as_str().to_owned()),
+        paths.map(|path| path.occurrence_guids()[0].as_str().to_owned()),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "66666666-6666-6666-6666-666666666666".to_owned()
@@ -182,7 +182,7 @@ fn three_member_rigid_group_stream() -> Vec<u8> {
 
 #[test]
 fn rigid_group_reads_every_member_after_its_first_two() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use super::compact_wide::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::{
         DesignAssemblyOperandQualifier, TYPED_OCCURRENCE_PATH_TYPE_GUID,
     };
@@ -194,7 +194,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
     )
     .unwrap()
     .expect("a three-member rigid group");
-    assert_eq!(scope.frame_length(), 268);
+    assert_eq!(scope.frame_length(), Some(268));
     assert_eq!(scope.reference_members().len(), 0);
     // The empty table's count sits 11 bytes past a two-member group's.
     let mut moved = scope.clone();
@@ -223,7 +223,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
         .operand_path_refs()
         .expect("the first two members");
     assert_eq!(
-        paths.map(|path| path.occurrence_guids()[0].value.as_str().to_owned()),
+        paths.map(|path| path.occurrence_guids()[0].as_str().to_owned()),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "66666666-6666-6666-6666-666666666666".to_owned()
@@ -236,7 +236,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
         panic!("an occurrence path");
     };
     assert_eq!(
-        path.occurrence_guids()[0].value.as_str(),
+        path.occurrence_guids()[0].as_str(),
         "77777777-7777-7777-7777-777777777777"
     );
     assert_eq!(
@@ -301,7 +301,7 @@ fn typed_rigid_group_stream() -> Vec<u8> {
 
 #[test]
 fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use super::compact_wide::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     let bytes = typed_rigid_group_stream();
     let class = "328".to_owned().try_into().unwrap();
@@ -314,7 +314,7 @@ fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
     };
     let mut scope = parse(&bytes).unwrap();
     scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
-    assert_eq!(scope.frame_length(), 588);
+    assert_eq!(scope.frame_length(), Some(588));
     assert!(scope.reference_members().is_empty());
     let layout = crate::design::assembly::RigidGroupLayout::for_scope(&scope).unwrap();
     assert_eq!(
@@ -368,7 +368,7 @@ fn rigid_group_tail_selects_between_equal_frame_lengths() {
 
 #[test]
 fn rigid_group_lengths_and_dynamic_classes_do_not_select_owner_generations() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use super::compact_wide::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     for members in [13_u32, 17, 19] {
         let mut bytes = rigid_as_built_stream();
@@ -402,7 +402,7 @@ fn rigid_group_lengths_and_dynamic_classes_do_not_select_owner_generations() {
         .unwrap()
         .unwrap();
         scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
-        assert_eq!(scope.frame_length(), u64::try_from(length).unwrap());
+        assert_eq!(scope.frame_length(), Some(u64::try_from(length).unwrap()));
         assert!(!crate::design::assembly::placement_ordered_as_built_scope(
             &scope
         ));
@@ -480,11 +480,14 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
         scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
         assert_eq!(
             scope.frame_length(),
-            frame_length + u64::try_from(shift).unwrap()
+            Some(frame_length + u64::try_from(shift).unwrap())
         );
         assert_eq!(
-            scope.paired_byte_offset() - scope.feature_ordinal_offset(),
-            u64::try_from(tail_length).unwrap()
+            scope
+                .paired_byte_offset()
+                .zip(scope.feature_ordinal_offset())
+                .map(|(paired, ordinal)| paired - ordinal),
+            Some(u64::try_from(tail_length).unwrap())
         );
         assert_eq!(
             scope.previous_history_state_id_offset(),
@@ -529,16 +532,15 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
                 ]
             })
             .collect();
-        let alignment =
-            crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types(
-                &bytes,
-                &records,
-                &scope,
-                &[],
-                &types,
-            )
-            .unwrap()
-            .unwrap();
+        let alignment = super::compact_wide::exact_assembly_alignment_with_types(
+            &bytes,
+            &records,
+            &scope,
+            &[],
+            &types,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(
             alignment
                 .operand_path_refs()

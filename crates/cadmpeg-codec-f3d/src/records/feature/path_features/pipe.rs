@@ -34,6 +34,11 @@ pub(crate) const POINT_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
 /// Construction-group payload lengths from the opaque index to the paired header.
 const GROUP_TAIL_LENGTHS: [u64; 4] = [47, 48, 51, 52];
 
+/// Whether two source positions agree where both are located.
+fn positions_agree(left: Option<u64>, right: Option<u64>) -> bool {
+    left.zip(right).is_none_or(|(left, right)| left == right)
+}
+
 fn has_type(data: &SegmentTypeData, guid: &str, base: &str, versions: &[u32]) -> bool {
     data.type_guid.as_str().eq_ignore_ascii_case(guid)
         && data
@@ -192,9 +197,12 @@ impl<'a> PipeIndex<'a> {
         let segment = design_segment(&scope.id)?;
         let (data, header) = self.typed(segment, scope.record_index)?;
         if !is_pipe(data)
-            || header.byte_offset != scope.byte_offset()
+            || !positions_agree(header.byte_offset, scope.byte_offset())
             || header.class_tag != scope.class_tag
-            || !pipe.scope_offsets_are_valid(scope.byte_offset(), scope.reference_count_offset())
+            || scope
+                .byte_offset()
+                .zip(scope.reference_count_offset())
+                .is_some_and(|(start, table)| !pipe.scope_offsets_are_valid(start, table))
         {
             return None;
         }
@@ -210,12 +218,17 @@ impl<'a> PipeIndex<'a> {
             let owner = self.owner(segment, id)?;
             let position = members.values().position(|value| *value == id)?;
             if !is_scalar(data)
-                || owner.scope_record_index() != scope.record_index
-                || owner.local_ordinal() != ordinal
-                || owner.byte_offset() != header.byte_offset
+                || owner.scope_record_index() != Some(scope.record_index)
+                || owner.local_ordinal() != Some(ordinal)
+                || !positions_agree(owner.byte_offset(), header.byte_offset)
                 || owner.class_tag() != &header.class_tag
-                || !matches!(owner.frame_length(), 103 | 104)
-                || owner.byte_offset().checked_add(40) != Some(owner.evaluated_value_offset())
+                || owner
+                    .frame_length()
+                    .is_some_and(|length| !matches!(length, 103 | 104))
+                || owner
+                    .byte_offset()
+                    .zip(owner.evaluated_value_offset())
+                    .is_some_and(|(start, value)| start.checked_add(40) != Some(value))
                 || previous.is_some_and(|previous| position <= previous)
                 || !claimed.insert(id)
             {
@@ -241,20 +254,29 @@ impl<'a> PipeIndex<'a> {
         for group in &groups {
             let (data, header) = self.typed(segment, group.record_index)?;
             let ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
+            let layout_valid = match (
+                group.byte_offset,
+                group.paired_byte_offset,
+                group.role_offset(),
+                group.frame.opaque_index_offset(),
+                group.frame.member_count_offset,
+            ) {
+                (Some(start), Some(paired), Some(role), Some(opaque), Some(count)) => {
+                    paired > role
+                        && GROUP_TAIL_LENGTHS
+                            .iter()
+                            .any(|length| opaque.checked_add(*length) == Some(paired))
+                        && start.checked_add(21).is_some_and(|offset| count >= offset)
+                }
+                (None, None, None, None, None) => true,
+                _ => false,
+            };
             if !has_type(data, GROUP_GUID, GROUP_BASE, &[1])
-                || group.byte_offset != header.byte_offset
+                || !positions_agree(group.byte_offset, header.byte_offset)
                 || group.class_tag != header.class_tag
                 || group.members().is_empty()
                 || group.extrude_role().is_some()
-                || group.paired_byte_offset <= group.role_offset()
-                || !GROUP_TAIL_LENGTHS.iter().any(|length| {
-                    group.frame.opaque_index_offset().checked_add(*length)
-                        == Some(group.paired_byte_offset)
-                })
-                || group
-                    .byte_offset
-                    .checked_add(21)
-                    .is_none_or(|offset| group.frame.member_count_offset < offset)
+                || !layout_valid
                 || members.values().nth(ordinal) != Some(&group.record_index)
                 || !claimed.insert(group.record_index)
             {
@@ -269,7 +291,10 @@ impl<'a> PipeIndex<'a> {
             {
                 return None;
             }
-            let mut offset = group.frame.member_count_offset.checked_add(5);
+            let mut offset = group
+                .frame
+                .member_count_offset
+                .and_then(|count| count.checked_add(5));
             for (member, scope_member) in group
                 .members()
                 .iter()
@@ -287,16 +312,16 @@ impl<'a> PipeIndex<'a> {
                 };
                 if !typed
                     || member.value != *scope_member
-                    || offset != Some(member.offset)
+                    || offset != member.offset
                     || member
                         .offset
-                        .checked_add(10)
-                        .is_none_or(|end| end > group.role_offset())
+                        .zip(group.role_offset())
+                        .is_some_and(|(at, role)| at.checked_add(10).is_none_or(|end| end > role))
                     || !claimed.insert(member.value)
                 {
                     return None;
                 }
-                offset = member.offset.checked_add(11);
+                offset = member.offset.and_then(|at| at.checked_add(11));
             }
         }
         if let Some(selection) = &pipe.point_selection {
@@ -310,14 +335,25 @@ impl<'a> PipeIndex<'a> {
             if !is_point(data)
                 || !is_recipe(input_type)
                 || point.rule.reference_type() != 1
-                || point.point_record_byte_offset != header.byte_offset
+                || !positions_agree(point.point_record_byte_offset, header.byte_offset)
                 || point
                     .point_record_byte_offset
-                    .checked_add(42)
-                    .is_none_or(|offset| point.position_offset < offset)
-                || point.position_offset.checked_add(24) != Some(point.reference_type_offset)
-                || point.reference_type_offset.checked_add(input_gap)
-                    != Some(input.reference_offset)
+                    .zip(point.position_offset)
+                    .is_some_and(|(start, position)| {
+                        start.checked_add(42).is_none_or(|offset| position < offset)
+                    })
+                || point
+                    .position_offset
+                    .zip(point.reference_type_offset)
+                    .is_some_and(|(position, reference)| {
+                        position.checked_add(24) != Some(reference)
+                    })
+                || point
+                    .reference_type_offset
+                    .zip(input.reference_offset)
+                    .is_some_and(|(reference, input)| {
+                        reference.checked_add(input_gap) != Some(input)
+                    })
                 || !claimed.insert(point.point_record_index)
                 || !claimed.insert(input.record_index())
             {

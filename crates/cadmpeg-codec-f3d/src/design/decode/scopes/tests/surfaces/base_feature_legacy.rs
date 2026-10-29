@@ -240,7 +240,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         },
         crate::records::identity::Located {
             value: 0,
-            offset: u64_from_index(compact::MODE)
+            offset: Some(u64_from_index(compact::MODE))
         }
     );
     let body_entity_suffixes = &[u64::from(body.entity.value)];
@@ -254,24 +254,24 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     assert_eq!(body_entity_suffixes, &[201]);
     assert_eq!(
         body_entity_suffix_offsets,
-        &[u64_from_index(compact::BODY_ENTITY_SUFFIX)]
+        &[Some(u64_from_index(compact::BODY_ENTITY_SUFFIX))]
     );
     assert_eq!(body_entity_fields, &[[0, 0, 1, 0, 0, 0]]);
     assert_eq!(body_reference_records, &[201]);
     assert_eq!(parameter_body_records, &[198]);
     assert_eq!(
         parameter_body_record_offsets,
-        &[u64_from_index(compact::PARAMETER_BODY_RECORD)]
+        &[Some(u64_from_index(compact::PARAMETER_BODY_RECORD))]
     );
     assert_eq!(auxiliary_records, &[202]);
     assert_eq!(
         auxiliary_record_offsets,
-        &[u64_from_index(compact::AUXILIARY_RECORD)]
+        &[Some(u64_from_index(compact::AUXILIARY_RECORD))]
     );
     assert_eq!(*scope_reference, 196);
     assert_eq!(
         *scope_reference_offset,
-        u64_from_index(compact::SCOPE_REFERENCE)
+        Some(u64_from_index(compact::SCOPE_REFERENCE))
     );
     assert_eq!(
         envelope_guid.as_str(),
@@ -279,7 +279,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
     assert_eq!(
         *envelope_guid_offset,
-        u64_from_index(compact::ENVELOPE_GUID)
+        Some(u64_from_index(compact::ENVELOPE_GUID))
     );
     assert_eq!(
         serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],
@@ -287,13 +287,16 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
     assert_eq!(
         *tag_body_based_on_faces_offset,
-        u64_from_index(compact::TAG_BODY_BASED_ON_FACES_VALUE)
+        Some(u64_from_index(compact::TAG_BODY_BASED_ON_FACES_VALUE))
     );
     let serialized = serde_json::to_value(&compact_construction).expect("serialize compact form");
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-            .expect("deserialize compact form"),
-        compact_construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize compact form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     compact_bytes[compact::MODE] = 1;
@@ -313,7 +316,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         },
         crate::records::identity::Located {
             value: 1,
-            offset: u64_from_index(compact::MODE)
+            offset: Some(u64_from_index(compact::MODE))
         }
     );
 
@@ -429,9 +432,12 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     assert_eq!(*scope_reference, 300);
     let serialized = serde_json::to_value(&expanded_construction).expect("serialize expanded form");
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-            .expect("deserialize expanded form"),
-        expanded_construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize expanded form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     let mut invalid_mode = compact_bytes;

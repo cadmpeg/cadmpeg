@@ -322,6 +322,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
     zip.write_all(&bytes).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     let row = crate::design::test_support::design_type(
+        256,
         "1C037A07-4A15-43F6-ABFC-BBF61B9038D4",
         None,
         1,
@@ -372,7 +373,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
             assert_eq!(scope.source_kind_name(), "Perçage");
             assert_eq!(
                 super::parameter_scope_payload_length(scope),
-                Some(scope.frame_length() - 14)
+                scope.frame_length().map(|length| length - 14)
             );
             let wire = serde_json::to_string(scope).unwrap();
             let restored: DesignParameterScope = serde_json::from_str(&wire).unwrap();

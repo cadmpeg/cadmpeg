@@ -33,7 +33,7 @@ fn scope() -> DesignParameterScope {
         target_transform_offset: Some(1190),
         source: DesignOccurrenceTransferSource::Copy {
             source_transform: SketchPlacementMatrix::IDENTITY,
-            source_transform_offset: 1034,
+            source_transform_offset: Some(1034),
         },
     });
     scope

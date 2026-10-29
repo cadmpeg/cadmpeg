@@ -27,7 +27,7 @@ fn decode_parameters(records: &[(u32, &str, &str)]) -> DecodeResult {
         bulk.extend_from_slice(&0_u32.to_le_bytes());
         lp_utf16(&mut bulk, "mm");
         lp_utf16(&mut bulk, name);
-        bulk.extend_from_slice(&1.0_f64.to_le_bytes());
+        bulk.extend_from_slice(&0.1_f64.to_le_bytes());
         bulk.extend_from_slice(&[0, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         assert!(
             crate::design::decode::parameters::parse_design_parameter_record(&bulk[start..])
@@ -56,12 +56,12 @@ fn dependencies(decoded: &DecodeResult) -> std::collections::BTreeMap<&str, Vec<
             (
                 parameter.name.as_str(),
                 parameter
-                    .dependencies
-                    .iter()
+                    .expression
+                    .dependencies()
                     .map(|id| {
                         parameters
                             .iter()
-                            .find(|candidate| candidate.id == *id)
+                            .find(|candidate| &candidate.id == id)
                             .unwrap()
                             .name
                             .as_str()
@@ -79,21 +79,25 @@ fn parameter_cycle_preserves_an_acyclic_dependency_into_the_cycle() {
         let decoded = decode_parameters(&order.map(|index| records[index]));
         assert_eq!(
             dependencies(&decoded),
-            std::collections::BTreeMap::from([("A", vec![]), ("B", vec!["A"]), ("C", vec!["A"])])
+            std::collections::BTreeMap::from([
+                ("A", vec!["B"]),
+                ("B", vec!["A"]),
+                ("C", vec!["A"])
+            ])
         );
         let parameters = &decoded.ir().model.parameters;
         let ordinal = |name| parameters.iter().find(|p| p.name == name).unwrap().ordinal;
         assert!(ordinal("A") < ordinal("C"));
         assert!(ordinal("A") < ordinal("B"));
-        let loss = decoded
+        assert!(decoded
             .report()
             .losses
             .iter()
-            .find(|loss| loss.code == F3dLossCode::ParameterExpressionUnbound.kind())
-            .unwrap();
-        assert!(loss
-            .message
-            .starts_with("1 decoded parameter expression symbol(s)"));
+            .all(|loss| loss.code != F3dLossCode::ParameterExpressionUnbound.kind()));
+        let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).unwrap();
+        assert!(validation.findings.iter().any(|finding| finding.severity
+            == cadmpeg_ir::report::Severity::Warning
+            && finding.message.contains("cycle")));
         let native = crate::test_support::native_test::f3d_native(decoded.ir());
         assert_eq!(native.design_parameters.len(), 3);
         assert!(native
@@ -114,9 +118,9 @@ fn parameter_cycle_preserves_dependencies_between_distinct_cycles() {
     assert_eq!(
         dependencies(&decoded),
         std::collections::BTreeMap::from([
-            ("A", vec!["D"]),
+            ("A", vec!["B", "D"]),
             ("B", vec!["A"]),
-            ("C", vec![]),
+            ("C", vec!["D"]),
             ("D", vec!["C"]),
         ])
     );
@@ -171,7 +175,15 @@ fn parameter_ordering_within_its_cap_orders_a_reversed_chain() {
     for index in 1..10 {
         let parameter = by_name(format!("P{index}"));
         let dependency = by_name(format!("P{}", index - 1));
-        assert_eq!(parameter.dependencies.as_slice(), [dependency.id.clone()]);
+        assert_eq!(
+            parameter
+                .expression
+                .dependencies()
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
+            [dependency.id.clone()]
+        );
         assert!(dependency.ordinal < parameter.ordinal);
     }
     assert!(decoded
@@ -182,15 +194,19 @@ fn parameter_ordering_within_its_cap_orders_a_reversed_chain() {
 }
 
 #[test]
-fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edges() {
+fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_all_references() {
     // Round `k` scans the `3000 - k` unresolved parameters and one dependency
     // each: about 3000^2 work units, past the per-scope cap.
     let chain = reversed_chain(3000);
     let decoded = decode_chain(&chain);
     let parameters = &decoded.ir().model.parameters;
-    assert!(parameters
-        .iter()
-        .all(|parameter| parameter.dependencies.is_empty()));
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|parameter| parameter.expression.dependencies().count())
+            .sum::<usize>(),
+        2999
+    );
     for (ordinal, name, _) in &chain {
         let parameter = parameters
             .iter()
@@ -198,15 +214,11 @@ fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edg
             .unwrap();
         assert_eq!(parameter.ordinal, *ordinal);
     }
-    let loss = decoded
+    assert!(decoded
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == F3dLossCode::ParameterExpressionUnbound.kind())
-        .unwrap();
-    assert!(loss
-        .message
-        .starts_with("2999 decoded parameter expression symbol(s)"));
+        .all(|loss| loss.code != F3dLossCode::ParameterExpressionUnbound.kind()));
     let skip = decoded
         .report()
         .losses
@@ -215,6 +227,6 @@ fn parameter_ordering_past_its_cap_keeps_source_ordinals_and_reports_dropped_edg
         .unwrap();
     assert_eq!(
         skip.message,
-        "1 Design parameter owner scope(s) keep their unique ordinal slots and drop their same-scope dependency edges because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
+        "1 Design parameter owner scope(s) keep their unique ordinal slots and all expression references because ordering exceeded the local work cap PARAMETER_ORDER_WORK (4194304)."
     );
 }

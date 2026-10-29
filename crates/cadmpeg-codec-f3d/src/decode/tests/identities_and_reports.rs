@@ -37,6 +37,7 @@ fn sketch_annotation_ids_preserve_identity_text() {
 #[test]
 fn failed_mesh_resource_limit_propagates() {
     let refusal = cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::Session,
         dimension: cadmpeg_core::decode::ResourceDimension::DecompressedBytes,
         reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
         limit: 0,
@@ -45,9 +46,11 @@ fn failed_mesh_resource_limit_propagates() {
         operation: "synthetic mesh refusal",
     });
     let mut bodies = Vec::new();
-    let mut report = cadmpeg_ir::codec::DecodeBody::new(
-        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-    );
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::container(),
+            geometry_transferred: false,
+        });
     let error = super::super::collect_mesh_outcome(
         &mut bodies,
         &mut report,
@@ -160,10 +163,15 @@ fn archive_entries_do_not_hide_new_model_entities() {
         "root.f3d",
         &[("part.f3d", crate::test_support::assembly_test::XREF_ROLE)],
     );
-    crate::test_support::with_decode_context(|scan_ctx| {
-        let scan =
-            crate::container::scan(scan_ctx, cadmpeg_core::decode::View::over_retained(&bytes))
-                .unwrap();
+    {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &DecodePolicy::service(),
+        )
+        .unwrap();
+        let scan = crate::container::scan(&scan_ctx, root).unwrap();
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = cadmpeg_core::decode::u64_from_index(scan.entries.len());
         crate::test_support::with_decode_policy(&policy, |ctx| {
@@ -184,14 +192,16 @@ fn archive_entries_do_not_hide_new_model_entities() {
             assert_eq!(limit.operation, "admit F3D entities");
             assert_eq!(Some(limit), ctx.resource_refusal());
         });
-    });
+    }
 }
 
 #[test]
 fn unsupported_parameter_owners_report_a_loss_only_when_present() {
-    let mut report = cadmpeg_ir::codec::DecodeBody::new(
-        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-    );
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::container(),
+            geometry_transferred: false,
+        });
     super::super::report_unparsed_parameter_owners(&mut report, 0);
     assert!(report.losses.is_empty());
     super::super::report_unparsed_parameter_owners(&mut report, 2);

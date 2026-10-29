@@ -14,36 +14,90 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 /// otherwise the replay law's compare: replaying the retained image is
 /// eligible exactly when `id` is the source's dialect.
 ///
-/// `Inherit` asks for preservation instead: a valid retained image replays
-/// whatever dialect the source is, every versioned row included, which this
-/// writer could never synthesize. Where the image is not usable the semantic
-/// writer still preserves the dialect whenever the retained blocks carry the
-/// source's own `swSolidWorks` envelope, because that envelope is passed
-/// through unchanged. Where neither holds, the write lands on the totality row
-/// and the request is refused by name. There is no fall-through to the catalog
-/// default: a same-format conversion never silently changes what the file is.
-///
-/// The catalog default supplies the target only when there is nothing to
-/// inherit: the document has no source, or a source of another format.
+/// `Inherit` preserves the typed source dialect. When retained layout cannot
+/// express an edit, synthesis authors the selected envelope from the document.
+/// A fresh or cross-format document uses the catalog default.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let (written, bytes) = match write(input, resolved.preserves_source()) {
-        Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
-            let synthesis_targets = crate::dialect::TARGETS
-                .iter()
-                .map(|entry| entry.id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(resolved.unavailable(format!(
-                "cannot preserve {}; synthesis catalog targets: {synthesis_targets}; {error}",
-                resolved.target_id()
-            )));
+    if !resolved.preserves_source() || input.fidelity.is_none() {
+        let cause = if resolved.preserves_source() && input.fidelity.is_none() {
+            super::synthesis::SynthesisCause::SourceImageUnavailable
+        } else {
+            super::synthesis::SynthesisCause::Fresh
+        };
+        return super::synthesis::plan(input, resolved, cause);
+    }
+    let classes = input.source_unrepresented();
+    if !classes.is_empty() {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::SourceUnrepresented { classes },
+        );
+    }
+    if input
+        .ir
+        .model
+        .attributes
+        .iter()
+        .any(super::accounting::requires_attribute_omission)
+    {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "the current attributes require omission from scalar SLDPRT fields".into(),
+            },
+        );
+    }
+    if super::synthesis::parameters::has_conflict(input.ir) {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "held parameters conflict with the current operation roles".into(),
+            },
+        );
+    }
+    let attempt = write(input, true);
+    let (written, bytes) = match attempt {
+        Ok(written) => written,
+        Err(error) => {
+            let reason = match error {
+                CodecError::UnsupportedContent(reason) => reason,
+                error => error.to_string(),
+            };
+            return super::synthesis::plan(
+                input,
+                resolved,
+                super::synthesis::SynthesisCause::PatchDeclined { reason },
+            );
         }
-        result => result?,
     };
-    check_honesty(resolved, &written)?;
+    if matches!(
+        &written,
+        Written::Semantic {
+            path: SemanticPath::Synthesized,
+            ..
+        }
+    ) {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::SourceImageUnavailable,
+        );
+    }
+    if !check_honesty(resolved, &written) {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "the semantic source envelope differs from the selected target".into(),
+            },
+        );
+    }
     Ok(finish(
         input,
         resolved.displacement_message(),
@@ -58,11 +112,12 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
-            let records = source_records(input.ir, value)?;
+            let records = source_records(input.ir, value);
             SldprtCodec::write_preserved_with_annotations(
                 input.ir,
                 &value.annotations,
                 &records,
+                value,
                 &mut bytes,
             )?
         }
@@ -70,6 +125,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             input.ir,
             &Annotations::default(),
             &[],
+            None,
             SemanticFidelity::NotConsumed,
             &mut bytes,
         )?,
@@ -77,6 +133,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
             input.ir,
             &Annotations::default(),
             &[],
+            None,
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
@@ -88,19 +145,12 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
     Ok((written, bytes))
 }
 
-/// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land
-/// on the resolved target.
-fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> Result<(), CodecError> {
-    let Written::Semantic { dialect: got, .. } = written else {
-        return Ok(());
-    };
-    if got == resolved.target_id() {
-        return Ok(());
+/// Whether a semantic write emitted the selected source envelope.
+fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> bool {
+    match written {
+        Written::Semantic { dialect, .. } => dialect == resolved.target_id(),
+        Written::Replayed => true,
     }
-    Err(resolved.unavailable(format!(
-        "the retained document blocks decide the swSolidWorks envelope this writer emits, \
-             and from this input that envelope is {got}"
-    )))
 }
 
 fn finish(
@@ -138,9 +188,16 @@ fn finish(
             != cadmpeg_ir::codec::write::ArenaDisposition::Written
             && !super::requires_native_partition(input.ir);
         losses.extend(super::accounting::losses(input.ir, regenerated_brep));
+        losses.extend(super::accounting::arena_losses(input.ir, coverage));
     }
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
+    }
+    if matches!(write_path, WritePath::Synthesized { .. }) && input.ir.model.faces.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterNoExportableSolids
+                .note("the document has no exportable B-rep solids"),
+        );
     }
     let path_note = match &write_path {
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
@@ -155,6 +212,12 @@ fn finish(
         },
         write_path,
         coverage: written.coverage(),
+        native_dispositions: cadmpeg_ir::codec::write::NativeDispositions::for_namespace(
+            "sldprt",
+            crate::native::SLDPRT_ARENA_NAMES,
+            cadmpeg_ir::codec::write::NativeDisposition::Written,
+        ),
+        synthesis_cause: None,
         losses,
         notes: vec![
             path_note.into(),

@@ -13,7 +13,7 @@ use cadmpeg_ir::products::PrototypeReference;
 use cadmpeg_ir::CadIr;
 
 use super::PlacementClass;
-use crate::tolerance::{COMPARE_OCCURRENCE_LINEAR_DEVIATION, COMPARE_OCCURRENCE_SCALE_DEVIATION};
+use crate::tolerance::COMPARE_OCCURRENCE_LINEAR_DEVIATION;
 
 /// The placement class of a document.
 pub(super) fn class(ir: &CadIr) -> PlacementClass {
@@ -34,14 +34,7 @@ fn trivial(ir: &CadIr) -> bool {
         if !matches!(occurrence.prototype, PrototypeReference::Local { .. }) {
             return false;
         }
-        if occurrence
-            .scale
-            .iter()
-            .any(|scale| (scale.get() - 1.0).abs() > COMPARE_OCCURRENCE_SCALE_DEVIATION)
-        {
-            return false;
-        }
-        let Ok(transform) = occurrence.effective_transform() else {
+        let Ok(Some(transform)) = occurrence.effective_transform() else {
             return false;
         };
         for (row, coefficients) in transform.affine_rows().iter().enumerate() {

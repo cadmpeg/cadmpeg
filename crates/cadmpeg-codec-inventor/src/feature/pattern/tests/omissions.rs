@@ -28,8 +28,8 @@ fn rectangular_grids_keep_one_based_source_suppressions_as_zero_based_omissions(
         else {
             panic!("linear grid");
         };
-        assert_eq!(*count, 3);
-        assert_eq!(second.as_ref().expect("second direction").count, 2);
+        assert_eq!(*count, 3.into());
+        assert_eq!(second.as_ref().expect("second direction").count, 2.into());
         assert_eq!(omitted_instances, &[[2, 1], [1, 0]]);
         assert_eq!(pattern.occurrence_count(), Some(4));
     }
@@ -104,7 +104,7 @@ fn two_by_two_grid_omits_the_last_position_and_keeps_both_nominal_counts() {
     };
     assert!(matches!(
         pattern.definition(),
-        PatternTransform::Linear { count: 2, second: Some(LinearPatternDirection { count: 2, .. }), omitted_instances, .. }
+        PatternTransform::Linear { count: cadmpeg_ir::features::Dimension::Literal(2), second: Some(LinearPatternDirection { count: cadmpeg_ir::features::Dimension::Literal(2), .. }), omitted_instances, .. }
             if omitted_instances == &[[1, 1]]
     ));
     assert_eq!(pattern.occurrence_count(), Some(3));

@@ -12,7 +12,7 @@ use cadmpeg_ir::{
     },
     scalar::Length,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 pub(crate) mod operands;
 use operands::{
@@ -28,6 +28,8 @@ use operands::{
 const EPS_ORTHONORMAL_FRAME: f64 = 1.0e-9;
 /// Perpendicularity acceptance scaled by direction magnitudes.
 const EPS_PERPENDICULAR: f64 = 1.0e-9;
+/// Relative acceptance for the native numeric expression cache.
+const EXPRESSION_CACHE_RELATIVE_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 
 pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
     feature.evaluation.outputs().is_empty()
@@ -97,79 +99,25 @@ pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
-    if configuration_suppression_differs(ir, configuration) {
+    // The base model is the active configuration. It must not restate that
+    // model's parameter caches or definitions as configuration overrides.
+    if !configuration.parameter_overrides.is_empty()
+        || !configuration.parameter_values.is_empty()
+        || !configuration.feature_states.is_empty()
+    {
         return true;
     }
     let Some(bodies) = configuration.bodies.as_deref() else {
         return true;
     };
-    let required_features = if ir.model.features.is_empty() {
-        BTreeMap::new()
-    } else {
-        let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
-            return true;
-        };
-        active_features
-    };
-    configuration_state_differs(ir, configuration, &required_features)
-}
-
-/// Whether a feature's suppression differs from the configuration's
-/// suppression state, or the feature has no suppression state.
-fn configuration_suppression_differs(
-    ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
-) -> bool {
-    ir.model.features.iter().any(|feature| {
-        feature.suppressed.is_none_or(|suppressed| {
-            configuration
-                .feature_states
-                .get(&feature.id)
-                .is_some_and(|state| state.evaluation.is_suppressed())
-                != suppressed
-        })
-    })
-}
-
-/// Whether the configuration's feature states and parameter values differ
-/// from the model for the active features and every suppressed feature.
-fn configuration_state_differs(
-    ir: &CadIr,
-    configuration: &cadmpeg_ir::features::DesignConfiguration,
-    required_features: &BTreeMap<cadmpeg_ir::features::FeatureId, usize>,
-) -> bool {
-    let mut suppressed_only = ir.model.features.iter().enumerate().filter(|(_, feature)| {
-        feature.suppressed == Some(true) && !required_features.contains_key(&feature.id)
-    });
-    if configuration.feature_states.len()
-        != required_features.len() + suppressed_only.clone().count()
-    {
-        return true;
-    }
-    let state_is_incomplete = |id: &cadmpeg_ir::features::FeatureId, index: usize| {
-        let feature = &ir.model.features[index];
-        let Some(state) = configuration.feature_states.get(id) else {
-            return true;
-        };
-        Some(state.evaluation.is_suppressed()) != feature.suppressed
-            || state.dependencies != feature.dependencies
-            || state.evaluation.outputs() != feature.evaluation.outputs().as_slice()
-            || &state.definition != feature.evaluation.definition()
-    };
-    if required_features
+    if bodies
         .iter()
-        .any(|(id, &index)| state_is_incomplete(id, index))
-        || suppressed_only.any(|(index, feature)| state_is_incomplete(&feature.id, index))
+        .any(|id| !ir.model.bodies.iter().any(|body| &body.id == id))
     {
         return true;
     }
-
-    configuration.parameter_values.len() != ir.model.parameters.len()
-        || ir.model.parameters.iter().any(|parameter| {
-            parameter.value.as_ref().is_none_or(|value| {
-                configuration.parameter_values.get(&parameter.id) != Some(value)
-            })
-        })
+    !ir.model.features.is_empty()
+        && crate::native::history::active_feature_closure(ir, bodies).is_err()
 }
 
 /// Whether an admitted frame misses the NX datum contract: perpendicular
@@ -204,141 +152,119 @@ fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
     first.dot(second).abs() <= EPS_PERPENDICULAR * (first.norm() * second.norm())
 }
 
-pub(crate) fn incomplete_expression_parameters(
-    ir: &CadIr,
-) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
-    let mut parameter_owners = BTreeSet::new();
-    for parameter in &ir.model.parameters {
-        parameter_owners.insert(&parameter.owner);
-    }
+pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
+    use cadmpeg_ir::features::ParameterValue;
+    use std::collections::BTreeMap;
+    let ids = ir
+        .model
+        .parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| (&parameter.id, index))
+        .collect::<BTreeMap<_, _>>();
     let mut incomplete = BTreeSet::new();
-    for owner in parameter_owners {
-        let mut parameters = Vec::new();
-        for parameter in ir
-            .model
-            .parameters
-            .iter()
-            .filter(|parameter| &parameter.owner == owner)
-        {
-            parameters.push(parameter);
-        }
-        let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
-        for parameter in &parameters {
-            let name_key = (
-                parameter.name.as_str(),
-                parameter.properties.get("unit").map(String::as_str),
-            );
-            let ids = match ids_by_name.entry(name_key) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
-            };
-            ids.push(&parameter.id);
-        }
-        let mut expected = Vec::new();
-        for parameter in &parameters {
-            expected.push(
-                (|| -> Result<Option<Vec<ParameterId>>, cadmpeg_core::CodecError> {
-                    let unit = match parameter.properties.get("unit").map(String::as_str) {
-                        None => None,
-                        Some(unit @ ("millimeter" | "inch" | "degree")) => Some(unit),
-                        Some(_) => return Ok(None),
-                    };
-                    let Some(ids) = ids_by_name.get(&(parameter.name.as_str(), unit)) else {
-                        return Ok(None);
-                    };
-                    let [_] = ids.as_slice() else {
-                        return Ok(None);
-                    };
-                    let mut dependencies = Vec::new();
-                    for name in crate::native::om::expression_parameter_names(&parameter.expression)
-                    {
-                        let Some(ids) = ids_by_name.get(&(name, unit)) else {
-                            return Ok(None);
-                        };
-                        let [dependency] = ids.as_slice() else {
-                            return Ok(None);
-                        };
-                        if dependencies.iter().any(|id| id == *dependency) {
-                            continue;
-                        }
-                        dependencies.push((*dependency).clone());
-                    }
-                    Ok(Some(dependencies))
-                })()?,
-            );
-        }
-        let mut indices = BTreeMap::new();
-        for (index, parameter) in parameters.iter().enumerate() {
-            indices.insert(&parameter.id, index);
-        }
-        let mut emitted = BTreeSet::new();
-        let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
-        while let Some(index) = (0..parameters.len()).find(|index| {
-            !emitted.contains(index)
-                && expected[*index].as_ref().is_some_and(|dependencies| {
-                    dependencies.iter().all(|dependency| {
-                        evaluated.contains_key(dependency)
-                            && indices
-                                .get(dependency)
-                                .is_some_and(|index| emitted.contains(index))
-                    })
-                })
-        }) {
-            let parameter = parameters[index];
-            let unit = parameter.properties.get("unit").map(String::as_str);
-            let value = crate::native::om::evaluate_parameterized_expression(
-                &parameter.expression,
-                |name| {
-                    let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
-                        return None;
-                    };
-                    evaluated.get(*dependency).copied()
-                },
-            );
-            let stored = match (unit, parameter.value.as_ref()) {
-                (
-                    Some("millimeter" | "inch"),
-                    Some(cadmpeg_ir::features::ParameterValue::Length(value)),
-                ) => Some(value.get()),
-                (Some("degree"), Some(cadmpeg_ir::features::ParameterValue::Angle(value))) => {
-                    Some(value.get())
-                }
-                (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => {
-                    Some(value.get())
-                }
-                (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
-                    cadmpeg_core::convert::f64_from_i64(*value)
-                }
-                _ => None,
-            };
-            if let Some(native_value) = value {
-                let native_value = native_value.get();
-                let canonical_value = unit.map_or(Some(native_value), |unit| {
-                    crate::native::om::canonical_expression_value(unit, native_value)
-                });
-                if let (Some(canonical_value), Some(stored)) = (canonical_value, stored) {
-                    let tolerance =
-                        64.0 * f64::EPSILON * canonical_value.abs().max(stored.abs()).max(1.0);
-                    if canonical_value.is_finite()
-                        && stored.is_finite()
-                        && (canonical_value - stored).abs() <= tolerance
-                    {
-                        evaluated.insert(&parameter.id, native_value);
-                    }
-                }
+    let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
+    let scalar = |value: &ParameterValue| match value {
+        ParameterValue::Length(value) => Some(value.get()),
+        ParameterValue::Angle(value) => Some(value.get()),
+        ParameterValue::Real(value) => Some(value.get()),
+        ParameterValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
+        _ => None,
+    };
+    loop {
+        let mut progressed = false;
+        for parameter in &ir.model.parameters {
+            if evaluated.contains_key(&parameter.id) || incomplete.contains(&parameter.id) {
+                continue;
             }
-            emitted.insert(index);
-        }
-        for (index, parameter) in parameters.into_iter().enumerate() {
-            if expected[index].as_deref() != Some(parameter.dependencies.as_slice())
-                || !emitted.contains(&index)
-                || !evaluated.contains_key(&parameter.id)
+            let unit = parameter.properties.get("unit").map(String::as_str);
+            if parameter.value.is_none()
+                || unit.is_some_and(|unit| !matches!(unit, "millimeter" | "inch" | "degree"))
+                || parameter.expression.tokens.iter().any(|token| match token {
+                    cadmpeg_ir::features::ExpressionToken::Text(text) => {
+                        crate::native::om::expression_parameter_names(text)
+                            .next()
+                            .is_some()
+                    }
+                    cadmpeg_ir::features::ExpressionToken::Parameter(_) => false,
+                })
+                || parameter
+                    .expression
+                    .dependencies()
+                    .any(|id| !ids.contains_key(id))
             {
                 incomplete.insert(parameter.id.clone());
+                continue;
             }
+            if parameter
+                .expression
+                .dependencies()
+                .any(|id| !evaluated.contains_key(id))
+            {
+                continue;
+            }
+            let stored = parameter.value.as_ref().and_then(scalar);
+            let literal = parameter
+                .value
+                .as_ref()
+                .and_then(|value| parameter.expression.literal_value_as(value))
+                .as_ref()
+                .and_then(scalar);
+            let native_value = if let Some(literal) = literal {
+                Some(match unit {
+                    Some("inch") => literal / 25.4,
+                    Some("degree") => literal.to_degrees(),
+                    _ => literal,
+                })
+            } else {
+                parameter
+                    .expression
+                    .render_with(|id| ids.get(id).map(|index| format!("p{index}")))
+                    .and_then(|text| {
+                        crate::native::om::evaluate_parameterized_expression(&text, |name| {
+                            let index: usize = name.strip_prefix('p')?.parse().ok()?;
+                            evaluated.get(&ir.model.parameters.get(index)?.id).copied()
+                        })
+                    })
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+            };
+            let canonical = native_value.and_then(|value| {
+                unit.map_or(Some(value), |unit| match unit {
+                    "millimeter" => Some(value),
+                    "inch" => Some(value * 25.4),
+                    "degree" => Some(value.to_radians()),
+                    _ => None,
+                })
+            });
+            if let (Some(native), Some(canonical), Some(stored)) = (native_value, canonical, stored)
+            {
+                let tolerance = EXPRESSION_CACHE_RELATIVE_TOLERANCE
+                    * canonical.abs().max(stored.abs()).max(1.0);
+                if canonical.is_finite()
+                    && stored.is_finite()
+                    && (canonical - stored).abs() <= tolerance
+                {
+                    evaluated.insert(&parameter.id, native);
+                    progressed = true;
+                    continue;
+                }
+            }
+            incomplete.insert(parameter.id.clone());
+        }
+        if !progressed {
+            break;
         }
     }
-    Ok(incomplete)
+    // Cyclic identities remain in their expression tokens; only the ability
+    // to verify their cached evaluation is incomplete.
+    incomplete.extend(
+        ir.model
+            .parameters
+            .iter()
+            .filter(|parameter| !evaluated.contains_key(&parameter.id))
+            .map(|parameter| parameter.id.clone()),
+    );
+    incomplete
 }
 
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
@@ -409,7 +335,7 @@ pub(super) fn delete_body_definition_is_incomplete(feature: &Feature) -> bool {
     body_selection_is_incomplete(bodies) || matches!(mode, BodyRetentionMode::Unresolved)
 }
 
-pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
+pub(crate) fn hole_definition_is_incomplete(ir: &cadmpeg_ir::CadIr, feature: &Feature) -> bool {
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile,
         face,
@@ -428,11 +354,14 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
     let construction_incomplete = match construction {
         cadmpeg_ir::features::holes::HoleConstruction::Form { kind, .. } => {
             hole_feature_is_incomplete(
+                ir,
                 profile.as_ref(),
                 face.as_ref(),
                 placements.as_deref(),
                 (kind, exit_kind.as_ref()),
-                diameter.map(Into::into),
+                diameter
+                    .and_then(|diameter| ir.dimension_value(diameter))
+                    .map(Into::into),
                 extent.as_ref(),
             )
         }
@@ -442,16 +371,22 @@ pub(crate) fn hole_definition_is_incomplete(feature: &Feature) -> bool {
             ..
         } => {
             let kind = cadmpeg_ir::features::holes::HoleKind::SimpleDrilled {
-                drill_point_angle: *drill_point_angle,
+                drill_point_angle: drill_point_angle.clone(),
             };
             hole_feature_is_incomplete(
+                ir,
                 profile.as_ref(),
                 face.as_ref(),
                 placements.as_deref(),
                 (&kind, exit_kind.as_ref()),
-                diameter.map(Into::into),
+                diameter
+                    .and_then(|diameter| ir.dimension_value(diameter))
+                    .map(Into::into),
                 extent.as_ref(),
-            ) || diameter.is_none_or(|diameter| major_diameter.get() <= diameter.get())
+            ) || diameter
+                .and_then(|diameter| ir.dimension_value(diameter))
+                .zip(ir.dimension_value(major_diameter))
+                .is_none_or(|(diameter, major)| major.get() <= diameter.get())
         }
     };
     construction_incomplete

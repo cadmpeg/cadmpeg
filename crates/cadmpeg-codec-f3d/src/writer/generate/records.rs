@@ -83,7 +83,7 @@ pub(super) fn native_tolerant_coedge_extension(
                     CodecError::malformed(format_args!("missing use curve {}", use_curve.curve))
                 })?;
             let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));
             };
@@ -109,7 +109,7 @@ pub(super) fn native_tolerant_coedge_extension(
             native_i64(records, 0);
             Ok(())
         }
-        _ => Err(CodecError::NotImplemented(format!(
+        _ => Err(CodecError::UnsupportedContent(format!(
             "source-less F3D cannot serialize nonempty tolerant-coedge extension for {coedge}"
         ))),
     }
@@ -177,7 +177,7 @@ pub(super) fn encode_design_bulkstream(
             .iter()
             .any(|header| header.member_values().next().is_some())
     {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::UnsupportedContent(
             "source-less F3D Design parameter records are not writable".into(),
         ));
     }
@@ -186,7 +186,7 @@ pub(super) fn encode_design_bulkstream(
         .bodies
         .iter()
         .any(|body| body.visible.is_some());
-    if native.design_parameters.is_empty()
+    if parameter_bytes.is_empty()
         && native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
@@ -214,7 +214,7 @@ pub(super) fn encode_design_bulkstream(
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
         let count = u32::try_from(body_map.entries.as_map().len())
-            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
+            .map_err(|_| CodecError::InvalidInput("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
         for (&body_key, &entity_suffix) in body_map.entries.as_map() {
             out.extend_from_slice(&body_key.to_le_bytes());
@@ -231,7 +231,7 @@ pub(super) fn encode_design_bulkstream(
         if let Some(design) = &recipe.design {
             let design_id = &design.id.value;
             if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"
                 )));
             }
@@ -241,7 +241,7 @@ pub(super) fn encode_design_bulkstream(
         // A generated Design recipe states its own record index; a native
         // recipe that states none has no index word to regenerate.
         let Some(record_index) = recipe.record_index else {
-            return Err(CodecError::NotImplemented(
+            return Err(CodecError::UnsupportedContent(
                 "source-less F3D construction recipe states no record index".into(),
             ));
         };
@@ -249,7 +249,7 @@ pub(super) fn encode_design_bulkstream(
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
                 .map_err(|_| {
-                    CodecError::NotImplemented("Design recipe name exceeds u32::MAX".into())
+                    CodecError::InvalidInput("Design recipe name exceeds u32::MAX".into())
                 })?
                 .to_le_bytes(),
         );
@@ -265,7 +265,7 @@ pub(super) fn encode_design_bulkstream(
         out.extend_from_slice(&0u16.to_le_bytes());
         native_lp_ascii(&mut out, "BodiesRoot")?;
         let count = u32::try_from(native.design_body_members.len()).map_err(|_| {
-            CodecError::NotImplemented("Design BodiesRoot exceeds u32::MAX members".into())
+            CodecError::InvalidInput("Design BodiesRoot exceeds u32::MAX members".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
         for member in &native.design_body_members {
@@ -285,16 +285,12 @@ pub(super) fn encode_design_bulkstream(
         out.extend_from_slice(header.class_tag.as_bytes());
         out.extend_from_slice(&header.entity_id.suffix().to_le_bytes());
         out.extend_from_slice(&[0; 5]);
-        out.push(u8::from(header.optional_slot_present));
-        if header.optional_slot_present {
-            out.extend_from_slice(&[0; 4]);
-        }
+        // Optional padding is a source layout choice; canonical output omits it.
+        out.push(0);
         native_lp_utf16(&mut out, header.entity_id.as_str())?;
         if header.in_sketch_module() {
             let count = u32::try_from(header.reference_values().count()).map_err(|_| {
-                CodecError::NotImplemented(
-                    "Design sketch header exceeds u32::MAX references".into(),
-                )
+                CodecError::InvalidInput("Design sketch header exceeds u32::MAX references".into())
             })?;
             match header
                 .sketch_references()
@@ -427,70 +423,9 @@ fn primary_record_u64(
     Ok(crate::metastream::RecordIndexEntry {
         entity_id,
         bulk_offset: u64::try_from(bulk_offset).map_err(|_| {
-            CodecError::NotImplemented("generated Design record offset exceeds u64".into())
+            CodecError::InvalidInput("generated Design record offset exceeds u64".into())
         })?,
     })
-}
-
-pub(super) fn encode_document_parameters(
-    parameters: &[crate::records::parameters::DesignParameter],
-) -> Result<Vec<u8>, CodecError> {
-    let mut out = Vec::new();
-    let mut parameter_indices = std::collections::BTreeSet::new();
-    let mut parameter_ordinals = std::collections::BTreeSet::new();
-    for parameter in parameters {
-        let expected_discriminator =
-            crate::design::decode::parameters::design_parameter_discriminator(
-                parameter.source_kind_str(),
-            );
-        if parameter
-            .family_discriminator()
-            .map(|value| value.value.code())
-            != Some(expected_discriminator)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
-                parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
-            )));
-        }
-        let crate::records::parameters::DesignParameterSource::User {
-            family_discriminator: Some(family_discriminator),
-        } = parameter.source()
-        else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D owned Design parameter records are not writable".into(),
-            ));
-        };
-        if !parameter_indices.insert(parameter.record_index)
-            || !parameter_ordinals.insert(parameter.source_ordinal)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design parameter {} duplicates a record index or source ordinal",
-                parameter.id
-            )));
-        }
-        native_lp_ascii(&mut out, parameter.class_tag.as_str())?;
-        out.extend_from_slice(&parameter.record_index.to_le_bytes());
-        out.extend_from_slice(&[0; 11]);
-        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
-        out.push(0);
-        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
-        out.push(0);
-        native_lp_utf16(&mut out, parameter.expression())?;
-        out.extend_from_slice(&[0; 8]);
-        out.push(1);
-        native_lp_utf16(&mut out, "User Parameter")?;
-        out.extend_from_slice(&0u32.to_le_bytes());
-        if let Some(unit) = parameter.unit() {
-            native_lp_utf16(&mut out, unit.value.as_str())?;
-        } else {
-            out.extend_from_slice(&0u32.to_le_bytes());
-        }
-        native_lp_utf16(&mut out, parameter.name())?;
-        out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
-        out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    }
-    Ok(out)
 }
 
 fn encode_sketch_record_header(
@@ -523,7 +458,7 @@ fn encode_sketch_point(
         ..
     } = point.record_form()
     else {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "source-less sketch point {} requires the version-11 member sequence",
             point.id
         )));
@@ -575,7 +510,7 @@ fn encode_sketch_point_companion(
     let prefix_present_zero = companion.prefix_present_zero;
     let incident_curves = companion.incident_curves;
     let count = u32::try_from(incident_curves.len()).map_err(|_| {
-        CodecError::NotImplemented(
+        CodecError::InvalidInput(
             "source-less sketch point companion exceeds u32::MAX curves".into(),
         )
     })?;
@@ -692,7 +627,7 @@ fn encode_sketch_curve_identity(
             geometry,
         )?,
         None => {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "source-less sketch curve {} has no writable geometry",
                 curve.id
             )))
@@ -746,20 +681,19 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&geometry.degree().to_le_bytes());
     record.extend_from_slice(&(geometry.fit_tolerance().get() / LEN_TO_MM).to_le_bytes());
     let knot_count = u32::try_from(knots.len())
-        .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many knots".into()))?;
+        .map_err(|_| CodecError::InvalidInput("sketch NURBS has too many knots".into()))?;
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
     encode_f64_sequence(record, knots);
     let weight_count = u32::try_from(poles.weights().len())
-        .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many weights".into()))?;
+        .map_err(|_| CodecError::InvalidInput("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
     encode_f64_sequence(record, &poles.weights().collect::<Vec<_>>());
-    let point_count = u32::try_from(poles.point_count()).map_err(|_| {
-        CodecError::NotImplemented("sketch NURBS has too many control points".into())
-    })?;
+    let point_count = u32::try_from(poles.point_count())
+        .map_err(|_| CodecError::InvalidInput("sketch NURBS has too many control points".into()))?;
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
@@ -777,42 +711,12 @@ fn encode_sketch_nurbs(
     Ok(())
 }
 
-fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    let decoded = crate::design::decode::sketch::decode_sketch_text_record(
-        &text.raw_bytes,
-        "Design/BulkStream.dat",
-        text.class_tag.clone(),
-        text.class_version,
-        text.record_index,
-        0,
-    )?
-    .ok_or_else(|| {
-        CodecError::malformed(format_args!("invalid raw sketch-text record {}", text.id))
-    })?;
-    let common_header_matches = text.raw_bytes.get(0..4) == Some(&3u32.to_le_bytes())
-        && text.raw_bytes.get(4..7) == Some(text.class_tag.as_bytes());
-    let legacy_index_matches =
-        text.raw_bytes.get(7..15) == Some(&u64::from(text.record_index).to_le_bytes());
-    let indexed_index_matches = text.raw_bytes.get(7..11) == Some(&text.record_index.to_le_bytes())
-        && text.raw_bytes.get(11..20) == Some(&[0; 9]);
-    let header_matches = common_header_matches && (legacy_index_matches || indexed_index_matches);
-    let fields_match = decoded.owner_reference == text.owner_reference
-        && decoded.entity_genesis == text.entity_genesis
-        && decoded.persistent_id == text.persistent_id
-        && decoded.base_id == text.base_id
-        && decoded.text == text.text
-        && decoded.font_family == text.font_family
-        && decoded.height == text.height
-        && decoded.color == text.color
-        && decoded.layout == text.layout;
-    if !header_matches || !fields_match {
-        return Err(CodecError::malformed(format_args!(
-            "sketch-text record {} fields disagree with its raw bytes",
-            text.id
-        )));
-    }
-    out.extend_from_slice(&text.raw_bytes);
-    Ok(())
+fn encode_sketch_text(_out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
+    // (S-entity): raw retained payload is not a native content serializer.
+    Err(CodecError::UnsupportedContent(format!(
+        "sketch text {} has no typed F3D serializer",
+        text.id,
+    )))
 }
 
 /// Least sketch-relation record the Design `BulkStream` writer emits. A
@@ -933,7 +837,7 @@ pub(super) fn encode_design_metastream(
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     let type_count = u32::try_from(registry.types.len()).map_err(|_| {
-        CodecError::NotImplemented("Design MetaStream registers more than u32::MAX types".into())
+        CodecError::InvalidInput("Design MetaStream registers more than u32::MAX types".into())
     })?;
     out.extend_from_slice(&type_count.to_le_bytes());
     let mut next_entity_id = 1u64;
@@ -947,14 +851,14 @@ pub(super) fn encode_design_metastream(
         }
         out.extend_from_slice(&design_type.version.to_le_bytes());
         if crate::bytes::is_guid_relaxed(&design_type.module) {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Design type module name is GUID-shaped: {}",
                 design_type.module
             )));
         }
         native_lp_ascii(&mut out, &design_type.module)?;
         let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
-            CodecError::NotImplemented("Design type owns more than u32::MAX entities".into())
+            CodecError::InvalidInput("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
         for entity_id in &design_type.entity_ids {
@@ -970,7 +874,7 @@ pub(super) fn encode_design_metastream(
     // Named-entity list, primary record index, and secondary index.
     out.extend_from_slice(&0u32.to_le_bytes());
     let record_count = u32::try_from(primary_records.len()).map_err(|_| {
-        CodecError::NotImplemented("Design primary index exceeds u32::MAX records".into())
+        CodecError::InvalidInput("Design primary index exceeds u32::MAX records".into())
     })?;
     out.extend_from_slice(&record_count.to_le_bytes());
     let registered_entities = registry
@@ -1035,24 +939,24 @@ fn encode_browser_nodes(
 /// asset to name.
 const GENERATED_ASSET_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
-fn native_lp_ascii(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_lp_ascii(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     if !value.bytes().all(|byte| byte.is_ascii_graphic()) {
-        return Err(CodecError::NotImplemented(
+        return Err(CodecError::Malformed(
             "Design MetaStream strings must contain printable ASCII".into(),
         ));
     }
     let length = u32::try_from(value.len()).map_err(|_| {
-        CodecError::NotImplemented("Design MetaStream string exceeds u32::MAX".into())
+        CodecError::InvalidInput("Design MetaStream string exceeds u32::MAX".into())
     })?;
     out.extend_from_slice(&length.to_le_bytes());
     out.extend_from_slice(value.as_bytes());
     Ok(())
 }
 
-fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
+pub(super) fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
     let units = value.encode_utf16().collect::<Vec<_>>();
     let length = u32::try_from(units.len())
-        .map_err(|_| CodecError::NotImplemented("Design UTF-16 string exceeds u32::MAX".into()))?;
+        .map_err(|_| CodecError::InvalidInput("Design UTF-16 string exceeds u32::MAX".into()))?;
     out.extend_from_slice(&length.to_le_bytes());
     for unit in units {
         out.extend_from_slice(&unit.to_le_bytes());

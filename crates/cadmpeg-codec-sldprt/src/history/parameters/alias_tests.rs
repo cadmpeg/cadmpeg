@@ -17,9 +17,6 @@ use crate::history::tests::native_configuration;
 use crate::history::tests::native_with_configuration_lanes;
 use crate::history::tests::with_configuration_id;
 use crate::history::write::configurations::sync_neutral_configurations;
-use crate::history::write::parameters::{
-    rewrite_parameter_expression, unquoted_expression_identifier,
-};
 use crate::records::FeatureContent;
 use crate::records::FeatureHistory;
 use crate::records::FeatureSource;
@@ -129,6 +126,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
     let local_owner = FeatureId::mint("synthetic:test:id#local").expect("identity grammar");
     let parameters = [
         DesignParameter {
+            driving: true,
             id: ParameterId::mint("synthetic:test:id#global-id").expect("identity grammar"),
             owner: Some(global_owner.clone()),
             ordinal: 0,
@@ -136,12 +134,12 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "1".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
         },
         DesignParameter {
+            driving: true,
             id: ParameterId::mint("synthetic:test:id#local-id").expect("identity grammar"),
             owner: Some(local_owner.clone()),
             ordinal: 0,
@@ -149,7 +147,6 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             expression: "2".into(),
             display: None,
             value: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -233,21 +230,26 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
         .map(|parameter| (parameter.name.as_str(), parameter))
         .collect::<HashMap<_, _>>();
 
-    assert!(by_name["Literal"].dependencies.is_empty());
+    assert!(by_name["Literal"]
+        .expression
+        .dependencies()
+        .cloned()
+        .collect::<Vec<_>>()
+        .is_empty());
     assert_eq!(
-        by_name["Reference"].dependencies.as_slice(),
+        by_name["Reference"]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [by_name["4"].id.clone()]
     );
     assert_eq!(
         by_name["Reference"].value,
         Some(ParameterValue::Length(Length::new(6.0).unwrap()))
     );
-    assert!(!unquoted_expression_identifier("4"));
-    assert_eq!(
-        rewrite_parameter_expression("Width * 2", &HashMap::from([("Width".into(), "4".into())]),)
-            .as_deref(),
-        Some("\"4\" * 2")
-    );
+    assert_eq!(super::render_identifier("4"), "\"4\"");
 }
 
 #[test]
@@ -272,7 +274,12 @@ fn subtraction_projects_both_parameter_dependencies() {
     .unwrap();
 
     assert_eq!(
-        parameters[2].dependencies.as_slice(),
+        parameters[2]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [parameters[0].id.clone(), parameters[1].id.clone()]
     );
     assert_eq!(parameters[2].value, Some(ParameterValue::Integer(5)));
@@ -358,7 +365,12 @@ fn equation_driven_parameters_are_global() {
     .unwrap();
 
     assert_eq!(
-        parameters[1].dependencies.as_slice(),
+        parameters[1]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [parameters[0].id.clone()]
     );
     assert_eq!(
@@ -392,7 +404,12 @@ fn ordinary_feature_parameters_do_not_leak_globally() {
     )
     .unwrap();
 
-    assert!(parameters[1].dependencies.is_empty());
+    assert!(parameters[1]
+        .expression
+        .dependencies()
+        .cloned()
+        .collect::<Vec<_>>()
+        .is_empty());
     assert_eq!(parameters[1].value, None);
 }
 
@@ -426,7 +443,12 @@ fn local_parameter_precedes_same_named_global() {
     .unwrap();
 
     assert_eq!(
-        parameters[1].dependencies.as_slice(),
+        parameters[1]
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         [parameters[2].id.clone()]
     );
     assert_eq!(
@@ -462,7 +484,11 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
         features: vec![first, second, dependent, malformed],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
 
     assert!(projected[2].dependencies.is_empty());
     assert_eq!(
@@ -503,4 +529,37 @@ fn stored_configuration_id_precedes_ordinal_fallback() {
         configuration_lane_assignments(&configurations, &lanes),
         [(0, 0)]
     );
+}
+
+#[test]
+fn renamed_identifiers_round_trip_the_source_token_grammar() {
+    for name in ["Width@Sketch1", "$Global", "name.with.parts"] {
+        let rendered = super::render_identifier(name);
+        assert_eq!(rendered, name);
+        let tokens = super::expression_identifier_tokens(&rendered).unwrap();
+        let [token] = tokens.as_slice() else {
+            panic!("one identifier: {rendered}");
+        };
+        assert_eq!(token.value(), name);
+        assert!(!token.is_syntax());
+    }
+    for name in [
+        "12",
+        "1e3",
+        "PI",
+        "true",
+        "false",
+        "长度",
+        "part depth",
+        "A\"B",
+    ] {
+        let rendered = super::render_identifier(name);
+        let tokens = super::expression_identifier_tokens(&rendered).unwrap();
+        let [token] = tokens.as_slice() else {
+            panic!("one identifier: {rendered}");
+        };
+        assert!(token.is_quoted(), "{name}");
+        assert!(!token.is_syntax(), "{name}");
+        assert_eq!(token.value(), name, "{rendered}");
+    }
 }

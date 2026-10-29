@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::history::literals::parse_dimension_length_mm;
 use crate::records::FeatureSource;
 
-pub(super) fn is_custom_property(feature: &Feature) -> bool {
+pub(crate) fn is_custom_property(feature: &Feature) -> bool {
     feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
 }
 
@@ -502,7 +502,7 @@ pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
     }
 }
 
-pub(super) fn indexed_name(name: &str, prefix: &str) -> bool {
+pub(crate) fn indexed_name(name: &str, prefix: &str) -> bool {
     name.strip_prefix(prefix).is_some_and(|suffix| {
         !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
     })

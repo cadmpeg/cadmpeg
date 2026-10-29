@@ -52,15 +52,69 @@ macro_rules! geometry_or_none {
     };
 }
 
-fn attach_geometry_source(
-    source: &mut Option<SourceObjectAssociation>,
+trait NamedCarrier {
+    fn name_target(&self) -> cadmpeg_ir::attributes::AttributeTarget;
+    fn association_mut(&mut self) -> &mut Option<SourceObjectAssociation>;
+}
+
+macro_rules! named_carrier {
+    ($record:ty, $target:ident) => {
+        impl NamedCarrier for $record {
+            fn name_target(&self) -> cadmpeg_ir::attributes::AttributeTarget {
+                cadmpeg_ir::attributes::AttributeTarget::$target(self.id.clone())
+            }
+            fn association_mut(&mut self) -> &mut Option<SourceObjectAssociation> {
+                &mut self.source_object
+            }
+        }
+    };
+}
+named_carrier!(Curve, Curve);
+named_carrier!(Surface, Surface);
+named_carrier!(Point, Point);
+
+fn attach_geometry_source<T: NamedCarrier>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    carrier: &mut T,
     id: u64,
     name: Option<&str>,
-) {
+    attributes: &mut Vec<cadmpeg_ir::attributes::SourceAttribute>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let target = carrier.name_target();
+    let source = carrier.association_mut();
     if source.is_none() {
-        let name = name.map(std::string::ToString::to_string);
-        *source = Some(super::step_source_association(id, name));
+        *source = Some(super::step_source_association(id));
+        retain_geometry_name(ctx, attributes, target, id, name)?;
     }
+
+    Ok(())
+}
+
+fn retain_geometry_name(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    attributes: &mut Vec<cadmpeg_ir::attributes::SourceAttribute>,
+    target: cadmpeg_ir::attributes::AttributeTarget,
+    source: u64,
+    name: Option<&str>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let Some(name) = name.filter(|name| !name.is_empty()) else {
+        return Ok(());
+    };
+    attributes.push(cadmpeg_ir::attributes::SourceAttribute::new(
+        ctx,
+        cadmpeg_ir::ids::AttributeId::from(ids::data(
+            kind!("geometry-name"),
+            IdentityKey::from(source).dash(attributes.len()),
+        )),
+        None,
+        target,
+        "name".to_owned(),
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            name.to_owned(),
+        )],
+    )?);
+
+    Ok(())
 }
 
 pub(super) struct GeometryData {
@@ -651,7 +705,7 @@ pub(super) fn decode(
             _ => {}
         }
     }
-    decode_tessellated_curve_sets(exchange, &unit_scales, ir, &mut typed, &mut losses);
+    decode_tessellated_curve_sets(ctx, exchange, &unit_scales, ir, &mut typed, &mut losses)?;
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records().values() {
         if record
@@ -739,10 +793,20 @@ pub(super) fn decode(
             continue;
         };
         let source_name = apll_point_names.remove(&id);
+        retain_geometry_name(
+            ctx,
+            &mut ir.model.attributes,
+            cadmpeg_ir::attributes::AttributeTarget::Point(PointId::from(ids::data(
+                kind!("point"),
+                id,
+            ))),
+            id,
+            source_name.as_ref().and_then(|name| name.as_deref()),
+        )?;
         ir.model.points.push(Point::new(
             PointId::from(ids::data(kind!("point"), id)),
             position,
-            source_name.map(|name| super::step_source_association(id, name)),
+            source_name.map(|_| super::step_source_association(id)),
         ));
     }
     for (id, record) in exchange.entities("VECTOR") {
@@ -1070,6 +1134,7 @@ pub(super) fn decode(
                 curve_parameter_offsets.insert(id, offset);
             }
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry,
@@ -1092,6 +1157,7 @@ pub(super) fn decode(
         }
         if let Some(nurbs) = nurbs_curve(id, record, &points, &mut losses) {
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -1179,6 +1245,7 @@ pub(super) fn decode(
                 },
             );
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(geometry),
@@ -1299,6 +1366,7 @@ pub(super) fn decode(
                 },
             };
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: curve.clone(),
                 geometry,
@@ -1349,6 +1417,7 @@ pub(super) fn decode(
                 };
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -1426,6 +1495,7 @@ pub(super) fn decode(
                 }
             };
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(copied_geometry),
@@ -1449,6 +1519,7 @@ pub(super) fn decode(
             )));
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: CurveId::from(ids::data(kind!("curve"), id)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1504,6 +1575,7 @@ pub(super) fn decode(
             let curve = CurveId::from(ids::data(kind!("curve"), id));
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1602,6 +1674,7 @@ pub(super) fn decode(
         };
         let surface = SurfaceId::from(ids::data(kind!("surface"), id));
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1710,6 +1783,7 @@ pub(super) fn decode(
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry,
                 source_object: None,
@@ -1730,6 +1804,7 @@ pub(super) fn decode(
         }
         if let Some(nurbs) = nurbs_surface(id, record, &points, &mut losses) {
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: None,
@@ -1860,6 +1935,7 @@ pub(super) fn decode(
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let copied_geometry = solved_geometry.clone();
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(copied_geometry),
                 source_object: None,
@@ -1965,6 +2041,7 @@ pub(super) fn decode(
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             let copied_geometry = geometry.clone();
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(copied_geometry),
                 source_object: None,
@@ -2012,6 +2089,7 @@ pub(super) fn decode(
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
@@ -2069,6 +2147,7 @@ pub(super) fn decode(
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
@@ -2103,6 +2182,7 @@ pub(super) fn decode(
             )));
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: SurfaceId::from(ids::data(kind!("surface"), id)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
@@ -2148,6 +2228,7 @@ pub(super) fn decode(
         {
             let curve_index = CurveIndex(ir.model.curves.len());
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: CurveId::from(ids::data(kind!("curve"), curve_step)),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -2174,6 +2255,7 @@ pub(super) fn decode(
         if let std::collections::hash_map::Entry::Vacant(e) = carrier_index.surfaces.entry(id) {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
@@ -2206,6 +2288,7 @@ pub(super) fn decode(
         {
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: SurfaceId::from(ids::data(kind!("surface"), surface_step)),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: exchange
@@ -2285,6 +2368,7 @@ pub(super) fn decode(
             continue;
         };
         ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: PcurveId::from(ids::data(kind!("pcurve"), id)),
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
@@ -2389,12 +2473,13 @@ pub(super) fn decode(
 }
 
 fn decode_tessellated_curve_sets(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     unit_scales: &UnitScales,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (&id, record) in exchange.records() {
         if record.partial("TESSELLATED_CURVE_SET").is_none() {
             continue;
@@ -2462,18 +2547,28 @@ fn decode_tessellated_curve_sets(
             .ok() else {
                 continue;
             };
-            let source_name = source_name.clone();
+            let curve_id = CurveId::from(ids::data(kind!("curve"), curve_key));
+            retain_geometry_name(
+                ctx,
+                &mut ir.model.attributes,
+                cadmpeg_ir::attributes::AttributeTarget::Curve(curve_id.clone()),
+                id,
+                source_name.as_deref(),
+            )?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
-                id: CurveId::from(ids::data(kind!("curve"), curve_key)),
+                id: curve_id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)),
-                source_object: Some(super::step_source_association(id, source_name)),
+                source_object: Some(super::step_source_association(id)),
             });
         }
         for source_id in [id, coordinates_id] {
             typed.insert(source_id);
         }
     }
+
+    Ok(())
 }
 
 fn tessellated_curve_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
@@ -2528,12 +2623,13 @@ fn face_surface_reference(record: &RawRecord) -> Option<u64> {
 }
 
 pub(super) fn associate_free_geometric_set_members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for set in exchange.records().values() {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
@@ -2562,33 +2658,41 @@ pub(super) fn associate_free_geometric_set_members(
                     continue;
                 }
                 attach_geometry_source(
-                    &mut ir.model.curves[index.0].source_object,
+                    ctx,
+                    &mut ir.model.curves[index.0],
                     member,
                     name.as_deref(),
-                );
+                    &mut ir.model.attributes,
+                )?;
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if owned.points.contains(index) {
                     continue;
                 }
                 attach_geometry_source(
-                    &mut ir.model.points[index.0].source_object,
+                    ctx,
+                    &mut ir.model.points[index.0],
                     member,
                     name.as_deref(),
-                );
+                    &mut ir.model.attributes,
+                )?;
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if owned.surfaces.contains(index) {
                     continue;
                 }
                 attach_geometry_source(
-                    &mut ir.model.surfaces[index.0].source_object,
+                    ctx,
+                    &mut ir.model.surfaces[index.0],
                     member,
                     name.as_deref(),
-                );
+                    &mut ir.model.attributes,
+                )?;
             }
         }
     }
+
+    Ok(())
 }
 
 /// Associate carriers that are listed directly by a STEP representation but
@@ -2597,12 +2701,13 @@ pub(super) fn associate_free_geometric_set_members(
 /// reachability check would misclassify a valid standalone carrier as an
 /// orphan.
 pub(super) fn associate_free_representation_members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for representation in exchange.records().values().filter(|record| {
         record
             .partials
@@ -2631,32 +2736,40 @@ pub(super) fn associate_free_representation_members(
             if let Some(index) = index.curves.get(&member) {
                 if !owned.curves.contains(index) {
                     attach_geometry_source(
-                        &mut ir.model.curves[index.0].source_object,
+                        ctx,
+                        &mut ir.model.curves[index.0],
                         member,
                         source_name.as_deref(),
-                    );
+                        &mut ir.model.attributes,
+                    )?;
                 }
             }
             if let Some(index) = index.points.get(&member).map(|point| &point.index) {
                 if !owned.points.contains(index) {
                     attach_geometry_source(
-                        &mut ir.model.points[index.0].source_object,
+                        ctx,
+                        &mut ir.model.points[index.0],
                         member,
                         source_name.as_deref(),
-                    );
+                        &mut ir.model.attributes,
+                    )?;
                 }
             }
             if let Some(index) = index.surfaces.get(&member) {
                 if !owned.surfaces.contains(index) {
                     attach_geometry_source(
-                        &mut ir.model.surfaces[index.0].source_object,
+                        ctx,
+                        &mut ir.model.surfaces[index.0],
                         member,
                         source_name.as_deref(),
-                    );
+                        &mut ir.model.attributes,
+                    )?;
                 }
             }
         }
     }
+
+    Ok(())
 }
 
 /// Associate geometry that is owned by presentation records rather than by a
@@ -2674,7 +2787,15 @@ pub(super) fn associate_free_presentation_carriers(
     for (style_id, target) in exchange.records().iter().filter_map(|(style_id, record)| {
         super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
-        associate_presentation_carrier(exchange, ir, index, owned, (target, style_id), losses);
+        associate_presentation_carrier(
+            ctx,
+            exchange,
+            ir,
+            index,
+            owned,
+            (target, style_id),
+            losses,
+        )?;
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
         for parameter in plane
@@ -2686,13 +2807,14 @@ pub(super) fn associate_free_presentation_carriers(
                 let target = target?;
                 if index.surfaces.contains_key(&target) {
                     associate_presentation_carrier(
+                        ctx,
                         exchange,
                         ir,
                         index,
                         owned,
                         (target, plane_id),
                         losses,
-                    );
+                    )?;
                 }
             }
         }
@@ -2701,13 +2823,14 @@ pub(super) fn associate_free_presentation_carriers(
 }
 
 fn associate_presentation_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     exchange: &Exchange,
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
     (target, source_id): (u64, u64),
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let name = exchange
         .records()
         .get(&target)
@@ -2726,30 +2849,38 @@ fn associate_presentation_carrier(
     if let Some(index) = index.curves.get(&target) {
         if !owned.curves.contains(index) {
             attach_geometry_source(
-                &mut ir.model.curves[index.0].source_object,
+                ctx,
+                &mut ir.model.curves[index.0],
                 source_id,
                 name.as_deref(),
-            );
+                &mut ir.model.attributes,
+            )?;
         }
     }
     if let Some(index) = index.points.get(&target).map(|point| &point.index) {
         if !owned.points.contains(index) {
             attach_geometry_source(
-                &mut ir.model.points[index.0].source_object,
+                ctx,
+                &mut ir.model.points[index.0],
                 source_id,
                 name.as_deref(),
-            );
+                &mut ir.model.attributes,
+            )?;
         }
     }
     if let Some(index) = index.surfaces.get(&target) {
         if !owned.surfaces.contains(index) {
             attach_geometry_source(
-                &mut ir.model.surfaces[index.0].source_object,
+                ctx,
+                &mut ir.model.surfaces[index.0],
                 source_id,
                 name.as_deref(),
-            );
+                &mut ir.model.attributes,
+            )?;
         }
     }
+
+    Ok(())
 }
 
 fn representation_items(record: &RawRecord) -> Option<impl Iterator<Item = u64> + '_> {
@@ -3080,8 +3211,7 @@ pub(super) fn associate_topology_carriers(
             continue;
         }
         if ir.model.curves[index.0].source_object.is_none() {
-            ir.model.curves[index.0].source_object =
-                Some(super::step_source_association(edge_id, None));
+            ir.model.curves[index.0].source_object = Some(super::step_source_association(edge_id));
         }
     }
     for (face_id, face) in exchange.entities_any(&["ADVANCED_FACE", "FACE_SURFACE"]) {
@@ -3096,7 +3226,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.model.surfaces[index.0].source_object.is_none() {
             ir.model.surfaces[index.0].source_object =
-                Some(super::step_source_association(face_id, None));
+                Some(super::step_source_association(face_id));
         }
     }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
@@ -3111,7 +3241,7 @@ pub(super) fn associate_topology_carriers(
         }
         if ir.model.points[index.0].source_object.is_none() {
             ir.model.points[index.0].source_object =
-                Some(super::step_source_association(vertex_id, None));
+                Some(super::step_source_association(vertex_id));
         }
     }
 }
@@ -3134,7 +3264,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.model.curves[parent_index.0].source_object.is_none() {
             ir.model.curves[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(replica_id));
         }
     }
     for (replica_id, record) in exchange.entities("SURFACE_REPLICA") {
@@ -3148,7 +3278,7 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
         };
         if ir.model.surfaces[parent_index.0].source_object.is_none() {
             ir.model.surfaces[parent_index.0].source_object =
-                Some(super::step_source_association(replica_id, None));
+                Some(super::step_source_association(replica_id));
         }
     }
 }
@@ -3204,7 +3334,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         };
         if ir.model.surfaces[surface_index.0].source_object.is_none() {
             ir.model.surfaces[surface_index.0].source_object =
-                Some(super::step_source_association(pcurve_id, None));
+                Some(super::step_source_association(pcurve_id));
         }
     }
 }
@@ -3238,7 +3368,7 @@ pub(super) fn associate_surface_curve_supports(
         {
             if ir.model.curves[curve_index.0].source_object.is_none() {
                 ir.model.curves[curve_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(surface_curve_id));
             }
         }
         for surface_id in surface_curve_supports(record, exchange, index) {
@@ -3247,7 +3377,7 @@ pub(super) fn associate_surface_curve_supports(
             };
             if ir.model.surfaces[surface_index.0].source_object.is_none() {
                 ir.model.surfaces[surface_index.0].source_object =
-                    Some(super::step_source_association(surface_curve_id, None));
+                    Some(super::step_source_association(surface_curve_id));
             }
         }
     }

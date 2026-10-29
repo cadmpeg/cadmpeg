@@ -507,16 +507,15 @@ pub(super) struct EdgeGroupTransition<'a> {
     pub(super) feature_id: &'a cadmpeg_ir::features::FeatureId,
 }
 
+type EdgeMemberOverride<'a> = Option<&'a [crate::records::identity::Located<u32, Option<u64>>]>;
+
 fn resolved_edge_group_with_transition_chain(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
-    (proof, members_override): (
-        EdgeGroupProof,
-        Option<&[crate::records::identity::Located<u32>]>,
-    ),
+    (proof, members_override): (EdgeGroupProof, EdgeMemberOverride<'_>),
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
@@ -716,10 +715,6 @@ fn resolved_edge_group_with_transition_chain(
             let mut uniform = true;
             if let Some(matches) = identity_matches.as_ref() {
                 for operand in matches {
-                    if !operand.layout().is_compact() {
-                        uniform = false;
-                        break;
-                    }
                     let candidate = sorted_transition_slots(&operand.transition_edge_candidates);
                     if candidate != edges {
                         uniform = false;
@@ -1768,7 +1763,7 @@ fn scope_partition_edge_group_candidates<'a>(
     target: &DesignConstructionOperandGroup,
     groups: &'a [DesignConstructionOperandGroup],
     operands: &'a [DesignEdgeOperand],
-    target_members: &[crate::records::identity::Located<u32>],
+    target_members: &[crate::records::identity::Located<u32, Option<u64>>],
 ) -> Option<Vec<i64>> {
     let stream = native_stream(&target.id)?;
     let mut scope_groups = Vec::new();
@@ -2513,7 +2508,7 @@ pub(super) fn project_fixed_fillet_with_corners(
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(radius) => {
                 let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(radius.value.get() * 10.0) else { return Ok(None); };
                 Some(RadiusSpec::Constant {
-                    radius,
+                    radius: (radius).into(),
                 })
             }
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Variable {
@@ -2525,20 +2520,20 @@ pub(super) fn project_fixed_fillet_with_corners(
                 let Some(start_radius) = Length::new(start.value.get() * 10.0) else { return Ok(None); };
                 points.push(VariableRadius {
                     parameter: 0.0,
-                    radius: start_radius,
+                    radius: (start_radius).into(),
                 });
                 for row in intermediate {
 
                     let Some(radius) = Length::new(row.radius.value.get() * 10.0) else { return Ok(None); };
                     points.push(VariableRadius {
                         parameter: row.parameter.value.get(),
-                        radius,
+                        radius: (radius).into(),
                     });
                 }
                 let Some(end_radius) = Length::new(end.value.get() * 10.0) else { return Ok(None); };
                 points.push(VariableRadius {
                     parameter: 1.0,
-                    radius: end_radius,
+                    radius: (end_radius).into(),
                 });
                 let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok() else { return Ok(None); };
                 Some(RadiusSpec::Variable {
@@ -2583,11 +2578,10 @@ pub(super) fn project_fixed_fillet_with_corners(
         fixed.groups.iter().zip(complete_edge_groups).collect()
     } else if fixed.groups.len() == 1 && complete_edge_groups.is_empty() {
         let group = {
-            // Support-face operands share the compact persistent-identity
-            // prefix. A sole construction group cannot be a support group
-            // alongside an unrepresented edge group: it is the Fillet's edge
-            // selection when every member has one exact identity record and
-            // the fixed radius selects a nonempty transition chain.
+            // A sole construction group is the Fillet edge selection when
+            // every member has one exact identity and the fixed radius proves
+            // one nonempty transition chain. Source prologue layout carries no
+            // additional selection semantics.
             let [group] = scope_groups.as_slice() else {
                 return Ok(None);
             };
@@ -2606,14 +2600,11 @@ pub(super) fn project_fixed_fillet_with_corners(
                 let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
                     return Ok(None);
                 };
-                if !operand.layout().is_compact() {
-                    return Ok(None);
-                }
                 identities.push(operand);
             }
             or_none!(radius_edge_identity_group_candidates(
                 &identities,
-                radius.get()
+                or_none!(radius.literal()).get()
             ));
             *group
         };
@@ -2624,8 +2615,8 @@ pub(super) fn project_fixed_fillet_with_corners(
     let mut groups = Vec::new();
     for (fixed_group, edge_group) in assignments {
         let radius = or_none!(radius_spec(fixed_group)?);
-        let edge_radius = match radius {
-            RadiusSpec::Constant { radius } => Some(radius.get()),
+        let edge_radius = match &radius {
+            RadiusSpec::Constant { radius } => Some(or_none!(radius.literal()).get()),
             RadiusSpec::Chordal { .. }
             | RadiusSpec::Asymmetric { .. }
             | RadiusSpec::Variable { .. }
@@ -2648,7 +2639,8 @@ pub(super) fn project_fixed_fillet_with_corners(
         groups.push(FilletGroup {
             edges,
             radius,
-            tangency_weight: fixed_group.tangency_weight().map(|tangency| tangency.value),
+            tangency_weight: (fixed_group.tangency_weight().map(|tangency| tangency.value))
+                .map(Into::into),
         });
     }
     Ok(Some(FeatureDefinition::Operation(

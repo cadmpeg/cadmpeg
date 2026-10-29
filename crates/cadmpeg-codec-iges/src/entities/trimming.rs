@@ -277,6 +277,7 @@ fn create_boundary_vertices(
         ));
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id.clone(),
             point: point_id,
             tolerance: Some(tolerance),
@@ -1961,6 +1962,7 @@ pub(super) fn clone_boundary_edge(edge: &Edge) -> Edge {
         }
     };
     Edge {
+        native_ref: edge.native_ref.clone(),
         id: edge.id.clone(),
         carrier,
         start: edge.start.clone(),
@@ -2918,6 +2920,7 @@ pub(super) fn project(
                 };
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
                 candidate.model_mut().edges.push(Edge {
+                    native_ref: None,
                     id: edge_id.clone(),
                     carrier,
                     start: start_vertex,
@@ -2956,6 +2959,7 @@ pub(super) fn project(
 
                     ctx.charge_entities(1, "iges_geometry_trimming")?;
                     candidate.model_mut().pcurves.push(Pcurve {
+                        native_ref: None,
                         id: id.clone(),
                         geometry,
                         metadata: PcurveMetadata::general(
@@ -2976,6 +2980,7 @@ pub(super) fn project(
                 let coedge_id = coedge_ids[segment_index].clone();
                 ctx.charge_entities(1, "iges_geometry_trimming")?;
                 candidate.model_mut().coedges.push(Coedge {
+                    native_ref: None,
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id,
@@ -3002,6 +3007,7 @@ pub(super) fn project(
             };
             ctx.charge_entities(1, "iges_geometry_trimming")?;
             candidate.model_mut().loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -3068,6 +3074,7 @@ pub(super) fn project(
             sequences.record_surface(&derived_surface_id, entry.sequence);
             ctx.charge_entities(1, "iges_geometry_trimming")?;
             candidate.model_mut().surfaces.push(Surface {
+                native_ref: None,
                 id: derived_surface_id.clone(),
                 geometry: support_geometry,
                 source_object: Some(match source_object(entry) {
@@ -3136,6 +3143,7 @@ pub(super) fn project(
         };
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().faces.push(Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: face_surface_id,
@@ -3159,6 +3167,7 @@ pub(super) fn project(
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().regions.push(Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
@@ -3166,6 +3175,7 @@ pub(super) fn project(
         let body_regions = vec![region_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().bodies.push(Body {
+            native_ref: None,
             id: body_id,
             kind: BodyKind::Sheet,
             regions: body_regions,

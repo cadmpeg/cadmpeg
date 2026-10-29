@@ -432,7 +432,12 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
     };
     assert_eq!(transfer.relation_program_parameter_count, 1);
     assert_eq!(parameter.name, "Thickness");
-    assert_eq!(parameter.expression, "35 mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text_with_native(
+            &ir, parameter, &native
+        ),
+        "35 mm"
+    );
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(35.0).unwrap()))
@@ -564,13 +569,21 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     };
     assert_eq!(transfer.relation_program_parameter_count, 1);
     assert_eq!(input.name, "Thickness");
-    assert_eq!(input.expression, "35 mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text_with_native(&ir, input, &native),
+        "35 mm"
+    );
     assert_eq!(
         input.value,
         Some(ParameterValue::Length(Length::new(35.0).unwrap()))
     );
     assert_eq!(output.name, "Result");
-    assert_eq!(output.expression, "#1_ /2-2mm");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text_with_native(
+            &ir, output, &native
+        ),
+        "#1_ /2-2mm"
+    );
     assert_eq!(
         output.value,
         Some(ParameterValue::Length(Length::new(33.0).unwrap()))
@@ -578,7 +591,7 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
     assert_eq!(
-        output.dependencies.as_slice(),
+        crate::test_support::parameter_projection::dependencies(output).as_slice(),
         std::slice::from_ref(&input.id)
     );
     assert_eq!(output.native_ref, Some(output_entity.id));

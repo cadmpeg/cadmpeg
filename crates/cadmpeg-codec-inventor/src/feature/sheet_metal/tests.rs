@@ -315,6 +315,7 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
 fn corner_loss_input() -> cadmpeg_ir::features::Feature {
     serde_json::from_value(serde_json::json!({
         "id": "test:model:feature#corner", "ordinal": 1, "suppressed": null,
+        "needs_recompute": false,
         "definition": {"definition": "native", "kind": "SheetMetalCorner"}
     }))
     .expect("synthetic corner feature")
@@ -471,7 +472,9 @@ fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
             groups: vec![cadmpeg_ir::features::edge_treatments::FilletGroup {
                 edges: cadmpeg_ir::features::EdgeSelection::Native("synthetic-edges".to_owned()),
                 radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("radius"),
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(3.0)
+                        .expect("radius")
+                        .into(),
                 },
                 tangency_weight: None,
             }]

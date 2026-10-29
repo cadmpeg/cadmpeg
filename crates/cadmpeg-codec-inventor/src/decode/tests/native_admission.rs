@@ -8,11 +8,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
 use crate::decode::{
-    admit_assembly_placement, admit_kernel_annotation, decode_container, project_preview_asset,
-    project_property_set_issue, project_protein_records, project_protein_state,
-    project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
-    project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
-    project_ufrx_state, property_set_name, structural_issue,
+    admit_kernel_annotation, decode_container, project_preview_asset, project_property_set_issue,
+    project_protein_records, project_protein_state, project_root_product,
+    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
+    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, property_set_name,
+    structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -25,13 +25,12 @@ use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::ufrx::UfrxRecord;
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecordWire,
-    StructuralIssueRecord,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
+    AssemblyPlacementRecordWire, StructuralIssueRecord,
 };
 use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentKind, SegmentMetaState};
+use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentMetaState};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
@@ -90,6 +89,7 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
         .identity_issues
         .push("identity issue".into());
     container.rse.segments[0].meta = SegmentMetaState::Malformed {
+        framing: None,
         declared: None,
         detail: "metadata issue".into(),
     };
@@ -141,25 +141,38 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
             occurrence_id: 0,
         }],
         placements: Vec::new(),
-        representations: Vec::new(),
-        visibility_off: Vec::new(),
-        groundings: Vec::new(),
-        issues: Vec::new(),
+        parts: cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+        ),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
-    AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0])
+    cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
+        .insert_native(
+            &ctx,
+            "assembly_occurrences",
+            AssemblyOccurrenceRecord::from_parsed_occurrence(&inventory.occurrences[0]),
+        )
         .expect("admitted occurrence");
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        AssemblyOccurrenceRecord::from_occurrence(&ctx, &inventory.occurrences[0]),
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor).insert_native(&ctx, "assembly_occurrences", AssemblyOccurrenceRecord::from_parsed_occurrence(&inventory.occurrences[0])),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor native assembly occurrence"
     ));
+}
+
+fn stage_placement(
+    ctx: &DecodeContext<'_>,
+    wire: AssemblyPlacementRecordWire,
+) -> Result<(), CodecError> {
+    let record = AssemblyPlacementRecord::try_from(wire).map_err(CodecError::malformed)?;
+    cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor)
+        .insert_native(ctx, "assembly_placements", record)
 }
 
 #[test]
@@ -184,10 +197,9 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
             object_reference: 0,
             suffix: View::over_retained(&suffix),
         }],
-        representations: Vec::new(),
-        visibility_off: Vec::new(),
-        groundings: Vec::new(),
-        issues: Vec::new(),
+        parts: cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+        ),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -196,7 +208,7 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let wire = AssemblyPlacementRecordWire::from_placement(&inventory.placements[0]);
     assert!(matches!(
-        admit_assembly_placement(&limited, wire, &mut Vec::new()),
+        stage_placement(&limited, wire),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor native assembly placement"
@@ -204,9 +216,7 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
     let wire = AssemblyPlacementRecordWire::from_placement(&inventory.placements[0]);
-    assert!(admit_assembly_placement(&ctx, wire, &mut Vec::new())
-        .expect("admit the assembly placement")
-        .is_some());
+    stage_placement(&ctx, wire).expect("admit the assembly placement");
 }
 
 #[test]
@@ -580,7 +590,7 @@ fn native_rse_projection_refuses_entity_limit_at_record_creation() {
                 && limit.operation == "admit Inventor native structural records"
     ));
     assert!(rse_native_projection::project(&setup_ctx, &container).is_ok());
-    assert!(decode_container(&setup_ctx, &container).is_ok());
+    assert!(decode_container(&setup_ctx, container).is_ok());
 }
 
 #[test]
@@ -692,48 +702,46 @@ fn rejected_occurrence_does_not_fail_decode() {
 
 #[test]
 fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
-    let bytes = primary_envelope_fixture();
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-        .expect("container fixture");
-    let mut container = InventorContainer::open(&ctx, root).expect("container fixture");
     let mut payload = vec![0; 15];
     payload.extend_from_slice(&0_u16.to_le_bytes());
     payload.extend_from_slice(&0_u16.to_le_bytes());
     payload.extend_from_slice(&f64::INFINITY.to_le_bytes());
-    let segment = &mut container.rse.segments[0];
-    segment.kind = SegmentKind::AmGraphics;
-    let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-        panic!("framed fixture");
-    };
-    let RecordFrameState::Framed(table) = &mut bulk.records else {
-        panic!("record fixture");
-    };
-    table.records[0].type_id = [
+    let type_id = [
         0xa2, 0x63, 0x71, 0xca, 0xd0, 0x11, 0xb2, 0xd3, 0x00, 0x08, 0xbf, 0xbb, 0x21, 0xed, 0xdc,
         0x09,
     ];
-    table.records[0].payload = View::over_retained(&payload);
+    let bytes = crate::test_support::test_fixtures::assembly_graphics_envelope_fixture(&[(
+        type_id, payload,
+    )]);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        .expect("container fixture");
+    let container = InventorContainer::open(&ctx, root).expect("container fixture");
     let decoded =
-        decode_container(&ctx, &container).expect("invalid placement must not fail decode");
+        decode_container(&ctx, container).expect("invalid placement must not fail decode");
     let namespace = decoded
         .ir
         .native
         .namespace("inventor")
         .expect("native namespace");
-    let issues = namespace
-        .arena_as::<RecordIssue>("assembly_record_issues")
-        .expect("assembly issues");
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].family, RecordIssueFamily::Assembly);
-    assert!(issues[0].detail.contains("finite"), "{:?}", issues[0]);
+    assert!(!namespace.arenas().contains_key("assembly_record_issues"));
     assert!(namespace
-        .arena_as::<serde_json::Value>("assembly_placements")
-        .expect("placements")
+        .arena_as::<AssemblyPlacementRecord>("assembly_placements")
+        .expect("the placements arena holds placement records")
         .is_empty());
-    assert!(super::validation_findings(&decoded.ir)
+    let unreadable = decoded
+        .body
+        .losses
         .iter()
-        .any(|finding| finding.message.contains(&issues[0].detail)));
+        .filter(|loss| loss.message.contains("inventor.rse_record_body"))
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert_eq!(unreadable[0].code.to_string(), "decode/record.unreadable");
+    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(unreadable[0].message.contains("finite"));
+    let given_up = crate::test_support::given_up_records(&decoded.source_fidelity);
+    assert_eq!(given_up.len(), 1);
+    assert!(given_up[0].data().is_some());
 }
 
 #[test]
@@ -746,26 +754,22 @@ fn rejected_placement_digest_records_its_source_and_keeps_later_placements() {
         "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
         "object_reference": 0, "suffix_len": 48, "suffix_sha256": "invalid"
     });
-    let mut issues = Vec::new();
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
+    // §4.5 rule1 removes native issue records. With no source bytes, a forged
+    // native wire value is rejected by its owning type, not recovered as a part.
     let bad: AssemblyPlacementRecordWire =
         serde_json::from_value(wire.clone()).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, bad, &mut issues)
-        .expect("admit the assembly placement")
-        .is_none());
-    assert_eq!(issues.len(), 1);
-    assert_eq!(issues[0].segment_token.as_str(), "segment");
-    assert_eq!(issues[0].record_ordinal, 1);
-    assert!(issues[0].detail.contains("suffix_sha256"));
+    assert_eq!(bad.segment_token, "segment");
+    assert_eq!(bad.record_ordinal, 1);
+    assert!(AssemblyPlacementRecord::try_from(bad)
+        .expect_err("an invalid suffix digest is refused")
+        .contains("suffix_sha256"));
     let mut wire = wire;
     wire["suffix_sha256"] = serde_json::json!("0".repeat(64));
     let good = serde_json::from_value(wire).expect("wire fixture");
-    assert!(admit_assembly_placement(&ctx, good, &mut issues)
-        .expect("admit the assembly placement")
-        .is_some());
-    assert_eq!(issues.len(), 1);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("the empty source fits the service policy");
+    stage_placement(&ctx, good).expect("later placement remains admitted");
 }
 
 fn placement_wire(suffix_len: u64, suffix_sha256: &str) -> AssemblyPlacementRecordWire {
@@ -782,32 +786,18 @@ fn placement_wire(suffix_len: u64, suffix_sha256: &str) -> AssemblyPlacementReco
 
 #[test]
 fn empty_placement_suffix_becomes_an_issue() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    let mut issues = Vec::new();
-    assert!(
-        admit_assembly_placement(&ctx, placement_wire(0, &"0".repeat(64)), &mut issues)
-            .expect("admit the assembly placement")
-            .is_none()
-    );
-    assert_eq!(issues.len(), 1);
-    assert!(issues[0].detail.contains("suffix_len"));
+    let wire = placement_wire(0, &"0".repeat(64));
+    assert!(AssemblyPlacementRecord::try_from(wire)
+        .expect_err("an empty placement suffix is refused")
+        .contains("suffix_len"));
 }
 
 #[test]
 fn uppercase_placement_digest_becomes_an_issue() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    let mut issues = Vec::new();
-    assert!(
-        admit_assembly_placement(&ctx, placement_wire(48, &"A".repeat(64)), &mut issues)
-            .expect("admit the assembly placement")
-            .is_none()
-    );
-    assert_eq!(issues.len(), 1);
-    assert!(issues[0].detail.contains("suffix_sha256"));
+    let wire = placement_wire(48, &"A".repeat(64));
+    assert!(AssemblyPlacementRecord::try_from(wire)
+        .expect_err("an uppercase suffix digest is refused")
+        .contains("suffix_sha256"));
 }
 
 fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {
@@ -902,7 +892,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     edit(&mut document);
     container.ufrx = UfrxState::Parsed(Box::new(document));
     let decoded =
-        decode_container(&ctx, &container).expect("rejected native record must not fail decode");
+        decode_container(&ctx, container).expect("rejected native record must not fail decode");
     assert!(decoded
         .body
         .losses

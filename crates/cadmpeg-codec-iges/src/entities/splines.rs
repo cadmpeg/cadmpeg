@@ -201,11 +201,13 @@ fn add_edge(
     ctx.charge_entities(2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
@@ -215,6 +217,7 @@ fn add_edge(
 
     ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -229,6 +232,7 @@ fn add_edge(
 
     ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
         start: start_vertex,
@@ -954,6 +958,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_splines")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry)?),

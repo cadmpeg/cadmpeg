@@ -5,7 +5,7 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
@@ -19,16 +19,14 @@ use crate::FcstdCodec;
 /// quantity.
 const MEASURED_FIXTURE_FLOOR: usize = 8;
 
-/// The document label that the patch write stores.
+/// The document label that the write stores.
 const EDITED_LABEL: &str = "measured round trip";
 
 /// Every corpus document that measures a comparable body keeps its
-/// measured geometry when an edit of its document label forces the patch
-/// writer to repack the archive.
+/// measured geometry when an edit of its document label forces a write.
 ///
-/// The patch rewrites only `Document.xml` and repacks the retained BREP
-/// entry bytes unchanged, so this measures the repack and the decode of
-/// those bytes, not a write of BREP geometry.
+/// The write takes the patch path, or synthesizes with the cause that makes
+/// the patch path ineligible or declines it.
 #[test]
 fn patched_corpus_documents_keep_measured_geometry() {
     let fixtures =
@@ -69,12 +67,25 @@ fn patched_corpus_documents_keep_measured_geometry() {
             .unwrap_or_else(|_| panic!("{label}: the document label is not editable"));
         let mut encoded = Vec::new();
         let plan = FcstdCodec
-            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+            .plan(
+                EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
             .unwrap_or_else(|_| panic!("{label}: the edit is not planned"));
-        assert!(
-            matches!(plan.report().write_path(), WritePath::Patched { .. }),
-            "{label}: the label edit does not take the patch path"
-        );
+        let unrepresented = decoded.source_fidelity().unrepresented();
+        match plan.report().synthesis_cause() {
+            None => assert!(
+                matches!(plan.report().write_path(), WritePath::Patched { .. }),
+                "{label}: the label edit takes neither the patch path nor a stated synthesis fallback"
+            ),
+            Some(SynthesisCause::SourceUnrepresented { classes }) => {
+                assert_eq!(classes, &unrepresented, "{label}: synthesis names other classes");
+            }
+            Some(SynthesisCause::PatchDeclined { .. }) => assert!(
+                unrepresented.is_empty(),
+                "{label}: unrepresented source content does not force synthesis"
+            ),
+        }
         plan.write_to(&mut encoded)
             .unwrap_or_else(|_| panic!("{label}: the patch write fails"));
         let round_trip = FcstdCodec

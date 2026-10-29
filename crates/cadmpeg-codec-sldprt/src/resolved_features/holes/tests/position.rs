@@ -112,6 +112,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         })
         .collect();
     let surface = |id, x| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -178,6 +179,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     );
 
     let opposite_side = |id, x| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("test:model:entity#surface-{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -279,6 +281,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
         .into_iter()
         .enumerate()
         .map(|(id, x)| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:entity#carrier-{id}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -438,6 +441,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     );
 
     surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#duplicate-locus-bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -496,9 +500,11 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "hole-name".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         value: "Hole".into(),
         object_id: Some(ObjectId::Absent),
@@ -511,9 +517,11 @@ fn an_absent_object_name_trailer_sources_no_hole_position() {
 
     let child_offset = hole_trailer + 32;
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "position-name".into(),
         parent: "lane".into(),
         ordinal: 1,
+        sequence: 1,
         offset: cadmpeg_core::decode::u64_from_index(child_offset),
         value: "Position".into(),
         object_id: ObjectId::from_value(6),
@@ -544,9 +552,11 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
     let mut lane = lane();
     lane.native_payload.resize(200, 0);
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "hole-name".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         value: "Hole".into(),
         object_id: ObjectId::from_value(7),
@@ -558,9 +568,11 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
 
     let child_offset = hole_trailer + 32;
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "position-name".into(),
         parent: "lane".into(),
         ordinal: 1,
+        sequence: 1,
         offset: cadmpeg_core::decode::u64_from_index(child_offset),
         value: "Position".into(),
         object_id: ObjectId::from_value(6),
@@ -699,9 +711,11 @@ fn position_sketch_index_matches_the_candidate_scan() {
                 id: format!("lane-{lane_index}"),
                 names: (0..next(12))
                     .map(|ordinal| FeatureInputName {
+                        feature_ref: None,
                         id: format!("name-{lane_index}-{ordinal}"),
                         parent: format!("lane-{lane_index}"),
                         ordinal,
+                        sequence: ordinal,
                         offset: u64::from(ordinal) * 8,
                         object_id: ObjectId::from_value(1 + next(6)),
                         value: format!("Sketch{}", next(8)),
@@ -740,6 +754,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -877,8 +892,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &entities,
         std::slice::from_ref(&history),
         &[lane, alternate_configuration],
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -914,8 +928,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&paired_lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: paired_placements,
         ..
@@ -978,8 +991,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&incomplete_lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         incomplete_features[0].evaluation.definition()
     else {
@@ -1001,6 +1013,7 @@ fn unique_unindexed_point_locus_is_projected() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -1072,8 +1085,7 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1105,8 +1117,7 @@ fn unique_unindexed_point_locus_is_projected() {
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    )
-    .unwrap();
+    );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous_features[0].evaluation.definition()
     else {
@@ -1129,6 +1140,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1227,6 +1239,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
     .with_construction(true)
     .with_native_ref(Some("construction-point".into()));
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1248,6 +1261,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         &[surface],
         &[history],
         &[lane],
+        &[],
     );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -1282,6 +1296,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1345,6 +1360,7 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         &[],
         &[history],
         &[lane],
+        &[],
     );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -1393,6 +1409,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(sketch_id.clone()),
@@ -1453,6 +1470,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
     )
     .with_native_ref(Some("relation-handle".into()));
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#bore").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1474,6 +1492,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         &[surface],
         &[history],
         &[lane],
+        &[],
     );
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -1580,17 +1599,21 @@ fn source_intervals_supply_legacy_hole_profiles() {
 
     let mut lane = lane_with_position_reference(12);
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "depth-name".into(),
         parent: "lane".into(),
         ordinal: 1,
+        sequence: 1,
         offset: 120,
         value: "depth".into(),
         object_id: None,
     });
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "profile-name".into(),
         parent: "lane".into(),
         ordinal: 2,
+        sequence: 2,
         offset: 100,
         value: "Profile".into(),
         object_id: ObjectId::from_value(8),
@@ -1600,6 +1623,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         parent: "lane".into(),
         feature_ref: Some("native-profile-sketch".into()),
         ordinal: 0,
+        sequence: 0,
         offset: 150,
         object_id: 1,
         name: "depth-name".into(),
@@ -1611,7 +1635,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     let mut histories = [history];
     enrich_history_parameters(&mut histories, [&lane], true);
     assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
-    enrich_history_hole_constructions(&mut histories, &[lane]).unwrap();
+    enrich_history_hole_constructions(&mut histories, &[lane]);
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1629,7 +1653,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
     next_hole.source_id = FeatureSource::from_value(20);
     next_hole.ordinal = 1;
     histories[0].features.push(next_hole);
-    enrich_history_hole_constructions(&mut histories, &[]).unwrap();
+    enrich_history_hole_constructions(&mut histories, &[]);
     assert_eq!(
         histories[0].features[0]
             .properties
@@ -1685,24 +1709,28 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     lane.native_payload.resize(300, 0);
     lane.names.extend([
         FeatureInputName {
+            feature_ref: None,
             id: "position-name".into(),
             parent: "lane".into(),
             ordinal: 1,
+            sequence: 1,
             offset: 100,
             value: "Position".into(),
             object_id: ObjectId::from_value(12),
         },
         FeatureInputName {
+            feature_ref: None,
             id: "profile-name".into(),
             parent: "lane".into(),
             ordinal: 2,
+            sequence: 2,
             offset: 200,
             value: "Profile".into(),
             object_id: ObjectId::from_value(58),
         },
     ]);
 
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane.clone()]).unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane.clone()]);
     assert_eq!(
         history.features[0]
             .properties
@@ -1721,32 +1749,37 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
     alternate_lane.native_payload.resize(300, 0);
     alternate_lane.names.extend([
         FeatureInputName {
+            feature_ref: None,
             id: "alternate-position-name".into(),
             parent: "lane".into(),
             ordinal: 1,
+            sequence: 1,
             offset: 100,
             value: "Position".into(),
             object_id: ObjectId::from_value(12),
         },
         FeatureInputName {
+            feature_ref: None,
             id: "alternate-profile-name".into(),
             parent: "lane".into(),
             ordinal: 2,
+            sequence: 2,
             offset: 150,
             value: "Alternate profile".into(),
             object_id: ObjectId::from_value(59),
         },
         FeatureInputName {
+            feature_ref: None,
             id: "later-profile-name".into(),
             parent: "lane".into(),
             ordinal: 3,
+            sequence: 3,
             offset: 200,
             value: "Profile".into(),
             object_id: ObjectId::from_value(58),
         },
     ]);
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane])
-        .unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[lane, alternate_lane]);
     assert!(!history.features[0]
         .properties
         .contains_key("DissectableChildren"));
@@ -1793,7 +1826,7 @@ fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
         ],
     });
 
-    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[]).unwrap();
+    enrich_history_hole_constructions(std::slice::from_mut(&mut history), &[]);
 
     assert_eq!(
         history.features[0]
@@ -1810,16 +1843,20 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
     let mut history = native_history();
     let mut lane = lane_with_position_reference(6);
     lane.classes.push(FeatureInputClass {
+        feature_ref: None,
         id: "angle-parameter-class".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 100,
         name: "moAngleParameter_c".into(),
     });
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "angle-name".into(),
         parent: "lane".into(),
         ordinal: 1,
+        sequence: 1,
         offset: 120,
         value: "D1".into(),
         object_id: None,
@@ -1829,6 +1866,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         parent: "lane".into(),
         feature_ref: Some("native-hole".into()),
         ordinal: 0,
+        sequence: 0,
         offset: 150,
         object_id: 1,
         name: "angle-name".into(),
@@ -1865,6 +1903,7 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
         &mut features,
         &[],
         &HoleTopology {
+            parameters: &[],
             surfaces: &surfaces,
             faces: &[],
             loops: &[],

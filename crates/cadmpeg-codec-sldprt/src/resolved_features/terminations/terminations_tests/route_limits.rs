@@ -50,6 +50,8 @@ fn extrusion_termination_enrichment_projects_through_all() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 10,
+                feature_ref: None,
                 id: "extrusion-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 0,
@@ -58,6 +60,8 @@ fn extrusion_termination_enrichment_projects_through_all() {
                 object_id: ObjectId::from_value(10),
             },
             FeatureInputName {
+                sequence: 200,
+                feature_ref: None,
                 id: "cosmetic-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 1,
@@ -66,6 +70,8 @@ fn extrusion_termination_enrichment_projects_through_all() {
                 object_id: ObjectId::from_value(11),
             },
             FeatureInputName {
+                sequence: 500,
+                feature_ref: None,
                 id: "next-name".into(),
                 parent: "lane#7".into(),
                 ordinal: 2,
@@ -159,6 +165,8 @@ fn legacy_face_fixture() -> (Vec<FeatureHistory>, FeatureInputLane) {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 10,
+            feature_ref: None,
             id: "extrusion-name".into(),
             parent: "lane#7".into(),
             ordinal: 0,
@@ -273,9 +281,11 @@ fn extrusion_delimiters_end_every_successor_through_all() {
             content: Vec::new(),
         });
         names.push(FeatureInputName {
+            feature_ref: None,
             id: format!("name#{index}"),
             parent: "lane".into(),
             ordinal: index,
+            sequence: index,
             offset: u64::try_from(offset).unwrap(),
             object_id: ObjectId::from_value(source),
             value: name,

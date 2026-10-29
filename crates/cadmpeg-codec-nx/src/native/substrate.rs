@@ -143,7 +143,12 @@ impl<'a> ParsedStreams<'a> {
                 crate::parasolid::StreamBody::Parasolid { subtype, .. }
                     if stream.kind() != StreamKind::Deltas =>
                 {
-                    StreamView::parse_uniform(&stream.inflated, subtype.chart_point_layout())?
+                    StreamView::parse_uniform(
+                        stream
+                            .source
+                            .map_or(stream.inflated.as_ref(), |source| source.window()),
+                        subtype.chart_point_layout(),
+                    )?
                 }
                 _ => StreamView::without_geometry(source),
             };
@@ -192,11 +197,12 @@ mod tests {
 
     use super::{topology_streams, ParsedStreams};
 
-    fn one_delta_pair() -> Vec<crate::parasolid::Stream> {
+    fn one_delta_pair() -> Vec<crate::parasolid::Stream<'static>> {
         let stream = |subtype, file_offset| crate::parasolid::Stream {
+            source: None,
             file_offset,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
                 schema: Some(
@@ -214,9 +220,10 @@ mod tests {
     #[test]
     fn delta_pairing_matches_the_nearest_preceding_partition() {
         let mut streams = vec![crate::parasolid::Stream {
+            source: None,
             file_offset: 10,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Preview,
         }];
         streams.extend(one_delta_pair());
@@ -233,9 +240,10 @@ mod tests {
         use std::collections::BTreeSet;
 
         let stream = |subtype, schema: Option<&str>, file_offset| Stream {
+            source: None,
             file_offset,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype,
                 schema: schema.map(|schema| {
@@ -251,9 +259,10 @@ mod tests {
                 10,
             ),
             Stream {
+                source: None,
                 file_offset: 20,
                 consumed: 0,
-                inflated: Vec::new(),
+                inflated: Vec::new().into(),
                 body: crate::parasolid::StreamBody::Preview,
             },
             stream(
@@ -286,8 +295,8 @@ mod tests {
 
     #[test]
     fn unchanged_stream_views_borrow_the_inflated_bytes() {
-        let scan = crate::decode::Scan {
-            container: crate::container::Container {
+        let scan = crate::decode::Scan::new(
+            crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
@@ -296,10 +305,11 @@ mod tests {
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
             },
-            streams: vec![crate::parasolid::Stream {
+            vec![crate::parasolid::Stream {
+                source: None,
                 file_offset: 0,
                 consumed: 3,
-                inflated: vec![1, 2, 3],
+                inflated: vec![1, 2, 3].into(),
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
                     schema: Some(
@@ -308,18 +318,15 @@ mod tests {
                     ),
                 },
             }],
-        };
+        );
 
         let topology = topology_streams(&scan).expect("test topology streams");
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
 
-        assert!(std::ptr::eq(
-            topology[0],
-            scan.streams[0].inflated.as_slice()
-        ));
+        assert!(std::ptr::eq(topology[0], scan.streams[0].inflated.as_ref()));
         assert!(std::ptr::eq(
             parsed.streams[0].view.source,
-            scan.streams[0].inflated.as_slice()
+            scan.streams[0].inflated.as_ref()
         ));
     }
 
@@ -328,9 +335,10 @@ mod tests {
         let stream = |file_offset| {
             let inflated = bspline_partition_stream();
             crate::parasolid::Stream {
+                source: None,
                 file_offset,
                 consumed: u64::try_from(inflated.len()).expect("test stream length fits u64"),
-                inflated,
+                inflated: inflated.into(),
                 body: crate::parasolid::StreamBody::Parasolid {
                     subtype: crate::parasolid::ParasolidSubtype::Partition,
                     schema: Some(
@@ -340,8 +348,8 @@ mod tests {
                 },
             }
         };
-        let scan = crate::decode::Scan {
-            container: crate::container::Container {
+        let scan = crate::decode::Scan::new(
+            crate::container::Container {
                 data: Vec::new().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
@@ -350,8 +358,8 @@ mod tests {
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
             },
-            streams: vec![stream(0), stream(1)],
-        };
+            vec![stream(0), stream(1)],
+        );
 
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");
 

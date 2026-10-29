@@ -253,12 +253,17 @@ pub(super) fn attach(
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             snapshot.restore(ir, annotations, unknowns, losses);
-            losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
-                "Native object-model attachment failed: {error}. Decoded geometry and \
+            ir.scope.design = false;
+            losses.push(NxLossCode::NativeAttachmentFailed.note({
+                scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
+                scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+                format!(
+                    "Native object-model attachment failed: {error}. Decoded geometry and \
                  topology are kept. None of the attachment's features, sketches, parameters, \
                  configurations, appearances, attributes, display tessellations, native \
                  records, or container passthrough records are kept."
-            )));
+                )
+            }));
             Ok(())
         }
     }
@@ -386,20 +391,27 @@ fn attach_records(
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     for section in &model.om.object_record_identity_bounded_sections {
-        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
-            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
+        losses.push(NxLossCode::ObjectRecordIdentityBounded.note({
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Design);
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+            format!(
+                "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
              {} of its object records were kept without a stable identity.",
-            section.source_entry,
-            crate::native::om::MAX_STABLE_GRAPH_WORK,
-            section.records
-        )));
+                section.source_entry,
+                crate::native::om::MAX_STABLE_GRAPH_WORK,
+                section.records
+            )
+        }));
     }
     if model.display_jt.arithmetic_lane_work_bounded {
-        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(
-            "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
+        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note({
+            scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+            format!(
+                "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
              the lanes above that bound were left undecoded.",
-            crate::jt::MAX_ARITHMETIC_WORK
-        )));
+                crate::jt::MAX_ARITHMETIC_WORK
+            )
+        }));
     }
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
@@ -408,6 +420,7 @@ fn attach_records(
     }
     attach_rm_appearances(ir, model, annotations)?;
     let display_jt_tessellations = display_jt_tessellations(
+        &mut scan.source_untyped(),
         ctx,
         &DisplayJtTessellationInputs {
             meshes: &model.display_jt.polygon_meshes,
@@ -430,7 +443,42 @@ fn attach_records(
         },
         losses,
     )?;
-    for (tessellation, source_offset) in display_jt_tessellations {
+    for (tessellation, source_offset, color) in display_jt_tessellations {
+        if let Some(color) = color {
+            let source_id = tessellation.id.to_string();
+            let appearance_id: AppearanceId =
+                extended_id(&source_id, &cadmpeg_ir::identity_key!("material")).ok_or_else(
+                    || CodecError::malformed("invalid JT tessellation appearance identity"),
+                )?;
+            ir.model.appearances.push(Appearance {
+                native_ref: None,
+                id: appearance_id.clone(),
+                name: None,
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: Some("JTMaterial".into()),
+                category: None,
+                base_color: Some(color),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+            let binding = AppearanceBinding {
+                native_ref: None,
+                id: extended_id(&source_id, &cadmpeg_ir::identity_key!("appearance-binding"))
+                    .ok_or_else(|| {
+                        CodecError::malformed("invalid JT tessellation binding identity")
+                    })?,
+                target: AppearanceTarget::Tessellation(source_id),
+                appearance: appearance_id,
+                source_entity_id: None,
+                object_type: None,
+                visible: None,
+                channels: BTreeMap::new(),
+            };
+            ir.model.appearance_bindings.push(binding);
+        }
         annotations.note(
             tessellation.id.as_str(),
             &annotation_stream,
@@ -449,6 +497,7 @@ fn attach_records(
         annotations,
     )?;
     attach_part_attributes(
+        ctx,
         ir,
         model.om.part_attributes.iter().map(|attribute| {
             (
@@ -470,6 +519,7 @@ fn attach_records(
         &model.parasolid.attribute_field_names,
     );
     attach_parasolid_topology_string_attributes(
+        ctx,
         ir,
         &ParasolidStringAttributeSources {
             string_uses: &model.parasolid.entity_51_string_uses,
@@ -479,6 +529,7 @@ fn attach_records(
         annotations,
     )?;
     attach_parasolid_topology_numeric_attributes(
+        ctx,
         ir,
         &ParasolidNumericAttributeSources {
             numeric_uses: &model.parasolid.entity_51_numeric_uses,
@@ -489,6 +540,7 @@ fn attach_records(
         annotations,
     )?;
     attach_parasolid_topology_structured_attributes(
+        ctx,
         ir,
         &ParasolidStructuredAttributeSources {
             structured_uses: &model.parasolid.entity_51_structured_uses,
@@ -527,14 +579,16 @@ fn attach_records(
         ir,
         &model.om.expressions,
         &model.om.expression_declarations,
-        &model.features.feature_parameter_uses,
         annotations,
+        losses,
     )?;
-    attach_feature_operations(ctx, ir, model, annotations, losses)?;
-    expressions::attach_block_dimension_parameter_consumers(
+    attach_feature_operations(
+        &mut scan.source_untyped(),
+        ctx,
         ir,
-        &model.features.feature_block_dimensions,
+        model,
         annotations,
+        losses,
     )?;
     attach_current_feature_states(ir, annotations)?;
     ir.model
@@ -550,6 +604,7 @@ fn attach_records(
 }
 
 fn attach_part_attributes<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     attributes: impl IntoIterator<Item = (&'a str, &'a str, &'a str, u64)>,
     annotations: &mut AnnotationBuilder,
@@ -583,12 +638,14 @@ fn attach_part_attributes<'a>(
             .derived(id.as_str(), "values")
             .map_err(cadmpeg_core::CodecError::from)?;
 
-        ir.model.attributes.push(SourceAttribute {
+        ir.model.attributes.push(SourceAttribute::new(
+            ctx,
             id,
-            target: AttributeTarget::Document,
-            name: attribute_title.to_string(),
-            values: vec![AttributeValue::String(attribute_value.to_string())],
-        });
+            None,
+            AttributeTarget::Document,
+            attribute_title.to_string(),
+            vec![AttributeValue::String(attribute_value.to_string())],
+        )?);
     }
     Ok(())
 }
@@ -723,6 +780,7 @@ fn attach_rm_appearances(
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::from)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
+            native_ref: None,
             id: binding_id,
             target: AppearanceTarget::Source {
                 source_id: binding.source_id.clone(),
@@ -779,6 +837,7 @@ fn ensure_rm_color_appearance(
         .derived(id.as_str(), "base_color")
         .map_err(cadmpeg_core::CodecError::from)?;
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: id.clone(),
         name: Some(definition.name.clone()),
         asset_guid: None,
@@ -904,6 +963,21 @@ fn attach_jpeg_preview_assets(
         };
         let native_ref: UnknownId =
             IdScope::container().id(&cadmpeg_ir::identity_component!("jpeg-preview"), ordinal);
+        if ctx.container_only() {
+            // A container-only decode holds no model class (§1.1), so the
+            // preview stays a retained source record.
+            annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(bytes.len()),
+                "retain NX JPEG preview outside a container-only model",
+            )?;
+            push_native_unknown(
+                ctx,
+                unknowns,
+                UnknownRecord::retained(native_ref, source_offset, bytes.to_vec(), Vec::new()),
+            )?;
+            continue;
+        }
         if crate::decode::jpeg::jpeg_dimensions(bytes).is_none() {
             annotations.note(
                 native_ref.as_str(),
@@ -1142,6 +1216,7 @@ fn attach_initial_segment_bodies(
         .derived(&id, "definition")
         .map_err(cadmpeg_core::CodecError::from)?;
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: id.clone(),
         ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
         name: Some("Retained history input".to_string()),
@@ -1168,6 +1243,7 @@ fn attach_initial_segment_bodies(
 }
 
 fn attach_feature_operations(
+    source_untyped: &mut cadmpeg_ir::ArenaClasses,
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
@@ -2017,12 +2093,6 @@ fn attach_feature_operations(
             .get(value.operation_record.as_str())
             .map(|operation| (*operation, value))
     }));
-    let mut parameter_owners = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        let key = parameter.id.clone();
-        let owner = parameter.owner.clone();
-        parameter_owners.insert(key, owner);
-    }
     let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
     for (annotation_ordinal, label) in labels
         .iter()
@@ -2038,10 +2108,10 @@ fn attach_feature_operations(
         let Some(order) = order else {
             const PREFIX: &str = "NX TEXT label ";
             const SUFFIX: &str = " lies past the stated semantic-annotation order width, so it states no order and is not projected.";
-            losses.push(
-                NxLossCode::SemanticAnnotationOrderUnstatable
-                    .note(format!("{PREFIX}{}{SUFFIX}", label.id)),
-            );
+            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note({
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                format!("{PREFIX}{}{SUFFIX}", label.id)
+            }));
             continue;
         };
         let [text, font_family] = payload_strings else {
@@ -2647,18 +2717,6 @@ fn attach_feature_operations(
                 format_args!("block_dimensions"),
                 format_args!("{}", dimensions.id),
             );
-            for (dimension_ordinal, dimension) in dimensions.dimensions.iter().enumerate() {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("block_dimension_declaration.{dimension_ordinal}"),
-                    format_args!("{}", dimension.declaration),
-                );
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("block_dimension_expression.{dimension_ordinal}"),
-                    format_args!("{}", dimension.expression),
-                );
-            }
         }
         for (ordinal, point) in block_payload_points_by_operation
             .get(label.id.as_str())
@@ -3695,7 +3753,7 @@ fn attach_feature_operations(
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
                 FeatureOperation::Sphere {
                     center: *center,
-                    radius: *radius,
+                    radius: (*radius).into(),
                     op: sphere_op,
                 },
             ))
@@ -3875,7 +3933,7 @@ fn attach_feature_operations(
         } else {
             None
         };
-        let definition = if let Some(definition) = primary_definition.or(brep_projection) {
+        let mut definition = if let Some(definition) = primary_definition.or(brep_projection) {
             definition
         } else if let Some(sketch) = sketch {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3938,12 +3996,14 @@ fn attach_feature_operations(
                         extent: blind_hole_depths
                             .get(label.id.as_str())
                             .copied()
-                            .map(|length| LinearTermination::Blind { length }),
+                            .map(|length| LinearTermination::Blind {
+                                length: (length).into(),
+                            }),
                         counterbore: counterbore_dimensions.get(label.id.as_str()).copied(),
                         chamfer: simple_hole_chamfers
                             .get(label.id.as_str())
                             .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
-                            .copied(),
+                            .cloned(),
                         grouped_simple_through: hole_packages
                             .outputs
                             .contains_key(label.id.as_str()),
@@ -3958,21 +4018,37 @@ fn attach_feature_operations(
             }
             definition
         };
+        if let (
+            FeatureDefinition::Operation(FeatureOperation::Block {
+                dimensions: Some(neutral),
+                ..
+            }),
+            Some(source),
+        ) = (
+            &mut definition,
+            block_dimensions_by_operation.get(label.id.as_str()),
+        ) {
+            for (dimension, source) in neutral.iter_mut().zip(&source.dimensions) {
+                if let Some(parameter) = expressions::expression_parameter_id(&source.expression)
+                    .filter(|id| {
+                        ir.model
+                            .parameters
+                            .iter()
+                            .any(|parameter| &parameter.id == id)
+                    })
+                {
+                    *dimension = cadmpeg_ir::features::Dimension::Parameter(parameter);
+                } else {
+                    losses.push(NxLossCode::ExpressionParameterIncomplete.note(format!(
+                        "Block {} dimension expression {} has no neutral parameter binding.",
+                        label.id, source.expression
+                    )));
+                }
+            }
+        }
         annotations.note(&id, &stream, label.source_offset, Some("FEATURE_OPERATION"));
         annotations.exactness(&id, Exactness::Derived);
         let source_content = feature_source_content(operation_payload_string_records)?;
-        let mut referenced_parameters = Vec::new();
-        for parameter_use in operation_parameter_uses {
-            push_referenced_parameter(&mut referenced_parameters, &parameter_use.expression);
-        }
-        if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
-            for dimension in &dimensions.dimensions {
-                push_referenced_parameter(&mut referenced_parameters, &dimension.expression);
-            }
-        }
-        for owner in parameter_owner_dependencies(&parameter_owners, &referenced_parameters) {
-            dependencies.push(&owner);
-        }
         if !source_content.is_empty() {
             annotations
                 .derived(&id, "source_content")
@@ -4005,6 +4081,7 @@ fn attach_feature_operations(
             }
         }
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: id.clone(),
             ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
@@ -4945,6 +5022,7 @@ struct ParasolidStringAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_string_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStringAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
@@ -5006,7 +5084,7 @@ fn attach_parasolid_topology_string_attributes(
                 string_use.position.reference_ordinal(),
             );
             let values = vec![AttributeValue::String(string.value.as_str().to_owned())];
-            push_topology_attribute(ir, context, id, name, values);
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -5196,6 +5274,33 @@ fn parasolid_topology_attribute_class_names<'a>(
 
 fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
     let mut targets = BTreeMap::new();
+    for body in &ir.model.bodies {
+        targets.insert(body.id.to_string(), AttributeTarget::Body(body.id.clone()));
+    }
+    for region in &ir.model.regions {
+        targets.insert(
+            region.id.to_string(),
+            AttributeTarget::Region(region.id.clone()),
+        );
+    }
+    for surface in &ir.model.surfaces {
+        targets.insert(
+            surface.id.to_string(),
+            AttributeTarget::Surface(surface.id.clone()),
+        );
+    }
+    for curve in &ir.model.curves {
+        targets.insert(
+            curve.id.to_string(),
+            AttributeTarget::Curve(curve.id.clone()),
+        );
+    }
+    for point in &ir.model.points {
+        targets.insert(
+            point.id.to_string(),
+            AttributeTarget::Point(point.id.clone()),
+        );
+    }
     for shell in &ir.model.shells {
         targets.insert(
             shell.id.to_string(),
@@ -5292,9 +5397,12 @@ fn parasolid_topology_attribute_contexts<'a>(
             continue;
         };
 
-        let Some(target) = emitted_targets.get(target_key.as_str()) else {
-            continue;
-        };
+        let target = emitted_targets
+            .get(target_key.as_str())
+            .cloned()
+            .unwrap_or_else(|| AttributeTarget::Source {
+                source_id: reference.id.clone(),
+            });
         let mut entities = BTreeSet::new();
         if let Some(entity) = reference.attribute_list_record.as_deref() {
             entities.insert(entity);
@@ -5350,18 +5458,23 @@ fn mapped_vector_attribute_values<T, const N: usize>(
 }
 
 fn push_topology_attribute(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     context: &ParasolidTopologyAttributeContext<'_>,
     id: AttributeId,
     name: String,
     values: Vec<AttributeValue>,
-) {
-    ir.model.attributes.push(SourceAttribute {
+) -> Result<(), cadmpeg_core::CodecError> {
+    ir.model.attributes.push(SourceAttribute::new(
+        ctx,
         id,
-        target: context.target.clone(),
+        None,
+        context.target.clone(),
         name,
         values,
-    });
+    )?);
+
+    Ok(())
 }
 
 /// The key half of an entity reference, which is what an id suffix names.
@@ -5374,6 +5487,7 @@ fn entity_suffix_key(entity: &str) -> Option<cadmpeg_ir::ids::IdentityKey> {
 }
 
 fn attach_parasolid_topology_numeric_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
@@ -5465,7 +5579,7 @@ fn attach_parasolid_topology_numeric_attributes(
                 lane,
                 numeric_use.position.reference_ordinal(),
             );
-            push_topology_attribute(ir, context, id, name, values);
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -5483,6 +5597,7 @@ struct ParasolidStructuredAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_structured_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStructuredAttributeSources<'_>,
     attribute_index: &ParasolidTopologyAttributeIndex<'_>,
@@ -5619,19 +5734,13 @@ fn attach_parasolid_topology_structured_attributes(
                 family,
                 structured_use.position.reference_ordinal(),
             );
-            push_topology_attribute(ir, context, id, name, values);
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
         .attributes
         .sort_by(|first, second| first.id.as_str().cmp(second.id.as_str()));
     Ok(())
-}
-
-fn push_referenced_parameter(referenced: &mut Vec<ParameterId>, expression: &str) {
-    if let Some(id) = expressions::expression_parameter_id(expression) {
-        referenced.push(id);
-    }
 }
 
 fn preceding_operation_dependency<'a>(
@@ -5686,6 +5795,7 @@ fn text_semantic_annotation(
     }))
 }
 
+#[cfg(test)]
 pub(super) fn parameter_owner_dependencies(
     parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
     parameter_references: &[ParameterId],

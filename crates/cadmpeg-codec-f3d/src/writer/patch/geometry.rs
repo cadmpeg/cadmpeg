@@ -287,7 +287,7 @@ fn patch_asm_geometry(
                 .and_then(|index| records_by_index.get(&index).copied())
         });
         let Some((attribute, decoded)) = carrier else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "F3D entity color {id} has no writable exact direct-color attribute"
             )));
         };
@@ -575,7 +575,7 @@ fn patch_asm_geometry(
                     "straight" => [0, 1],
                     "straight-curve" => [3, 4],
                     _ => {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "straight record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -605,7 +605,7 @@ fn patch_asm_geometry(
                     "degenerate_curve" => 0,
                     "degenerate_curve-curve" => 3,
                     _ => {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "degenerate-curve record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -630,7 +630,7 @@ fn patch_asm_geometry(
                     "ellipse" => [0, 1, 2, 3],
                     "ellipse-curve" => [3, 4, 5, 6],
                     _ => {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "ellipse record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -676,7 +676,7 @@ fn patch_asm_geometry(
                     "plane" => [0, 1, 2],
                     "plane-surface" => [3, 4, 5],
                     _ => {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "plane record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -713,7 +713,7 @@ fn patch_asm_geometry(
                     "sphere" => [0, 1, 2, 3],
                     "sphere-surface" => [3, 4, 5, 6],
                     _ => {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "sphere record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -747,7 +747,7 @@ fn patch_asm_geometry(
                     "torus" => [0, 1, 2, 3, 4],
                     "torus-surface" => [3, 4, 5, 6, 7],
                     _ => {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "torus record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -787,7 +787,7 @@ fn patch_asm_geometry(
                     "cone" => [0, 1, 2, 3, 4, 5, 6],
                     "cone-surface" => [3, 4, 5, 6, 9, 10, 11],
                     _ => {
-                        return Err(CodecError::malformed(format_args!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "cone record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -850,7 +850,7 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     let channels = [color.r(), color.g(), color.b()];
     let encoded = channels.map(|channel| truncate_f64_to_u8(f64::from((channel * 255.0).round())));
     let [Some(red), Some(green), Some(blue)] = encoded else {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
             record.head(),
             record.index
@@ -859,7 +859,7 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     let encoded = [red, green, blue];
     let decoded = encoded.map(|channel| f32::from(channel) / 255.0);
     if decoded != channels {
-        return Err(CodecError::NotImplemented(format!(
+        return Err(CodecError::UnsupportedContent(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
             record.head(),
             record.index

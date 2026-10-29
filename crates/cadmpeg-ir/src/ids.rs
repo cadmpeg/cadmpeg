@@ -942,6 +942,7 @@ macro_rules! id_type {
         pub struct $name($crate::ids::Identity);
 
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
+            const IS_REFERENCE_LEAF: bool = true;
             fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, value: &mut serde_json::Value, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<(), cadmpeg_core::CodecError> {
                 <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
             }
@@ -1248,3 +1249,18 @@ id_type!(
 
 #[cfg(test)]
 mod tests;
+
+macro_rules! working_identity_copy {
+    ($($name:ident),+ $(,)?) => {$(
+        impl $name {
+            /// Copy this admitted identity with fallible caller working storage.
+            pub fn try_clone_working(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>) -> Result<Self, cadmpeg_core::CodecError> {
+                let mut text = String::new();
+                ctx.reserve_text_working(&mut text, self.as_str().len(), "copy admitted geometry identity")?;
+                text.push_str(self.as_str());
+                Ok(Self(Identity(text)))
+            }
+        }
+    )+};
+}
+working_identity_copy!(CurveId, ProceduralCurveId, ProceduralSurfaceId, UnknownId);

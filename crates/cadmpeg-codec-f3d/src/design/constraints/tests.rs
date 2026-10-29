@@ -181,7 +181,10 @@ fn rectangular_point_relation_with_direction_slots(
         members: (members
             .clone()
             .into_iter()
-            .map(SketchRelationMember::from_index)
+            .map(|index| SketchRelationMember {
+                offset: Some(0),
+                ..SketchRelationMember::from_index(index)
+            })
             .collect::<Vec<_>>())
         .try_into()
         .expect("uniform member resolution"),
@@ -223,7 +226,10 @@ fn rectangular_point_relation_with_direction_slots(
         return_members: (members
             .iter()
             .copied()
-            .map(SketchRelationReturnMember::from_index)
+            .map(|index| SketchRelationReturnMember {
+                offset: Some(0),
+                ..SketchRelationReturnMember::from_index(index)
+            })
             .collect::<Vec<_>>())
         .try_into()
         .expect("uniform member resolution"),
@@ -281,6 +287,46 @@ fn rectangular_parameters(count: u32, distance: f64) -> [DesignParameter; 4] {
     ]
 }
 
+fn rectangular_parameter_document(parameters: &[DesignParameter; 4]) -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::{DesignParameter as NeutralParameter, ParameterValue};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters = parameters
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| {
+            let value = if index % 2 == 0 {
+                ParameterValue::Integer(
+                    parameter
+                        .evaluated_value()
+                        .get()
+                        .to_string()
+                        .parse()
+                        .unwrap(),
+                )
+            } else {
+                ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(parameter.evaluated_value().get() * 10.0)
+                        .unwrap(),
+                )
+            };
+            NeutralParameter {
+                id: crate::ids::neutral_parameter_id_parts("native", parameter.record_index),
+                owner: None,
+                ordinal: parameter.source_ordinal,
+                name: parameter.name().to_owned(),
+                expression: value.literal_expression(),
+                driving: true,
+                display: None,
+                value: Some(value),
+                properties: std::collections::BTreeMap::default(),
+                pmi: None,
+                native_ref: Some(parameter.id.clone()),
+            }
+        })
+        .collect();
+    ir
+}
+
 #[test]
 fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
     let seed = point_entity("generated:test:point#seed", 2.0);
@@ -296,13 +342,25 @@ fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
         panic!("rectangular pattern did not resolve");
     };
     let directions = pattern.directions();
-    assert_eq!(directions[0].spacing().get(), 15.0);
-    assert_eq!(directions[1].spacing().get(), 0.0);
+    assert_eq!(
+        directions[0]
+            .spacing(&rectangular_parameter_document(&parameters))
+            .expect("retained test source")
+            .get(),
+        15.0
+    );
+    assert_eq!(
+        directions[1]
+            .spacing(&rectangular_parameter_document(&parameters))
+            .expect("retained test source")
+            .get(),
+        0.0
+    );
     assert!(matches!(
         directions[0].distance,
-        Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. })
+        cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. }
     ));
-    assert!(directions[0].count_parameter.is_some());
+    assert!(directions[0].count.parameter().is_some());
     assert_eq!([pattern.rows().len(), pattern.rows()[0].len()], [3, 1]);
 }
 
@@ -321,12 +379,18 @@ fn rectangular_pattern_projects_total_span_and_keeps_span_parameter() {
         panic!("total-span rectangular pattern did not resolve");
     };
     let directions = pattern.directions();
-    assert_eq!(directions[0].spacing().get(), 15.0);
+    assert_eq!(
+        directions[0]
+            .spacing(&rectangular_parameter_document(&parameters))
+            .expect("retained test source")
+            .get(),
+        15.0
+    );
     assert!(matches!(
         directions[0].distance,
-        Some(cadmpeg_ir::sketches::SketchPatternDistance::Span { .. })
+        cadmpeg_ir::sketches::SketchPatternDistance::Span { .. }
     ));
-    assert!(directions[0].count_parameter.is_some());
+    assert!(directions[0].count.parameter().is_some());
 }
 
 #[test]
@@ -380,18 +444,24 @@ fn rectangular_pattern_transfers_two_instances_in_both_distance_forms() {
             panic!("two-instance rectangular pattern did not resolve");
         };
         let directions = pattern.directions();
-        assert_eq!(directions[0].spacing().get(), 15.0);
+        assert_eq!(
+            directions[0]
+                .spacing(&rectangular_parameter_document(&parameters))
+                .expect("retained test source")
+                .get(),
+            15.0
+        );
         match distance_form {
             RectangularPatternDistanceForm::AdjacentSpacing => {
                 assert!(matches!(
                     directions[0].distance,
-                    Some(cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. })
+                    cadmpeg_ir::sketches::SketchPatternDistance::Spacing { .. }
                 ));
             }
             RectangularPatternDistanceForm::SeedToFinalSpan => {
                 assert!(matches!(
                     directions[0].distance,
-                    Some(cadmpeg_ir::sketches::SketchPatternDistance::Span { .. })
+                    cadmpeg_ir::sketches::SketchPatternDistance::Span { .. }
                 ));
             }
         }
@@ -445,10 +515,22 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
             ),
             rectangular_counted_reference_count: None,
             members: (vec![
-                SketchRelationMember::from_index(1),
-                SketchRelationMember::from_index(2),
-                SketchRelationMember::from_index(3),
-                SketchRelationMember::from_index(4),
+                SketchRelationMember {
+                    offset: Some(0),
+                    ..SketchRelationMember::from_index(1)
+                },
+                SketchRelationMember {
+                    offset: Some(0),
+                    ..SketchRelationMember::from_index(2)
+                },
+                SketchRelationMember {
+                    offset: Some(0),
+                    ..SketchRelationMember::from_index(3)
+                },
+                SketchRelationMember {
+                    offset: Some(0),
+                    ..SketchRelationMember::from_index(4)
+                },
             ])
             .try_into()
             .expect("uniform member resolution"),
@@ -469,10 +551,22 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
             .expect("valid relation definition"),
             entity_genesis: None,
             return_members: (vec![
-                SketchRelationReturnMember::from_index(2),
-                SketchRelationReturnMember::from_index(3),
-                SketchRelationReturnMember::from_index(4),
-                SketchRelationReturnMember::from_index(1),
+                SketchRelationReturnMember {
+                    offset: Some(0),
+                    ..SketchRelationReturnMember::from_index(2)
+                },
+                SketchRelationReturnMember {
+                    offset: Some(0),
+                    ..SketchRelationReturnMember::from_index(3)
+                },
+                SketchRelationReturnMember {
+                    offset: Some(0),
+                    ..SketchRelationReturnMember::from_index(4)
+                },
+                SketchRelationReturnMember {
+                    offset: Some(0),
+                    ..SketchRelationReturnMember::from_index(1)
+                },
             ])
             .try_into()
             .expect("uniform member resolution"),
@@ -497,7 +591,12 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
     };
     assert_eq!(pattern.center(), center.id());
     assert_eq!(
-        wire::field::<cadmpeg_ir::scalar::Angle>(&pattern, "angle").get(),
+        pattern
+            .angle()
+            .dimension()
+            .literal()
+            .expect("source literal angle")
+            .get(),
         std::f64::consts::PI
     );
     assert_eq!((pattern.instances().len() + 1), 3);
@@ -582,10 +681,22 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
         ),
         rectangular_counted_reference_count: None,
         members: (vec![
-            SketchRelationMember::from_index(1),
-            SketchRelationMember::from_index(2),
-            SketchRelationMember::from_index(3),
-            SketchRelationMember::from_index(4),
+            SketchRelationMember {
+                offset: Some(0),
+                ..SketchRelationMember::from_index(1)
+            },
+            SketchRelationMember {
+                offset: Some(0),
+                ..SketchRelationMember::from_index(2)
+            },
+            SketchRelationMember {
+                offset: Some(0),
+                ..SketchRelationMember::from_index(3)
+            },
+            SketchRelationMember {
+                offset: Some(0),
+                ..SketchRelationMember::from_index(4)
+            },
         ])
         .try_into()
         .expect("uniform member resolution"),
@@ -606,10 +717,22 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
         .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![
-            SketchRelationReturnMember::from_index(2),
-            SketchRelationReturnMember::from_index(3),
-            SketchRelationReturnMember::from_index(4),
-            SketchRelationReturnMember::from_index(1),
+            SketchRelationReturnMember {
+                offset: Some(0),
+                ..SketchRelationReturnMember::from_index(2)
+            },
+            SketchRelationReturnMember {
+                offset: Some(0),
+                ..SketchRelationReturnMember::from_index(3)
+            },
+            SketchRelationReturnMember {
+                offset: Some(0),
+                ..SketchRelationReturnMember::from_index(4)
+            },
+            SketchRelationReturnMember {
+                offset: Some(0),
+                ..SketchRelationReturnMember::from_index(1)
+            },
         ])
         .try_into()
         .expect("uniform member resolution"),
@@ -670,48 +793,45 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
         glyph[ordinal][ordinal] = 1.0;
     }
     glyph[0][3] = 0.5;
-    let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
-        id: "f3d:Design/BulkStream.dat:sketch-relation#3".into(),
-        record_index: 3,
-        class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned()).unwrap(),
-        byte_offset: 0,
-        state_offset: 0,
-        owner_reference: 1,
-        owner_entity_id: None,
-        auxiliary_references: crate::records::identity::ReferenceRun::located(
-            vec![2]
-                .into_iter()
-                .map(|value| crate::records::identity::Located { value, offset: 0 })
-                .collect(),
-        ),
-        rectangular_counted_reference_count: None,
-        members: (vec![
-            SketchRelationMember::from_index(1),
-            SketchRelationMember::from_index(2),
-        ])
-        .try_into()
-        .expect("uniform member resolution"),
-        owner_reference_offset: 0,
-        definition: crate::records::sketch_relations::SketchRelationDefinition::new(
-            0x200_0000_0000,
-            Some(
-                crate::records::sketch_relations::SketchPatternDefinition::TextPath {
-                    text_reference: 2,
-                    glyph_transforms: vec![
-                        crate::records::sketch_relations::SketchGlyphTransform::try_from(glyph)
-                            .expect("finite native glyph"),
-                    ],
-                },
+    let relation =
+        SketchRelation::authored(crate::records::sketch_relations::SketchRelationContent {
+            id: "f3d:Design/BulkStream.dat:sketch-relation#3".into(),
+            record_index: 3,
+            class_tag: crate::records::references::DesignClassTag::try_from("413".to_owned())
+                .unwrap(),
+            owner_reference: 1,
+            owner_entity_id: None,
+            auxiliary_references: crate::records::identity::ReferenceRun::located(
+                vec![2]
+                    .into_iter()
+                    .map(|value| crate::records::identity::Located { value, offset: 0 })
+                    .collect(),
             ),
-        )
-        .expect("valid relation definition"),
-        entity_genesis: Some(2),
-        return_members: (vec![SketchRelationReturnMember::from_index(1)])
+            rectangular_counted_reference_count: None,
+            members: (vec![
+                SketchRelationMember::from_index(1),
+                SketchRelationMember::from_index(2),
+            ])
             .try_into()
             .expect("uniform member resolution"),
-        raw_bytes: vec![0; 160],
-    })
-    .unwrap();
+            definition: crate::records::sketch_relations::SketchRelationDefinition::new(
+                0x200_0000_0000,
+                Some(
+                    crate::records::sketch_relations::SketchPatternDefinition::TextPath {
+                        text_reference: 2,
+                        glyph_transforms: vec![
+                            crate::records::sketch_relations::SketchGlyphTransform::try_from(glyph)
+                                .expect("finite native glyph"),
+                        ],
+                    },
+                ),
+            )
+            .expect("valid relation definition"),
+            entity_genesis: Some(2),
+            return_members: (vec![SketchRelationReturnMember::from_index(1)])
+                .try_into()
+                .expect("uniform member resolution"),
+        });
     let projected = std::collections::HashMap::from([(("scope", 1), &path), (("scope", 2), &text)]);
     let definition = exact_text_relation(&relation, "scope", &projected)
         .unwrap()
@@ -774,7 +894,13 @@ fn rectangular_pattern_distance_mode_is_independent_of_direction_reference_slots
             else {
                 panic!("serialized mode did not resolve");
             };
-            assert_eq!(pattern.directions()[0].spacing().get(), 15.0);
+            assert_eq!(
+                pattern.directions()[0]
+                    .spacing(&rectangular_parameter_document(&parameters))
+                    .expect("retained test source")
+                    .get(),
+                15.0
+            );
             assert_eq!(pattern.rows().len(), 3);
         }
     }
@@ -797,6 +923,12 @@ fn rectangular_pattern_preserves_signed_spacing_and_extent() {
         else {
             panic!("signed source distance did not resolve");
         };
-        assert_eq!(pattern.directions()[0].spacing().get(), -15.0);
+        assert_eq!(
+            pattern.directions()[0]
+                .spacing(&rectangular_parameter_document(&parameters))
+                .expect("retained test source")
+                .get(),
+            -15.0
+        );
     }
 }

@@ -16,7 +16,9 @@ use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition, Prot
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
+use crate::canonical::placement::Placement;
 use crate::reason::UnavailableReason;
+use crate::report::PlacementClass;
 use crate::report::{DescendantMeasures, OccurrenceMeasures};
 use crate::value::Unavailable;
 
@@ -76,7 +78,14 @@ fn definition<'ir>(
 }
 
 fn scaled(occurrence: &Occurrence) -> bool {
-    occurrence.scale.iter().any(|factor| factor.get() != 1.0)
+    occurrence.transform.is_some_and(|transform| {
+        Placement::of(transform).is_ok_and(|placement| {
+            matches!(
+                placement.class,
+                PlacementClass::Similarity | PlacementClass::Affine
+            )
+        })
+    })
 }
 
 /// The first reason a space has no rows; later failures keep it.
@@ -150,13 +159,24 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
             }
             let composed = chain
                 .iter()
-                .try_fold(Transform::identity(), |placed, member| {
+                .try_fold(Some(Transform::identity()), |placed, member| {
                     member
                         .effective_transform()
-                        .and_then(|local| placed.compose(local))
+                        .and_then(|local| match (placed, local) {
+                            (Some(placed), Some(local)) => placed.compose(local).map(Some),
+                            _ => Ok(None),
+                        })
                 });
             match composed {
-                Ok(composed) => world = Some(composed),
+                Ok(Some(composed)) => world = Some(composed),
+                Ok(None) => failure.note(
+                    UnavailableReason::PlacementOccurrenceUnplaced,
+                    chain
+                        .iter()
+                        .find(|member| member.transform.is_none())
+                        .map_or(name, |member| member.id.as_str()),
+                    "an occurrence of the chain states no placement",
+                ),
                 Err(_) => failure.note(
                     UnavailableReason::PlacementNonFinite,
                     name,
@@ -209,17 +229,26 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
                 );
             }
             let child_placement = placement.and_then(|placement| {
-                child
-                    .effective_transform()
-                    .and_then(|local| placement.compose(local))
-                    .map_err(|_| {
+                match child.effective_transform() {
+                    Ok(Some(local)) => placement.compose(local).ok(),
+                    Ok(None) => {
                         failure.note(
-                            UnavailableReason::PlacementNonFinite,
+                            UnavailableReason::PlacementOccurrenceUnplaced,
                             child_name,
-                            "the subtree placement does not compose to a finite placement",
+                            "an occurrence of the subtree states no placement",
                         );
-                    })
-                    .ok()
+                        return None;
+                    }
+                    Err(_) => None,
+                }
+                .or_else(|| {
+                    failure.note(
+                        UnavailableReason::PlacementNonFinite,
+                        child_name,
+                        "the subtree placement does not compose to a finite placement",
+                    );
+                    None
+                })
             });
             place(child_prototype, child_placement, &mut failure);
             members.push(Member {

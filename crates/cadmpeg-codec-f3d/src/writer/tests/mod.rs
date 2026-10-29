@@ -4,11 +4,14 @@
 mod act;
 mod appearances;
 mod design_edits;
+mod face_keys;
+mod face_sidedness;
 mod sketch_edits;
 mod source_less_analytic;
 mod source_less_bodies;
 mod source_less_design;
 mod source_less_nurbs;
+mod synthesis;
 mod targets;
 mod topology_edits;
 

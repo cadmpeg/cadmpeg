@@ -81,14 +81,18 @@ pub(super) struct TopologyBudgets<'inputs> {
 }
 
 pub(super) fn emit_topology(
+    reporting: (
+        &mut cadmpeg_ir::ArenaClasses,
+        &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     topology_stream: &TopologyStream<'_>,
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
     topology_budgets: &TopologyBudgets<'_>,
-    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    let (source_untyped, topology_losses) = reporting;
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
         cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
@@ -203,6 +207,7 @@ pub(super) fn emit_topology(
         bodies.insert(body_xmt, id.clone());
 
         ir.model.bodies.push(Body {
+            native_ref: None,
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
@@ -257,6 +262,7 @@ pub(super) fn emit_topology(
             annotations.derived(region.as_str(), "body")?;
 
             ir.model.regions.push(Region {
+                native_ref: None,
                 id: region.clone(),
                 body: body.clone(),
                 shells: Vec::new(),
@@ -354,6 +360,7 @@ pub(super) fn emit_topology(
         }
 
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex.clone(),
             point: point_ref.clone(),
             tolerance,
@@ -458,6 +465,7 @@ pub(super) fn emit_topology(
                 annotations.derived(carrier.as_str(), "geometry")?;
 
                 ir.model.curves.push(Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
@@ -630,6 +638,7 @@ pub(super) fn emit_topology(
         }
 
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                 .map_err(CodecError::malformed)?,
@@ -714,7 +723,7 @@ pub(super) fn emit_topology(
         });
         if !ring_resolves {
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"),
+                { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face") },
             ));
             continue;
         }
@@ -1019,6 +1028,7 @@ pub(super) fn emit_topology(
                 }
 
                 ir.model.pcurves.push(Pcurve {
+                    native_ref: None,
                     id: pcurve_id.clone(),
                     geometry: geometry.clone(),
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -1055,6 +1065,7 @@ pub(super) fn emit_topology(
             fields.sense
         };
         ir.model.coedges.push(Coedge {
+            native_ref: None,
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
@@ -1087,12 +1098,13 @@ pub(super) fn emit_topology(
             };
             let Some(ring) = ring else {
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
+                    { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face") },
                 ));
                 continue;
             };
 
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: id.clone(),
                 face: face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -1110,13 +1122,14 @@ pub(super) fn emit_topology(
     for pending in pending_faces {
         if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
-                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
-                pending.xmt),
+                { source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
+                pending.xmt) },
             ));
         }
         let loops = face_loops.remove(&pending.id).unwrap_or_default();
 
         ir.model.faces.push(Face {
+            native_ref: None,
             id: pending.id,
             shell: pending.shell,
             surface: pending.surface,
@@ -1233,6 +1246,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(unknown.clone()),
@@ -1265,6 +1279,7 @@ pub(super) fn retain_unresolved_topology_carriers(
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1402,6 +1417,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         .push(Point::new(point.clone(), position, None));
 
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex.clone(),
         point,
         tolerance,
@@ -1590,7 +1606,7 @@ pub(super) fn unknown_stream(
         cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
         "retain NX unknown stream",
     )?;
-    unknown_stream_record(si, stream, Some(stream.inflated.clone()))
+    unknown_stream_record(si, stream, Some(stream.inflated.to_vec()))
 }
 
 pub(super) fn unknown_stream_metadata(
@@ -1610,7 +1626,7 @@ pub(super) fn retain_unknown_stream_data(
             cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
             "retain NX unknown stream",
         )?;
-        unknown.retain_data(stream.inflated.clone());
+        unknown.retain_data(stream.inflated.to_vec());
     }
     Ok(())
 }
@@ -1661,7 +1677,6 @@ pub(super) fn source_meta(
         ..
     } = scan.container.layout
     {
-        insert_source_attribute(&mut attributes, "footer_offset", footer.offset);
         insert_source_attribute(
             &mut attributes,
             "footer_entry_count",
@@ -1857,8 +1872,8 @@ mod tests {
     use cadmpeg_ir::math::Point3;
 
     fn empty_source_scan() -> Scan<'static> {
-        Scan {
-            container: Container {
+        Scan::new(
+            Container {
                 data: Vec::new().into(),
                 physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
@@ -1867,15 +1882,16 @@ mod tests {
                 indexed_section_layouts: std::sync::OnceLock::new(),
                 om_section_cache: std::sync::OnceLock::new(),
             },
-            streams: Vec::new(),
-        }
+            Vec::new(),
+        )
     }
 
-    fn preview_stream(bytes: Vec<u8>) -> Stream {
+    fn preview_stream(bytes: Vec<u8>) -> Stream<'static> {
         Stream {
+            source: None,
             file_offset: 0,
             consumed: 0,
-            inflated: bytes,
+            inflated: bytes.into(),
             body: crate::parasolid::StreamBody::Preview,
         }
     }
@@ -1899,15 +1915,17 @@ mod tests {
     fn source_meta_reuses_the_prepared_delta_census() {
         let mut scan = empty_source_scan();
         scan.streams.push(Stream {
+            source: None,
             file_offset: 0,
             consumed: 0,
-            inflated: Vec::new(),
+            inflated: Vec::new().into(),
             body: crate::parasolid::StreamBody::Preview,
         });
         scan.streams.push(Stream {
+            source: None,
             file_offset: 0,
             consumed: 0,
-            inflated: vec![0xaa; 50_000],
+            inflated: vec![0xaa; 50_000].into(),
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype: crate::parasolid::ParasolidSubtype::Deltas,
                 schema: None,
@@ -1934,9 +1952,10 @@ mod tests {
             },
             |ctx| {
                 let stream = Stream {
+                    source: None,
                     file_offset: 0,
                     consumed: 0,
-                    inflated: vec![1, 2, 3],
+                    inflated: vec![1, 2, 3].into(),
                     body: crate::parasolid::StreamBody::Parasolid {
                         subtype: crate::parasolid::ParasolidSubtype::Partition,
                         schema: None,

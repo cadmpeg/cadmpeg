@@ -4,7 +4,7 @@
 fn placement(explicit: bool) -> super::DesignCoilPlacement {
     super::DesignCoilPlacement {
         selection_record_index: 1,
-        selection_record_byte_offset: 20,
+        selection_record_byte_offset: Some(20),
         selection_class_tag: "301".to_owned().try_into().unwrap(),
         selection: super::DesignCoilSelection::Persistent {
             asset_id: "11111111-1111-4111-8111-111111111111"
@@ -20,11 +20,11 @@ fn placement(explicit: bool) -> super::DesignCoilPlacement {
             secondary: None,
         },
         transform_record_index: 4,
-        transform_record_byte_offset: 40,
+        transform_record_byte_offset: Some(40),
         transform_class_tag: "302".to_owned().try_into().unwrap(),
-        explicit_transform: explicit.then_some(crate::records::identity::Located {
+        explicit_transform: explicit.then_some(crate::records::identity::Sourced {
             value: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            offset: 50,
+            offset: Some(50),
         }),
     }
 }
@@ -68,12 +68,12 @@ fn coil_scope_borrowed_wire_matches_owned_wire_bytes() {
         super::DesignCoilScope {
             operation: Some(crate::records::identity::RecordedValue {
                 value: super::DesignExtrudeOperation::NewBody,
-                offset: 10,
+                offset: Some(10),
             }),
             extent: Some(crate::records::identity::MaybeRecordedValue::Located(
                 crate::records::identity::RecordedValue {
                     value: super::DesignCoilExtent::Spiral,
-                    offset: 11,
+                    offset: Some(11),
                 },
             )),
             placement: Some(placement(true)),

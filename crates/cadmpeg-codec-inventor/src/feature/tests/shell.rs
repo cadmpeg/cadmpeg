@@ -141,7 +141,9 @@ fn shell_projects_thickness_native_faces_and_result_without_direction_defaults()
             panic!("shell definition")
         };
         assert_eq!(
-            thickness.map(cadmpeg_ir::scalar::PositiveLength::get),
+            thickness
+                .as_ref()
+                .map(|thickness| thickness.literal().expect("literal thickness").get()),
             Some(2.0)
         );
         assert!(bodies.is_none() && outward.is_none() && mode.is_none() && join.is_none());

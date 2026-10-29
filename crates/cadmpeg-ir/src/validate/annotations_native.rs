@@ -252,18 +252,25 @@ pub(super) fn check_native_links(
     findings: &mut Vec<Finding>,
 ) {
     let ir = view.ir;
-    for feature in &ir.model.features {
-        if let Some(target) = &feature.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(feature.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
-                );
+    macro_rules! check_arenas {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+            for record in &ir.model.$field {
+                if let Some(target) = crate::schema::EntitySchema::native_reference(record) {
+                    if !all_ids.native_record_owns(target) {
+                        super::record_finding(
+                            findings,
+                            Check::NativeLinks,
+                            Severity::Error,
+                            Some(crate::schema::EntitySchema::identity(record)),
+                            format_args!("native_ref `{target}` does not resolve"),
+                        );
+                    }
+                }
             }
-        }
+        )*};
+    }
+    crate::document::arena_registry!(check_arenas);
+    for feature in &ir.model.features {
         if let crate::features::FeatureDefinition::Operation(
             crate::features::FeatureOperation::HelixNativeAxis {
                 axis_native_ref: target,
@@ -282,81 +289,7 @@ pub(super) fn check_native_links(
             }
         }
     }
-    for parameter in &ir.model.parameters {
-        if let Some(target) = &parameter.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(parameter.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
-                );
-            }
-        }
-        if let Some(semantic) = &parameter.pmi {
-            if !all_ids.native_record_owns(semantic.native_ref.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(parameter.id.as_str()),
-                    format_args!("PMI native_ref `{}` does not resolve", semantic.native_ref),
-                );
-            }
-        }
-    }
-    for configuration in &ir.model.configurations {
-        if let Some(target) = &configuration.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(configuration.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
-                );
-            }
-        }
-    }
-    for sketch in &ir.model.sketches {
-        if let Some(target) = &sketch.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(sketch.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
-                );
-            }
-        }
-    }
-    for sketch in &ir.model.spatial_sketches {
-        if let Some(target) = &sketch.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(sketch.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
-                );
-            }
-        }
-    }
     for constraint in &ir.model.sketch_constraints {
-        if let Some(target) = &constraint.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(constraint.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
-                );
-            }
-        }
         if let crate::sketches::SketchConstraintDefinitionInput::Native { operands, .. } =
             constraint.definition.kind()
         {
@@ -376,17 +309,6 @@ pub(super) fn check_native_links(
         }
     }
     for constraint in &ir.model.spatial_sketch_constraints {
-        if let Some(target) = &constraint.native_ref {
-            if !all_ids.native_record_owns(target.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::NativeLinks,
-                    Severity::Error,
-                    Some(constraint.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
-                );
-            }
-        }
         if let crate::sketches::SpatialSketchConstraintDefinitionInput::Native {
             operands, ..
         } = constraint.definition.kind()

@@ -54,15 +54,6 @@
 //! - Chaining through an intermediate proves nothing about the endpoints.
 //!   Compare the two values the question names.
 //!
-//! ## Local digests
-//!
-//! A codec still needs bitwise digests over decoded content: the write path
-//! asks whether the document changed since decode, and only a bitwise digest
-//! answers that cheaply. Such a digest is valid within one machine's decode
-//! and nowhere else, for the libm reason above. Name it with
-//! [`LOCAL_DIGEST_SUFFIX`]. [`is_local_digest_attribute`] is the sole check
-//! for whether a source attribute holds one.
-
 use serde_json::Value;
 
 /// Relative tolerance for a fractional number in a semantic comparison.
@@ -71,21 +62,6 @@ use serde_json::Value;
 /// so small values compare absolutely. See the module documentation for why
 /// this magnitude.
 pub const FLOAT_TOLERANCE: f64 = 1.0e-12;
-
-/// Suffix for a source attribute holding a machine-local content digest.
-///
-/// Bitwise over decoded content; machine-local only. Digests over retained
-/// source bytes must not use this suffix.
-pub const LOCAL_DIGEST_SUFFIX: &str = "_local_sha256";
-
-/// Whether a source attribute key names a machine-local content digest under the
-/// [`LOCAL_DIGEST_SUFFIX`] convention.
-///
-/// Structural diffs report these informationally; the golden harness elides them.
-#[must_use]
-pub fn is_local_digest_attribute(key: &str) -> bool {
-    key.ends_with(LOCAL_DIGEST_SUFFIX)
-}
 
 /// Whether two fractional numbers agree within [`FLOAT_TOLERANCE`] relative to
 /// the larger magnitude, with a floor of one so small values compare

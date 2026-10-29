@@ -53,7 +53,7 @@ use self::attributes::attribute_owner;
 use self::emit::{
     count_other_records, emit_attributes, emit_carrier_records, emit_coedges, emit_containers,
     emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns, emit_pcurves, emit_points,
-    emit_vertices, CoedgeDecodeInputs, ContainerInputs, CurveSenseRefs,
+    emit_vertices, CoedgeDecodeInputs, ContainerInputs, CurveSenseRefs, FaceInputs,
 };
 use self::geometry::{
     attach_point_edge_carriers, clamp_edge_ranges_to_carrier_domains, classify_body_kinds,
@@ -692,11 +692,14 @@ fn decode_with_table(
     emit_faces(
         ctx,
         &mut out,
-        records,
-        &by_index,
-        &reach,
-        &inward_normal_surfaces,
-        format,
+        FaceInputs {
+            records,
+            by_index: &by_index,
+            reach: &reach,
+            inward_normal_surfaces: &inward_normal_surfaces,
+            format,
+            purpose,
+        },
     )?;
     emit_containers(
         ctx,
@@ -712,7 +715,7 @@ fn decode_with_table(
             format,
         },
     )?;
-    let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
+    let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;

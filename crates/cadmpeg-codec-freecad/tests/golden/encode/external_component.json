@@ -2,13 +2,18 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 7424,
-      "payload_sha256": "d6773250dec7ff8e9dfca3a17ec325c6573490ba74a2eff9aef76bed77100ed4"
+      "payload_len": 6135,
+      "payload_sha256": "ab4be1b518d43a4ea41dde2006c17c6924a6b11bd81d4b5ae3e90367a3b60ca5"
     },
     {
-      "name": "ExternalPrototype.Shape.brp",
-      "payload_len": 3361,
-      "payload_sha256": "325de7ed872b3dc47b89cf559a92d561d357ae326a76363117a5e0dd7fa41cf4"
+      "name": "Cadmpeg.StringHasher.0.txt",
+      "payload_len": 22,
+      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
+    },
+    {
+      "name": "ExternalPrototype.brp",
+      "payload_len": 1080,
+      "payload_sha256": "92cbfa14d2488861fac224e9f1aa8497438662ccda1b16c56e4719d35bb2c047"
     }
   ],
   "report": {
@@ -19,7 +24,7 @@
         "appearances": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 0,
+        "attributes": 21,
         "bodies": 1,
         "coedges": 6,
         "configurations": 0,
@@ -29,21 +34,18 @@
         "faces": 3,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 1,
+        "features": 0,
         "loops": 3,
         "native.fcstd.applications": 2,
         "native.fcstd.attachments": 1,
-        "native.fcstd.byte_coverage": 1,
         "native.fcstd.carrier_census": 1,
-        "native.fcstd.design_census": 1,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 2,
-        "native.fcstd.logical_ledger": 74,
         "native.fcstd.objects": 2,
-        "native.fcstd.physical_ledger": 15,
         "native.fcstd.properties": 36,
         "native.fcstd.shape_payloads": 1,
         "native.fcstd.string_tables": 1,
+        "native.fcstd.topology_uses": 13,
         "occurrences": 0,
         "parameters": 0,
         "pcurves": 6,
@@ -72,20 +74,256 @@
         "view_presentations": 0
       }
     },
+    "coverage": {
+      "arenas": {
+        "appearance_bindings": "written",
+        "appearances": "written",
+        "assembly_joints": "written",
+        "assets": "dropped",
+        "attributes": "reported",
+        "bodies": "written",
+        "coedges": "written",
+        "configurations": "dropped",
+        "curves": "written",
+        "drawings": "dropped",
+        "edges": "written",
+        "faces": "written",
+        "feature_input_topologies": "dropped",
+        "feature_result_topologies": "dropped",
+        "features": "written",
+        "loops": "written",
+        "occurrences": "written",
+        "parameters": "written",
+        "pcurves": "written",
+        "pmi": "dropped",
+        "points": "written",
+        "presentation_documents": "written",
+        "presentation_layers": "dropped",
+        "procedural_curves": "written",
+        "procedural_surfaces": "written",
+        "product_definitions": "written",
+        "regions": "written",
+        "semantic_annotations": "dropped",
+        "shells": "written",
+        "sketch_constraints": "written",
+        "sketch_entities": "written",
+        "sketches": "written",
+        "spatial_sketch_constraints": "dropped",
+        "spatial_sketch_entities": "dropped",
+        "spatial_sketches": "dropped",
+        "spreadsheets": "written",
+        "subds": "dropped",
+        "surfaces": "written",
+        "tessellations": "dropped",
+        "vertices": "written",
+        "view_presentations": "written"
+      },
+      "coverage": "declared"
+    },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [],
-    "notes": [
-      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
-      "unsupported retained entries and unedited XML records were preserved"
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#CorpusMetadata:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalPrototype:Label:property conflicts with operation property Label",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.entries`: fcstd:native:entry#ExternalPrototype.Shape.brp",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExternalPrototype:ExpressionEngine",
+        "severity": "info"
+      }
     ],
+    "native_dispositions": {
+      "namespaces": {
+        "fcstd": {
+          "arenas": {
+            "annotations": {
+              "disposition": "dropped"
+            },
+            "applications": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#CorpusMetadata": "regenerated",
+                "fcstd:native:application#ExternalPrototype": "regenerated"
+              }
+            },
+            "attachments": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:attachment#ExternalPrototype": "written"
+              }
+            },
+            "carrier_census": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:carrier-census#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:families": "regenerated"
+              }
+            },
+            "design_census": {
+              "disposition": "dropped"
+            },
+            "document": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:document#0": "regenerated"
+              }
+            },
+            "drawings": {
+              "disposition": "dropped"
+            },
+            "element_maps": {
+              "disposition": "dropped"
+            },
+            "entries": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:entry#Document.xml": "regenerated"
+              }
+            },
+            "extensions": {
+              "disposition": "dropped"
+            },
+            "gui_documents": {
+              "disposition": "dropped"
+            },
+            "gui_properties": {
+              "disposition": "dropped"
+            },
+            "gui_view_providers": {
+              "disposition": "dropped"
+            },
+            "joints": {
+              "disposition": "dropped"
+            },
+            "objects": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#CorpusMetadata": "written",
+                "fcstd:native:object#ExternalPrototype": "written"
+              }
+            },
+            "product_nodes": {
+              "disposition": "dropped"
+            },
+            "properties": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:property#0:Comment": "regenerated",
+                "fcstd:native:property#0:Company": "regenerated",
+                "fcstd:native:property#0:CreatedBy": "regenerated",
+                "fcstd:native:property#0:CreationDate": "regenerated",
+                "fcstd:native:property#0:FileName": "written",
+                "fcstd:native:property#0:Id": "regenerated",
+                "fcstd:native:property#0:Label": "regenerated",
+                "fcstd:native:property#0:LastModifiedBy": "regenerated",
+                "fcstd:native:property#0:LastModifiedDate": "regenerated",
+                "fcstd:native:property#0:License": "regenerated",
+                "fcstd:native:property#0:LicenseURL": "regenerated",
+                "fcstd:native:property#0:Material": "written",
+                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:ShowHidden": "regenerated",
+                "fcstd:native:property#0:Tip": "written",
+                "fcstd:native:property#0:TipName": "regenerated",
+                "fcstd:native:property#0:TransientDir": "written",
+                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#CorpusMetadata:InertValue": "written",
+                "fcstd:native:property#CorpusMetadata:Label": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Label2": "regenerated",
+                "fcstd:native:property#CorpusMetadata:License": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Proxy": "written",
+                "fcstd:native:property#CorpusMetadata:Purpose": "regenerated",
+                "fcstd:native:property#CorpusMetadata:Visibility": "regenerated",
+                "fcstd:native:property#ExternalPrototype:Label": "regenerated",
+                "fcstd:native:property#ExternalPrototype:Label2": "regenerated",
+                "fcstd:native:property#ExternalPrototype:Placement": "regenerated",
+                "fcstd:native:property#ExternalPrototype:Shape": "regenerated",
+                "fcstd:native:property#ExternalPrototype:ShapeMaterial": "written",
+                "fcstd:native:property#ExternalPrototype:Visibility": "regenerated",
+                "fcstd:native:property#ExternalPrototype:_ElementMapVersion": "written"
+              }
+            },
+            "shape_payloads": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp": "regenerated"
+              }
+            },
+            "string_tables": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:string-table#0": "written"
+              }
+            },
+            "topology_uses": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:1": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:10": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:11": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:12": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:13": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:2": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:3": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:4": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:5": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:6": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:7": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:8": "regenerated",
+                "fcstd:native:shape-payload#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:topology-use:9": "regenerated"
+              }
+            },
+            "unknowns": {
+              "disposition": "dropped"
+            }
+          }
+        }
+      }
+    },
+    "notes": [],
+    "synthesis_cause": {
+      "cause": "patch_declined",
+      "reason": "unsupported writer content: the typed property has no independent projection"
+    },
     "write_path": {
       "fidelity": {
         "status": "not_consumed"
       },
-      "path": "patched"
+      "path": "synthesized"
     }
   }
 }

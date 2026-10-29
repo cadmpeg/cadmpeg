@@ -39,8 +39,15 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         },
     ];
 
-    let payload =
-        crate::writer::resolved_feature_payload(lane, &native.feature_histories, &renames).unwrap();
+    let payload = crate::writer::resolved_feature_payload(
+        lane,
+        &native.feature_histories,
+        &renames,
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
+    )
+    .unwrap()
+    .0;
 
     let written = decoded_object_names(&payload, &lane.id);
     assert_eq!(

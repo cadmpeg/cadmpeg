@@ -293,8 +293,10 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -384,8 +386,9 @@ fn hole_outline_placement_preserves_stored_plane_order() {
             902,
             [0.0, 0.0, 1.0],
             LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
-                    .expect("nonzero length fixture"),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroLength::new(6.5).expect("nonzero length fixture")
+                ),
             },
         ))
     );
@@ -1002,6 +1005,7 @@ fn mixed_current_and_generated_edges_remain_native() {
     ]);
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1021,6 +1025,7 @@ fn mixed_current_and_generated_edges_remain_native() {
         native_ref: None,
     });
     ir.model.edges.push(cadmpeg_ir::topology::Edge {
+        native_ref: None,
         id: EdgeId::mint("creo:visibgeom:edge#45".to_string()).expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: cadmpeg_ir::ids::VertexId::mint("test:model:entity#test:start".to_string())
@@ -1324,11 +1329,13 @@ fn geometry_signal_excludes_opaque_carriers() {
     let surface_id =
         SurfaceId::mint("test:model:entity#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
     });
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("test:model:entity#curve".to_string()).expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

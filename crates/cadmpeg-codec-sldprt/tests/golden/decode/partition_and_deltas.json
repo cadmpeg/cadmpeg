@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -44,6 +43,7 @@
     "native": {
       "sldprt": {
         "configurations": [],
+        "document_metadata": [],
         "feature_histories": [],
         "feature_input_body_selections": [],
         "feature_input_classes": [],
@@ -66,25 +66,13 @@
         ]
       }
     },
+    "scope": {
+      "design": false,
+      "model": false
+    },
     "source": {
       "attributes": {
-        "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "2",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
-        "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "parasolid_schema": "SCH_SW_33103_11000"
       },
       "identity": {
         "classification": "classified",
@@ -208,6 +196,17 @@
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -217,7 +216,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": false,
+        "model": false
+      }
     }
   },
   "source_fidelity": {
@@ -241,6 +243,15 @@
         }
       }
     },
+    "metadata": {
+      "active_parasolid_block": "Contents/Config-0-Partition",
+      "brep_local_sha256": "887f8427f935ae19a9d4f6884ea91064eec57c60abae9e3bcdc4054c4807e910",
+      "document_local_sha256": "6d14197ce55e91675c2607cf45f5750154b856f8c38691e6afd48321983ccae0",
+      "outer_version": "0x00000004",
+      "sldprt_swobjects_local_sha256": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
+      "sldprt_swobjects_material_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_swobjects_metadata_identity_local_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "retained_records": {
       "sldprt:file:block#8": {
         "bytes": {
@@ -248,7 +259,10 @@
           "retention": "inline"
         },
         "offset": 8,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
@@ -256,8 +270,12 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

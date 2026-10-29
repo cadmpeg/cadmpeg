@@ -92,15 +92,15 @@ fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
     assert_eq!(parameter.owner_record_index(), Some(886));
     assert_eq!(parameter.source_ordinal, 20);
     assert_eq!(parameter.expression(), "0.4375 in");
-    assert_eq!(parameter.expression_offset(), 45);
+    assert_eq!(parameter.expression_offset(), Some(45));
     assert_eq!(parameter.source_kind(), "HoleDepth");
     assert_eq!(
         parameter.unit().map(|field| field.value.as_str()),
         Some("in")
     );
-    assert_eq!(parameter.unit().map(|field| field.offset), Some(94));
+    assert_eq!(parameter.unit().map(|field| field.offset), Some(Some(94)));
     assert_eq!(parameter.name(), "d20");
-    assert_eq!(parameter.evaluated_value_offset(), 108);
+    assert_eq!(parameter.evaluated_value_offset(), Some(108));
 
     let dimension =
         parse_design_parameter_record(&class_287_parameter_record("Diameter Dimension-2", "d1"))
@@ -372,9 +372,56 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
         panic!("expected one canonical parameter");
     };
     assert_eq!(parameter.record_index, 71);
-    assert_eq!(parameter.byte_offset(), 0);
+    assert_eq!(parameter.byte_offset(), Some(0));
     assert_eq!(parameter.expression(), "first");
     assert_eq!(parameter.evaluated_value().get(), 1.0);
+}
+
+#[test]
+fn a_parameter_copy_inside_another_primary_record_is_payload() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let meta = "FusionAssetName[Active]/Design1/MetaStream.dat";
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut bulk = Vec::new();
+    crate::test_support::indexed_header(&mut bulk, *b"256", 10);
+    bulk.extend_from_slice(b"pad!");
+    bulk.extend_from_slice(&parameter_record(
+        None,
+        "copy",
+        "User Parameter",
+        Some("mm"),
+        "Copy",
+        9.0,
+    ));
+    let live = bulk.len();
+    bulk.extend_from_slice(&parameter_record(
+        None,
+        "12 mm",
+        "User Parameter",
+        Some("mm"),
+        "Width",
+        1.2,
+    ));
+    let metastream = crate::test_support::streams_test::design_metastream_with_records(
+        &[],
+        &[(10, 0), (71, u64::try_from(live).unwrap())],
+    );
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(meta, stored).unwrap();
+    zip.write_all(&metastream).unwrap();
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let [parameter] = decoded.parameters.as_slice() else {
+        panic!("expected only the primary-index parameter record");
+    };
+    assert_eq!(parameter.byte_offset(), Some(u64::try_from(live).unwrap()));
+    assert_eq!(parameter.expression(), "12 mm");
+    assert!(decoded.unparsed.is_empty());
 }
 
 fn compact_parameter_owner_frame() -> Vec<u8> {
@@ -669,37 +716,37 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
 #[test]
 fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     let parsed = parse_legacy_parameter_owner_68(
-        &legacy_parameter_owner_68_frame("284"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_68_frame("284"),
+        ),
         crate::records::identity::Located {
             value: 0.0,
             offset: 700,
         },
         0,
     )
-    .expect("legacy 68-byte parameter owner")
-    .into_record("Design/BulkStream.dat", 0)
-    .unwrap();
-    assert_eq!(parsed.frame_length(), 68);
+    .expect("legacy 68-byte parameter owner");
+    // This frame has no local-ordinal lane. The parser's compatibility
+    // placeholder is not a document-stated ordinal.
+    assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.scope_record_index, 0);
+    let parsed = parsed.into_record("Design/BulkStream.dat", 0).unwrap();
+    assert_eq!(parsed.frame_length(), Some(68));
     assert_eq!(parsed.class_tag().as_str(), "284");
     assert_eq!(parsed.record_index(), 100);
     assert_eq!(parsed.parameter_record_index(), 101);
     assert_eq!(parsed.companion_record_index(), 102);
-    assert_eq!(parsed.scope_record_index(), 0);
-    assert_eq!(parsed.local_ordinal(), 0);
-    assert_eq!(
-        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
-            serde_json::to_value(&parsed).unwrap()
-        )
-        .unwrap()
-        .owned_ordinal,
-        290
-    );
+    assert_eq!(parsed.scope_record_index(), None);
+    assert_eq!(parsed.local_ordinal(), None);
+    assert_eq!(parsed.owned_ordinal(), 290);
     assert_eq!(parsed.evaluated_value().get(), 0.0);
 
     for class_tag in ["268", "282", "289", "292", "297", "299", "325", "336"] {
         assert!(
             parse_legacy_parameter_owner_68(
-                &legacy_parameter_owner_68_frame(class_tag),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_68_frame(class_tag)
+                ),
                 crate::records::identity::Located {
                     value: 1.25,
                     offset: 700
@@ -716,7 +763,9 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
 #[test]
 fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     assert!(parse_legacy_parameter_owner_68(
-        &legacy_parameter_owner_68_frame("291"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_68_frame("291")
+        ),
         crate::records::identity::Located {
             value: 1.0,
             offset: 700
@@ -728,7 +777,7 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     let mut malformed = legacy_parameter_owner_68_frame("284");
     malformed[55] = 0;
     assert!(parse_legacy_parameter_owner_68(
-        &malformed,
+        crate::design::decode::parameters::ParameterFrame::over_retained(&malformed),
         crate::records::identity::Located {
             value: 1.0,
             offset: 700
@@ -744,7 +793,9 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
         offset: 700,
     };
     let typed = super::parse_admitted_legacy_parameter_owner_68(
-        &legacy_parameter_owner_68_frame("318"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_68_frame("318"),
+        ),
         evaluated,
         0,
         true,
@@ -752,9 +803,13 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
     .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
     .expect("owner-typed legacy frame");
     assert_eq!(typed.class_tag().as_str(), "318");
-    assert!(
-        super::parse_admitted_legacy_parameter_owner_68(&malformed, evaluated, 0, true).is_none()
-    );
+    assert!(super::parse_admitted_legacy_parameter_owner_68(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&malformed),
+        evaluated,
+        0,
+        true
+    )
+    .is_none());
     let wire = serde_json::to_value(&typed).unwrap();
     assert!(
         serde_json::from_value::<crate::records::parameters::DesignParameterOwner>(wire).is_ok()
@@ -764,27 +819,24 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
 #[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let parsed = parse_legacy_parameter_owner_88(
-        &legacy_parameter_owner_88_frame("284"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_88_frame("284"),
+        ),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700,
         },
         0,
     )
-    .expect("legacy 88-byte parameter owner")
-    .into_record("Design/BulkStream.dat", 0)
-    .unwrap();
-    assert_eq!(parsed.frame_length(), 88);
-    assert_eq!(parsed.scope_record_index(), 77);
-    assert_eq!(parsed.local_ordinal(), 0);
-    assert_eq!(
-        serde_json::from_value::<crate::records::parameters::DesignParameterOwnerWire>(
-            serde_json::to_value(&parsed).unwrap()
-        )
-        .unwrap()
-        .owned_ordinal,
-        290
-    );
+    .expect("legacy 88-byte parameter owner");
+    // This frame has no local-ordinal lane. The parser's compatibility
+    // placeholder is not a document-stated ordinal.
+    assert_eq!(parsed.local_ordinal, 0);
+    let parsed = parsed.into_record("Design/BulkStream.dat", 0).unwrap();
+    assert_eq!(parsed.frame_length(), Some(88));
+    assert_eq!(parsed.scope_record_index(), Some(77));
+    assert_eq!(parsed.local_ordinal(), None);
+    assert_eq!(parsed.owned_ordinal(), 290);
     assert_eq!(parsed.parameter_record_index(), 101);
     assert_eq!(parsed.companion_record_index(), 102);
     assert_eq!(parsed.evaluated_value().get(), 2.5);
@@ -792,7 +844,9 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     for class_tag in ["282", "336", "325", "297"] {
         assert!(
             parse_legacy_parameter_owner_88(
-                &legacy_parameter_owner_88_frame(class_tag),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_88_frame(class_tag)
+                ),
                 crate::records::identity::Located {
                     value: 2.5,
                     offset: 700
@@ -804,7 +858,9 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
         );
     }
     assert!(parse_legacy_parameter_owner_88(
-        &legacy_parameter_owner_88_frame("268"),
+        crate::design::decode::parameters::ParameterFrame::over_retained(
+            &legacy_parameter_owner_88_frame("268")
+        ),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700
@@ -816,7 +872,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let mut mismatched = legacy_parameter_owner_88_frame("284");
     mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
     assert!(parse_legacy_parameter_owner_88(
-        &mismatched,
+        crate::design::decode::parameters::ParameterFrame::over_retained(&mismatched),
         crate::records::identity::Located {
             value: 2.5,
             offset: 700
@@ -910,9 +966,9 @@ fn every_parsed_parameter_owner_frame_is_a_valid_owner_record() {
         let owner = parsed
             .into_record("Design/BulkStream.dat", 1000)
             .unwrap_or_else(|| panic!("{length}-byte owner with variant {variant:?}"));
-        assert_eq!(owner.frame_length(), length);
+        assert_eq!(owner.frame_length(), Some(length));
         assert_eq!(
-            i128::from(owner.evaluated_value_offset()),
+            i128::from(owner.evaluated_value_offset().unwrap()),
             1000 + value_offset
         );
     }
@@ -994,7 +1050,7 @@ fn parameter_companion_decode_emits_one_identified_companion() {
         id: crate::ids::native_design_record_header_id(STREAM, 0),
         record_index: 46,
         class_tag: crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -1003,8 +1059,7 @@ fn parameter_companion_decode_emits_one_identified_companion() {
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     with_scan(&archive, |scan| {
-        let decoded =
-            super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]).unwrap();
+        let decoded = super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]);
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),
@@ -1071,7 +1126,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         id: crate::ids::native_design_record_header_id(stream, 0),
         record_index: 44,
         class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let mut exact = parameter_owner_frame();
@@ -1087,9 +1142,9 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let [owner] = owners.owners.as_slice() else {
         panic!("expected one parameter owner");
     };
-    assert_eq!(owner.frame_length(), 104);
+    assert_eq!(owner.frame_length(), Some(104));
     assert!(owners.unparsed.is_empty());
-    assert_eq!(owner.evaluated_value_offset(), 40);
+    assert_eq!(owner.evaluated_value_offset(), Some(40));
 
     let mut compact = without_variant_padding(parameter_owner_frame());
     compact.extend_from_slice(&paired_header());
@@ -1104,9 +1159,9 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let [owner] = owners.owners.as_slice() else {
         panic!("expected one compact parameter owner");
     };
-    assert_eq!(owner.frame_length(), 103);
+    assert_eq!(owner.frame_length(), Some(103));
     assert!(owners.unparsed.is_empty());
-    assert_eq!(owner.evaluated_value_offset(), 40);
+    assert_eq!(owner.evaluated_value_offset(), Some(40));
 
     let unresolved = with_scan(&archive(stream, &[]), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
@@ -1169,7 +1224,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         id: crate::ids::native_design_record_header_id(stream, supported_at),
         record_index: 54,
         class_tag: header.class_tag.clone(),
-        byte_offset: supported_at,
+        byte_offset: Some(supported_at),
     };
     let native_parameters = [parameter, supported_parameter];
     let decoded = with_scan(&archive(stream, &extended), |scan| {
@@ -1258,13 +1313,13 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     );
     let recipe = |record_index, byte_offset| ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{record_index}"),
-        byte_offset,
+        byte_offset: Some(byte_offset),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: record_index,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let recipes = [recipe(31, 100), recipe(30, 80)];
@@ -1284,8 +1339,8 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     .unwrap();
 
     let payload = bound[0].payload().expect("bound payload");
-    assert_eq!(payload.byte_offset(), 68);
-    assert_eq!(payload.byte_length(), 132);
+    assert_eq!(payload.byte_offset(), Some(68));
+    assert_eq!(payload.byte_length(), Some(132));
     assert_eq!(
         payload.owned_recipe_ids(),
         [
@@ -1308,7 +1363,7 @@ fn parameter_companion_binding_owns_its_recipe() {
     );
     let recipe = ConstructionRecipe {
         id: "f3d:native:construction-recipe#60".into(),
-        byte_offset: 60,
+        byte_offset: Some(60),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 0,
@@ -1345,15 +1400,17 @@ fn parameter_owner_value_offset_is_localized_once() {
     let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
     let owner = parsed.into_record("Design/BulkStream.dat", 1000).unwrap();
-    assert_eq!(owner.byte_offset(), 1000);
-    assert_eq!(owner.evaluated_value_offset(), 1040);
+    assert_eq!(owner.byte_offset(), Some(1000));
+    assert_eq!(owner.evaluated_value_offset(), Some(1040));
     assert!(parse_parameter_owner(&parameter_owner_frame())
         .unwrap()
         .into_record("Design/BulkStream.dat", u64::MAX)
         .is_none());
     for owner in [
         parse_legacy_parameter_owner_68(
-            &legacy_parameter_owner_68_frame("284"),
+            crate::design::decode::parameters::ParameterFrame::over_retained(
+                &legacy_parameter_owner_68_frame("284"),
+            ),
             crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
@@ -1362,7 +1419,9 @@ fn parameter_owner_value_offset_is_localized_once() {
         )
         .unwrap(),
         parse_legacy_parameter_owner_88(
-            &legacy_parameter_owner_88_frame("284"),
+            crate::design::decode::parameters::ParameterFrame::over_retained(
+                &legacy_parameter_owner_88_frame("284"),
+            ),
             crate::records::identity::Located {
                 value: 2.5,
                 offset: 700,
@@ -1372,7 +1431,7 @@ fn parameter_owner_value_offset_is_localized_once() {
         .unwrap(),
     ] {
         let owner = owner.into_record("Design/BulkStream.dat", 0).unwrap();
-        assert_eq!(owner.evaluated_value_offset(), 700);
+        assert_eq!(owner.evaluated_value_offset(), Some(700));
     }
 }
 
@@ -1385,13 +1444,17 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
         };
         for parsed in [
             parse_legacy_parameter_owner_68(
-                &legacy_parameter_owner_68_frame("284"),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_68_frame("284"),
+                ),
                 evaluated,
                 frame_start,
             )
             .unwrap(),
             parse_legacy_parameter_owner_88(
-                &legacy_parameter_owner_88_frame("284"),
+                crate::design::decode::parameters::ParameterFrame::over_retained(
+                    &legacy_parameter_owner_88_frame("284"),
+                ),
                 evaluated,
                 frame_start,
             )
@@ -1404,8 +1467,8 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
             let owner = parsed
                 .into_record("Design/BulkStream.dat", frame_start)
                 .unwrap();
-            assert_eq!(owner.byte_offset(), frame_start);
-            assert_eq!(owner.evaluated_value_offset(), 700);
+            assert_eq!(owner.byte_offset(), Some(frame_start));
+            assert_eq!(owner.evaluated_value_offset(), Some(700));
             assert_eq!(owner.evaluated_value().get(), 2.5);
             assert_eq!(
                 owner.id(),
@@ -1423,15 +1486,19 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 
     let payload = parameter_record(None, "1", "User Parameter", None, "p", 1.0);
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    assert!(super::parse_design_parameter(&payload)
-        .unwrap()
-        .expect("parsed parameter")
-        .into_record(stream, u64::MAX)
-        .is_none());
+    assert!(super::parse_design_parameter(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&payload)
+    )
+    .unwrap()
+    .expect("parsed parameter")
+    .into_record(stream, u64::MAX)
+    .is_none());
 
-    let parsed = super::parse_design_parameter(&payload)
-        .unwrap()
-        .expect("parsed parameter");
+    let parsed = super::parse_design_parameter(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&payload),
+    )
+    .unwrap()
+    .expect("parsed parameter");
     let error = super::locate_design_parameter(parsed, stream, usize::MAX)
         .expect_err("a frame at the end of the address space cannot be located");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
@@ -1440,10 +1507,15 @@ fn frame_relative_offsets_refuse_to_saturate_at_the_end_of_the_address_space() {
 #[test]
 fn design_parameter_text_fields_keep_the_name() {
     let payload = parameter_record(Some(44), "1", "AlongDistance", Some("mm"), "d71", 1.0);
-    let parsed = super::parse_design_parameter(&payload).unwrap().unwrap();
+    let parsed = super::parse_design_parameter(
+        crate::design::decode::parameters::ParameterFrame::over_retained(&payload),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(parsed.name, "d71");
 }
 
+mod authored_links;
 const TYPED_PARAMETER_TAIL_TYPE: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
 const TYPED_OWNER_TYPE: &str = "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0";
 const TYPED_SCOPE_TYPE: &str = "11111111-2222-3333-4444-555555555555";
@@ -1493,15 +1565,23 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     assert_eq!(parameter.record_index, 537);
     assert_eq!(parameter.source_ordinal, 8);
     assert_eq!(parameter.owner_record_index(), Some(536));
-    assert_eq!(parameter.family_discriminator(), None);
+    assert_eq!(
+        parameter
+            .family_discriminator()
+            .map(|located| crate::records::identity::Located {
+                value: located.value,
+                offset: located.offset.expect("retained test discriminator")
+            }),
+        None
+    );
     assert_eq!(parameter.expression(), "3 mm");
-    assert_eq!(parameter.expression_offset(), 85);
+    assert_eq!(parameter.expression_offset(), Some(85));
     assert_eq!(parameter.unit().map(|unit| unit.value.as_str()), Some("mm"));
     assert_eq!(parameter.name(), "d1");
     assert_eq!(parameter.evaluated_value().get(), 0.3);
     assert_eq!(
         parameter.evaluated_value_offset(),
-        u64::try_from(owned.len() - 60).unwrap()
+        Some(u64::try_from(owned.len() - 60).unwrap())
     );
 
     // The owner reference can omit its inline type GUID.
@@ -1512,7 +1592,7 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
     plain.extend_from_slice(&owned[81..]);
     let parameter = parse_design_parameter_record(&plain).expect("plain-owner typed parameter");
     assert_eq!(parameter.owner_record_index(), Some(536));
-    assert_eq!(parameter.expression_offset(), 45);
+    assert_eq!(parameter.expression_offset(), Some(45));
 
     let document = typed_parameter_record(242, None, "User Parameter");
     let parameter = parse_design_parameter_record(&document).expect("typed document parameter");
@@ -1523,7 +1603,7 @@ fn typed_compact_parameters_read_owned_and_document_forms() {
             family_discriminator: None
         }
     );
-    assert_eq!(parameter.expression_offset(), 35);
+    assert_eq!(parameter.expression_offset(), Some(35));
 
     // Owner presence must agree with the document source kind, and the tail
     // must name the typed parameter-tail type.
@@ -1604,7 +1684,7 @@ fn typed_owner_frame_widens_every_reference_and_keeps_the_scalar_envelope() {
     assert_eq!(parsed.variant, None);
     assert_eq!(parsed.companion_record_index, 538);
     let owner = parsed.into_record("Design1", 1000).expect("typed owner");
-    assert_eq!(owner.evaluated_value_offset(), 1080);
+    assert_eq!(owner.evaluated_value_offset(), Some(1080));
 
     let variant = typed_owner_frame(&[1, 0, 0]);
     let parsed = parse_parameter_owner(&variant).expect("typed variant owner");
@@ -1630,7 +1710,9 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     narrow[tail] = 0x10;
     let expected = parse_design_parameter_record(&narrow).expect("narrow discriminated parameter");
     assert_eq!(
-        expected.family_discriminator().map(|field| field.offset),
+        expected
+            .family_discriminator()
+            .and_then(|field| field.offset),
         Some(22)
     );
 
@@ -1642,7 +1724,10 @@ fn wide_discriminated_parameter_stores_four_zero_bytes_before_its_discriminator(
     assert_eq!(parameter.name(), "d3");
     assert_eq!(parameter.evaluated_value().get(), 1.0);
     let discriminator = parameter.family_discriminator().expect("discriminator");
-    assert_eq!((discriminator.value.code(), discriminator.offset), (6, 26));
+    assert_eq!(
+        (discriminator.value.code(), discriminator.offset),
+        (6, Some(26))
+    );
 
     // The four bytes before the discriminator are zero.
     let mut nonzero = wide.clone();
@@ -1697,7 +1782,7 @@ fn typed_companion_prefix_moves_the_timestamp_after_the_wide_owner_reference() {
     let record = parsed
         .into_record("Design/BulkStream.dat", 1000)
         .expect("typed companion record");
-    assert_eq!(record.timestamp_micros_offset(), 1082);
+    assert_eq!(record.timestamp_micros_offset(), Some(1082));
     assert_eq!(record.payload_byte_offset(), Some(1098));
 
     // A nonzero byte in the zero run after the timestamp is not a prefix.

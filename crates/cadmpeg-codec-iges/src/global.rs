@@ -8,6 +8,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 
+pub(crate) mod parts;
+
 #[derive(Debug, Clone, PartialEq)]
 enum Value {
     Omitted,
@@ -96,6 +98,35 @@ struct NumericDeclarations {
     double_significance: Supplied<u32>,
 }
 
+/// The source of the numeric context of a Global section.
+#[derive(Debug)]
+enum NumericContext {
+    /// Global fields 7 to 11 declare the sender numeric context.
+    Declared(NumericDeclarations),
+    /// The Binary Flag Section supersedes Global fields 7 to 11 (IGES 5.3
+    /// Appendix H.2.3), and the decoder ignores them.
+    BinaryFlagSection,
+}
+
+impl NumericContext {
+    fn precision(&self) -> RealPrecision {
+        match self {
+            Self::Declared(declarations) => declarations.precision(),
+            Self::BinaryFlagSection => RealPrecision {
+                single_significance: FALLBACK_SIGNIFICANCE,
+                double_significance: FALLBACK_SIGNIFICANCE,
+            },
+        }
+    }
+
+    fn limits(&self) -> NumericLimits {
+        match self {
+            Self::Declared(declarations) => declarations.limits(),
+            Self::BinaryFlagSection => NumericLimits::default(),
+        }
+    }
+}
+
 impl NumericDeclarations {
     fn precision(&self) -> RealPrecision {
         RealPrecision {
@@ -130,7 +161,18 @@ struct RawGlobal {
     record_delimiter: u8,
     values: Vec<Value>,
     field_count: usize,
-    unreadable_suffix: Option<(usize, CodecError)>,
+    unframed: Option<UnframedField>,
+}
+
+/// A Global field whose end is unknown. No later field has a boundary, so
+/// every later field is absent.
+#[derive(Debug)]
+struct UnframedField {
+    /// The Global field index (0 is field 1).
+    field: usize,
+    /// The Global stream offset where the field starts.
+    offset: usize,
+    error: CodecError,
 }
 
 /// The effective specification family selected by Global field 23.
@@ -237,7 +279,7 @@ pub(crate) struct ResolvedGlobal {
     receiver_product: Option<String>,
     native_file_name: Option<String>,
     units_name: Option<String>,
-    numeric: NumericDeclarations,
+    numeric: NumericContext,
     minimum_resolution: NonNegativeReal,
     length_factor_mm: Option<PositiveReal>,
     line_weight_scale: Option<LineWeightScale>,
@@ -308,6 +350,14 @@ const FIELD_DRAFTING_STANDARD: usize = 23;
 const FIELD_MODEL_DATE: usize = 24;
 const FIELD_APPLICATION_PROTOCOL: usize = 25;
 const TABLE_1_FIELD_COUNT: usize = 26;
+
+/// The parameter delimiter when Global field 1 is empty or given up: a comma
+/// (IGES 5.3 §2.2.4.3.1).
+pub(crate) const DEFAULT_PARAMETER_DELIMITER: u8 = b',';
+
+/// The record delimiter when Global field 2 is empty or given up: a
+/// semicolon (IGES 5.3 §2.2.4.3.2).
+pub(crate) const DEFAULT_RECORD_DELIMITER: u8 = b';';
 
 const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
     "parameter delimiter",
@@ -585,13 +635,51 @@ fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
     Ok((delimiter, cursor + 1))
 }
 
-fn delimited_value(
+#[derive(Clone, Copy)]
+enum ValueKind {
+    Omitted,
+    String,
+    Malformed,
+    Atom,
+}
+
+struct ValueFrame {
+    kind: ValueKind,
+    payload: std::ops::Range<usize>,
+    next: usize,
+    ended: bool,
+}
+
+impl ValueFrame {
+    fn value(&self, payload: &[u8]) -> Value {
+        if matches!(self.kind, ValueKind::Omitted) {
+            Value::Omitted
+        } else {
+            self.owned_value(payload.to_vec())
+        }
+    }
+
+    fn owned_value(&self, payload: Vec<u8>) -> Value {
+        match self.kind {
+            ValueKind::Omitted => Value::Omitted,
+            ValueKind::String => Value::String(payload),
+            ValueKind::Malformed => Value::Malformed(payload),
+            ValueKind::Atom => Value::Atom(payload),
+        }
+    }
+
+    fn window_value(&self, bytes: &[u8]) -> Value {
+        self.value(&bytes[self.payload.clone()])
+    }
+}
+
+fn frame_value(
     bytes: &[u8],
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
     retain: bool,
-) -> Result<(Value, usize, bool), CodecError> {
+) -> Result<ValueFrame, CodecError> {
     let remaining = bytes
         .len()
         .checked_sub(start)
@@ -601,21 +689,28 @@ fn delimited_value(
             .iter()
             .position(|byte| *byte != b' ')
             .unwrap_or(remaining);
-    if bytes.get(value_start) == Some(&parameter_delimiter) {
-        return Ok((Value::Omitted, value_start + 1, false));
+    if bytes.get(value_start) == Some(&parameter_delimiter)
+        || record_delimiter.is_some_and(|delimiter| bytes.get(value_start) == Some(&delimiter))
+    {
+        return Ok(ValueFrame {
+            kind: ValueKind::Omitted,
+            payload: value_start..value_start,
+            next: value_start + 1,
+            ended: bytes.get(value_start) != Some(&parameter_delimiter)
+                && record_delimiter == bytes.get(value_start).copied(),
+        });
     }
-    if record_delimiter.is_some_and(|delimiter| bytes.get(value_start) == Some(&delimiter)) {
-        return Ok((Value::Omitted, value_start + 1, true));
-    }
-    let (value, end, allow_padding_after) =
+    let (kind, payload, end, allow_padding_after) =
         if let Some((payload, end)) = hollerith(bytes, value_start)? {
-            if !retain {
-                (Value::Omitted, end, true)
-            } else if source_span_crosses_card(value_start, end - payload.len()) {
-                (Value::Malformed(payload.to_vec()), end, true)
+            let payload_start = end - payload.len();
+            let kind = if !retain {
+                ValueKind::Omitted
+            } else if source_span_crosses_card(value_start, payload_start) {
+                ValueKind::Malformed
             } else {
-                (Value::String(payload.to_vec()), end, true)
-            }
+                ValueKind::String
+            };
+            (kind, payload_start..end, end, true)
         } else {
             let end = bytes[value_start..]
                 .iter()
@@ -623,13 +718,14 @@ fn delimited_value(
                 .and_then(|relative| value_start.checked_add(relative))
                 .ok_or_else(|| malformed("record delimiter is missing"))?;
             let atom = &bytes[value_start..end];
-            if !retain || atom.iter().all(|byte| *byte == b' ') {
-                (Value::Omitted, end, false)
+            let kind = if !retain || atom.iter().all(|byte| *byte == b' ') {
+                ValueKind::Omitted
             } else if source_span_crosses_card(value_start, end + 1) {
-                (Value::Malformed(atom.to_vec()), end, false)
+                ValueKind::Malformed
             } else {
-                (Value::Atom(atom.to_vec()), end, false)
-            }
+                ValueKind::Atom
+            };
+            (kind, value_start..end, end, false)
         };
     let separator_start = if allow_padding_after {
         let remaining = bytes
@@ -643,15 +739,17 @@ fn delimited_value(
     } else {
         end
     };
-    match bytes.get(separator_start).copied() {
-        Some(separator) if separator == parameter_delimiter => {
-            Ok((value, separator_start + 1, false))
-        }
-        Some(separator) if record_delimiter == Some(separator) => {
-            Ok((value, separator_start + 1, true))
-        }
-        _ => Err(malformed("value is not followed by a delimiter")),
-    }
+    let ended = match bytes.get(separator_start).copied() {
+        Some(separator) if separator == parameter_delimiter => false,
+        Some(separator) if record_delimiter == Some(separator) => true,
+        _ => return Err(malformed("value is not followed by a delimiter")),
+    };
+    Ok(ValueFrame {
+        kind,
+        payload,
+        next: separator_start + 1,
+        ended,
+    })
 }
 
 fn global_bytes(scan: &CardScan<'_>) -> Vec<u8> {
@@ -664,23 +762,31 @@ fn global_bytes(scan: &CardScan<'_>) -> Vec<u8> {
 
 fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
     let bytes = global_bytes(scan);
+    parse_raw_with(&bytes, |_, frame| Ok(frame.window_value(&bytes)))
+}
+
+fn parse_raw_with(
+    bytes: &[u8],
+    mut value: impl FnMut(usize, &ValueFrame) -> Result<Value, CodecError>,
+) -> Result<RawGlobal, CodecError> {
     if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
     if bytes.iter().copied().filter(|byte| *byte != b' ').eq(*b";") {
         return Ok(RawGlobal {
-            parameter_delimiter: b',',
-            record_delimiter: b';',
+            parameter_delimiter: DEFAULT_PARAMETER_DELIMITER,
+            record_delimiter: DEFAULT_RECORD_DELIMITER,
             values: vec![Value::Omitted; 26],
             field_count: 1,
-            unreadable_suffix: None,
+            unframed: None,
         });
     }
-    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
-    let (record_value, next, _) = delimited_value(&bytes, cursor, parameter_delimiter, None, true)?;
-    cursor = next;
+    let (parameter_delimiter, mut cursor) = first_delimiter(bytes)?;
+    let record_frame = frame_value(bytes, cursor, parameter_delimiter, None, true)?;
+    let record_value = record_frame.window_value(bytes);
+    cursor = record_frame.next;
     let record_delimiter = match &record_value {
-        Value::Omitted => b';',
+        Value::Omitted => DEFAULT_RECORD_DELIMITER,
         Value::String(value) if value.len() == 1 => value[0],
         Value::String(_) | Value::Malformed(_) | Value::ForbiddenString | Value::Atom(_) => {
             return Err(malformed("record delimiter must contain one byte"));
@@ -707,35 +813,39 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
         Value::String(vec![record_delimiter])
     };
     let mut field_count = 2_usize;
-    let mut unreadable_suffix = None;
+    let mut unframed = None;
     loop {
         let retain = field_count < values.len();
-        let framed = delimited_value(
-            &bytes,
+        let framed = frame_value(
+            bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
             retain,
         );
-        let (value, next, ended) = match framed {
-            Ok(value) => value,
-            // Every field after the version declaration is descriptive. The
-            // Global cards bound their suffix independently of Directory and
-            // Parameter cards; no later field boundary needs to be guessed.
-            Err(error @ CodecError::Malformed(_)) if field_count > FIELD_VERSION_FLAG => {
-                unreadable_suffix = Some((cursor, error));
+        let frame = match framed {
+            Ok(frame) => frame,
+            // The delimiter declarations bound every field. A field whose end
+            // is unknown leaves only the later fields without boundaries.
+            Err(error @ CodecError::Malformed(_)) => {
+                unframed = Some(UnframedField {
+                    field: field_count,
+                    offset: cursor,
+                    error,
+                });
                 break;
             }
             Err(error) => return Err(error),
         };
+        let parsed = value(cursor, &frame)?;
         if retain {
-            values[field_count] = value;
+            values[field_count] = parsed;
         }
         field_count = field_count
             .checked_add(1)
             .ok_or_else(|| malformed("Global field count overflows"))?;
-        cursor = next;
-        if ended {
+        cursor = frame.next;
+        if frame.ended {
             break;
         }
     }
@@ -744,13 +854,79 @@ fn parse_raw(scan: &CardScan) -> Result<RawGlobal, CodecError> {
         record_delimiter,
         values,
         field_count,
-        unreadable_suffix,
+        unframed,
+    })
+}
+
+/// The Global loss of a field whose end is unknown, when no part holds it.
+fn unframed_loss(raw: &RawGlobal) -> Option<LossNote> {
+    let unframed = raw.unframed.as_ref()?;
+    let message = format!(
+        "IGES Global field {} ({}) at Global byte {} has an unreadable suffix: {}; \
+         preceding interpretation fields retained, remaining metadata left source-only",
+        unframed.field + 1,
+        field_name(unframed.field),
+        unframed.offset,
+        unframed.error
+    );
+    Some(admitted_global_loss(
+        IgesLossCode::GlobalNoncanonicalFraming,
+        message,
+    ))
+}
+
+/// The IGES form of the file that holds a Global section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalForm {
+    Ascii,
+    Binary,
+}
+
+/// Resolve a raw Global record that no part holds.
+fn resolve_unparted(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNote>) {
+    let suffix = unframed_loss(&raw);
+    let (global, mut losses) = resolve_form(raw, form);
+    if let Some(loss) = suffix {
+        losses.insert(0, loss);
+    }
+    (global, losses)
+}
+
+/// The Global context of a given-up Global section: every field is absent,
+/// and the delimiters are the specified defaults.
+pub(crate) fn given_up() -> (ResolvedGlobal, Vec<LossNote>) {
+    resolve(RawGlobal {
+        parameter_delimiter: DEFAULT_PARAMETER_DELIMITER,
+        record_delimiter: DEFAULT_RECORD_DELIMITER,
+        values: vec![Value::Omitted; 26],
+        field_count: 2,
+        unframed: None,
     })
 }
 
 /// Recover the Global field boundaries, then resolve every field once.
 pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    Ok(resolve(parse_raw(scan)?))
+    Ok(resolve_unparted(parse_raw(scan)?, GlobalForm::Ascii))
+}
+
+#[cfg(test)]
+pub(crate) fn parse_stream(bytes: &[u8]) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
+    Ok(resolve_unparted(
+        parse_raw_with(bytes, |_, frame| Ok(frame.window_value(bytes)))?,
+        GlobalForm::Ascii,
+    ))
+}
+
+/// Resolve the normalized Global payload of a Binary file. Global fields 7
+/// to 11 stay read values; the Binary Flag Section supersedes them as the
+/// numeric context.
+pub(crate) fn parse_binary_stream(
+    bytes: &[u8],
+) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
+    Ok(resolve_unparted(
+        parse_raw_with(bytes, |_, frame| Ok(frame.window_value(bytes)))?,
+        GlobalForm::Binary,
+    ))
 }
 
 fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
@@ -1128,6 +1304,36 @@ impl Resolution {
         }
     }
 
+    /// The sender numeric context that Global fields 7 to 11 declare.
+    fn numeric_declarations(&mut self, global_table: GlobalTable) -> NumericDeclarations {
+        let integer_bits = self
+            .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |value| {
+                value > 0 && u32::try_from(value).is_ok()
+            })
+            .and_then(|value| u32::try_from(value).ok());
+        let single_magnitude =
+            self.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
+        let single_significance = self.significance(FIELD_SINGLE_SIGNIFICANCE).value();
+        let double_magnitude =
+            self.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
+        let double_significance = if global_table == GlobalTable::V5_0
+            && matches!(
+                self.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
+                Supplied::Absent
+            ) {
+            Supplied::Absent
+        } else {
+            self.significance(FIELD_DOUBLE_SIGNIFICANCE)
+        };
+        NumericDeclarations {
+            integer_bits,
+            single_magnitude,
+            double_magnitude,
+            single_significance,
+            double_significance,
+        }
+    }
+
     fn minimum_resolution(&mut self, global_table: GlobalTable) -> NonNegativeReal {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
             SuppliedReal::Absent if global_table.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
@@ -1340,12 +1546,16 @@ impl Resolution {
 }
 
 fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
+    resolve_form(raw, GlobalForm::Ascii)
+}
+
+fn resolve_form(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNote>) {
     let RawGlobal {
         parameter_delimiter,
         record_delimiter,
         values,
         field_count,
-        unreadable_suffix,
+        unframed: _,
     } = raw;
     let mut resolution = Resolution {
         values,
@@ -1358,18 +1568,6 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
         resolution.losses.push(note);
     }
-    if let Some((offset, error)) = unreadable_suffix {
-        let message = format!(
-            "IGES Global field {} ({}) at Global byte {offset} has an unreadable \
-             suffix: {error}; preceding interpretation fields retained, remaining \
-             metadata left source-only",
-            field_count + 1,
-            field_name(field_count)
-        );
-        let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
-        resolution.losses.push(note);
-    }
-
     let declaration = match resolution.supplied_integer(FIELD_VERSION_FLAG) {
         Supplied::Absent => VersionDeclaration::Exact(VersionFlag::V2_0),
         Supplied::Value(value) => match VersionFlag::exact(value) {
@@ -1397,24 +1595,11 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table);
     resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table);
     resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
-    let integer_bits = resolution
-        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |value| {
-            value > 0 && u32::try_from(value).is_ok()
-        })
-        .and_then(|value| u32::try_from(value).ok());
-    let single_magnitude =
-        resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE).value();
-    let double_magnitude =
-        resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
-    let double_significance = if global_table == GlobalTable::V5_0
-        && matches!(
-            resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
-            Supplied::Absent
-        ) {
-        Supplied::Absent
-    } else {
-        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
+    let numeric = match form {
+        GlobalForm::Binary => NumericContext::BinaryFlagSection,
+        GlobalForm::Ascii => {
+            NumericContext::Declared(resolution.numeric_declarations(global_table))
+        }
     };
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => {
@@ -1465,13 +1650,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         receiver_product,
         native_file_name,
         units_name,
-        numeric: NumericDeclarations {
-            integer_bits,
-            single_magnitude,
-            double_magnitude,
-            single_significance,
-            double_significance,
-        },
+        numeric,
         minimum_resolution,
         length_factor_mm,
         line_weight_scale,
@@ -1562,11 +1741,14 @@ impl ResolvedGlobal {
         &self,
         uses_double_precision: bool,
     ) -> Vec<LossNote> {
+        let NumericContext::Declared(numeric) = &self.numeric else {
+            return Vec::new();
+        };
         if self.global_table() != GlobalTable::V5_0 || !uses_double_precision {
             return Vec::new();
         }
         let mut losses = Vec::new();
-        if matches!(self.numeric.double_magnitude, Supplied::Absent) {
+        if matches!(numeric.double_magnitude, Supplied::Absent) {
             let note = global_loss_note(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 FIELD_DOUBLE_MAGNITUDE,
@@ -1576,7 +1758,7 @@ impl ResolvedGlobal {
 
             losses.push(note);
         }
-        if matches!(self.numeric.double_significance, Supplied::Absent) {
+        if matches!(numeric.double_significance, Supplied::Absent) {
             let note = global_loss_note(
                 IgesLossCode::GlobalSemanticContextSubstituted,
                 FIELD_DOUBLE_SIGNIFICANCE,

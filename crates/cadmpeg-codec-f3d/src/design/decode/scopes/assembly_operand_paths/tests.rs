@@ -1,23 +1,91 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{exact_assembly_operand_path, exact_assembly_operand_path_envelope};
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+
+// These adapters give each unchanged byte fixture its actual source session.
+fn exact_assembly_operand_path(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    limit: usize,
+    link: DesignAssemblyOperandPathLink,
+    type_guid: Option<&str>,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::exact_assembly_operand_path(source, start, record_index, limit, link, type_guid)
+        .map(|parsed| parsed.map(|path| path.content))
+}
+
+fn exact_assembly_operand_path_envelope(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    types: &super::StreamTypes<'_>,
+    locator_record_index: u32,
+    locator_at: usize,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyOperandPath>,
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::exact_assembly_operand_path_envelope(
+        source,
+        scope,
+        types,
+        locator_record_index,
+        locator_at,
+    )
+    .map(|parsed| parsed.map(|path| path.content))
+}
+
+fn with_parsed_envelope<R>(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    types: &super::StreamTypes<'_>,
+    locator_record_index: u32,
+    locator_at: usize,
+    read: impl FnOnce(Option<super::ParsedOperandPath<'_>>) -> R,
+) -> R {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    read(
+        super::exact_assembly_operand_path_envelope(
+            source,
+            scope,
+            types,
+            locator_record_index,
+            locator_at,
+        )
+        .unwrap(),
+    )
+}
 
 const GUID: &str = "11111111-1111-1111-1111-111111111111";
 
 fn path_link() -> DesignAssemblyOperandPathLink {
     DesignAssemblyOperandPathLink {
-        locator_reference_offset: 0,
         locator_record_index: 64,
         locator_class_tag: "304".to_owned().try_into().unwrap(),
-        locator_byte_offset: 0,
-        locator_scope_reference_offset: 0,
         wrapper_record_index: 66,
-        wrapper_reference_offset: 0,
         wrapper_class_tag: "382".to_owned().try_into().unwrap(),
-        wrapper_byte_offset: 0,
-        path_reference_offset: 0,
     }
 }
 
@@ -91,7 +159,6 @@ fn assembly_path_span_keeps_its_record_index() {
         &scope,
         &std::collections::HashMap::new(),
         64,
-        0,
         0,
     )
     .unwrap()
@@ -218,13 +285,13 @@ fn wide_scope_locator_is_admitted_by_its_record_type() {
         let bytes = wide_envelope_bytes(scope.record_index, transform);
         let locator_length = if transform { 225 } else { 97 };
         assert_eq!(bytes.len(), locator_length + path_bytes().len() + 37 + 11);
-        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0, 0)
+        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &typed, 64, 0)
             .unwrap()
             .expect("wide locator");
         assert_eq!(path.record_index, 65);
         let untyped = std::collections::HashMap::new();
         assert!(
-            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+            exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0)
                 .unwrap()
                 .is_none()
         );
@@ -246,7 +313,7 @@ fn typed_path_reads_a_decimal_occurrence_key() {
     let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), Some(TYPED))
         .unwrap()
         .expect("typed path with a decimal key");
-    assert_eq!(path.occurrence_guids()[0].value.as_str(), "34");
+    assert_eq!(path.occurrence_guids()[0].as_str(), "34");
     assert_eq!(path.identity_guids().len(), 4);
 }
 
@@ -270,11 +337,8 @@ fn typed_path_reads_its_occurrence_identity_pairs() {
         .expect("typed path with an identity pair");
     let pairs = path.paired_occurrence_keys();
     assert_eq!(pairs.len(), 2);
-    assert_eq!(pairs[0].value.as_str(), "43");
-    assert_eq!(
-        pairs[1].value.as_str(),
-        "66666666-6666-6666-6666-666666666666"
-    );
+    assert_eq!(pairs[0].as_str(), "43");
+    assert_eq!(pairs[1].as_str(), "66666666-6666-6666-6666-666666666666");
     assert_eq!(path.identity_guids().len(), 4);
 
     // The plain zero tail has no pairs; a pair without its `u32 2` is refused.
@@ -299,6 +363,7 @@ fn typed_path_reads_its_occurrence_identity_pairs() {
     );
 }
 
+mod source_layout;
 /// A wide locator's typed path can continue over a second typed path record;
 /// the wrapper then counts and names both records.
 #[test]
@@ -359,13 +424,13 @@ fn wide_locator_path_continues_over_typed_records() {
         (66, (TYPED, 4)),
     ]);
     let bytes = envelope(true);
-    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0, 0)
+    let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0)
         .unwrap()
         .expect("continued wide path");
     let occurrences = path
         .occurrence_guids()
         .iter()
-        .map(|guid| guid.value.as_str())
+        .map(crate::records::mesh::DesignOccurrenceKey::as_str)
         .collect::<Vec<_>>();
     assert_eq!(occurrences, [GUID, "77777777-7777-7777-7777-777777777777"]);
     assert_eq!(path.identity_guids().len(), 8);
@@ -375,7 +440,7 @@ fn wide_locator_path_continues_over_typed_records() {
     let pairs = path
         .paired_occurrence_keys()
         .iter()
-        .map(|key| key.value.as_str())
+        .map(crate::records::mesh::DesignOccurrenceKey::as_str)
         .collect::<Vec<_>>();
     assert_eq!(pairs, ["43", "66666666-6666-6666-6666-666666666666"]);
 
@@ -385,7 +450,7 @@ fn wide_locator_path_continues_over_typed_records() {
         (65, (TYPED, 4)),
     ]);
     assert!(
-        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0, 0)
+        exact_assembly_operand_path_envelope(&bytes, &scope, &untyped, 64, 0)
             .unwrap()
             .is_none()
     );
@@ -484,36 +549,41 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
                 64,
                 (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
             )]);
-            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 0).unwrap()
         };
         assert!(exact_assembly_operand_path_envelope(
             &bytes,
             &scope,
             &std::collections::HashMap::new(),
             64,
-            1,
             0,
         )
         .unwrap()
         .is_none());
-        let path = read(&bytes, version).unwrap();
+        assert!(read(&bytes, version).is_some());
         let discriminator = usize::try_from(length).unwrap() - 6;
         let mut pathless = bytes.clone();
         pathless[discriminator..discriminator + 4].copy_from_slice(&0_u32.to_le_bytes());
         assert!(read(&pathless, version).is_none());
-        assert_eq!(path.byte_offset(), length);
-        let frame = exact_as_built_operand_frame(
-            &bytes,
-            &path,
-            &scope,
-            &std::collections::HashMap::from([(64, (super::WIDE_PATH_LOCATOR_TYPE_GUID, version))]),
-        )
+        let types =
+            std::collections::HashMap::from([(64, (super::WIDE_PATH_LOCATOR_TYPE_GUID, version))]);
+        let frame = with_parsed_envelope(&bytes, &scope, &types, 64, 0, |parsed| {
+            let parsed = parsed.unwrap();
+            assert_eq!(
+                parsed.source.header_start(),
+                Some(usize::try_from(length).unwrap())
+            );
+            exact_as_built_operand_frame(&bytes, &parsed, &scope, &types)
+        })
         .unwrap();
         assert_eq!(
             frame.reference_record_index,
             if construction { 164 } else { 64 }
         );
-        assert_eq!(frame.reference_offset, if construction { 22 } else { 7 });
+        assert_eq!(
+            frame.reference_offset,
+            Some(if construction { 22 } else { 7 })
+        );
         let flag = if construction {
             if version == 2 {
                 72
@@ -523,7 +593,7 @@ fn rigid_group_locator_version_selects_its_exact_frame_and_reference_width() {
         } else {
             22
         };
-        assert_eq!(frame.transform_offset, flag + u64::from(matrix));
+        assert_eq!(frame.transform_offset, Some(flag + u64::from(matrix)));
         let mut bad_flag = bytes.clone();
         bad_flag[usize::try_from(flag).unwrap()] = 2;
         assert!(read(&bad_flag, version).is_none());
@@ -578,7 +648,7 @@ fn typed_root_operand_path_keeps_two_identities_and_exact_closure() {
     };
     let path = read(&bytes, Some(TYPED)).unwrap();
     assert_eq!(
-        path.occurrence_guids()[0].value.as_str(),
+        path.occurrence_guids()[0].as_str(),
         "00000000-0000-0000-0000-000000000000"
     );
     assert_eq!(path.identity_guids().len(), 2);
@@ -642,7 +712,7 @@ fn rigid_group_nullable_locators_keep_counted_path_order_and_reference_width() {
             (66, (TYPED, 4)),
         ]);
         let read = |bytes: &[u8]| {
-            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 1, 0).unwrap()
+            exact_assembly_operand_path_envelope(bytes, &scope, &types, 64, 0).unwrap()
         };
         let path = read(&bytes).unwrap();
         assert_eq!(path.occurrence_guids().len(), 2);
@@ -689,22 +759,22 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
             64,
             (super::WIDE_PATH_LOCATOR_TYPE_GUID, frame_version),
         )]);
-        let path = exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0)
-            .unwrap()
-            .unwrap();
-        assert!(exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some());
-        for version in [1, 2, 3, 4, 5, 6] {
-            let types = std::collections::HashMap::from([(
-                64,
-                (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
-            )]);
-            let decoded =
-                exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 1, 0).unwrap();
-            assert_eq!(decoded.is_some(), version == frame_version);
-            assert_eq!(
-                exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some(),
-                version == frame_version
-            );
-        }
+        with_parsed_envelope(&bytes, &scope, &types, 64, 0, |path| {
+            let path = path.unwrap();
+            assert!(exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some());
+            for version in [1, 2, 3, 4, 5, 6] {
+                let types = std::collections::HashMap::from([(
+                    64,
+                    (super::WIDE_PATH_LOCATOR_TYPE_GUID, version),
+                )]);
+                let decoded =
+                    exact_assembly_operand_path_envelope(&bytes, &scope, &types, 64, 0).unwrap();
+                assert_eq!(decoded.is_some(), version == frame_version);
+                assert_eq!(
+                    exact_as_built_operand_frame(&bytes, &path, &scope, &types).is_some(),
+                    version == frame_version
+                );
+            }
+        });
     }
 }

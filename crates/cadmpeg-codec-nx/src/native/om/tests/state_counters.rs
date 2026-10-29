@@ -73,7 +73,8 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<OmOperationStateCounter>("om_operation_state_counters")
         .expect("state-counter arena");
     assert_eq!(emitted, rows.as_slice());
@@ -108,7 +109,8 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<OmAuditTrailRow>("om_audit_trail_rows")
         .expect("audit-trail row arena");
     assert_eq!(emitted, rows.as_slice());
@@ -157,7 +159,8 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<OmOperationStateJournalGroup>("om_operation_state_journal_groups")
         .expect("state-journal arena");
     assert_eq!(emitted, groups.as_slice());
@@ -166,7 +169,8 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<FeatureOperationStateJournalUse>("feature_operation_state_journal_uses")
         .expect("operation-state journal use arena");
     assert_eq!(uses.len(), 1);
@@ -225,7 +229,8 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<OmRollForwardStateGroup>("om_roll_forward_state_groups")
         .expect("roll-forward group arena");
     assert_eq!(emitted.iter().collect::<Vec<_>>(), groups);
@@ -265,7 +270,8 @@ fn native_catalog_emits_bounded_operation_state_messages() {
         .ir()
         .native
         .namespace("nx")
-        .expect("NX namespace")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<OmOperationStateMessage>("om_operation_state_messages")
         .expect("state-message arena");
     assert_eq!(emitted, messages.as_slice());
@@ -326,7 +332,12 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
             &DecodeOptions::default(),
         )
         .expect("native decode");
-    let namespace = result.ir().native.namespace("nx").expect("NX namespace");
+    let namespace = &result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone();
     let emitted_statuses = namespace
         .arena_as::<OmOperationStateStatus>("om_operation_state_statuses")
         .expect("state-status arena");

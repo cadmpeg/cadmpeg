@@ -57,11 +57,12 @@ pub(crate) fn region(layout: u8, xmt: u16, region_type: u8) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn stream(bytes: Vec<u8>) -> crate::parasolid::Stream {
+pub(crate) fn stream(bytes: Vec<u8>) -> crate::parasolid::Stream<'static> {
     crate::parasolid::Stream {
+        source: None,
         file_offset: 0,
         consumed: u64::try_from(bytes.len()).unwrap(),
-        inflated: bytes,
+        inflated: bytes.into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype: crate::parasolid::ParasolidSubtype::Deltas,
             schema: Some(

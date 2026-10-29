@@ -16,6 +16,7 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 mod graph_diagnostic_tests;
+mod joint_component_uses;
 mod restoration;
 
 #[test]
@@ -37,9 +38,8 @@ fn local_copy_on_change_target_maps_to_its_definition() {
     );
 }
 
-#[test]
-pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+fn product_fixture_document() -> &'static str {
+    r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="6">
  <Object type="App::Part" name="Assembly" id="1"/>
  <Object type="Part::Feature" name="Prototype" id="2"/>
@@ -70,7 +70,10 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
  <Object name="ElementA"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="ElementB"><Properties Count="2"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="ScaleVector" type="App::PropertyVector"><PropertyVector valueX="2" valueY="2" valueZ="2"/></Property></Properties></Object>
  <Object name="Outer"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Assembly"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="100" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
-</ObjectData></Document>"#;
+</ObjectData></Document>"#
+}
+
+fn product_fixture_archive(document: &str) -> Vec<u8> {
     let mut placements = 2_u32.to_le_bytes().to_vec();
     for value in [
         1.0_f64, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0, 0.0, 0.0, 1.0,
@@ -81,11 +84,16 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     for value in [1.0_f64, 1.0, 1.0, 2.0, 2.0, 2.0] {
         scales.extend_from_slice(&value.to_le_bytes());
     }
-    let bytes = archive_entries(&[
+    archive_entries(&[
         ("Document.xml", document.as_bytes()),
         ("PlacementList", &placements),
         ("ScaleList", &scales),
-    ]);
+    ])
+}
+
+#[test]
+pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
+    let bytes = product_fixture_archive(product_fixture_document());
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("product structure");
@@ -160,41 +168,46 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
                 .is_some_and(|id| id.ends_with("Occurrence"))
         })
         .collect::<Vec<_>>();
-    assert_eq!(assembly_occurrence.transform.rows()[0][3], 10.0);
+    assert_eq!(
+        assembly_occurrence
+            .transform
+            .expect("source occurrence placement")
+            .rows()[0][3],
+        10.0
+    );
     assert_eq!(link_occurrences.len(), 2);
     assert_eq!(link_occurrences[0].ordinal, 0);
-    assert_eq!(link_occurrences[0].transform.rows()[0][3], 6.0);
-    assert_eq!(link_occurrences[1].transform.rows()[0][3], 12.0);
+    // #213: LinkTransform requires the prototype frame, which this source does not state.
     let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
-        .expect("valid assembly graph");
-    assert_eq!(
-        assembly::resolved_transform(&graph, &link_occurrences[0].id)
-            .unwrap()
-            .rows()[0][3],
-        116.0
-    );
-    assert_eq!(
-        assembly::resolved_transform(&graph, &link_occurrences[1].id)
-            .unwrap()
-            .rows()[0][3],
-        122.0
-    );
-    assert_eq!(
-        link_occurrences[0]
-            .scale
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [1.0, 1.0, 1.0]
-    );
-    assert_eq!(
-        link_occurrences[1]
-            .scale
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [1.0, 1.0, 1.0]
-    );
+        .expect("valid assembly graph with unknown placement");
+    for link in &link_occurrences {
+        assert_eq!(link.transform, None);
+        assert_eq!(link.linked_prototype, None);
+        assert_eq!(link.effective_transform().unwrap(), None);
+        assert_eq!(graph.effective_transform(&link.id), None);
+    }
+    // The native carrier retains every authored local frame and scale fact.
+    assert_eq!(occurrence.element_transforms()[0].rows()[0][3], 1.0);
+    assert_eq!(occurrence.scale(), Some([2.0, 3.0, 4.0]));
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let prototype_properties = properties
+        .iter()
+        .filter(|property| property.owner == "fcstd:native:object#Prototype")
+        .collect::<Vec<_>>();
+    assert_eq!(prototype_properties.len(), 3);
+    assert!(prototype_properties
+        .iter()
+        .all(|property| property.name != "Placement" && property.name != "LinkPlacement"));
     let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
     assert_eq!(first_link.linked_subelements(), ["Face1"]);
-    assert_eq!(link_occurrences[0].visible, None);
-    assert_eq!(link_occurrences[1].visible, None);
+    assert_eq!(link_occurrences[0].visible, Some(true));
+    assert_eq!(link_occurrences[1].visible, Some(false));
     assert!(first_link.element_component().is_some());
     assert_eq!(first_link.claim_child(), Some(true));
     let copy_on_change = first_link.copy_on_change().expect("copy-on-change state");
@@ -232,6 +245,84 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
+}
+
+#[test]
+fn authored_prototype_placement_resolves_local_array_and_ancestor_frames() {
+    let original = product_fixture_document();
+    let document = original.replacen(
+        "<Object name=\"Prototype\"><Properties Count=\"3\">",
+        r#"<Object name="Prototype"><Properties Count="4"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>"#,
+        1,
+    );
+    assert_ne!(
+        document, original,
+        "this positive control states its prototype frame"
+    );
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(product_fixture_archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .expect("authored prototype placement");
+    let link_occurrences = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence.native_ref.as_deref() == Some("fcstd:native:object#Occurrence")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(link_occurrences.len(), 2);
+    assert_eq!(
+        link_occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows()[0][3],
+        6.0
+    );
+    assert_eq!(
+        link_occurrences[1]
+            .transform
+            .expect("source occurrence placement")
+            .rows()[0][3],
+        12.0
+    );
+    let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
+        .expect("valid assembly graph");
+    assert_eq!(
+        assembly::resolved_transform(&graph, &link_occurrences[0].id)
+            .unwrap()
+            .rows()[0][3],
+        116.0
+    );
+    assert_eq!(
+        assembly::resolved_transform(&graph, &link_occurrences[1].id)
+            .unwrap()
+            .rows()[0][3],
+        122.0
+    );
+    for (occurrence, expected) in link_occurrences
+        .iter()
+        .zip([[2.0, 3.0, 4.0], [4.0, 6.0, 8.0]])
+    {
+        let rows = occurrence
+            .transform
+            .expect("source occurrence placement")
+            .rows();
+        let scales = [0, 1, 2].map(|column| {
+            (0..3)
+                .map(|row| rows[row][column].powi(2))
+                .sum::<f64>()
+                .sqrt()
+        });
+        assert_eq!(
+            scales, expected,
+            "source scale is part of the sole local affine transform"
+        );
+    }
+    assert_valid_document(result.ir());
 }
 
 #[test]
@@ -354,9 +445,9 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
         .arena_as::<native::PropertyRecord>("properties")
         .expect("properties");
     assert_eq!(properties.len(), 5);
-    assert!(properties.iter().any(|property| {
-        property.name == "Description" && property.xml.text().contains("<Wrapper>")
-    }));
+    assert!(properties
+        .iter()
+        .any(|property| property.name == "Description"));
     assert!(properties.iter().any(|property| {
         property.name == "PartNumber" && property.type_name == "App::PropertyInteger"
     }));
@@ -844,9 +935,13 @@ fn rejects_nonfinite_product_scale_at_source_admission() {
                 &DecodeOptions::default(),
             )
             .expect_err("nonfinite product scale");
-        assert!(error
-            .to_string()
-            .contains(&format!("invalid finite value for {name}")));
+        assert!(
+            matches!(
+                error,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
+            ),
+            "{name}: {error}"
+        );
     }
 }
 
@@ -1571,10 +1666,7 @@ fn unequal_stale_arrays_do_not_establish_missing_element_count() {
         )
         .expect("inactive array carriers remain native");
     assert_eq!(result.ir().model.occurrences.len(), 1);
-    assert_eq!(
-        result.ir().model.occurrences[0].transform,
-        cadmpeg_ir::transform::Transform::identity()
-    );
+    assert_eq!(result.ir().model.occurrences[0].transform, None);
     assert_valid_document(result.ir());
 }
 
@@ -1608,10 +1700,7 @@ fn equal_stale_arrays_do_not_establish_missing_element_count() {
         )
         .expect("inactive array carriers remain native without ElementCount");
     assert_eq!(result.ir().model.occurrences.len(), 1);
-    assert_eq!(
-        result.ir().model.occurrences[0].transform,
-        cadmpeg_ir::transform::Transform::identity()
-    );
+    assert_eq!(result.ir().model.occurrences[0].transform, None);
     let native = result
         .ir()
         .native
@@ -1752,69 +1841,4 @@ fn ordinary_group_membership_does_not_compete_with_a_part_placement_parent() {
     );
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     assert_valid_document(decoded.ir());
-}
-
-#[test]
-fn assembly_joints_and_linked_prototypes_are_not_occurrences() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
- <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
- <Object type="Assembly::JointGroup" name="Joints" id="2"/>
- <Object type="App::FeaturePython" name="Ground" id="3"/>
- <Object type="App::Link" name="BlockLink" id="4"/>
- <Object type="Part::Feature" name="Block" id="5"/>
-</Objects>
-<ObjectData Count="5">
- <Object name="Assembly"><Properties Count="1">
-  <Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="Joints"/><Link value="BlockLink"/><Link value="Ground"/></LinkList></Property>
- </Properties></Object>
- <Object name="Joints"><Properties Count="1">
-  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Ground"/></LinkList></Property>
- </Properties></Object>
- <Object name="Ground"><Properties Count="1">
-  <Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="BlockLink"/></Property>
- </Properties></Object>
- <Object name="BlockLink"><Properties Count="1">
-  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" stamp="" name="Block"/></Property>
- </Properties></Object>
- <Object name="Block"><Properties Count="0"/></Object>
-</ObjectData></Document>"#;
-    let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect("assembly");
-    let model = &result.ir().model;
-    let occurrences = model
-        .occurrences
-        .iter()
-        .map(|occurrence| occurrence.id.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        occurrences,
-        [
-            "fcstd:model:occurrence#Assembly:container",
-            "fcstd:model:occurrence#BlockLink:instance"
-        ]
-    );
-    let definitions = model
-        .product_definitions
-        .iter()
-        .map(|definition| definition.id.as_str())
-        .collect::<HashSet<_>>();
-    assert_eq!(
-        definitions,
-        HashSet::from([
-            "fcstd:model:product_definition#Assembly:definition",
-            "fcstd:model:product_definition#Block:definition"
-        ])
-    );
-    let connectors = model.assembly_joints[0].connectors().collect::<Vec<_>>();
-    assert!(matches!(
-        &connectors[0].operand.container,
-        cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. }
-            if occurrence.as_str() == "fcstd:model:occurrence#BlockLink:instance"
-    ));
-    assert_valid_document(result.ir());
 }

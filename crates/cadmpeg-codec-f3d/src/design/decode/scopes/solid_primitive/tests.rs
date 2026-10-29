@@ -107,7 +107,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
                 offset_x,
                 offset_y,
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: 20,
+                operation_offset: Some(20),
                 ..
             }
         )) if length.get() == 3.0 && width.get() == 4.0 && height.get() == 2.0 && offset_x.get() == 0.5 && offset_y.get() == -0.25
@@ -141,7 +141,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
                 height,
                 diameter,
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 20,
+                operation_offset: Some(20),
                 ..
             }
         )) if height.get() == 0.7 && diameter.get() == 3.0
@@ -291,7 +291,7 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 height,
                 diameter,
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 22,
+                operation_offset: Some(22),
                 transform: None,
                 ..
             }
@@ -340,8 +340,11 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                     height,
                     diameter,
                     operation: DesignExtrudeOperation::Join,
-                    operation_offset: 22,
-                    transform: Some(crate::records::identity::Located { offset: 72, .. }),
+                    operation_offset: Some(22),
+                    transform: Some(crate::records::identity::Sourced {
+                        offset: Some(72),
+                        ..
+                    }),
                     ..
                 }
             )) if height.get() == 0.7 && diameter.get() == 3.0

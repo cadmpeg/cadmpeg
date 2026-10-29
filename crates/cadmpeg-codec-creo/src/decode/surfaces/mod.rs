@@ -332,9 +332,8 @@ pub(super) fn transfer_part_product(
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some(occurrence_name),
             visible: None,
             link: None,
@@ -575,6 +574,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
@@ -590,10 +590,6 @@ pub(super) fn transfer_fc05_cap_circles(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -632,6 +628,7 @@ pub(super) fn transfer_fc05_cap_circles(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id: surface_id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cylinder_surface,
@@ -645,10 +642,6 @@ pub(super) fn transfer_fc05_cap_circles(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },

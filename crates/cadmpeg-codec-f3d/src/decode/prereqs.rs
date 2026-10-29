@@ -26,6 +26,7 @@ pub(super) struct ProductPrereqs {
     pub(super) design_material_assignments: Vec<DesignMaterialAssignment>,
     pub(super) design_types: Vec<SegmentType>,
     pub(super) design_parameters: Vec<DesignParameter>,
+    pub(super) parameter_state_parts: crate::design::decode::parameter_state::DecodedStateParts,
     /// Per-stream counts of typed parameter frames that match no parameter
     /// grammar; the session reports them as losses.
     pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
@@ -96,6 +97,7 @@ impl ProductPrereqs {
             design_material_assignments,
             design_types,
             design_parameters,
+            parameter_state_parts,
             design_parameter_unparsed: _,
             design_parameter_owner_unparsed: _,
             design_superseded_scope_envelopes: _,
@@ -124,6 +126,9 @@ impl ProductPrereqs {
         native.design_material_assignments = design_material_assignments;
         native.design_types = design_types;
         native.design_parameters = design_parameters;
+        native.design_parameter_states = parameter_state_parts.states;
+        native.design_parameter_state_companions = parameter_state_parts.companions;
+        native.design_parameter_document_headers = parameter_state_parts.headers;
         native.design_entity_headers = design_entity_headers;
         native.design_record_headers =
             merged_record_headers(&design_record_headers, &design_owner_record_headers);
@@ -161,9 +166,18 @@ pub(super) fn decode(
     let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
     let design_types = crate::design::decode::meta::decode_types(scan)?;
     let crate::design::decode::parameters::DecodedParameters {
-        parameters: design_parameters,
+        parameters: mut design_parameters,
         unparsed: design_parameter_unparsed,
+        state_targets: parameter_state_targets,
     } = crate::design::decode::parameters::decode_parameters(scan)?;
+    let parameter_state_parts = crate::design::decode::parameter_state::decode(ctx, scan)?;
+    crate::design::decode::parameter_state::link_parameters(
+        ctx,
+        scan,
+        &mut design_parameters,
+        &parameter_state_parts.states,
+        &parameter_state_targets,
+    )?;
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     let design_record_headers =
         crate::design::decode::sketch::decode_record_headers(scan, &design_entity_headers)?;
@@ -232,6 +246,7 @@ pub(super) fn decode(
         design_material_assignments,
         design_types,
         design_parameters,
+        parameter_state_parts,
         design_parameter_unparsed,
         design_parameter_owner_unparsed,
         design_superseded_scope_envelopes,

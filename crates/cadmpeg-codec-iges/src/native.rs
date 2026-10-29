@@ -2,6 +2,7 @@
 //! Versioned `native.iges` physical cards and entity records.
 
 use cadmpeg_ir::native::bytes::NativeBytes;
+use cadmpeg_ir::source_fidelity::SourceEvidence;
 
 use crate::card::{CardScan, ScannedLine, Section};
 
@@ -30,7 +31,62 @@ use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod annotations;
+mod attributes;
+mod evidence;
 mod fem;
+mod products;
+pub(crate) use evidence::untyped_records;
+
+/// Arena names emitted by the typed IGES native store.
+pub(crate) const ARENAS: &[&str] = &[
+    "annotations",
+    "associativities",
+    "attribute_table_definitions",
+    "attribute_table_instances",
+    "boolean_trees",
+    "boundary_vertex_sewing",
+    "cards",
+    "circular_arrays",
+    "colors",
+    "connect_points",
+    "copious_data",
+    "definition_levels",
+    "directions",
+    "display_attributes",
+    "drawings",
+    "entities",
+    "external_references",
+    "fem_entities",
+    "flashes",
+    "groups",
+    "line_fonts",
+    "macro_definitions",
+    "macro_instances",
+    "manifold_solids",
+    "network_definitions",
+    "network_instances",
+    "primitive_solids",
+    "procedural_solids",
+    "product_occurrence_expansion",
+    "product_occurrences",
+    "product_properties",
+    "properties",
+    "quarantined_directory_records",
+    "quarantined_parameter_records",
+    "rectangular_arrays",
+    "segmented_visibility",
+    "selected_components",
+    "solid_assemblies",
+    "solid_instances",
+    "subfigure_definitions",
+    "subfigure_instances",
+    "text_fonts",
+    "text_templates",
+    "transformations",
+    "units_data",
+    "view_visibility",
+    "views",
+];
 
 pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
 pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
@@ -94,32 +150,21 @@ impl Serialize for QuarantinedId {
 impl Serialize for NativeCard<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        struct Wire<'a> {
+        struct Wire {
             id: CardId,
-            offset: u64,
-            payload: NativeBytes<&'a [u8]>,
-            line_ending: NativeBytes<&'a [u8]>,
             section: Option<Section>,
-            sequence: Option<u32>,
         }
-        let (section, sequence) = match self.line {
-            ScannedLine::Card {
-                section, sequence, ..
-            } => (Some(*section), Some(*sequence)),
-            ScannedLine::Trailing(_) => (None, None),
+        let section = match self.line {
+            ScannedLine::Card { section, .. } => Some(*section),
+            ScannedLine::Trailing(_) => None,
         };
-        let line = self.line.physical();
         Wire {
             id: CardId(
                 self.index
                     .checked_add(1)
                     .ok_or_else(|| serde::ser::Error::custom("IGES card index exceeds usize"))?,
             ),
-            offset: line.offset,
-            payload: NativeBytes::from(line.payload.as_slice()),
-            line_ending: NativeBytes::from(line.line_ending()),
             section,
-            sequence,
         }
         .serialize(serializer)
     }
@@ -130,16 +175,26 @@ enum NativeQuarantinedRecord<'a> {
     Parameter(&'a QuarantinedParameterRecord),
 }
 
+impl Serialize for QuarantinedDirectoryRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        NativeQuarantinedRecord::Directory(self).serialize(serializer)
+    }
+}
+
+impl Serialize for QuarantinedParameterRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        NativeQuarantinedRecord::Parameter(self).serialize(serializer)
+    }
+}
+
 impl Serialize for NativeQuarantinedRecord<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        struct Wire<'a, D: Serialize> {
+        struct Wire<D: Serialize> {
             id: QuarantinedId,
             section: &'static str,
             sequence: u32,
-            source_offset: u64,
-            cards: usize,
-            bytes: NativeBytes<&'a [u8]>,
+            evidence: SourceEvidence,
             defect: D,
         }
         match self {
@@ -150,9 +205,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
                 },
                 section: "directory-entry",
                 sequence: record.sequence,
-                source_offset: record.source_offset,
-                cards: record.cards(),
-                bytes: NativeBytes::from(record.bytes.as_slice()),
+                evidence: SourceEvidence::of(&record.bytes),
                 defect: record.defect,
             }
             .serialize(serializer),
@@ -163,9 +216,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
                 },
                 section: "parameter-data",
                 sequence: record.sequence,
-                source_offset: record.source_offset(),
-                cards: record.cards(),
-                bytes: NativeBytes::from(record.bytes()),
+                evidence: SourceEvidence::of(record.bytes()),
                 defect: record.defect,
             }
             .serialize(serializer),
@@ -726,9 +777,9 @@ struct NativeExternalReference {
     id: String,
     source_entity: String,
     reference_kind: ExternalReferenceKind,
-    file_identifier: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
-    symbolic_name: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
-    library_name: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
+    file_identifier: Option<NativeBytes<Vec<u8>>>,
+    symbolic_name: Option<NativeBytes<Vec<u8>>>,
+    library_name: Option<NativeBytes<Vec<u8>>>,
 }
 
 impl Serialize for NativeExternalReference {
@@ -927,7 +978,7 @@ struct NativeAttributeDefinition {
     values: Vec<NativeAttributeValue>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeAttributeTableDefinition {
     id: String,
     source_entity: String,
@@ -938,14 +989,14 @@ struct NativeAttributeTableDefinition {
     attributes: Vec<NativeAttributeDefinition>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeAttributeTableInstance {
     id: String,
     source_entity: String,
     form: i64,
     definition: Option<String>,
     declared_row_count: Option<i64>,
-    rows: Vec<Vec<TokenValue>>,
+    rows: Vec<Vec<Option<TokenValue>>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -953,30 +1004,31 @@ struct NativeProductProperty {
     id: String,
     source_entity: String,
     property_kind: ProductPropertyKind,
-    value: Option<cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>>,
+    value: Option<NativeBytes<Vec<u8>>>,
     owners: Vec<String>,
 }
 
 impl Serialize for NativeProductProperty {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            id: &'a String,
-            source_entity: &'a String,
-            form: i64,
-            property_kind: &'a ProductPropertyKind,
-            value: &'a Option<NativeBytes<Vec<u8>>>,
-            owners: &'a Vec<String>,
-        }
-        Wire {
-            id: &self.id,
-            source_entity: &self.source_entity,
-            form: self.property_kind.form(),
-            property_kind: &self.property_kind,
-            value: &self.value,
-            owners: &self.owners,
-        }
-        .serialize(serializer)
+        attributes::serialize_product_property(self, serializer)
+    }
+}
+
+impl Serialize for NativeProperty {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        attributes::serialize_property(self, serializer)
+    }
+}
+
+impl Serialize for NativeAttributeTableDefinition {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        attributes::serialize_definition(self, serializer)
+    }
+}
+
+impl Serialize for NativeAttributeTableInstance {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        attributes::serialize_instance(self, serializer)
     }
 }
 
@@ -1183,14 +1235,13 @@ struct NativeLepLayerDefinition {
     functional_identifier: Option<NativeBytes<Vec<u8>>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeProperty {
     id: String,
     source_entity: String,
     form: i64,
     declared_value_count: Option<i64>,
     owners: Vec<String>,
-    #[serde(flatten)]
     value: NativePropertyValue,
 }
 
@@ -1221,7 +1272,7 @@ mod occurrence {
     /// What one product occurrence record is: the assembly root, a nested
     /// occurrence, or one member of an occurrence's definition.
     #[derive(Debug, Clone, PartialEq, Eq)]
-    enum OccurrenceRole {
+    pub(super) enum OccurrenceRole {
         Root,
         Nested,
         Member(String),
@@ -1232,7 +1283,7 @@ mod occurrence {
             matches!(self, Self::Root)
         }
 
-        fn member(&self) -> Option<&str> {
+        pub(super) fn member(&self) -> Option<&str> {
             match self {
                 Self::Root | Self::Nested => None,
                 Self::Member(member) => Some(member),
@@ -1242,14 +1293,14 @@ mod occurrence {
 
     #[derive(Debug, Clone, PartialEq)]
     pub(super) struct NativeProductOccurrence {
-        id: String,
-        role: OccurrenceRole,
-        source_instance: String,
-        definition: String,
-        neutral_links: Vec<String>,
-        instance_path: Vec<String>,
-        local_transform: [[f64; 4]; 3],
-        world_transform: [[f64; 4]; 3],
+        pub(super) id: String,
+        pub(super) role: OccurrenceRole,
+        pub(super) source_instance: String,
+        pub(super) definition: String,
+        pub(super) neutral_links: Vec<String>,
+        pub(super) instance_path: Vec<String>,
+        pub(super) local_transform: [[f64; 4]; 3],
+        pub(super) world_transform: [[f64; 4]; 3],
     }
 
     struct OccurrencePath<'a>(&'a [u32]);
@@ -1460,7 +1511,7 @@ impl UnstatableAttributeTable {
 /// `values` holds exactly `rows * values_per_row` tokens of the instance
 /// record's primary parameters.
 struct AttributeTableRows<'a> {
-    values: &'a [crate::parameter::Token],
+    values: &'a [Option<crate::parameter::Token>],
     values_per_row: std::num::NonZeroUsize,
 }
 
@@ -1501,8 +1552,8 @@ fn attribute_table_rows<'a>(
                 .integer_or(count_index, 1)
                 .ok_or(UnstatableAttributeTable::ValueCount { attribute })?,
             Some(TokenValue::Integer(value)) => *value,
-            Some(TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_)) => {
-                return Err(UnstatableAttributeTable::ValueCount { attribute })
+            Some(TokenValue::Real(_) | TokenValue::String(_)) => {
+                return Err(UnstatableAttributeTable::ValueCount { attribute });
             }
         };
         let declared = usize::try_from(declared)
@@ -1613,6 +1664,7 @@ impl OverdeclaredCounts {
 }
 
 pub(crate) struct NativeStoreResult {
+    pub(crate) projection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
     pub(crate) ambiguous_parameter_boundaries: Vec<AmbiguousParameterBoundary>,
     pub(crate) overdeclared_counts: BTreeMap<u32, OverdeclaredCount>,
@@ -1896,19 +1948,11 @@ impl Serialize for NativeParameterRecordSlot<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            parameter_line_start: Option<u32>,
-            parameter_line_end: Option<u32>,
-            parameter_bytes: NativeBytes<&'a [u8]>,
-            parameters: &'a [Token],
+            parameters: &'a [Option<Token>],
             comment: NativeBytes<&'a [u8]>,
         }
         let record = self.0;
         Wire {
-            parameter_line_start: record.map(|record| record.line_range.start),
-            parameter_line_end: record.map(|record| record.line_range.end),
-            parameter_bytes: NativeBytes::from(
-                record.map_or(&[][..], |record| record.bytes.as_slice()),
-            ),
             parameters: record.map_or(&[], ParameterRecord::tokens),
             comment: NativeBytes::from(record.map_or(&[][..], |record| record.comment.as_slice())),
         }
@@ -1922,8 +1966,8 @@ struct NativeEntity<'a> {
     directory_sequence: u32,
     entity_type: i64,
     form: i64,
-    parameter_start: i64,
     parameter_line_count: i64,
+
     structure: i64,
     line_font: Option<i64>,
     level: Option<i64>,
@@ -1935,6 +1979,7 @@ struct NativeEntity<'a> {
     line_weight: Option<i64>,
     color: Option<i64>,
     reserved: [NativeBytes<[u8; 8]>; 2],
+
     label: NativeBytes<[u8; 8]>,
     subscript: Option<i64>,
     #[serde(flatten)]
@@ -1950,9 +1995,6 @@ struct NativeMacroDefinition {
     id: String,
     source_entity: String,
     defined_entity_type: i64,
-    macro_statement: NativeBytes<Vec<u8>>,
-    language_statements: Vec<NativeBytes<Vec<u8>>>,
-    end_statement: NativeBytes<Vec<u8>>,
 }
 
 #[derive(Serialize)]
@@ -1963,7 +2005,7 @@ struct NativeMacroInstance<'a> {
     form: i64,
     macro_definition: Option<String>,
     macro_library: Option<String>,
-    parameters: &'a [Token],
+    parameters: &'a [Option<Token>],
 }
 
 fn binary_integer(value: Option<i64>) -> Option<bool> {
@@ -2182,8 +2224,8 @@ where
 }
 
 struct NativeInputIndexes<'a> {
-    quarantined_directory_records: Vec<NativeQuarantinedRecord<'a>>,
-    quarantined_parameter_records: Vec<NativeQuarantinedRecord<'a>>,
+    quarantined_directory_records: Vec<&'a QuarantinedDirectoryRecord>,
+    quarantined_parameter_records: Vec<&'a QuarantinedParameterRecord>,
     cards: Vec<NativeCard<'a>>,
     by_directory: BTreeMap<u32, &'a ParameterRecord>,
     entries: BTreeMap<u32, &'a DirectoryEntry>,
@@ -2196,19 +2238,9 @@ fn index_native_inputs<'a>(
     quarantine: QuarantinedRecords<'a>,
 ) -> NativeInputIndexes<'a> {
     let mut quarantined_directory_records = Vec::new();
-    quarantined_directory_records.extend(
-        quarantine
-            .directory
-            .iter()
-            .map(NativeQuarantinedRecord::Directory),
-    );
+    quarantined_directory_records.extend(quarantine.directory.iter());
     let mut quarantined_parameter_records = Vec::new();
-    quarantined_parameter_records.extend(
-        quarantine
-            .parameters
-            .iter()
-            .map(NativeQuarantinedRecord::Parameter),
-    );
+    quarantined_parameter_records.extend(quarantine.parameters.iter());
     let mut cards = Vec::new();
     cards.extend(
         scan.lines
@@ -2288,30 +2320,10 @@ pub(crate) fn store(
             Err(MacroDataError::Defect(_, _)) => continue,
             Err(MacroDataError::Error(error)) => return Err(error),
         };
-        let Some(first) = data.statement_spans.first() else {
-            continue;
-        };
-        let Some(last) = data.statement_spans.last() else {
-            continue;
-        };
-        let Some(language_end) = data.statement_spans.len().checked_sub(1) else {
-            continue;
-        };
-        let Some(language_spans) = data.statement_spans.get(1..language_end) else {
-            continue;
-        };
-        let mut language_statements = Vec::new();
-        for span in language_spans {
-            language_statements.push(NativeBytes::from(record.bytes[span.clone()].to_vec()));
-        }
-
         macro_definitions.push(NativeMacroDefinition {
             id: format!("iges:native:macro-definition#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             defined_entity_type: data.defined_entity_type,
-            macro_statement: NativeBytes::from(record.bytes[first.clone()].to_vec()),
-            language_statements: (language_statements).into_iter().collect(),
-            end_statement: NativeBytes::from(record.bytes[last.clone()].to_vec()),
         });
     }
     let mut macro_instances = Vec::new();
@@ -2510,8 +2522,8 @@ pub(crate) fn store(
                 directory_sequence: entry.sequence,
                 entity_type: entry.entity_type,
                 form: entry.form,
-                parameter_start: entry.parameter_start,
                 parameter_line_count: entry.parameter_line_count,
+
                 structure: entry.structure,
                 line_font: entry.line_font,
                 level: entry.level,
@@ -2522,6 +2534,7 @@ pub(crate) fn store(
                 line_weight: entry.line_weight,
                 color: entry.color,
                 reserved: entry.reserved.map(NativeBytes::from),
+
                 label: NativeBytes::from(entry.label),
                 subscript: entry.subscript,
                 parameter_record: NativeParameterRecordSlot(parameters),
@@ -3747,7 +3760,12 @@ pub(crate) fn store(
                         record
                             .and_then(|record| record.integer(2 + index))
                             .and_then(|sequence| {
-                                parameter_resolver.resolve_any(entry.sequence, 2 + index, sequence)
+                                // A member slot keeps the Directory Entry
+                                // pointer it reads, whether or not its target
+                                // survives (#222 Group count ruling, rule 1).
+                                parameter_resolver
+                                    .resolve_any(entry.sequence, 2 + index, sequence)
+                                    .or_else(|| crate::graph::directory_pointer_sequence(sequence))
                             })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
@@ -4487,12 +4505,7 @@ pub(crate) fn store(
                             Some(TokenValue::Integer(_)) => {
                                 record.count_with_stride_before(cursor + 2, stride, end)
                             }
-                            None
-                            | Some(
-                                TokenValue::Real(_)
-                                | TokenValue::String(_)
-                                | TokenValue::Unreadable(_),
-                            ) => None,
+                            None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                         }
                     };
                     let Some(value_start) = cursor.checked_add(3) else {
@@ -4518,6 +4531,7 @@ pub(crate) fn store(
                             let value = record
                                 .tokens()
                                 .get(value_index)
+                                .and_then(Option::as_ref)
                                 .map_or(TokenValue::Omitted, |token| token.value.clone());
                             let display_template = (entry.form == 2)
                                 .then(|| record.integer(value_index + 1))
@@ -4603,7 +4617,11 @@ pub(crate) fn store(
                     let row_width = grid.values_per_row.get();
                     grid.values
                         .chunks_exact(row_width)
-                        .map(|row| row.iter().map(|item| item.value.clone()).collect())
+                        .map(|row| {
+                            row.iter()
+                                .map(|item| item.as_ref().map(|item| item.value.clone()))
+                                .collect()
+                        })
                         .collect()
                 }
                 Ok(None) => Vec::new(),
@@ -4892,6 +4910,7 @@ pub(crate) fn store(
                                 value: record
                                     .tokens()
                                     .get(index + 1)
+                                    .and_then(Option::as_ref)
                                     .map_or(TokenValue::Omitted, |token| token.value.clone()),
                             }
                         })
@@ -5749,9 +5768,19 @@ pub(crate) fn store(
         ));
     };
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
+    let mut projection_losses = if structure_admitted.is_some() {
+        products::project(
+            ir,
+            &product_occurrences,
+            &subfigure_definitions,
+            &network_definitions,
+            ctx,
+        )?
+    } else {
+        Vec::new()
+    };
     let namespace = ir.native.namespace_mut("iges");
     namespace.set_arena_from(ctx, "cards", cards)?;
-    namespace.set_arena_from(ctx, "entities", entities)?;
     namespace.set_arena_from(ctx, "directions", directions)?;
     namespace.set_arena_from(ctx, "flashes", flashes)?;
     namespace.set_arena_from(ctx, "transformations", transforms)?;
@@ -5779,14 +5808,6 @@ pub(crate) fn store(
     namespace.set_arena_from(ctx, "external_references", external_references)?;
     namespace.set_arena_from(ctx, "groups", groups)?;
     namespace.set_arena_from(ctx, "associativities", associativities)?;
-    namespace.set_arena_from(
-        ctx,
-        "attribute_table_definitions",
-        attribute_table_definitions,
-    )?;
-    namespace.set_arena_from(ctx, "attribute_table_instances", attribute_table_instances)?;
-    namespace.set_arena_from(ctx, "product_properties", product_properties)?;
-    namespace.set_arena_from(ctx, "properties", properties)?;
     namespace.set_arena_from(ctx, "units_data", units_data)?;
     namespace.set_arena_from(ctx, "views", views)?;
     namespace.set_arena_from(ctx, "view_visibility", view_visibility)?;
@@ -5819,7 +5840,31 @@ pub(crate) fn store(
         "quarantined_parameter_records",
         quarantined_parameter_records,
     )?;
+    if structure_admitted.is_some() {
+        projection_losses.extend(attributes::project(
+            ir,
+            sequences,
+            &entities,
+            &attributes::PropertyRecords {
+                properties: &properties,
+                definitions: &attribute_table_definitions,
+                instances: &attribute_table_instances,
+            },
+            ctx,
+        )?);
+    }
+    let namespace = ir.native.namespace_mut("iges");
+    namespace.set_arena_from(
+        ctx,
+        "attribute_table_definitions",
+        attribute_table_definitions,
+    )?;
+    namespace.set_arena_from(ctx, "attribute_table_instances", attribute_table_instances)?;
+    namespace.set_arena_from(ctx, "product_properties", product_properties)?;
+    namespace.set_arena_from(ctx, "properties", properties)?;
+    namespace.set_arena_from(ctx, "entities", entities)?;
     Ok(NativeStoreResult {
+        projection_losses,
         occurrence_expansion: ProductOccurrenceExpansion {
             output_truncated_at,
             depth_truncated_at,

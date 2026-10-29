@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct DesignSurfaceStitchOperation {
     /// Positive maximum stitched-boundary gap in centimetres.
     pub(crate) gap_tolerance: PositiveReal,
-    /// Byte offset of `gap_tolerance`.
-    pub(crate) gap_tolerance_offset: u64,
+    /// Byte offset of `gap_tolerance`. of a located scope.
+    #[serde(skip)]
+    pub(crate) gap_tolerance_offset: Option<u64>,
     /// Indexed tolerance-record identity.
     pub(crate) tolerance_record_index: u32,
     /// Indexed operation-settings record identity.
@@ -36,26 +37,30 @@ pub(crate) enum DesignSurfaceExtendMethod {
 pub(crate) struct DesignSurfaceExtendOperation {
     /// Extension distance in source centimetres.
     pub(crate) distance: FiniteReal,
-    /// Byte offset of `distance`.
-    pub(crate) distance_offset: u64,
+    /// Byte offset of `distance` of a located scope.
+    #[serde(skip)]
+    pub(crate) distance_offset: Option<u64>,
     /// Indexed scalar record carrying `distance`.
     pub(crate) distance_record_index: u32,
     /// Geometric continuation law.
     pub(crate) method: DesignSurfaceExtendMethod,
-    /// Byte offset of the method enum.
-    pub(crate) method_offset: u64,
+    /// Byte offset of the method enum. of a located scope.
+    #[serde(skip)]
+    pub(crate) method_offset: Option<u64>,
     /// Indexed boundary-carrier record.
     pub(crate) boundary_record_index: u32,
     /// Additional indexed reference carried by the boundary tail.
     pub(crate) boundary_reference_record_index: u32,
-    /// Byte offset of `boundary_reference_record_index`'s marked reference.
-    pub(crate) boundary_reference_offset: u64,
+    /// Byte offset of `boundary_reference_record_index`'s marked reference. of a located scope.
+    #[serde(skip)]
+    pub(crate) boundary_reference_offset: Option<u64>,
     /// Ordered edge-recipe records contained by the boundary carrier.
     pub(crate) edge_record_indices: Vec<u32>,
     /// Modelling tolerance in source centimetres.
     pub(crate) tolerance: cadmpeg_ir::scalar::PositiveReal,
-    /// Byte offset of `tolerance`.
-    pub(crate) tolerance_offset: u64,
+    /// Byte offset of `tolerance`. of a located scope.
+    #[serde(skip)]
+    pub(crate) tolerance_offset: Option<u64>,
 }
 
 /// Source selection form named by a `SurfaceOffset` scope.
@@ -68,14 +73,17 @@ pub(crate) enum DesignSurfaceOffsetSupport {
         boundary_record_index: u32,
         /// Additional indexed reference carried by the boundary tail.
         boundary_reference_record_index: u32,
-        /// Byte offset of `boundary_reference_record_index`'s marked reference.
-        boundary_reference_offset: u64,
+        /// Byte offset of `boundary_reference_record_index`'s marked
+        /// reference of a located scope.
+        #[serde(skip)]
+        boundary_reference_offset: Option<u64>,
         /// Ordered edge-recipe records contained by the boundary carrier.
         edge_record_indices: Vec<u32>,
         /// Modelling tolerance in source centimetres.
         tolerance: cadmpeg_ir::scalar::PositiveReal,
-        /// Byte offset of `tolerance`.
-        tolerance_offset: u64,
+        /// Byte offset of `tolerance` of a located scope.
+        #[serde(skip)]
+        tolerance_offset: Option<u64>,
     },
     /// Counted role-0x41 groups containing bounded-face recipes.
     FaceGroups {
@@ -89,8 +97,9 @@ pub(crate) enum DesignSurfaceOffsetSupport {
 pub(crate) struct DesignSurfaceOffsetOperation {
     /// Signed offset distance in source centimetres.
     pub(crate) distance: FiniteReal,
-    /// Byte offset of `distance`.
-    pub(crate) distance_offset: u64,
+    /// Byte offset of `distance` of a located scope.
+    #[serde(skip)]
+    pub(crate) distance_offset: Option<u64>,
     /// Indexed scalar record carrying `distance`.
     pub(crate) distance_record_index: u32,
     /// Exact source selection form.
@@ -372,16 +381,19 @@ pub(crate) enum DesignRuledSurfaceCorner {
 pub(crate) struct DesignRuledSurfaceOperation {
     /// Direction law.
     pub(crate) method: DesignRuledSurfaceMethod,
-    /// Byte offset of the direction-law enum.
-    pub(crate) method_offset: u64,
+    /// Byte offset of the direction-law enum. of a located scope.
+    #[serde(skip)]
+    pub(crate) method_offset: Option<u64>,
     /// Corner construction law.
     pub(crate) corner: DesignRuledSurfaceCorner,
-    /// Byte offset of the corner-law enum.
-    pub(crate) corner_offset: u64,
+    /// Byte offset of the corner-law enum. of a located scope.
+    #[serde(skip)]
+    pub(crate) corner_offset: Option<u64>,
     /// Whether the opposite incident face supplies the angle reference.
     pub(crate) alternate_face: bool,
-    /// Byte offset of the alternate-face Boolean.
-    pub(crate) alternate_face_offset: u64,
+    /// Byte offset of the alternate-face Boolean. of a located scope.
+    #[serde(skip)]
+    pub(crate) alternate_face_offset: Option<u64>,
     /// Referenced ruled-angle parameter owner.
     pub(crate) angle_owner_record_index: u32,
     /// Referenced ruled-distance parameter owner.
@@ -427,7 +439,7 @@ impl DesignPatchContinuity {
 #[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignSurfacePatchNormalState {
     Explicit {
-        reversed: crate::records::identity::Located<bool>,
+        reversed: crate::records::identity::Sourced<bool>,
     },
     Unsupported,
 }

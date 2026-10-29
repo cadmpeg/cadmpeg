@@ -25,6 +25,7 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
     let id = PcurveId::mint("test:iges:pcurve#overflow").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: id.clone(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(f64::MAX, 0.0))
@@ -54,7 +55,7 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
         .expect_err("the end has no finite point");
     assert_eq!(
         error.to_string(),
-        cadmpeg_core::CodecError::malformed(
+        crate::writer::unsupported(
             "IGES point edge test pcurve test:iges:pcurve#overflow end has non-finite coordinates"
         )
         .to_string()
@@ -67,6 +68,7 @@ fn line_pcurve_end_error(surface: &SurfaceGeometry, line: LinePcurve) -> String 
     let id = PcurveId::mint("test:iges:pcurve#overflow").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: id.clone(),
         geometry: PcurveGeometry::Line(line),
         metadata: PcurveMetadata::general(
@@ -126,7 +128,7 @@ fn a_pcurve_end_whose_placed_support_point_overflows_is_refused_as_non_finite() 
         .expect("valid LinePcurve fixture");
     assert_eq!(
         line_pcurve_end_error(&surface, line),
-        cadmpeg_core::CodecError::malformed(
+        crate::writer::unsupported(
             "IGES point edge test pcurve test:iges:pcurve#overflow end has non-finite coordinates"
         )
         .to_string()
@@ -141,7 +143,7 @@ fn a_pcurve_end_whose_line_point_overflows_is_refused_as_non_finite() {
         .expect("valid LinePcurve fixture");
     assert_eq!(
         line_pcurve_end_error(&SurfaceGeometry::Solved(origin_plane()), line),
-        cadmpeg_core::CodecError::malformed(
+        crate::writer::unsupported(
             "IGES point edge test pcurve test:iges:pcurve#overflow end has non-finite coordinates"
         )
         .to_string()
@@ -166,6 +168,7 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
     let id = PcurveId::mint("test:iges:pcurve#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -205,6 +208,7 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
         None,
     ));
     ir.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: id.clone(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 1.0), Point2::new(0.0, 1.0))

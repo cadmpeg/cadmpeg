@@ -48,10 +48,6 @@ pub(crate) fn cgm_source_key(
         geometry_role: None,
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
         object_id,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -537,17 +533,7 @@ pub(crate) fn source_meta(
         format_args!("file_size"),
         format_args!("{}", scan.data.len()),
     )?;
-    resource::source_attribute(
-        &mut attributes,
-        format_args!("outer_dir_offset"),
-        format_args!("{}", scan.outer_dir_offset),
-    )?;
     if let Some(dir) = &scan.inner {
-        resource::source_attribute(
-            &mut attributes,
-            format_args!("inner_offset"),
-            format_args!("{}", dir.inner),
-        )?;
         resource::source_attribute(
             &mut attributes,
             format_args!("stream_count"),
@@ -740,11 +726,13 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: true,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -871,11 +859,13 @@ pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
     );
 
     DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -1291,6 +1281,7 @@ mod route_tests {
         let mut ir = CadIr::empty();
         for key in [9_u32, 10] {
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: CurveId::mint(format!("catia:test:curve#{key}")).expect("identity grammar"),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1349,6 +1340,7 @@ mod route_tests {
         let mut ir = CadIr::empty();
         let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1391,6 +1383,7 @@ mod route_tests {
         let curve_id =
             CurveId::mint("catia:test:curve#curve-0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1399,6 +1392,7 @@ mod route_tests {
         let surface_id =
             SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1406,6 +1400,7 @@ mod route_tests {
         let offset_id =
             SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1506,6 +1501,7 @@ mod route_tests {
             let mut ir = CadIr::empty();
             for index in 0..CHAIN {
                 ir.model.surfaces.push(Surface {
+                    native_ref: None,
                     id: surface_id(index),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: None,
@@ -1514,6 +1510,7 @@ mod route_tests {
                 });
             }
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id(CHAIN),
                 geometry: terminal,
                 source_object: None,
@@ -1604,6 +1601,7 @@ mod route_tests {
         let mut ir = CadIr::empty();
         let id = CurveId::mint("catia:test:curve#link".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1633,6 +1631,7 @@ mod route_tests {
         let id =
             CurveId::mint("catia:test:curve#unresolved".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

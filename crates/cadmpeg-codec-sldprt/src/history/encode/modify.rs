@@ -29,7 +29,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let [group] = groups else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} requires exactly one fillet edge group",
                     feature.id
                 )));
@@ -40,20 +40,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if selection.is_none()
                 && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_fillet(record)) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
                 )));
             }
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
+            let mut parameters = self.base_parameters();
             let positional_radius = parameters.contains_key("D1")
                 && !parameters.contains_key("Radius")
                 && !parameters
@@ -62,14 +60,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match radius {
                 RadiusSpec::Unresolved { .. } => {
                     if existing.is_none() {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has an unresolved fillet radius law",
                             feature.id
                         )));
                     }
                 }
                 RadiusSpec::Constant { radius } => {
-                    let radius = (*radius).into();
+                    let radius = self.dimension(radius)?.into();
 
                     parameters.retain(|name, _| {
                         name != "Radius"
@@ -90,13 +88,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(key, value);
                 }
                 RadiusSpec::Chordal { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(CodecError::UnsupportedContent(format!(
                         "SLDPRT feature {} uses a chordal fillet law",
                         feature.id
                     )));
                 }
                 RadiusSpec::Asymmetric { .. } => {
-                    return Err(CodecError::NotImplemented(format!(
+                    return Err(CodecError::UnsupportedContent(format!(
                         "SLDPRT feature {} uses an asymmetric fillet law",
                         feature.id
                     )));
@@ -108,7 +106,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             && !indexed_name(name.as_str(), "Position")
                     });
                     if positional_radius {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} changes positional fillet form",
                             feature.id
                         )));
@@ -120,12 +118,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Radius{index}"),
-                            format_length_mm(point.radius.into()),
+                            format_length_mm(self.dimension(&point.radius)?.into()),
                         );
                     }
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 write_native_selection(
                     &mut properties,
@@ -151,7 +149,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let [group] = groups else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} requires exactly one chamfer edge group",
                     feature.id
                 )));
@@ -159,7 +157,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let edges = &group.edges;
             let spec = &group.spec;
             if flip_direction {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
                     feature.id
                 )));
@@ -168,20 +166,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if selection.is_none()
                 && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
                 )));
             }
             if existing.is_some_and(|record| !is_chamfer(record)) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
                 )));
             }
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
+            let mut parameters = self.base_parameters();
             let positional = parameters.contains_key("D1")
                 && !parameters.contains_key("Distance")
                 && !parameters.contains_key("Distance1");
@@ -192,23 +188,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match spec {
                 ChamferSpec::Unresolved { .. } => {
                     if existing.is_none() {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has unresolved chamfer dimensions",
                             feature.id
                         )));
                     }
                 }
                 ChamferSpec::Distance { distance } => {
-                    if existing.is_some()
-                        && if positional {
-                            parameters.contains_key("D2")
+                    if existing.is_some_and(|record| {
+                        if positional {
+                            record.parameters.contains_key("D2")
                         } else {
-                            parameters.contains_key("Distance1")
-                                || parameters.contains_key("Distance2")
-                                || parameters.contains_key("Angle")
+                            record.parameters.contains_key("Distance1")
+                                || record.parameters.contains_key("Distance2")
+                                || record.parameters.contains_key("Angle")
                         }
-                    {
-                        return Err(CodecError::NotImplemented(format!(
+                    }) {
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
                         )));
@@ -219,7 +215,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         cadmpeg_core::nonblank_literal!("Distance")
                     };
                     let value = format_length_like(
-                        (*distance).into(),
+                        self.dimension(distance)?.into(),
                         existing
                             .and_then(|record| record.parameters.get(key.as_str()))
                             .map(String::as_str),
@@ -227,16 +223,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(key, value);
                 }
                 ChamferSpec::TwoDistances { first, second } => {
-                    if existing.is_some()
-                        && if positional {
-                            !parameters.contains_key("D2") || positional_angle
+                    if existing.is_some_and(|record| {
+                        if positional {
+                            !record.parameters.contains_key("D2") || positional_angle
                         } else {
-                            !parameters.contains_key("Distance1")
-                                || !parameters.contains_key("Distance2")
-                                || parameters.contains_key("Angle")
+                            !record.parameters.contains_key("Distance1")
+                                || !record.parameters.contains_key("Distance2")
+                                || record.parameters.contains_key("Angle")
                         }
-                    {
-                        return Err(CodecError::NotImplemented(format!(
+                    }) {
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
                         )));
@@ -255,7 +251,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         first_key.clone(),
                         format_length_like(
-                            (*first).into(),
+                            self.dimension(first)?.into(),
                             existing
                                 .and_then(|record| record.parameters.get(first_key.as_str()))
                                 .map(String::as_str),
@@ -264,7 +260,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         second_key.clone(),
                         format_length_like(
-                            (*second).into(),
+                            self.dimension(second)?.into(),
                             existing
                                 .and_then(|record| record.parameters.get(second_key.as_str()))
                                 .map(String::as_str),
@@ -272,17 +268,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
                 ChamferSpec::DistanceAngle { distance, angle } => {
-                    if existing.is_some()
-                        && if positional {
+                    if existing.is_some_and(|record| {
+                        if positional {
                             !positional_angle
                         } else {
-                            !parameters.contains_key("Distance")
-                                || !parameters.contains_key("Angle")
-                                || parameters.contains_key("Distance1")
-                                || parameters.contains_key("Distance2")
+                            !record.parameters.contains_key("Distance")
+                                || !record.parameters.contains_key("Angle")
+                                || record.parameters.contains_key("Distance1")
+                                || record.parameters.contains_key("Distance2")
                         }
-                    {
-                        return Err(CodecError::NotImplemented(format!(
+                    }) {
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} changes chamfer form",
                             feature.id
                         )));
@@ -301,7 +297,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         distance_key.clone(),
                         format_length_like(
-                            (*distance).into(),
+                            self.dimension(distance)?.into(),
                             existing
                                 .and_then(|record| record.parameters.get(distance_key.as_str()))
                                 .map(String::as_str),
@@ -310,7 +306,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         angle_key.clone(),
                         format_angle_like(
-                            (*angle).into(),
+                            self.dimension(angle)?.into(),
                             existing
                                 .and_then(|record| record.parameters.get(angle_key.as_str()))
                                 .map(String::as_str),
@@ -318,7 +314,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 write_native_selection(
                     &mut properties,
@@ -350,7 +346,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     && !feature_input_class(record, NativeClassKind::Combine)
             }) || keep_tools
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported combine semantics",
                     feature.id
                 )));
@@ -358,12 +354,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if existing.is_none()
                 && (body_selection_value(target).is_none() || body_selection_value(tools).is_none())
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved combine semantics",
                     feature.id
                 )));
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(target) = body_selection_value(target) {
                 properties.insert(cadmpeg_core::nonblank_literal!("Target"), target);
             }
@@ -376,9 +372,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Combine".into(), |record| record.kind.clone()),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties,
             }
         })
@@ -395,18 +389,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             require_same_family(existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
             let targets = body_selection_value(targets).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no surface-cut target bodies",
                     feature.id
                 ))
             })?;
             let tools = face_selection_value(tools).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no surface-cut tools",
                     feature.id
                 ))
             })?;
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Targets"), targets);
             properties.insert(cadmpeg_core::nonblank_literal!("Tools"), tools);
             if let Some(reverse) = reverse {
@@ -418,9 +412,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             NeutralFeatureEncoding {
                 kind: existing
                     .map_or_else(|| "CutWithSurface".into(), |record| record.kind.clone()),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties,
             }
         })
@@ -436,12 +428,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             let selection = body_selection_value(bodies);
             if existing.is_some_and(|record| body_retention_mode(record).is_none()) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported delete-body semantics",
                     feature.id
                 )));
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 if !crate::resolved_features::component_paths::is_compact_body_selection_value(
                     &selection,
@@ -449,7 +441,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), selection);
                 }
             } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported delete-body semantics",
                     feature.id
                 )));
@@ -457,13 +449,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             match mode {
                 BodyRetentionMode::Unresolved => {
                     let Some(record) = existing else {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} requires a retained unresolved body operation",
                             feature.id
                         )));
                     };
                     if body_retention_mode(record) != Some(BodyRetentionMode::Unresolved) {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} removes a resolved body-retention mode",
                             feature.id
                         )));
@@ -486,9 +478,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     },
                     |record| record.kind.clone(),
                 ),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties,
             }
         })
@@ -504,19 +494,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             let unsupported = existing.is_some_and(|record| !feature_family(record, "DeleteFace"));
             let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported delete-face semantics",
                     feature.id
                 )));
             };
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             properties.insert(cadmpeg_core::nonblank_literal!("Heal"), heal.to_string());
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "DeleteFace".into(), |record| record.kind.clone()),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties,
             }
         })
@@ -536,12 +524,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 face_selection_value(replacements),
                 unsupported,
             ) else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported replace-face semantics",
                     feature.id
                 )));
             };
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), targets);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("ReplacementFaces"),
@@ -549,9 +537,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "ReplaceFace".into(), |record| record.kind.clone()),
-                parameters: existing
-                    .map(|record| record.parameters.clone())
-                    .unwrap_or_default(),
+                parameters: self.base_parameters(),
                 properties,
             }
         })
@@ -567,15 +553,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             let unsupported = existing.is_some_and(|record| !feature_family(record, "MoveFace"));
             let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported move-face semantics",
                     feature.id
                 )));
             };
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
-            let mut properties = feature.source_properties.clone();
+            let mut parameters = self.base_parameters();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             parameters.remove("Distance");
             parameters.remove("Angle");
@@ -587,7 +571,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Offset".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Distance"),
-                        format_length_mm(*distance),
+                        format_length_mm(self.dimension(distance)?),
                     );
                 }
                 FaceMotion::Translate {
@@ -601,7 +585,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Distance"),
-                        format_length_mm(*distance),
+                        format_length_mm(self.dimension(distance)?),
                     );
                 }
                 FaceMotion::Rotate {
@@ -620,7 +604,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
-                        format_angle_rad(*angle),
+                        format_angle_rad(self.dimension(angle)?),
                     );
                 }
             }
@@ -643,7 +627,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let bodies = body_selection_value(bodies).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no body-motion selection",
                     feature.id
                 ))
@@ -659,10 +643,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             };
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
-            let mut properties = feature.source_properties.clone();
+            let mut parameters = self.base_parameters();
+            let mut properties = self.base_properties();
             properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), bodies);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Translation"),
@@ -684,7 +666,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Rotation"),
-                        format_angle_rad(rotation.angle),
+                        format_angle_rad(self.dimension(&rotation.angle)?),
                     );
                 }
                 None => {
@@ -704,7 +686,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_dome(
         &self,
         faces: &FaceSelection,
-        height: Option<&cadmpeg_ir::scalar::PositiveLength>,
+        height: Option<&cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>>,
         elliptical: Option<bool>,
         reverse: Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -713,7 +695,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             let faces = face_selection_value(faces);
             if existing.is_some_and(|record| !feature_family(record, "Dome")) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported dome semantics",
                     feature.id
                 )));
@@ -724,21 +706,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || elliptical.is_none()
                     || reverse.is_none())
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved dome construction",
                     feature.id
                 )));
             }
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
+            let mut parameters = self.base_parameters();
             if let Some(height) = height {
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("Height"),
-                    format_length_mm((*height).into()),
+                    format_length_mm(self.dimension(height)?.into()),
                 );
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(faces) = faces {
                 properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             }
@@ -747,12 +727,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     cadmpeg_core::nonblank_literal!("Elliptical"),
                     elliptical.to_string(),
                 );
+            } else if let Some(value) =
+                existing.and_then(|record| record.properties.get("Elliptical"))
+            {
+                properties.insert(cadmpeg_core::nonblank_literal!("Elliptical"), value.clone());
             }
             if let Some(reverse) = reverse {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Reverse"),
                     reverse.to_string(),
                 );
+            } else if let Some(value) = existing.and_then(|record| record.properties.get("Reverse"))
+            {
+                properties.insert(cadmpeg_core::nonblank_literal!("Reverse"), value.clone());
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Dome".into(), |record| record.kind.clone()),
@@ -771,38 +758,46 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             if existing.is_some_and(|record| !feature_family(record, "Flex")) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported flex semantics",
                     feature.id
                 )));
             }
             if existing.is_none() && (axis.is_none() || matches!(mode, FlexMode::Unresolved { .. }))
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved flex construction",
                     feature.id
                 )));
             }
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
-            let mut properties = feature.source_properties.clone();
+            let mut parameters = self.base_parameters();
+            let mut properties = self.base_properties();
             if let Some(axis) = axis {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Axis"),
                     format_vector3((*axis).into()),
                 );
                 properties.remove("AxisDirection");
+            } else if let Some(record) = existing {
+                for key in ["Axis", "AxisDirection"] {
+                    if let Some((name, value)) = record.properties.get_key_value(key) {
+                        properties.insert(name.clone(), value.clone());
+                    }
+                }
             }
             match mode {
-                FlexMode::Unresolved { .. } => {}
+                FlexMode::Unresolved { .. } => {
+                    if let Some(value) = existing.and_then(|record| record.properties.get("Mode")) {
+                        properties.insert(cadmpeg_core::nonblank_literal!("Mode"), value.clone());
+                    }
+                }
                 FlexMode::Bending { angle } => {
                     parameters.remove("Factor");
                     parameters.remove("Distance");
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Bending".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
-                        format_angle_rad(*angle),
+                        format_angle_rad(self.dimension(angle)?),
                     );
                 }
                 FlexMode::Twisting { angle } => {
@@ -811,7 +806,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Twisting".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
-                        format_angle_rad(*angle),
+                        format_angle_rad(self.dimension(angle)?),
                     );
                 }
                 FlexMode::Tapering { factor } => {
@@ -820,7 +815,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Tapering".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Factor"),
-                        factor.get().to_string(),
+                        self.dimension(factor)?.get().to_string(),
                     );
                 }
                 FlexMode::Stretching { distance } => {
@@ -829,7 +824,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Stretching".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Distance"),
-                        format_length_mm(*distance),
+                        format_length_mm(self.dimension(distance)?),
                     );
                 }
             }
@@ -852,7 +847,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok({
             let selection = body_selection_value(bodies);
             if existing.is_some_and(|record| !feature_family(record, "Scale")) {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported scale semantics",
                     feature.id
                 )));
@@ -861,11 +856,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ScaleCenter::Native(reference) => !reference.is_empty(),
                 ScaleCenter::Point(_) | ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
             });
-            let resolved_factors = factors.resolved();
-            if existing.is_none()
-                && (selection.is_none() || center.is_none() || resolved_factors.is_none())
+            let resolved_factors = !matches!(factors, ScaleFactors::Unresolved {});
+            if existing.is_none() && (selection.is_none() || center.is_none() || !resolved_factors)
             {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved scale construction",
                     feature.id
                 )));
@@ -876,15 +870,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            let mut parameters = existing
-                .map(|record| record.parameters.clone())
-                .unwrap_or_default();
+            let mut parameters = self.base_parameters();
             match factors {
                 ScaleFactors::Unresolved {} => {}
                 ScaleFactors::Uniform { factor } => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Factor"),
-                        factor.get().to_string(),
+                        self.dimension(factor)?.get().to_string(),
                     );
                     parameters.remove("ScaleX");
                     parameters.remove("ScaleY");
@@ -894,19 +886,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.remove("Factor");
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("ScaleX"),
-                        factors[0].get().to_string(),
+                        self.dimension(&factors[0])?.get().to_string(),
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("ScaleY"),
-                        factors[1].get().to_string(),
+                        self.dimension(&factors[1])?.get().to_string(),
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("ScaleZ"),
-                        factors[2].get().to_string(),
+                        self.dimension(&factors[2])?.get().to_string(),
                     );
                 }
             }
-            let mut properties = feature.source_properties.clone();
+            let mut properties = self.base_properties();
             if let Some(selection) = selection {
                 properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), selection);
             }
@@ -949,7 +941,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         reference.clone(),
                     );
                 }
-                None => {}
+                None => {
+                    if let Some(record) = existing {
+                        for key in ["Center", "CenterType", "CenterRef"] {
+                            if let Some((name, value)) = record.properties.get_key_value(key) {
+                                properties.insert(name.clone(), value.clone());
+                            }
+                        }
+                    }
+                }
             }
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "Scale".into(), |record| record.kind.clone()),

@@ -18057,6 +18057,140 @@ type = "f64[16]"
 source = "spec"
 anchor = "row-major transforms start at offsets 50 and 272"
 
+[[record]]
+name = "design_parameter_state"
+kind = "byte"
+section = "3.1"
+anchor = "**Parameter state.**"
+size = 61
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameter_state.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "zero_run_23"
+offset = 11
+type = "bytes[23]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "companion_marker"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "companion_index"
+offset = 35
+type = "u64"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "companion_flags"
+offset = 43
+type = "bytes[2]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "zero_run_5"
+offset = 45
+type = "bytes[5]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "root_marker"
+offset = 50
+type = "u8"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "root_index"
+offset = 51
+type = "u64"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "root_flags"
+offset = 59
+type = "bytes[2]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record]]
+name = "design_parameter_state_companion"
+kind = "byte"
+section = "3.1"
+anchor = "**Parameter state.**"
+size = 44
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameter_state.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "control"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "control_word"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "state_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "state_index"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "state_flags"
+offset = 33
+type = "bytes[2]"
+source = "spec"
+anchor = "**Parameter state.**"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 35
+type = "bytes[9]"
+source = "spec"
+anchor = "**Parameter state.**"
 
 [[record]]
 name = "body_reference_tail_prefix"
@@ -20938,7 +21072,7 @@ anchor = "The `Emboss` fixed-prefix form has nine ordered references."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-f3d/src/records/feature/emboss.rs"
-contains = "scope.byte_offset().checked_add(235) != Some(scope.reference_count_offset())"
+contains = "start.checked_add(235) == Some(count)"
 note = "The common reference count follows the complete null-GUID separator."
 
 [[record]]

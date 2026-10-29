@@ -131,6 +131,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
 
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#70:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -152,6 +153,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -161,6 +163,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         visible: None,
     });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
             .expect("identity grammar"),
         ordinal: 0,
@@ -220,6 +223,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     });
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -229,6 +233,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         visible: None,
     });
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
         regions: vec![
@@ -240,6 +245,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         visible: None,
     });
     ir.model.regions.push(Region {
+        native_ref: None,
         id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
         body: BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
         shells: vec![
@@ -252,6 +258,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar"),
     ));
     ir.model.faces.push(Face {
+        native_ref: None,
         id: FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar"),
         shell: ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
         surface: SurfaceId::mint("creo:visibgeom:surface#7".to_string()).expect("identity grammar"),
@@ -265,6 +272,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         tolerance: None,
     });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: cadmpeg_ir::features::FeatureId::mint("creo:model:feature#10")
             .expect("identity grammar"),
         ordinal: 0,
@@ -327,6 +335,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
 
     let mut duplicate_region = ir.clone();
     duplicate_region.model.regions.push(Region {
+        native_ref: None,
         id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
         body: BodyId::mint("creo:ambiguous:body#10".to_string()).expect("identity grammar"),
         shells: Vec::new(),
@@ -375,6 +384,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         EdgeId::mint("test:model:entity#creo:test:edge".to_string()).expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_id.clone(),
         kind: BodyKind::Solid,
         regions: vec![region_id.clone()],
@@ -384,6 +394,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         visible: None,
     });
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id.clone()],
@@ -394,6 +405,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         face_id.clone(),
     ));
     ir.model.faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: SurfaceId::mint("test:model:entity#creo:test:surface".to_string())
@@ -405,6 +417,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         tolerance: None,
     });
     ir.model.loops.push(IrLoop {
+        native_ref: None,
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -413,6 +426,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         ),
     });
     ir.model.coedges.push(Coedge {
+        native_ref: None,
         id: coedge_id.clone(),
         owner_loop: loop_id.clone(),
         edge: edge_id.clone(),
@@ -429,6 +443,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
 
     let mut duplicate_loop = ir.clone();
     duplicate_loop.model.loops.push(IrLoop {
+        native_ref: None,
         id: loop_id.clone(),
         face: FaceId::mint("test:model:entity#creo:ambiguous:face".to_string())
             .expect("identity grammar"),
@@ -445,6 +460,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
 
     let mut duplicate_face = ir.clone();
     duplicate_face.model.faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: ShellId::mint("test:model:entity#creo:ambiguous:shell".to_string())
             .expect("identity grammar"),
@@ -482,6 +498,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
 
     let mut duplicate_region = ir.clone();
     duplicate_region.model.regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: BodyId::mint("test:model:entity#creo:ambiguous:body".to_string())
             .expect("identity grammar"),
@@ -495,6 +512,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
 
     let mut duplicate_body = ir;
     duplicate_body.model.bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: Vec::new(),
@@ -514,6 +532,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
 fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -532,6 +551,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     );
 
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),

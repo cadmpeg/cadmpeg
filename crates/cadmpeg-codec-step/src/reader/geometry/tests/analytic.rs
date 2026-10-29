@@ -826,7 +826,13 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
         .expect("geometric-set owner");
     assert_eq!(source.format, cadmpeg_ir::CodecFormat::Step);
     assert_eq!(source.object_id, "#9");
-    assert_eq!(source.name, None);
+    assert_eq!(
+        crate::test_support::geometry_name(
+            result.ir(),
+            &cadmpeg_ir::attributes::AttributeTarget::Curve(composite.id.clone())
+        ),
+        None
+    );
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -870,10 +876,12 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
 
     assert_eq!(decoded.ir().model.points.len(), 1);
     assert_eq!(
-        decoded.ir().model.points[0]
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::geometry_name(
+            decoded.ir(),
+            &cadmpeg_ir::attributes::AttributeTarget::Point(
+                decoded.ir().model.points[0].id.clone()
+            )
+        ),
         Some("free point")
     );
     assert!(!decoded
@@ -974,10 +982,10 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         })
         .expect("named APLL point");
     assert_eq!(
-        named_point
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::geometry_name(
+            decoded.ir(),
+            &cadmpeg_ir::attributes::AttributeTarget::Point(named_point.id.clone())
+        ),
         Some("leader")
     );
     let complex_point = decoded
@@ -993,10 +1001,10 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         })
         .expect("complex APLL point");
     assert_eq!(
-        complex_point
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::geometry_name(
+            decoded.ir(),
+            &cadmpeg_ir::attributes::AttributeTarget::Point(complex_point.id.clone())
+        ),
         Some("complex leader")
     );
     let unknowns = decoded
@@ -1087,10 +1095,10 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
         Some("#4")
     );
     assert_eq!(
-        first
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::geometry_name(
+            decoded.ir(),
+            &cadmpeg_ir::attributes::AttributeTarget::Curve(first.id.clone())
+        ),
         Some("display curve")
     );
     assert!(!decoded

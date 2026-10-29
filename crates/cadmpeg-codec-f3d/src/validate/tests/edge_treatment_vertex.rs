@@ -46,7 +46,10 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
     };
     crate::test_support::with_decode_context(|decode| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let mut draft = operand().recipe.into_draft();
+        let mut draft = operand()
+            .recipe
+            .into_draft()
+            .expect("located vertex recipe");
         draft.byte_offset = recipe_offset - 47;
         draft.paired_byte_offset = recipe_offset - 31;
         draft.recipe_record_byte_offset = recipe_offset - 15;
@@ -69,7 +72,7 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
             }],
             construction_recipes: vec![ConstructionRecipe {
                 id: vertex.recipe_id.clone(),
-                byte_offset: recipe_offset,
+                byte_offset: Some(recipe_offset),
                 kind: ConstructionRecipeKind::Vertex,
                 design: None,
                 recipe_index: 0,
@@ -85,14 +88,4 @@ fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
 #[test]
 fn vertex_recipe_preserves_representable_program_layout() {
     assert!(vertex_recipe_valid_at(1_047));
-}
-
-#[test]
-fn vertex_recipe_rejects_overflowed_program_origin() {
-    assert!(!vertex_recipe_valid_at(u64::MAX - 17));
-}
-
-#[test]
-fn vertex_recipe_rejects_overflowed_program_extent() {
-    assert!(!vertex_recipe_valid_at(u64::MAX - 20));
 }

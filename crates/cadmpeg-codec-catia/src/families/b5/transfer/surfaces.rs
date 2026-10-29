@@ -648,6 +648,7 @@ pub(super) fn emit_surfaces(
         let model_id = id.clone();
         admission.charge()?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: model_id,
             geometry: plan.geometry,
             source_object: Some(cgm_source("surface", object_id)?),
@@ -680,6 +681,7 @@ pub(super) fn emit_surfaces(
                 annotations.derived(directrix_id.as_str(), "geometry")?;
                 admission.charge()?;
                 ir.model.curves.push(Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: directrix_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -827,6 +829,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.charge()?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: directrix_id.clone(),
                 geometry: curve,
@@ -855,6 +858,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.charge()?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: source_id.clone(),
                 geometry: source_curve,
@@ -869,6 +873,7 @@ fn emit_extrusion_procedure(
             )?;
             admission.charge()?;
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: directrix_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1024,6 +1029,7 @@ mod tests {
         let mut ir = CadIr::empty();
         let surface_id = SurfaceId::mint("catia:test:surface#result-30").expect("identity grammar");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,

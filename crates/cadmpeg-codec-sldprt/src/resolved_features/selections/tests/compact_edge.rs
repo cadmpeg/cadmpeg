@@ -4,6 +4,8 @@ use super::super::super::component_paths::{
     compact_edge_path_value, compact_edge_selection_set_value,
 };
 use super::super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
+use super::helpers::compact_body_selection_at;
+use super::helpers::surface_reference_matches_at;
 use crate::classification::FeatureClass;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -11,10 +13,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputComponentPathEntry,
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
-use crate::resolved_features::selections::compact_body_retention_mode;
-use crate::resolved_features::selections::compact_body_selection_at;
 use crate::resolved_features::selections::compact_body_selection_vector;
-use crate::resolved_features::selections::compact_body_state_ids;
 use crate::resolved_features::selections::compact_component_reference_list;
 use crate::resolved_features::selections::compact_component_reference_list_at;
 use crate::resolved_features::selections::compact_edge_component_path_at;
@@ -29,10 +28,11 @@ use crate::resolved_features::selections::fillet_edge_roster_end;
 use crate::resolved_features::selections::is_component_vector_selector;
 use crate::resolved_features::selections::marker_local_links;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
-use crate::resolved_features::selections::surface_reference_matches_at;
 use crate::resolved_features::selections::unique_marker_candidate;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::BTreeMap;
+
+use crate::resolved_features::selections::{compact_body_retention_mode, compact_body_state_ids};
 
 #[test]
 fn component_vector_selector_accepts_lane_subtypes() {
@@ -690,7 +690,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         id: "selection".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: cadmpeg_core::decode::u64_from_index(marker),
+        sequence: 0,
         object_name_ref: "name".into(),
         feature_ref: "consumer".into(),
         local_edge_ids: vec![4, 4, 0],
@@ -767,6 +767,8 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "producer-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -775,6 +777,8 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
                 value: "Producer".into(),
             },
             FeatureInputName {
+                sequence: 24,
+                feature_ref: None,
                 id: "consumer-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -794,7 +798,9 @@ fn compact_edge_selection_marker_does_not_require_a_class_declaration() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let selections = compact_edge_selections(&history_ctx, &[history], &lane)
+        .unwrap()
+        .records;
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].feature_ref, "consumer");
@@ -831,10 +837,12 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            feature_ref: None,
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -1156,13 +1164,17 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            feature_ref: None,
             id: "vertex-dimension-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "feature-name".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -1181,7 +1193,9 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
         sketch_entities: Vec::new(),
     };
 
-    let selections = compact_edge_selections(&history_ctx, &[history], &lane).unwrap();
+    let selections = compact_edge_selections(&history_ctx, &[history], &lane)
+        .unwrap()
+        .records;
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));
@@ -1236,6 +1250,8 @@ fn scalar_binding_refuses_sparse_path_nesting_limit() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "producer-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -1244,6 +1260,8 @@ fn scalar_binding_refuses_sparse_path_nesting_limit() {
                 value: "Producer".into(),
             },
             FeatureInputName {
+                sequence: 24,
+                feature_ref: None,
                 id: "consumer-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -1266,8 +1284,9 @@ fn scalar_binding_refuses_sparse_path_nesting_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
+    let source = lane.native_payload.to_vec();
     let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let error =
         crate::resolved_features::bindings::bind_scalar_operands(&ctx, &[history], &mut [lane])
             .unwrap_err();

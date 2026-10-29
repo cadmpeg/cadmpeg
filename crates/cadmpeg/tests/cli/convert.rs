@@ -282,11 +282,11 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
     }
 }
 
-/// The decode report line names the depth the codec delivered. A codec with
+/// The decode report line names the content scope the codec delivered. A codec with
 /// no geometry-depth cut delivers `full` for STEP's geometry request, with or
 /// without `--full-decode`, which excludes `--container-only`.
 #[test]
-fn convert_reports_the_delivered_depth() {
+fn convert_reports_the_delivered_scope() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
     for extra in [None, Some("--full-decode")] {
@@ -298,7 +298,7 @@ fn convert_reports_the_delivered_depth() {
             .assert()
             .success()
             .stderr(predicate::str::contains(
-                "depth=full, geometry_transferred=false",
+                "scope=model+design, geometry_transferred=false",
             ));
     }
     Command::cargo_bin("cadmpeg")
@@ -371,7 +371,10 @@ fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
             "parametric/design record(s) were not represented in STEP",
         ));
     let report: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    assert_eq!(report["decode_report"]["transfer"]["transfer"], "full");
+    assert_eq!(
+        report["decode_report"]["transfer"]["scope"],
+        serde_json::json!({"model": true, "design": true})
+    );
 }
 
 #[cfg(any(feature = "fcstd", feature = "f3d"))]
@@ -394,7 +397,11 @@ fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[
             .args(args)
             .assert()
             .success()
-            .stderr(predicate::str::contains(format!("depth={depth},")));
+            .stderr(predicate::str::contains(if depth == "full" {
+                "scope=model+design,"
+            } else {
+                "scope=model,"
+            }));
         written.push(fs::read(&output).unwrap());
     }
     assert!(
@@ -469,7 +476,7 @@ fn step_artifact_starts_with_step_header() {
 
 #[cfg(feature = "sldprt")]
 #[test]
-fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
+fn source_less_ir_exports_to_decodable_sldprt() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &sldprt_cube());
     let output = dir.path().join("cube.sldprt");
@@ -484,11 +491,15 @@ fn source_less_sldprt_without_a_native_envelope_is_refused_prewrite() {
             output.to_str().unwrap(),
         ])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "SLDPRT envelope regeneration needs validated retained",
-        ));
-    assert!(!output.exists());
+        .success();
+
+    let bytes = fs::read(output).unwrap();
+    let decoded = cadmpeg_codec_sldprt::SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+    assert_eq!(decoded.ir().model.edges.len(), 12);
 }
 
 #[cfg(feature = "rhino")]
@@ -511,7 +522,6 @@ fn source_less_ir_exports_to_decodable_rhino() {
             input.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -566,7 +576,6 @@ fn rhino_output_version_is_selected_explicitly() {
                 output.to_str().unwrap(),
                 "--to",
                 spelling,
-                "--allow-errors",
             ])
             .assert()
             .success();
@@ -583,7 +592,7 @@ fn rhino_output_version_is_selected_explicitly() {
 }
 
 #[test]
-fn check_blocks_conversion_unless_overridden() {
+fn reject_errors_blocks_conversion_while_default_writes() {
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
     invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
@@ -604,6 +613,7 @@ fn check_blocks_conversion_unless_overridden() {
             "step",
             "-o",
             output.to_str().unwrap(),
+            "--reject-errors",
         ])
         .assert()
         .code(1)
@@ -618,10 +628,10 @@ fn check_blocks_conversion_unless_overridden() {
             "step",
             "-o",
             output.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
-        .success();
+        .success()
+        .stderr(predicate::str::contains("error"));
     assert!(output.exists());
 }
 
@@ -860,29 +870,23 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
 fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
     let dir = tempdir().unwrap();
     for format in ["f3d", "sldprt"] {
-        let native = dir.path().join(format!("source.{format}"));
-        if format == "sldprt" {
-            fs::write(
-                &native,
-                include_bytes!("../../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"),
-            ).unwrap();
+        let source_ir = if format == "sldprt" {
+            sldprt_cube()
         } else {
-            let cube = fixture(
-                dir.path(),
-                &format!("cube-{format}.cadir.json"),
-                &unit_cube().expect("unit cube fixture is admitted"),
-            );
-            Command::cargo_bin("cadmpeg")
-                .unwrap()
-                .args([
-                    "convert",
-                    cube.to_str().unwrap(),
-                    "-o",
-                    native.to_str().unwrap(),
-                ])
-                .assert()
-                .success();
-        }
+            unit_cube().expect("unit cube fixture is admitted")
+        };
+        let cube = fixture(dir.path(), &format!("cube-{format}.cadir.json"), &source_ir);
+        let native = dir.path().join(format!("source.{format}"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                cube.to_str().unwrap(),
+                "-o",
+                native.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
 
         let persisted = dir.path().join(format!("decoded-{format}.cadir.json"));
         Command::cargo_bin("cadmpeg")
@@ -913,7 +917,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
 
         fs::remove_file(sidecar).unwrap();
         let refused = dir.path().join(format!("refused.{format}"));
-        let refused_command = Command::cargo_bin("cadmpeg")
+        Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
                 "convert",
@@ -922,17 +926,12 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
                 refused.to_str().unwrap(),
                 "--reject-lossy",
             ])
-            .assert();
-        if format == "sldprt" {
-            refused_command.code(2).stderr(predicate::str::contains(
-                "SLDPRT envelope regeneration needs validated retained",
-            ));
-        } else {
-            refused_command.code(1).stderr(
+            .assert()
+            .code(1)
+            .stderr(
                 predicate::str::contains("Preserved")
                     .or(predicate::str::contains("source image is unavailable")),
             );
-        }
         assert!(!refused.exists());
     }
 }
@@ -1019,7 +1018,6 @@ fn convert_refuses_binary_output_to_stdout() {
             "rhino",
             "-o",
             out.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1033,7 +1031,6 @@ fn convert_refuses_binary_output_to_stdout() {
             point.to_str().unwrap(),
             "--format",
             "rhino",
-            "--allow-errors",
             "--binary-stdout",
         ])
         .output()
@@ -1111,7 +1108,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             original.to_str().unwrap(),
             "--to",
             "5.1",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1125,7 +1121,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             original.to_str().unwrap(),
             "-o",
             inherited.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1141,7 +1136,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             upgraded.to_str().unwrap(),
             "--to",
             "5.3",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1180,7 +1174,6 @@ fn a_to_that_names_only_the_format_still_inherits() {
             original.to_str().unwrap(),
             "--to",
             "iges:5.1-fixed-ascii",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1197,7 +1190,6 @@ fn a_to_that_names_only_the_format_still_inherits() {
                 inherited.to_str().unwrap(),
                 "--to",
                 spelling,
-                "--allow-errors",
             ])
             .assert()
             .success();

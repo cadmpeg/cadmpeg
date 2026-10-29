@@ -469,7 +469,7 @@ fn project_all_dimension_constraints(
                 let ids: Vec<_> = entities.iter().map(|entity| entity.id().clone()).collect();
                 return Some(Definition::Distance {
                     entities: ids,
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 });
             }
             let (
@@ -492,7 +492,7 @@ fn project_all_dimension_constraints(
                 return Some(Definition::DistanceLoci {
                     first: cadmpeg_ir::sketches::SketchLocus::Entity(entities[0].id().clone()),
                     second: cadmpeg_ir::sketches::SketchLocus::Entity(entities[1].id().clone()),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 });
             }
             return None;
@@ -514,7 +514,7 @@ fn project_all_dimension_constraints(
             return Some(Definition::Angle {
                 first: entities[0].id().clone(),
                 second: entities[1].id().clone(),
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             });
         }
         if source_kind.starts_with("Angular Dimension") && entities.len() == 2 {
@@ -523,7 +523,7 @@ fn project_all_dimension_constraints(
             return Some(Definition::Angle {
                 first,
                 second,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             });
         }
         None
@@ -588,25 +588,30 @@ fn project_all_dimension_constraints(
                         secondary_ids.insert(locus.geometry_record_index, secondary_id);
                     }
                 }
-                let CountedOffset { pairs, distance } = exact_counted_offset(
+                let CountedOffset {
+                    mut pairs,
+                    distance,
+                } = exact_counted_offset(
                     &group.loci,
                     &entities_by_record,
                     &secondary_ids,
                     linear_tolerance,
                 )?;
-                let parameter = offset_parameter_factor(
+                let distance = match offset_parameter_factor(
                     distance.get(),
                     parameter.evaluated_value().get() * 10.0,
-                )
-                .map(|factor| cadmpeg_ir::sketches::OffsetParameter {
-                    id: parameter_id,
-                    negated: factor.is_sign_negative(),
-                });
-                return Some(Definition::Offset {
-                    pairs,
-                    distance,
-                    parameter,
-                });
+                ) {
+                    Some(factor) => {
+                        if factor.is_sign_negative() {
+                            for pair in &mut pairs {
+                                pair.source_reversed = !pair.source_reversed;
+                            }
+                        }
+                        cadmpeg_ir::features::Dimension::Parameter(parameter_id)
+                    }
+                    None => distance.into(),
+                };
+                return Some(Definition::Offset { pairs, distance });
             }
             let copied = parameter_id.clone();
             if let Some(definition) = directional_point_dimension(
@@ -692,7 +697,8 @@ fn project_all_dimension_constraints(
             continue;
         };
         if let Some(Definition::Offset {
-            parameter: Some(_), ..
+            distance: cadmpeg_ir::features::Dimension::Parameter(_),
+            ..
         }) = exact_group_definition(scope, group, parameter, parameter_id)
         {
             parameterized_offset_companions.insert((scope, group.companion_record_index));
@@ -1109,7 +1115,10 @@ fn project_all_dimension_constraints(
         };
         let constraint_id =
             crate::ids::neutral_dimension_constraint_id(&parameter_id, "recipe-group");
-        let Some(sketch) = sketches_by_scope.get(&(scope, owner.scope_record_index())) else {
+        let Some(sketch) = owner
+            .scope_record_index()
+            .and_then(|index| sketches_by_scope.get(&(scope, index)))
+        else {
             continue;
         };
         let sketch = sketch.clone();
@@ -1229,7 +1238,7 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let sketch = sketches_by_scope
-                .get(&(scope, owner.scope_record_index()))?
+                .get(&(scope, owner.scope_record_index()?))?
                 .clone();
             let mut parallel_axis_angle = None;
             let mut saw_parallel_axis_angle = false;
@@ -1365,7 +1374,7 @@ fn project_all_dimension_constraints(
             if exact_definition.is_none()
                 && companion
                     .payload()
-                    .is_none_or(|payload| payload.byte_length() == 0)
+                    .is_none_or(|payload| payload.byte_length() == Some(0))
             {
                 return None;
             }
@@ -1479,7 +1488,7 @@ fn presentation_dimension_definition(
             .then(|| Definition::DistanceLoci {
                 first: cadmpeg_ir::sketches::SketchLocus::Start(entity.id().clone()),
                 second: cadmpeg_ir::sketches::SketchLocus::End(entity.id().clone()),
-                parameter: parameter_id.clone(),
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
             })
         }),
         [first, second] if parameter.source_kind_str().starts_with("Tangent Dimension") => {
@@ -1509,7 +1518,7 @@ fn presentation_dimension_definition(
             .then(|| Definition::Angle {
                 first: first.id().clone(),
                 second: second.id().clone(),
-                parameter: parameter_id.clone(),
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
             })
         }
         _ => None,
@@ -1538,7 +1547,7 @@ fn tangent_radius_dimension_definition(
     )
     .then(|| Definition::Radius {
         entity: entity.id().clone(),
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -1627,7 +1636,7 @@ fn tangent_entity_distance_definition(
     }
     Some(Definition::Distance {
         entities: vec![first.id().clone(), second.id().clone()],
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -1657,7 +1666,7 @@ fn explicit_linear_dimension_definition(
     {
         return Some(Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         });
     }
     let (
@@ -1677,7 +1686,7 @@ fn explicit_linear_dimension_definition(
         Definition::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }
     })
 }
@@ -1706,7 +1715,10 @@ fn preceding_incident_angular_dimension_definition(
     let preceding_curve = |record| {
         curves.iter().any(|curve| {
             native_stream(&curve.id) == Some(scope)
-                && curve.byte_offset < parameter.byte_offset()
+                && parameter
+                    .byte_offset()
+                    .zip(curve.byte_offset)
+                    .is_some_and(|(parameter_offset, curve_offset)| curve_offset < parameter_offset)
                 && curve.record_index == record
         })
     };
@@ -1717,7 +1729,11 @@ fn preceding_incident_angular_dimension_definition(
         &cadmpeg_ir::sketches::SketchEntity,
     )>;
     for point in points.iter().filter(|point| {
-        native_stream(&point.id) == Some(scope) && point.byte_offset < parameter.byte_offset()
+        native_stream(&point.id) == Some(scope)
+            && parameter
+                .byte_offset()
+                .zip(point.byte_offset)
+                .is_some_and(|(parameter_offset, point_offset)| point_offset < parameter_offset)
     }) {
         let companion = point.companion();
         let [first_record, second_record] = companion.incident_curves else {
@@ -1767,7 +1783,7 @@ fn preceding_incident_angular_dimension_definition(
     Some(Definition::Angle {
         first: first.id().clone(),
         second: second.id().clone(),
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -1824,7 +1840,7 @@ fn owner_scoped_angular_dimension_definition(
     Some(Definition::Angle {
         first: first.id().clone(),
         second: second.id().clone(),
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -1866,7 +1882,7 @@ fn parallel_group_axis_angle_definition(
     .then(|| Definition::AngleToAxis {
         entity: first.id().clone(),
         axis: SketchAxis::Horizontal,
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -1929,7 +1945,7 @@ fn concentric_circle_dimension_definition(
         [] => None,
         [(first, second)] => Some(Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }),
         _ => {
             let mut measurements = Vec::new();
@@ -1942,7 +1958,7 @@ fn concentric_circle_dimension_definition(
             }
             Some(Definition::RepeatedDistance {
                 measurements,
-                parameter: parameter_id.clone(),
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
             })
         }
     }
@@ -2000,7 +2016,7 @@ fn unique_point_line_dimension_definition(
     let (point, line) = matched?;
     Some(Definition::Distance {
         entities: vec![point.id().clone(), line.id().clone()],
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -2049,7 +2065,7 @@ fn unique_parallel_line_dimension_definition(
     let (first, second) = matched?;
     Some(Definition::Distance {
         entities: vec![first.id().clone(), second.id().clone()],
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -2149,7 +2165,7 @@ fn owner_scoped_parallel_line_set_dimension_definition(
             .iter()
             .map(|entity| entity.id().clone())
             .collect(),
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -2198,11 +2214,11 @@ fn owner_scoped_line_length_dimension_definition(
         [entity] => Some(Definition::DistanceLoci {
             first: SketchLocus::Start(entity.id().clone()),
             second: SketchLocus::End(entity.id().clone()),
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }),
         _ => Some(Definition::RepeatedLength {
             entities: matches.iter().map(|entity| entity.id().clone()).collect(),
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }),
     }
 }
@@ -2302,19 +2318,19 @@ fn unique_point_class_dimension_definition(
         Definition::VerticalDistance {
             first,
             second,
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }
     } else if dv.abs() <= tolerance {
         Definition::HorizontalDistance {
             first,
             second,
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }
     } else {
         Definition::DistanceLoci {
             first,
             second,
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }
     })
 }
@@ -2370,12 +2386,12 @@ fn owner_scoped_radial_dimension_definition(
     Some(if radius {
         Definition::RepeatedRadius {
             entities: members,
-            parameter,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
         }
     } else {
         Definition::RepeatedDiameter {
             entities: members,
-            parameter,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
         }
     })
 }
@@ -2384,91 +2400,90 @@ pub(crate) fn constraint_parameters(
     definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
 ) -> impl Iterator<Item = &cadmpeg_ir::features::ParameterId> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
-
     let parameters = match definition {
-        Definition::Offset { parameter, .. } => [
-            parameter.as_ref().map(|parameter| &parameter.id),
-            None,
+        Definition::Native { parameter, .. } => [parameter.as_ref(), None, None, None],
+        Definition::PointCoordinateValues { values, .. } => {
+            [values[0].parameter(), values[1].parameter(), None, None]
+        }
+        Definition::Offset { distance, .. } => [distance.parameter(), None, None, None],
+        Definition::ArcAngle { angle, .. } => [angle.parameter(), None, None, None],
+        Definition::EllipseAngle { angle, .. } => [angle.parameter(), None, None, None],
+        Definition::Distance { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::DistanceLoci { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::DistanceLociValue { distance, .. } => [distance.parameter(), None, None, None],
+        Definition::PolarDistance {
+            distance, angle, ..
+        } => [
+            distance.parameter(),
+            angle
+                .as_ref()
+                .and_then(cadmpeg_ir::features::Dimension::parameter),
             None,
             None,
         ],
-        Definition::Native { parameter, .. } => [parameter.as_ref(), None, None, None],
-        Definition::PolarDistance {
-            distance_parameter, ..
-        } => [distance_parameter.as_ref(), None, None, None],
-        Definition::DistanceLociValue { parameter, .. } => [parameter.as_ref(), None, None, None],
-        Definition::Distance { parameter, .. }
-        | Definition::DistanceLoci { parameter, .. }
-        | Definition::HorizontalDistance { parameter, .. }
-        | Definition::VerticalDistance { parameter, .. }
-        | Definition::RepeatedDistance { parameter, .. }
-        | Definition::RepeatedLength { parameter, .. }
-        | Definition::ParallelLineSetDistance { parameter, .. }
-        | Definition::Angle { parameter, .. }
-        | Definition::AngleToAxis { parameter, .. }
-        | Definition::Radius { parameter, .. }
-        | Definition::RepeatedRadius { parameter, .. }
-        | Definition::Diameter { parameter, .. }
-        | Definition::RepeatedDiameter { parameter, .. }
-        | Definition::SnellsLaw { parameter, .. }
-        | Definition::Weight { parameter, .. } => [Some(parameter), None, None, None],
+        Definition::AngleDifference { value, .. } => [value.parameter(), None, None, None],
+        Definition::HorizontalDistance { parameter, .. } => {
+            [parameter.parameter(), None, None, None]
+        }
+        Definition::VerticalDistance { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::RepeatedDistance { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::RepeatedLength { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::ParallelLineSetDistance { parameter, .. } => {
+            [parameter.parameter(), None, None, None]
+        }
+        Definition::Angle { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::AngleToAxis { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::Radius { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::RepeatedRadius { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::Diameter { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::RepeatedDiameter { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::SnellsLaw { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::Weight { parameter, .. } => [parameter.parameter(), None, None, None],
         Definition::RectangularPattern { pattern } => {
             let [first, second] = pattern.directions();
             [
-                first
-                    .distance
-                    .as_ref()
-                    .map(cadmpeg_ir::sketches::SketchPatternDistance::parameter),
-                first.count_parameter.as_ref(),
-                second
-                    .distance
-                    .as_ref()
-                    .map(cadmpeg_ir::sketches::SketchPatternDistance::parameter),
-                second.count_parameter.as_ref(),
+                first.distance.dimension().parameter(),
+                first.count.parameter(),
+                second.distance.dimension().parameter(),
+                second.count.parameter(),
             ]
         }
         Definition::CircularPattern { pattern } => [
-            pattern.angle_parameter(),
-            pattern.count_parameter(),
+            pattern.angle().dimension().parameter(),
+            pattern.count().parameter(),
             None,
             None,
         ],
-        Definition::Disabled {}
-        | Definition::Coincident { .. }
-        | Definition::ProjectedCopy { .. }
-        | Definition::Polygon { .. }
-        | Definition::SplineGroup { .. }
-        | Definition::TextFrame { .. }
-        | Definition::TextPath { .. }
-        | Definition::CoincidentLoci { .. }
-        | Definition::SameCoordinate { .. }
-        | Definition::PointSymmetric { .. }
-        | Definition::TangentLoci { .. }
-        | Definition::AtIntersection { .. }
-        | Definition::Midpoint { .. }
-        | Definition::PointCoordinateValues { .. }
-        | Definition::MidpointCoordinate { .. }
-        | Definition::AngleDifference { .. }
-        | Definition::ScalarEquality { .. }
-        | Definition::Concentric { .. }
-        | Definition::Coradial { .. }
-        | Definition::Collinear { .. }
-        | Definition::Symmetric { .. }
-        | Definition::Horizontal { .. }
-        | Definition::Vertical { .. }
-        | Definition::Parallel { .. }
-        | Definition::Perpendicular { .. }
-        | Definition::Tangent { .. }
-        | Definition::Curvature { .. }
-        | Definition::Equal { .. }
-        | Definition::EqualDistance { .. }
-        | Definition::ArcAngle { .. }
-        | Definition::EllipseAngle { .. }
-        | Definition::Fixed { .. }
-        | Definition::PointOnObject { .. }
-        | Definition::InternalAlignment { .. }
-        | Definition::Group { .. }
-        | Definition::Text { .. } => [None; 4],
+        _ => [None; 4],
+    };
+    parameters.into_iter().flatten()
+}
+
+pub(crate) fn spatial_constraint_parameters<U, L>(
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput<U, L>,
+) -> impl Iterator<Item = &cadmpeg_ir::features::ParameterId> {
+    use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
+    let parameters = match definition {
+        Definition::Native { parameter, .. } => [parameter.as_ref(), None, None, None],
+        Definition::PointDistance { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::PointLineDistance { parameter, .. } => {
+            [parameter.parameter(), None, None, None]
+        }
+        Definition::LineLength { parameter, .. } => [parameter.parameter(), None, None, None],
+        Definition::RepeatedLineLength { parameter, .. } => {
+            [parameter.parameter(), None, None, None]
+        }
+        Definition::ParallelLineDistance { parameter, .. } => {
+            [parameter.parameter(), None, None, None]
+        }
+        Definition::RepeatedParallelLineDistance { parameter, .. } => {
+            [parameter.parameter(), None, None, None]
+        }
+        Definition::ParallelLineSetDistance { parameter, .. } => {
+            [parameter.parameter(), None, None, None]
+        }
+        Definition::Offset { distance, .. } => [distance.parameter(), None, None, None],
+        _ => [None; 4],
     };
     parameters.into_iter().flatten()
 }
@@ -2518,12 +2533,10 @@ pub(crate) fn bind_offset_dimension_parameters(
             if constraint.sketch != dimension.sketch {
                 continue;
             }
-            let Definition::Offset {
-                pairs,
-                distance,
-                parameter: None,
-            } = constraint.definition.kind()
-            else {
+            let Definition::Offset { pairs, distance } = constraint.definition.kind() else {
+                continue;
+            };
+            let Some(distance) = distance.literal() else {
                 continue;
             };
             if pairs.iter().any(|pair| &pair.source == entity)
@@ -2550,13 +2563,19 @@ pub(crate) fn bind_offset_dimension_parameters(
     bindings.retain(|binding| offset_counts.get(&binding.1) == Some(&1));
     let mut removed = HashSet::new();
     for (dimension_index, offset_index, parameter, parameter_value) in bindings {
-        let applied = constraints[offset_index].definition.set_offset_parameter(
-            cadmpeg_ir::sketches::OffsetParameter {
-                id: parameter,
-                negated: parameter_value.is_sign_negative(),
-            },
-        );
-        if applied {
+        let applied = constraints[offset_index].definition.edit(|definition| {
+            let Definition::Offset { pairs, distance } = definition else {
+                return false;
+            };
+            if parameter_value.is_sign_negative() {
+                for pair in pairs {
+                    pair.source_reversed = !pair.source_reversed;
+                }
+            }
+            *distance = cadmpeg_ir::features::Dimension::Parameter(parameter);
+            true
+        });
+        if matches!(applied, Ok(true)) {
             removed.insert(dimension_index);
         }
     }
@@ -2734,7 +2753,9 @@ pub(crate) fn project_spatial_dimension_constraints(
                             Some(SpatialSketchConstraintDefinitionInput::PointDistance {
                                 first: first.id().clone(),
                                 second: second.id().clone(),
-                                parameter: parameter.clone(),
+                                parameter: cadmpeg_ir::features::Dimension::Parameter(
+                                    parameter.clone(),
+                                ),
                             })
                         } else if spatial_parallel_line_distance_matches(
                             &first.geometry,
@@ -2745,7 +2766,9 @@ pub(crate) fn project_spatial_dimension_constraints(
                                 SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
                                     first: first.id().clone(),
                                     second: second.id().clone(),
-                                    parameter: parameter.clone(),
+                                    parameter: cadmpeg_ir::features::Dimension::Parameter(
+                                        parameter.clone(),
+                                    ),
                                 },
                             )
                         } else {
@@ -2827,37 +2850,9 @@ pub(crate) fn project_spatial_dimension_constraints(
         }
     }
 
-    let retained_parameter_ids =
-        projected
-            .iter()
-            .filter_map(|constraint| match constraint.definition.kind() {
-                SpatialSketchConstraintDefinitionInput::Native {
-                    parameter: Some(parameter),
-                    ..
-                }
-                | SpatialSketchConstraintDefinitionInput::PointDistance { parameter, .. }
-                | SpatialSketchConstraintDefinitionInput::PointLineDistance { parameter, .. }
-                | SpatialSketchConstraintDefinitionInput::LineLength { parameter, .. }
-                | SpatialSketchConstraintDefinitionInput::RepeatedLineLength {
-                    parameter, ..
-                }
-                | SpatialSketchConstraintDefinitionInput::ParallelLineDistance {
-                    parameter, ..
-                }
-                | SpatialSketchConstraintDefinitionInput::RepeatedParallelLineDistance {
-                    parameter,
-                    ..
-                }
-                | SpatialSketchConstraintDefinitionInput::ParallelLineSetDistance {
-                    parameter,
-                    ..
-                } => Some(parameter),
-                SpatialSketchConstraintDefinitionInput::Offset {
-                    parameter: Some(parameter),
-                    ..
-                } => Some(&parameter.id),
-                _ => None,
-            });
+    let retained_parameter_ids = projected
+        .iter()
+        .flat_map(|constraint| spatial_constraint_parameters(constraint.definition.kind()));
     let mut retained_parameters = HashSet::new();
     for parameter in retained_parameter_ids {
         let id = parameter.clone();
@@ -2897,7 +2892,10 @@ pub(crate) fn project_spatial_dimension_constraints(
         else {
             continue;
         };
-        let Some(sketch) = spatial_by_scope.get(&(scope, owner.scope_record_index())) else {
+        let Some(sketch) = owner
+            .scope_record_index()
+            .and_then(|index| spatial_by_scope.get(&(scope, index)))
+        else {
             continue;
         };
         let sketch = (*sketch).clone();
@@ -2913,7 +2911,7 @@ pub(crate) fn project_spatial_dimension_constraints(
                     field: Some(NativeOperandField {
                         name: if companion
                             .payload()
-                            .is_none_or(|payload| payload.byte_length() == 0)
+                            .is_none_or(|payload| payload.byte_length() == Some(0))
                         {
                             cadmpeg_core::nonblank_literal!("companion")
                         } else {
@@ -2989,11 +2987,11 @@ fn owner_scoped_spatial_line_length_dimension_definition(
         0 => None,
         1 => Some(Definition::LineLength {
             entity: matches.remove(0),
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }),
         _ => Some(Definition::RepeatedLineLength {
             entities: matches,
-            parameter: parameter_id.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
         }),
     }
 }
@@ -3046,7 +3044,7 @@ fn unique_spatial_parallel_line_dimension_definition(
     Some(Definition::ParallelLineDistance {
         first: first.id().clone(),
         second: second.id().clone(),
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -3113,7 +3111,7 @@ fn owner_scoped_spatial_repeated_profile_line_distance_definition(
     }
     (pairs.len() >= 2).then(|| Definition::RepeatedParallelLineDistance {
         pairs,
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -3219,7 +3217,7 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
             .iter()
             .map(|entity| entity.id().clone())
             .collect(),
-        parameter: parameter_id.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -3325,8 +3323,6 @@ fn spatial_counted_offset_dimension_definition(
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_by_record: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SpatialSketchEntity>,
 ) -> Option<cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput> {
-    use cadmpeg_ir::scalar::Length;
-
     use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Definition;
 
     let (native_kind, native_state, operands) = native;
@@ -3448,12 +3444,13 @@ fn spatial_counted_offset_dimension_definition(
     Some(Definition::Offset {
         sources,
         results,
-        normal: normal.into(),
-        distance: Length::new(distance)?,
-        parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-            id: parameter.clone(),
-            negated: parameter_factor.is_sign_negative(),
-        }),
+        normal: if parameter_factor.is_sign_negative() {
+            normal.negated()
+        } else {
+            normal
+        }
+        .into(),
+        distance: cadmpeg_ir::features::Dimension::Parameter(parameter.clone()),
     })
 }
 
@@ -3622,7 +3619,7 @@ fn repeated_linear_dimension(
     }
     Some(Definition::RepeatedDistance {
         measurements,
-        parameter,
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
     })
 }
 
@@ -3679,7 +3676,7 @@ pub(super) fn null_locus_dimension_definition(
         Definition::AngleToAxis {
             entity: entity.id().clone(),
             axis: SketchAxis::Horizontal,
-            parameter,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
         }
     })
 }
@@ -3731,12 +3728,12 @@ fn radial_dimension_definition_at_tolerance(
     Some(if is_radius {
         Definition::Radius {
             entity: entity.id().clone(),
-            parameter,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
         }
     } else {
         Definition::Diameter {
             entity: entity.id().clone(),
-            parameter,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
         }
     })
 }
@@ -3758,8 +3755,6 @@ fn annotation_offset_dimension_definition(
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
     linear_tolerance: f64,
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
-    use cadmpeg_ir::scalar::Length;
-
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput as Definition, SketchOffsetPair};
 
     let (parameter, parameter_id) = parameter;
@@ -3875,13 +3870,9 @@ fn annotation_offset_dimension_definition(
         pairs: vec![SketchOffsetPair {
             source: source.id().clone(),
             result: result.id().clone(),
-            source_reversed: distance.is_sign_negative(),
+            source_reversed: distance.is_sign_negative() ^ parameter_factor.is_sign_negative(),
         }],
-        distance: Length::new(distance.abs())?,
-        parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
-            id: parameter_id.clone(),
-            negated: parameter_factor.is_sign_negative(),
-        }),
+        distance: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
     })
 }
 
@@ -3939,12 +3930,12 @@ fn radial_locus_dimension_definition(
         return Some(if radius {
             Definition::RepeatedRadius {
                 entities: ids,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         } else {
             Definition::RepeatedDiameter {
                 entities: ids,
-                parameter,
+                parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
             }
         });
     }
@@ -4058,23 +4049,26 @@ pub(crate) fn remove_dimension_frame_relations(
     let mut dimension_frames = HashSet::new();
     let frames = pairs
         .iter()
-        .filter_map(|pair| Some((native_stream(&pair.id)?, pair.byte_offset())))
+        .filter_map(|pair| Some((native_stream(&pair.id)?, pair.byte_offset()?)))
         .chain(
             groups
                 .iter()
-                .filter_map(|group| Some((native_stream(&group.id)?, group.byte_offset))),
+                .filter_map(|group| Some((native_stream(&group.id)?, group.byte_offset?))),
         )
         .chain(
             null_pairs
                 .iter()
-                .filter_map(|pair| Some((native_stream(&pair.id)?, pair.byte_offset()))),
+                .filter_map(|pair| Some((native_stream(&pair.id)?, pair.byte_offset()?))),
         );
     for frame in frames {
         dimension_frames.insert(frame);
     }
     relations.retain(|relation| {
-        native_stream(&relation.id)
-            .is_none_or(|scope| !dimension_frames.contains(&(scope, relation.byte_offset)))
+        native_stream(&relation.id).is_none_or(|scope| {
+            relation
+                .byte_offset
+                .is_none_or(|offset| !dimension_frames.contains(&(scope, offset)))
+        })
     });
 }
 
@@ -4115,11 +4109,10 @@ pub(crate) fn bind_dimension_loci(
     }
     let mut scopes_by_companion = HashMap::new();
     for owner in owners {
-        if let Some(scope) = native_stream(owner.id()) {
-            scopes_by_companion.insert(
-                (scope, owner.companion_record_index()),
-                owner.scope_record_index(),
-            );
+        if let (Some(scope), Some(owner_scope)) =
+            (native_stream(owner.id()), owner.scope_record_index())
+        {
+            scopes_by_companion.insert((scope, owner.companion_record_index()), owner_scope);
         }
     }
     let mut bindings = HashMap::<&str, HashMap<u32, u32>>::new();
@@ -4666,12 +4659,12 @@ fn directional_point_dimension(
         (true, false) => Some(Definition::HorizontalDistance {
             first: first_locus,
             second: second_locus,
-            parameter,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
         }),
         (false, true) => Some(Definition::VerticalDistance {
             first: first_locus,
             second: second_locus,
-            parameter,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
         }),
         (false, false) | (true, true) => None,
     }
@@ -4765,7 +4758,7 @@ fn recipe_linear_dimension_candidates(
     for (first, second) in line_pairs {
         let definition = Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: parameter.clone(),
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter.clone()),
         };
         candidates.push(definition);
     }
@@ -4964,7 +4957,7 @@ fn symmetric_parallel_line_dimension_definition(
     linear_measurement_matches(2.0 * separation, expected, linear_tolerance).then(|| {
         Definition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: parameter_id,
+            parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id),
         }
     })
 }
@@ -5119,7 +5112,7 @@ fn two_locus_distance_dimension(
     }
     Some(Definition::Distance {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-        parameter,
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
     })
 }
 
@@ -5956,8 +5949,7 @@ pub(super) fn exact_offset_constraint(
     }
     Some(Definition::Offset {
         pairs,
-        distance: Length::new(canonical_distance?)?,
-        parameter: None,
+        distance: Length::new(canonical_distance?)?.into(),
     })
 }
 
@@ -6427,6 +6419,12 @@ pub(super) fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {
 }
 
 pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
+    expression_identifier_spans(expression).map(|(_, identifier)| identifier)
+}
+
+pub(super) fn expression_identifier_spans(
+    expression: &str,
+) -> impl Iterator<Item = (std::ops::Range<usize>, &str)> {
     let identifier_character = |character: char| {
         character.is_alphanumeric() || matches!(character, '_' | '"' | '$' | '°' | 'µ')
     };
@@ -6466,7 +6464,7 @@ pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &
             {
                 continue;
             }
-            return Some(token);
+            return Some((token_start..offset, token));
         }
         None
     })
@@ -6478,54 +6476,42 @@ pub(crate) fn unresolved_parameter_expression_dependency_count(
     native: &[DesignParameter],
     projected: &[cadmpeg_ir::features::DesignParameter],
 ) -> usize {
-    let mut projected_by_native_ref = HashMap::new();
-    let mut projected_by_id = HashMap::new();
-    for parameter in projected {
-        if let Some(native_ref) = parameter.native_ref.as_deref() {
-            projected_by_native_ref.insert(native_ref, parameter);
-        }
-        projected_by_id.insert(&parameter.id, parameter);
-    }
-    let mut names_by_stream = HashMap::<&str, HashSet<&str>>::new();
-    for parameter in native {
-        let Some(stream) = native_stream(&parameter.id) else {
-            continue;
-        };
-        if !names_by_stream.contains_key(stream) {
-            names_by_stream.insert(stream, HashSet::new());
-        }
-        if let Some(names) = names_by_stream.get_mut(stream) {
-            names.insert(parameter.name());
-        }
-    }
+    unresolved_parameter_expression_records(native, projected)
+        .into_iter()
+        .map(|(_, count)| count)
+        .sum()
+}
 
-    let mut unresolved = 0usize;
+/// Each source parameter with unresolved identifier text, without deleting any
+/// other references to satisfy ordering or cycle validation.
+pub(crate) fn unresolved_parameter_expression_records(
+    native: &[DesignParameter],
+    projected: &[cadmpeg_ir::features::DesignParameter],
+) -> Vec<(String, usize)> {
+    let by_native = projected
+        .iter()
+        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
+        .collect::<HashMap<_, _>>();
+    let by_id = projected
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    let mut unresolved = Vec::new();
     for parameter in native {
-        let Some(stream) = native_stream(&parameter.id) else {
+        let Some(projected) = by_native.get(parameter.id.as_str()) else {
             continue;
         };
-        let Some(names) = names_by_stream.get(stream) else {
-            continue;
-        };
-        let Some(projected) = projected_by_native_ref.get(parameter.id.as_str()) else {
-            continue;
-        };
-        let mut dependency_names = HashSet::new();
-        for dependency in &projected.dependencies {
-            if let Some(dependency) = projected_by_id.get(dependency) {
-                dependency_names.insert(dependency.name.as_str());
-            }
+        let names = projected
+            .expression
+            .dependencies()
+            .filter_map(|id| by_id.get(id).map(|parameter| parameter.name.as_str()))
+            .collect::<HashSet<_>>();
+        let unknown = expression_identifiers(parameter.expression())
+            .filter(|identifier| !names.contains(*identifier))
+            .collect::<HashSet<_>>();
+        if !unknown.is_empty() {
+            unresolved.push((parameter.id.clone(), unknown.len()));
         }
-        let mut identifiers = HashSet::new();
-        for identifier in expression_identifiers(parameter.expression()) {
-            if names.contains(identifier) {
-                identifiers.insert(identifier);
-            }
-        }
-        unresolved += identifiers
-            .into_iter()
-            .filter(|identifier| !dependency_names.contains(*identifier))
-            .count();
     }
     unresolved
 }

@@ -160,17 +160,17 @@ fn exact_legacy_mirror_scope_tolerance(
         _ => return None,
     };
     let kind_code_units = scope.source_kind_name().encode_utf16().count();
-    let kind_end = usize::try_from(scope.kind_offset())
+    let kind_end = usize::try_from(scope.kind_offset()?)
         .ok()?
         .checked_add(kind_code_units.checked_mul(2)?)?;
     let previous = usize::try_from(scope.previous_history_state_id_offset()?).ok()?;
     if previous != kind_end.checked_add(previous_state)? {
         return None;
     }
-    let paired = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let paired = usize::try_from(scope.paired_byte_offset()?).ok()?;
     if paired != kind_end.checked_add(tail_length)?
-        || paired.checked_sub(usize::try_from(scope.byte_offset()).ok()?)?
-            != usize::try_from(scope.frame_length()).ok()?
+        || paired.checked_sub(usize::try_from(scope.byte_offset()?).ok()?)?
+            != usize::try_from(scope.frame_length()?).ok()?
     {
         return None;
     }
@@ -213,11 +213,11 @@ fn exact_legacy_mirror_scope_tolerance(
                 repeated_marker_offset.map(u64::try_from).transpose().ok()?,
             ))
             .ok()?,
-            marker_offset: u64::try_from(marker_offset).ok()?,
+            marker_offset: Some(u64::try_from(marker_offset).ok()?),
             first_reference,
-            first_reference_offset: u64::try_from(first_reference_offset).ok()?,
+            first_reference_offset: Some(u64::try_from(first_reference_offset).ok()?),
             second_reference,
-            second_reference_offset: u64::try_from(second_reference_offset).ok()?,
+            second_reference_offset: Some(u64::try_from(second_reference_offset).ok()?),
         },
     ))
 }
@@ -341,9 +341,9 @@ pub(crate) fn bind_mirror_constructions(
         let (plane_scope_record_index, plane_selection_record_index) =
             if let Some((plane_scope_record_index, plane_reference_offset)) = work_plane {
                 (
-                    Some(crate::records::identity::Located {
+                    Some(crate::records::identity::Sourced {
                         value: plane_scope_record_index,
-                        offset: plane_reference_offset,
+                        offset: Some(plane_reference_offset),
                     }),
                     None,
                 )
@@ -380,8 +380,8 @@ pub(crate) fn bind_mirror_constructions(
         let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
         let count = unique_match(owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream.as_str())
-                && owner.scope_record_index() == scope_record_index
-                && owner.local_ordinal() == 0
+                && owner.scope_record_index() == Some(scope_record_index)
+                && owner.local_ordinal() == Some(0)
                 && owner.evaluated_value().get() == 2.0
         }));
         let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
@@ -391,29 +391,33 @@ pub(crate) fn bind_mirror_constructions(
                 .iter()
                 .filter(|owner| {
                     native_stream(owner.id()) == Some(stream.as_str())
-                        && owner.scope_record_index() == scope_record_index
+                        && owner.scope_record_index() == Some(scope_record_index)
                 })
-                .filter(|owner| owner.local_ordinal() == 1)
+                .filter(|owner| owner.local_ordinal() == Some(1))
                 .filter_map(|owner| {
                     Some((owner, PositiveReal::try_from(owner.evaluated_value()).ok()?))
                 }),
         );
         let (count, tolerance_source) = (
             match (count, inline_count) {
-                (UniqueMatch::One(count), None) => {
-                    Some((count.record_index(), count.evaluated_value_offset()))
-                }
+                (UniqueMatch::One(count), None) => count
+                    .evaluated_value_offset()
+                    .map(|offset| (count.record_index(), offset)),
                 (UniqueMatch::Zero, Some(count)) => Some(count),
                 _ => None,
             },
             match (tolerance, inline_tolerance) {
-                (UniqueMatch::One((tolerance, value)), None) => Some((
-                    value,
-                    tolerance.evaluated_value_offset(),
-                    mirror::DesignMirrorToleranceSource::Owner {
-                        record_index: tolerance.record_index(),
-                    },
-                )),
+                (UniqueMatch::One((tolerance, value)), None) => {
+                    tolerance.evaluated_value_offset().map(|offset| {
+                        (
+                            value,
+                            offset,
+                            mirror::DesignMirrorToleranceSource::Owner {
+                                record_index: tolerance.record_index(),
+                            },
+                        )
+                    })
+                }
                 (UniqueMatch::Zero, Some((value, value_offset, scope_tail))) => Some((
                     value,
                     value_offset,
@@ -432,14 +436,14 @@ pub(crate) fn bind_mirror_constructions(
         {
             let construction = Some(DesignMirrorConstruction {
                 count_record_index,
-                count_offset,
+                count_offset: Some(count_offset),
                 stitch_tolerance,
-                stitch_tolerance_offset,
+                stitch_tolerance_offset: Some(stitch_tolerance_offset),
                 tolerance_source,
                 seed_group_record_index: seed_group.record_index,
                 plane_group_record_index: plane_group.record_index,
                 seed_feature_scope_record_index: seed_feature
-                    .map(|(value, offset)| crate::records::identity::Located { value, offset }),
+                    .map(|(value, offset)| crate::records::identity::Sourced::at(value, offset)),
                 plane_scope_record_index,
                 plane_selection_record_index,
                 plane: None,
@@ -466,7 +470,8 @@ fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
 }
 
 fn compact_feature_reference(bytes: &[u8], header: &DesignRecordHeader) -> Option<(u32, u64)> {
-    let start = usize::try_from(header.byte_offset).ok()?;
+    let header_offset = header.byte_offset?;
+    let start = usize::try_from(header_offset).ok()?;
     if bytes.get(start + 11..start + 21) != Some(&[0; 10][..])
         || bytes.get(start + 21) != Some(&1)
         || View::u32_le_at(bytes, start + 22) != header.record_index.checked_add(3)

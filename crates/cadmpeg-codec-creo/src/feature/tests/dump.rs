@@ -466,14 +466,14 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     assert_eq!(parameter.name, "d917_42_1");
     assert_eq!(repeated.name, "d917_42_2");
     assert_ne!(parameter.id, repeated.id);
-    assert_eq!(parameter.expression, "1");
+    assert_eq!(parameter.expression, "1".into());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(
             cadmpeg_ir::scalar::Angle::new(1.0).unwrap()
         ))
     );
-    assert!(relation.dependencies.is_empty());
+    assert!(relation.expression.dependencies().next().is_none());
     assert_eq!(relation.properties["external_dependencies"], "d42");
     assert_eq!(
         relation.value,
@@ -502,9 +502,13 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             ..
         }) if profile == "creo:featdefs:sketch#917"
     ));
+    let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     assert_eq!(
-        model_feature.source_properties["native_parameter.dimension_count"],
-        "2"
+        sketches[0].fields().unwrap()["dimensions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
     );
     let sketch_feature = result
         .ir()
@@ -779,18 +783,24 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
         parameters[1].properties["value_encoding"],
         "three_byte_placeholder"
     );
-    assert_eq!(parameters[1].properties["value_token"], "0004a6");
     assert_eq!(
         parameters[2].properties["value_encoding"],
         "four_byte_placeholder"
     );
-    assert_eq!(parameters[2].properties["value_token"], "0104fef2");
 
     let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     let sketch_fields = sketches[0].fields().unwrap();
     let dimensions = sketch_fields["dimensions"]
         .as_array()
         .expect("native dimensions");
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[1]["unresolved_value_token"]),
+        [0, 4, 166]
+    );
+    assert_eq!(
+        crate::test_support::native_bytes(&dimensions[2]["unresolved_value_token"]),
+        [1, 4, 254, 242]
+    );
     assert_eq!(
         crate::test_support::native_bytes(&dimensions[1]["unresolved_value_token"])[0],
         0

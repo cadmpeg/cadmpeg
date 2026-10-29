@@ -331,7 +331,10 @@ fn projects_a_full_revolve_about_its_work_axis() {
     };
     assert_eq!(axis.origin.get(), Point3::new(5.0, 0.0, 0.0));
     assert_eq!(axis.direction.get(), Vector3::new(0.0, 1.0, 0.0));
-    assert_eq!(angle.get(), std::f64::consts::TAU);
+    assert_eq!(
+        angle.literal().expect("literal angle").get(),
+        std::f64::consts::TAU
+    );
 }
 
 #[test]
@@ -587,7 +590,7 @@ fn native_dimension_annotation_data_does_not_change_the_angular_travel() {
                 termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
             }, ..
         }, ..
-    }) if angle.get() == 1.25)
+    }) if angle.literal().expect("literal angle").get() == 1.25)
     );
 }
 
@@ -654,7 +657,7 @@ fn projects_the_positive_one_sided_angular_travel() {
             panic!("partial revolve");
         };
         assert_eq!(axis.direction.get(), Vector3::new(0.0, 1.0, 0.0));
-        assert_eq!(angle.get(), value);
+        assert_eq!(angle.literal().expect("literal angle").get(), value);
     }
 }
 
@@ -698,7 +701,7 @@ fn a_full_turn_does_not_consume_the_stored_angle_value() {
                     termination: cadmpeg_ir::features::AngularTermination::Angle { angle },
                 }, ..
             }, ..
-        }) if angle.get() == std::f64::consts::TAU)
+        }) if angle.literal().expect("literal angle").get() == std::f64::consts::TAU)
         );
     }
 }

@@ -518,11 +518,12 @@ pub(crate) fn project_occurrences(
                    current_poses: &mut usize|
      -> Result<Occurrence, CodecError> {
         if let Some(pose) = &reference.current_pose {
-            occurrence.transform =
-                crate::design::components::neutral_transform(pose.transform.map_or(
+            occurrence.transform = Some(crate::design::components::neutral_transform(
+                pose.transform.map_or(
                     IDENTITY_ROWS,
                     crate::records::xref::XrefPlacementTransform::rows,
-                ))?;
+                ),
+            )?);
             *current_poses += 1;
         }
         Ok(occurrence)
@@ -579,6 +580,7 @@ pub(crate) fn project_occurrences(
                 + cadmpeg_core::decode::u64_from_index(projection.occurrences.len());
             if used >= sources.limits.max_entities {
                 return Err(cadmpeg_core::decode::ResourceLimit {
+                    scope: cadmpeg_core::decode::LimitScope::Session,
                     dimension: cadmpeg_core::decode::ResourceDimension::Entities,
                     reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
                     limit: sources.limits.max_entities,
@@ -630,15 +632,10 @@ fn root_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::
     let mut occurrences = Vec::new();
     for (ordinal, reference) in table.references.iter().enumerate() {
         let path = reference.relative_path.as_str().to_owned();
-        let transform = reference.transform.map_or(
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            crate::records::xref::XrefPlacementTransform::rows,
-        );
+        let transform = reference
+            .transform
+            .map(|transform| crate::design::components::neutral_transform(transform.rows()))
+            .transpose()?;
         occurrences.push(Occurrence {
             id: crate::ids::neutral_xref_occurrence_id(
                 reference.ordinal,
@@ -650,9 +647,8 @@ fn root_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::
             },
             parent: OccurrenceParent::Root {},
             ordinal: ordinal_at(ordinal)?,
-            transform: crate::design::components::neutral_transform(transform)?,
+            transform,
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,

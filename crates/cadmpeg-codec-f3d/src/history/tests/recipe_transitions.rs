@@ -133,7 +133,7 @@ fn split_face_case() -> (
             AsmDeltaState {
                 id: format!("f3d:history:state#{state_id}"),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -158,6 +158,7 @@ fn split_face_case() -> (
         vec![state(2, Some(1)), state(1, None)],
     );
     let mut features = vec![Feature {
+        needs_recompute: false,
         id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -288,12 +289,13 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     )
     .unwrap();
     let reference = |token: &str, design_reference, candidates: &[i64]| DesignRecipeReference {
+        clause_index: 0,
         selector: 1,
-        selector_offset: 1_411,
+        selector_offset: Some(1_411),
         token: token.into(),
-        token_offset: 1_415,
+        token_offset: Some(1_415),
         design_reference,
-        design_reference_offset: 1_420,
+        design_reference_offset: Some(1_420),
         candidate_faces: candidates.iter().copied().map(face).collect(),
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
@@ -346,7 +348,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             AsmDeltaState {
                 id: format!("f3d:history:state#{state_id}"),
                 parent: "f3d:history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,
@@ -442,7 +444,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Standard,
-            designation_offset: 0,
+            designation_offset: Some(0),
             designation: cadmpeg_core::text::NonBlankString::new("M4x0.7").unwrap(),
             nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "4.0".to_owned(),
@@ -591,6 +593,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     use cadmpeg_ir::topology::{Body, BodyKind};
 
     let body = |id: &str, kind| Body {
+        native_ref: None,
         id: BodyId::mint(id).expect("identity grammar"),
         kind,
         regions: Vec::new(),
@@ -600,6 +603,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         visible: None,
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -783,39 +787,39 @@ fn hole_face_case() -> (
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
         slot.point = Some(DesignHoleConstruction {
             point_record_index: 55,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([0.0; 3]),
-            position_offset: 0,
+            position_offset: Some(0),
             direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-            direction_offset: 0,
+            direction_offset: Some(0),
             point_parameters: crate::test_support::reals([0.0; 2]),
-            point_parameter_offsets: [0, 0],
+            point_parameter_offsets: Some([0, 0]),
             reference_type: 0,
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
             tangent_point_data: None,
-            input_records: vec![crate::records::identity::Located {
+            input_records: vec![crate::records::identity::Sourced {
                 value: 55,
-                offset: 0,
+                offset: Some(0),
             }],
             face_selection: Some(DesignHoleFaceSelection {
                 record_index: 100,
-                byte_offset: 0,
+                byte_offset: Some(0),
                 class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned())
                     .unwrap(),
                 asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
                     .to_owned()
                     .try_into()
                     .unwrap(),
-                asset_id_offset: 0,
+                asset_id_offset: Some(0),
                 context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
                     .to_owned()
                     .try_into()
                     .unwrap(),
-                context_id_offset: 0,
+                context_id_offset: Some(0),
                 identity_record_index: 103,
-                identity_record_offset: 0,
+                identity_record_offset: Some(0),
                 primary_identity: 18044,
-                primary_identity_offset: 0,
+                primary_identity_offset: Some(0),
                 secondary: None,
                 historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
                     history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2"
@@ -828,11 +832,12 @@ fn hole_face_case() -> (
                     face_slot: 30,
                 }],
                 next_record_index: 104,
-                next_byte_offset: 0,
+                next_byte_offset: Some(0),
             }),
         });
     }
     let mut feature = Feature {
+        needs_recompute: false,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -859,12 +864,14 @@ fn hole_face_case() -> (
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
 
                 extent: Some(LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()).into(),
                 }),
                 bottom: None,
                 taper_angle: None,
@@ -889,7 +896,7 @@ fn hole_face_case() -> (
             AsmDeltaState {
                 id: format!("history:state#{state_id}"),
                 parent: "history".into(),
-                byte_offset: 0,
+                byte_offset: Some(0),
                 state_id,
                 version_flag: 1,
                 state_flag: 0,

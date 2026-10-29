@@ -79,7 +79,8 @@ fn unresolved_class24_relation_creates_no_neutral_geometry() {
             .ir()
             .native
             .namespace("catia")
-            .expect("native namespace")
+            .expect("catia namespace")
+            .clone()
             .arenas()["consolidated_domain_relations"]
             .len(),
         1
@@ -171,7 +172,8 @@ fn unresolved_class25_maps_create_no_neutral_geometry() {
                 .ir()
                 .native
                 .namespace("catia")
-                .expect("native namespace")
+                .expect("catia namespace")
+                .clone()
                 .arenas()["consolidated_domain_relations"]
                 .len(),
             1

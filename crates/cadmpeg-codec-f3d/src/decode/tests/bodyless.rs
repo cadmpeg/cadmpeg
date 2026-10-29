@@ -18,7 +18,10 @@ use crate::loss::F3dLossCode;
 /// states before the design segment is classified.
 fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
     cadmpeg_ir::codec::DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: false,
+        },
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses: vec![
             F3dLossCode::GeometryNotTransferred.note("stated before classification"),
@@ -26,7 +29,6 @@ fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
             F3dLossCode::MissingGeometryStream.note("stated before classification"),
         ],
         notes: Vec::new(),
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     }
 }
 
@@ -36,7 +38,7 @@ fn brep_less_geometry_report() -> cadmpeg_ir::codec::DecodeBody {
 fn sketch_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 13, 0);
-    assert!(report.transfer.geometry_transferred());
+    assert!(!report.transfer.geometry_transferred);
     assert!(
         report
             .losses
@@ -57,7 +59,7 @@ fn sketch_only_design_is_not_a_geometry_loss() {
 fn presentation_only_design_is_not_a_geometry_loss() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 1);
-    assert!(report.transfer.geometry_transferred());
+    assert!(!report.transfer.geometry_transferred);
     assert!(
         report
             .losses
@@ -77,7 +79,7 @@ fn presentation_only_design_is_not_a_geometry_loss() {
 fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 1, 13, 0);
-    assert!(!report.transfer.geometry_transferred());
+    assert!(!report.transfer.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
 
@@ -88,7 +90,7 @@ fn a_declared_body_without_a_brep_stream_keeps_its_geometry_losses() {
 fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 0, 0, 0, 0);
-    assert!(!report.transfer.geometry_transferred());
+    assert!(!report.transfer.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
 
@@ -98,7 +100,7 @@ fn a_document_without_sketch_entities_keeps_its_geometry_losses() {
 fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 1, 0, 0, 13, 0);
-    assert!(!report.transfer.geometry_transferred());
+    assert!(!report.transfer.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
 }
 
@@ -107,8 +109,26 @@ fn a_present_brep_stream_is_never_reclassified_as_sketch_only() {
 fn a_text_brep_carrier_is_never_reclassified_as_sketch_only() {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_bodyless_design_classification(&mut report, 0, 2, 0, 13, 0);
-    assert!(!report.transfer.geometry_transferred());
+    assert!(!report.transfer.geometry_transferred);
     assert_eq!(report.losses.len(), 3);
+}
+
+/// A complete mesh carrier holds model content without claiming a B-rep.
+#[test]
+fn mesh_only_classification_keeps_brep_transfer_false() {
+    let archive =
+        crate::test_support::assembly_test::f3d_without_brep("mesh-design", "mesh.f3d", &[]);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let mut report = brep_less_geometry_report();
+        super::super::apply_mesh_body_classification(&mut report, scan, 2);
+        assert!(report.transfer.scope.model);
+        assert!(!report.transfer.geometry_transferred);
+        assert_eq!(report.losses.len(), 1);
+        assert_eq!(
+            report.losses[0].code,
+            F3dLossCode::MeshVertexPrecisionReduced.kind()
+        );
+    });
 }
 
 #[test]
@@ -128,6 +148,7 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
             has_appearance: false,
             mesh_projection: super::super::MeshProjection {
                 count: 0,
+                untyped: false,
                 tessellations_by_scope: std::collections::HashMap::new(),
             },
         });
@@ -163,6 +184,7 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     })
     .collect::<Vec<_>>();
     let path = super::super::FinalizePath::Geometry(super::super::GeometryIndex {
@@ -170,6 +192,7 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         annotation_records: Vec::new(),
         mesh_projection: super::super::MeshProjection {
             count: 0,
+            untyped: false,
             tessellations_by_scope: std::collections::HashMap::new(),
         },
     });

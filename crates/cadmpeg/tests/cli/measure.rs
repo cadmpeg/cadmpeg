@@ -228,7 +228,8 @@ fn measures_plate_with_hole() {
     assert!((length(inner) - hole).abs() <= TEST_ABSOLUTE_FLOOR * scale);
     assert_eq!(row["orientation"]["consistent"], true);
     assert_eq!(row["status"], "measured");
-    assert_eq!(report["measure"]["input"]["decode_depth"], "full");
+    assert_eq!(report["measure"]["input"]["scope"]["model"], true);
+    assert_eq!(report["measure"]["input"]["scope"]["design"], false);
     assert_eq!(report["measure"]["input"]["origin"], "decoded");
 
     let text = measure_text(&[plate.to_str().unwrap(), "--face", "face#69"]);
@@ -241,7 +242,8 @@ fn measures_plate_with_hole() {
 fn measures_full_cylinder_side_face() {
     let solid = fixture("measure_cylinder_solid.p21");
     let report = measure_json(&[solid.to_str().unwrap(), "--face", "face#46"]);
-    assert_eq!(report["measure"]["input"]["decode_depth"], "full");
+    assert_eq!(report["measure"]["input"]["scope"]["model"], true);
+    assert_eq!(report["measure"]["input"]["scope"]["design"], false);
     let row = face(&report, "step:data:face#46");
     let parameters = &row["carrier"]["parameters"];
     let scale = 30.0;
@@ -837,7 +839,7 @@ fn cadir_with_and_without_sidecar() {
 
 #[cfg(feature = "step")]
 #[test]
-fn container_depth_cadir_is_refused() {
+fn container_scope_cadir_measures_without_refusing() {
     let dir = tempdir().unwrap();
     let cadir = dir.path().join("container.cadir.json");
     dump(
@@ -851,13 +853,12 @@ fn container_depth_cadir_is_refused() {
         .arg("--json")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert!(stderr.contains("neutral scope excludes"), "{stderr}");
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["status"], "refused");
-    assert_eq!(value["refusal"]["code"], "insufficient_depth");
-    assert_eq!(value["refusal"]["stage"], "plan");
-    assert_eq!(value["refusal"]["depth"]["needed"], "geometry");
-    assert_eq!(value["refusal"]["depth"]["recorded"], "container");
+    assert_eq!(value["measure"]["input"]["scope"]["model"], false);
+    assert_eq!(value["measure"]["input"]["scope"]["design"], false);
 }
 
 #[cfg(feature = "step")]

@@ -14,6 +14,64 @@ use crate::curves::GeometryError;
 use crate::layout::uuid_wire_form as uuid_wire;
 use crate::settings::MillimeterScale;
 
+/// Decode the archive's inverted-alpha packed colour into neutral RGBA.
+pub(crate) fn packed_color(value: [u8; 4]) -> cadmpeg_ir::topology::Color {
+    cadmpeg_ir::topology::Color::from_rgba8(value[0], value[1], value[2], value[3]).invert_alpha()
+}
+
+/// Decode a native packed colour, or an authored neutral colour value.
+pub(crate) fn native_color(
+    value: &serde_json::Value,
+) -> Result<cadmpeg_ir::topology::Color, serde_json::Error> {
+    if value.is_string() {
+        let value: cadmpeg_ir::native::bytes::NativeBytes<[u8; 4]> =
+            serde_json::from_value(value.clone())?;
+        let bytes: &[u8] = value.as_ref();
+        Ok(packed_color([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    } else {
+        serde_json::from_value(value.clone())
+    }
+}
+
+pub(crate) fn serialize_panose<'a, S: serde::Serializer>(
+    value: impl IntoIterator<Item = &'a cadmpeg_ir::native::bytes::NativeBytes<[u8; 10]>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    #[derive(serde::Serialize)]
+    struct Panose {
+        family_type: u8,
+        serif_style: u8,
+        weight: u8,
+        proportion: u8,
+        contrast: u8,
+        stroke_variation: u8,
+        arm_style: u8,
+        letterform: u8,
+        midline: u8,
+        x_height: u8,
+    }
+    use serde::Serialize;
+    value
+        .into_iter()
+        .next()
+        .map(|value| {
+            let bytes: &[u8] = value.as_ref();
+            Panose {
+                family_type: bytes[0],
+                serif_style: bytes[1],
+                weight: bytes[2],
+                proportion: bytes[3],
+                contrast: bytes[4],
+                stroke_variation: bytes[5],
+                arm_style: bytes[6],
+                letterform: bytes[7],
+                midline: bytes[8],
+                x_height: bytes[9],
+            }
+        })
+        .serialize(serializer)
+}
+
 /// Serializes `value` as compact JSON.
 pub(crate) fn json(value: &impl serde::Serialize) -> Result<String, CodecError> {
     serde_json::to_string(value).map_err(|error| CodecError::malformed(error.to_string()))
@@ -54,7 +112,6 @@ impl Uuid {
     }
 
     /// Inverse of [`Uuid::from_wire`].
-    #[cfg(test)]
     pub(crate) fn to_wire(self) -> [u8; uuid_wire::LEN] {
         let mut wire = [0; uuid_wire::LEN];
         for index in 0..4 {

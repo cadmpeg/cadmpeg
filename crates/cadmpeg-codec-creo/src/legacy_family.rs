@@ -28,7 +28,7 @@ pub(crate) struct FamilyTable {
     /// Source offset of the root object row.
     pub(crate) offset: usize,
     /// Optional root generic-name field.
-    generic_name: Option<legacy::StringValue>,
+    pub(crate) generic_name: Option<legacy::StringValue>,
     /// Ordered table-column descriptors.
     pub(crate) items: Vec<FamilyTableItem>,
     /// Ordered instance rows.
@@ -47,39 +47,39 @@ pub(crate) struct FamilyTableItem {
     /// Stored visibility flag.
     invisible: i32,
     /// Stored item name, including null or non-UTF-8 forms.
-    name: legacy::StringValue,
+    pub(crate) name: legacy::StringValue,
 }
 
 /// One ordered family-table instance row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableInstance {
     /// Source offset of the instance object row.
-    offset: usize,
+    pub(crate) offset: usize,
     /// Stored instance name. This field is required to be non-empty UTF-8.
-    name: String,
+    pub(crate) name: String,
     /// Stored instance attributes bitfield.
     attributes: i32,
     /// Direct model object referenced by the instance row.
     model_object_id: String,
     /// Values aligned by ordinal with [`FamilyTable::items`].
-    values: Vec<FamilyTableValue>,
+    pub(crate) values: Vec<FamilyTableValue>,
 }
 
 /// One typed family-table cell.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct FamilyTableValue {
+pub(crate) struct FamilyTableValue {
     /// Legacy value-row object identity.
-    source_object_id: String,
+    pub(crate) source_object_id: String,
     /// Source offset of the typed value field.
     offset: usize,
     /// Typed value payload.
-    value: FamilyTableValuePayload,
+    pub(crate) value: FamilyTableValuePayload,
 }
 
 /// Typed payload forms admitted by the legacy family-table row grammar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
-enum FamilyTableValuePayload {
+pub(crate) enum FamilyTableValuePayload {
     /// `type=50` with one `value(d_val)` real field.
     Real {
         /// Exact source real value.

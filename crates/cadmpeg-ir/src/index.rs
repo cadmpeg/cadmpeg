@@ -481,9 +481,9 @@ mod tests {
             ordinal: 0,
             name: "p1".into(),
             expression: "1".into(),
+            driving: true,
             display: None,
             value: None,
-            dependencies: crate::features::DistinctMembers::default(),
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -558,9 +558,9 @@ mod tests {
                 ordinal,
                 name: format!("p{ordinal}"),
                 expression: expression.into(),
+                driving: true,
                 display: None,
                 value: None,
-                dependencies: crate::features::DistinctMembers::default(),
                 properties: std::collections::BTreeMap::new(),
                 pmi: None,
                 native_ref: None,
@@ -579,8 +579,8 @@ mod tests {
                 &crate::index::StandardIndex
             )
             .unwrap()
-            .map(|parameter| parameter.expression.as_str()),
-            Some("last")
+            .and_then(|parameter| parameter.expression.literal_text()),
+            Some("last".into())
         );
         assert!(parameters.get().is_some());
         assert!(index.bodies.get().is_none());
@@ -595,6 +595,7 @@ mod tests {
             crate::ids::ProceduralSurfaceId::mint("test:model:procedural#exact")
                 .expect("valid identity");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: exact_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: exact_construction.clone(),
@@ -612,6 +613,7 @@ mod tests {
         let cached_surface = crate::ids::SurfaceId::mint("test:model:surface#cached".to_string())
             .expect("valid identity");
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: cached_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(

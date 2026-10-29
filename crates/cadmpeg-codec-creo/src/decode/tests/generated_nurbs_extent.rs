@@ -34,8 +34,9 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },
@@ -57,6 +58,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             offset: usize::try_from(id).expect("fixture index fits usize"),
         };
         let plane = |id, origin, normal| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -99,6 +101,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -109,12 +112,14 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             plane(32, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
             plane(33, Point3::new(0.0, 0.0, 2.0), Vector3::new(0.0, 0.0, -1.0)),
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#34".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),

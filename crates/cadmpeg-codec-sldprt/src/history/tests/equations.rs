@@ -13,7 +13,6 @@ use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::resolved_features_payload_with_names;
 use crate::test_support::history::resolved_features_payload_with_names_relation_and_scalar;
 use crate::test_support::native::sldprt_native;
-use crate::test_support::native::update_sldprt_native;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
@@ -142,7 +141,8 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .iter_mut()
             .find(|parameter| parameter.name == "Radius")
             .unwrap();
-        radius.expression = "R2".into();
+        radius.expression = "2mm".into();
+        radius.display = Some(cadmpeg_ir::features::DimensionDisplay::Radius);
         radius.value = Some(ParameterValue::Length(Length::new(2.0).unwrap()));
         let modified_diameter = ir
             .model
@@ -150,7 +150,8 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .iter_mut()
             .find(|parameter| parameter.name == "ModifiedDiameter")
             .unwrap();
-        modified_diameter.expression = "<MOD-DIAM>4".into();
+        modified_diameter.expression = "4mm".into();
+        modified_diameter.display = Some(cadmpeg_ir::features::DimensionDisplay::Diameter);
         modified_diameter.value = Some(ParameterValue::Length(Length::new(4.0).unwrap()));
         let display_angle = ir
             .model
@@ -158,7 +159,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .iter_mut()
             .find(|parameter| parameter.name == "DisplayAngle")
             .unwrap();
-        display_angle.expression = format!("30{}", '\u{00b0}');
+        display_angle.expression = format!("30{}", '\u{00b0}').into();
         display_angle.value = Some(ParameterValue::Angle(
             Angle::new(30.0_f64.to_radians()).unwrap(),
         ));
@@ -265,7 +266,10 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
             .iter()
             .find(|parameter| parameter.name == "Driven")
             .unwrap()
-            .dependencies
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
             .as_slice(),
         expected_dependencies
     );
@@ -302,10 +306,18 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
         .find(|parameter| parameter.name == "Driven")
         .unwrap();
     assert_eq!(
-        driven.expression,
+        crate::test_support::history::rendered_parameter(regenerated.ir(), driven),
         "sin(30deg) + pi + iif(Width = 4mm, 1, 2) + \"Sine input\" + \"Pi input\" + \"Choice input\""
     );
-    assert_eq!(driven.dependencies.len(), 4);
+    assert_eq!(
+        driven
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .len(),
+        4
+    );
 }
 
 #[test]
@@ -446,7 +458,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
             },
             op: BooleanOp::Join,
             ..
-        }) if actual_length.get() == 8.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 8.0
     ));
     let depth = decoded
         .ir()
@@ -455,7 +467,10 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("depth parameter");
-    assert_eq!(depth.expression, "Base * 2");
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(decoded.ir(), depth),
+        "Base * 2"
+    );
     assert_eq!(
         depth.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -492,7 +507,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
                 }
             },
             ..
-        }) if actual_length.get() == 8.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 8.0
     ));
 }
 
@@ -545,7 +560,15 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("depth parameter");
-    assert_eq!(depth.dependencies.as_slice(), vec![width.id.clone()]);
+    assert_eq!(
+        depth
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        vec![width.id.clone()]
+    );
     assert_eq!(
         depth.value,
         Some(ParameterValue::Length(Length::new(8.0).unwrap()))
@@ -558,38 +581,45 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .iter()
         .position(|feature| feature.name.as_deref() == Some("Equation boss"))
         .expect("extrusion");
+    decoded.ir_mut().model.features[extrusion].name = Some("Renamed equation boss".into());
     {
-        let mut ir = decoded.ir_mut();
-        ir.model.features[extrusion].name = Some("Renamed equation boss".into());
-        ir.model.features[extrusion]
-            .evaluation
-            .edit(|definition, _| {
-                let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) =
-                    definition
-                else {
-                    panic!("typed extrusion");
-                };
-                *extent = ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
-                        },
-                        draft: None,
-                    },
-                };
-            });
-        let depth = ir
+        let width = decoded
+            .ir()
             .model
             .parameters
-            .iter_mut()
+            .iter()
+            .find(|parameter| parameter.name == "Width")
+            .unwrap()
+            .id
+            .clone();
+        let depth = decoded
+            .ir()
+            .model
+            .parameters
+            .iter()
             .find(|parameter| parameter.name == "Depth")
-            .expect("depth parameter");
-        depth.expression = "Width * 3".into();
-        depth.value = Some(ParameterValue::Length(Length::new(12.0).unwrap()));
+            .unwrap()
+            .id
+            .clone();
+        decoded
+            .ir_mut()
+            .set_parameter_expression(
+                &depth,
+                cadmpeg_ir::features::Expression {
+                    tokens: vec![
+                        cadmpeg_ir::features::ExpressionToken::Parameter(width),
+                        cadmpeg_ir::features::ExpressionToken::Text(" * 3".into()),
+                    ],
+                },
+                Some(ParameterValue::Length(Length::new(12.0).unwrap())),
+            )
+            .unwrap();
     }
 
+    assert!(decoded.ir().model.features[extrusion].needs_recompute);
+
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -619,12 +649,23 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
         .iter()
         .find(|parameter| parameter.name == "Depth")
         .expect("depth parameter");
-    assert_eq!(depth.expression, "Width * 3");
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(regenerated.ir(), depth),
+        "Width * 3"
+    );
     assert_eq!(
         depth.value,
         Some(ParameterValue::Length(Length::new(12.0).unwrap()))
     );
-    assert_eq!(depth.dependencies.len(), 1);
+    assert_eq!(
+        depth
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .len(),
+        1
+    );
     let extrusion = regenerated
         .ir()
         .model
@@ -644,7 +685,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
                 }
             },
             ..
-        }) if actual_length.get() == 12.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 12.0
     ));
 }
 
@@ -691,8 +732,19 @@ fn feature_rename_rewrites_only_its_qualified_parameter_references() {
         .iter()
         .find(|parameter| parameter.name == "Result")
         .unwrap();
-    assert_eq!(result.expression, "D1@Profile + D1@Sketch2");
-    assert_eq!(result.dependencies.len(), 2);
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(regenerated.ir(), result),
+        "D1@Profile + D1@Sketch2"
+    );
+    assert_eq!(
+        result
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -726,7 +778,10 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(
+        parameter.expression.literal_text().as_deref(),
+        Some("25 mm")
+    );
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(
@@ -737,13 +792,9 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 }
 
 #[test]
-fn configuration_local_modeling_edits_without_brep_are_refused() {
-    use cadmpeg_ir::{
-        features::{
-            edge_treatments::RadiusSpec, FeatureDefinition, FeatureOperation, ParameterValue,
-        },
-        scalar::Length,
-    };
+fn configuration_local_modeling_edits_without_brep_are_synthesized() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -751,180 +802,140 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         "Contents/Keywords",
         br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Fillet Name="Round1" Type="Fillet"><Dimension Name="D1">30mm</Dimension><Dimension Name="D2">D1 * 2</Dimension></Fillet></Keywords>"#,
     ));
-    source.extend(make_block(
-        0x45,
-        "Contents/Config-0-ResolvedFeatures",
-        &resolved_features_payload_with_names_relation_and_scalar(
-            &[0],
-            &["Round1", "D1"],
-            "sgPntPntDist",
-            0.025,
-        ),
-    ));
-    source.extend(make_block(
-        0x45,
-        "Contents/Config-1-ResolvedFeatures",
-        &resolved_features_payload_with_names_relation_and_scalar(
-            &[0],
-            &["Round1", "D1"],
-            "sgPntPntDist",
-            0.050,
-        ),
-    ));
-
-    let decoded = EditableDecodeResult::from(
-        SldprtCodec
-            .decode(
-                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
-                    &(source),
-                )),
-                &DecodeOptions::default(),
-            )
-            .unwrap(),
-    );
-    assert!(!decoded.report().losses.iter().any(|loss| loss
-        .message
-        .contains("parameter expression(s) cannot regenerate")));
-    let parameter = decoded
+    for (slot, radius_m) in [(0, 0.025), (1, 0.050)] {
+        source.extend(make_block(
+            0x45,
+            &format!("Contents/Config-{slot}-ResolvedFeatures"),
+            &resolved_features_payload_with_names_relation_and_scalar(
+                &[0],
+                &["Round1", "D1"],
+                "sgPntPntDist",
+                radius_m,
+            ),
+        ));
+    }
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &(source),
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let parameter_id = decoded
         .ir()
         .model
         .parameters
         .iter()
         .find(|parameter| parameter.name == "D1")
-        .unwrap();
-    let dependent = decoded
+        .unwrap()
+        .id
+        .clone();
+    let dependent_id = decoded
         .ir()
         .model
         .parameters
         .iter()
         .find(|parameter| parameter.name == "D2")
+        .unwrap()
+        .id
+        .clone();
+    let inactive = decoded
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| !configuration.active)
         .unwrap();
+    let inactive_id = inactive.id.clone();
     assert_eq!(
-        parameter.value,
-        Some(ParameterValue::Length(Length::new(30.0).unwrap()))
-    );
-    assert_eq!(parameter.native_ref, None);
-    assert_eq!(
-        decoded.ir().model.configurations[0]
-            .parameter_values
-            .get(&parameter.id),
-        Some(&ParameterValue::Length(Length::new(25.0).unwrap()))
+        inactive.parameter_value(decoded.ir(), &parameter_id),
+        Some(&ParameterValue::Length(Length::new(50.0).unwrap())),
+        "configurations={:#?}; parameters={:#?}; native lanes={:#?}",
+        decoded.ir().model.configurations,
+        decoded.ir().model.parameters,
+        sldprt_native(decoded.ir()).feature_input_lanes,
     );
     assert_eq!(
-        decoded.ir().model.configurations[1]
-            .parameter_values
-            .get(&parameter.id),
-        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
-    );
-    assert_eq!(
-        decoded.ir().model.configurations[0]
-            .parameter_values
-            .get(&dependent.id),
-        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
-    );
-    assert_eq!(
-        decoded.ir().model.configurations[1]
-            .parameter_values
-            .get(&dependent.id),
+        inactive.parameter_value(decoded.ir(), &dependent_id),
         Some(&ParameterValue::Length(Length::new(100.0).unwrap()))
     );
-    let round_trip =
-        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
-    assert_eq!(
-        round_trip.model.configurations[1]
-            .parameter_values
-            .get(&parameter.id),
-        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
-    );
-
-    let parameter_id = parameter.id.clone();
-    let dependent_id = dependent.id.clone();
-    let feature_id = parameter.owner.clone();
-    let mut incoherent = decoded.ir().clone();
-    incoherent.model.configurations[1].parameter_values.insert(
-        parameter_id.clone(),
-        ParameterValue::Length(Length::new(75.0).unwrap()),
-    );
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &incoherent,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("configuration parameter values are inconsistent with their expressions"),
-        "unexpected error: {error}"
-    );
+    for configuration in decoded
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.active)
+    {
+        assert!(configuration.parameter_values.is_empty());
+        assert!(configuration.parameter_overrides.is_empty());
+        assert!(configuration.feature_states.is_empty());
+    }
 
     let mut edited = decoded.ir().clone();
-    edited.model.configurations[1].parameter_values.insert(
-        parameter_id.clone(),
-        ParameterValue::Length(Length::new(75.0).unwrap()),
+    edited
+        .set_parameter_expression(
+            &parameter_id,
+            cadmpeg_ir::features::Expression::text("75mm"),
+            Some(ParameterValue::Length(Length::new(75.0).unwrap())),
+        )
+        .unwrap();
+    // The expression setter invalidates the dependent evaluated value. The
+    // evaluated result can be supplied without changing its authored tokens.
+    let dependent_expression = edited
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == dependent_id)
+        .unwrap()
+        .expression
+        .clone();
+    edited
+        .set_parameter_expression(
+            &dependent_id,
+            dependent_expression,
+            Some(ParameterValue::Length(Length::new(150.0).unwrap())),
+        )
+        .unwrap();
+    assert!(edited
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.needs_recompute));
+    let inactive = edited
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.id == inactive_id)
+        .unwrap();
+    assert_eq!(
+        inactive.parameter_value(&edited, &parameter_id),
+        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
     );
-    edited.model.configurations[1].parameter_values.insert(
-        dependent_id,
-        ParameterValue::Length(Length::new(150.0).unwrap()),
+    assert_eq!(
+        inactive.parameter_value(&edited, &dependent_id),
+        Some(&ParameterValue::Length(Length::new(100.0).unwrap()))
     );
-    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups, .. }) =
-        &mut edited.model.configurations[1]
-            .feature_states
-            .get_mut(feature_id.as_ref().expect("feature-owned parameter"))
-            .unwrap()
-            .definition
-    else {
-        panic!("configuration fillet state");
-    };
-    groups[0].radius = RadiusSpec::Constant {
-        radius: cadmpeg_ir::scalar::PositiveLength::new(75.0).unwrap(),
-    };
-
-    let mut conflicting = edited.clone();
-    update_sldprt_native(&mut conflicting, |native| {
-        let lane = native
-            .feature_input_lanes
-            .iter_mut()
-            .find(|lane| lane.configuration.as_deref() == Some("1"))
-            .unwrap();
-        let scalar = &mut lane.scalars[0];
-        scalar.value = cadmpeg_ir::scalar::FiniteReal::new(0.060).expect("finite test scalar");
-        let offset = usize::try_from(scalar.offset).unwrap();
-        lane.native_payload[offset..offset + 8].copy_from_slice(&0.060f64.to_le_bytes());
-    });
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &conflicting,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT configuration design-state edits"));
 
     let mut unavailable_fidelity = decoded.source_fidelity().clone();
     crate::test_support::make_source_image_unavailable(&mut unavailable_fidelity);
-    let error =
-        crate::test_support::plan_inherited_write(&edited, &unavailable_fidelity, &mut Vec::new())
-            .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error
-        .to_string()
-        .contains("validated retained local, central and EOCD signature tokens"));
-
-    assert!(unavailable_fidelity
-        .retained_record(crate::SOURCE_IMAGE_ID)
-        .unwrap()
-        .data()
-        .is_none());
-
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&edited, Some(&unavailable_fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "evaluation.stale"));
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
-        &edited,
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
+    plan.write_to(&mut encoded).unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
@@ -935,30 +946,40 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         .iter()
         .find(|parameter| parameter.name == "D1")
         .unwrap();
-    let regenerated_feature = regenerated
+    let regenerated_dependent = regenerated
         .ir()
         .model
-        .features
+        .parameters
         .iter()
-        .find(|feature| feature.name.as_deref() == Some("Round1"))
+        .find(|parameter| parameter.name == "D2")
         .unwrap();
     assert_eq!(
-        regenerated.ir().model.configurations[1]
-            .parameter_values
-            .get(&regenerated_parameter.id),
-        Some(&ParameterValue::Length(Length::new(75.0).unwrap()))
+        regenerated_parameter.value,
+        Some(ParameterValue::Length(Length::new(75.0).unwrap()))
     );
-    assert!(matches!(
-        regenerated.ir().model.configurations[1].feature_states[&regenerated_feature.id].definition,
-        FeatureDefinition::Operation(FeatureOperation::Fillet {
-            ref groups,
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: RadiusSpec::Constant {
-                radius: actual_radius
-            },
-            ..
-        }] if actual_radius.get() == 75.0)
-    ));
+    assert_eq!(
+        regenerated_dependent.value,
+        Some(ParameterValue::Length(Length::new(150.0).unwrap()))
+    );
+    let inactive = regenerated
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| !configuration.active)
+        .unwrap();
+    assert_eq!(
+        inactive.parameter_value(regenerated.ir(), &regenerated_parameter.id),
+        Some(&ParameterValue::Length(Length::new(50.0).unwrap())),
+        "written configurations={:#?}; parameters={:#?}; native lanes={:#?}",
+        regenerated.ir().model.configurations,
+        regenerated.ir().model.parameters,
+        sldprt_native(regenerated.ir()).feature_input_lanes,
+    );
+    assert_eq!(
+        inactive.parameter_value(regenerated.ir(), &regenerated_dependent.id),
+        Some(&ParameterValue::Length(Length::new(100.0).unwrap()))
+    );
 }
 
 #[test]
@@ -1006,7 +1027,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
             },
             op: BooleanOp::Join,
             ..
-        }) if actual_length.get() == 25.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 25.0
     ));
     let parameter = decoded
         .ir()
@@ -1015,7 +1036,7 @@ fn decode_separates_document_expression_from_evaluated_feature_scalar() {
         .iter()
         .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
-    assert_eq!(parameter.expression, "2.5");
+    assert_eq!(parameter.expression.literal_text().as_deref(), Some("2.5"));
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Length(Length::new(25.0).unwrap()))

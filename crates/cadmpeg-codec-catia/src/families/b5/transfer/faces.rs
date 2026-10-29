@@ -311,6 +311,7 @@ pub(super) fn emit_faces(
     let body_record_id = body_id.clone();
     admission.charge()?;
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_record_id,
         kind: ownership.body_kind,
         regions: body_regions,
@@ -342,6 +343,7 @@ pub(super) fn emit_faces(
         let region_shells = vec![region_shell_id];
         admission.charge()?;
         ir.model.regions.push(Region {
+            native_ref: None,
             id: region_record_id,
             body: region_body_id,
             shells: region_shells,
@@ -405,6 +407,7 @@ pub(super) fn emit_faces(
         let face_record_index = ir.model.faces.len();
         admission.charge()?;
         ir.model.faces.push(Face {
+            native_ref: None,
             id: face_record_id,
             shell: face_shell_id,
             surface: face_surface_id,
@@ -472,6 +475,7 @@ pub(super) fn emit_faces(
             let loop_face_id = face_id.clone();
             admission.charge()?;
             ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loop_record_id,
                 face: loop_face_id,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
@@ -519,6 +523,7 @@ pub(super) fn emit_faces(
                 }
                 admission.charge()?;
                 ir.model.coedges.push(Coedge {
+                    native_ref: None,
                     id: coedge_record_id,
                     owner_loop: owner_loop_id,
                     edge: edge_ref_id,

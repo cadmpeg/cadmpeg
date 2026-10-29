@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::report::{
-    decode::{DecodeReport, DecodeTransfer, TransferLedger},
+    decode::{DecodeReport, DecodeTransfer},
     export::{CensusBasis, EntityCensus, ExportReport},
     loss::{LossKind, LossNote, LossTaxonomy},
     Severity,
@@ -36,11 +36,13 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
 fn unclassified_reports_serialize_empty_dialect_keys() {
     let decode = DecodeReport::unclassified(
         "rhino",
-        DecodeTransfer::full(true),
+        DecodeTransfer {
+            scope: crate::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        TransferLedger::default(),
     );
     let rendered = serde_json::to_string(&decode).unwrap();
     assert!(

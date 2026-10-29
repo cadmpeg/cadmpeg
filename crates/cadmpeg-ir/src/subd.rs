@@ -16,6 +16,14 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SubdSurface {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena identity.
     pub id: SubdId,
     /// Subdivision scheme.
@@ -94,6 +102,26 @@ impl TryFrom<SubdCageWire> for SubdCage {
 }
 
 impl SubdCage {
+    /// Control vertices in cage order.
+    pub fn vertices(&self) -> &[SubdVertex] {
+        &self.vertices
+    }
+
+    /// Control edges in cage order.
+    pub fn edges(&self) -> &[SubdEdge] {
+        &self.edges
+    }
+
+    /// Directed face rings in cage order.
+    pub fn faces(&self) -> &[SubdFace] {
+        &self.faces
+    }
+
+    /// Editor symmetry blocks in cage order.
+    pub fn symmetries(&self) -> &[SubdSymmetry] {
+        &self.symmetries
+    }
+
     /// Construct a cage with closed directed rings and valid local payloads.
     pub fn new(
         vertices: Vec<SubdVertex>,
@@ -123,12 +151,6 @@ impl SubdCage {
         self.validate_vertices(&vertices)?;
         self.vertices = vertices;
         Ok(())
-    }
-
-    /// Control edges in cage order.
-    #[must_use]
-    pub fn edges(&self) -> &[SubdEdge] {
-        &self.edges
     }
 
     /// Atomically edit edge copies while preserving cage invariants.
@@ -632,6 +654,11 @@ impl TryFrom<SubdVertexWire> for SubdVertex {
 }
 
 impl SubdVertex {
+    /// Optional secondary-grip topology.
+    pub fn secondary_grips(&self) -> Option<&SubdVertexGripLayout> {
+        self.secondary_grips.as_ref()
+    }
+
     /// Construct a control vertex with a finite position.
     pub fn new(
         point: Point3,
@@ -906,6 +933,26 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// Indices of the two endpoint vertices.
+    pub const fn vertices(&self) -> [u32; 2] {
+        self.vertices
+    }
+
+    /// Sharpness at the start and end endpoints.
+    pub const fn sharpness(&self) -> [NonNegativeReal; 2] {
+        self.sharpness
+    }
+
+    /// Parametric knot interval, when present.
+    pub const fn knot_interval(&self) -> Option<PositiveReal> {
+        self.knot_interval
+    }
+
+    /// Sector coefficients at the two endpoints.
+    pub const fn sector_coefficients(&self) -> [FiniteReal; 2] {
+        self.sector_coefficients
+    }
+
     /// Effective knot interval, with an explicit user value taking precedence.
     #[must_use]
     pub fn effective_knot_interval(&self) -> Option<f64> {
@@ -1069,6 +1116,11 @@ impl TryFrom<SubdFaceWire> for SubdFace {
 }
 
 impl SubdFace {
+    /// Directed edge uses in boundary order.
+    pub fn edges(&self) -> &[SubdEdgeUse] {
+        &self.edges
+    }
+
     /// Construct a face with at least three directed edge uses.
     pub fn new(edges: Vec<SubdEdgeUse>) -> Result<Self, SubdError> {
         if edges.len() < 3 {
@@ -1111,3 +1163,5 @@ cadmpeg_core::named_optional_field!(deserialize_user_knot, SubdUserKnot, "user_k
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

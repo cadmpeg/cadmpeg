@@ -489,9 +489,14 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .find(|body| body.id.as_str() == "iges:model:body#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(
-        body.color,
+        result
+            .ir()
+            .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Body(
+                body.id.clone()
+            )),
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
+    assert_eq!(body.color, None, "the appearance owns the source colour");
     assert_eq!(body.visible, Some(true));
     let face = result
         .ir()
@@ -501,9 +506,14 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .find(|face| face.id.as_str() == "iges:model:face#D11:D9")
         .unwrap();
     assert_eq!(
-        face.color,
+        result
+            .ir()
+            .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Face(
+                face.id.clone()
+            )),
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).expect("valid color"))
     );
+    assert_eq!(face.color, None, "the appearance owns the source colour");
     assert!(result
         .ir()
         .model
@@ -759,6 +769,18 @@ fn decode_types_definition_levels_and_directory_level_links() {
         line.fields().unwrap()["level_definition"],
         "iges:presentation:definition-levels#D1"
     );
+    let projected = &result.ir().model.presentation_layers;
+    assert_eq!(projected.len(), 3);
+    for level in [2, 7, 11] {
+        let layer = projected
+            .iter()
+            .find(|layer| layer.name == level.to_string())
+            .unwrap();
+        assert!(layer.items.iter().any(|item| matches!(item,
+            cadmpeg_ir::presentation::PresentationItem::Curve { curve }
+                if curve.as_str() == "iges:model:curve#D3"
+        )));
+    }
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -947,7 +969,11 @@ fn decode_binds_the_directory_color_to_a_curve_source_object() {
         .expect("a projected line names its source entity");
     assert_eq!(source.object_id.as_str(), "D1");
     assert_eq!(
-        source.color,
+        result
+            .ir()
+            .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Curve(
+                curve.id.clone()
+            )),
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
 }

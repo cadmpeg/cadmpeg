@@ -1,11 +1,21 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
+      "assets": [
+        {
+          "content": {
+            "data": "/9j/4AAQ",
+            "kind": "embedded"
+          },
+          "id": "creo:document:asset#thumbnail-137",
+          "media_type": "image/jpeg",
+          "name": "THMB_IMG_MAIN"
+        }
+      ],
       "attributes": [],
       "bodies": [],
       "coedges": [],
@@ -52,6 +62,10 @@
           }
         ]
       }
+    },
+    "scope": {
+      "design": true,
+      "model": true
     },
     "source": {
       "attributes": {
@@ -554,7 +568,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -585,7 +602,8 @@
           "retention": "inline"
         },
         "offset": 152,
-        "stream": "creo:THMB_IMG_MAIN"
+        "stream": "creo:THMB_IMG_MAIN",
+        "untyped": []
       },
       "creo:VisibGeom:section#79": {
         "bytes": {
@@ -593,8 +611,23 @@
           "retention": "inline"
         },
         "offset": 79,
-        "stream": "creo:VisibGeom"
+        "stream": "creo:VisibGeom",
+        "untyped": []
+      },
+      "creo:source:image#whole": {
+        "bytes": {
+          "data": "I1VHQzoyIFAgdGVzdAojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgF4CJwAGNydl9hcnJheQDz+AwjCiNBbGxGZWF0dXIKAQIDIwojVEhNQl9JTUdfTUFJTgr/2P/gABA=",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "creo:source",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

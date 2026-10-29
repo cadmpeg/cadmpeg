@@ -293,7 +293,7 @@ pub(super) fn decode(
                     drawing_kind(name),
                     name.into(),
                     order,
-                    identity.into_string(),
+                    None,
                 )
             },
         );

@@ -35,6 +35,7 @@ fn lane(constraints: &[([u16; 2], f64)]) -> FeatureInputLane {
             parent: "lane".into(),
             feature_ref: Some("feature".into()),
             ordinal: u32::try_from(ordinal).unwrap(),
+            sequence: u32::try_from(ordinal).unwrap(),
             offset: u64::try_from(ordinal).unwrap(),
             object_id: 0,
             name: "distance".into(),

@@ -1,7 +1,6 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [
         {
@@ -84,7 +83,22 @@
         }
       ],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "step:data:geometry-name#49-0",
+          "name": "name",
+          "target": {
+            "id": "step:data:curve#48",
+            "kind": "curve"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "two segments"
+            }
+          ]
+        }
+      ],
       "bodies": [],
       "coedges": [],
       "configurations": [],
@@ -298,7 +312,6 @@
           "id": "step:data:curve#48",
           "source_object": {
             "format": "step",
-            "name": "two segments",
             "object_id": "#49"
           }
         },
@@ -766,16 +779,12 @@
         ]
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
-      "attributes": {
-        "bytes_named_opaque": "85",
-        "bytes_structural": "314",
-        "bytes_typed": "2563",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "52",
-        "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
-      },
+      "attributes": {},
       "identity": {
         "classification": "classified",
         "dialects": {
@@ -872,11 +881,23 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
     "annotations": {},
+    "metadata": {
+      "bytes_named_opaque": "85",
+      "bytes_structural": "314",
+      "bytes_typed": "2563",
+      "bytes_unclassified": "0",
+      "data_sections": "1",
+      "entity_instances": "52",
+      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
+    },
     "retained_records": {
       "step:data:presentation_style_assignment#42": {
         "bytes": {
@@ -884,7 +905,10 @@
           "retention": "inline"
         },
         "offset": 2448,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       },
       "step:data:styled_item#43": {
         "bytes": {
@@ -892,8 +916,14 @@
           "retention": "inline"
         },
         "offset": 2505,
-        "stream": ""
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

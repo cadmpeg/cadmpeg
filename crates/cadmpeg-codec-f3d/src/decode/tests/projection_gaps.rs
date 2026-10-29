@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-module projection and completeness unit tests.
 
+use crate::records::identity::Located;
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+    DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+    DesignConstructionOperandRole,
+};
+use crate::records::topology::extrude_selection::DesignOperandRole as SourceOperandRole;
+
 use super::super::{
-    apply_appearance_base_colors, container_only_dimension_parameters,
-    unresolved_dimension_companion_count, DesignProjectionGaps, DimensionCompanionSources,
+    container_only_dimension_parameters, unresolved_dimension_companion_count,
+    DesignProjectionGaps, DimensionCompanionSources,
 };
 use crate::native::F3dNative;
 use crate::records::{
@@ -53,6 +61,7 @@ fn design_projection_gaps_count_unresolved_body_map_pairs() {
     let mut native = F3dNative::default();
     native.design_body_bindings.push(
         DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
+            map_ordinal: 0,
             component_owner: None,
             component_owner_unresolved: false,
             id: "f3d:Design/BulkStream.dat:design-body-binding#0".into(),
@@ -97,12 +106,13 @@ fn design_projection_gaps_count_cosmetic_thread_faces() {
         ir.model.features.push(
             serde_json::from_value(serde_json::json!({
                 "id": format!("test:model:feature#thread-{ordinal}"),
+                "needs_recompute": false,
                 "ordinal": ordinal,
                 "suppressed": null,
                 "definition": {
                     "definition": "cosmetic_thread",
                     "face": face,
-                    "diameter": 2.5
+                    "diameter": {"kind": "literal", "value": 2.5}
                 }
             }))
             .expect("CosmeticThread feature"),
@@ -157,6 +167,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#extrude",
+            "needs_recompute": false,
             "ordinal": 0,
             "suppressed": null,
             "definition": {
@@ -183,6 +194,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#sweep",
+            "needs_recompute": false,
             "ordinal": 1,
             "suppressed": null,
             "definition": {
@@ -203,6 +215,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#fillet",
+            "needs_recompute": false,
             "ordinal": 2,
             "suppressed": null,
             "definition": {
@@ -210,11 +223,11 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 "groups": [
                     {
                         "edges": {"kind": "native", "value": "native:edges"},
-                        "radius": {"kind": "constant", "radius": 1.0}
+                        "radius": {"kind": "constant", "radius": {"kind": "literal", "value": 1.0}}
                     },
                     {
                         "edges": {"kind": "unresolved"},
-                        "radius": {"kind": "constant", "radius": 2.0}
+                        "radius": {"kind": "constant", "radius": {"kind": "literal", "value": 2.0}}
                     },
                     {
                         "edges": {
@@ -229,7 +242,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                                 "native": "native:partial-edges"
                             }
                         },
-                        "radius": {"kind": "constant", "radius": 3.0}
+                        "radius": {"kind": "constant", "radius": {"kind": "literal", "value": 3.0}}
                     }
                 ]
             }
@@ -239,13 +252,14 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#suppressed-fillet",
+            "needs_recompute": false,
             "ordinal": 2,
             "suppressed": true,
             "definition": {
                 "definition": "fillet",
                 "groups": [{
                     "edges": {"kind": "native", "value": "native:suppressed-edges"},
-                    "radius": {"kind": "constant", "radius": 3.0}
+                    "radius": {"kind": "constant", "radius": {"kind": "literal", "value": 3.0}}
                 }]
             }
         }))
@@ -254,6 +268,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#native-feature",
+            "needs_recompute": false,
             "ordinal": 3,
             "suppressed": null,
             "definition": {
@@ -267,6 +282,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     ir.model.features.push(
         serde_json::from_value(serde_json::json!({
             "id": "synthetic:test:id#unresolved-pattern",
+            "needs_recompute": false,
             "ordinal": 4,
             "suppressed": null,
             "definition": {
@@ -309,8 +325,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             owner_reference: Some(1),
             class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            coordinate_offset: 0,
+            byte_offset: Some(0),
+            coordinate_offset: Some(0),
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },
@@ -330,8 +346,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         record_index: 12,
         owner_reference: Some(1),
         class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
-        byte_offset: 0,
-        geometry_offset: 0,
+        byte_offset: None,
+        geometry_offset: None,
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(1).unwrap(),
         secondary_id: 2,
@@ -383,7 +399,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 source: crate::records::parameters::DesignParameterSource::new(
                     "Linear Dimension-2".into(),
                     Some(3),
-                    Some(crate::records::identity::Located {
+                    Some(Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
                     }),
@@ -483,29 +499,46 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     );
 
     native.design_construction_operand_groups.push(
-        serde_json::from_value(serde_json::json!({
-            "id": "native:partial-edges",
-            "scope_record_index": 1,
-            "scope_reference_ordinal": 0,
-            "record_index": 2,
-            "byte_offset": 0,
-            "class_tag": "300",
-            "members": [3],
-            "lost_edge_references": ["f3d:test:lost-edge-reference#2"],
-            "member_offsets": [0],
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 1.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 0x10_0000_0000u64,
-            "role_offset": 0,
-            "paired_class_tag": "258",
-            "paired_byte_offset": 0
-        }))
+        DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+            scope_record_index: 1,
+            scope_reference_ordinal: 0,
+            record_index: 2,
+            byte_offset: 0,
+            role_offset: 0,
+            paired_byte_offset: 0,
+            id: "native:partial-edges".to_owned(),
+            class_tag: "300".to_owned().try_into().expect("source class tag"),
+            paired_class_tag: "258".to_owned().try_into().expect("source class tag"),
+            members: [3]
+                .into_iter()
+                .zip([0])
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            lost_edge_references: vec!["f3d:test:lost-edge-reference#2"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                0x10_0000_0000u64,
+            )),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 0,
+                    opaque_index: 1,
+                    opaque_index_offset: 18,
+                    opaque_scalar: 1.0,
+                    opaque_scalar_offset: 22,
+                    variant: false,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                },
+            )
+            .expect("source construction frame"),
+        })
         .expect("lost-reference construction group"),
     );
     ir.model.features[2].evaluation.edit(|definition, _| {
@@ -580,7 +613,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "id": "synthetic:test:id#parameter-2",
             "ordinal": 2,
             "name": "d2",
-            "expression": "1 mm",
+            "expression": {"tokens": [{"kind": "text", "value": "1 mm"}]},
+            "driving": true,
             "native_ref": "f3d:test:design-parameter#2"
         }))
         .expect("Design parameter"),
@@ -647,6 +681,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         .map(|scope| {
             serde_json::from_value(serde_json::json!({
                 "id": format!("test:model:feature#{}", scope.record_index),
+                "needs_recompute": false,
                 "ordinal": scope.record_index,
                 "suppressed": null,
                 "definition": {
@@ -715,11 +750,11 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         crate::records::entity_header::DesignTimelineFrame::test_items(
             0,
             vec![
-                crate::records::identity::Located {
+                Located {
                     value: 100,
                     offset: 0,
                 },
-                crate::records::identity::Located {
+                Located {
                     value: 200,
                     offset: 0,
                 },
@@ -772,7 +807,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
                 source: crate::records::parameters::DesignParameterSource::new(
                     "Linear Dimension-2".into(),
                     Some(29),
-                    Some(crate::records::identity::Located {
+                    Some(Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
                     }),
@@ -840,7 +875,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             "definition": {
                 "kind": "distance",
                 "entities": ["f3d:model:sketch-entity#first", "f3d:model:sketch-entity#second"],
-                "parameter": "f3d:model:parameter#1"
+                "parameter": {"kind": "parameter", "value": "f3d:model:parameter#1"}
             },
             "native_ref": format!("{stream}:design-parameter-companion#30")
         }))
@@ -861,15 +896,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             recipe_ordinal: 0,
             recipe_id: format!("{stream}:construction-recipe#31"),
             recipe_kind: crate::records::recipes::ConstructionRecipeKind::Edge,
-            byte_offset: 278,
+            byte_offset: Some(278),
             class_tag: crate::records::references::DesignClassTag::try_from("423".to_owned())
                 .unwrap(),
             record_index: 31,
-            frame_length: 100,
-            prefix_offset: 300,
+            frame_length: Some(100),
+            prefix_offset: Some(300),
             prefix_bytes: Vec::new().into(),
             references: Vec::new(),
-            program_offset: 320,
+            program_offset: Some(320),
             program: vec![-1],
             matching_edge_operand_ids: Vec::new(),
         });
@@ -891,22 +926,22 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
                 .unwrap(),
             record_index: 31,
             frame_length: 100,
-            opaque_index: Some(crate::records::identity::Located {
+            opaque_index: Some(Located {
                 value: 0,
                 offset: 313,
             }),
             loci: [
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(40),
-                    geometry_reference_offset: 318,
+                    geometry_reference_offset: Some(318),
                     role: 1,
-                    role_offset: 328,
+                    role_offset: Some(328),
                 },
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(41),
-                    geometry_reference_offset: 333,
+                    geometry_reference_offset: Some(333),
                     role: 2,
-                    role_offset: 343,
+                    role_offset: Some(343),
                 },
             ],
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -949,15 +984,15 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             loci: [
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: None,
-                    geometry_reference_offset: 303,
+                    geometry_reference_offset: Some(303),
                     role: 14,
-                    role_offset: 313,
+                    role_offset: Some(313),
                 },
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(40),
-                    geometry_reference_offset: 318,
+                    geometry_reference_offset: Some(318),
                     role: 3,
-                    role_offset: 328,
+                    role_offset: Some(328),
                 },
             ],
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -985,52 +1020,63 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
 }
 
 #[test]
-fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
-    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-    use cadmpeg_ir::ids::AppearanceId;
+fn material_bindings_do_not_restate_display_colors() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceTarget};
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     use cadmpeg_ir::topology::Color;
 
+    const FACE_GUID: &str = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    const VISUAL: &str = "11111111-2222-3333-4444-555555555555_Post2015";
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
-    let first_face = ir.model.faces[0].id.clone();
-    let second_face = ir.model.faces[1].id.clone();
     let direct = Color::new(0.9, 0.8, 0.7, 1.0).expect("valid color");
     let material = Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color");
     ir.model.bodies[0].color = Some(direct);
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#material"
+            .try_into()
+            .expect("valid identity"),
+        target: AttributeTarget::Face(ir.model.faces[0].id.clone()),
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+            Some(AttributeValue::String(FACE_GUID.into())),
+        ],
+        native_ref: None,
+    });
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
+        native_ref: None,
+        id: "test:model:appearance#material"
+            .try_into()
+            .expect("valid identity"),
         name: None,
         asset_guid: None,
         library_id: None,
         textures: Vec::new(),
-        visual_guid: None,
+        visual_guid: Some(VISUAL.into()),
         physical_token: None,
         schema: None,
         category: None,
         base_color: Some(material),
         properties: Default::default(),
     });
-    let binding = |id: &str, target| AppearanceBinding {
-        id: format!("test:model:appearance-binding#{id}")
-            .try_into()
-            .expect("valid identity"),
-        target,
-        appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
-        source_entity_id: None,
-        object_type: None,
-        visible: None,
-        channels: Default::default(),
+    let assignment = crate::materials::FaceAppearanceAssignment {
+        face_guid: FACE_GUID.into(),
+        visual_guid: VISUAL.to_owned().try_into().expect("visual token"),
+        color: Some(material),
     };
-    ir.model.appearance_bindings = vec![
-        binding("body", AppearanceTarget::Body(body)),
-        binding("face", AppearanceTarget::Face(first_face)),
-        binding("ambiguous-a", AppearanceTarget::Face(second_face.clone())),
-        binding("ambiguous-b", AppearanceTarget::Face(second_face)),
-    ];
 
-    apply_appearance_base_colors(&mut ir);
+    let losses = super::super::resolve_face_appearance_bindings(&mut ir, &[assignment])
+        .expect("one complete face assignment");
+    assert!(losses.is_empty());
+    assert_eq!(ir.model.appearance_bindings.len(), 1);
+    assert_eq!(
+        ir.model.appearance_bindings[0].target,
+        AppearanceTarget::Face(ir.model.faces[0].id.clone())
+    );
     assert_eq!(ir.model.bodies[0].color, Some(direct));
-    assert_eq!(ir.model.faces[0].color, Some(material));
+    assert_eq!(ir.model.faces[0].color, None);
+    assert_eq!(ir.model.appearances[0].base_color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);
 }
 

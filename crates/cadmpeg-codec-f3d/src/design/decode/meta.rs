@@ -92,7 +92,13 @@ pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, Cod
             continue;
         }
         for design_type in &meta.types {
-            let id = design_record_id(&entry.name, ":design-type#", design_type.byte_offset);
+            let id = design_record_id(
+                &entry.name,
+                ":design-type#",
+                design_type.byte_offset.ok_or_else(|| {
+                    CodecError::malformed("parsed type lacks its source location")
+                })?,
+            );
             out.push(SegmentType::try_new(id, design_type.clone()).map_err(CodecError::Malformed)?);
         }
     }
@@ -149,8 +155,8 @@ fn insert_component_naming_space(
         if existing.name.is_none() && name.is_some() {
             existing.name = name.map(|(name, _)| name);
             existing.name_offset = name_offset;
-            existing.byte_offset = byte_offset;
-            existing.context_uuid_offset = context_uuid_offset;
+            existing.byte_offset = Some(byte_offset);
+            existing.context_uuid_offset = Some(context_uuid_offset);
             existing.id =
                 design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
             *existing_record = record;
@@ -180,10 +186,10 @@ fn insert_component_naming_space(
     bindings.push((
         DesignComponentNamingSpace {
             id,
-            byte_offset,
+            byte_offset: Some(byte_offset),
             component_record_index,
             context_uuid,
-            context_uuid_offset,
+            context_uuid_offset: Some(context_uuid_offset),
             name: name.map(|(name, _)| name),
             name_offset,
         },

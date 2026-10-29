@@ -47,7 +47,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
 
     let scope = parse_parameter_scope(
@@ -55,7 +55,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .unwrap();
@@ -66,13 +66,13 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(scope.feature_ordinal.get(), 1);
     assert_eq!(
         scope.feature_ordinal_offset(),
-        u64_from_index(feature_ordinal_at)
+        Some(u64_from_index(feature_ordinal_at))
     );
     assert_eq!(scope.history_state_id(), Some(7));
     assert_eq!(scope.previous_history_state_id(), Some(2));
     assert_eq!(
         scope.reference_count_offset(),
-        u64_from_index(reference_count_at)
+        Some(u64_from_index(reference_count_at))
     );
     assert_eq!(
         scope
@@ -90,9 +90,9 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             .collect::<Vec<_>>(),
         [u64_from_index(reference_at)]
     );
-    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
+    assert_eq!(scope.frame_length(), Some(u64_from_index(paired_at)));
     assert_eq!(scope.paired_class_tag.as_str(), "261");
-    assert_eq!(scope.paired_byte_offset(), u64_from_index(paired_at));
+    assert_eq!(scope.paired_byte_offset(), Some(u64_from_index(paired_at)));
     let discovered =
         crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
             &bytes,
@@ -106,7 +106,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
                 &header.class_tag,
-                header.byte_offset,
+                header.byte_offset.expect("actual scanner header position"),
             )
             .unwrap()
         })
@@ -121,7 +121,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_tail),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope with compact fixed tail");
@@ -129,7 +129,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         compact.kind(),
         crate::records::feature::scope::DesignFeatureKind::Sketch
     );
-    assert_eq!(compact.frame_length(), u64_from_index(paired_at) - 1);
+    assert_eq!(compact.frame_length(), Some(u64_from_index(paired_at) - 1));
     assert_eq!(compact.previous_history_state_id(), Some(2));
     assert!(
         !crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
@@ -152,7 +152,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("scope with legacy fixed tail");
@@ -180,7 +180,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         &crate::design::test_support::indexed_record_offsets_for_test(&extended_tail),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope with extended fixed tail");
@@ -203,7 +203,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             &crate::design::test_support::indexed_record_offsets_for_test(&variant),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("scope with extended no-history fixed tail");
@@ -240,7 +240,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         &crate::design::test_support::indexed_record_offsets_for_test(&copy_scope),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("CopyPasteBodies scope with extended tail");
@@ -251,7 +251,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(copy.feature_ordinal.get(), 2);
     assert_eq!(
         copy.feature_ordinal_offset(),
-        u64_from_index(copy_feature_ordinal_at)
+        Some(u64_from_index(copy_feature_ordinal_at))
     );
     assert_eq!(copy.history_state_id(), None);
     assert_eq!(copy.previous_history_state_id(), None);
@@ -259,7 +259,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         copy.previous_history_state_id_offset(),
         Some(u64_from_index(copy_feature_ordinal_at + 53))
     );
-    assert_eq!(copy.frame_length(), u64_from_index(copy_paired_at));
+    assert_eq!(copy.frame_length(), Some(u64_from_index(copy_paired_at)));
 
     let mut operation_bytes = vec![0; 148];
     operation_bytes[29] = 1;
@@ -312,7 +312,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(operation.body_group_record_index, 55);
     assert_eq!(
         operation.body_group_byte_offset(),
-        u64_from_index(body_group_at)
+        Some(u64_from_index(body_group_at))
     );
     assert_eq!(
         operation
@@ -325,7 +325,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(operation.relation_record_index, 44);
     assert_eq!(
         operation.relation_byte_offset(),
-        u64_from_index(relation_at)
+        Some(u64_from_index(relation_at))
     );
     assert_eq!(
         operation
@@ -359,7 +359,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         &crate::design::test_support::indexed_record_offsets_for_test(&generic_references),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("generic-table Sketch scope");
@@ -621,8 +621,8 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [0.0, -3.0, 4.0]
     );
-    assert_eq!(construction.origin_offset, 25);
-    assert_eq!(construction.displacement_offset, 49);
+    assert_eq!(construction.origin_offset, Some(25));
+    assert_eq!(construction.displacement_offset, Some(49));
     assert!(matches!(
         construction.source,
         Some(

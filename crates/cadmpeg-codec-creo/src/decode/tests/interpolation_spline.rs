@@ -451,8 +451,10 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
             ExtrudeExtent::Symmetric {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                            .expect("nonzero length fixture")
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                                .expect("nonzero length fixture")
+                        )
                     },
                     draft: None,
                 }
@@ -709,6 +711,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     };
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -751,7 +754,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             op: BooleanOp::NewBody,
             solid: Some(false),
             ..
-        }) if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.get() == 6.0
+        }) if (direction == Vector3::new(0.0, 0.0, 1.0)) && actual_length.literal().expect("literal dimension").get() == 6.0
     ));
 }
 
@@ -1168,7 +1171,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             ..
         }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value },
-                }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
+                }) if (value.literal().expect("literal dimension").get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
 
     let sketch = SketchId::mint("creo:model:sketch#822".to_string()).expect("valid test fixture");
@@ -1239,6 +1242,7 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     };
     scan.surfaces.rows.extend([row(31), row(32)]);
     let plane = |id, z| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1284,7 +1288,9 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(
         length,
-        cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("nonzero length fixture")
+        cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::NonZeroLength::new(6.0).expect("nonzero length fixture")
+        )
     );
 }
 
@@ -1457,6 +1463,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     });
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1827,6 +1834,7 @@ fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance
 #[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let feature = |definition, outputs: Vec<cadmpeg_ir::ids::BodyId>| Feature {
+        needs_recompute: false,
         id: IrFeatureId::mint("creo:model:feature#1".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1875,8 +1883,9 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
-                            .expect("nonzero length fixture"),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(1.0)
+                            .expect("nonzero length fixture"))
+                        .into(),
                     },
                     draft: None,
                 },

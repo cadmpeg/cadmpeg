@@ -1,15 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::act::{ActChannelGroup, ActEntity};
+use crate::records::act::{ActChannelGroup, ActEntity, ActStreamResidue, ActTableRow};
 use std::collections::BTreeMap;
 
 fn group_wire() -> serde_json::Value {
     serde_json::json!({
         "id":"stream:act-entity#7", "record_index":7, "entity_id":"0_1", "in_table":false,
-        "channel_class_tag":"261", "channel_record_index_offset":100, "channel_entity_id_offset":200,
-        "channels":{"Appearance":"11111111-2222-3333-4444-555555555555"},
-        "channel_guid_offsets":{"Appearance":120}
+        "channel_class_tag":"261",
+        "channels":{"Appearance":"11111111-2222-3333-4444-555555555555"}
     })
+}
+
+fn channels(
+    offset: u64,
+) -> BTreeMap<String, crate::records::identity::Located<crate::records::mesh::DesignGuidText>> {
+    BTreeMap::from([(
+        "Appearance".into(),
+        crate::records::identity::Located {
+            value: "11111111-2222-3333-4444-555555555555"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            offset,
+        },
+    )])
 }
 
 #[test]
@@ -59,35 +73,75 @@ fn act_group_admission_rejects_invalid_names_counts_and_locations() {
         ("channel_record_index_offset", 120),
         ("channel_entity_id_offset", 191),
     ] {
-        let mut wire = group_wire();
-        wire[field] = serde_json::json!(value);
-        assert!(serde_json::from_value::<ActEntity>(wire).is_err());
+        let record = if field == "channel_record_index_offset" {
+            value
+        } else {
+            100
+        };
+        let entity = if field == "channel_entity_id_offset" {
+            value
+        } else {
+            200
+        };
+        assert!(ActChannelGroup::try_new(
+            record,
+            Some(entity),
+            "261".to_owned().try_into().unwrap(),
+            channels(120),
+            None
+        )
+        .is_err());
     }
     for offset in [100, 129, u64::MAX] {
-        let mut wire = group_wire();
-        wire["channel_guid_offsets"]["Appearance"] = serde_json::json!(offset);
-        assert!(serde_json::from_value::<ActEntity>(wire).is_err());
+        assert!(ActChannelGroup::try_new(
+            100,
+            Some(200),
+            "261".to_owned().try_into().unwrap(),
+            channels(offset),
+            None
+        )
+        .is_err());
     }
     for tail_offset in [100, 191, 200] {
-        let mut wire = group_wire();
-        wire["channel_class_tail"] = serde_json::json!("01");
-        wire["channel_class_tail_offset"] = serde_json::json!(tail_offset);
-        assert!(serde_json::from_value::<ActEntity>(wire).is_err());
+        let tail = ActStreamResidue::new(vec![1], tail_offset).unwrap();
+        assert!(ActChannelGroup::try_new(
+            100,
+            Some(200),
+            "261".to_owned().try_into().unwrap(),
+            channels(120),
+            Some(tail)
+        )
+        .is_err());
     }
 }
 
 #[test]
 fn act_entity_requires_a_group_and_a_table_or_inline_key() {
-    let mut wire = group_wire();
-    wire.as_object_mut()
+    let group = || {
+        ActChannelGroup::try_new(
+            100,
+            None,
+            "261".to_owned().try_into().unwrap(),
+            channels(120),
+            None,
+        )
         .unwrap()
-        .remove("channel_entity_id_offset");
-    assert!(serde_json::from_value::<ActEntity>(wire.clone()).is_err());
+    };
+    assert!(
+        ActEntity::try_new("stream:act-entity#7".into(), 7, "0_1".into(), None, group()).is_err()
+    );
+    let mut wire = group_wire();
     wire["in_table"] = serde_json::json!(true);
-    wire["table_record_index_offset"] = serde_json::json!(20);
-    wire["table_entity_id_offset"] = serde_json::json!(34);
-    let entity: ActEntity = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(entity).unwrap(), wire);
+    let entity = ActEntity::try_new(
+        "stream:act-entity#7".into(),
+        7,
+        "0_1".into(),
+        Some(ActTableRow::new(20).unwrap()),
+        group(),
+    )
+    .unwrap();
+    assert_eq!(entity.table_record_index_offset(), Some(20));
+    assert_eq!(entity.table_entity_id_offset(), Some(34));
     for field in ["channel_class_tag", "channel_record_index_offset"] {
         wire.as_object_mut().unwrap().remove(field);
     }
@@ -98,7 +152,16 @@ fn act_entity_requires_a_group_and_a_table_or_inline_key() {
 
 #[test]
 fn act_entity_edits_keep_keys_and_channel_locations_valid() {
-    let mut entity: ActEntity = serde_json::from_value(group_wire()).unwrap();
+    let group = ActChannelGroup::try_new(
+        100,
+        Some(200),
+        "261".to_owned().try_into().unwrap(),
+        channels(120),
+        None,
+    )
+    .unwrap();
+    let mut entity =
+        ActEntity::try_new("stream:act-entity#7".into(), 7, "0_1".into(), None, group).unwrap();
     for key in ["", "_1", "1_", "a_1", "1_2_3", "1_+2"] {
         let before = entity.clone();
         assert!(entity.try_set_entity_id(key.into()).is_err());

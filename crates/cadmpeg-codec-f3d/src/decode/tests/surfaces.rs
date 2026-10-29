@@ -35,6 +35,33 @@ use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
+fn assert_mesh_sentinel_export(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("unrepresented mesh surface writes with losses");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(
+        report.losses.iter().any(|loss| loss.code
+            == crate::loss::F3dLossCode::WriterGeometryOmitted.kind()
+            && loss.severity == cadmpeg_ir::report::Severity::Error),
+        "an unsolved sentinel body cannot silently survive retained bytes"
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("degraded mesh-surface output decodes");
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().model.faces.is_empty());
+    assert!(decoded.ir().model.surfaces.is_empty());
+}
+
 #[test]
 fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -67,26 +94,11 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
         .iter()
         .any(|loss| loss.message.contains("spline/procedural surfaces")));
 
-    let mut replay = Vec::new();
-    F3dCodec
-        .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut replay))
-        .expect("mesh-surface native replay");
-    assert_eq!(replay, source);
+    assert_mesh_sentinel_export(result.ir(), Some(result.source_fidelity()));
 
     let mut edited = result.ir().clone();
     f3d_native_mut(&mut edited).mesh_surface_sentinels[0].record_index += 1;
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("mesh-surface structural metadata is immutable");
-    assert!(error.to_string().contains("edits beyond supported"));
+    assert_mesh_sentinel_export(&edited, Some(result.source_fidelity()));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -95,13 +107,7 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
     source_less
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("mesh-surface sentinel requires retained ASM bytes");
-    assert!(error
-        .to_string()
-        .contains("cannot serialize mesh-surface sentinel"));
+    assert_mesh_sentinel_export(&source_less, None);
 }
 
 #[test]

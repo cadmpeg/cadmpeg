@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::transform::Transform;
 
 use crate::options::StepSchema;
 
@@ -30,9 +29,6 @@ impl std::fmt::Display for Ref {
 enum Refusal {
     /// A non-finite number [`Emitter::real`] was asked to format.
     NonFiniteReal(f64),
-    /// A transform [`Emitter::refuse_operator`] was given, which is not a
-    /// similarity.
-    NonSimilarOperator(Transform),
 }
 
 /// Accumulates DATA instances in allocation order and counts their entity types.
@@ -77,12 +73,6 @@ impl Emitter {
         }
     }
 
-    /// Record that `transform` has no `CARTESIAN_TRANSFORMATION_OPERATOR_3D`
-    /// statement. [`Self::into_lines`] then refuses the whole DATA section.
-    pub(crate) fn refuse_operator(&self, transform: Transform) {
-        self.refuse(Refusal::NonSimilarOperator(transform));
-    }
-
     /// Format `v` as a Part 21 real literal.
     ///
     /// A Part 21 real states a finite number only. A non-finite `v` is
@@ -93,6 +83,28 @@ impl Emitter {
             self.refuse(Refusal::NonFiniteReal(v));
             String::new()
         })
+    }
+
+    /// Emit one geometric carrier atomically. A computed value outside the
+    /// target's numeric domain omits that carrier, retaining prior instances.
+    pub(crate) fn try_geometry(
+        &mut self,
+        emit: impl FnOnce(&mut Self) -> Option<Ref>,
+    ) -> Option<Ref> {
+        let start = self.lines.len();
+        let counts = self.counts.clone();
+        let prior = self.refusal.get();
+        let result = emit(self);
+        if result.is_none() || (prior.is_none() && self.refusal.get().is_some()) {
+            self.lines.truncate(start);
+            self.counts = counts;
+            self.interned
+                .retain(|_, reference| reference.0 <= cadmpeg_core::decode::u64_from_index(start));
+            self.refusal.set(prior);
+            None
+        } else {
+            result
+        }
     }
 
     /// Append `#id = TYPE(params);` and return the allocated reference.
@@ -136,20 +148,14 @@ impl Emitter {
 
     /// Consume the emitter and return one encoded DATA instance per element,
     /// or refuse the section when [`Self::real`] was handed a non-finite
-    /// number or [`Self::refuse_operator`] a transform.
+    /// number. This is a (C) emitter invariant; carrier transactions consume
+    /// numeric admission failures before the section is finalized.
     pub(crate) fn into_lines(self) -> Result<Vec<String>, CodecError> {
         match self.refusal.get() {
             None => Ok(self.lines),
-            Some(Refusal::NonFiniteReal(value)) => Err(CodecError::NotImplemented(format!(
+            Some(Refusal::NonFiniteReal(value)) => Err(CodecError::InvalidInput(format!(
                 "STEP writer computed the non-finite real {value}, which Part 21 cannot state"
             ))),
-            Some(Refusal::NonSimilarOperator(transform)) => {
-                Err(CodecError::NotImplemented(format!(
-                    "STEP writer cannot state the transform with rows {:?} as a \
-                     CARTESIAN_TRANSFORMATION_OPERATOR_3D, which states a similarity",
-                    transform.rows()
-                )))
-            }
         }
     }
 }

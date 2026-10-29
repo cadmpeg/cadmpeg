@@ -183,8 +183,6 @@ pub(crate) struct Properties {
 /// Revision-history property.
 #[derive(Debug, Clone)]
 pub(crate) struct RevisionHistory {
-    /// Source range.
-    pub(crate) source: SourceRange,
     /// Creator.
     pub(crate) created_by: String,
     /// Creation time.
@@ -200,8 +198,6 @@ pub(crate) struct RevisionHistory {
 /// Notes property.
 #[derive(Debug, Clone)]
 pub(crate) struct Notes {
-    /// Source range.
-    pub(crate) source: SourceRange,
     /// HTML flag.
     pub(crate) html: bool,
     /// Text.
@@ -217,8 +213,6 @@ pub(crate) struct Notes {
 /// Application property.
 #[derive(Debug, Clone)]
 pub(crate) struct Application {
-    /// Source range.
-    pub(crate) source: SourceRange,
     /// Application name.
     pub(crate) name: String,
     /// Application URL.
@@ -295,35 +289,6 @@ impl StandardUnit {
             25 => Self::Parsecs,
             _ => return None,
         })
-    }
-
-    pub(crate) fn value(self) -> i32 {
-        match self {
-            Self::Microns => 1,
-            Self::Millimeters => 2,
-            Self::Centimeters => 3,
-            Self::Meters => 4,
-            Self::Kilometers => 5,
-            Self::Microinches => 6,
-            Self::Mils => 7,
-            Self::Inches => 8,
-            Self::Feet => 9,
-            Self::Miles => 10,
-            Self::Angstroms => 12,
-            Self::Nanometers => 13,
-            Self::Decimeters => 14,
-            Self::Dekameters => 15,
-            Self::Hectometers => 16,
-            Self::Megameters => 17,
-            Self::Gigameters => 18,
-            Self::Yards => 19,
-            Self::PrinterPoints => 20,
-            Self::PrinterPicas => 21,
-            Self::NauticalMiles => 22,
-            Self::AstronomicalUnits => 23,
-            Self::LightYears => 24,
-            Self::Parsecs => 25,
-        }
     }
 
     const fn code(self) -> usize {
@@ -414,16 +379,6 @@ pub(crate) struct CustomUnit {
     name: String,
 }
 
-impl CustomUnit {
-    pub(crate) fn meters_per_unit(&self) -> PositiveReal {
-        self.meters_per_unit
-    }
-
-    pub(crate) fn name(&self) -> &str {
-        &self.name
-    }
-}
-
 /// The standard and custom Rhino unit systems.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum UnitSystem {
@@ -441,15 +396,6 @@ impl UnitSystem {
             millimeters_per_unit,
             name,
         }))
-    }
-
-    pub(crate) fn value(&self) -> i32 {
-        match self {
-            Self::None => 0,
-            Self::Standard(unit) => unit.value(),
-            Self::Custom(_) => 11,
-            Self::Unset => 255,
-        }
     }
 
     fn millimeters_per_unit(&self) -> Option<f64> {
@@ -485,10 +431,6 @@ pub(crate) struct UnitsAndTolerances {
 }
 
 impl UnitsAndTolerances {
-    pub(crate) fn millimeters_per_unit(&self) -> Option<f64> {
-        self.unit.millimeters_per_unit()
-    }
-
     pub(crate) fn absolute_tolerance_millimeters(&self) -> Option<PositiveLength> {
         self.absolute_tolerance_millimeters
     }
@@ -1280,9 +1222,6 @@ fn parse_revision(
         ));
     }
     let value = RevisionHistory {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
         created_by: utf16_retained(ctx, &mut reader, "Rhino revision creator")?,
         created: times(&mut reader)?,
         last_edited_by: utf16_retained(ctx, &mut reader, "Rhino revision editor")?,
@@ -1312,9 +1251,6 @@ fn parse_notes(
     let rectangle = [reader.i32()?, reader.i32()?, reader.i32()?, reader.i32()?];
     let locked = version.1 >= 1 && reader.bool()?;
     let value = Notes {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
         html,
         text,
         visible,
@@ -1333,9 +1269,6 @@ fn parse_application(
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     packed(&mut reader)?;
     let value = Application {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
         name: utf16_retained(ctx, &mut reader, "Rhino application name")?,
         url: utf16_retained(ctx, &mut reader, "Rhino application URL")?,
         details: utf16_retained(ctx, &mut reader, "Rhino application details")?,

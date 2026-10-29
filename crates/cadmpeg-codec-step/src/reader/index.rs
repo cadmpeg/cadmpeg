@@ -95,6 +95,7 @@ mod tests {
     fn carriers() -> CadIr {
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 1)),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -109,6 +110,7 @@ mod tests {
             None,
         ));
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::from(crate::ids::data(crate::ids::kind!("surface"), 3)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 PlaneSurface::try_new(

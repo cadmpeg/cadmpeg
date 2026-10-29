@@ -122,6 +122,7 @@ pub(crate) fn project_catalog(
                 "Inventor neutral appearance",
             )?;
             appearances.push(Appearance {
+                native_ref: None,
                 id: appearance_id(instance_ordinal, record.ordinal),
                 name: Some(record.base.clone()),
                 asset_guid: Some(record.guid.clone()),

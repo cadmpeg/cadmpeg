@@ -112,15 +112,16 @@ fn face_source_identity_uses_registration_and_segment_instead_of_class_literals(
     let mut types = vec![SegmentType::try_new(
         "f3d:test/Design1/MetaStream.dat:design-type#10".into(),
         SegmentTypeData {
-            byte_offset: 10,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            byte_offset: Some(10),
             type_guid: "CAA55628-037B-4D01-9C74-26118F70B63E"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            type_guid_offset: 14,
+            type_guid_offset: Some(14),
             base_type_guid: BaseTypeGuid::Absent,
             version: 0,
-            version_offset: 50,
+            version_offset: Some(50),
             module: "Fusion".into(),
             entities: ReferenceRun::unlocated(vec![100]),
         },

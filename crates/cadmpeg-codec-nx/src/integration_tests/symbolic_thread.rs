@@ -31,10 +31,13 @@ fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
 #[test]
 fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
     let result = decode(3);
-    let wire = serde_json::to_value(
-        &result.ir().native.namespace("nx").unwrap().arenas()["feature_symbolic_threads"][0],
-    )
-    .unwrap();
+    let namespace = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone();
+    let wire = serde_json::to_value(&namespace.arenas()["feature_symbolic_threads"][0]).unwrap();
     assert_eq!(wire["construction"]["parameter_class_index"], 3);
     assert_eq!(
         wire["construction"]["coordinates"][2],
@@ -50,7 +53,14 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
         panic!("cosmetic thread")
     };
     assert_eq!(*face, FaceSelection::Unresolved);
-    assert_eq!(diameter.unwrap().get(), 3.0);
+    assert_eq!(
+        result
+            .ir()
+            .dimension_value(diameter.as_ref().expect("diameter"))
+            .expect("dimension value")
+            .get(),
+        3.0
+    );
     assert!(extent.is_none());
     let (mut ir, report, fidelity) = result.into_parts();
     let validation =

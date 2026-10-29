@@ -371,8 +371,10 @@ fn dimension_identity_includes_its_feature_definition() {
         SketchConstraintDefinitionInput::Radius {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let retained_without_circle = section_segment_radius_constraints_for_emitted(
@@ -439,8 +441,10 @@ fn dimension_identity_includes_its_feature_definition() {
         SketchConstraintDefinitionInput::Diameter {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     let mut duplicate_circle_id = definition.clone();
@@ -482,8 +486,10 @@ fn dimension_identity_includes_its_feature_definition() {
         SketchConstraintDefinitionInput::Diameter {
             entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:42".to_string())
                 .expect("valid test fixture"),
-            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
-                .expect("identity grammar"),
+            parameter: cadmpeg_ir::Dimension::Parameter(
+                ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                    .expect("identity grammar")
+            ),
         }
     );
     definition
@@ -719,6 +725,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         "creo:feature:revolution#41:body",
     ] {
         ir.model.bodies.push(Body {
+            native_ref: None,
             id: BodyId::mint(id.to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: Vec::new(),
@@ -729,6 +736,7 @@ fn evaluated_sweep_bodies_are_feature_outputs() {
         });
     }
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#43:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
         regions: Vec::new(),

@@ -148,15 +148,7 @@ fn decode_and_validate_compact_delete_body_selection() {
                 );
             });
         }
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("changes a compact body selection"));
+        crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
     }
 
     {
@@ -183,15 +175,7 @@ fn decode_and_validate_compact_delete_body_selection() {
                 *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
             });
         }
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("changes a compact body retention mode"));
+        crate::test_support::assert_synthesis_fallback(decoded.ir(), decoded.source_fidelity());
     }
 
     native.feature_input_lanes[0].body_selections[0]

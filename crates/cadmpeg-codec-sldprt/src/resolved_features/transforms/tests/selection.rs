@@ -73,6 +73,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -187,6 +188,16 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         self_linked_curve.clone(),
         forward_linked_curve.clone(),
     ]);
+    // Source order is independent of retained byte positions. Preserve every
+    // original offset, link, and coordinate while giving each marker its row.
+    for (ordinal, marker) in markers.iter_mut().enumerate() {
+        *marker = marker.with_test_position(
+            u32::try_from(ordinal).expect("fixture marker ordinal"),
+            marker.offset(),
+        );
+    }
+    assert_eq!(markers[6].id(), "relation-line");
+    assert_eq!(markers[6].offset(), 84);
     let mut native_payload = vec![0; 181];
     for offset in [0, 27, 54] {
         native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
@@ -214,6 +225,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         relation_bindings: Vec::new(),
         relation_instances: vec![
             FeatureInputRelationInstance {
+                sequence: 90,
                 id: "relation".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -236,6 +248,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 }],
             },
             FeatureInputRelationInstance {
+                sequence: 94,
                 id: "qualified-point-relation".into(),
                 parent: "lane".into(),
                 ordinal: 2,
@@ -267,6 +280,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 ],
             },
             FeatureInputRelationInstance {
+                sequence: 92,
                 id: "line-relation".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -289,6 +303,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 }],
             },
             FeatureInputRelationInstance {
+                sequence: 97,
                 id: "coincident-point-relation".into(),
                 parent: "lane".into(),
                 ordinal: 3,
@@ -320,6 +335,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 ],
             },
             FeatureInputRelationInstance {
+                sequence: 100,
                 id: "self-linked-curve-relation".into(),
                 parent: "lane".into(),
                 ordinal: 4,
@@ -351,6 +367,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
                 ],
             },
             FeatureInputRelationInstance {
+                sequence: 103,
                 id: "forward-linked-curve-relation".into(),
                 parent: "lane".into(),
                 ordinal: 5,
@@ -462,7 +479,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
     assert_eq!(
         loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
         vec![SketchLocus::End(
-            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:6",).unwrap()
         )]
     );
     let markers = lane
@@ -479,7 +496,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         )
         .unwrap(),
         Some(SketchLocus::End(
-            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
+            SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:6",).unwrap()
         ))
     );
 }
@@ -504,6 +521,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -562,6 +580,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
         relation_instances: vec![FeatureInputRelationInstance {
+            sequence: 90,
             id: "relation".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -681,6 +700,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -710,6 +730,7 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 3,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -892,6 +913,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         .into_iter()
         .enumerate()
         .map(|(index, (y, z))| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:entity#cylinder-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -933,6 +955,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
@@ -949,14 +972,14 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         ),
     ];
     let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
+        driving: true,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(FeatureId::mint(owner).expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
-        expression: format!("<MOD-DIAM>{diameter}"),
+        expression: format!("<MOD-DIAM>{diameter}").into(),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1039,6 +1062,7 @@ fn dimensioned_circle_matching_keeps_large_radius_identity() {
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
     };
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:surface#large-cylinder").unwrap(),
         source_object: None,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(

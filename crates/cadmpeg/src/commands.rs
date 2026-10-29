@@ -5,8 +5,9 @@ pub(crate) mod reporting;
 
 use reporting::{
     command_body_json, command_report_json, fidelity_diff, fidelity_differs, print_check_report,
-    print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
-    print_source_diff, write_command_report, write_json_report, CommandReportBody, Payload,
+    print_decode_report, print_export_emission, print_export_notes, print_fidelity_summary,
+    print_id_delta, print_source_diff, write_command_report, write_json_report, CommandReportBody,
+    Payload,
 };
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -30,8 +31,8 @@ use crate::application::artifact_store::{self, FileDestination};
 use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
 use crate::application::transcoder::{
-    self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
-    SourceRequest, TargetSelection,
+    self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossFloor,
+    LossPolicy, SourceRequest, TargetSelection,
 };
 use crate::application::validators::validate_loaded;
 use crate::loader;
@@ -42,6 +43,11 @@ use cadmpeg_measure::compare::Verdict;
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
 pub(crate) fn print_load_notice(document: &LoadedDocument) {
+    if matches!(document.origin, LoadOrigin::Restored { .. }) {
+        eprintln!(
+            "decode history: this report describes the decode that produced this CADIR; the current CADIR parse is lossless"
+        );
+    }
     let LoadOrigin::Decoded {
         selection: Selection::Detected { confidence },
         report,
@@ -58,12 +64,30 @@ pub(crate) fn print_load_notice(document: &LoadedDocument) {
     }
 }
 
+pub(crate) fn print_scope_note(
+    writer: &mut impl Write,
+    scope: cadmpeg_ir::document::ContentScope,
+) -> io::Result<()> {
+    let missing = scope.missing_from(cadmpeg_ir::document::ContentScope::full());
+    if !missing.is_empty() {
+        writeln!(
+            writer,
+            "note: the document's neutral scope excludes {missing}; no neutral records of those classes are supplied"
+        )?;
+    }
+    Ok(())
+}
+
 /// CLI-facing conversion arguments assembled from argv.
 pub(crate) struct ConversionArgs {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// Minimum severity that refuses a reported loss.
+    pub(crate) loss_floor: LossFloor,
+    /// Refuse export when validation reports carried errors.
+    pub(crate) reject_errors: bool,
+    /// Refuse an empty geometry export.
+    pub(crate) reject_empty: bool,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -120,11 +144,17 @@ pub(crate) fn report_failure<T>(
             let mut stderr = io::stderr();
             let diagnostics = (|| -> io::Result<()> {
                 if let Some(report) = reports.decode {
+                    if matches!(refusal, ConversionRefusal::DecodeLossRejected { .. }) {
+                        print_scope_note(&mut stderr, report.scope())?;
+                    }
                     print_decode_report(&mut stderr, report)?;
                     writeln!(stderr)?;
                 }
                 if let Some(report) = reports.check {
                     print_check_report(&mut stderr, report)?;
+                }
+                if let Some(report) = reports.export {
+                    print_export_notes(&mut stderr, report)?;
                 }
                 Ok(())
             })();
@@ -484,7 +514,9 @@ pub(crate) fn convert(
     let result = (|| {
         let policy = ConversionPolicy {
             losses: conversion.losses,
-            allow_errors: conversion.allow_errors,
+            loss_floor: conversion.loss_floor,
+            reject_errors: conversion.reject_errors,
+            reject_empty: conversion.reject_empty,
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;
@@ -504,7 +536,7 @@ pub(crate) fn convert(
         let depth = if conversion.full_decode || conversion.losses.needs_full_decode() {
             DecodeDepth::Full
         } else {
-            target.needs().request()
+            target.request()
         };
         let source = SourceRequest {
             path,
@@ -513,11 +545,14 @@ pub(crate) fn convert(
             work: args.policy.limits.work_profile(),
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
+        print_load_notice(&prepared.document);
+        if conversion.losses != LossPolicy::Allow {
+            print_scope_note(&mut io::stderr(), prepared.document.ir.scope)?;
+        }
         let planned = prepared.plan()?;
 
         let (decode_report, validation) = {
             let prepared = planned.prepared();
-            print_load_notice(&prepared.document);
             let mut stderr = io::stderr();
             if let Some(report) = prepared.document.decode_report() {
                 print_decode_report(&mut stderr, report)?;
@@ -621,6 +656,13 @@ pub(crate) fn diff(
         println!("diff {} vs {}", a.path.display(), b.path.display());
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
+        }
+        if let Some(change) = &result.scope_change {
+            println!(
+                "  scope: {} → {}",
+                serde_json::to_string(&change.before())?,
+                serde_json::to_string(&change.after())?
+            );
         }
         print_source_diff(&result.source)?;
         for arena in &result.per_arena {

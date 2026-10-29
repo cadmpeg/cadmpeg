@@ -78,7 +78,7 @@ fn selection_objects<'history, 'lane>(
 pub(super) fn compact_body_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Result<Vec<FeatureInputBodySelection>, CodecError> {
+) -> Result<Vec<(FeatureInputBodySelection, u64)>, CodecError> {
     let objects = selection_objects(histories, lane);
     let lane_key = lane
         .id
@@ -144,17 +144,20 @@ pub(super) fn compact_body_selections(
             ),
             _ => (Vec::new(), None),
         };
-        result.push(FeatureInputBodySelection {
-            id,
-            parent,
-            ordinal,
-            offset: u64_from_index(offset),
-            object_name_ref,
-            feature_ref,
-            local_body_ids,
-            body_state_ids,
-            mode,
-        });
+        result.push((
+            FeatureInputBodySelection {
+                id,
+                parent,
+                ordinal,
+                sequence: ordinal,
+                object_name_ref,
+                feature_ref,
+                local_body_ids,
+                body_state_ids,
+                mode,
+            },
+            u64_from_index(offset),
+        ));
     }
     Ok(result)
 }
@@ -170,44 +173,6 @@ fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
     }
     let offset = usize::try_from(class.offset).ok()?;
     View::u16_le_at(&lane.native_payload, offset + 8 + class.name.len())
-}
-
-pub(crate) fn compact_body_state_ids_for_selection(
-    lane: &FeatureInputLane,
-    selection: &FeatureInputBodySelection,
-) -> Vec<u32> {
-    let Some(token) = compact_body_state_token(lane) else {
-        return Vec::new();
-    };
-    let mut start = None;
-    for name in &lane.names {
-        if name.id == selection.object_name_ref {
-            start = usize::try_from(name.offset).ok();
-            break;
-        }
-    }
-    let (Some(start), Ok(end)) = (start, usize::try_from(selection.offset)) else {
-        return Vec::new();
-    };
-    compact_body_state_ids(&lane.native_payload, start, end, token)
-}
-
-pub(crate) fn compact_body_retention_mode_for_selection(
-    lane: &FeatureInputLane,
-    selection: &FeatureInputBodySelection,
-) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
-    let token = compact_body_state_token(lane)?;
-    let mut start = None;
-    for name in &lane.names {
-        if name.id == selection.object_name_ref {
-            start = usize::try_from(name.offset).ok();
-            break;
-        }
-    }
-    let (Some(start), Ok(end)) = (start, usize::try_from(selection.offset)) else {
-        return None;
-    };
-    compact_body_retention_mode(&lane.native_payload, start, end, token)
 }
 
 fn compact_body_retention_mode(
@@ -287,11 +252,16 @@ pub(crate) fn compact_edge_reference_list_for_feature(
         .filter(|references| references.len() == count)
 }
 
+pub(super) struct ParsedEdgeSelections {
+    pub(super) records: Vec<FeatureInputEdgeSelection>,
+    pub(super) frames: std::collections::BTreeMap<String, std::ops::Range<usize>>,
+}
+
 pub(super) fn compact_edge_selections(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> Result<Vec<FeatureInputEdgeSelection>, CodecError> {
+) -> Result<ParsedEdgeSelections, CodecError> {
     let history_features = history_features_with_object_sources(histories, lane);
     let selection_features = FeatureSources::new(&history_features);
     let objects = selection_objects(histories, lane);
@@ -300,6 +270,7 @@ pub(super) fn compact_edge_selections(
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
+    let mut frames = std::collections::BTreeMap::new();
     let mut compact_edge_classes = lane
         .classes
         .iter()
@@ -353,6 +324,7 @@ pub(super) fn compact_edge_selections(
         selections.sort_unstable_by_key(|left| left.0);
         selections.dedup_by_key(|selection| selection.0);
         let mut feature_selections = Vec::new();
+        let mut feature_frames = std::collections::BTreeMap::new();
         for (offset, local_edge_ids) in selections {
             let references = compact_edge_reference_list_for_feature(
                 &lane.native_payload,
@@ -384,6 +356,11 @@ pub(super) fn compact_edge_selections(
                 &feature.id,
             )?;
             let id = format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}");
+            let frame = edge_selection_frame(ctx, &lane.native_payload, offset, &feature.kind)?
+                .ok_or_else(|| {
+                    CodecError::malformed("admitted edge selection lacks its source frame")
+                })?;
+            feature_frames.insert(id.clone(), frame);
             let parent = lane.id.clone();
             let object_name_ref = name.id.clone();
             let feature_ref = feature.id.clone();
@@ -391,7 +368,7 @@ pub(super) fn compact_edge_selections(
                 id,
                 parent,
                 ordinal: 0,
-                offset: u64_from_index(offset),
+                sequence: 0,
                 object_name_ref,
                 feature_ref,
                 local_edge_ids,
@@ -404,10 +381,73 @@ pub(super) fn compact_edge_selections(
         for mut selection in input_owned_edge_selections(feature_selections) {
             selection.ordinal = u32::try_from(result.len())
                 .map_err(|_| CodecError::malformed(SELECTION_ORDINAL_OVERFLOW))?;
+            let frame = feature_frames.remove(&selection.id).ok_or_else(|| {
+                CodecError::malformed("retained edge selection lacks its source frame")
+            })?;
+            frames.insert(selection.id.clone(), frame);
             result.push(selection);
         }
     }
-    Ok(result)
+    Ok(ParsedEdgeSelections {
+        records: result,
+        frames,
+    })
+}
+
+fn edge_selection_frame(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    marker: usize,
+    feature_kind: &str,
+) -> Result<Option<std::ops::Range<usize>>, CodecError> {
+    let Some(start) = marker.checked_sub(12) else {
+        return Ok(None);
+    };
+    let Some(ids) = compact_edge_selection_at(ctx, payload, marker)? else {
+        return Ok(None);
+    };
+    let count = View::u32_le_at(payload, start)
+        .and_then(|count| usize::try_from(count).ok())
+        .filter(|count| (1..=64).contains(count))
+        .ok_or_else(|| CodecError::malformed("admitted edge selection has no valid count"))?;
+    if let Some((_, end)) = compact_component_reference_list_frame(payload, marker, true) {
+        return Ok(Some(start..end));
+    }
+    let mut end = None;
+    let mut include = |candidate: Option<(Vec<u32>, usize)>| {
+        if let Some((actual, candidate_end)) = candidate {
+            if actual == ids {
+                end = Some(end.map_or(candidate_end, |end: usize| end.max(candidate_end)));
+            }
+        }
+    };
+    include(compact_homogeneous_edge_ids_frame(
+        payload,
+        marker + 18,
+        count,
+    ));
+    include(compact_u16_edge_ids_frame(payload, marker + 18, count));
+    for (ComponentPathReference(components, _), candidate_end) in
+        compact_edge_component_path_frames(ctx, payload, marker, count)?
+    {
+        include(Some((
+            components
+                .iter()
+                .filter_map(|entry| entry.local_id)
+                .collect(),
+            candidate_end,
+        )));
+    }
+    if feature_kind.eq_ignore_ascii_case("VarFillet") {
+        if let Some((references, candidate_end)) =
+            compact_component_reference_list_frame(payload, marker, false)
+        {
+            if references.len() == count {
+                end = Some(end.map_or(candidate_end, |end| end.max(candidate_end)));
+            }
+        }
+    }
+    Ok(end.map(|end| start..end))
 }
 
 fn fillet_edge_roster_end(lane: &FeatureInputLane, start: usize, end: usize) -> Option<usize> {
@@ -765,6 +805,7 @@ pub(super) fn compact_surface_selections(
                 id,
                 parent,
                 ordinal,
+                sequence: ordinal,
                 offset: u64_from_index(offset),
                 selector: lane.native_payload
                     [offset.checked_sub(8).map_or(0, std::convert::identity)],
@@ -916,8 +957,9 @@ fn face_reference_plane_selection_candidates(
     end: usize,
 ) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
     let mut data_classes = lane.classes.iter().filter(|class| {
-        class.name == "moFaceRefPlnData_c"
-            && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+        class.name == "moFaceRefPlnData_c" && {
+            (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+        }
     });
     let mut candidates = Vec::new();
     if let (Some(data_class), None) = (data_classes.next(), data_classes.next()) {
@@ -986,10 +1028,10 @@ fn order_surface_candidates(candidates: &mut Vec<(usize, Vec<FeatureInputCompone
     }
 }
 
-type GeneratedIdentityCache = Option<Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>>;
+type GeneratedIdentityCache = Option<ParsedGeneratedSurfaces>;
 
 fn operation_surface_selection_candidates(
-    ctx: &DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operation: FeatureClass,
     lane: &FeatureInputLane,
     start: usize,
@@ -1044,10 +1086,19 @@ fn operation_surface_selection_candidates(
             return Ok(Vec::new());
         };
         if generated_identities.is_none() {
-            *generated_identities = Some(generated_surface_identities(lane)?);
+            *generated_identities = Some(generated_surface_identities(
+                &lane.id,
+                &lane.classes,
+                &lane.native_payload,
+            )?);
         }
         let mut candidates = Vec::new();
-        for identity in generated_identities.iter().flatten() {
+        for (parsed, identity) in generated_identities.iter().flat_map(|parsed| {
+            parsed
+                .records
+                .iter()
+                .map(move |identity| (parsed, identity))
+        }) {
             let (Some(first), Some(last)) =
                 (identity.components.first(), identity.components.last())
             else {
@@ -1059,10 +1110,10 @@ fn operation_surface_selection_candidates(
             {
                 continue;
             }
-            let Ok(offset) = usize::try_from(identity.offset) else {
+            let Some(frame) = parsed.frames.get(&identity.id) else {
                 continue;
             };
-            candidates.push((offset, identity.components.clone()));
+            candidates.push((frame.extent.start, identity.components.clone()));
         }
         return Ok(candidates);
     }
@@ -1855,30 +1906,6 @@ fn compact_surface_reference_at(
     Ok(inline_surface_reference_at(payload, marker))
 }
 
-pub(crate) fn surface_reference_matches_at(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    marker: usize,
-    expected: &[FeatureInputComponentPathEntry],
-) -> Result<bool, CodecError> {
-    let candidates = [
-        compact_surface_selection_at(payload, marker),
-        component_vector_path_at(payload, marker),
-        flatten_surface_references(compact_component_reference_list_at(payload, marker)),
-        flatten_surface_references(compact_component_reference_list(payload, marker, false)),
-        counted_surface_component_path_at(payload, marker),
-        compact_termination_reference_path_at(ctx, payload, marker)?,
-        compact_sketch_surface_component_path_at(payload, marker),
-        inline_surface_reference_at(payload, marker),
-    ];
-    for components in candidates.into_iter().flatten() {
-        if components == expected {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 fn repeated_edge_selections(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -2260,20 +2287,21 @@ fn inline_surface_components_at(
     payload: &[u8],
     offset: usize,
 ) -> Option<impl Iterator<Item = Option<FeatureInputComponentPathEntry>> + '_> {
-    let prefix: [u8; 4] = payload.get(offset..offset + 4)?.try_into().ok()?;
+    let read = move |start: usize, len: usize| payload.get(start..start.checked_add(len)?);
+    let prefix: [u8; 4] = read(offset, 4)?.try_into().ok()?;
     let family = View::u16_le_at(&prefix, 0)?;
     let variant = View::u16_le_at(&prefix, 2)?;
     if !is_class_token(family) || variant == 0 {
         return None;
     }
     let signature_at = move |offset: usize| -> Option<[u8; 12]> {
-        let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
+        let signature: [u8; 12] = read(offset, 12)?.try_into().ok()?;
         let source = View::u32_le_at(&signature, 4)?;
         let identity = View::u32_le_at(&signature, 8)?;
         (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
     };
     let instance_before = move |offset: usize| -> Option<u16> {
-        let bytes = payload.get(offset.checked_sub(4)?..offset)?;
+        let bytes = read(offset.checked_sub(4)?, 4)?;
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
@@ -2285,7 +2313,7 @@ fn inline_surface_components_at(
         }
         let node = (|| {
             let signature = signature_at(cursor)?;
-            let tail: [u8; 4] = payload.get(cursor + 12..cursor + 16)?.try_into().ok()?;
+            let tail: [u8; 4] = read(cursor + 12, 4)?.try_into().ok()?;
             let instance = View::u16_le_at(&tail, 0)?;
             let continues = is_class_token(instance)
                 && tail[2..] == [0, 0]
@@ -2329,12 +2357,25 @@ fn inline_surface_reference_at(
 /// Decode persistent surface identities declared by `*SurfIdRep_c` classes.
 /// Operation-specific consumers separately project the identities that also
 /// carry input selections, including projected split-line target faces.
+pub(crate) struct ParsedGeneratedSurfaces {
+    pub(crate) records: Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>,
+    /// Parser-local frames; never part of native content or its wire format.
+    pub(super) frames: std::collections::BTreeMap<String, GeneratedSurfaceFrame>,
+}
+
+pub(super) struct GeneratedSurfaceFrame {
+    pub(super) extent: Range<usize>,
+}
+
 pub(crate) fn generated_surface_identities(
-    lane: &FeatureInputLane,
-) -> Result<Vec<crate::records::FeatureInputGeneratedSurfaceIdentity>, CodecError> {
+    parent: &str,
+    classes: &[crate::records::FeatureInputClass],
+    payload: &[u8],
+) -> Result<ParsedGeneratedSurfaces, CodecError> {
     struct SurfaceIdentityFields {
         offset: u64,
         input_index: usize,
+        end: usize,
         type_prefix: [u8; 4],
         feature_source_id: FeatureSourceId,
         local_identity: u32,
@@ -2348,12 +2389,12 @@ pub(crate) fn generated_surface_identities(
         (signature[..4] == prefix && identity != 0).then_some(source)
     };
     let instance_before = |offset: usize| -> Option<u16> {
-        let bytes = lane.native_payload.get(offset.checked_sub(4)?..offset)?;
+        let bytes = payload.get(offset.checked_sub(4)?..offset)?;
         let instance = View::u16_le_at(bytes, 0)?;
         (is_class_token(instance) && bytes[2..] == [0, 0]).then_some(instance)
     };
     let mut prefixes = HashSet::new();
-    for class in &lane.classes {
+    for class in classes {
         if !class.name.ends_with("SurfIdRep_c") {
             continue;
         }
@@ -2361,14 +2402,10 @@ pub(crate) fn generated_surface_identities(
             let body = usize::try_from(class.offset)
                 .ok()?
                 .checked_add(6 + class.name.len())?;
-            if lane.native_payload.get(body..body + 2)? != [0, 0] {
+            if payload.get(body..body + 2)? != [0, 0] {
                 return None;
             }
-            let prefix: [u8; 4] = lane
-                .native_payload
-                .get(body + 2..body + 6)?
-                .try_into()
-                .ok()?;
+            let prefix: [u8; 4] = payload.get(body + 2..body + 6)?.try_into().ok()?;
             let family = View::u16_le_at(&prefix, 0)?;
             let variant = View::u16_le_at(&prefix, 2)?;
             (is_class_token(family) && variant != 0).then_some(prefix)
@@ -2381,12 +2418,14 @@ pub(crate) fn generated_surface_identities(
 
     let mut result = Vec::<SurfaceIdentityFields>::new();
     let mut identities_by_hash = HashMap::<u64, Vec<usize>>::new();
-    let Some(last) = lane.native_payload.len().checked_sub(16) else {
-        return Ok(Vec::new());
+    let Some(last) = payload.len().checked_sub(16) else {
+        return Ok(ParsedGeneratedSurfaces {
+            records: Vec::new(),
+            frames: std::collections::BTreeMap::new(),
+        });
     };
     for terminal in 0..=last {
-        let Some(window) = lane
-            .native_payload
+        let Some(window) = payload
             .get(terminal..terminal + 16)
             .and_then(<[u8]>::first_chunk::<16>)
         else {
@@ -2404,8 +2443,7 @@ pub(crate) fn generated_surface_identities(
         let possible_instance = cadmpeg_core::bytes::assemble_u16_le([t0, t1]);
         if is_class_token(possible_instance)
             && tail[2..] == [0, 0]
-            && lane
-                .native_payload
+            && payload
                 .get(terminal + 16..)
                 .and_then(|bytes| signature_prefix(bytes, prefix))
                 .is_some()
@@ -2420,8 +2458,7 @@ pub(crate) fn generated_surface_identities(
             let Some(previous) = offset.checked_sub(16) else {
                 break;
             };
-            if lane
-                .native_payload
+            if payload
                 .get(previous..)
                 .and_then(|bytes| signature_prefix(bytes, prefix))
                 .is_none()
@@ -2430,7 +2467,7 @@ pub(crate) fn generated_surface_identities(
             }
             offset = previous;
         }
-        let Some(components) = inline_surface_components_at(&lane.native_payload, offset)
+        let Some(components) = inline_surface_components_at(payload, offset)
             .and_then(Iterator::collect::<Option<Vec<_>>>)
         else {
             continue;
@@ -2460,6 +2497,11 @@ pub(crate) fn generated_surface_identities(
         result.push(SurfaceIdentityFields {
             offset: u64_from_index(offset),
             input_index,
+            end: components
+                .len()
+                .checked_mul(16)
+                .and_then(|len| offset.checked_add(len))
+                .ok_or_else(|| CodecError::malformed("generated surface path length overflow"))?,
             type_prefix: prefix,
             feature_source_id,
             local_identity,
@@ -2469,11 +2511,9 @@ pub(crate) fn generated_surface_identities(
     result.sort_unstable_by(|left, right| {
         (left.offset, left.input_index).cmp(&(right.offset, right.input_index))
     });
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
-        .map_or(lane.id.as_str(), |(_, key)| key);
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     let mut identities = Vec::new();
+    let mut frames = std::collections::BTreeMap::new();
     for (ordinal, fields) in result.into_iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed(SELECTION_ORDINAL_OVERFLOW))?;
@@ -2481,19 +2521,31 @@ pub(crate) fn generated_surface_identities(
             "sldprt:feature-input:generated-surface#{lane_key}:{}",
             fields.offset
         );
-        let parent = lane.id.clone();
+        let start = usize::try_from(fields.offset).map_err(|_| {
+            CodecError::malformed("generated surface source position exceeds usize")
+        })?;
+        frames.insert(
+            id.clone(),
+            GeneratedSurfaceFrame {
+                extent: start..fields.end,
+            },
+        );
+        let parent = parent.to_owned();
         identities.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
             id,
             parent,
             ordinal,
-            offset: fields.offset,
+            sequence: ordinal,
             type_prefix: fields.type_prefix.into(),
             feature_source_id: fields.feature_source_id,
             local_identity: fields.local_identity,
             components: fields.components,
         });
     }
-    Ok(identities)
+    Ok(ParsedGeneratedSurfaces {
+        records: identities,
+        frames,
+    })
 }
 
 fn compact_edge_selection_vector(
@@ -2634,6 +2686,15 @@ fn compact_component_reference_list(
     marker: usize,
     require_distinct_framing: bool,
 ) -> Option<Vec<Vec<FeatureInputComponentPathEntry>>> {
+    compact_component_reference_list_frame(payload, marker, require_distinct_framing)
+        .map(|(records, _)| records)
+}
+
+fn compact_component_reference_list_frame(
+    payload: &[u8],
+    marker: usize,
+    require_distinct_framing: bool,
+) -> Option<(Vec<Vec<FeatureInputComponentPathEntry>>, usize)> {
     let header = (|| {
         let count_start = marker.checked_sub(12)?;
         if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
@@ -2670,12 +2731,13 @@ fn compact_component_reference_list(
             })
     };
     let terminal_null_at = |offset: usize| {
-        (16..=18).any(|zero_count| {
-            payload
+        (16..=18).find_map(|zero_count| {
+            (payload
                 .get(offset..offset + zero_count)
                 .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
                 && payload.get(offset + zero_count..offset + zero_count + 3)
-                    == Some(&[0xff, 0xfe, 0xff])
+                    == Some(&[0xff, 0xfe, 0xff]))
+            .then_some(offset + zero_count + 3)
         })
     };
 
@@ -2688,11 +2750,14 @@ fn compact_component_reference_list(
             reference.push(hop);
             cursor += 16;
         }
-        if reference.is_empty() && index + 1 == count && terminal_null_at(cursor) {
-            return (!references.is_empty()).then_some(references);
+        if reference.is_empty() && index + 1 == count {
+            if let Some(end) = terminal_null_at(cursor) {
+                return (!references.is_empty()).then_some((references, end));
+            }
         }
         if reference.is_empty() {
-            return (!require_distinct_framing && !references.is_empty()).then_some(references);
+            return (!require_distinct_framing && !references.is_empty())
+                .then_some((references, cursor));
         }
         has_reference_framing |= reference.len() > 1;
         let last = reference.last_mut()?;
@@ -2704,8 +2769,10 @@ fn compact_component_reference_list(
             has_reference_framing = true;
         }
         references.push(reference);
-        if index + 2 == count && terminal_null_at(cursor) {
-            return Some(references);
+        if index + 2 == count {
+            if let Some(end) = terminal_null_at(cursor) {
+                return Some((references, end));
+            }
         }
         if index + 1 == count {
             continue;
@@ -2716,11 +2783,12 @@ fn compact_component_reference_list(
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
                 && hop_at(cursor + *gap).is_some()
         }) else {
-            return (!require_distinct_framing && !references.is_empty()).then_some(references);
+            return (!require_distinct_framing && !references.is_empty())
+                .then_some((references, cursor));
         };
         cursor += gap;
     }
-    (!require_distinct_framing || has_reference_framing).then_some(references)
+    (!require_distinct_framing || has_reference_framing).then_some((references, cursor))
 }
 
 #[derive(Debug)]
@@ -2871,6 +2939,20 @@ fn compact_edge_component_path_candidates(
     marker: usize,
     count: usize,
 ) -> Result<Vec<ComponentPathReference>, CodecError> {
+    Ok(
+        compact_edge_component_path_frames(ctx, payload, marker, count)?
+            .into_iter()
+            .map(|(path, _)| path)
+            .collect(),
+    )
+}
+
+fn compact_edge_component_path_frames(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    marker: usize,
+    count: usize,
+) -> Result<Vec<(ComponentPathReference, usize)>, CodecError> {
     let component_paths =
         |entry_count| -> Result<Vec<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
             let candidates = [
@@ -2910,16 +2992,20 @@ fn compact_edge_component_path_candidates(
     let mut candidates = Vec::new();
     for candidate in terminal_paths
         .into_iter()
-        .map(|(components, _, source)| ComponentPathReference(components, Some(source)))
+        .map(|(components, end, source)| {
+            (ComponentPathReference(components, Some(source)), end + 36)
+        })
         .chain(
             full_paths
                 .into_iter()
-                .map(|(components, _)| ComponentPathReference(components, None)),
+                .map(|(components, end)| (ComponentPathReference(components, None), end)),
         )
     {
         let mut duplicate = false;
-        for existing in &candidates {
-            if existing == &candidate {
+        for existing in &mut candidates {
+            let existing: &mut (ComponentPathReference, usize) = existing;
+            if existing.0 == candidate.0 {
+                existing.1 = existing.1.max(candidate.1);
                 duplicate = true;
                 break;
             }
@@ -3059,11 +3145,15 @@ pub(crate) fn surface_selection_terminal_feature_at(
     component_path_terminal_feature(components, features.iter())
 }
 
-fn compact_homogeneous_edge_ids(
+fn compact_homogeneous_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
+    compact_homogeneous_edge_ids_frame(payload, cursor, count).map(|(ids, _)| ids)
+}
+
+fn compact_homogeneous_edge_ids_frame(
     payload: &[u8],
     mut cursor: usize,
     count: usize,
-) -> Option<Vec<u32>> {
+) -> Option<(Vec<u32>, usize)> {
     let window = (|| {
         let signature = payload.get(cursor + 4..cursor + 16)?;
         bounded_len(
@@ -3097,7 +3187,7 @@ fn compact_homogeneous_edge_ids(
                 }
             }
         }
-        Some(ids)
+        Some((ids, cursor))
     })()
 }
 
@@ -3302,6 +3392,14 @@ fn compact_sparse_component_path(
 }
 
 fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
+    compact_u16_edge_ids_frame(payload, cursor, count).map(|(ids, _)| ids)
+}
+
+fn compact_u16_edge_ids_frame(
+    payload: &[u8],
+    cursor: usize,
+    count: usize,
+) -> Option<(Vec<u32>, usize)> {
     let end = count.checked_mul(2).and_then(|len| cursor.checked_add(len));
     let end = end?;
     let bytes = payload.get(cursor..end)?;
@@ -3319,7 +3417,8 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
         suffix[..8].iter().all(|byte| *byte == 0)
             && View::u16_le_at(suffix, 8).is_some_and(is_class_token)
     });
-    (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids)
+    (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated))
+        .then_some((ids, end + if sentinel_terminated { 19 } else { 10 }))
 }
 
 fn compact_body_selection_vector(
@@ -3371,35 +3470,6 @@ fn compact_body_selection_vector(
         return Some((offset, local_body_ids));
     }
     None
-}
-
-pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
-    let header_end = offset.checked_add(12)?;
-    let schema_end = offset.checked_add(4)?;
-    if payload.get(offset..schema_end) != Some(11000u32.to_le_bytes().as_slice())
-        || payload.get(schema_end..header_end) != Some(&[0; 8])
-    {
-        if payload.get(offset..schema_end).is_none()
-            || payload.get(schema_end..header_end).is_none()
-        {
-            return None;
-        }
-        return super::direct_edits::move_body_selection_at(payload, offset);
-    }
-    let ids = (|| {
-        let count = usize::try_from(View::u32_le_at(payload, offset.checked_add(12)?)?).ok()?;
-        let ids_start = offset.checked_add(16)?;
-        let ids_end = ids_start.checked_add(count.checked_mul(4)?)?;
-        let sentinel_end = ids_end.checked_add(4)?;
-        let zeros_end = sentinel_end.checked_add(12)?;
-        if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
-            || payload.get(sentinel_end..zeros_end)? != [0; 12]
-        {
-            return None;
-        }
-        payload.get(ids_start..ids_end)
-    })();
-    ids.map(read_compact_body_ids)
 }
 
 pub(super) fn read_compact_body_ids(bytes: &[u8]) -> Vec<u32> {
@@ -3723,21 +3793,4 @@ fn counted_legacy_profile_line_layout(payload: &[u8], offset: usize) -> bool {
 }
 
 #[cfg(test)]
-pub(super) fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> usize {
-    let count = u32::try_from(entries.len()).expect("selection vector entry count fits u32");
-    payload.extend_from_slice(&count.to_le_bytes());
-    payload.extend_from_slice(&[0, 2, 0, 0]);
-    payload.extend_from_slice(&[0, 0, 0, 0]);
-    let marker = payload.len();
-    payload.extend_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
-    payload.extend_from_slice(&[0, 0]);
-    for local_id in entries {
-        payload.extend_from_slice(&[0x32, 0x80, 0, 0]);
-        payload.extend_from_slice(&[1; 12]);
-        payload.extend_from_slice(&local_id.to_le_bytes());
-    }
-    marker
-}
-
-#[cfg(test)]
-mod tests;
+pub(super) mod tests;

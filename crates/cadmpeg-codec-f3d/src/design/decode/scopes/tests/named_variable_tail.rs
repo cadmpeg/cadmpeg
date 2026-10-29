@@ -51,14 +51,14 @@ fn parameter_scope_parses_named_variable_tail() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("named variable-tail scope");
@@ -78,7 +78,7 @@ fn parameter_scope_parses_named_variable_tail() {
             .collect::<Vec<_>>(),
         [55]
     );
-    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
+    assert_eq!(scope.frame_length(), Some(u64_from_index(paired_at)));
 
     let mut owner_scope = scope.clone();
     owner_scope
@@ -141,6 +141,6 @@ fn parameter_scope_parses_named_variable_tail() {
     assert_eq!(operation.angle.get(), 0.0);
     assert_eq!(operation.angle_record_index, 327);
     assert_eq!(operation.opposite_angle_record_index, 330);
-    assert_eq!(operation.angle_offset, 111);
-    assert_eq!(operation.opposite_angle_offset, 222);
+    assert_eq!(operation.angle_offset, Some(111));
+    assert_eq!(operation.opposite_angle_offset, Some(222));
 }

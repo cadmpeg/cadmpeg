@@ -30,13 +30,13 @@ fn face_recipe_prefix_type_entry_does_not_terminate_the_operand() {
     );
     let header = DesignRecordHeader {
         id: format!("{stream}:design-record-header#0"),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: "317".to_owned().try_into().unwrap(),
         record_index: 700,
     };
     let recipe = ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{name_at}"),
-        byte_offset: u64::try_from(name_at).unwrap(),
+        byte_offset: Some(u64::try_from(name_at).unwrap()),
         kind: ConstructionRecipeKind::BoundedFace,
         design: None,
         recipe_index: 0,

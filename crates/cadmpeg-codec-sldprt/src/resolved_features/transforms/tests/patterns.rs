@@ -124,9 +124,11 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         features: vec![seed_native, pattern_native, path_native, next_native],
     };
     let name = |offset: u64, object_id: u32, value: &str| FeatureInputName {
+        feature_ref: None,
         id: format!("name-{offset}"),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset,
         value: value.into(),
         object_id: ObjectId::try_from(object_id).ok(),
@@ -197,17 +199,21 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     let mut display_payload = vec![0; 512];
     let display_names = [
         FeatureInputName {
+            feature_ref: None,
             id: "display-d3".into(),
             parent: "lane".into(),
             ordinal: 0,
+            sequence: 0,
             offset: 100,
             object_id: Some(ObjectId::Absent),
             value: "D3".into(),
         },
         FeatureInputName {
+            feature_ref: None,
             id: "display-d4".into(),
             parent: "lane".into(),
             ordinal: 1,
+            sequence: 1,
             offset: 300,
             object_id: Some(ObjectId::Absent),
             value: "D4".into(),
@@ -448,10 +454,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         configuration: None,
         native_payload: native_payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(line_ref_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(line_ref_offset),
+            feature_ref: None,
             id: "line-reference".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(line_ref_offset),
             name: "moLineRef_w".into(),
         }],
         names: vec![
@@ -502,6 +510,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -514,8 +523,10 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
                 seeds: Vec::new(),
                 pattern: PatternKind::new(PatternTransform::CurveDriven {
                     path: None,
-                    spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-                    count: 3,
+                    spacing: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                    ),
+                    count: cadmpeg_ir::Dimension::Literal(3),
                 })
                 .unwrap(),
             }),
@@ -650,8 +661,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-                count: 3,
+                distance: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap().into(),
+                count: cadmpeg_ir::Dimension::Literal(3),
                 second: None,
                 omitted_instances: Vec::new(),
             })
@@ -742,8 +753,8 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: None,
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-                count: 3,
+                distance: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap().into(),
+                count: cadmpeg_ir::Dimension::Literal(3),
                 second: None,
                 omitted_instances: Vec::new(),
             })
@@ -771,16 +782,20 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
     ]);
     derived_lane.classes.extend([
         FeatureInputClass {
+            feature_ref: None,
             id: "count-dimension".into(),
             parent: "lane".into(),
             ordinal: 1,
+            sequence: 1,
             offset: 200,
             name: "moNumberDim_c".into(),
         },
         FeatureInputClass {
+            feature_ref: None,
             id: "spacing-dimension".into(),
             parent: "lane".into(),
             ordinal: 2,
+            sequence: 2,
             offset: 300,
             name: "ParallelPlaneDistanceDim_c".into(),
         },
@@ -795,6 +810,16 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             seeds: Vec::new(),
             pattern: PatternKind::UNRESOLVED_LINEAR,
         }));
+    // Apply the same source class proof that precedes pattern binding during
+    // decode. The authored z/e expressions remain exact; only typed caches
+    // receive the quantities established by the native dimension classes.
+    crate::resolved_features::parameters::enrich_history_parameters(
+        std::slice::from_mut(&mut derived_history),
+        [&derived_lane],
+        true,
+    );
+    assert_eq!(derived_history.features[2].parameters["z"], "3");
+    assert_eq!(derived_history.features[2].parameters["e"], "19");
     bind_pattern_inputs_test(
         &mut features,
         std::slice::from_ref(&derived_history),
@@ -807,11 +832,12 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             pattern: admitted_pattern,
         }) if matches!(admitted_pattern.definition(), PatternTransform::Linear {
                 direction: Some(actual_direction),
-                spacing: actual_spacing,
-                count: 3,
+                distance: actual_spacing,
+                count: actual_count,
                 ..
             } if (seeds == &[PatternSeed::Feature(features[2].id.clone())]
-            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0)) && actual_spacing.get() == 19.0)
+            && *actual_direction == Vector3::new(-1.0, 0.0, 0.0)) && crate::history::project::source_dimension_value(actual_spacing.dimension(), std::slice::from_ref(&derived_history)).unwrap().get() == 19.0
+            && crate::history::project::source_dimension_value(actual_count, std::slice::from_ref(&derived_history)) == Some(3))
     ));
 
     let mut mirror_history = history.clone();
@@ -1119,6 +1145,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1178,6 +1205,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
             id: id.into(),
             parent: "lane".into(),
             ordinal: u32::try_from(offset).expect("relation offset fits u32"),
+            sequence: u32::try_from(offset).expect("relation offset fits u32"),
             offset,
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
@@ -1211,6 +1239,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         sketch_entities: markers,
     };
     let parameter = |id: &str, scalar: &str| DesignParameter {
+        driving: true,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -1218,7 +1247,6 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(scalar.into()),
@@ -1320,6 +1348,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1370,6 +1399,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         id: "relation-point-line".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 100,
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
@@ -1414,6 +1444,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -1421,7 +1452,6 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         expression: "30mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(30.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1471,7 +1501,12 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         &SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#bound-point-0").unwrap())
     );
     assert_eq!(second, &SketchLocus::Entity(solver_line_id));
-    assert_eq!(parameter_ref, &parameter.id);
+    assert_eq!(
+        parameter_ref
+            .parameter()
+            .expect("canonical relation parameter"),
+        &parameter.id
+    );
 }
 
 #[test]
@@ -1508,6 +1543,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -1573,6 +1609,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         id: "relation-point-line-ambiguous".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 100,
         family: FeatureInputRelationFamily::PointLineDistance,
         class_ref: "class".into(),
@@ -1617,6 +1654,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -1624,7 +1662,6 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         expression: "15mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(15.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1695,6 +1732,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
@@ -1734,6 +1772,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
                 id: id.into(),
                 parent: "lane".into(),
                 ordinal: 0,
+                sequence: 0,
                 offset,
                 family,
                 class_ref: "class".into(),
@@ -1787,14 +1826,14 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         sketch_entities: vec![known_a, known_b, missing],
     };
     let parameter = |id: &str, scalar: &str, distance: f64| DesignParameter {
+        driving: true,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: id.to_string(),
-        expression: format!("{distance}mm"),
+        expression: format!("{distance}mm").into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(distance).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(scalar.into()),

@@ -22,6 +22,7 @@ use cadmpeg_ir::transform::Transform;
 
 #[derive(Default)]
 pub(super) struct SourceUnitCarriers {
+    pub(super) projection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex,
     length_scale_mm: Option<PositiveReal>,
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
@@ -30,9 +31,62 @@ pub(super) struct SourceUnitCarriers {
     sketch_entities: BTreeMap<SketchEntityId, SketchGeometry>,
 }
 
+/// The source geometry namespace supplies visibility, independently of any
+/// material appearance. Preserve it as typed layer membership.
+pub(in crate::decode) fn admit_surface_visibility(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    surface: &cadmpeg_ir::ids::SurfaceId,
+    visible: bool,
+) -> Result<(), CodecError> {
+    let layer_id = cadmpeg_ir::ids::LayerId::mint(if visible {
+        "creo:document:layer#VisibGeom"
+    } else {
+        "creo:document:layer#NovisGeom"
+    })
+    .map_err(CodecError::malformed)?;
+    let layer = if let Some(index) = ir
+        .model
+        .presentation_layers
+        .iter()
+        .position(|layer| layer.id == layer_id)
+    {
+        &mut ir.model.presentation_layers[index]
+    } else {
+        ctx.charge_entities(1, "admit Creo geometry visibility layer")?;
+        ir.model
+            .presentation_layers
+            .push(cadmpeg_ir::presentation::PresentationLayer {
+                native_ref: None,
+                id: layer_id,
+                name: if visible {
+                    "VisibGeom".into()
+                } else {
+                    "NovisGeom".into()
+                },
+                parent: None,
+                description: None,
+                visible: Some(visible),
+                items: Vec::new(),
+            });
+        ir.model
+            .presentation_layers
+            .last_mut()
+            .ok_or_else(|| CodecError::malformed("missing admitted visibility layer"))?
+    };
+    let item = cadmpeg_ir::presentation::PresentationItem::Surface {
+        surface: surface.clone(),
+    };
+    if !layer.items.contains(&item) {
+        layer.items.push(item);
+    }
+    Ok(())
+}
+
 impl SourceUnitCarriers {
     pub(super) fn new(length_scale_mm: Option<PositiveReal>) -> Self {
         Self {
+            projection_losses: Vec::new(),
             procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex::default(),
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
@@ -67,7 +121,9 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut occurrence: Occurrence,
     ) -> Result<(), CodecError> {
-        self.scale_product_translation(&mut occurrence.transform)?;
+        if let Some(transform) = occurrence.transform.as_mut() {
+            self.scale_product_translation(transform)?;
+        }
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
             self.scale_product_translation(transform)?;
         }
@@ -112,11 +168,22 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut parameter: DesignParameter,
     ) -> Result<(), CodecError> {
-        if let (Some(scale), Some(ParameterValue::Length(length))) =
-            (self.length_scale_mm, parameter.value.as_mut())
-        {
-            crate::decode::build::units::scale_length(length, scale)
-                .map_err(Self::unrepresentable_length)?;
+        if let Some(ParameterValue::Length(length)) = parameter.value.as_mut() {
+            let literal = parameter
+                .expression
+                .literal_text()
+                .and_then(|text| text.trim().parse::<f64>().ok())
+                .is_some_and(|value| value == length.get());
+            if let Some(scale) = self.length_scale_mm {
+                crate::decode::build::units::scale_length(length, scale)
+                    .map_err(Self::unrepresentable_length)?;
+            }
+            if literal {
+                // A dimension-table literal uses the source model length unit.
+                // Spell the converted literal's unit explicitly in neutral IR.
+                parameter.expression =
+                    cadmpeg_ir::features::Expression::text(format!("{} mm", length.get()));
+            }
         }
         ir.model.parameters.push(parameter);
         Ok(())
@@ -638,6 +705,7 @@ mod tests {
     #[test]
     fn replacement_curve_records_source_geometry() {
         let mut curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -663,6 +731,7 @@ mod tests {
             ),
         });
         let mut curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: geometry.clone(),
@@ -679,6 +748,7 @@ mod tests {
     #[test]
     fn replacement_surface_records_source_geometry() {
         let mut surface = Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:test:replacement-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -703,6 +773,7 @@ mod tests {
             ),
         });
         let mut surface = Surface {
+            native_ref: None,
             id,
             geometry: geometry.clone(),
             source_object: None,
@@ -718,6 +789,7 @@ mod tests {
     #[test]
     fn source_curve_admission_pushes_curve_and_records_source_geometry() {
         let curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -747,6 +819,7 @@ mod tests {
             ),
         });
         let curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id,
             geometry: geometry.clone(),
@@ -764,6 +837,7 @@ mod tests {
     #[test]
     fn source_surface_admission_pushes_surface_and_records_source_geometry() {
         let surface = Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:test:source-surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -792,6 +866,7 @@ mod tests {
             ),
         });
         let surface = Surface {
+            native_ref: None,
             id,
             geometry: geometry.clone(),
             source_object: None,
@@ -807,6 +882,7 @@ mod tests {
 
     fn admission_pcurve() -> cadmpeg_ir::geometry::pcurve::Pcurve {
         cadmpeg_ir::geometry::pcurve::Pcurve {
+            native_ref: None,
             id: cadmpeg_ir::ids::PcurveId::mint("creo:test:pcurve#0").expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -821,6 +897,7 @@ mod tests {
 
     fn source_feature(definition: FeatureDefinition) -> Feature {
         Feature {
+            needs_recompute: false,
             id: cadmpeg_ir::features::FeatureId::mint("creo:test:feature#1")
                 .expect("identity grammar"),
             ordinal: 0,
@@ -838,6 +915,7 @@ mod tests {
 
     fn source_length_parameter(value: f64) -> DesignParameter {
         DesignParameter {
+            driving: true,
             id: cadmpeg_ir::features::ParameterId::mint("creo:test:parameter#1")
                 .expect("identity grammar"),
             owner: None,
@@ -848,7 +926,7 @@ mod tests {
             value: Some(ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(value).expect("finite source length"),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
             properties: std::collections::BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -898,9 +976,9 @@ mod tests {
                 SketchConstraintDefinitionInput::DistanceLociValue {
                     first: SketchLocus::Start(entity.clone()),
                     second: SketchLocus::End(entity),
-                    distance: cadmpeg_ir::scalar::Length::new(value)
-                        .expect("finite source distance"),
-                    parameter: None,
+                    distance: cadmpeg_ir::features::Dimension::Literal(
+                        cadmpeg_ir::scalar::Length::new(value).expect("finite source distance"),
+                    ),
                 },
             )
             .expect("valid source distance"),
@@ -948,7 +1026,7 @@ mod tests {
         else {
             panic!("distance constraint changed family");
         };
-        assert_eq!(distance.get(), 50.8);
+        assert_eq!(distance.literal().expect("literal dimension").get(), 50.8);
         let SketchGeometryDefinition::Line { start, .. } = carriers
             .sketch_geometry(&ir.model.sketch_entities[0])
             .definition()
@@ -1003,7 +1081,8 @@ mod tests {
                 source_feature(FeatureDefinition::Operation(
                     FeatureOperation::DatumOffsetPlane {
                         reference: None,
-                        distance: cadmpeg_ir::scalar::Length::new(2.0).expect("finite distance"),
+                        distance: (cadmpeg_ir::scalar::Length::new(2.0).expect("finite distance"))
+                            .into(),
                     },
                 )),
             )
@@ -1014,7 +1093,7 @@ mod tests {
         else {
             panic!("datum offset feature changed family");
         };
-        assert_eq!(distance.get(), 50.8);
+        assert_eq!(distance.literal().expect("literal dimension").get(), 50.8);
     }
 
     #[test]
@@ -1028,10 +1107,10 @@ mod tests {
                 source_feature(FeatureDefinition::PostProcess {
                     operation: FeatureOperation::StoredGeometry {},
                     refine: false,
-                    fuzzy_tolerance: FuzzyTolerance::Explicit(
+                    fuzzy_tolerance: FuzzyTolerance::Explicit(cadmpeg_ir::Dimension::Literal(
                         cadmpeg_ir::scalar::PositiveLength::new(0.5)
                             .expect("positive source tolerance"),
-                    ),
+                    )),
                 }),
             )
         })
@@ -1043,7 +1122,7 @@ mod tests {
         else {
             panic!("post process feature changed family");
         };
-        assert_eq!(tolerance.get(), 12.7);
+        assert_eq!(tolerance.literal().expect("literal dimension").get(), 12.7);
     }
 
     #[test]
@@ -1057,8 +1136,9 @@ mod tests {
                 source_feature(FeatureDefinition::Operation(
                     FeatureOperation::DatumOffsetPlane {
                         reference: None,
-                        distance: cadmpeg_ir::scalar::Length::new(f64::MAX)
-                            .expect("finite source distance"),
+                        distance: (cadmpeg_ir::scalar::Length::new(f64::MAX)
+                            .expect("finite source distance"))
+                        .into(),
                     },
                 )),
             )
@@ -1097,9 +1177,8 @@ mod tests {
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform,
+            transform: Some(transform),
             linked_prototype,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -1115,6 +1194,7 @@ mod tests {
             carriers.admit_body(
                 &mut ir,
                 Body {
+                    native_ref: None,
                     id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
                         .expect("identity grammar"),
                     kind: BodyKind::Solid,
@@ -1144,7 +1224,13 @@ mod tests {
                 .affine_rows()[0][3],
             25.4
         );
-        assert_eq!(ir.model.occurrences[0].transform.affine_rows()[0][3], 50.8);
+        assert_eq!(
+            ir.model.occurrences[0]
+                .transform
+                .expect("source occurrence placement")
+                .affine_rows()[0][3],
+            50.8
+        );
         assert_eq!(
             ir.model.occurrences[0]
                 .linked_prototype
@@ -1183,6 +1269,7 @@ mod tests {
         )
         .expect("finite source cylinder");
         let surface = Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
             source_object: None,
@@ -1205,6 +1292,7 @@ mod tests {
         )
         .expect("finite source line");
         let curve = Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(geometry)),
@@ -1224,6 +1312,7 @@ mod tests {
     fn extrusion_construction_direction_is_in_millimeters_at_attachment() {
         let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
         let surface = Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1315,6 +1404,7 @@ mod tests {
         );
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: owner.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
@@ -1336,6 +1426,7 @@ mod tests {
         );
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1357,6 +1448,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -1426,6 +1518,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1443,6 +1536,7 @@ mod tests {
         let vertex =
             cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1").expect("identity grammar");
         let edge = Edge {
+            native_ref: None,
             id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1").expect("identity grammar"),
             carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0])).expect("bounded line"),
             start: vertex.clone(),
@@ -1476,6 +1570,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1503,6 +1598,7 @@ mod tests {
                 ctx,
                 &mut ir,
                 Edge {
+                    native_ref: None,
                     id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1")
                         .expect("identity grammar"),
                     carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, f64::MAX]))
@@ -1529,6 +1625,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Coedge {
+                        native_ref: None,
                         id: coedge_id.clone(),
                         owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:visibgeom:loop#1")
                             .expect("identity grammar"),
@@ -1561,6 +1658,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Curve {
+                        native_ref: None,
                         parameter_range: None,
                         id: curve_id.clone(),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1579,6 +1677,7 @@ mod tests {
                 .admit_vertex(
                     &mut ir,
                     Vertex {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
                             .expect("identity grammar"),
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
@@ -1591,6 +1690,7 @@ mod tests {
                 .admit_face(
                     &mut ir,
                     Face {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::FaceId::mint("creo:visibgeom:face#1")
                             .expect("identity grammar"),
                         shell: cadmpeg_ir::ids::ShellId::mint("creo:visibgeom:shell#1")
@@ -1612,6 +1712,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Coedge {
+                        native_ref: None,
                         id: coedge_id.clone(),
                         owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:visibgeom:loop#1")
                             .expect("identity grammar"),
@@ -1655,6 +1756,7 @@ mod tests {
                 .admit_vertex(
                     &mut ir,
                     Vertex {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
                             .expect("identity grammar"),
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
@@ -1679,6 +1781,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Surface {
+                        native_ref: None,
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1698,6 +1801,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::pcurve::Pcurve {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
                             .expect("identity grammar"),
                         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
@@ -1736,6 +1840,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::pcurve::Pcurve {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
                             .expect("identity grammar"),
                         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
@@ -1768,6 +1873,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     Surface {
+                        native_ref: None,
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1787,6 +1893,7 @@ mod tests {
                     ctx,
                     &mut ir,
                     cadmpeg_ir::geometry::pcurve::Pcurve {
+                        native_ref: None,
                         id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
                             .expect("identity grammar"),
                         geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(

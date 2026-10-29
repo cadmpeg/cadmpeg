@@ -8,9 +8,10 @@ use super::{
 };
 use crate::brep::{
     surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation,
-    TextOrientation, TextShapeKind, TextShapeUse, TextSurface, TextTShape, TextTShapeGeometry,
+    TextOrientation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
 };
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
+use crate::test_support::topology::geometry_for_kind;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -43,35 +44,6 @@ fn test_indexed_polygon(
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<IndexedPolygon, CodecError> {
     IndexedPolygon::try_new(nodes, parameters, deflection)
-}
-
-fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
-    match kind {
-        TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
-            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            point: cadmpeg_ir::features::FinitePoint3::ZERO,
-            representations: Vec::new(),
-        },
-        TextShapeKind::Edge => TextTShapeGeometry::Edge {
-            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            same_parameter: false,
-            same_range: false,
-            degenerated: false,
-            representations: Vec::new(),
-        },
-        TextShapeKind::Face => TextTShapeGeometry::Face {
-            natural_restriction: false,
-            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
-            surface: None,
-            location: crate::brep::LocationRef::Identity,
-            triangulation: None,
-        },
-        TextShapeKind::Wire => TextTShapeGeometry::Wire,
-        TextShapeKind::Shell => TextTShapeGeometry::Shell,
-        TextShapeKind::Solid => TextTShapeGeometry::Solid,
-        TextShapeKind::CompSolid => TextTShapeGeometry::CompSolid,
-        TextShapeKind::Compound => TextTShapeGeometry::Compound,
-    }
 }
 
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
@@ -732,6 +704,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
             let id =
                 CoedgeId::mint(format!("fcstd:test:coedge#{index}")).expect("identity grammar");
             Coedge {
+                native_ref: None,
                 id: id.clone(),
                 owner_loop: LoopId::mint(format!("fcstd:test:loop#{index}"))
                     .expect("identity grammar"),
@@ -751,6 +724,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
             let id = CoedgeId::mint(format!("fcstd:test:coedge#four-{index}"))
                 .expect("identity grammar");
             Coedge {
+                native_ref: None,
                 id: id.clone(),
                 owner_loop: LoopId::mint(format!("fcstd:test:loop#four-{index}"))
                     .expect("identity grammar"),
@@ -776,6 +750,7 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 
     let id = CoedgeId::mint("fcstd:test:coedge#single").expect("identity grammar");
     let mut singleton = vec![Coedge {
+        native_ref: None,
         id: id.clone(),
         owner_loop: LoopId::mint("fcstd:test:loop#single").expect("identity grammar"),
         edge,
@@ -1113,7 +1088,12 @@ Co 1001000 +2 0 *
         .model
         .coedges
         .iter()
-        .any(|coedge| { coedge.pcurves[0].pcurve.as_str().ends_with("3%3A3%3A1") }));
+        .all(|coedge| coedge.pcurves.iter().all(|usage| result
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .any(|curve| curve.id == usage.pcurve))));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(
@@ -1177,7 +1157,14 @@ Co 1001000 +2 0 *
         .is_some_and(|id| id.ends_with("Shape")));
     assert_eq!(view.order, 0);
     assert_eq!(view.expanded, Some(true));
-    assert_eq!(view.visible, Some(false));
+    assert_eq!(
+        result
+            .ir()
+            .effective_visibility(&cadmpeg_ir::appearance::AppearanceTarget::Body(
+                result.ir().model.bodies[0].id.clone(),
+            )),
+        Some(false),
+    );
     assert_eq!(
         view.line_width
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
@@ -1188,7 +1175,12 @@ Co 1001000 +2 0 *
             .map(cadmpeg_ir::scalar::NonNegativeReal::get),
         Some(4.0)
     );
-    let color = result.ir().model.bodies[0].color.expect("shape color");
+    let color = result
+        .ir()
+        .effective_display_color(&cadmpeg_ir::appearance::AppearanceTarget::Body(
+            result.ir().model.bodies[0].id.clone(),
+        ))
+        .expect("shape color");
     assert!((color.r() - f32::from(0x33_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.g() - f32::from(0x66_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
     assert!((color.b() - f32::from(0x99_u8) / 255.0).abs() < EPS_COLOR_COMPONENT);
@@ -1240,9 +1232,6 @@ Co 1001000 +2 0 *
         Some("fcstd:native:object#Shape")
     );
     assert_eq!(gui_properties.len(), 8);
-    assert!(gui_properties
-        .iter()
-        .all(|property| property.xml.text().starts_with("<Property")));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 
@@ -1503,9 +1492,25 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
         .arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
         .expect("element maps");
     let groups = &maps[0].maps[0].groups;
-    assert_eq!(groups[0].names[1][0].topology_ids.len(), 2);
-    assert_eq!(groups[1].names[1][0].topology_ids.len(), 2);
-    assert_eq!(groups[1].names[2][0].topology_ids.len(), 2);
+    // Query the source selectors through neutral.native_ref for both roots.
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let inverse = super::current_bindings(&ctx, result.ir()).unwrap();
+    let count = |group: usize, index| {
+        inverse
+            .selected_records(&maps[0].property, &groups[group].indexed_name, index)
+            .1
+            .count()
+    };
+    assert_eq!(count(0, 1), 2);
+    assert_eq!(count(1, 1), 2);
+    assert_eq!(count(1, 2), 2);
+    // DeletedEdgeStable remains a native historical name with no source edge.
+    assert_eq!(groups[0].names[2][0].encoded, ";DeletedEdgeStable.0.a");
+    let (linked, missing) = inverse.selected_records(&maps[0].property, &groups[0].indexed_name, 2);
+    assert!(!linked);
+    assert_eq!(missing.count(), 0);
+    let native = serde_json::to_value(&maps[0]).unwrap();
+    assert!(native.to_string().find("topology_ids").is_none());
     assert_valid_document(result.ir());
 }
 
@@ -1978,3 +1983,5 @@ So 1001000 +2 0 +6 0 *
         cadmpeg_ir::topology::BodyKind::General
     );
 }
+
+mod point_native_linkage;

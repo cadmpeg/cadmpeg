@@ -17,6 +17,7 @@ use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
+    pub(crate) root: View<'a>,
     pub(crate) snapshot: CompoundSnapshot<'a>,
     pub(crate) rse: RseInventory<'a>,
     pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
@@ -40,6 +41,7 @@ impl<'a> InventorContainer<'a> {
         let protein = parse_protein(ctx, &snapshot)?;
         let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
         Ok(Self {
+            root,
             snapshot,
             rse,
             property_sets,
@@ -57,7 +59,11 @@ impl<'a> InventorContainer<'a> {
                 continue;
             };
             match &segment.meta {
-                SegmentMetaState::Parsed(meta) => {
+                SegmentMetaState::Parsed(meta)
+                | SegmentMetaState::Malformed {
+                    framing: Some(meta),
+                    ..
+                } => {
                     insert_attribute(entry, "inner_framing", "zlib");
                     insert_attribute(entry, "expanded_size", meta.body.window().len());
                     insert_attribute(entry, "meta_marker", &meta.declared.marker);
@@ -65,7 +71,9 @@ impl<'a> InventorContainer<'a> {
                     insert_attribute(entry, "segment_kind", segment.kind.label());
                     insert_attribute(entry, "display_name", &meta.display_name);
                 }
-                SegmentMetaState::Malformed { declared, detail } => {
+                SegmentMetaState::Malformed {
+                    declared, detail, ..
+                } => {
                     if let Some(declared) = declared {
                         insert_attribute(entry, "meta_marker", &declared.marker);
                         insert_attribute(entry, "meta_stream_version", declared.version);

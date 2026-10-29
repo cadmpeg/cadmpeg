@@ -11,6 +11,7 @@ use cadmpeg_ir::sketches::SketchId;
 
 fn topology(surfaces: &[Surface]) -> HoleTopology<'_> {
     HoleTopology {
+        parameters: &[],
         surfaces,
         faces: &[],
         loops: &[],
@@ -123,6 +124,7 @@ fn bore_backed_position_projection_projects_one_point_sketch() {
             sketch: SketchFeatureBinding::Planar(None),
         }));
     let surfaces = [Surface {
+        native_ref: None,
         id: SurfaceId::mint("synthetic:test:id#plane").unwrap(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

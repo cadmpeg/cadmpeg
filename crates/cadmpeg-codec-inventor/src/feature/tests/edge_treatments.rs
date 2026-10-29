@@ -165,21 +165,34 @@ fn oriented_chamfers_keep_support_identity_and_require_admitted_dimensions() {
             groups[0].edges,
             cadmpeg_ir::features::EdgeSelection::Native(source.id())
         );
-        let expected = if form == 1 {
-            ChamferSpec::Unresolved {
-                form: Some(ChamferForm::DistanceAngle),
-            }
+        if form == 1 {
+            assert_eq!(
+                groups[0].spec,
+                ChamferSpec::Unresolved {
+                    form: Some(ChamferForm::DistanceAngle),
+                }
+            );
         } else if second == 2.0 {
-            ChamferSpec::TwoDistances {
-                first: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive"),
-                second: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive"),
-            }
+            let bound =
+                |distance: &cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>| {
+                    distance
+                        .value_from(&neutral)
+                        .expect("bound chamfer distance")
+                };
+            assert!(matches!(
+                &groups[0].spec,
+                ChamferSpec::TwoDistances { first, second }
+                    if bound(first) == cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive")
+                        && bound(second) == cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive")
+            ));
         } else {
-            ChamferSpec::Unresolved {
-                form: Some(ChamferForm::TwoDistances),
-            }
-        };
-        assert_eq!(groups[0].spec, expected);
+            assert_eq!(
+                groups[0].spec,
+                ChamferSpec::Unresolved {
+                    form: Some(ChamferForm::TwoDistances),
+                }
+            );
+        }
         assert_eq!(result.bodies().len(), 1);
         assert_eq!(result.bodies()[0].as_str(), properties[7].id());
     }

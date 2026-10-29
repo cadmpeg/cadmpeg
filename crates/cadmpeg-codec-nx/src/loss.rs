@@ -56,6 +56,8 @@ macro_rules! loss_codes {
 }
 
 loss_codes! {
+    /// A typed source record lacks enough fields for its neutral home.
+    NeutralRecordUnprojected => ("projection.record-unprojected", Warning, MetadataNotTransferred),
     /// A JT display graph failed native admission.
     DisplayJtGraphRejected => ("container.display-jt-graph-rejected", Blocking, DecodeDiagnostic),
     /// A roll-forward table failed native admission.
@@ -175,8 +177,145 @@ impl NxLossCode {
     }
 }
 
+/// Classes with source records represented only by bytes, rather than typed records.
+///
+/// Codes absent from this table describe retained typed content, metadata, or export
+/// loss. Native retention below is checked separately from neutral projection.
+#[cfg(test)]
+const UNREPRESENTED: &[(NxLossCode, cadmpeg_ir::ArenaClass)] = &[
+    (
+        NxLossCode::AttributeValueUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::CarrierLanesUnpaired,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::ContainerStreamOpaque,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        NxLossCode::ContainerStreamOpaque,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::DisplayJtArithmeticLaneBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::DisplayJtGraphRejected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::DisplayJtTessellationsDropped,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::FeatureNativeKindRetained,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        NxLossCode::GeometryAdaptiveWorkBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::IntersectionPcurveCompletionBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::IntersectionRecordsOpaque,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::NativeAttachmentFailed,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        NxLossCode::NativeAttachmentFailed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::ObjectRecordIdentityBounded,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        NxLossCode::ObjectRecordIdentityBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::OffsetStoreControlUntyped,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        NxLossCode::OffsetStoreControlUntyped,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::RollForwardTableRejected,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        NxLossCode::SemanticAnnotationOrderUnstatable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::SketchGraphUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        NxLossCode::SourceScanBounded,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (NxLossCode::SourceScanBounded, cadmpeg_ir::ArenaClass::Model),
+    (
+        NxLossCode::TopologyFaceLoopUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        NxLossCode::TopologyLoopRingUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+];
+
+/// Independent fixture oracle for codes that prove an omitted source record.
+/// Production fidelity is collected at actual decoding/retention branches.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
+) -> cadmpeg_ir::ArenaClasses {
+    let mut classes = cadmpeg_ir::ArenaClasses::default();
+    for (code, class) in UNREPRESENTED {
+        if losses.iter().any(|loss| loss.code == code.kind()) {
+            classes.insert(*class);
+        }
+    }
+
+    classes
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
+        let losses = [
+            super::NxLossCode::FeatureSuppressionUnresolved.note("typed record retained"),
+            super::NxLossCode::DeltasSelectionUnresolved.note("decode diagnostic"),
+        ];
+        assert!(super::unrepresented(&losses, None).is_empty());
+    }
+
+    #[test]
+    fn source_only_losses_declare_their_classes() {
+        for (code, class) in super::UNREPRESENTED {
+            let losses = [code.note("source record is not typed")];
+            let classes = super::unrepresented(&losses, None);
+            assert!(classes.contains(class), "{code:?} must declare {class:?}");
+        }
+        assert!(super::unrepresented(&[], None).is_empty());
+    }
+
     use super::NxLossCode;
     use std::collections::BTreeSet;
 
@@ -187,6 +326,7 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "projection.record-unprojected",
                 "container.display-jt-graph-rejected",
                 "history.roll-forward-table-rejected",
                 "source.kernel-dialect-unverified",

@@ -26,13 +26,16 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -68,13 +71,16 @@ fn type406_form34_and_form35_entity_table_boundary_follows_text_score_ranges() {
         directory_sequence: 3,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     };
@@ -112,13 +118,16 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };
@@ -139,7 +148,7 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
         directory_sequence: 3,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: vec![
+        tokens: (vec![
             Token {
                 value: TokenValue::Integer(406),
                 span: 0..0,
@@ -164,7 +173,10 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
                 value: TokenValue::Integer(0),
                 span: 0..0,
             },
-        ],
+        ])
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: 6,
         comment: Vec::new(),
     };
@@ -226,7 +238,10 @@ fn type406_form34_and_form35_malformed_counts_do_not_enable_generic_recovery() {
         line_range: 1..2,
         bytes: Vec::new(),
         parameter_end: values.len(),
-        tokens: values.into_iter().collect(),
+        tokens: (values.into_iter().collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
         comment: Vec::new(),
     };
     let analysis = analyze_trailing_pointer_groups_for_global_table(
@@ -265,7 +280,7 @@ fn type406_form30_entity_table_boundary_follows_fixed_np_and_note_count() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             parameter_end,
             comment: Vec::new(),
         }
@@ -352,7 +367,7 @@ fn type406_form30_complete_counted_span_keeps_boundary_with_wrong_note_type() {
         line_range: 1..2,
         bytes: Vec::new(),
         parameter_end: tokens.len(),
-        tokens,
+        tokens: (tokens).into_iter().map(Some).collect(),
         comment: Vec::new(),
     };
 
@@ -416,7 +431,7 @@ fn type406_form30_malformed_np_or_note_count_does_not_enable_generic_recovery() 
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: tokens.len(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups_for_global_table(
@@ -497,7 +512,7 @@ fn type406_form11_entity_table_boundary_follows_nested_value_counts() {
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: tokens.len(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             comment: Vec::new(),
         };
         if expected_start == 20 {
@@ -553,7 +568,7 @@ fn type406_form11_complete_nested_span_keeps_boundary_with_invalid_value() {
         line_range: 1..2,
         bytes: Vec::new(),
         parameter_end: tokens.len(),
-        tokens,
+        tokens: (tokens).into_iter().map(Some).collect(),
         comment: Vec::new(),
     };
 
@@ -711,7 +726,7 @@ fn type406_form11_malformed_nested_counts_do_not_enable_generic_recovery() {
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: tokens.len(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups_for_global_table(
@@ -772,7 +787,7 @@ fn type406_form12_entity_table_boundary_follows_name_count() {
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: tokens.len(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups_for_global_table(
@@ -816,7 +831,7 @@ fn type406_form12_table_boundary_beats_generic_alternatives() {
         line_range: 1..2,
         bytes: Vec::new(),
         parameter_end: tokens.len(),
-        tokens,
+        tokens: (tokens).into_iter().map(Some).collect(),
         comment: Vec::new(),
     };
     let generic_valid_candidate_count = structural_pointer_group_candidates(&record)
@@ -904,7 +919,7 @@ fn type406_form12_malformed_count_or_name_list_do_not_enable_generic_recovery() 
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: tokens.len(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups_for_global_table(
@@ -972,7 +987,7 @@ fn type406_form27_entity_table_boundary_follows_np_and_value_pair_count() {
             line_range: 1..2,
             bytes: Vec::new(),
             parameter_end: tokens.len(),
-            tokens,
+            tokens: (tokens).into_iter().map(Some).collect(),
             comment: Vec::new(),
         };
         let analysis = analyze_trailing_pointer_groups_for_global_table(

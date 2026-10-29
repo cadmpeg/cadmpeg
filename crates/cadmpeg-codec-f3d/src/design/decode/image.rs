@@ -4,7 +4,7 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 
@@ -57,17 +57,27 @@ pub(super) fn embedded_image_asset(
     ))
 }
 
-/// Decode image scopes in their owning streams, ordered by native identity.
-pub(super) fn decode_scoped_images<T>(
-    scan: &ContainerScan,
+/// The stream bytes of a range, read through the stream's source view.
+pub(super) type ImageRead<'s, 'r> = dyn Fn(std::ops::Range<usize>) -> Option<&'s [u8]> + 'r;
+
+/// Decode image records of scopes in their owning streams, ordered by native
+/// identity: `locate` names each record, and `parse` reads its grammar
+/// through the read it is given.
+pub(super) fn decode_scoped_image_records<'s, T>(
+    scan: &ContainerScan<'s>,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     kind: &crate::records::feature::scope::DesignFeatureKind,
-    mut parse: impl FnMut(
+    locate: impl Fn(
         &[u8],
         &str,
         &crate::records::feature::scope::DesignParameterScope,
+    ) -> Option<String>,
+    parse: impl Fn(
+        &[u8],
+        &str,
+        &crate::records::feature::scope::DesignParameterScope,
+        &ImageRead<'s, '_>,
     ) -> Result<Option<T>, CodecError>,
-    id: impl Fn(&T) -> &str,
 ) -> Result<Vec<T>, CodecError> {
     let mut images = Vec::new();
     for entry in scan
@@ -75,20 +85,36 @@ pub(super) fn decode_scoped_images<T>(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let bytes = source.window();
         let stream = crate::ids::native_scope(&entry.name);
+        let read = |range: std::ops::Range<usize>| {
+            source
+                .start()
+                .checked_add(range.start)
+                .zip(source.start().checked_add(range.end))
+                .and_then(|(start, end)| source.child(start, end))
+                .map(View::window)
+        };
         for scope in scopes.iter().filter(|scope| {
             scope.kind().as_str() == kind.as_str()
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         }) {
-            if let Some(image) = parse(bytes, &entry.name, scope)? {
-                images.push(image);
+            let Some(id) = locate(bytes, &entry.name, scope) else {
+                continue;
+            };
+            if images.iter().any(|(other, _): &(String, T)| *other == id) {
+                continue;
+            }
+            if let Some(image) = parse(bytes, &entry.name, scope, &read)? {
+                images.push((id, image));
             }
         }
     }
-    images.sort_by(|a, b| id(a).cmp(id(b)));
-    images.dedup_by(|a, b| id(a) == id(b));
-    Ok(images)
+    images.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(images.into_iter().map(|(_, image)| image).collect())
 }
 
 #[cfg(test)]
@@ -142,7 +168,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         let stream = crate::ids::native_scope(ENTRY);
         let scope: crate::records::feature::scope::DesignParameterScope =
-            serde_json::from_value(serde_json::json!({
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
                 "id": format!("{stream}:scope#1"),
                 "byte_offset": 0,
                 "class_tag": "300",
@@ -172,16 +198,15 @@ mod tests {
                 },
                 "paired_class_tag": "261",
                 "paired_byte_offset": 200
-            }))
-            .unwrap();
+            }));
         let kind = crate::records::feature::scope::DesignFeatureKind::Fillet;
         with_scan(&archive, |scan| {
-            let images = super::decode_scoped_images(
+            let images = super::decode_scoped_image_records(
                 scan,
                 std::slice::from_ref(&scope),
                 &kind,
-                |_, _, _| Ok(Some(17_u32)),
-                |_| "image",
+                |_, _, _| Some("image".to_owned()),
+                |_, _, _, _| Ok(Some(17_u32)),
             )
             .unwrap();
             assert_eq!(images, [17]);

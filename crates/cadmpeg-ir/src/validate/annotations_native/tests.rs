@@ -98,19 +98,11 @@ fn parameter_native_ref_must_resolve() {
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
-        pmi: Some(crate::features::ParameterPmi {
-            subtype: crate::features::PmiDimensionSubtype::Linear,
-            precision: 2,
-            display_text: None,
-            basic: false,
-            inspection: false,
-            reference_only: false,
-            native_ref: "native:pmi-missing#0".into(),
-        }),
+        pmi: Some(crate::ids::PmiId::mint("test:model:pmi#missing").unwrap()),
         native_ref: Some("native:missing#0".into()),
     });
     assert!(validate_neutral(&ir, Vec::new())
@@ -125,8 +117,8 @@ fn parameter_native_ref_must_resolve() {
         .findings
         .iter()
         .any(|finding| {
-            finding.check == Check::NativeLinks
-                && finding.message.contains("PMI native_ref")
+            finding.check == Check::ReferentialIntegrity
+                && finding.message.contains("parameter PMI reference")
                 && finding.entity.as_deref() == Some(id.as_str())
         }));
 }
@@ -353,4 +345,49 @@ fn annotations_on_many_model_points_resolve_without_findings() {
     )
     .unwrap();
     assert!(findings.is_empty());
+}
+
+#[test]
+fn full_registry_validation_requires_actual_native_rows_not_neutral_or_staged_ids() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let owner = ir.model.bodies[0].id.as_str().to_owned();
+    let native = crate::NativeRecord::new(
+        "test:native:record#geometry".try_into().unwrap(),
+        serde_json::Map::new(),
+    )
+    .unwrap();
+    ir.native
+        .namespace_mut("test")
+        .arenas_mut()
+        .insert("records".into(), vec![native]);
+    for (target, staged, succeeds) in [
+        ("test:native:record#geometry".to_owned(), false, true),
+        (ir.model.points[0].id.as_str().to_owned(), false, false),
+        ("other:native:record#renamed".to_owned(), true, false),
+        ("other:native:record#renamed".to_owned(), false, false),
+    ] {
+        ir.model.bodies[0].native_ref = Some(target.clone());
+        let index = crate::index::ModelIndex::with_additional_native_identities(
+            &ir,
+            if staged {
+                vec![target.as_str()]
+            } else {
+                vec![]
+            },
+        );
+        let mut findings = vec![];
+        super::check_native_links(
+            crate::native::view::NativeView::new(&ir, None),
+            &index,
+            &mut findings,
+        );
+        let actual: Vec<_> = findings
+            .iter()
+            .filter(|finding| finding.entity.as_deref() == Some(owner.as_str()))
+            .collect();
+        assert_eq!(actual.len(), usize::from(!succeeds));
+        if !succeeds {
+            assert_eq!(actual[0].check, crate::report::check::Check::NativeLinks);
+        }
+    }
 }

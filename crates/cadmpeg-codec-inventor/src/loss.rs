@@ -30,6 +30,8 @@ use cadmpeg_ir::report::{
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum InventorLossCode {
+    /// A typed native record has no constructible neutral counterpart.
+    NeutralRecordUnprojected,
     /// The active kernel carrier was not transferred into neutral geometry.
     GeometryKernelCarrierNotTransferred,
     /// Faces use procedural surfaces without a decoded carrier.
@@ -40,10 +42,6 @@ pub(crate) enum InventorLossCode {
     RseMetadataStreamMalformed,
     /// `RSe` bulk streams have invalid envelope or zlib framing.
     RseBulkStreamMalformed,
-    /// Typed assembly records are malformed or outside the implemented branch.
-    AssemblyRecordMalformed,
-    /// Typed presentation records are malformed or outside the implemented branch.
-    PresentationRecordMalformed,
     /// Typed design records are malformed or outside the implemented branch.
     DesignRecordMalformed,
     /// Typed sketch records could not be parsed exactly.
@@ -187,13 +185,12 @@ impl InventorLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [InventorLossCode] = &[
+        Self::NeutralRecordUnprojected,
         Self::GeometryKernelCarrierNotTransferred,
         Self::GeometryProceduralSurfaceNotTransferred,
         Self::RseSegmentPairUntyped,
         Self::RseMetadataStreamMalformed,
         Self::RseBulkStreamMalformed,
-        Self::AssemblyRecordMalformed,
-        Self::PresentationRecordMalformed,
         Self::DesignRecordMalformed,
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
@@ -267,6 +264,7 @@ impl InventorLossCode {
     #[must_use]
     pub(crate) const fn code(self) -> &'static str {
         match self {
+            Self::NeutralRecordUnprojected => "projection.record-unprojected",
             Self::GeometryKernelCarrierNotTransferred => "geometry.kernel-carrier-not-transferred",
             Self::GeometryProceduralSurfaceNotTransferred => {
                 "geometry.procedural-surface-not-transferred"
@@ -274,8 +272,6 @@ impl InventorLossCode {
             Self::RseSegmentPairUntyped => "rse.segment-pair-untyped",
             Self::RseMetadataStreamMalformed => "rse.metadata-stream-malformed",
             Self::RseBulkStreamMalformed => "rse.bulk-stream-malformed",
-            Self::AssemblyRecordMalformed => "assembly.record-malformed",
-            Self::PresentationRecordMalformed => "presentation.record-malformed",
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureRecordMalformed => "feature.record-malformed",
@@ -378,8 +374,6 @@ impl InventorLossCode {
             Self::DrawingRecordMalformed
             | Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
-            | Self::AssemblyRecordMalformed
-            | Self::PresentationRecordMalformed
             | Self::DesignRecordMalformed
             | Self::SketchRecordMalformed
             | Self::FeatureRecordMalformed
@@ -429,7 +423,8 @@ impl InventorLossCode {
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
-            Self::MetadataPropertyUnmapped
+            Self::NeutralRecordUnprojected
+            | Self::MetadataPropertyUnmapped
             | Self::FeatureLabelUnusable
             | Self::FeatureLabelNameReplaced => LossTaxonomy::MetadataNotTransferred,
             Self::ProteinCatalogUndecodable
@@ -474,8 +469,177 @@ impl InventorLossCode {
     }
 }
 
+/// Classes with source records represented only by bytes, rather than typed records.
+///
+/// Codes absent from this table describe retained typed content, metadata, or export
+/// loss. Native retention below is checked separately from neutral projection.
+#[cfg(test)]
+const UNREPRESENTED: &[(InventorLossCode, cadmpeg_ir::ArenaClass)] = &[
+    (
+        InventorLossCode::AppearanceDefaultUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::AppearanceFaceOverrideUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::AssemblyPlacementNotTransferred,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::DesignRecordMalformed,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        InventorLossCode::FeatureRecordMalformed,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        InventorLossCode::GeometryKernelCarrierNotTransferred,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::GeometryProceduralSurfaceNotTransferred,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::KernelCarrierUnparseable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::ProteinAppearanceAbsent,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::ProteinAssetRejected,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::ProteinCatalogUndecodable,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::ProteinStreamMalformed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::RseBulkStreamMalformed,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        InventorLossCode::RseBulkStreamMalformed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::RseMetadataStreamMalformed,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        InventorLossCode::RseMetadataStreamMalformed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::RseSegmentPairUntyped,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        InventorLossCode::RseSegmentPairUntyped,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::RseStreamUnpaired,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        InventorLossCode::RseStreamUnpaired,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::SketchRecordMalformed,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        InventorLossCode::UfrxSchemaUnsupported,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::UfrxSchemaUnsupportedAssembly,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        InventorLossCode::UfrxTableMalformed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+];
+
+/// Independent fixture oracle for codes that prove an omitted source record.
+/// Production fidelity is collected at actual decoding/retention branches.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
+) -> cadmpeg_ir::ArenaClasses {
+    let mut classes = cadmpeg_ir::ArenaClasses::default();
+    for (code, class) in UNREPRESENTED {
+        if losses.iter().any(|loss| loss.code == code.kind()) {
+            classes.insert(*class);
+        }
+    }
+
+    classes
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
+        let losses = [
+            super::InventorLossCode::FeatureStateUnresolved.note("typed record retained"),
+            super::InventorLossCode::SourceDialectUnverified.note("decode diagnostic"),
+        ];
+        assert!(super::unrepresented(&losses, None).is_empty());
+    }
+
+    #[test]
+    fn source_only_losses_declare_their_classes() {
+        for (code, class) in super::UNREPRESENTED {
+            let losses = [code.note("source record is not typed")];
+            let classes = super::unrepresented(&losses, None);
+            assert!(classes.contains(class), "{code:?} must declare {class:?}");
+        }
+        assert!(super::unrepresented(&[], None).is_empty());
+    }
+
+    /// `decode::primary` stores complete typed `PmDc` parameters/expressions/units,
+    /// features/properties, and sketch entities/constraints before projection.
+    /// An open neutral graph does not discard those source semantic records.
+    #[test]
+    fn graph_projection_failures_are_reductions_of_held_native_content() {
+        for code in [
+            super::InventorLossCode::ParameterGraphOpen,
+            super::InventorLossCode::FeatureOperationGraphOpen,
+            super::InventorLossCode::SketchGraphOpen,
+        ] {
+            assert!(
+                super::unrepresented(&[code.note("typed source graph remains held")], None)
+                    .is_empty()
+            );
+        }
+    }
+
+    /// These emit sites retain the actual semantic source records, so the
+    /// projection event alone never declares missing source content.
+    #[test]
+    fn typed_native_reductions_do_not_declare_opaque_source() {
+        assert!(super::unrepresented(
+            &[super::InventorLossCode::ParameterExpressionBounded
+                .note("typed semantic source remains held")],
+            None
+        )
+        .is_empty());
+    }
+
     use super::InventorLossCode;
     use std::collections::BTreeSet;
 
@@ -486,13 +650,12 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "projection.record-unprojected",
                 "geometry.kernel-carrier-not-transferred",
                 "geometry.procedural-surface-not-transferred",
                 "rse.segment-pair-untyped",
                 "rse.metadata-stream-malformed",
                 "rse.bulk-stream-malformed",
-                "assembly.record-malformed",
-                "presentation.record-malformed",
                 "design.record-malformed",
                 "sketch.record-malformed",
                 "feature.record-malformed",

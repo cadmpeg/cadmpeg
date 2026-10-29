@@ -19,7 +19,7 @@ impl RelationRecordCase {
             id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
             record_index: self.record_index,
             class_tag: self.class_tag.clone().try_into().unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         let mut records = Vec::new();
         crate::design::decode::sketch::decode_sketch_relation_record(

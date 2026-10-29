@@ -708,7 +708,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Ok(Some(native()?));
                 }
             }
-            SketchConstraintDefinitionInput::ArcAngle { entity, angle }
+            SketchConstraintDefinitionInput::ArcAngle {
+                entity,
+                angle: angle.into(),
+            }
         }
         MarkerRelationGroup::EllipseQuarter(quarter) => {
             let Some(entity) = linked_single_ellipse_entity(
@@ -742,7 +745,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if !same_dimension_angle(sweep, angle.get()) {
                 return Ok(Some(native()?));
             }
-            SketchConstraintDefinitionInput::EllipseAngle { entity, angle }
+            SketchConstraintDefinitionInput::EllipseAngle {
+                entity,
+                angle: angle.into(),
+            }
         }
         MarkerRelationGroup::Binary(binary) => {
             let owner_entities =

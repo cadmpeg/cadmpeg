@@ -40,7 +40,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
-        }) if actual_length.get() == 12.7
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 12.7
     ));
 }
 
@@ -170,10 +170,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
     ));
     let feature_id = feature.id.clone();
     assert!(matches!(
-        decoded.ir().model.configurations[0]
-            .feature_states
-            .get(&feature_id)
-            .map(|state| &state.definition),
+        super::effective_definition(
+            decoded.ir(),
+            &decoded.ir().model.configurations[0],
+            &feature_id
+        ),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -185,10 +186,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         }))
     ));
     assert!(matches!(
-        decoded.ir().model.configurations[1]
-            .feature_states
-            .get(&feature_id)
-            .map(|state| &state.definition),
+        super::effective_definition(
+            decoded.ir(),
+            &decoded.ir().model.configurations[1],
+            &feature_id
+        ),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -199,14 +201,34 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             ..
         }))
     ));
-    assert!(decoded
-        .ir()
-        .model
-        .configurations
-        .iter()
-        .all(
-            |configuration| configuration.feature_states.len() == decoded.ir().model.features.len()
-        ));
+    for configuration in &decoded.ir().model.configurations {
+        // Every feature has an effective state, but a stored definition must
+        // differ from the base. The active configuration stores no overrides.
+        assert!(decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .all(
+                |feature| super::effective_definition(decoded.ir(), configuration, &feature.id)
+                    .is_some()
+            ));
+        if configuration.active {
+            assert!(configuration.feature_states.is_empty());
+        }
+        for (id, state) in &configuration.feature_states {
+            if let Some(definition) = state.definition() {
+                let base = decoded
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .find(|feature| feature.id == *id)
+                    .unwrap();
+                assert_ne!(definition, base.evaluation.definition());
+            }
+        }
+    }
     let round_trip =
         cadmpeg_ir::CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
     assert_eq!(
@@ -220,21 +242,21 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
 
     let mut edited = decoded.ir().clone();
     let replacement = edited.model.configurations[0].feature_states[&feature_id].clone();
-    edited.model.configurations[1]
-        .feature_states
-        .insert(feature_id, replacement);
-    let error = crate::test_support::plan_inherited_write(
-        &edited,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    if edited.model.configurations[1].active {
+        edited
+            .set_feature_definition(&feature_id, replacement.definition().unwrap().clone())
+            .unwrap();
+    } else {
+        edited.model.configurations[1]
+            .feature_states
+            .insert(feature_id, replacement);
+    }
+    crate::history::configuration::normalize_configuration_differences(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut edited,
     )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("configuration design-state edit has no complete native lane encoding"),
-        "unexpected error: {error}"
-    );
+    .unwrap();
+    crate::test_support::assert_synthesis_fallback(&edited, decoded.source_fidelity());
 }
 
 #[test]
@@ -291,6 +313,7 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
 #[test]
 fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -350,21 +373,42 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     let state_a = &decoded.ir().model.configurations[0].feature_states[&extrusion_id];
     let state_b = &decoded.ir().model.configurations[1].feature_states[&extrusion_id];
     assert!(matches!(
-        &state_a.definition,
+        state_a.definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
         }) if profile == &profile_a.id
     ));
     assert!(matches!(
-        &state_b.definition,
+        state_b.definition().expect("structural override"),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Feature(profile)),
             ..
         }) if profile == &profile_b.id
     ));
-    assert_eq!(state_a.dependencies.as_slice(), vec![profile_a.id.clone()]);
-    assert_eq!(state_b.dependencies.as_slice(), vec![profile_b.id.clone()]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let feature_references = |state: &cadmpeg_ir::features::ConfigurationFeatureState| {
+        let mut references = Vec::new();
+        state
+            .definition()
+            .unwrap()
+            .visit_identity_references(&ctx, &mut |reference| {
+                if let Some(feature) = decoded
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .find(|feature| feature.id.as_str() == reference)
+                {
+                    references.push(feature.id.clone());
+                }
+                Ok(())
+            })
+            .unwrap();
+        references
+    };
+    assert_eq!(feature_references(state_a), vec![profile_a.id.clone()]);
+    assert_eq!(feature_references(state_b), vec![profile_b.id.clone()]);
 }
 
 #[test]
@@ -506,7 +550,7 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
             },
             op: BooleanOp::NewBody,
             ..
-        }) if actual_length.get() == 6.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 6.0
     ));
 }
 

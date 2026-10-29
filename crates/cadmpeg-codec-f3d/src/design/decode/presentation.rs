@@ -149,10 +149,34 @@ pub(crate) fn body_presentations(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<BodyPresentation>, CodecError> {
+    let mut out = Vec::new();
+    each_body_presentation(bytes, meta, |frame, parse| {
+        let record = bytes.get(frame.clone()).ok_or_else(|| {
+            CodecError::malformed("F3D Design body-presentation frame exceeds its stream")
+        })?;
+        if let Some(presentation) = parse(record)? {
+            out.push(presentation);
+        }
+        Ok(())
+    })?;
+    Ok(out)
+}
+
+/// The admitted parse of one body-presentation frame: the frame bytes from
+/// its start, read by the caller.
+pub(crate) type PresentationParse<'a> =
+    dyn Fn(&[u8]) -> Result<Option<BodyPresentation>, CodecError> + 'a;
+
+/// Visit each body-presentation frame of the primary index, in index order,
+/// with its stream extent and the parse of its bytes. The frame's
+/// registration metadata is checked before the visit.
+pub(crate) fn each_body_presentation(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    mut visit: impl FnMut(std::ops::Range<usize>, &PresentationParse<'_>) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
     let nodes = browser_node_records(bytes, meta)?;
     let entity_types = entity_types(meta)?;
-
-    let mut out = Vec::new();
     for frame in typed_primary_frames(
         bytes,
         meta,
@@ -175,85 +199,101 @@ pub(crate) fn body_presentations(
                 frame.entity_id
             )));
         }
-        let framed_bytes = &bytes[..frame.end];
-        let named_header = match parse_settled_entity_header(framed_bytes, frame.start) {
-            Some(header) => Some(header),
-            None => parse_genesis_entity_header(framed_bytes, frame.start),
-        };
-        let (entity_suffix, owner, material) = if let Some(NamedEntityHeader {
-            entity_id,
-            entity_id_offset,
-            end: header_end,
-            ..
-        }) = named_header
-        {
-            let entity_suffix = entity_id.suffix();
-            if entity_suffix != frame.entity_id {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D Design body-presentation entity {} disagrees with its named header entity {entity_suffix}",
-                    frame.entity_id
-                )));
-            }
-            (
-                entity_suffix,
-                BodyPresentationOwner::Named {
-                    entity_id,
-                    entity_id_offset: u64_from_index(entity_id_offset),
-                },
-                presentation_material(
-                    framed_bytes,
-                    header_end,
-                    frame.end,
-                    entity_suffix,
-                    &entity_types,
-                )?,
-            )
-        } else {
-            let entity_suffix =
-                View::u64_le_at(framed_bytes, frame.start + 7).ok_or_else(|| {
-                    crate::design::text::malformed_design(format_args!(
-                        "F3D Design bare body-presentation entity {} has a truncated head",
-                        frame.entity_id
-                    ))
-                })?;
-            if entity_suffix == 0 || entity_suffix != frame.entity_id {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D Design bare body-presentation entity {} has head entity {entity_suffix}",
-                    frame.entity_id
-                )));
-            }
-            let Some(material) = bare_presentation_material(
-                framed_bytes,
-                frame.start + 15,
-                frame.end,
-                entity_suffix,
-            )?
-            else {
-                continue;
-            };
-            (entity_suffix, BodyPresentationOwner::Bare, Some(material))
-        };
-        let browser_node = if let Some(material) = material.as_ref() {
-            let mut matching_nodes = nodes.iter().filter(|node| {
-                node.entity_suffix == entity_suffix
-                    && node.guid.eq_ignore_ascii_case(&material.node_guid)
-            });
-            match (matching_nodes.next(), matching_nodes.next()) {
-                (Some(node), None) => Some(node.clone()),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        out.push(BodyPresentation {
-            byte_offset: u64_from_index(frame.start),
-            entity_suffix,
-            owner,
-            browser_node,
-            material,
-        });
+        let (start, entity_id) = (frame.start, frame.entity_id);
+        visit(frame.start..frame.end, &|record: &[u8]| {
+            parse_body_presentation(record, start, entity_id, &nodes, &entity_types)
+        })?;
     }
-    Ok(out)
+    Ok(())
+}
+
+/// Parse one body-presentation frame. `record` holds the frame from its
+/// first byte, and `start` is the frame's stream offset; every returned offset
+/// is a stream offset.
+fn parse_body_presentation(
+    record: &[u8],
+    start: usize,
+    entity_id: u64,
+    nodes: &[BrowserNodeRecord],
+    entity_types: &HashMap<u64, (&str, u32)>,
+) -> Result<Option<BodyPresentation>, CodecError> {
+    let end = record.len();
+    let rebase = |offset: u64| {
+        offset
+            .checked_add(u64_from_index(start))
+            .ok_or_else(|| CodecError::malformed("F3D Design body-presentation offset overflows"))
+    };
+    let named_header = match parse_settled_entity_header(record, 0) {
+        Some(header) => Some(header),
+        None => parse_genesis_entity_header(record, 0),
+    };
+    let (entity_suffix, owner, material) = if let Some(NamedEntityHeader {
+        entity_id: header_entity_id,
+        entity_id_offset,
+        end: header_end,
+        ..
+    }) = named_header
+    {
+        let entity_suffix = header_entity_id.suffix();
+        if entity_suffix != entity_id {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D Design body-presentation entity {entity_id} disagrees with its named header entity {entity_suffix}"
+            )));
+        }
+        (
+            entity_suffix,
+            BodyPresentationOwner::Named {
+                entity_id: header_entity_id,
+                entity_id_offset: rebase(u64_from_index(entity_id_offset))?,
+            },
+            presentation_material(record, header_end, end, entity_suffix, entity_types)?,
+        )
+    } else {
+        let entity_suffix = View::u64_le_at(record, 7).ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
+                "F3D Design bare body-presentation entity {entity_id} has a truncated head"
+            ))
+        })?;
+        if entity_suffix == 0 || entity_suffix != entity_id {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "F3D Design bare body-presentation entity {entity_id} has head entity {entity_suffix}"
+            )));
+        }
+        let Some(material) = bare_presentation_material(record, 15, end, entity_suffix)? else {
+            return Ok(None);
+        };
+        (entity_suffix, BodyPresentationOwner::Bare, Some(material))
+    };
+    let material = match material {
+        Some(mut material) => {
+            material.physical_token_offset = rebase(material.physical_token_offset)?;
+            material.visual_guid_offset = rebase(material.visual_guid_offset)?;
+            if let Some(preset) = &mut material.visual_preset {
+                preset.offset = rebase(preset.offset)?;
+            }
+            Some(material)
+        }
+        None => None,
+    };
+    let browser_node = if let Some(material) = material.as_ref() {
+        let mut matching_nodes = nodes.iter().filter(|node| {
+            node.entity_suffix == entity_suffix
+                && node.guid.eq_ignore_ascii_case(&material.node_guid)
+        });
+        match (matching_nodes.next(), matching_nodes.next()) {
+            (Some(node), None) => Some(node.clone()),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    Ok(Some(BodyPresentation {
+        byte_offset: u64_from_index(start),
+        entity_suffix,
+        owner,
+        browser_node,
+        material,
+    }))
 }
 
 fn entity_types(
@@ -670,6 +710,7 @@ mod tests {
         bytes.extend_from_slice(&42_u64.to_le_bytes());
         let meta = crate::metastream::MetaStream {
             types: vec![design_type(
+                256,
                 BROWSER_NODE_TYPE_GUID,
                 Some(BROWSER_NODE_BASE_TYPE_GUID),
                 BROWSER_NODE_TYPE_VERSION,
@@ -722,6 +763,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -729,6 +771,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
@@ -736,6 +779,7 @@ mod tests {
                     vec![43],
                 ),
                 design_type(
+                    258,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -743,6 +787,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    259,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -810,6 +855,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -817,6 +863,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
@@ -824,6 +871,7 @@ mod tests {
                     vec![43],
                 ),
                 design_type(
+                    258,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -831,6 +879,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    259,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -880,6 +929,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -887,6 +937,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -894,6 +945,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    258,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -950,6 +1002,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -957,6 +1010,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     "00000000-0000-0000-0000-000000000000",
                     None,
                     0,
@@ -964,6 +1018,7 @@ mod tests {
                     vec![99],
                 ),
                 design_type(
+                    258,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -971,6 +1026,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    259,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -1001,6 +1057,7 @@ mod tests {
         bytes.extend_from_slice(&42u64.to_le_bytes());
         let meta = crate::metastream::MetaStream {
             types: vec![design_type(
+                256,
                 BROWSER_NODE_TYPE_GUID,
                 Some(BROWSER_NODE_BASE_TYPE_GUID),
                 BROWSER_NODE_TYPE_VERSION,
@@ -1023,8 +1080,9 @@ mod tests {
         let node_guid = "11111111-2222-8333-A444-555555555555";
         let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
         let mut types = (0..44)
-            .map(|_| {
+            .map(|ordinal| {
                 design_type(
+                    256 + ordinal,
                     "00000000-0000-0000-0000-000000000000",
                     None,
                     0,
@@ -1037,6 +1095,7 @@ mod tests {
         let node_tag = 301u32;
         types.extend([
             design_type(
+                300,
                 BODY_PRESENTATION_TYPE_GUID,
                 Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                 BODY_PRESENTATION_TYPE_VERSION,
@@ -1044,6 +1103,7 @@ mod tests {
                 vec![entity],
             ),
             design_type(
+                301,
                 BROWSER_NODE_TYPE_GUID,
                 Some(BROWSER_NODE_BASE_TYPE_GUID),
                 BROWSER_NODE_TYPE_VERSION,

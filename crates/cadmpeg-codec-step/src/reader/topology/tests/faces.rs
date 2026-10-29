@@ -631,6 +631,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     let vertex = ir.model.vertices[0].id.clone();
     let inner = LoopId::mint("zzzz:test:loop#inner").expect("identity grammar");
     ir.model.loops.push(Loop {
+        native_ref: None,
         id: inner.clone(),
         face: face.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {

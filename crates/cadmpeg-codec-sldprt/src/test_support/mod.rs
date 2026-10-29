@@ -115,21 +115,69 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Check public refusal, then exercise the internal history section encoder.
-pub(crate) fn serialize_history_in_native_envelope_after_refusal(
+/// Exercise the sealed writer after construction controls changed.
+pub(crate) fn serialize_edited_history(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
-    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
-    let error = plan_inherited_write(&ir, &fidelity, &mut Vec::new()).unwrap_err();
-    assert!(
-        matches!(&error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
-        "{error}"
+) -> Result<(), CodecError> {
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    plan.write_to(writer)?;
+    Ok(())
+}
+
+/// A declined native layout writes the document through synthesis and reports it.
+/// Returns the reason the patch path declined.
+pub(crate) fn assert_synthesis_fallback(ir: &CadIr, fidelity: &SourceFidelity) -> String {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    let reason = match plan.report().synthesis_cause() {
+        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { reason }) => reason.clone(),
+        other => panic!("expected a declined patch, got {other:?}"),
+    };
+    assert!(!reason.is_empty());
+    assert!(!plan.report().losses.is_empty());
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+    reason
+}
+
+/// Independently synthesize current content and compare every Written arena.
+pub(crate) fn assert_source_free_synthesis_agrees(
+    ir: &CadIr,
+    retained_output: &CadIr,
+) -> cadmpeg_ir::codec::DecodeResult {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    let report = plan.report().clone();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let synthesized = SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    cadmpeg_test_support::contract::assert_written_arenas_agree(
+        &report,
+        retained_output,
+        synthesized.ir(),
     );
-    let records = crate::source_records(&ir, &fidelity)?;
-    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, writer)
-        .map(|output| output.dialect)
+    synthesized
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
@@ -173,3 +221,5 @@ pub(crate) mod native;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
 pub(crate) mod tessellation;
+
+pub(crate) mod dimensions;

@@ -404,6 +404,13 @@ fn decode_retains_generated_asm_history_graph() {
     };
     assert_eq!(entity_references, &[1830, -1]);
     assert!(!history.states()[0].records[0].raw_bytes.is_empty());
+    assert!(!result
+        .source_fidelity()
+        .retained_record(&history.states()[0].records[0].id)
+        .unwrap()
+        .data()
+        .unwrap()
+        .is_empty());
     assert!(matches!(
         history.states()[0].bulletin_boards[0].changes[1].kind,
         crate::history_records::AsmEntityChangeKind::Insert { .. }
@@ -422,8 +429,8 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
         let history = &mut native.asm_histories[0];
-        assert!(history.byte_offset > 0);
-        assert!(history.states()[0].byte_offset > 0);
+        assert!(history.byte_offset > Some(0));
+        assert!(history.states()[0].byte_offset > Some(0));
         history.preamble = Some(crate::history_records::AsmPreamble {
             stream_size: 8,
             history_entry_count: 120,
@@ -437,10 +444,10 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         history.states_mut()[0].partner_ref = Some(18);
         history.states_mut()[0].owner_ref = 20;
         let board = &mut history.states_mut()[0].bulletin_boards[0];
-        assert!(board.byte_offset > 0);
+        assert!(board.byte_offset > Some(0));
         board.owner_ref = 22;
         board.number = 24;
-        assert!(board.changes[0].byte_offset > 0);
+        assert!(board.changes[0].byte_offset > Some(0));
         board.changes[0].kind = crate::history_records::AsmEntityChangeKind::Delete { old: 26 };
         board.changes[1].kind = crate::history_records::AsmEntityChangeKind::Insert { new: 28 };
     });
@@ -843,7 +850,7 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
         assert!(!result.ir().model.faces.is_empty());
-        let attributes = &result.ir().source.as_ref().unwrap().attributes;
+        let attributes = &result.source_fidelity().metadata;
         assert_eq!(
             attributes.get("active_brep").map(String::as_str),
             Some(contributing_name)

@@ -816,7 +816,9 @@ impl TryFrom<DisplayJtPolygonMeshWire> for DisplayJtPolygonMesh {
             || wire.polygon_groups.len() != count
             || wire.polygon_flags.len() != count
         {
-            return Err("polygons/vertex_attribute_indices/polygon_groups/polygon_flags: lengths must agree");
+            return Err(
+                "polygons/vertex_attribute_indices/polygon_groups/polygon_flags: lengths must agree",
+            );
         }
         let polygons = wire
             .polygons
@@ -1020,7 +1022,9 @@ impl TryFrom<(u16, Option<u64>)> for JtVertexVersion {
         match (version, bindings) {
             (1, None) => Ok(Self::One),
             (2, Some(bindings)) => Ok(Self::Two(bindings)),
-            _ => Err("vertex_version/version_2_vertex_bindings: version 1 has no repeated bindings and version 2 requires them"),
+            _ => Err(
+                "vertex_version/version_2_vertex_bindings: version 1 has no repeated bindings and version 2 requires them",
+            ),
         }
     }
 }
@@ -1045,8 +1049,13 @@ impl TryFrom<(u16, Option<f32>)> for JtMaterialVersion {
     fn try_from((version, reflectivity): (u16, Option<f32>)) -> Result<Self, Self::Error> {
         match (version, reflectivity) {
             (1, None) => Ok(Self::One),
-            (2, Some(value)) => Ok(Self::Two(UnitBinary32::try_from(value).map_err(|_| "reflectivity: expected a finite fraction in 0..=1")?)),
-            _ => Err("version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1"),
+            (2, Some(value)) => Ok(Self::Two(
+                UnitBinary32::try_from(value)
+                    .map_err(|_| "reflectivity: expected a finite fraction in 0..=1")?,
+            )),
+            _ => Err(
+                "version/reflectivity: version 1 has no reflectivity and version 2 requires a finite fraction in 0..=1",
+            ),
         }
     }
 }
@@ -1619,7 +1628,9 @@ impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElem
             .and_then(|count| count.checked_mul(25))
             .and_then(|bytes| bytes.checked_add(20));
         if minimum.is_none_or(|minimum| minimum > u64::from(wire.framed_byte_len)) {
-            return Err("DisplayJtCompressedElementSequence.framed_byte_len cannot contain its elements and end marker");
+            return Err(
+                "DisplayJtCompressedElementSequence.framed_byte_len cannot contain its elements and end marker",
+            );
         }
         Ok(Self {
             id: wire.id,
@@ -5479,10 +5490,11 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 /// Refuses a vertex-normal lane that does not cover the vertex lane, and a
 /// tessellation the IR will not admit.
 pub(super) fn display_jt_tessellations(
+    source_untyped: &mut cadmpeg_ir::ArenaClasses,
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<(Tessellation, u64)>, CodecError> {
+) -> Result<Vec<(Tessellation, u64, Option<Color>)>, CodecError> {
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
@@ -5535,7 +5547,7 @@ pub(super) fn display_jt_tessellations(
                 match $value {
                     Some(value) => value,
                     None => {
-                        dropped_display_jt_mesh(losses, mesh);
+                        dropped_display_jt_mesh(source_untyped, losses, mesh);
                         continue 'meshes;
                     }
                 }
@@ -5568,16 +5580,20 @@ pub(super) fn display_jt_tessellations(
         };
         let Some(paths) = paths else {
             if !visits.exhausted() {
-                dropped_display_jt_mesh(losses, mesh);
+                dropped_display_jt_mesh(source_untyped, losses, mesh);
                 continue;
             }
             bounded_shape_nodes.insert(shape_node_key);
-            losses.push(NxLossCode::SourceScanBounded.note(format!(
+            losses.push(NxLossCode::SourceScanBounded.note({
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
                 "The instance-path scan of Display-JT shape node {} reached its visit bound of {}; \
                  the meshes bound to that shape node were skipped.",
                 shape_node.object_id,
                 MAX_JT_NODE_PATH_VISITS,
-            )));
+            )
+            }));
             continue;
         };
         let mut mesh_tessellations = Vec::new();
@@ -5593,7 +5609,7 @@ pub(super) fn display_jt_tessellations(
             rendered.push((triangle, attributes));
         }
         if rendered.is_empty() {
-            dropped_display_jt_mesh(losses, mesh);
+            dropped_display_jt_mesh(source_untyped, losses, mesh);
             continue;
         }
         let vertex_header = required!(vertex_headers.get(shape_element.id.as_str()).copied());
@@ -5601,14 +5617,14 @@ pub(super) fn display_jt_tessellations(
             .then(|| normals.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
-            dropped_display_jt_mesh(losses, mesh);
+            dropped_display_jt_mesh(source_untyped, losses, mesh);
             continue;
         }
         let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
             .then(|| colors.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
-            dropped_display_jt_mesh(losses, mesh);
+            dropped_display_jt_mesh(source_untyped, losses, mesh);
             continue;
         }
         let mut texture_arrays = Vec::new();
@@ -5624,7 +5640,7 @@ pub(super) fn display_jt_tessellations(
             .then(|| vertex_flags.get(vertex_header.id.as_str()).copied())
             .flatten();
         if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
-            dropped_display_jt_mesh(losses, mesh);
+            dropped_display_jt_mesh(source_untyped, losses, mesh);
             continue;
         }
         for path in paths {
@@ -5662,7 +5678,7 @@ pub(super) fn display_jt_tessellations(
                     if !(1..=4).contains(&count)
                         || !array.values.iter().all(|value| value.len() == count)
                     {
-                        dropped_display_jt_mesh(losses, mesh);
+                        dropped_display_jt_mesh(source_untyped, losses, mesh);
                         continue 'meshes;
                     }
                     texture_component_counts.push(count);
@@ -5802,13 +5818,10 @@ pub(super) fn display_jt_tessellations(
                     object_id: required!(cadmpeg_core::text::NonBlankString::new(
                         shape_node.id.clone(),
                     )),
-                    name: None,
-                    color,
-                    visible: None,
-                    layer: None,
                     instance_path,
                 })),
                 shape_node.source_offset,
+                color,
             ));
         }
         tessellations.append(&mut mesh_tessellations);
@@ -5817,12 +5830,19 @@ pub(super) fn display_jt_tessellations(
 }
 
 /// Report that `mesh` did not resolve and none of its tessellations are kept.
-fn dropped_display_jt_mesh(losses: &mut Vec<LossNote>, mesh: &DisplayJtPolygonMesh) {
-    losses.push(NxLossCode::DisplayJtTessellationsDropped.note(format!(
-        "Display-JT polygon mesh {} did not resolve to a tessellation; \
+fn dropped_display_jt_mesh(
+    source_untyped: &mut cadmpeg_ir::ArenaClasses,
+    losses: &mut Vec<LossNote>,
+    mesh: &DisplayJtPolygonMesh,
+) {
+    losses.push(NxLossCode::DisplayJtTessellationsDropped.note({
+        source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+        format!(
+            "Display-JT polygon mesh {} did not resolve to a tessellation; \
          the mesh was skipped.",
-        mesh.id
-    )));
+            mesh.id
+        )
+    }));
 }
 
 #[cfg(test)]

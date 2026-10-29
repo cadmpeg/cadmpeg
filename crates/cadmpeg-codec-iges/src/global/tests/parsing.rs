@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::{point_file_with_field, report_code_count, strict_options, valid_global_fields};
@@ -238,8 +237,12 @@ fn global_hollerith_values_reject_non_printable_ascii() {
     }
 }
 
+/// A forbidden byte breaks a delimiter declaration, which frames the Global
+/// section (`iges.global_section`). The section is given up, every
+/// Global value is absent, and the later sections use the comma and
+/// semicolon of IGES 5.3 §2.2.4.3.1-2, which this file also uses.
 #[test]
-fn a_forbidden_delimiter_payload_still_refuses_the_file() {
+fn a_forbidden_delimiter_payload_gives_up_the_global_section() {
     for field in [b"1H,".as_slice(), b"1H;".as_slice()] {
         let mut bytes = point_file();
         let position = bytes
@@ -248,13 +251,33 @@ fn a_forbidden_delimiter_payload_still_refuses_the_file() {
             .expect("delimiter declaration");
         bytes[position + 2] = 0x01;
 
-        assert!(
-            matches!(
-                IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-                Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_)))
-            ),
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            super::given_up_global_part(&result),
+            "iges.global_section",
             "{field:?}"
         );
+        let attributes = &result
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes;
+        assert!(!attributes.contains_key("sender_product"), "{field:?}");
+        assert_eq!(attributes["parameter_delimiter"], ",");
+        assert_eq!(attributes["record_delimiter"], ";");
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entities = &native.arenas()["entities"];
+        assert_eq!(entities.len(), 1, "{field:?}");
+        let parameters = entities[0].fields().unwrap()["parameters"].clone();
+        assert_eq!(parameters.as_array().unwrap().len(), 4, "{field:?}");
+        assert!(parameters
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|parameter| !parameter.is_null()));
     }
 }
 
@@ -291,19 +314,23 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
     }
 }
 
+/// A prohibited delimiter byte makes its declaration unusable, and the
+/// declarations frame the Global section (`iges.global_section`,
+/// IGES 5.3 §2.2.3.1). The section is given up and the file is not refused.
 #[test]
-fn prohibited_delimiter_declarations_refuse_before_parameter_decode() {
+fn prohibited_delimiter_declarations_give_up_the_global_section() {
     let prohibited = [
         ' ', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '.', 'D', 'E', 'H',
     ];
     for delimiter in prohibited {
         for (parameter, record) in [(delimiter, ';'), (',', delimiter)] {
             let bytes = point_file_with_delimiters(parameter, record);
-            assert!(
-                matches!(
-                    IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
-                    Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(_)))
-                ),
+            let result = IgesCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap_or_else(|error| panic!("{parameter}{record}: {error}"));
+            assert_eq!(
+                super::given_up_global_part(&result),
+                "iges.global_section",
                 "{parameter}{record}"
             );
         }
@@ -381,11 +408,17 @@ fn unreadable_global_metadata_suffix_keeps_geometry_and_exact_source() {
                 }
                 fields[field] = value.into();
                 let source = geometry_with_global_fields(&geometry, &fields);
-                let recovered = cadmpeg_test_support::EditableDecodeResult::from(
-                    IgesCodec
-                        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
-                        .unwrap(),
+                let decoded = IgesCodec
+                    .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+                    .unwrap();
+                // #222 C.5: the field whose end is unknown gives up its
+                // `iges.global_field` part, and every later field is absent.
+                assert_eq!(
+                    super::given_up_global_part(&decoded),
+                    "iges.global_field",
+                    "field {field}: {value}"
                 );
+                let recovered = cadmpeg_test_support::EditableDecodeResult::from(decoded);
                 assert_eq!(
                     recovered.ir().model,
                     expected.ir().model,
@@ -399,25 +432,19 @@ fn unreadable_global_metadata_suffix_keeps_geometry_and_exact_source() {
                         .data(),
                     Some(source.as_slice())
                 );
-                assert!(
-                    recovered
-                        .report()
-                        .losses
-                        .iter()
-                        .any(|loss| loss.code == IgesLossCode::GlobalNoncanonicalFraming.kind()),
-                    "field {field}: {value}"
-                );
                 assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
                     .unwrap()
                     .is_ok());
             }
         }
+        // The version flag gives up the same way; the file is not refused.
         let mut fields = valid_global_fields();
         fields[22] = "999999999999999999999999999999999999H".into();
         let source = geometry_with_global_fields(&geometry, &fields);
-        assert!(IgesCodec
+        let decoded = IgesCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
-            .is_err());
+            .unwrap();
+        assert_eq!(super::given_up_global_part(&decoded), "iges.global_field");
     }
 }
 
@@ -480,11 +507,21 @@ fn empty_global_record_retains_independent_directory_and_source() {
     let namespace = recovered.ir().native.namespace("iges").unwrap();
     assert_eq!(namespace.arenas()["entities"].len(), 1);
     assert_eq!(
-        recovered.ir().source.as_ref().unwrap().attributes["parameter_delimiter"],
+        recovered
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes["parameter_delimiter"],
         ","
     );
     assert_eq!(
-        recovered.ir().source.as_ref().unwrap().attributes["record_delimiter"],
+        recovered
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes["record_delimiter"],
         ";"
     );
 }

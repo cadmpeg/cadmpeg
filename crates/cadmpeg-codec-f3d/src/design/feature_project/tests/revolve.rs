@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::records::identity::Located;
+use crate::records::topology::construction::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
+    DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+    DesignConstructionOperandRole,
+};
+use crate::records::topology::extrude_selection::DesignOperandRole as SourceOperandRole;
+
 #[test]
 fn revolve_projects_with_native_profile() {
     use crate::records::feature::path_features::{
         DesignPathFeatureConstruction, DesignRevolveConstruction,
     };
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use crate::records::topology::construction::DesignConstructionOperandGroup;
     use crate::records::topology::edge_identity::DesignEdgeOperand;
     use crate::records::topology::extrude_selection::DesignOperandRole;
 
@@ -16,38 +23,53 @@ fn revolve_projects_with_native_profile() {
         .try_edit(|draft| {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
-                operation_offset: 0,
+                operation_offset: Some(0),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
                 angle_record_index: 300,
-                angle_offset: 0,
+                angle_offset: Some(0),
                 opposite_angle: None,
             })
             .into();
         })
         .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
-        serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
-            "id": format!("f3d:test:group#{record_index}"),
-            "scope_record_index": 12,
-            "scope_reference_ordinal": ordinal,
-            "record_index": record_index,
-            "byte_offset": 1000,
-            "class_tag": "332",
-            "members": [member],
-            "member_offsets": [1026],
-            "frame": {
-                "member_count_offset": 1021,
-                "opaque_index": 1,
-                "opaque_index_offset": 1072,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 1076,
-                "variant": false
-            },
-            "role": role.raw(),
-            "role_offset": 1054,
-            "paired_class_tag": "259",
-            "paired_byte_offset": 1125
-        }))
+        DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+            scope_record_index: 12,
+            scope_reference_ordinal: ordinal,
+            record_index,
+            byte_offset: 1000,
+            role_offset: 1054,
+            paired_byte_offset: 1125,
+            id: format!("f3d:test:group#{record_index}"),
+            class_tag: "332".to_owned().try_into().expect("source class tag"),
+            paired_class_tag: "259".to_owned().try_into().expect("source class tag"),
+            members: [member]
+                .into_iter()
+                .zip([1026])
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            lost_edge_references: Vec::new(),
+            operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                role.raw(),
+            )),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1021,
+                    opaque_index: 1,
+                    opaque_index_offset: 1072,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 1076,
+                    variant: false,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                },
+            )
+            .expect("source construction frame"),
+        })
         .unwrap()
     };
     let groups = [
@@ -114,38 +136,53 @@ fn revolve_projects_design_geometry_z_axis_selection() {
         .try_edit(|draft| {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
-                operation_offset: 0,
+                operation_offset: Some(0),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: 300,
-                angle_offset: 0,
+                angle_offset: Some(0),
                 opposite_angle: None,
             })
             .into();
         })
         .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
-        serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
-            "id": format!("f3d:test:group#{record_index}"),
-            "scope_record_index": 12,
-            "scope_reference_ordinal": ordinal,
-            "record_index": record_index,
-            "byte_offset": 1000,
-            "class_tag": "332",
-            "members": [member],
-            "member_offsets": [1026],
-            "frame": {
-                "member_count_offset": 1021,
-                "opaque_index": 1,
-                "opaque_index_offset": 1072,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 1076,
-                "variant": false
-            },
-            "role": role.raw(),
-            "role_offset": 1054,
-            "paired_class_tag": "259",
-            "paired_byte_offset": 1125
-        }))
+        DesignConstructionOperandGroup::try_from(DesignConstructionOperandGroupDraft {
+            scope_record_index: 12,
+            scope_reference_ordinal: ordinal,
+            record_index,
+            byte_offset: 1000,
+            role_offset: 1054,
+            paired_byte_offset: 1125,
+            id: format!("f3d:test:group#{record_index}"),
+            class_tag: "332".to_owned().try_into().expect("source class tag"),
+            paired_class_tag: "259".to_owned().try_into().expect("source class tag"),
+            members: [member]
+                .into_iter()
+                .zip([1026])
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            lost_edge_references: Vec::new(),
+            operand_role: DesignConstructionOperandRole::Other(SourceOperandRole::from_raw(
+                role.raw(),
+            )),
+            frame: DesignConstructionOperandGroupFrame::try_from(
+                DesignConstructionOperandGroupFrameDraft {
+                    member_count_offset: 1021,
+                    opaque_index: 1,
+                    opaque_index_offset: 1072,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 1076,
+                    variant: false,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                },
+            )
+            .expect("source construction frame"),
+        })
         .unwrap()
     };
     let groups = [

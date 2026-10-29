@@ -31,6 +31,8 @@ fn feature_operation_geometry_is_validated() {
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
 
+            needs_recompute: false,
+
             evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -61,6 +63,7 @@ fn feature(
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     }
@@ -143,7 +146,9 @@ fn many_datum_plane_cycles_are_each_reported_once_in_linear_time() {
                     reference: Some(DatumPlaneReference::Feature {
                         feature: crate::features::FeatureId::mint(id(cycle, 1 - side)).unwrap(),
                     }),
-                    distance: crate::scalar::Length::new(1.0).unwrap(),
+                    distance: crate::features::Dimension::Literal(
+                        crate::scalar::Length::new(1.0).unwrap(),
+                    ),
                 }),
             ));
         }

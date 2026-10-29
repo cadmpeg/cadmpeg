@@ -12,6 +12,8 @@ use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
 
+pub(crate) mod parts;
+
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
@@ -96,7 +98,6 @@ struct DataEntity {
 #[derive(Debug)]
 struct ParsedDirectoryRecord {
     sequence: u32,
-    specs: [Option<Rc<Vec<u8>>>; 16],
     next: usize,
 }
 
@@ -117,43 +118,10 @@ fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Compressed ASCII: {}", message.into()))
 }
 
-fn split_lines(source: &[u8]) -> Result<Vec<&[u8]>, CodecError> {
-    if source.is_empty() {
-        return Err(malformed("source is empty"));
-    }
-    let mut lines = Vec::new();
-    let mut start = 0_usize;
-    while start < source.len() {
-        let relative_end = memchr::memchr2(b'\r', b'\n', &source[start..]);
-        let (end, next) = match relative_end {
-            Some(relative) => {
-                let end = start
-                    .checked_add(relative)
-                    .ok_or_else(|| malformed("line offset overflows"))?;
-                let ending =
-                    usize::from(source[end] == b'\r' && source.get(end + 1) == Some(&b'\n'));
-                (end, end + ending + 1)
-            }
-            None => (source.len(), source.len()),
-        };
-
-        lines.push(&source[start..end]);
-        start = next;
-    }
-    Ok(lines)
-}
-
-/// Delimiter declarations contain one counted byte each. Read only those two
-/// fields; optional Global suffix framing belongs to the Global resolver.
-fn compressed_delimiters(cards: &[&[u8]]) -> Result<(u8, u8), CodecError> {
-    if cards.iter().any(|card| card.len() != CARD_WIDTH) {
-        return Err(malformed("Start and Global records must be 80 columns"));
-    }
-    let mut bytes = cards
-        .iter()
-        .flat_map(|card| card[..CARD_DATA_WIDTH].iter().copied());
-    let parameter = delimiter_field(&mut bytes, b',', b',')?;
-    let record = delimiter_field(&mut bytes, parameter, b';')?;
+/// The Global delimiters as the Compressed Data section uses them. The record
+/// delimiter cannot be the Directory field-specifier marker `@`, and the two
+/// delimiters differ.
+fn compressed_delimiters(parameter: u8, record: u8) -> Result<(u8, u8), CodecError> {
     if record == b'@' {
         return Err(malformed(
             "record delimiter conflicts with the Directory field-specifier marker",
@@ -163,55 +131,6 @@ fn compressed_delimiters(cards: &[&[u8]]) -> Result<(u8, u8), CodecError> {
         return Err(malformed("parameter and record delimiters are equal"));
     }
     Ok((parameter, record))
-}
-
-fn delimiter_field(
-    bytes: &mut impl Iterator<Item = u8>,
-    separator: u8,
-    default: u8,
-) -> Result<u8, CodecError> {
-    let next = |bytes: &mut dyn Iterator<Item = u8>| -> Result<u8, CodecError> {
-        loop {
-            let byte = bytes
-                .next()
-                .ok_or_else(|| malformed("Global delimiter declaration is truncated"))?;
-            if byte != b' ' {
-                return Ok(byte);
-            }
-        }
-    };
-    let mut byte = next(bytes)?;
-    if byte == separator {
-        return Ok(default);
-    }
-    let mut count = 0_u64;
-    let mut digits = false;
-    while byte.is_ascii_digit() {
-        digits = true;
-        count = count
-            .checked_mul(10)
-            .and_then(|count| count.checked_add(u64::from(byte - b'0')))
-            .ok_or_else(|| malformed("Global delimiter Hollerith count overflows"))?;
-        byte = next(bytes)?;
-    }
-    if !digits || !matches!(byte, b'H' | b'h') || count != 1 {
-        return Err(malformed(
-            "Global delimiter is not a one-byte Hollerith field",
-        ));
-    }
-
-    let value = bytes
-        .next()
-        .ok_or_else(|| malformed("Global delimiter payload is truncated"))?;
-    let terminator = next(bytes)?;
-    // The first declaration terminates itself. The second uses the first.
-    let expected = if default == b',' { value } else { separator };
-    if terminator != expected {
-        return Err(malformed(
-            "Global delimiter field has an invalid terminator",
-        ));
-    }
-    Ok(value)
 }
 
 fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize), CodecError> {
@@ -348,39 +267,13 @@ fn parse_directory_record(
         }
         spec_bytes.extend_from_slice(&lines[line_index][..delimiter_offset]);
     }
+    // The specifier grammar is admitted here; `parts::source::Fields` keeps
+    // each specifier value at its source location.
+    parse_field_specs(&spec_bytes)?;
     Ok(ParsedDirectoryRecord {
         sequence,
-        specs: parse_field_specs(&spec_bytes)?,
         next: line_index + 1,
     })
-}
-
-fn apply_field_specs(
-    previous: Option<&DirectoryFields>,
-    specs: [Option<Rc<Vec<u8>>>; 16],
-) -> Result<DirectoryFields, CodecError> {
-    if let Some(previous) = previous {
-        let mut fields = previous.clone();
-        for (index, value) in specs.into_iter().enumerate() {
-            if let Some(value) = value {
-                fields.0[index] = value;
-            }
-        }
-        return Ok(fields);
-    }
-    #[rustfmt::skip]
-    let [
-        Some(f0), Some(f1), Some(f2), Some(f3), Some(f4), Some(f5), Some(f6), Some(f7),
-        Some(f8), Some(f9), Some(f10), Some(f11), Some(f12), Some(f13), Some(f14), Some(f15),
-    ] = specs
-    else {
-        return Err(malformed(
-            "the first Data record does not specify every non-redundant Directory field",
-        ));
-    };
-    Ok(DirectoryFields([
-        f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15,
-    ]))
 }
 
 fn field_i64(
@@ -446,11 +339,13 @@ fn append_source_card(output: &mut Vec<u8>, line: &[u8], section: u8) -> Result<
     Ok(())
 }
 
-fn append_directory_cards(
-    output: &mut Vec<u8>,
+/// The two rendered Directory lines, nine 8-byte fields each.
+type DirectoryLines = ([[u8; 8]; 9], [[u8; 8]; 9]);
+
+fn directory_fields(
     entity: &DataEntity,
     parameter_start: u32,
-) -> Result<(), CodecError> {
+) -> Result<DirectoryLines, CodecError> {
     let entity_type = entity
         .fields
         .get(CompressedField::Shared(DirectoryFieldSlot::EntityType));
@@ -532,6 +427,15 @@ fn append_directory_cards(
                 .get(CompressedField::Shared(DirectoryFieldSlot::Subscript)),
         )?,
     ];
+    Ok((first_fields, second_fields))
+}
+
+fn append_directory_fields(
+    output: &mut Vec<u8>,
+    first_fields: [[u8; 8]; 9],
+    second_fields: [[u8; 8]; 9],
+    sequence: u32,
+) -> Result<(), CodecError> {
     let mut first = [b' '; CARD_DATA_WIDTH];
     let mut second = [b' '; CARD_DATA_WIDTH];
     for (index, field) in first_fields.into_iter().enumerate() {
@@ -540,9 +444,8 @@ fn append_directory_cards(
     for (index, field) in second_fields.into_iter().enumerate() {
         second[index * 8..(index + 1) * 8].copy_from_slice(&field);
     }
-    append_card(output, &first, b'D', entity.sequence)?;
-    let even_sequence = entity
-        .sequence
+    append_card(output, &first, b'D', sequence)?;
+    let even_sequence = sequence
         .checked_add(1)
         .ok_or_else(|| malformed("Directory sequence overflows"))?;
     append_card(output, &second, b'D', even_sequence)
@@ -610,17 +513,14 @@ fn parameter_record_terminator(
     Ok(false)
 }
 
-fn parse_data_entity(
+fn parse_data_entity_with_fields(
     lines: &[&[u8]],
-    start: usize,
-    previous: Option<&DirectoryFields>,
+    sequence: u32,
+    mut cursor: usize,
+    fields: DirectoryFields,
     parameter_delimiter: u8,
     record_delimiter: u8,
 ) -> Result<(DataEntity, usize), CodecError> {
-    let directory = parse_directory_record(lines, start, record_delimiter)?;
-    let fields = apply_field_specs(previous, directory.specs)?;
-    let sequence = directory.sequence;
-    let mut cursor = directory.next;
     let entity_type = field_i64(
         &fields,
         CompressedField::Shared(DirectoryFieldSlot::EntityType),
@@ -725,131 +625,5 @@ fn append_terminate(
 
 /// Expand one Compressed ASCII source into the fixed-card input consumed by
 /// the IGES section, Directory, and Parameter parsers.
-pub(crate) fn normalize(source: &[u8]) -> Result<Vec<u8>, CodecError> {
-    let lines = split_lines(source)?;
-    let flag = lines
-        .first()
-        .copied()
-        .ok_or_else(|| malformed("flag record is missing"))?;
-    if flag.len() != CARD_WIDTH || flag.get(72) != Some(&b'C') {
-        return Err(malformed(
-            "Compressed ASCII flag is not an 80-column C record",
-        ));
-    }
-
-    let mut cursor = 1_usize;
-    let start_begin = cursor;
-    while lines
-        .get(cursor)
-        .is_some_and(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'S'))
-    {
-        cursor += 1;
-    }
-    if cursor == start_begin {
-        return Err(malformed("Start section is missing after the flag record"));
-    }
-    let global_begin = cursor;
-    while lines
-        .get(cursor)
-        .is_some_and(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'G'))
-    {
-        cursor += 1;
-    }
-    if cursor == global_begin {
-        return Err(malformed("Global section is missing"));
-    }
-    let data_begin = cursor;
-    let terminate_index = lines
-        .get(data_begin..)
-        .and_then(|tail| {
-            tail.iter()
-                .position(|line| line.len() == CARD_WIDTH && line.get(72) == Some(&b'T'))
-        })
-        .map(|index| data_begin + index)
-        .ok_or_else(|| malformed("Terminate section is missing"))?;
-
-    let global_cards = &lines[global_begin..data_begin];
-    let (parameter_delimiter, record_delimiter) = compressed_delimiters(global_cards)?;
-    let mut entities = Vec::new();
-    let mut data_cursor = data_begin;
-    let mut expected_sequence = 1_u32;
-    while data_cursor < terminate_index {
-        let (entity, next) = parse_data_entity(
-            &lines,
-            data_cursor,
-            entities
-                .last()
-                .map(|previous: &DataEntity| &previous.fields),
-            parameter_delimiter,
-            record_delimiter,
-        )?;
-        if entity.sequence != expected_sequence || entity.sequence % 2 == 0 {
-            return Err(malformed(format!(
-                "Data record sequence {} is not the next odd Directory sequence {}",
-                entity.sequence, expected_sequence
-            )));
-        }
-        expected_sequence = expected_sequence
-            .checked_add(2)
-            .ok_or_else(|| malformed("Directory sequence overflows"))?;
-        entities.push(entity);
-        data_cursor = next;
-    }
-
-    let mut output = Vec::new();
-
-    for line in &lines[start_begin..global_begin] {
-        append_source_card(&mut output, line, b'S')?;
-    }
-    for line in &lines[global_begin..data_begin] {
-        append_source_card(&mut output, line, b'G')?;
-    }
-    let mut parameter_starts = Vec::new();
-    let mut parameter_sequence = 1_u32;
-    for entity in &entities {
-        let parameter_start = if entity.parameter_lines.is_empty() {
-            0
-        } else {
-            parameter_sequence
-        };
-        parameter_starts.push(parameter_start);
-        parameter_sequence = parameter_sequence
-            .checked_add(
-                u32::try_from(entity.parameter_lines.len())
-                    .map_err(|_| malformed("Parameter Data section count overflows"))?,
-            )
-            .ok_or_else(|| malformed("Parameter Data sequence overflows"))?;
-    }
-    for (entity, parameter_start) in entities.iter().zip(parameter_starts) {
-        append_directory_cards(&mut output, entity, parameter_start)?;
-    }
-    let mut parameter_sequence = 1_u32;
-    for entity in &entities {
-        append_parameter_cards(&mut output, entity, parameter_sequence)?;
-        parameter_sequence = parameter_sequence
-            .checked_add(
-                u32::try_from(entity.parameter_lines.len())
-                    .map_err(|_| malformed("Parameter Data section count overflows"))?,
-            )
-            .ok_or_else(|| malformed("Parameter Data sequence overflows"))?;
-    }
-    let parameter_count = entities
-        .iter()
-        .map(|entity| entity.parameter_lines.len())
-        .sum();
-    append_terminate(
-        &mut output,
-        start_begin,
-        global_cards.len(),
-        entities.len() * 2,
-        parameter_count,
-    )?;
-    for line in lines.get(terminate_index + 1..).unwrap_or_default() {
-        output.extend_from_slice(line);
-        output.push(b'\n');
-    }
-    Ok(output)
-}
-
 #[cfg(test)]
 mod tests;

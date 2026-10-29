@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+mod encode_paths;
 mod reader_routes;
 
 /// Every hand-written `Deserialize` in the three wire crates, with the reader
@@ -56,6 +57,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "ContainerKind",
         "keyless",
     ),
+    ("crates/cadmpeg-ir/src/document.rs", "ArenaName", "keyless"),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
     (
@@ -86,11 +88,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "crates/cadmpeg-ir/src/features.rs",
         "BodyMembers",
         "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/features.rs",
-        "ConfigurationEvaluation",
-        "wire",
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
@@ -353,14 +350,19 @@ fn compiled_hand_readers_keep_their_admission_boundaries() {
         Some(serde_json::json!({"preserved": true}))
     );
 
-    let unknown_configuration = serde_json::from_value::<
-        cadmpeg_ir::features::ConfigurationEvaluation,
-    >(serde_json::json!({
-        "kind": "suppressed",
-        "unexpected": true,
-    }));
+    let unknown_feature =
+        serde_json::from_value::<cadmpeg_ir::features::Feature>(serde_json::json!({
+            "id": "test:source-census:feature#0",
+            "ordinal": 0,
+            "needs_recompute": false,
+            "definition": {"definition":"stored_geometry"},
+            "unexpected": true,
+        }));
     assert!(
-        unknown_configuration.is_err(),
+        unknown_feature
+            .expect_err("the feature fixture contains an unknown field")
+            .to_string()
+            .contains("unexpected"),
         "the compiled local wire adapter rejects an unknown object key"
     );
 }
@@ -529,6 +531,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "crates/cadmpeg-asm/src/brep/records.rs",
         "FaceSidedness",
         "containment",
+        "FaceSidednessWire",
+    ),
+    (
+        "crates/cadmpeg-asm/src/brep/records.rs",
+        "FaceSidedness",
+        "face_key",
         "FaceSidednessWire",
     ),
 ];
@@ -837,6 +845,9 @@ const WRITING_DECLARATIONS: &[(&str, &str)] = &[
     ("FeatureRowWire", "FeatureWriteWire"),
     // `CadIr` writes through `CadIrWriteWire` in its hand-written `Serialize`.
     ("CadIrReadWire", "CadIrWriteWire"),
+    // These owners' manual serializers delegate to the corresponding Out structs.
+    ("ArchiveSpan", "ArchiveSpanOut"),
+    ("LogicalSpan", "LogicalSpanOut"),
     // Each of these is read by a hand-written `Deserialize` impl for the type
     // named beside it, which derives `Serialize` and writes the keys.
     ("HoleShapeWire", "HoleShape"),

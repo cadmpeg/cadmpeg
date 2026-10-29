@@ -106,7 +106,7 @@ pub(crate) fn spatial_sketches(
                 {
                     continue;
                 }
-                let Ok(offset) = usize::try_from(marker.offset()) else {
+                let Some(offset) = usize::try_from(marker.offset()).ok() else {
                     continue;
                 };
                 if !relation_ranges.is_empty()
@@ -315,9 +315,7 @@ fn spatial_line_vertices(
     (names, starts): &(FeatureObjectNames<'_>, FeatureObjectStarts),
 ) -> Option<SpatialLineVertices> {
     let name = names.of(record)?;
-    let Ok(start) = usize::try_from(name.offset) else {
-        return None;
-    };
+    let start = usize::try_from(name.offset).ok()?;
     let end = starts.end(name.offset, lane.native_payload.len());
     let object = lane.native_payload.get(start..end)?;
     let offsets = spatial_vertex_offsets(object);
@@ -1158,7 +1156,7 @@ pub(crate) fn relation_bindings(
             .map_err(|_| CodecError::malformed("SLDPRT relation binding ordinal overflows u32"))?;
         let id = format!(
             "sldprt:feature-input:relation-binding#{lane_key}:{}",
-            class.offset
+            class.ordinal
         );
         let parent = parent.to_owned();
         let class_ref = class.id.clone();
@@ -1168,6 +1166,7 @@ pub(crate) fn relation_bindings(
             id,
             parent,
             ordinal,
+            sequence: ordinal,
             offset: class.offset,
             class_ref,
             family,
@@ -1193,6 +1192,7 @@ pub(crate) fn reference_cells(
                 parent,
                 feature_ref,
                 ordinal: 0,
+                sequence: 0,
                 offset: operand.offset,
                 kind: operand.kind,
                 class_ref: None,
@@ -3290,9 +3290,7 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
         if marker.feature_ref != curve.feature_ref {
             continue;
         }
-        let Ok(marker_offset) = usize::try_from(marker.offset()) else {
-            return None;
-        };
+        let marker_offset = usize::try_from(marker.offset()).ok()?;
         let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
             continue;
         };
@@ -3302,8 +3300,8 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
             }
             by_selector
                 .entry(selector)
-                .and_modify(|offsets| offsets.include_offset(marker.offset()))
-                .or_insert(ReverseIncidenceOffsets::One(marker.offset()));
+                .and_modify(|offsets| offsets.include_offset(u64_from_index(marker_offset)))
+                .or_insert(ReverseIncidenceOffsets::One(u64_from_index(marker_offset)));
         }
     }
     let mut candidates = by_selector

@@ -219,6 +219,7 @@ impl Builder {
             None,
         ));
         self.ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex.clone(),
             point,
             tolerance: None,
@@ -248,6 +249,7 @@ impl Builder {
         let n = self.serial();
         let curve = id(CurveId::mint, "curve", n);
         self.ir.model.curves.push(Curve {
+            native_ref: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(geometry),
             parameter_range: None,
@@ -260,6 +262,7 @@ impl Builder {
         let n = self.serial();
         let edge = id(EdgeId::mint, "edge", n);
         self.ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier,
             start,
@@ -438,6 +441,7 @@ impl Builder {
         let n = self.serial();
         let pcurve = id(PcurveId::mint, "pcurve", n);
         self.ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve.clone(),
             geometry,
             metadata: PcurveMetadata::default(),
@@ -517,6 +521,7 @@ impl Builder {
             let m = self.serial();
             let loop_id = id(LoopId::mint, "loop", m);
             self.ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Vertex {
@@ -604,6 +609,7 @@ impl Builder {
         let n = self.serial();
         let surface = id(SurfaceId::mint, "surface", n);
         self.ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
@@ -631,6 +637,7 @@ impl Builder {
                 let k = self.serial();
                 let coedge = id(CoedgeId::mint, "coedge", k);
                 self.ir.model.coedges.push(Coedge {
+                    native_ref: None,
                     id: coedge.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge.clone(),
@@ -642,6 +649,7 @@ impl Builder {
                 coedges.push(coedge);
             }
             self.ir.model.loops.push(Loop {
+                native_ref: None,
                 id: loop_id.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).expect("ring")),
@@ -656,6 +664,7 @@ impl Builder {
             FaceLoops::unspecified(loops)
         };
         self.ir.model.faces.push(Face {
+            native_ref: None,
             id: face.clone(),
             shell: id(ShellId::mint, "shell", 0),
             surface: surface.clone(),
@@ -718,11 +727,13 @@ impl Builder {
             .expect("shell"),
         );
         self.ir.model.regions.push(Region {
+            native_ref: None,
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
         });
         self.ir.model.bodies.push(Body {
+            native_ref: None,
             id: body,
             kind,
             regions: vec![region],

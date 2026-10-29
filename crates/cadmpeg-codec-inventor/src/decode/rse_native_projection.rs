@@ -6,7 +6,7 @@ use cadmpeg_core::CodecError;
 
 use crate::container::InventorContainer;
 use crate::native::{
-    MetaSectionRecord, MetaTypeRecord, RseRecordRecord, SegmentBulkFrame, SegmentBulkIssueRecord,
+    MetaSectionRecord, RseRecordRecord, SegmentBulkFrame, SegmentBulkIssueRecord,
     SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
     StructuralIssueRecord, UnpairedMember, UnpairedSegmentRecord,
 };
@@ -19,7 +19,6 @@ pub(super) struct RseNativeProjection {
     pub(super) segment_pairs: Vec<SegmentPairRecord>,
     pub(super) segment_meta: Vec<SegmentMetaRecord>,
     pub(super) meta_sections: Vec<MetaSectionRecord>,
-    pub(super) meta_types: Vec<MetaTypeRecord>,
     pub(super) segment_meta_issues: Vec<SegmentMetaIssueRecord>,
     pub(super) rse_records: Vec<RseRecordRecord>,
     pub(super) segment_bulk: Vec<SegmentBulkRecord>,
@@ -36,7 +35,6 @@ pub(super) fn project(
         segment_pairs: Vec::new(),
         segment_meta: Vec::new(),
         meta_sections: Vec::new(),
-        meta_types: Vec::new(),
         segment_meta_issues: Vec::new(),
         rse_records: Vec::new(),
         segment_bulk: Vec::new(),
@@ -55,65 +53,31 @@ pub(super) fn project(
         }
         admit_native_items(ctx, 1)?;
         projection.segment_pairs.push(SegmentPairRecord {
-            id: format!("inventor:rse:segment#{token}"),
+            id: crate::rse::segment_record_id(token),
             token: token.to_owned(),
             metadata_directory_id: segment.pair.metadata.directory_id(),
             bulk_directory_id: segment.pair.bulk.directory_id(),
         });
         match &segment.meta {
-            SegmentMetaState::Parsed(meta) => {
-                admit_native_items(ctx, 1)?;
-                projection.segment_meta.push(SegmentMetaRecord {
-                    id: format!("inventor:rse:segment-meta#{token}"),
-                    token: token.to_owned(),
-                    version: meta.declared.version,
-                    kind: segment.kind.label().to_owned(),
-                    display_name: meta.display_name.clone(),
-                    segment_id: hex(&meta.segment_id),
-                    header_values: meta.header_values,
-                    state_words: meta.state_words,
-                    created: meta.created.clone(),
-                    modified: meta.modified.clone(),
-                    body_form: meta.body_form,
-                    expanded_body_len: cadmpeg_core::decode::u64_from_index(
-                        meta.body.window().len(),
-                    ),
-                    expanded_body_sha256: String::from(
-                        cadmpeg_ir::hash::digest::Sha256Digest::digest(meta.body.window()),
-                    ),
-                    table_prefix: meta.tables.prefix,
-                    block_count: cadmpeg_core::decode::u64_from_index(meta.tables.blocks.len()),
-                    type_count: cadmpeg_core::decode::u64_from_index(meta.tables.types.len()),
-                    terminal_id: hex(&meta.tables.terminal_id),
-                });
-                for section in &meta.tables.sections {
-                    admit_native_items(ctx, 1)?;
-                    projection.meta_sections.push(MetaSectionRecord {
-                        id: format!("inventor:rse:meta-section#{token}-{}", section.number),
-                        token: token.to_owned(),
-                        number: section.number,
-                        discriminator: section.discriminator,
-                        payload_len: cadmpeg_core::decode::u64_from_index(
-                            section.payload.window().len(),
-                        ),
-                        payload_sha256: String::from(
-                            cadmpeg_ir::hash::digest::Sha256Digest::digest(
-                                section.payload.window(),
-                            ),
-                        ),
-                    });
-                }
-                for descriptor in &meta.tables.types {
-                    admit_native_items(ctx, 1)?;
-                    projection.meta_types.push(MetaTypeRecord {
-                        id: format!("inventor:rse:meta-type#{token}-{}", descriptor.index),
-                        token: token.to_owned(),
-                        index: descriptor.index,
-                        type_id: hex(&descriptor.id),
-                        fields: descriptor.fields,
-                    });
-                }
-            }
+            SegmentMetaState::Parsed(meta) => project_metadata_peers(
+                ctx,
+                &mut projection,
+                token,
+                segment.kind.label(),
+                meta,
+                true,
+            )?,
+            SegmentMetaState::Malformed {
+                framing: Some(meta),
+                ..
+            } => project_metadata_peers(
+                ctx,
+                &mut projection,
+                token,
+                segment.kind.label(),
+                meta,
+                false,
+            )?,
             SegmentMetaState::Malformed { detail, .. } => {
                 admit_native_items(ctx, 1)?;
                 projection.segment_meta_issues.push(SegmentMetaIssueRecord {
@@ -126,12 +90,26 @@ pub(super) fn project(
         match &segment.bulk {
             SegmentBulkState::Framed(bulk) => {
                 let records = match &bulk.records {
-                    RecordFrameState::Framed(table) => {
+                    RecordFrameState::Framed(table) | RecordFrameState::Partial { table, .. } => {
                         for record in &table.records {
+                            if crate::assembly::owns_record(&segment.kind, record.type_id)
+                                || crate::presentation::owns_record(&segment.kind, record.type_id)
+                            {
+                                continue;
+                            }
                             admit_native_items(ctx, 1)?;
                             projection
                                 .rse_records
                                 .push(RseRecordRecord::from_frame(token, record)?);
+                        }
+                        if let RecordFrameState::Partial {
+                            source_record_count,
+                            ..
+                        } = &bulk.records
+                        {
+                            if table.records.len() != *source_record_count {
+                                continue;
+                            }
                         }
                         SegmentBulkFrame::Framed {
                             record_count: cadmpeg_core::decode::u64_from_index(table.records.len()),
@@ -145,6 +123,7 @@ pub(super) fn project(
                             ),
                         }
                     }
+                    RecordFrameState::Withheld => continue,
                     RecordFrameState::Unavailable(detail) => SegmentBulkFrame::Unavailable {
                         detail: detail.to_owned(),
                     },
@@ -197,4 +176,55 @@ pub(super) fn project(
         });
     }
     Ok(projection)
+}
+
+fn project_metadata_peers(
+    ctx: &DecodeContext<'_>,
+    projection: &mut RseNativeProjection,
+    token: &str,
+    kind: &str,
+    meta: &crate::rse::SegmentMeta<'_>,
+    complete: bool,
+) -> Result<(), CodecError> {
+    if complete {
+        admit_native_items(ctx, 1)?;
+        projection.segment_meta.push(SegmentMetaRecord {
+            id: format!("inventor:rse:segment-meta#{token}"),
+            token: token.to_owned(),
+            version: meta.declared.version,
+            kind: kind.to_owned(),
+            display_name: meta.display_name.clone(),
+            segment_id: hex(&meta.segment_id),
+            header_values: meta.header_values,
+            state_words: meta.state_words,
+            created: meta.created.clone(),
+            modified: meta.modified.clone(),
+            body_form: meta.body_form,
+            expanded_body_len: cadmpeg_core::decode::u64_from_index(meta.body.window().len()),
+            expanded_body_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                meta.body.window(),
+            )),
+            table_prefix: meta.tables.prefix,
+            block_count: cadmpeg_core::decode::u64_from_index(meta.tables.blocks.len()),
+            type_count: cadmpeg_core::decode::u64_from_index(meta.tables.types.len()),
+            terminal_id: hex(&meta.tables.terminal_id),
+        });
+    }
+    for section in &meta.tables.sections {
+        if !complete && section.number == crate::records::MetaSectionNumber::Four {
+            continue;
+        }
+        admit_native_items(ctx, 1)?;
+        projection.meta_sections.push(MetaSectionRecord {
+            id: format!("inventor:rse:meta-section#{token}-{}", section.number),
+            token: token.to_owned(),
+            number: section.number,
+            discriminator: section.discriminator,
+            payload_len: cadmpeg_core::decode::u64_from_index(section.payload.window().len()),
+            payload_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
+                section.payload.window(),
+            )),
+        });
+    }
+    Ok(())
 }

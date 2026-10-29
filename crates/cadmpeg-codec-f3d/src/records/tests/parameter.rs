@@ -17,7 +17,7 @@ fn draft() -> DesignParameterDraft {
         source: DesignParameterSource::User {
             family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
-                offset: 122,
+                offset: Some(122),
             }),
         },
         expression: "-1 mm".into(),
@@ -35,7 +35,7 @@ fn draft() -> DesignParameterDraft {
 }
 
 #[test]
-fn parameter_rejects_empty_text_and_unlocated_units() {
+fn parameter_rejects_empty_text_and_source_layout_keys() {
     let wire = serde_json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
     for field in ["expression", "name", "unit"] {
         let mut invalid = wire.clone();
@@ -46,7 +46,7 @@ fn parameter_rejects_empty_text_and_unlocated_units() {
             .contains(field));
     }
     let mut invalid = wire;
-    invalid.as_object_mut().unwrap().remove("unit_offset");
+    invalid["unit_offset"] = json!(170);
     assert!(serde_json::from_value::<DesignParameter>(invalid)
         .unwrap_err()
         .to_string()
@@ -54,7 +54,7 @@ fn parameter_rejects_empty_text_and_unlocated_units() {
 }
 
 #[test]
-fn parameter_rejects_unordered_offsets_on_the_wire() {
+fn parameter_wire_rejects_source_layout_columns() {
     let wire = serde_json::to_value(DesignParameter::try_from(draft()).unwrap()).unwrap();
     for (field, value) in [
         ("byte_offset", 140),
@@ -97,7 +97,7 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
         .try_set_source(DesignParameterSource::User {
             family_discriminator: Some(Located {
                 value: DesignParameterDiscriminator::Code0,
-                offset: 121
+                offset: Some(121)
             })
         })
         .is_err());
@@ -108,4 +108,34 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
         edited.try_set_evaluated_value(value).unwrap();
         assert_eq!(edited.evaluated_value().get().to_bits(), value.to_bits());
     }
+}
+
+#[test]
+fn source_parameter_admission_checks_actual_field_order() {
+    assert!(DesignParameter::try_from(draft()).is_ok());
+    for (field, offset) in [
+        ("byte", 140),
+        ("expression", 100),
+        ("expression", 160),
+        ("source_kind", 180),
+        ("unit", 160),
+        ("unit", 180),
+        ("name", 190),
+        ("evaluated", 180),
+    ] {
+        let mut input = draft();
+        match field {
+            "byte" => input.byte_offset = offset,
+            "expression" => input.expression_offset = offset,
+            "source_kind" => input.source_kind_offset = offset,
+            "unit" => input.unit.as_mut().expect("original source unit").offset = offset,
+            "name" => input.name_offset = offset,
+            _ => input.evaluated_value_offset = offset,
+        }
+        assert!(DesignParameter::try_from(input).is_err(), "{field}");
+    }
+    let mut no_unit = draft();
+    no_unit.unit = None;
+    no_unit.name_offset = 160;
+    assert!(DesignParameter::try_from(no_unit).is_err());
 }

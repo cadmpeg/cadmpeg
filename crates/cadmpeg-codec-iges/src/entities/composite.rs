@@ -1648,11 +1648,13 @@ fn project_native_composite(
     ctx.charge_entities(2, "iges_geometry_composites")?;
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
@@ -1673,6 +1675,7 @@ fn project_native_composite(
 
     ctx.charge_entities(1, "iges_geometry_composites")?;
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -1684,6 +1687,7 @@ fn project_native_composite(
 
     ctx.charge_entities(1, "iges_geometry_composites")?;
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
         start: start_vertex.clone(),
@@ -2188,11 +2192,13 @@ fn project_with_type_130_policy(
         ctx.charge_entities(2, "iges_geometry_composites")?;
         ir.model.vertices.extend([
             Vertex {
+                native_ref: None,
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
@@ -2202,6 +2208,7 @@ fn project_with_type_130_policy(
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -2210,6 +2217,7 @@ fn project_with_type_130_policy(
 
         ctx.charge_entities(1, "iges_geometry_composites")?;
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),

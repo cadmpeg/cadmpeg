@@ -431,12 +431,12 @@ impl Placement<'_> {
             let o = self.occurrence(i)?;
             baseline |= self.protected.contains(&o.id);
             let (parent, local) = if baseline {
-                (self.parent(i)?, o.transform)
+                (self.parent(i)?, stated_transform(o))
             } else {
                 self.candidates
                     .get(&i)
                     .copied()
-                    .unwrap_or((self.parent(i)?, o.transform))
+                    .unwrap_or((self.parent(i)?, stated_transform(o)))
             };
             chain.push(local);
             let Some(parent) = parent else { break };
@@ -454,7 +454,7 @@ impl Placement<'_> {
             chain.push(if self.candidates.contains_key(&i) {
                 self.local(i)?
             } else {
-                self.occurrence(i)?.transform
+                stated_transform(self.occurrence(i)?)
             });
             let Some(parent) = self.parent(i)? else { break };
             i = parent;
@@ -677,12 +677,12 @@ pub(crate) fn project(
             ir.model
                 .occurrences
                 .get(*i)
-                .is_some_and(|o| !agree(*transform, o.transform))
+                .is_some_and(|o| !agree(*transform, stated_transform(o)))
         })
         .count();
     for (i, transform) in placed {
         if let Some(o) = ir.model.occurrences.get_mut(i) {
-            o.transform = transform;
+            o.transform = Some(transform);
         }
     }
     let ns = ir.native.namespace_mut("f3d");
@@ -718,6 +718,12 @@ pub(crate) fn project(
         losses.push(F3dLossCode::OperationPoseApplied.note(format!("{} occurrence definition(s) take their direct operation table's final pose in every instance; {count} instance transform(s) changed", applied.len())));
     }
     Ok(count)
+}
+
+/// The local placement pose arithmetic uses: the stated placement, or the
+/// container origin for an occurrence that states none.
+fn stated_transform(occurrence: &cadmpeg_ir::products::Occurrence) -> Transform {
+    occurrence.transform.unwrap_or_else(Transform::identity)
 }
 
 #[cfg(test)]

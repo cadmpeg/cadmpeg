@@ -327,7 +327,9 @@ pub(crate) fn operands<'a>(
     Ok(Operands {
         axis,
         extent: RevolveExtent::OneSided {
-            termination: AngularTermination::Angle { angle },
+            termination: AngularTermination::Angle {
+                angle: angle.into(),
+            },
         },
         op,
         unresolved_control,

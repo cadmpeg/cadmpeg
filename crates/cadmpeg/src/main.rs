@@ -27,7 +27,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
 use crate::application::artifact_store::{OptionalFileDestination, OutputDestinations};
-use crate::application::transcoder::{ConversionDestinations, DestinationPolicy, LossPolicy};
+use crate::application::transcoder::{
+    ConversionDestinations, DestinationPolicy, LossFloor, LossPolicy,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -160,7 +162,7 @@ enum Command {
     /// With no `--to`, a same-format conversion keeps the dialect the input
     /// already is, and a cross-format conversion writes the format's default.
     ///
-    /// Convert refuses when the check finds an error in what the output writes. `--allow-errors` writes the file anyway.
+    /// Convert reports check errors and writes the output. `--reject-errors` refuses when the output carries an error.
     #[command(
         display_order = 1,
         after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.sldprt -o out.3dm --to rhino:archive-80\n  cadmpeg convert part.f3d -o out.igs --to 5.1\n  cadmpeg convert part.f3d --to step"
@@ -177,9 +179,12 @@ enum Command {
         format: Option<String>,
         #[command(flatten)]
         destinations: ConversionDestinations,
-        /// Write output even if the check finds errors in what the output writes. The check runs and prints every finding.
+        /// Refuse output if the check finds errors in what the output writes.
         #[arg(long)]
-        allow_errors: bool,
+        reject_errors: bool,
+        /// Refuse output if no geometry was decoded or exported.
+        #[arg(long)]
+        reject_empty: bool,
         /// Decode the whole source, design intent included, even when the
         /// output format needs only its geometry.
         #[arg(long, conflicts_with = "container_only")]
@@ -197,6 +202,9 @@ enum Command {
             value_name = "SCOPE"
         )]
         reject_lossy: Option<LossPolicy>,
+        /// Minimum loss severity refused by --reject-lossy.
+        #[arg(long, value_enum, default_value = "info", value_name = "SEVERITY")]
+        reject_lossy_floor: LossFloor,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -510,15 +518,19 @@ fn main() -> ExitCode {
             _reject_json: _,
             format,
             destinations,
-            allow_errors,
+            reject_errors,
+            reject_empty,
             full_decode,
             reject_lossy,
+            reject_lossy_floor,
             input_args,
             decode,
         } => {
             let conversion_args = commands::ConversionArgs {
                 losses: reject_lossy.unwrap_or_default(),
-                allow_errors,
+                loss_floor: reject_lossy_floor,
+                reject_errors,
+                reject_empty,
                 full_decode,
                 destination: destinations.destination,
                 report: destinations.report,

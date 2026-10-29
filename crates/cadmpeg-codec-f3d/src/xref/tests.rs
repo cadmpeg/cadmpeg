@@ -223,7 +223,10 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
     assert_eq!(
-        occurrences[0].transform.rows(),
+        occurrences[0]
+            .transform
+            .expect("source occurrence placement")
+            .rows(),
         [
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
@@ -242,6 +245,12 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
             object: None,
         }
     );
+    let mut missing = table;
+    missing.references[0].transform = None;
+    let missing = super::root_occurrences(&missing).unwrap();
+    assert_eq!(missing.len(), 1);
+    assert_eq!(missing[0].transform, None);
+    assert_eq!(missing[0].effective_transform().unwrap(), None);
 }
 
 #[test]
@@ -1017,7 +1026,7 @@ fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
                 [0.0, 0.0, 1.0, 0.0],
             ]
         };
-        assert_eq!(occurrence.transform.affine_rows(), expected);
+        assert_eq!(occurrence.transform.unwrap().affine_rows(), expected);
         let losses = &decoded.report().losses;
         assert!(!losses
             .iter()
@@ -1590,14 +1599,14 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             carrier_record_index: 2,
             occurrence_identity: None,
             neutron_role: "role".into(),
-            neutron_role_offset: 0,
+            neutron_role_offset: Some(0),
             placement: Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
-                    scope: crate::records::identity::Located {
+                    scope: crate::records::identity::Sourced {
                         value: selected.try_into().unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     },
-                    carrier_offset: Some(0),
+                    carrier: Some(crate::records::identity::Sourced::at((), 0)),
                 },
             ),
         };
@@ -1606,11 +1615,11 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             neutron_role: "other".into(),
             placement: Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
-                    scope: crate::records::identity::Located {
+                    scope: crate::records::identity::Sourced {
                         value: ignored.try_into().unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     },
-                    carrier_offset: Some(0),
+                    carrier: Some(crate::records::identity::Sourced::at((), 0)),
                 },
             ),
             ..selected_construction.clone()
@@ -1862,7 +1871,7 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
         .iter()
         .find(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
         .expect("root occurrence");
-    assert!((occurrence.transform.rows()[0][3] - 120.0).abs() < EPS_PLACEMENT_TRANSLATION);
+    assert!((occurrence.transform.unwrap().rows()[0][3] - 120.0).abs() < EPS_PLACEMENT_TRANSLATION);
     assert!(decoded
         .report()
         .losses

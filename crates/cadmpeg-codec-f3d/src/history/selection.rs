@@ -1951,7 +1951,8 @@ pub(crate) fn bind_edge_identity_history(
     if projection_was_finalized(histories.get()) {
         return;
     }
-    let mut compact_group_counts = HashMap::<(String, u32, u32), Option<usize>>::new();
+    let mut identity_group_members =
+        HashMap::<(String, u32, u32), (HashSet<u32>, HashSet<u32>, bool)>::new();
     for operand in operands.iter() {
         let Some(stream) = crate::ids::native_stream(&operand.id) else {
             continue;
@@ -1962,12 +1963,11 @@ pub(crate) fn bind_edge_identity_history(
             operand.scope_record_index,
             operand.group_record_index,
         );
-        compact_group_counts
+        let (ordinals, records, unique) = identity_group_members
             .entry(key)
-            .and_modify(|count| {
-                *count = count.and_then(|count| operand.layout().is_compact().then_some(count + 1));
-            })
-            .or_insert(operand.layout().is_compact().then_some(1));
+            .or_insert_with(|| (HashSet::new(), HashSet::new(), true));
+        *unique &=
+            ordinals.insert(operand.group_member_ordinal) && records.insert(operand.record_index());
     }
     let local_ids = operands
         .iter()
@@ -2145,7 +2145,7 @@ pub(crate) fn bind_edge_identity_history(
                             let mut treatment_edges = candidates.treatment_edges.clone();
                             // The geometric chain is transition-scoped. The deleted-
                             // set fallback is group-scoped because its proof depends
-                            // on this operand group's compact member count.
+                            // on this operand group's distinct identity-member count.
                             if lineage_scopes.contains(&scope.id) {
                                 if treatment_edges.len() != 1 {
                                     treatment_edges.clear();
@@ -2159,17 +2159,18 @@ pub(crate) fn bind_edge_identity_history(
                                             | crate::design::DesignFeatureFamily::Chamfer
                                     )
                                 );
-                                let compact_member_count = compact_group_counts
+                                let identity_member_count = identity_group_members
                                     .get(&(
                                         stream.to_owned(),
                                         operand.scope_record_index,
                                         operand.group_record_index,
                                     ))
-                                    .copied()
-                                    .flatten();
-                                treatment_edges = complete_compact_edge_treatment_deletions(
+                                    .and_then(|(ordinals, _, unique)| {
+                                        unique.then_some(ordinals.len())
+                                    });
+                                treatment_edges = complete_edge_treatment_deletions(
                                     is_edge_treatment,
-                                    compact_member_count,
+                                    identity_member_count,
                                     &candidates.deleted_edges,
                                 );
                             }
@@ -2231,14 +2232,14 @@ pub(crate) fn bind_edge_identity_history(
     );
 }
 
-pub(super) fn complete_compact_edge_treatment_deletions(
+pub(super) fn complete_edge_treatment_deletions(
     is_edge_treatment: bool,
-    compact_member_count: Option<usize>,
+    identity_member_count: Option<usize>,
     deleted_edges: &[i64],
 ) -> Vec<i64> {
     if is_edge_treatment
         && !deleted_edges.is_empty()
-        && compact_member_count == Some(deleted_edges.len())
+        && identity_member_count == Some(deleted_edges.len())
     {
         deleted_edges.to_vec()
     } else {

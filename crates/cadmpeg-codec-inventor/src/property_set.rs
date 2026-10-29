@@ -7,6 +7,8 @@ use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStrea
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod source_admission;
+
 const BYTE_ORDER_LE: u16 = 0xfffe;
 const MAX_STREAM_SIZE: usize = 2_097_152;
 const MAX_PROPERTIES: usize = 65_536;
@@ -26,6 +28,8 @@ pub(crate) struct PropertySetDescriptor<'a> {
     pub(crate) stream: CompoundStreamId,
     pub(crate) path: String,
     pub(crate) state: PropertySetState<'a>,
+    /// Actual opened CFB stream; held syntax descriptors have no source proof.
+    pub(crate) source: Option<View<'a>>,
 }
 
 #[derive(Debug)]
@@ -159,98 +163,33 @@ pub(crate) fn inventory<'a>(
             stream: stream.id(),
             path: stream.path().into(),
             state,
+            source: Some(view),
         });
     }
     Ok(property_sets)
 }
 
-pub(crate) fn parse_property_set_stream<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-) -> Result<PropertySetStream<'a>, CodecError> {
-    let bytes = source.window();
-    if bytes.len() > MAX_STREAM_SIZE {
-        return Err(CodecError::malformed(format_args!(
-            "OLE property-set stream exceeds {MAX_STREAM_SIZE} bytes"
-        )));
-    }
-    let mut cursor = Cursor::new(source, "OLE property-set stream");
-    if cursor.u16("byte order")? != BYTE_ORDER_LE {
-        return Err(CodecError::Malformed(
-            "OLE property-set byte order is not little-endian".into(),
-        ));
-    }
-    let version = cursor.u16("version")?;
-    if !matches!(version, 0 | 1) {
-        return Err(CodecError::malformed(format_args!(
-            "OLE property-set version {version} is invalid"
-        )));
-    }
-    let system_identifier = cursor.u32("system identifier")?;
-    let clsid = cursor.array("CLSID")?;
-    let section_count = cursor.count("section count", 2)?;
-    if section_count == 0 {
-        return Err(CodecError::Malformed(
-            "OLE property-set stream has no sections".into(),
-        ));
-    }
-    let mut directories = Vec::new();
-    let mut fmtids = BTreeSet::new();
-    for _ in 0..section_count {
-        let fmtid = cursor.array("section FMTID")?;
-        if !fmtids.insert(fmtid) {
-            return Err(CodecError::Malformed(
-                "OLE property-set stream duplicates a section FMTID".into(),
-            ));
-        }
-        directories.push((fmtid, cursor.offset("section offset")?));
-    }
-    let header_end = cursor.position();
-    directories.sort_by_key(|left| left.1);
-    let mut previous_end = header_end;
-    let mut sections = Vec::new();
-    for (fmtid, offset) in directories {
-        if offset < previous_end || offset % 4 != 0 {
-            return Err(CodecError::Malformed(
-                "OLE property-set section ranges overlap or are not aligned".into(),
-            ));
-        }
-        require_zero_range(bytes, previous_end, offset, "section gap")?;
-        let mut section = crate::reader::at(source, source.start() + offset, "section size")?;
-        let size =
-            usize::try_from(crate::reader::u32(&mut section, "section size")?).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?;
-        let end = offset.checked_add(size).ok_or_else(|| {
-            CodecError::Malformed("OLE property-set section range overflows".into())
-        })?;
-        if size < 8 || end > bytes.len() {
-            return Err(CodecError::Malformed(
-                "OLE property-set section range is invalid".into(),
-            ));
-        }
-        let section_source = source
-            .child(source.start() + offset, source.start() + end)
-            .ok_or_else(|| {
-                CodecError::Malformed("OLE property-set section view is invalid".into())
-            })?;
-        sections.push(parse_section(ctx, section_source, fmtid)?);
-        previous_end = end;
-    }
-    require_zero_range(bytes, previous_end, bytes.len(), "stream suffix")?;
-    Ok(PropertySetStream {
-        version,
-        system_identifier,
-        clsid,
-        sections,
-    })
+/// Values decoded from the independently located OLEPS header.
+pub(crate) struct PropertySetHeader {
+    version: u16,
+    system_identifier: u32,
+    clsid: [u8; 16],
+    directories: Vec<([u8; 16], usize)>,
 }
 
-fn parse_section<'a>(
-    ctx: &DecodeContext<'a>,
-    source: View<'a>,
-    fmtid: [u8; 16],
-) -> Result<PropertySection<'a>, CodecError> {
+/// Actual section table and its code-page/dictionary dependencies. Value bodies
+/// other than those metadata dependencies are not parsed by this function.
+pub(crate) struct PropertySectionDirectory {
+    pub(crate) ranges: Vec<(u32, usize, usize)>,
+    pub(crate) names: BTreeMap<u32, String>,
+    pub(crate) code_page: Option<u16>,
+    pub(crate) offsets_ordered: bool,
+}
+
+pub(crate) fn parse_section_directory(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+) -> Result<PropertySectionDirectory, CodecError> {
     let bytes = source.window();
     let mut cursor = Cursor::new(source, "OLE property-set section");
     let size = cursor.offset("size")?;
@@ -329,23 +268,183 @@ fn parse_section<'a>(
         })
         .transpose()?
         .unwrap_or_default();
+    Ok(PropertySectionDirectory {
+        ranges,
+        names,
+        code_page,
+        offsets_ordered,
+    })
+}
+
+pub(crate) fn parse_property_set_stream<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+) -> Result<PropertySetStream<'a>, CodecError> {
+    let bytes = source.window();
+    if bytes.len() > MAX_STREAM_SIZE {
+        return Err(CodecError::malformed(format_args!(
+            "OLE property-set stream exceeds {MAX_STREAM_SIZE} bytes"
+        )));
+    }
+    let header_source = header_extent(source)?;
+    let PropertySetHeader {
+        version,
+        system_identifier,
+        clsid,
+        mut directories,
+    } = parse_header(header_source)?;
+    let header_end = header_source.window().len();
+    directories.sort_by_key(|left| left.1);
+    let mut previous_end = header_end;
+    for (_, offset) in &directories {
+        previous_end = section_extent(source, *offset, previous_end)?.end() - source.start();
+    }
+    require_zero_range(bytes, previous_end, bytes.len(), "stream suffix")?;
+    let mut previous_end = header_end;
+    let mut sections = Vec::new();
+    for (fmtid, offset) in directories {
+        let section_source = section_extent(source, offset, previous_end)?;
+        previous_end = section_source.end() - source.start();
+        sections.push(parse_section(ctx, section_source, fmtid)?);
+    }
+    Ok(PropertySetStream {
+        version,
+        system_identifier,
+        clsid,
+        sections,
+    })
+}
+
+fn section_extent(
+    source: View<'_>,
+    offset: usize,
+    previous_end: usize,
+) -> Result<View<'_>, CodecError> {
+    let bytes = source.window();
+    if offset < previous_end || !offset.is_multiple_of(4) {
+        return Err(CodecError::Malformed(
+            "OLE property-set section ranges overlap or are not aligned".into(),
+        ));
+    }
+    require_zero_range(bytes, previous_end, offset, "section gap")?;
+    let mut section = crate::reader::at(source, source.start() + offset, "section size")?;
+    let size = usize::try_from(crate::reader::u32(&mut section, "section size")?)
+        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
+    let end = offset
+        .checked_add(size)
+        .ok_or_else(|| CodecError::Malformed("OLE property-set section range overflows".into()))?;
+    if size < 8 || end > bytes.len() {
+        return Err(CodecError::Malformed(
+            "OLE property-set section range is invalid".into(),
+        ));
+    }
+    let section_source = source
+        .child(source.start() + offset, source.start() + end)
+        .ok_or_else(|| CodecError::Malformed("OLE property-set section view is invalid".into()))?;
+    Ok(section_source)
+}
+
+/// The section count fixes the header extent before section content is parsed.
+fn header_extent(source: View<'_>) -> Result<View<'_>, CodecError> {
+    let mut cursor = Cursor::new(source, "OLE property-set stream");
+    let (_, _, _, section_count) = header_prefix(&mut cursor)?;
+    for _ in 0..section_count {
+        let _: [u8; 16] = cursor.array("section FMTID")?;
+        cursor.offset("section offset")?;
+    }
+    child(source, 0, cursor.position(), "property-set header")
+}
+
+fn header_prefix(cursor: &mut Cursor<'_>) -> Result<(u16, u32, [u8; 16], usize), CodecError> {
+    if cursor.u16("byte order")? != BYTE_ORDER_LE {
+        return Err(CodecError::Malformed(
+            "OLE property-set byte order is not little-endian".into(),
+        ));
+    }
+    let version = cursor.u16("version")?;
+    if !matches!(version, 0 | 1) {
+        return Err(CodecError::malformed(format_args!(
+            "OLE property-set version {version} is invalid"
+        )));
+    }
+    let system_identifier = cursor.u32("system identifier")?;
+    let clsid = cursor.array("CLSID")?;
+    let section_count = cursor.count("section count", 2)?;
+    if section_count == 0 {
+        return Err(CodecError::Malformed(
+            "OLE property-set stream has no sections".into(),
+        ));
+    }
+    Ok((version, system_identifier, clsid, section_count))
+}
+
+/// Physical header directory for locating sibling sections. Duplicate FMTIDs
+/// are a semantic header error; they do not change these actual offsets.
+fn frame_header_directory(source: View<'_>) -> Result<PropertySetHeader, CodecError> {
+    let mut cursor = Cursor::new(source, "OLE property-set stream");
+    let (version, system_identifier, clsid, section_count) = header_prefix(&mut cursor)?;
+    let mut directories = Vec::new();
+    for _ in 0..section_count {
+        directories.push((
+            cursor.array("section FMTID")?,
+            cursor.offset("section offset")?,
+        ));
+    }
+    Ok(PropertySetHeader {
+        version,
+        system_identifier,
+        clsid,
+        directories,
+    })
+}
+
+pub(crate) fn parse_header(source: View<'_>) -> Result<PropertySetHeader, CodecError> {
+    let mut cursor = Cursor::new(source, "OLE property-set stream");
+    let (version, system_identifier, clsid, section_count) = header_prefix(&mut cursor)?;
+    let mut directories = Vec::new();
+    let mut fmtids = BTreeSet::new();
+    for _ in 0..section_count {
+        let fmtid = cursor.array("section FMTID")?;
+        if !fmtids.insert(fmtid) {
+            return Err(CodecError::Malformed(
+                "OLE property-set stream duplicates a section FMTID".into(),
+            ));
+        }
+        directories.push((fmtid, cursor.offset("section offset")?));
+    }
+    Ok(PropertySetHeader {
+        version,
+        system_identifier,
+        clsid,
+        directories,
+    })
+}
+
+/// Property extents are fixed by the section's complete offset table before
+/// any property is parsed.
+fn parse_section<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    fmtid: [u8; 16],
+) -> Result<PropertySection<'a>, CodecError> {
+    let PropertySectionDirectory {
+        ranges,
+        names,
+        code_page,
+        offsets_ordered,
+    } = parse_section_directory(ctx, source)?;
     let mut properties = Vec::new();
     for (id, start, end) in ranges {
         let raw = source
             .child(source.start() + start, source.start() + end)
             .ok_or_else(|| CodecError::Malformed("OLE property view is invalid".into()))?;
-        let value = if id == 0 {
-            PropertyValue::Dictionary
-        } else {
-            parse_typed_value(ctx, raw, code_page)?
-        };
-        let name = names.get(&id).cloned();
-        properties.push(Property {
-            id,
-            name,
-            value,
+        properties.push(parse_property(
+            ctx,
             raw,
-        });
+            id,
+            names.get(&id).cloned(),
+            code_page,
+        )?);
     }
     properties.sort_by_key(|left| left.id);
     Ok(PropertySection {
@@ -354,6 +453,26 @@ fn parse_section<'a>(
         offsets_ordered,
         dictionary_entries: names.len(),
         properties,
+    })
+}
+
+pub(crate) fn parse_property<'a>(
+    ctx: &DecodeContext<'a>,
+    raw: View<'a>,
+    id: u32,
+    name: Option<String>,
+    code_page: Option<u16>,
+) -> Result<Property<'a>, CodecError> {
+    let value = if id == 0 {
+        PropertyValue::Dictionary
+    } else {
+        parse_typed_value(ctx, raw, code_page)?
+    };
+    Ok(Property {
+        id,
+        name,
+        value,
+        raw,
     })
 }
 
@@ -898,6 +1017,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    mod source_boundaries;
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 

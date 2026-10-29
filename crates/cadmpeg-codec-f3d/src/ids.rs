@@ -73,10 +73,6 @@ pub(crate) fn design_segment(id: &str) -> Option<&str> {
 /// The fixed key of the single source-image record a design carries.
 pub(crate) const FILE_SOURCE_IMAGE_ID: &str = "f3d:file:source-image#0";
 
-/// The fixed key of the single design-intent failure record a contained
-/// decode carries.
-pub(crate) const DESIGN_INTENT_FAILURE_ID: &str = "f3d:design:intent-failure#0";
-
 /// The fixed identity of the retained source image record.
 pub(crate) fn file_source_image_id() -> cadmpeg_ir::ids::UnknownId {
     cadmpeg_ir::ids::UnknownId::compose(
@@ -218,6 +214,17 @@ pub(crate) fn neutral_xref_occurrence_id(
         cadmpeg_ir::identity_key!("xref")
             .dash(reference_ordinal)
             .dash(occurrence_ordinal),
+    )
+}
+
+/// Neutral root product projected from one typed ACT document-root record.
+pub(crate) fn neutral_act_root_product_id(
+    root: &crate::records::act::ActComponentLink,
+) -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "model", "component"),
+        cadmpeg_ir::identity_key!("act-root-")
+            .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(root.id())),
     )
 }
 
@@ -1269,25 +1276,25 @@ mod tests {
     fn legacy_assembly_connector_key_is_namespace_and_recipe_scoped() {
         let selection = DesignAssemblyLegacySelection {
             record_index: 7,
-            byte_offset: 100,
+            byte_offset: Some(100),
             class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
                 .unwrap(),
             asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            asset_id_offset: 110,
+            asset_id_offset: Some(110),
             context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            context_id_offset: 120,
+            context_id_offset: Some(120),
             recipe_record_index: 8,
-            recipe_record_byte_offset: 130,
+            recipe_record_byte_offset: Some(130),
             recipe_id: "Recipe:1".into(),
             recipe_kind: ConstructionRecipeKind::Face,
             recipe_references: Vec::new(),
-            next_byte_offset: 140,
+            next_byte_offset: Some(140),
         };
         assert_eq!(
             neutral_assembly_legacy_object_id(&selection),

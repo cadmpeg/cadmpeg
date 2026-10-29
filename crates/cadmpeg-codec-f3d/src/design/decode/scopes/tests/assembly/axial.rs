@@ -103,12 +103,17 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         panic!("first operand must select a component insertion");
     };
     assert_eq!(component_insert_scope_record_index, 200);
-    assert_eq!(construction_transform_offset, construction_byte_offset + 48);
+    let construction_byte_offset = construction_byte_offset.expect("decoded carrier offset");
+    let axis_record_index_offsets = axis_record_index_offsets.expect("decoded axis offsets");
+    assert_eq!(
+        construction_transform_offset,
+        Some(construction_byte_offset + 48)
+    );
     assert_eq!(axis_record_index_offsets[0], construction_byte_offset + 193);
     assert_eq!(axis_record_index_offsets[1], construction_byte_offset + 209);
     assert_eq!(
         construction_paired_byte_offset,
-        construction_byte_offset + 380
+        Some(construction_byte_offset + 380)
     );
     assert_eq!(selectors[0].axis_paired_class_tag.as_str(), "261");
     assert_eq!(selectors[0].selector_paired_class_tag.as_str(), "261");
@@ -135,8 +140,12 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     );
 
     let mut mismatched = bytes.clone();
-    let mismatch_at =
-        usize::try_from(selectors[1].external_object_reference_offset).expect("test offset");
+    let mismatch_at = usize::try_from(
+        selectors[1]
+            .external_object_reference_offset
+            .expect("decoded offset"),
+    )
+    .expect("test offset");
     mismatched[mismatch_at..mismatch_at + 8].copy_from_slice(&7_002_u64.to_le_bytes());
     let mut mismatched_scopes = unresolved_scopes;
     bind_axial_assembly_operand_targets(

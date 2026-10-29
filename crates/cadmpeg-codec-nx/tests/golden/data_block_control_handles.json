@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -23,6 +22,7 @@
             },
             "id": "nx:om-entry-0:feature#equations-72",
             "name": "NX expressions",
+            "needs_recompute": false,
             "ordinal": 0,
             "source_content": [
               {
@@ -38,7 +38,15 @@
         "occurrences": [],
         "parameters": [
           {
-            "expression": "25",
+            "driving": true,
+            "expression": {
+              "tokens": [
+                {
+                  "kind": "text",
+                  "value": "25 mm"
+                }
+              ]
+            },
             "id": "nx:om-entry-0:parameter#99",
             "name": "length",
             "native_ref": "nx:om-entry-0:expression#99",
@@ -227,6 +235,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": false
+      },
       "source": {
         "attributes": {
           "classified_offset_store_control_count": "0",
@@ -235,7 +247,6 @@
           "file_size": "216",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "202",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "offset_store_control_count": "1",
@@ -300,6 +311,17 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "depth.not-delivered",
+            "kind": "geometry_not_transferred",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "requested full depth but the nx decoder did not deliver classes: model",
+          "severity": "error"
         }
       ],
       "notes": [
@@ -310,7 +332,10 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": false
+        }
       }
     },
     "source_fidelity": {
@@ -394,7 +419,8 @@
             "retention": "inline"
           },
           "offset": 122,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -402,7 +428,8 @@
             "retention": "inline"
           },
           "offset": 132,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
@@ -410,9 +437,26 @@
             "retention": "inline"
           },
           "offset": 167,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAADKAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAB+AAAAAAAAAKqqqqqqqqqqEVVHUzo6TW9kbEZlYXR1cmWBLgAAADgAAABbAAAAfgAAAAIAAADgAAAAAeAAAAACBAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXMEACoCC5kEHChOdW1iZXIgW21tXSkgbGVuZ3RoOiAyNTsgAEZPT1RFUgAAAAAAAAAA",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": [
+            "model",
+            "design"
+          ]
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {

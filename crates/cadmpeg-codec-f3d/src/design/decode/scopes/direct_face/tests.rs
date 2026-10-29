@@ -17,10 +17,10 @@ fn legacy_scale_with_78_byte_tail_resolves_center_and_history_states() {
         let (bytes, position_at) = scale_fixture(5, 78, start);
         let scope = parse_scope(&bytes, start).expect("synthetic Scale scope");
         let offset = u64_from_index(start);
-        assert_eq!(scope.frame_length(), 309);
-        assert_eq!(scope.reference_count_offset(), offset + 154);
-        assert_eq!(scope.kind_offset(), offset + 221);
-        assert_eq!(scope.feature_ordinal_offset(), offset + 231);
+        assert_eq!(scope.frame_length(), Some(309));
+        assert_eq!(scope.reference_count_offset(), Some(offset + 154));
+        assert_eq!(scope.kind_offset(), Some(offset + 221));
+        assert_eq!(scope.feature_ordinal_offset(), Some(offset + 231));
         assert_eq!(scope.previous_history_state_id_offset(), Some(offset + 262));
         assert_eq!(scope.history_state_id(), Some(19));
         assert_eq!(scope.previous_history_state_id(), Some(17));
@@ -29,10 +29,10 @@ fn legacy_scale_with_78_byte_tail_resolves_center_and_history_states() {
             .expect("uniform Scale with 78-byte fixed tail");
         assert_eq!(operation.body_group_record_index, 102);
         assert_eq!(operation.center_record_index, 105);
-        assert_eq!(operation.uniform_factor_offset, offset + 21);
+        assert_eq!(operation.uniform_factor_offset, Some(offset + 21));
         assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
         let center = operation.center_position.expect("point-data center");
-        assert_eq!(center.offset, u64_from_index(position_at));
+        assert_eq!(center.offset, Some(u64_from_index(position_at)));
         for (actual, expected) in center.value.into_iter().zip([1.25, -2.5, 3.75]) {
             assert!((actual.get() - expected).abs() < EPS_SCALE_VALUE);
         }
@@ -118,7 +118,7 @@ fn legacy_scale_requires_an_admitted_frame_length_and_reference_count_pair() {
     ] {
         let (bytes, _) = scale_fixture(count, tail_length, 0);
         let scope = parse_scope(&bytes, 0).expect("synthetic scope envelope");
-        assert_eq!(scope.frame_length(), frame_length);
+        assert_eq!(scope.frame_length(), Some(frame_length));
         assert_eq!(scope.reference_members().len(), count);
         assert!(decode_scale(&bytes, 0, &HashMap::new()).is_none());
     }

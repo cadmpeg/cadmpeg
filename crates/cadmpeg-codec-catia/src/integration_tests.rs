@@ -597,11 +597,12 @@ fn sketch_geometry_without_construction_state_stays_native() {
         model.sketches[0].placement,
         cadmpeg_ir::sketches::SketchPlacement::Resolved { .. }
     ));
-    let native = result
+    let native = &result
         .ir()
         .native
         .namespace("catia")
-        .expect("native namespace");
+        .expect("catia namespace")
+        .clone();
     let records: Vec<crate::native::CatiaObjectRecord> = native
         .arena_as("object_graph_records")
         .expect("typed object records");
@@ -673,11 +674,12 @@ fn operation_schema_buckets_stay_native_without_feature_ownership() {
             "ConstraintDYS",
         ]));
         let result = decode(outer_container_catpart(&stream).0);
-        let namespace = result
+        let namespace = &result
             .ir()
             .native
             .namespace("catia")
-            .expect("native namespace");
+            .expect("catia namespace")
+            .clone();
         let objects: Vec<crate::native::CatiaDesignObject> = namespace
             .arena_as("design_objects")
             .expect("native design objects");
@@ -773,11 +775,12 @@ fn parameters_without_feature_aggregation_stay_document_scoped() {
         .native_ref
         .as_deref()
         .expect("parameter native identity");
-    let namespace = result
+    let namespace = &result
         .ir()
         .native
         .namespace("catia")
-        .expect("native namespace");
+        .expect("catia namespace")
+        .clone();
     let entities: Vec<crate::native::entity_record::CatiaEntityRecord> = namespace
         .arena_as("entity_records")
         .expect("native entities");
@@ -834,3 +837,7 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
 }
 
 mod float_packed_fixtures;
+
+mod external_occurrences;
+
+mod color_source_identity;

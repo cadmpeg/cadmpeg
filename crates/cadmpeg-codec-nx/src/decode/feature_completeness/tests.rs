@@ -22,7 +22,11 @@ fn append_design_intent_losses(
     ir: &cadmpeg_ir::document::CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    crate::decode::report::append_design_intent_losses(ir, losses).unwrap();
+    crate::decode::report::append_design_intent_losses(
+        &mut cadmpeg_ir::ArenaClasses::default(),
+        ir,
+        losses,
+    );
 }
 
 fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
@@ -30,6 +34,7 @@ fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: ParameterId::mint("test:model:parameter#incomplete")
             .expect("parameter identity grammar"),
         owner: None,
@@ -38,7 +43,7 @@ fn one_incomplete_expression_parameter() -> cadmpeg_ir::CadIr {
         expression: "p2".into(),
         display: None,
         value: None,
-        dependencies: Default::default(),
+
         properties: Default::default(),
         pmi: None,
         native_ref: None,
@@ -63,6 +68,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             .unwrap(),
     };
     assert!(!hole_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -83,6 +89,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         },
     ] {
         assert!(!hole_feature_is_incomplete(
+            &cadmpeg_ir::CadIr::empty(),
             None,
             None,
             Some(std::slice::from_ref(&placement)),
@@ -96,6 +103,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
     };
     assert!(!hole_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         None,
         None,
         Some(std::slice::from_ref(&axis)),
@@ -108,14 +116,14 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             vec![axis.clone()],
             None,
             LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+                length: (cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()).into(),
             },
         ),
         (
             vec![axis],
             Some(HoleKind::Chamfer {
-                diameter: cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap(),
-                angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+                diameter: (cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap()).into(),
+                angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
             }),
             LinearTermination::ThroughAll {},
         ),
@@ -126,6 +134,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         ),
     ] {
         assert!(hole_feature_is_incomplete(
+            &cadmpeg_ir::CadIr::empty(),
             None,
             None,
             Some(&placements),
@@ -135,6 +144,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         ));
     }
     assert!(hole_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         Some(&PlanarProfileRef::Unresolved("hole".into())),
         Some(&FaceSelection::Unresolved),
         None,
@@ -143,6 +153,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(&LinearTermination::ThroughAll {}),
     ));
     assert!(hole_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -151,6 +162,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(&LinearTermination::Unresolved {}),
     ));
     assert!(hole_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -164,6 +176,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(&LinearTermination::ThroughAll {}),
     ));
     assert!(hole_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -174,34 +187,37 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 
     for kind in [
         HoleKind::Chamfer {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()).into(),
+            angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
         HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
-            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()).into(),
+            depth: (cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()).into(),
         },
         HoleKind::CounterboreDrilled {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()).into(),
+            depth: (cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()).into(),
+            drill_point_angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
         HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            diameter: (cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap()).into(),
+            angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
         HoleKind::Counterdrill {
             diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
-                cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                ),
                 None,
             )
             .unwrap(),
 
-            depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap(),
+            depth: (cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()).into(),
+            angle: (cadmpeg_ir::scalar::InteriorAngle::new(0.5).unwrap()).into(),
         },
     ] {
         assert!(hole_feature_is_incomplete(
+            &cadmpeg_ir::CadIr::empty(),
             None,
             None,
             Some(std::slice::from_ref(&directed)),
@@ -272,7 +288,9 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     assert!(!extrude_extent_is_incomplete(
         &ExtrudeExtent::TwoSided {
             first: side(LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap(),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap()
+                ),
             }),
             second: side(LinearTermination::ThroughAll {}),
         },
@@ -298,7 +316,9 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
     assert!(termination_is_incomplete(
         &LinearTermination::OffsetFromFace {
             face: FaceSelection::Native("nx:face-selection#2".to_string()),
-            offset: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+            offset: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()
+            ),
         }
     ));
     assert!(termination_is_incomplete(&LinearTermination::ToVertex {
@@ -342,7 +362,9 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         ),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()),
+        thickness: Some(Into::into(
+            cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+        )),
         side: Some(RibSide::Centered),
         draft: RibDraft::None,
     };
@@ -410,40 +432,49 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         direction: Some(
             cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
         ),
-        spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-        count: 3,
+        distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+            distance: (cadmpeg_ir::scalar::Length::new(10.0).unwrap()).into(),
+        },
+        count: 3_u32.into(),
         second: None,
         omitted_instances: Vec::new(),
     })
     .unwrap();
-    assert!(!pattern_is_incomplete(&linear));
+    assert!(!pattern_is_incomplete(&cadmpeg_ir::CadIr::empty(), &linear));
     let grid = PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
         PatternTransform::Linear {
             direction: Some(
                 cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             ),
-            spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-            count: 1,
+            distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                distance: (cadmpeg_ir::scalar::Length::new(10.0).unwrap()).into(),
+            },
+            count: 1_u32.into(),
             second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                 direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                     0.0, 1.0, 0.0,
                 ))
                 .unwrap(),
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
-                count: 2,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: (cadmpeg_ir::scalar::Length::new(5.0).unwrap()).into(),
+                },
+                count: 2_u32.into(),
             }),
             omitted_instances: vec![[0, 1]],
         },
     )
     .unwrap();
-    assert!(!pattern_is_incomplete(&grid));
+    assert!(!pattern_is_incomplete(&cadmpeg_ir::CadIr::empty(), &grid));
     assert_eq!(grid.occurrence_count(), Some(1));
     assert!(pattern_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Linear {
                 direction: None,
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                count: 3,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: (cadmpeg_ir::scalar::Length::new(10.0).unwrap()).into()
+                },
+                count: 3_u32.into(),
                 second: None,
                 omitted_instances: Vec::new(),
             }
@@ -451,14 +482,17 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         .unwrap()
     ));
     assert!(pattern_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::Linear {
                 direction: Some(
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
                         .unwrap()
                 ),
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                count: 1,
+                distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                    distance: (cadmpeg_ir::scalar::Length::new(10.0).unwrap()).into()
+                },
+                count: 1_u32.into(),
                 second: None,
                 omitted_instances: Vec::new(),
             }
@@ -466,23 +500,29 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         .unwrap()
     ));
     assert!(pattern_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
             PatternTransform::CurveDriven {
                 path: Some(PathRef::Native("nx:path".into())),
-                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                count: 3,
+                spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0)
+                    .unwrap()
+                    .into(),
+                count: 3_u32.into(),
             }
         )
         .unwrap()
     ));
     assert!(pattern_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &PatternKind::new(PatternTransform::Composite {
             stages: cadmpeg_ir::features::patterns::CompositePattern::new(vec![PatternStage {
                 pattern: Box::new(
                     PatternKind::new(PatternTransform::Linear {
                         direction: None,
-                        spacing: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                        count: 3,
+                        distance: cadmpeg_ir::features::patterns::PatternDistance::Spacing {
+                            distance: (cadmpeg_ir::scalar::Length::new(10.0).unwrap()).into()
+                        },
+                        count: 3_u32.into(),
                         second: None,
                         omitted_instances: Vec::new(),
                     })
@@ -517,7 +557,10 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         .unwrap(),
     })
     .unwrap();
-    assert!(!pattern_is_incomplete(&composite));
+    assert!(!pattern_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
+        &composite
+    ));
     assert_eq!(composite.occurrence_count(), Some(6));
 }
 
@@ -632,6 +675,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         })
     };
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -720,21 +764,25 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
     .unwrap();
 
     assert!(!pattern_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         std::slice::from_ref(&seed),
         &pattern,
         std::slice::from_ref(&seed_id),
     ));
     assert!(pattern_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         std::slice::from_ref(&seed),
         &pattern,
         &[],
     ));
     assert!(pattern_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &[seed.clone(), seed],
         &pattern,
         std::slice::from_ref(&seed_id),
     ));
     assert!(pattern_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &[PatternSeed::Faces(FaceSelection::Native(
             "nx:pattern-face-selection#0".into(),
         ))],
@@ -742,11 +790,13 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
         &[],
     ));
     assert!(pattern_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &[PatternSeed::Bodies(BodySelection::Unresolved)],
         &pattern,
         &[],
     ));
     assert!(!pattern_feature_is_incomplete(
+        &cadmpeg_ir::CadIr::empty(),
         &[PatternSeed::Bodies(BodySelection::Bodies(
             cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
                 "test:model:body#seed"
@@ -807,7 +857,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap(),
+                        length: (cadmpeg_ir::scalar::NonZeroLength::new(5.0).unwrap()).into(),
                     },
                     draft: None,
                 },
@@ -826,6 +876,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         Some(true),
     );
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -925,7 +976,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         },
         extent: RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                angle: (cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap()).into(),
             },
         },
         solid: Some(true),
@@ -1041,6 +1092,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
 
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#revolve").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1130,6 +1182,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
     };
     let incomplete = |profile, face| {
         hole_feature_is_incomplete(
+            &cadmpeg_ir::CadIr::empty(),
             profile,
             face,
             Some(std::slice::from_ref(&placement)),
@@ -1157,6 +1210,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let sketch_id = SketchId::mint("test:test:sketch#0").unwrap();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#sketch").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1300,6 +1354,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     ir.model.configurations[0].active = true;
     let output = ir.model.bodies[0].id.clone();
     let feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#base").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1327,25 +1382,16 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
-    ir.model.configurations[0].feature_states.insert(
-        feature.id.clone(),
-        ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                outputs: cadmpeg_ir::features::DistinctMembers::try_from(
-                    feature.evaluation.outputs().clone(),
-                )
-                .unwrap(),
-            },
-            dependencies: feature.dependencies.clone(),
-            definition: feature.evaluation.definition().clone(),
-        },
-    );
+    ir.model.configurations[0]
+        .feature_states
+        .insert(feature.id.clone(), ConfigurationFeatureState::Active {});
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("test:test:parameter#length").expect("identity grammar"),
         owner: Some(feature.id),
         ordinal: 0,
@@ -1355,7 +1401,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
         )),
-        dependencies: Default::default(),
+
         properties: Default::default(),
         pmi: None,
         native_ref: None,
@@ -1375,6 +1421,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     let suppressed = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#suppressed").expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -1405,11 +1452,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
 
     ir.model.configurations[0].feature_states.insert(
         suppressed.id.clone(),
-        ConfigurationFeatureState {
-            evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
-            dependencies: suppressed.dependencies,
-            definition: suppressed.evaluation.definition().clone(),
-        },
+        ConfigurationFeatureState::Suppressed {},
     );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
@@ -1429,6 +1472,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#block").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1441,11 +1485,12 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Block {
-                dimensions: Some([
+                dimensions: (Some([
                     cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
                     cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap(),
-                ]),
+                ]))
+                .map(|values| values.map(Into::into)),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             }),
@@ -1512,7 +1557,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+            angle: Some(Into::into(
+                cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
+            )),
             outward: Some(false),
         }));
     losses.clear();
@@ -1520,7 +1567,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("draft (1)"));
 
-    let draft = |pull_direction: Option<cadmpeg_ir::math::Vector3>, angle, outward| {
+    let draft = |pull_direction: Option<cadmpeg_ir::math::Vector3>,
+                 angle: Option<cadmpeg_ir::scalar::SlopeAngle>,
+                 outward| {
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: cadmpeg_ir::features::FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
                 "test:model:face#draft",
@@ -1536,7 +1585,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle,
+            angle: (angle).map(Into::into),
             outward,
         })
     };
@@ -1569,7 +1618,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::DatumOffsetPlane {
                 reference: None,
-                distance: Length::new(5.0).unwrap(),
+                distance: (Length::new(5.0).unwrap()).into(),
             },
         ));
     losses.clear();
@@ -1585,7 +1634,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
                     feature: datum.clone(),
                 }),
-                distance: Length::new(5.0).unwrap(),
+                distance: (Length::new(5.0).unwrap()).into(),
             },
         ));
     losses.clear();
@@ -1595,6 +1644,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     ir.model.features[0].ordinal = 1;
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: datum.clone(),
         ordinal: 0,
         name: None,
@@ -1636,7 +1686,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             ))
             .try_into()
             .unwrap(),
-            gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
+            gap_tolerance: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap(),
+            )),
         }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
@@ -1653,7 +1705,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             .unwrap())
             .try_into()
             .unwrap(),
-            gap_tolerance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap()),
+            gap_tolerance: Some(Into::into(
+                cadmpeg_ir::scalar::PositiveLength::new(0.01).unwrap(),
+            )),
         }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
@@ -1739,7 +1793,9 @@ fn nx_body_producing_feature_families_require_history_outputs() {
                     plane: None,
                 }),
             },
-            angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+            angle: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()
+            )),
             outward: Some(false),
         })
         .body_output_family(),
@@ -1763,6 +1819,7 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#initial-bodies").expect("identity grammar"),
         ordinal: 0,
         name: Some("Retained history input".into()),
@@ -1800,6 +1857,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#snapshot").expect("identity grammar"),
         ordinal: 0,
         name: Some("MASTER SNAPSHOT BODY".into()),
@@ -1841,6 +1899,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     let second = second_body.id.clone();
     ir.model.bodies.push(second_body);
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#sew").expect("identity grammar"),
         ordinal: 0,
         name: None,

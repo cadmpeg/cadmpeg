@@ -10,6 +10,7 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("valid cube");
     let appearance = AppearanceId::mint("sldprt:test:appearance#shared").unwrap();
     ir.model.appearances.push(Appearance {
+        native_ref: None,
         id: appearance.clone(),
         name: None,
         asset_guid: None,
@@ -24,6 +25,7 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
     });
     ir.model.appearance_bindings = vec![
         AppearanceBinding {
+            native_ref: None,
             id: AppearanceBindingId::mint("sldprt:test:binding#a-face").unwrap(),
             target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
             appearance: appearance.clone(),
@@ -33,6 +35,7 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
             channels: BTreeMap::new(),
         },
         AppearanceBinding {
+            native_ref: None,
             id: AppearanceBindingId::mint("sldprt:test:binding#b-body").unwrap(),
             target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
             appearance,

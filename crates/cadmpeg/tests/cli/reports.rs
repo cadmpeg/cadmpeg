@@ -11,7 +11,7 @@ use tempfile::tempdir;
 use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
 
 #[test]
-fn artifact_reports_cover_success_with_and_without_geometry() {
+fn artifact_reports_cover_success_and_semantic_refusal() {
     let dir = tempdir().unwrap();
     let cube = fixture(
         dir.path(),
@@ -51,6 +51,7 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
     assert!(value["export"]["notes"].is_array());
 
     let empty = geometryless_creo(dir.path(), "empty.prt");
+    let empty_output = dir.path().join("empty.step");
     let empty_report = dir.path().join("empty-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -59,11 +60,16 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
             empty.to_str().unwrap(),
             "-f",
             "step",
+            "-o",
+            empty_output.to_str().unwrap(),
             "--report",
             empty_report.to_str().unwrap(),
         ])
         .assert()
         .success();
+    assert!(fs::read(&empty_output)
+        .unwrap()
+        .starts_with(b"ISO-10303-21"));
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(empty_report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
@@ -71,7 +77,61 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
     assert!(value["refusal"].is_null());
     assert!(value["decode_report"].is_object());
     assert!(value["check_report"].is_object());
-    assert!(value["export"].is_object());
+    assert_eq!(value["export"]["identity"]["payload"], "native");
+    let empty_losses = value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|loss| {
+            loss["code"]["namespace"] == "export" && loss["code"]["code"] == "output.empty"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(empty_losses.len(), 1);
+    assert_eq!(empty_losses[0]["severity"], "warning");
+
+    let refusal_report = dir.path().join("refusal-report.json");
+    let refused_output = dir.path().join("refused.step");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            empty.to_str().unwrap(),
+            "-f",
+            "step",
+            "-o",
+            refused_output.to_str().unwrap(),
+            "--reject-empty",
+            "--report",
+            refusal_report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("refusing to write an empty step"));
+    assert!(!refused_output.exists());
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(refusal_report).unwrap()).unwrap();
+    assert_eq!(value["command"], "convert");
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["refusal"]["stage"], "plan");
+    assert_eq!(value["refusal"]["code"], "empty_geometry");
+    assert!(value["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("geometry"));
+    assert!(value["decode_report"].is_object());
+    assert!(value["check_report"].is_object());
+    assert_eq!(value["export"]["identity"]["payload"], "native");
+    let empty_losses = value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|loss| {
+            loss["code"]["namespace"] == "export" && loss["code"]["code"] == "output.empty"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(empty_losses.len(), 1);
+    assert_eq!(empty_losses[0]["severity"], "warning");
 }
 
 #[test]

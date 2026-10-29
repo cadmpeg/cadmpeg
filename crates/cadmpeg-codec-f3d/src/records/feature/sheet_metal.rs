@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct DesignBaseFlangeOperation {
     /// Positive sheet thickness in centimetres.
     pub(crate) thickness: PositiveReal,
-    /// Byte offset of `thickness`.
-    pub(crate) thickness_offset: u64,
+    /// Byte offset of `thickness` of a located scope.
+    #[serde(skip)]
+    pub(crate) thickness_offset: Option<u64>,
     /// Counted sketch-profile operand group.
     pub(crate) profile_group_record_index: u32,
     /// Sketch-profile record contained by the profile group.
@@ -410,8 +411,8 @@ pub(crate) struct DesignEdgeFlangeOperation {
     pub(crate) settings_record_index: u32,
     /// Retain the scope control for native replay.
     pub(crate) bend_radius: PositiveReal,
-    /// Byte offset of `bend_radius`.
-    pub(crate) bend_radius_offset: u64,
+    /// Byte offset of `bend_radius` of a located scope.
+    pub(crate) bend_radius_offset: Option<u64>,
     /// Face pair the flange height is measured from.
     pub(crate) height_datum: DesignSheetMetalHeightDatum,
     /// Bend position relative to the selected edge.
@@ -482,7 +483,6 @@ impl Serialize for DesignEdgeFlangeOperation {
             width_parameter_source: DesignEdgeFlangeWidthParameterSource,
             settings_record_index: u32,
             bend_radius: f64,
-            bend_radius_offset: u64,
             reference_side_code: u32,
             height_datum: DesignSheetMetalHeightDatum,
             bend_position: DesignBendPosition,
@@ -522,7 +522,6 @@ impl Serialize for DesignEdgeFlangeOperation {
             width_parameter_source: shape.source(),
             settings_record_index: self.settings_record_index,
             bend_radius: self.bend_radius.get(),
-            bend_radius_offset: self.bend_radius_offset,
             reference_side_code: 4,
             height_datum: self.height_datum,
             bend_position: self.bend_position,
@@ -590,7 +589,6 @@ pub(super) struct DesignEdgeFlangeOperationSerde {
     pub(super) width_parameter_source: DesignEdgeFlangeWidthParameterSource,
     pub(super) settings_record_index: u32,
     pub(super) bend_radius: f64,
-    pub(super) bend_radius_offset: u64,
     pub(super) reference_side_code: u32,
     pub(super) height_datum: DesignSheetMetalHeightDatum,
     pub(super) bend_position: DesignBendPosition,
@@ -627,7 +625,7 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
             settings_record_index: wire.settings_record_index,
             bend_radius: PositiveReal::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
-            bend_radius_offset: wire.bend_radius_offset,
+            bend_radius_offset: None,
             height_datum: wire.height_datum,
             bend_position: wire.bend_position,
         })
@@ -686,7 +684,6 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
             width_parameter_source: operation.selection.shape().source(),
             settings_record_index: operation.settings_record_index,
             bend_radius: operation.bend_radius.get(),
-            bend_radius_offset: operation.bend_radius_offset,
             reference_side_code: 4,
             height_datum: operation.height_datum,
             bend_position: operation.bend_position,
@@ -744,8 +741,8 @@ pub(crate) struct DesignHemOperation {
     pub(crate) settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
     pub(crate) bend_radius: PositiveReal,
-    /// Byte offset of `bend_radius`.
-    pub(crate) bend_radius_offset: u64,
+    /// Byte offset of `bend_radius` of a located scope.
+    pub(crate) bend_radius_offset: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -769,8 +766,6 @@ struct DesignHemOperationWire {
     settings_record_index: u32,
     /// Positive rule-derived inside bend radius in centimetres.
     bend_radius: f64,
-    /// Byte offset of `bend_radius`.
-    bend_radius_offset: u64,
 }
 
 impl DesignHemOperation {
@@ -809,7 +804,7 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
             settings_record_index: wire.settings_record_index,
             bend_radius: PositiveReal::new(wire.bend_radius)
                 .ok_or("bend_radius must be positive and finite")?,
-            bend_radius_offset: wire.bend_radius_offset,
+            bend_radius_offset: None,
         })
     }
 }
@@ -827,7 +822,6 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
             parameter_owners: record.parameter_owners,
             settings_record_index: record.settings_record_index,
             bend_radius: record.bend_radius.get(),
-            bend_radius_offset: record.bend_radius_offset,
         }
     }
 }

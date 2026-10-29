@@ -11,10 +11,6 @@ fn support(key: &str) -> SourceObjectAssociation {
         format: CodecFormat::Iges,
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: NonBlankString::new(key).expect("non-blank key"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }

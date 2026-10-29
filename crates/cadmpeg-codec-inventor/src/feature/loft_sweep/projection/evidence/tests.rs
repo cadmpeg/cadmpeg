@@ -132,10 +132,12 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
                 vec![2, 8, 19, 258, 0, 0, 3, 23, 258, 4, 1],
             ),
         };
-        attribute.values[5] = AttributeValue::String(family.into());
-        attribute
-            .values
-            .extend(values.into_iter().map(AttributeValue::Integer));
+        attribute.values[5] = Some(AttributeValue::String(family.into()));
+        attribute.values.extend(
+            values
+                .into_iter()
+                .map(|value| Some(AttributeValue::Integer(value))),
+        );
     }
     let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     let poles = NurbsPoleGrid::from_lanes(
@@ -169,7 +171,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         .contains(&(section, name)))
     .is_none());
     let mut different_last_curve = model.clone();
-    different_last_curve.attributes[2].values[17] = AttributeValue::Integer(5);
+    different_last_curve.attributes[2].values[17] = Some(AttributeValue::Integer(5));
     assert!(loft(&different_last_curve, 17, [19, 23], |section, name| [
         (0, 8),
         (1, 5)
@@ -183,13 +185,13 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     .contains(&(section, name)))
     .is_none());
     let mut wrong_curve = model.clone();
-    wrong_curve.attributes[2].values[12] = AttributeValue::Integer(99);
+    wrong_curve.attributes[2].values[12] = Some(AttributeValue::Integer(99));
     assert!(
         loft(&wrong_curve, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
             .contains(&(section, name)))
         .is_none()
     );
-    model.attributes[2].values[21] = AttributeValue::Integer(2);
+    model.attributes[2].values[21] = Some(AttributeValue::Integer(2));
     assert!(loft(&model, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
         .contains(&(section, name)))
     .is_none());

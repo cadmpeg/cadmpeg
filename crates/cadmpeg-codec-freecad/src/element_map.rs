@@ -3,16 +3,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::decode::bounded_len;
 use cadmpeg_core::CodecError;
 
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
 };
-use crate::native::{
-    EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord, StringTables,
-};
-use crate::topology_transfer::TopologyOccurrence;
+use crate::native::{PropertyRecord, StringTableEntry, StringTableRecord, StringTables};
 
 fn recover_metadata<T>(
     result: Result<T, CodecError>,
@@ -55,7 +52,8 @@ struct MapPayload {
 struct OwnershipPrefix<'a> {
     start: u64,
     furthest: &'a PropertyRecord,
-    second_furthest: Option<&'a PropertyRecord>,
+    furthest_end: u64,
+    second_furthest: Option<(&'a PropertyRecord, u64)>,
 }
 
 enum ElementMapCarrier<'a, 'input> {
@@ -65,13 +63,18 @@ enum ElementMapCarrier<'a, 'input> {
 
 /// Recover every string table and element map carried by `Document.xml`.
 pub(crate) fn parse(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     xml: &roxmltree::Document<'_>,
     file_version: Option<usize>,
     properties: &[PropertyRecord],
-    entries: &[EntryRecord],
+    archive: crate::entry_sources::ArchiveEntries<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    mut fidelity: Option<&mut cadmpeg_ir::SourceFidelity>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
+    let crate::entry_sources::ArchiveEntries {
+        records: entries,
+        sources,
+    } = archive;
     // Orphan carriers are diagnosed once; each marker still proves its own
     // framing so a damaged table cannot erase independently framed peers.
     // discarded-value: framing errors become diagnostics; node admission below is authoritative
@@ -82,7 +85,7 @@ pub(crate) fn parse(
     )?;
     let mut entry_data = HashMap::new();
     for entry in entries {
-        entry_data.insert(entry.name(), entry.data());
+        entry_data.insert(entry.name(), sources.view(entry)?.window());
     }
 
     let hasher_nodes = xml
@@ -94,36 +97,18 @@ pub(crate) fn parse(
         0
     };
     let mut ownership = Vec::new();
-    ownership.extend(
-        properties
-            .iter()
-            .take(owner_count)
-            .map(|property| OwnershipPrefix {
-                start: property.xml.start(),
-                furthest: property,
-                second_furthest: None,
-            }),
-    );
-    ownership.sort_unstable_by_key(|left| left.start);
-
-    let mut furthest: Option<&PropertyRecord> = None;
-    let mut second_furthest: Option<&PropertyRecord> = None;
-    for prefix in &mut ownership {
-        match furthest {
-            Some(previous) if previous.xml.end() >= prefix.furthest.xml.end() => {
-                if second_furthest.is_none_or(|second| second.xml.end() < prefix.furthest.xml.end())
-                {
-                    second_furthest = Some(prefix.furthest);
-                }
-                prefix.furthest = previous;
-            }
-            _ => {
-                second_furthest = furthest;
-                furthest = Some(prefix.furthest);
-            }
-        }
-        prefix.second_furthest = second_furthest;
+    for property in properties.iter().take(owner_count) {
+        let range = ctx.source_range(property)?.ok_or_else(|| {
+            CodecError::malformed("string-table ownership requires an original source extent")
+        })?;
+        ownership.push(OwnershipPrefix {
+            start: cadmpeg_core::decode::u64_from_index(range.start),
+            furthest: property,
+            furthest_end: cadmpeg_core::decode::u64_from_index(range.end),
+            second_furthest: None,
+        });
     }
+    let ownership = ownership_index(ownership);
 
     let mut tables = Vec::new();
     let mut framing_by_parent = HashMap::new();
@@ -202,6 +187,14 @@ pub(crate) fn parse(
             .map_err(CodecError::Malformed)
         })();
         let payload = recover_metadata(parsed, losses, "StringHasher payload")?.flatten();
+        if payload.is_none() || save_all.is_none() || threshold.is_none() {
+            source_only(
+                &mut fidelity,
+                owner_property
+                    .as_deref()
+                    .unwrap_or(crate::fidelity::SOURCE_IMAGE),
+            )?;
+        }
         let mut record = match payload {
             Some(record) => record,
             None => StringTableRecord::try_new(index, None, save_all, threshold, None, None)
@@ -217,9 +210,12 @@ pub(crate) fn parse(
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
+        let mut untyped = false;
+        let mut carrier_present = false;
         let parsed = (|| {
+            let property_xml = ctx.property_xml(property)?;
             let property_xml = ctx
-                .parse_xml(property.xml.text(), "FreeCAD XML tree")
+                .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
                 .map_err(|error| {
                     let CodecError::Malformed(error) = error else {
                         return error;
@@ -229,9 +225,13 @@ pub(crate) fn parse(
                         property.id
                     ))
                 })?;
+            carrier_present = property_xml
+                .descendants()
+                .any(|node| matches!(node.tag_name().name(), "ElementMap" | "ElementMap2"));
             let Some((part, carrier)) = direct_element_map(property_xml.root_element())? else {
                 return Ok(None);
             };
+            carrier_present = true;
             let version = part.attribute("ElementMap").unwrap_or("").to_owned();
             let mut hasher_index = part
                 .attribute("HasherIndex")
@@ -244,7 +244,9 @@ pub(crate) fn parse(
                 })
                 .transpose()?
                 .flatten();
+            untyped |= part.attribute("HasherIndex").is_some() && hasher_index.is_none();
             if hasher_index.is_some_and(|index| tables.get(index).is_none()) {
+                untyped = true;
                 recover_metadata::<()>(
                     Err(CodecError::Malformed(
                         "HasherIndex references an unavailable string table".into(),
@@ -266,6 +268,7 @@ pub(crate) fn parse(
                             )
                         })
                         .transpose()?;
+                    untyped |= declared_count == Some(None);
                     let source_entry = map_node
                         .attribute("file")
                         .filter(|name| !name.is_empty())
@@ -289,13 +292,31 @@ pub(crate) fn parse(
                         parsed,
                     })
                 }
-                ElementMapCarrier::Legacy(marker) => parse_legacy_element_map(
-                    marker,
-                    file_version,
-                    &entry_data,
-                    &property.id,
-                    losses,
-                )?,
+                ElementMapCarrier::Legacy(marker) => {
+                    let payload = parse_legacy_element_map(
+                        marker,
+                        file_version,
+                        &entry_data,
+                        &property.id,
+                        losses,
+                    )?;
+                    // A framed, empty legacy marker declares no map payload.
+                    // Its attributes remain typed property values. A malformed
+                    // count, unavailable side entry, or nonempty child remains
+                    // source-only through the ordinary recovery path.
+                    if payload.is_none()
+                        && marker.attribute("file").is_none_or(str::is_empty)
+                        && parse_count(marker, "ElementMap")? == 0
+                        && !marker.children().any(|node| {
+                            node.is_element()
+                                || (node.is_text()
+                                    && node.text().is_some_and(|text| !text.trim().is_empty()))
+                        })
+                    {
+                        carrier_present = false;
+                    }
+                    payload
+                }
             };
             let Some(payload) = payload else {
                 return Ok(None);
@@ -332,6 +353,7 @@ pub(crate) fn parse(
                         missing |= !known_ids.contains(id);
                     }
                     if missing {
+                        untyped = true;
                         recover_metadata::<()>(
                             Err(CodecError::Malformed(
                                 "mapped names reference unavailable persistent string IDs".into(),
@@ -355,11 +377,27 @@ pub(crate) fn parse(
                 maps: parsed.maps,
             }))
         })();
-        if let Some(map) = recover_metadata(parsed, losses, &property.id)?.flatten() {
+        let map = recover_metadata(parsed, losses, &property.id)?.flatten();
+        if untyped || (carrier_present && map.is_none()) {
+            source_only(&mut fidelity, &property.id)?;
+        }
+        if let Some(map) = map {
             maps.push(map);
         }
     }
     Ok((StringTables::try_from(tables)?, maps))
+}
+
+/// A parsed carrier with no typed payload still exists only in its source
+/// image. Record this at the recovery branch, independently of loss taxonomy.
+fn source_only(
+    fidelity: &mut Option<&mut cadmpeg_ir::SourceFidelity>,
+    record: &str,
+) -> Result<(), CodecError> {
+    if let Some(fidelity) = fidelity {
+        crate::fidelity::mark_untyped(fidelity, record, cadmpeg_ir::ArenaClass::Model)?;
+    }
+    Ok(())
 }
 
 fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
@@ -383,24 +421,28 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
     Ok(count)
 }
 
-/// Connect kernel indexed-map positions to every neutral placed occurrence.
-pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
-    let mut by_property = HashMap::<&str, Vec<&TopologyOccurrence>>::new();
-    for occurrence in occurrences {
-        by_property
-            .entry(occurrence.property.as_str())
-            .or_default()
-            .push(occurrence);
-    }
-    for map in maps {
-        for occurrence in by_property.get(map.property.as_str()).into_iter().flatten() {
-            map.maps.bind_root_topology(
-                occurrence.indexed_name,
-                occurrence.source_index,
-                &occurrence.topology_id,
-            );
+fn ownership_index(mut ownership: Vec<OwnershipPrefix<'_>>) -> Vec<OwnershipPrefix<'_>> {
+    ownership.sort_unstable_by_key(|left| left.start);
+
+    let mut furthest: Option<(&PropertyRecord, u64)> = None;
+    let mut second_furthest: Option<(&PropertyRecord, u64)> = None;
+    for prefix in &mut ownership {
+        match furthest {
+            Some((previous, end)) if end >= prefix.furthest_end => {
+                if second_furthest.is_none_or(|(_, end)| end < prefix.furthest_end) {
+                    second_furthest = Some((prefix.furthest, prefix.furthest_end));
+                }
+                prefix.furthest = previous;
+                prefix.furthest_end = end;
+            }
+            _ => {
+                second_furthest = furthest;
+                furthest = Some((prefix.furthest, prefix.furthest_end));
+            }
         }
+        prefix.second_furthest = second_furthest;
     }
+    ownership
 }
 
 fn owning_property(
@@ -412,13 +454,10 @@ fn owning_property(
     let Some(prefix) = upper.checked_sub(1).and_then(|index| ownership.get(index)) else {
         return Ok(None);
     };
-    if prefix.furthest.xml.end() <= start {
+    if prefix.furthest_end <= start {
         return Ok(None);
     }
-    if prefix
-        .second_furthest
-        .is_some_and(|property| property.xml.end() > start)
-    {
+    if prefix.second_furthest.is_some_and(|(_, end)| end > start) {
         return Err(CodecError::Malformed(
             "StringHasher has multiple enclosing properties".into(),
         ));
@@ -702,7 +741,9 @@ fn parse_legacy_element_map(
         return Ok(None);
     }
     let Some(file_version) = file_version else {
-        let message = format!("property {owner} inline legacy ElementMap requires a verified FileVersion; source XML retained without assigning an encoding");
+        let message = format!(
+            "property {owner} inline legacy ElementMap requires a verified FileVersion; source XML retained without assigning an encoding"
+        );
         losses.push(crate::loss::FreecadLossCode::ElementMapVersionUnresolved.note(message));
         return Ok(None);
     };
@@ -858,7 +899,6 @@ fn legacy_map_payload(
             encoded: record.mapped_name.clone(),
             resolved: Some(record.mapped_name),
             string_ids: record.string_ids,
-            topology_ids: Vec::new(),
         });
     }
     let parsed = ParsedMap {
@@ -1019,7 +1059,6 @@ fn parse_string_table(
     let mut previous_id = 0_i64;
     for _ in 0..declared_count {
         scanner.skip_whitespace();
-        let record_start = scanner.position;
         let header = scanner.token()?;
         let mut fields = header.split('.');
         let encoded_id_field = fields.next().ok_or_else(|| {
@@ -1074,15 +1113,11 @@ fn parse_string_table(
             }
             values.join(" ")
         };
-        let raw = text[record_start..scanner.position]
-            .trim_end_matches(char::is_whitespace)
-            .to_owned();
         output.push(StringTableEntry {
             string_id,
             flags,
             components,
             payload,
-            raw,
         });
         previous_id = string_id;
     }
@@ -1336,7 +1371,6 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
         encoded: encoded.to_owned(),
         resolved: Some(resolved),
         string_ids,
-        topology_ids: Vec::new(),
     })
 }
 

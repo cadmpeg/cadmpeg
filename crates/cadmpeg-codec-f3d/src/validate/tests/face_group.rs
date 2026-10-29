@@ -104,7 +104,7 @@ fn operand_native(valid: bool) -> crate::native::F3dNative {
             id: "f3d:Design/BulkStream.dat:design-record-header#200".into(),
             record_index: 200,
             class_tag: "338".to_owned().try_into().unwrap(),
-            byte_offset: 1_000,
+            byte_offset: Some(1_000),
         });
     }
     native

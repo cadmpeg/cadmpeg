@@ -17,6 +17,7 @@ use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
 
 fn resolved_hole_face() -> Face {
     Face {
+        native_ref: None,
         id: FaceId::mint("creo:visibgeom:face#11").expect("identity grammar"),
         shell: ShellId::mint("creo:test:shell#1").expect("identity grammar"),
         surface: SurfaceId::mint("creo:visibgeom:surface#11").expect("identity grammar"),
@@ -158,6 +159,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         });
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -229,6 +231,7 @@ fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
 
 fn plane_surface(origin_y: f64) -> Surface {
     Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::wire;
-
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
@@ -75,14 +73,27 @@ fn transfer_ledger_reports_an_unprojected_native_only_direction() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityRetainedUnprojected.kind()));
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(
-            &(result.report().transfer_ledger.entries[0].outcome),
-            "note"
-        )
-        .as_deref(),
-        Some("native record retained; semantic projection omitted with an attributed loss")
-    );
+    let native = result.ir().native.namespace("iges").unwrap();
+    let entities = &native.arenas()["entities"];
+    assert_eq!(entities.len(), 1);
+    assert_eq!(entities[0].id(), "iges:entity:directory#1");
+    let fields = entities[0].fields().unwrap();
+    assert_eq!(fields["directory_sequence"], 1);
+    assert_eq!(fields["entity_type"], 123);
+    assert_eq!(fields["form"], 0);
+    let directions = &native.arenas()["directions"];
+    assert_eq!(directions.len(), 1);
+    assert_eq!(directions[0].id(), "iges:native:direction#D1");
+    let fields = directions[0].fields().unwrap();
+    assert_eq!(fields["source_entity"], "iges:entity:directory#1");
+    assert_eq!(fields["components"], serde_json::json!([2.0, -3.0, 4.0]));
+    assert!(!result.report().geometry_transferred());
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().model.points.is_empty());
+    assert!(serde_json::to_value(result.report())
+        .unwrap()
+        .get("transfer_ledger")
+        .is_none());
 }
 
 #[test]
@@ -120,7 +131,19 @@ fn container_and_semantic_decode_retain_an_unknown_flag_three_name_without_geome
             "container_only={container_only}: {:#?}",
             result.report().losses
         );
-        assert_eq!(result.report().transfer_ledger.entries.len(), 1);
+        let native = result.ir().native.namespace("iges").unwrap();
+        let entities = &native.arenas()["entities"];
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id(), "iges:entity:directory#1");
+        let fields = entities[0].fields().unwrap();
+        assert_eq!(fields["entity_type"], 116);
+        assert_eq!(fields["form"], 0);
+        assert!(cadmpeg_ir::index::ModelIndex::build(result.ir())
+            .contains("iges:entity:directory#1", cadmpeg_ir::index::StandardIndex));
+        assert!(serde_json::to_value(result.report())
+            .unwrap()
+            .get("transfer_ledger")
+            .is_none());
     }
 }
 
@@ -241,6 +264,10 @@ fn decode_enforces_each_iges_session_resource_dimension() {
                 error,
                 cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
                     if limit.dimension == expected && limit.operation == operation
+                        && limit.scope == cadmpeg_core::decode::LimitScope::Session
+                        && (expected != ResourceDimension::Entities ||
+                            (limit.limit == u64::from(operation == "part neutral entity")
+                             && limit.used == limit.limit && limit.additional == 1))
             ),
             "{error:#?}"
         );
@@ -259,7 +286,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
     assert_refusal(
         |limits| limits.max_entities = 1,
         ResourceDimension::Entities,
-        "iges_geometry_primitives",
+        "part neutral entity",
     );
     let mut options = DecodeOptions {
         depth: cadmpeg_core::decode::DecodeDepth::Container,
@@ -281,6 +308,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
 fn semantic_decode_barrier_rejects_invalid_cadir() {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
         point: PointId::mint("iges:model:point#missing").expect("identity grammar"),
         tolerance: None,

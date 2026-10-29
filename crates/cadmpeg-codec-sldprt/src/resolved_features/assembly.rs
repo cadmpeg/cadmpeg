@@ -21,7 +21,7 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
 
 pub(crate) fn lanes(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
@@ -124,7 +124,7 @@ fn scalar_archive_classes(walk: &crate::carchive::Walk) -> HashMap<u64, ArchiveP
 
 pub(crate) fn supplemental_config_lanes(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
@@ -153,6 +153,10 @@ pub(crate) fn supplemental_config_lanes(
     Ok(lanes)
 }
 
+pub(super) fn source_id(source: crate::container::Section<'_>, family: &str) -> String {
+    format!("sldprt:feature-input:{family}#{}", source.ordinal())
+}
+
 fn feature_input_lane(
     ctx: &DecodeContext<'_>,
     source: crate::container::Section<'_>,
@@ -160,15 +164,14 @@ fn feature_input_lane(
     family: &str,
     annotations: &mut Annotations,
 ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
-    let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
+    let parent = source_id(source, family);
     let payload = source.payload();
     let classes = class_declarations(payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;
     let scalars = named_scalars(payload, &parent, &names)?;
-    let relation_bindings = relation_bindings(&parent, &classes, &scalars, &[])?;
-    let references = reference_cells(&scalars, &classes)?;
     let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
     for entity in &sketch_entities {
+        let position = entity.offset();
         let signature = usize::try_from(entity.offset())
             .ok()
             .and_then(|offset| payload.get(offset..offset + SKETCH_MARKER.len()))
@@ -185,7 +188,7 @@ fn feature_input_lane(
             annotations,
             entity.id(),
             source.source_stream(),
-            entity.offset(),
+            position,
             signature,
             Exactness::ByteExact,
         )?;
@@ -206,22 +209,25 @@ fn feature_input_lane(
         u64_from_index(payload.len()),
         "retain SLDPRT feature input payload",
     )?;
-    Ok(FeatureInputLane {
+    let mut lane = FeatureInputLane {
         id: parent,
         configuration: configuration(section),
         native_payload: payload.to_vec().into(),
         classes,
         names,
         scalars,
-        relation_bindings,
+        relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
-        references,
+        references: Vec::new(),
         sketch_entities,
-    })
+    };
+    lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
+    lane.references = reference_cells(&lane.scalars, &lane.classes)?;
+    Ok(lane)
 }
 
 fn legacy_feature_input_section(section: &str) -> bool {

@@ -377,7 +377,7 @@ pub(crate) enum DesignExtrudeOperandRole {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(super) enum DesignExtrudeOperandRoleTag {
+pub(crate) enum DesignExtrudeOperandRoleTag {
     Bodies,
     Profile,
     Faces,

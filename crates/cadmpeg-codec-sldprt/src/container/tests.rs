@@ -24,6 +24,8 @@ use crate::test_support::container::synthetic_sldprt;
 use crate::test_support::parasolid::parasolid_with_body;
 use crate::test_support::parasolid::triangle_body;
 
+mod provenance;
+
 #[test]
 fn probe_x84_wrapped_double_length_admits_overflowed_cache_cell() {
     let mut bytes = [0_u8; 27];
@@ -300,10 +302,11 @@ fn parasolid_partition_selection_retains_a_compound_stream_site() {
         &ctx,
         &[],
         0,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![stream],
+        super::NativeMarkers::default(),
+        super::CompoundStreams {
+            streams: vec![stream],
+            views: std::collections::BTreeMap::new(),
+        },
     )
     .unwrap();
 
@@ -496,8 +499,10 @@ fn oversized_block_candidate_is_skipped_without_fusing_the_session() {
         .copy_from_slice(&declared.to_le_bytes());
     source.extend(block);
     source.extend(make_block(0x21, "Kept", b"kept payload"));
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let scan = container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&source)).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    let scan = container::scan(&ctx, root).unwrap();
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.blocks[0].type_id, 0x21);
     assert!(ctx.finish_session().is_ok());
@@ -548,7 +553,7 @@ fn compound_parasolid_wrapper_expands_once() {
         panic!("one CFB stream");
     };
     assert_eq!(stream.payload, wrapper);
-    assert_eq!(stream.decoded_payload.as_deref(), Some(payload.as_slice()));
+    assert_eq!(stream.decoded_payload, Some(payload.as_slice()));
     let [parasolid] = stream.ps_streams.as_slice() else {
         panic!("one Parasolid stream");
     };

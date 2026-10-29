@@ -27,7 +27,6 @@ use super::super::feature_history::knit::emit_feature_result_topologies;
 use super::super::feature_history::link::link_feature_sketch_history;
 use super::super::feature_history::named::{
     named_feature_definition_with, named_or_referenced_feature_definition,
-    retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
     copy_body_id, feature_output_bodies, feature_parameters, feature_reference_name,
@@ -154,6 +153,7 @@ pub(super) fn emit_model_features(
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
         let feature = Feature {
+            needs_recompute: false,
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: None,
@@ -195,6 +195,7 @@ pub(super) fn emit_model_features(
         )?;
         ctx.charge_entities(1, "admit Creo model features")?;
         let feature = Feature {
+            needs_recompute: false,
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: None,
@@ -309,7 +310,7 @@ pub(super) fn emit_model_features(
                                 .into(),
                             parameters: cadmpeg_core::text::named_entries(
                                 format_args!("creo:model:feature#{}", operation.feature_id),
-                                std::mem::take(&mut parameters),
+                                super::super::feature_history::outputs::native_parameter_expressions(std::mem::take(&mut parameters)),
                             )?,
                         }))
                     })
@@ -326,7 +327,6 @@ pub(super) fn emit_model_features(
                 )
             },
         )?;
-        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(
             scan,
             ir,
@@ -447,6 +447,7 @@ pub(super) fn emit_model_features(
             operation_exactness,
         )?;
         let feature = Feature {
+            needs_recompute: false,
             id,
             ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
             name,
@@ -527,7 +528,9 @@ pub(super) fn emit_model_features(
                     kind: kind.to_owned().into(),
                     parameters: cadmpeg_core::text::named_entries(
                         format_args!("creo:model:feature#{feature_id}"),
-                        std::mem::take(&mut parameters),
+                        super::super::feature_history::outputs::native_parameter_expressions(
+                            std::mem::take(&mut parameters),
+                        ),
                     )?,
                 })),
             },
@@ -562,9 +565,9 @@ pub(super) fn emit_model_features(
                 SchemaClassList(&row_schema_classes),
             );
         }
-        retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let feature =
             Feature {
+                needs_recompute: false,
                 id,
                 ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
                 name: Some(match reference_name {

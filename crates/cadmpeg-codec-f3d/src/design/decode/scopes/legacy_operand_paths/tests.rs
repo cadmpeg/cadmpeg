@@ -97,17 +97,24 @@ fn legacy_path_keeps_both_occurrence_guids() {
     let bytes = path_fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = scope();
-    let path =
-        super::exact_legacy_class_388_operand_path_envelope(&bytes, &records, &scope, 10, 1, 0)
-            .unwrap()
-            .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let path = super::exact_legacy_class_388_operand_path_envelope(source, &records, &scope, 10, 0)
+        .unwrap()
+        .unwrap()
+        .content;
     assert_eq!(path.occurrence_guids().len(), 2);
     assert_eq!(
-        path.occurrence_guids()[0].value.as_str(),
+        path.occurrence_guids()[0].as_str(),
         "11111111-1111-1111-1111-111111111111"
     );
     assert_eq!(
-        path.occurrence_guids()[1].value.as_str(),
+        path.occurrence_guids()[1].as_str(),
         "22222222-2222-2222-2222-222222222222"
     );
 }

@@ -89,10 +89,15 @@ impl Registry {
         &self,
         transform: &crate::records::topology::construction::DesignConstructionOperandTransform,
     ) -> bool {
+        let (Some(byte_offset), Some(following_byte_offset)) =
+            (transform.byte_offset(), transform.following_byte_offset())
+        else {
+            return false;
+        };
         if !self.header(
             &transform.class_tag,
             transform.record_index(),
-            transform.byte_offset(),
+            byte_offset,
             Kind::TrailingTransform,
         ) {
             return false;
@@ -100,7 +105,7 @@ impl Registry {
         let Ok(index) = self
             .meta
             .records
-            .binary_search_by_key(&transform.byte_offset(), |record| record.bulk_offset)
+            .binary_search_by_key(&byte_offset, |record| record.bulk_offset)
         else {
             return false;
         };
@@ -110,7 +115,7 @@ impl Registry {
         let Some(ordinal) = transform.following_class_tag.dynamic_ordinal() else {
             return false;
         };
-        next.bulk_offset == transform.following_byte_offset()
+        next.bulk_offset == following_byte_offset
             && next.entity_id == u64::from(transform.following_record_index())
             && self.meta.types.get(ordinal).is_some_and(|row| {
                 row.entities
@@ -120,15 +125,20 @@ impl Registry {
     }
 
     pub(super) fn supports(&self, path: &DesignConstructionTrackingPath) -> bool {
+        let (Some(wrapper_byte_offset), Some(carrier_byte_offset)) =
+            (path.wrapper_byte_offset(), path.carrier_byte_offset())
+        else {
+            return false;
+        };
         self.header(
             &path.wrapper_class_tag,
             path.wrapper_record_index(),
-            path.wrapper_byte_offset(),
+            wrapper_byte_offset,
             Kind::Wrapper,
         ) && self.header(
             &path.carrier_class_tag,
             path.carrier_record_index(),
-            path.carrier_byte_offset(),
+            carrier_byte_offset,
             Kind::Carrier,
         )
     }

@@ -21,5 +21,5 @@ fuzz_target!(|data: &[u8]| {
     let arena = DecodeArena::new();
     if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) {
         drop(frame(&ctx, data, start, limit, ref_width, None));
-    }
+    };
 });

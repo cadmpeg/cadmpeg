@@ -2602,6 +2602,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         }
 
         ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve_id.clone(),
             geometry,
             metadata,
@@ -2744,6 +2745,7 @@ mod tests {
                 .expect("identity grammar");
             let mut ir = CadIr::empty();
             ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -2849,6 +2851,7 @@ mod tests {
                 let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()));
                 let mut ir = CadIr::empty();
                 ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                    native_ref: None,
                     id: surface_id.clone(),
                     geometry: geometry.clone(),
                     source_object: None,

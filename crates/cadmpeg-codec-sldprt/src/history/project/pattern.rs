@@ -10,10 +10,7 @@ use cadmpeg_ir::features::{
 use std::collections::HashMap;
 
 use crate::history::classify::feature_input_class;
-use crate::history::literals::{
-    parse_point3_mm, parse_positive_angle_rad, parse_positive_dimension_length_mm,
-    parse_valid_direction,
-};
+use crate::history::literals::{parse_point3_mm, parse_valid_direction};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::history) enum NativePatternClass {
@@ -105,28 +102,26 @@ pub(super) fn project_pattern(
                     Some(value) => Some(parse_valid_direction(value)?),
                     None => None,
                 },
-                spacing: parse_positive_dimension_length_mm(
-                    feature
-                        .parameters
-                        .get("Spacing")
-                        .or_else(|| feature.parameters.get("D3"))?,
-                )?,
-                count: parse_count(
-                    feature
-                        .parameters
-                        .get("Count")
-                        .or_else(|| feature.parameters.get("D1"))?,
-                )?,
+                distance: super::parameter_dimension::<cadmpeg_ir::scalar::Length>(
+                    feature,
+                    &["Spacing", "D3"],
+                )?
+                .into(),
+                count: super::parameter_dimension(feature, &["Count", "D1"])?,
                 second: match (
                     feature.properties.get("Direction2"),
                     feature.parameters.get("D4"),
                     feature.parameters.get("D2"),
                 ) {
-                    (Some(direction), Some(spacing), Some(count)) => {
+                    (Some(direction), Some(_spacing), Some(_count)) => {
                         Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                             direction: parse_valid_direction(direction)?,
-                            spacing: parse_positive_dimension_length_mm(spacing)?,
-                            count: parse_count(count)?,
+                            distance: super::parameter_dimension::<cadmpeg_ir::scalar::Length>(
+                                feature,
+                                &["D4"],
+                            )?
+                            .into(),
+                            count: super::parameter_dimension(feature, &["D2"])?,
                         })
                     }
                     _ => None,
@@ -137,27 +132,18 @@ pub(super) fn project_pattern(
             NativePatternClass::Circular => PatternKind::new(PatternTransform::Circular {
                 axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
                 axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
-                angle: feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_positive_angle_rad(value))?,
-                count: parse_count(feature.parameters.get("Count")?)?,
+                angle: super::parameter_dimension::<cadmpeg_ir::scalar::PositiveAngle>(
+                    feature,
+                    &["Angle"],
+                )?
+                .into(),
+                count: super::parameter_dimension(feature, &["Count"])?,
             })
             .ok()?,
             NativePatternClass::CurveDriven => PatternKind::new(PatternTransform::CurveDriven {
                 path: curve_path.take(),
-                spacing: parse_positive_dimension_length_mm(
-                    feature
-                        .parameters
-                        .get("Spacing")
-                        .or_else(|| feature.parameters.get("D3"))?,
-                )?,
-                count: parse_count(
-                    feature
-                        .parameters
-                        .get("Count")
-                        .or_else(|| feature.parameters.get("D1"))?,
-                )?,
+                spacing: super::parameter_dimension(feature, &["Spacing", "D3"])?,
+                count: super::parameter_dimension(feature, &["Count", "D1"])?,
             })
             .ok()?,
             NativePatternClass::Mirror => PatternKind::new(PatternTransform::Mirror {

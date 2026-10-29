@@ -23,7 +23,7 @@ PYTHON_ONLY = {
     'check-dialects.py', 'check-doc-anchors.py', 'check-fuzz-seeds.py',
     'check-golden-coverage-floors.py', 'check-resource-caps.py',
     'check-source-policy.py', 'census-panic-calls.py', 'dialect_support_data.py',
-    'render-format-support.py',
+    'render-format-support.py', 'check-native-arena-disposition.py',
 }
 PYTHON_ONLY |= {'test_' + name.replace('-', '_') for name in PYTHON_ONLY}
 # The pre-PR checker, its per-check modules and their tests read no Rust build

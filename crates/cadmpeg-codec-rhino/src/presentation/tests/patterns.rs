@@ -171,7 +171,6 @@ fn legacy_hatch_pattern_record(archive: ArchiveVersion) -> Vec<u8> {
 fn absent_component_index_does_not_alias_system_index_minus_one() {
     let record = LinetypeRecord {
         id: "rhino:presentation:linetype#record-7".to_owned(),
-        source_offset: 7,
         archive_index: None,
         source_uuid: None,
         name: String::new(),
@@ -380,8 +379,9 @@ fn linetype_install_retains_model_distances_without_physical_units() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete linetype document");
         let mut ir = CadIr::empty();
-        let installed = install(
+        let (installed, _) = install(
             &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_core::decode::View::over_retained(scan.data),
             &scan,
             &mut ir,
         )
@@ -430,8 +430,9 @@ fn hatch_install_retains_document_distances_without_physical_units() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
-        let installed = install(
+        let (installed, _) = install(
             &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_core::decode::View::over_retained(scan.data),
             &scan,
             &mut ir,
         )
@@ -496,8 +497,9 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
-        let installed = install(
+        let (installed, _) = install(
             &cadmpeg_test_support::service_decode_context(),
+            cadmpeg_core::decode::View::over_retained(scan.data),
             &scan,
             &mut ir,
         )

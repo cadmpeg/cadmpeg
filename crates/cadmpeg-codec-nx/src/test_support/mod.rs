@@ -15,6 +15,7 @@ pub(crate) mod studio_surface;
 pub(crate) mod test_bytes;
 pub(crate) mod test_cfb;
 pub(crate) mod test_deltas;
+pub(crate) mod test_jt_mesh;
 pub(crate) mod test_om;
 pub(crate) mod test_pmarks;
 pub(crate) mod test_prt;
@@ -41,7 +42,7 @@ pub(crate) fn with_decode_context_over<T>(
     f(&ctx)
 }
 
-pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
+pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream<'static>> {
     with_decode_context_over(
         bytes,
         |_| {},
@@ -51,8 +52,26 @@ pub(crate) fn extract_streams(bytes: &[u8]) -> Vec<crate::parasolid::Stream> {
                 crate::container::scan_bytes(bytes.to_vec()).expect("test SPLMSSTR container");
             crate::parasolid::extract_streams(ctx, root, &container)
                 .expect("test Parasolid streams")
+                .into_iter()
+                .map(crate::parasolid::Stream::into_owned)
+                .collect()
         },
     )
 }
 
+/// Render current parameter names without recreating a duplicate dependency list.
+pub(crate) fn parameter_expression_text(
+    ir: &cadmpeg_ir::CadIr,
+    expression: &cadmpeg_ir::features::Expression,
+) -> String {
+    expression
+        .render_with(|id| {
+            ir.model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)
+                .map(|parameter| parameter.name.clone())
+        })
+        .expect("expression references resolve")
+}
 pub(crate) mod blend_history;

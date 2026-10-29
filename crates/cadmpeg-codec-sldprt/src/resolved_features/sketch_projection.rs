@@ -14,13 +14,15 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Sketches and their projected entities and constraints.
 pub(crate) struct ProjectedSketches {
     pub(crate) sketches: Vec<Sketch>,
     pub(crate) entities: Vec<SketchEntity>,
     pub(crate) constraints: Vec<SketchConstraint>,
+    /// Nested source profiles whose carrier/topology payload was not fully typed.
+    pub(crate) untyped_lanes: BTreeSet<String>,
 }
 
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
@@ -33,6 +35,7 @@ pub(crate) fn sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
+    let mut untyped_lanes = BTreeSet::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
             continue;
@@ -48,6 +51,13 @@ pub(crate) fn sketches(
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
+            if brep.untyped_model
+                || brep.stats.unknown_surface_faces != 0
+                || brep.stats.unknown_curve_edges != 0
+                || brep.stats.unclaimed_faces != 0
+            {
+                untyped_lanes.insert(native_ref.clone());
+            }
             if stream.header.description.starts_with(": TRANSMIT FILE")
                 && !brep.stats.synthetic_body_grouping
                 && brep
@@ -86,6 +96,7 @@ pub(crate) fn sketches(
         sketches,
         entities,
         constraints,
+        untyped_lanes,
     })
 }
 
@@ -236,7 +247,6 @@ fn project_brep(
                         "feature_input_profile_edge",
                         Exactness::Derived,
                     )?;
-                    let native_edge_ref = format!("{stream_ordinal}:{}", edge.id.as_str());
                     let geometry_ref = edge
                         .curve()
                         .map(|curve_id| format!("{stream_ordinal}:{}", curve_id.as_str()));
@@ -247,7 +257,6 @@ fn project_brep(
                     let entity_sketch_id = sketch_id.clone();
                     entities.push(
                         SketchEntity::new(entity_id, entity_sketch_id, geometry)
-                            .with_native_ref(Some(native_edge_ref))
                             .with_geometry_ref(geometry_ref)
                             .with_endpoint_refs(endpoint_refs),
                     );
@@ -294,13 +303,10 @@ fn project_brep(
                 Exactness::Derived,
             )?;
             let entity_sketch_id = sketch_id.clone();
-            let native_vertex_ref = format!("{stream_ordinal}:{}", vertex.id.as_str());
             let mut endpoint_refs = Vec::new();
             endpoint_refs.push(format!("{stream_ordinal}:{}", vertex.point.as_str()));
             entities.push(
-                SketchEntity::new(id, entity_sketch_id, geometry)
-                    .with_native_ref(Some(native_vertex_ref))
-                    .with_endpoint_refs(endpoint_refs),
+                SketchEntity::new(id, entity_sketch_id, geometry).with_endpoint_refs(endpoint_refs),
             );
         }
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
@@ -470,6 +476,7 @@ mod projected_brep_output_tests {
         let point_id = PointId::mint("test:model:point#free").expect("point ID");
         crate::brep::graph::Brep {
             surfaces: vec![Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     PlaneSurface::try_new(
@@ -482,6 +489,7 @@ mod projected_brep_output_tests {
                 source_object: None,
             }],
             faces: vec![Face {
+                native_ref: None,
                 id: FaceId::mint("test:model:face#plane").expect("face ID"),
                 shell: ShellId::mint("test:model:shell#one").expect("shell ID"),
                 surface: surface_id,
@@ -492,6 +500,7 @@ mod projected_brep_output_tests {
                 tolerance: None,
             }],
             vertices: vec![Vertex {
+                native_ref: None,
                 id: VertexId::mint("test:model:vertex#free").expect("vertex ID"),
                 point: point_id.clone(),
                 tolerance: None,
@@ -515,6 +524,7 @@ mod projected_brep_output_tests {
         let mut brep = point_brep();
         for ordinal in 1..32 {
             brep.vertices.push(Vertex {
+                native_ref: None,
                 id: VertexId::mint(format!("test:model:vertex#{ordinal}")).unwrap(),
                 point: brep.points[0].id.clone(),
                 tolerance: None,
@@ -524,6 +534,7 @@ mod projected_brep_output_tests {
         brep.vertices.insert(
             1,
             Vertex {
+                native_ref: None,
                 id: VertexId::mint("test:model:vertex#missing").unwrap(),
                 point: PointId::mint("test:model:point#missing").unwrap(),
                 tolerance: None,
@@ -605,6 +616,46 @@ mod projected_brep_output_tests {
         assert_eq!(sketches.len(), 1);
         assert_eq!(entities.len(), 1);
         assert_eq!(sketches[0].name.as_deref(), Some("point sketch"));
+        assert_eq!(entities[0].endpoint_refs, ["0:test:model:point#free"]);
+    }
+
+    #[test]
+    fn projected_neutral_vertex_has_no_invented_native_owner() {
+        let brep = point_brep();
+        let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        let mut sketches = Vec::new();
+        let mut entities = Vec::new();
+        let mut constraints = Vec::new();
+        project_brep(
+            &brep,
+            &BrepSketchSource {
+                block_offset: 0,
+                stream_ordinal: 0,
+                stream_offset: 0,
+                source_stream: &stream,
+                sketch_name: "point sketch",
+                configuration: None,
+                native_ref: "native:point",
+            },
+            &mut annotations,
+            &mut sketches,
+            &mut entities,
+            &mut constraints,
+        )
+        .expect("project B-rep");
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(entities.len(), 1);
+        assert!(entities[0].native_ref.is_none());
+        assert_eq!(
+            entities[0].geometry.definition(),
+            &cadmpeg_ir::sketches::SketchGeometryDefinition::Point {
+                position: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
+                    1.0, 0.0
+                ))
+                .expect("finite original projected point"),
+            }
+        );
         assert_eq!(entities[0].endpoint_refs, ["0:test:model:point#free"]);
     }
 }

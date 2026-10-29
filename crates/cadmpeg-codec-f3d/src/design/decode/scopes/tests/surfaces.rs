@@ -45,11 +45,11 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
         .unwrap()
         .expect("exact SurfaceRuled operation");
     assert_eq!(operation.method, DesignRuledSurfaceMethod::Normal);
-    assert_eq!(operation.method_offset, 20);
+    assert_eq!(operation.method_offset, Some(20));
     assert_eq!(operation.corner, DesignRuledSurfaceCorner::Rounded);
-    assert_eq!(operation.corner_offset, 50);
+    assert_eq!(operation.corner_offset, Some(50));
     assert!(operation.alternate_face);
-    assert_eq!(operation.alternate_face_offset, 27);
+    assert_eq!(operation.alternate_face_offset, Some(27));
     assert_eq!(operation.angle_owner_record_index, 12);
     assert_eq!(operation.distance_owner_record_index, 11);
     assert_eq!(operation.edge_group_record_indices, [13, 15]);
@@ -99,7 +99,7 @@ fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
         ),
         Some(DesignSurfaceStitchOperation {
             gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
-            gap_tolerance_offset: 40,
+            gap_tolerance_offset: Some(40),
             tolerance_record_index: 300,
             settings_record_index: 301,
         })
@@ -215,9 +215,12 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let serialized = serde_json::to_value(&construction).expect("serialize legacy form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-            .expect("deserialize legacy form"),
-        construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize legacy form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     // The ordinary form is sized by its kind offset, so a shorter scope
@@ -433,9 +436,12 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
     assert!(serialized.get("form").is_none());
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-            .expect("deserialize snapshot form"),
-        construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize snapshot form")
+        )
+        .expect("reserialize"),
+        serialized
     );
     let DesignBaseFeatureConstruction::BodySnapshot {
         bodies,
@@ -463,11 +469,11 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             third_guid.to_owned()
         ]
     );
-    assert_eq!(related_guid_offsets, [66, 142, 275]);
+    assert_eq!(related_guid_offsets, Some([66, 142, 275]));
     assert_eq!(linkage_record, 301);
-    assert_eq!(linkage_record_offset, 234);
+    assert_eq!(linkage_record_offset, Some(234));
     assert_eq!(auxiliary_record, 401);
-    assert_eq!(auxiliary_record_offset, 253);
+    assert_eq!(auxiliary_record_offset, Some(253));
 
     let mut packed_snapshot_bytes = vec![0u8; 485];
     packed_snapshot_bytes[..54].copy_from_slice(&snapshot_bytes[..54]);
@@ -486,7 +492,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     else {
         panic!("packed body-snapshot Base Feature frame selected the wrong form");
     };
-    assert_eq!(related_guid_offsets, [67, 143, 275]);
+    assert_eq!(related_guid_offsets, Some([67, 143, 275]));
 
     let mut invalid_scope = snapshot_scope;
     invalid_scope
@@ -786,7 +792,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
-    assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
+    assert_eq!(metadata_record_offset, Some(u64_from_index(prefix + 33)));
     assert_eq!(metadata_field, [0; 6]);
 
     let mut nonzero_padding = zero_body.clone();
@@ -1077,7 +1083,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
-    assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
+    assert_eq!(metadata_record_offset, Some(u64_from_index(prefix + 33)));
     assert_eq!(metadata_field, [0; 14]);
 
     let mut nonzero_tail = zero_body.clone();
@@ -1230,9 +1236,9 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     };
     assert_eq!(
         *body,
-        crate::records::identity::Located {
+        crate::records::identity::Sourced {
             value: 201,
-            offset: u64_from_index(class_377::BODY_ENTITY_SUFFIX)
+            offset: Some(u64_from_index(class_377::BODY_ENTITY_SUFFIX))
         }
     );
     assert_eq!(
@@ -1242,12 +1248,12 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     assert_eq!(*parameter_body_record, 198);
     assert_eq!(
         *parameter_body_record_offset,
-        u64_from_index(class_377::PARAMETER_BODY_RECORD)
+        Some(u64_from_index(class_377::PARAMETER_BODY_RECORD))
     );
     assert_eq!(*auxiliary_record, 202);
     assert_eq!(
         *auxiliary_record_offset,
-        u64_from_index(class_377::AUXILIARY_RECORD)
+        Some(u64_from_index(class_377::AUXILIARY_RECORD))
     );
     assert_eq!(
         envelope_guid.as_str(),
@@ -1255,11 +1261,11 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     );
     assert_eq!(
         *envelope_guid_offset,
-        u64_from_index(class_377::ENVELOPE_GUID)
+        Some(u64_from_index(class_377::ENVELOPE_GUID))
     );
     assert_eq!(
         *tag_body_based_on_faces_offset,
-        u64_from_index(class_377::TAG_BODY_BASED_ON_FACES_VALUE)
+        Some(u64_from_index(class_377::TAG_BODY_BASED_ON_FACES_VALUE))
     );
 
     let mut class_365_scope = scope.clone();
@@ -1274,9 +1280,12 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
 
     let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
     assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-            .expect("deserialize body-reference form"),
-        construction
+        serde_json::to_value(
+            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+                .expect("deserialize body-reference form")
+        )
+        .expect("reserialize"),
+        serialized
     );
 
     let mut nonzero_field = bytes.clone();

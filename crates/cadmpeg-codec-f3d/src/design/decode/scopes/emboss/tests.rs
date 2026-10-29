@@ -75,11 +75,11 @@ fn emboss_prefix_retains_control_words_and_locates_all_owner_and_group_links() {
         assert_eq!(decoded.profile_group.value, 41);
         assert_eq!(
             decoded.depth_owner.offset,
-            u64::try_from(start).unwrap() + 29
+            Some(u64::try_from(start).unwrap() + 29)
         );
         assert_eq!(
             decoded.profile_group.offset,
-            u64::try_from(start).unwrap() + 119
+            Some(u64::try_from(start).unwrap() + 119)
         );
         assert!(decoded.links_match(&scope));
     }

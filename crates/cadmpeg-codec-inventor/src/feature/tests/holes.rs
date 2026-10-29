@@ -369,9 +369,8 @@ fn sketch_centers_become_placements_drilled_against_the_sketch_normal() {
 
 #[test]
 fn spotface_uses_a_flat_recess_and_retains_its_form() {
-    let projected = HoleFixture::new(3, 12, 5)
-        .project(&[])
-        .expect("spotface projection");
+    let fixture = HoleFixture::new(3, 12, 5);
+    let projected = fixture.project(&[]).expect("spotface projection");
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) =
         projected.evaluation.definition()
     else {
@@ -382,7 +381,8 @@ fn spotface_uses_a_flat_recess_and_retains_its_form() {
         cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind: HoleKind::Counterbore { diameter, depth },
             ..
-        } if diameter.get() == 6.0 && depth.get() == 1.0
+        } if diameter.value_from(&fixture.values).expect("bound hole dimension").get() == 6.0
+            && depth.value_from(&fixture.values).expect("bound hole dimension").get() == 1.0
     ));
     assert_eq!(
         projected
@@ -410,7 +410,7 @@ fn spotface_drill_point_angles_require_an_interior_angle() {
         cadmpeg_ir::features::holes::HoleConstruction::Form {
             kind: HoleKind::CounterboreDrilled { drill_point_angle, .. },
             ..
-        } if drill_point_angle.get() == 1.0
+        } if drill_point_angle.value_from(&fixture.values).expect("bound hole dimension").get() == 1.0
     ));
     for angle in [-1.0, std::f64::consts::PI] {
         fixture.values[5].value = Some(ParameterValue::Angle(
@@ -424,9 +424,8 @@ fn spotface_drill_point_angles_require_an_interior_angle() {
 fn hole_extents_keep_their_termination_kind() {
     for t in [11, 12] {
         for (value, expected) in [(1, "blind"), (4, "through_next"), (5, "through_all")] {
-            let projected = HoleFixture::new(0, t, value)
-                .project(&[])
-                .expect("hole extent projection");
+            let fixture = HoleFixture::new(0, t, value);
+            let projected = fixture.project(&[]).expect("hole extent projection");
             let FeatureDefinition::Operation(FeatureOperation::Hole {
                 extent: Some(extent),
                 ..
@@ -439,7 +438,13 @@ fn hole_extents_keep_their_termination_kind() {
                 expected
             );
             if let LinearTermination::Blind { length } = extent {
-                assert_eq!(length.get(), 15.0);
+                assert_eq!(
+                    length
+                        .value_from(&fixture.values)
+                        .expect("bound hole depth")
+                        .get(),
+                    15.0
+                );
             }
         }
     }

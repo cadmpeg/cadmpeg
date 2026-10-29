@@ -169,12 +169,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     missing_tolerance.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&missing_tolerance, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
+    let error = crate::writer::generate::write_new(&missing_tolerance, &mut Vec::new())
         .expect_err("compound loft without its required tolerance must be rejected");
     assert!(
         error
@@ -294,6 +289,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
             .unwrap();
         source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
+            native_ref: None,
             parameter_range: None,
             id: line_curve.clone(),
             geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -440,15 +436,12 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     missing_tolerance.model.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    assert!(F3dCodec
-        .plan(
-            EncodeInput::new(&missing_tolerance, None),
-            TargetRequest::Inherit
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("full scaled compound loft without tolerance must fail")
-        .to_string()
-        .contains("full shape requires a native cache-fit tolerance"));
+    assert!(
+        crate::writer::generate::write_new(&missing_tolerance, &mut Vec::new())
+            .expect_err("full scaled compound loft without tolerance must fail")
+            .to_string()
+            .contains("full shape requires a native cache-fit tolerance")
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1270,10 +1263,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
+    let error = crate::writer::generate::write_new(&source_less, &mut Vec::new()).unwrap_err();
     assert!(error.to_string().contains("unresolved variable arity"));
 }
 

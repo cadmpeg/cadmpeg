@@ -650,6 +650,32 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
                     '''})
                     self.assertEqual(status, 0, output)
 
+    def test_standard_nonzero_integer_readers_are_keyless(self) -> None:
+        for module in ("std", "core"):
+            for suffix in ("I8", "I16", "I32", "I64", "I128", "Isize",
+                           "U8", "U16", "U32", "U64", "U128", "Usize"):
+                payload = f"{module}::num::NonZero{suffix}"
+                with self.subTest(payload=payload):
+                    status, output = self.run_census({"lib.rs": f'''
+                        #[derive(Deserialize)]
+                        #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+                        enum Reader {{ Count({payload}) }}
+                    '''})
+                    self.assertEqual(status, 0, output)
+
+    def test_nonstandard_nonzero_names_do_not_prove_keyless_readers(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            mod hostile {
+                #[derive(Deserialize)]
+                pub struct NonZeroU32 { value: u32 }
+            }
+            #[derive(Deserialize)]
+            #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Reader { Count(hostile::NonZeroU32) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("NonZeroU32", output)
+
     def test_free_form_map_custom_reader_remains_admitted(self) -> None:
         status, output = self.run_census({"lib.rs": '''
             use std::collections::BTreeMap;

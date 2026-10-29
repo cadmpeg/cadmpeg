@@ -43,3 +43,79 @@ impl DesignParameterScopeDraft {
         });
     }
 }
+
+/// The located scope a flat scope fixture states: a scope document with the
+/// frame offsets and frame length of the decoded scope beside its fields.
+/// Offsets nested in the payload are dropped.
+pub(crate) fn located_scope_from_fixture(
+    mut value: serde_json::Value,
+) -> super::scope::DesignParameterScope {
+    fn strip(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                fields.retain(|key, _| !(key.ends_with("_offset") || key.ends_with("_offsets")));
+                fields.values_mut().for_each(strip);
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    let field = |name: &str| value.get(name).and_then(serde_json::Value::as_u64);
+    let required = |name: &str| field(name).unwrap_or_else(|| panic!("fixture {name}"));
+    let byte_offset = required("byte_offset");
+    let frame_length = required("frame_length");
+    let kind_offset = required("kind_offset");
+    let feature_ordinal_offset = required("feature_ordinal_offset");
+    let previous_history_state_id_offset = field("previous_history_state_id_offset");
+    let reference_count_offset = required("reference_count_offset");
+    let paired_byte_offset = required("paired_byte_offset");
+    let reference_offsets: Vec<u64> = value
+        .get("reference_member_offsets")
+        .and_then(serde_json::Value::as_array)
+        .map(|offsets| {
+            offsets
+                .iter()
+                .filter_map(serde_json::Value::as_u64)
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove("frame_length");
+    }
+    strip(&mut value);
+    value["generation"] = serde_json::json!({"form": "envelope"});
+    let scope: super::scope::DesignParameterScope =
+        serde_json::from_value(value).expect("fixture scope document");
+    let values: Vec<u32> = scope.reference_members().values().copied().collect();
+    let reference_members = if reference_offsets.len() == values.len() {
+        ReferenceRun::located(
+            values
+                .into_iter()
+                .zip(reference_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+        )
+    } else {
+        ReferenceRun::unlocated(values)
+    };
+    super::scope::DesignParameterScope::try_new(DesignParameterScopeDraft {
+        id: scope.id.clone(),
+        byte_offset,
+        class_tag: scope.class_tag.clone(),
+        record_index: scope.record_index,
+        frame_length,
+        kind_offset,
+        feature_ordinal: scope.feature_ordinal,
+        feature_ordinal_offset,
+        history_state_id: scope.history_state_id(),
+        previous_history_state_id: scope.previous_history_state_id(),
+        previous_history_state_id_offset,
+        reference_count_offset,
+        reference_members,
+        payload: scope.payload().clone(),
+        unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups.clone(),
+        paired_class_tag: scope.paired_class_tag.clone(),
+        paired_byte_offset,
+    })
+    .expect("fixture scope layout")
+}

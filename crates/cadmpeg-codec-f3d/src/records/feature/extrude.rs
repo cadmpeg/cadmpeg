@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude operations, extents, starts and the extrude prologue.
 
+use crate::records::identity::Sourced;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
     deserialize_operation_prefix_marker,
     u8,
     "operation_prefix_marker"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_operation_prefix_marker_offset,
-    u64,
-    "operation_prefix_marker_offset"
 );
 /// Boolean result operation stored by an Extrude parameter scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,19 +69,17 @@ pub(crate) struct DesignExtrudePrologueReference {
     /// Referenced Design record.
     pub(crate) record_index: u32,
     /// Byte offset of `record_index`.
-    pub(crate) record_index_offset: u64,
+    pub(crate) record_index_offset: Option<u64>,
     /// Number of zero bytes between `record_index` and the operation or its marker.
     pub(crate) trailing_zero_count: u8,
-    /// Byte offset of the optional marker 1 before the operation.
-    pub(crate) operation_prefix_marker_offset: Option<u64>,
+    /// The marker 1 before the operation, when the prologue stores it.
+    pub(crate) operation_prefix_marker: Option<Sourced<()>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct DesignExtrudePrologueReferenceWire {
     /// Referenced Design record.
     record_index: u32,
-    /// Byte offset of `record_index`.
-    record_index_offset: u64,
     /// Number of zero bytes between `record_index` and the operation or its marker.
     trailing_zero_count: u8,
     /// Optional marker byte between the zero run and the operation.
@@ -95,13 +89,18 @@ struct DesignExtrudePrologueReferenceWire {
         deserialize_with = "deserialize_operation_prefix_marker"
     )]
     operation_prefix_marker: Option<u8>,
-    /// Byte offset of `operation_prefix_marker` when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_operation_prefix_marker_offset"
-    )]
-    operation_prefix_marker_offset: Option<u64>,
+}
+
+/// The stored operation-prefix marker, which is the value 1 when present.
+fn operation_prefix_marker(marker: Option<u8>) -> Result<Option<Sourced<()>>, String> {
+    match marker {
+        None => Ok(None),
+        Some(1) => Ok(Some(Sourced {
+            value: (),
+            offset: None,
+        })),
+        Some(_) => Err("operation_prefix_marker must be 1".into()),
+    }
 }
 
 impl TryFrom<DesignExtrudePrologueReferenceWire> for DesignExtrudePrologueReference {
@@ -109,13 +108,9 @@ impl TryFrom<DesignExtrudePrologueReferenceWire> for DesignExtrudePrologueRefere
     fn try_from(wire: DesignExtrudePrologueReferenceWire) -> Result<Self, Self::Error> {
         Ok(Self {
             record_index: wire.record_index,
-            record_index_offset: wire.record_index_offset,
+            record_index_offset: None,
             trailing_zero_count: wire.trailing_zero_count,
-            operation_prefix_marker_offset: match (wire.operation_prefix_marker, wire.operation_prefix_marker_offset) {
-                (None, None) => None,
-                (Some(1), Some(offset)) => Some(offset),
-                _ => return Err("operation_prefix_marker must be 1 and occur with operation_prefix_marker_offset".into()),
-            },
+            operation_prefix_marker: operation_prefix_marker(wire.operation_prefix_marker)?,
         })
     }
 }
@@ -124,10 +119,8 @@ impl From<DesignExtrudePrologueReference> for DesignExtrudePrologueReferenceWire
     fn from(record: DesignExtrudePrologueReference) -> Self {
         Self {
             record_index: record.record_index,
-            record_index_offset: record.record_index_offset,
             trailing_zero_count: record.trailing_zero_count,
-            operation_prefix_marker: record.operation_prefix_marker_offset.map(|_| 1),
-            operation_prefix_marker_offset: record.operation_prefix_marker_offset,
+            operation_prefix_marker: record.operation_prefix_marker.map(|_| 1),
         }
     }
 }
@@ -138,7 +131,8 @@ pub(crate) struct DesignExtrudeTargetOrdinal {
     /// Zero-based ordinal in the enclosing scope reference table.
     pub(crate) scope_reference_ordinal: u32,
     /// Byte offset of `scope_reference_ordinal`.
-    pub(crate) scope_reference_ordinal_offset: u64,
+    #[serde(skip)]
+    pub(crate) scope_reference_ordinal_offset: Option<u64>,
 }
 
 /// Fixed fields preceding an Extrude parameter scope's reference table.
@@ -150,23 +144,22 @@ pub(crate) struct DesignExtrudeTargetOrdinal {
 pub(crate) enum DesignExtrudePrologue {
     /// Early distance-only layout with a nullable prefix field.
     LegacyDistance {
-        /// Byte offset of the fixed zero prefix when its marker is present.
-        prefix_zero_offset: Option<u64>,
+        /// The fixed zero prefix, when its marker is present.
+        prefix_zero: Option<Sourced<()>>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
-        operation_offset: u64,
+        operation_offset: Option<u64>,
         /// Byte offset of the fixed extent-kind value `2`.
-        #[serde(alias = "extent_discriminator_offset")]
-        extent_kind_offset: u64,
+        extent_kind_offset: Option<u64>,
         /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
+        direction_reversed_offset: Option<u64>,
         /// Whether the operation creates solid rather than sheet geometry.
         solid_operation: bool,
         /// Byte offset of the geometry-kind integer.
-        solid_operation_offset: u64,
+        solid_operation_offset: Option<u64>,
     },
     /// Reference-aware layout with an optional indexed-reference prefix.
     ReferenceAware {
@@ -175,7 +168,7 @@ pub(crate) enum DesignExtrudePrologue {
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
-        operation_offset: u64,
+        operation_offset: Option<u64>,
         /// Raw travel-direction and face-extension values.
         #[serde(alias = "extent_discriminators")]
         direction_face_extend_values: [u32; 2],
@@ -183,35 +176,33 @@ pub(crate) enum DesignExtrudePrologue {
         #[serde(default)]
         side_extent_discriminators: [u32; 2],
         /// Byte offsets parallel to `side_extent_discriminators`.
-        #[serde(default)]
-        side_extent_discriminator_offsets: [u64; 2],
+        side_extent_discriminator_offsets: Option<[u64; 2]>,
         /// Repeated target-group ordinal in the whole-body target form.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         first_side_target_ordinal: Option<DesignExtrudeTargetOrdinal>,
         /// Decoded extent form.
         extent: DesignExtrudeExtent,
         /// Byte offsets parallel to `direction_face_extend_values`.
-        #[serde(alias = "extent_discriminator_offsets")]
-        direction_face_extend_offsets: [u64; 2],
+        direction_face_extend_offsets: Option<[u64; 2]>,
         /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
+        direction_reversed_offset: Option<u64>,
         /// Whether the operation creates solid rather than sheet geometry.
         solid_operation: bool,
         /// Byte offset of `solid_operation`.
-        solid_operation_offset: u64,
+        solid_operation_offset: Option<u64>,
         /// Starting support.
         start: DesignExtrudeStart,
         /// Byte offset of `start`.
-        start_offset: u64,
+        start_offset: Option<u64>,
     },
     /// Shifted reference-aware two-sided face-target layout.
     ShiftedReferenceAware {
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
-        operation_offset: u64,
+        operation_offset: Option<u64>,
         /// Raw travel-direction and face-extension values.
         #[serde(alias = "extent_discriminators")]
         direction_face_extend_values: [u32; 2],
@@ -219,34 +210,32 @@ pub(crate) enum DesignExtrudePrologue {
         #[serde(default)]
         side_extent_discriminators: [u32; 2],
         /// Byte offsets parallel to `side_extent_discriminators`.
-        #[serde(default)]
-        side_extent_discriminator_offsets: [u64; 2],
+        side_extent_discriminator_offsets: Option<[u64; 2]>,
         /// Decoded extent form.
         extent: DesignExtrudeExtent,
         /// Byte offsets parallel to `direction_face_extend_values`.
-        #[serde(alias = "extent_discriminator_offsets")]
-        direction_face_extend_offsets: [u64; 2],
+        direction_face_extend_offsets: Option<[u64; 2]>,
         /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
+        direction_reversed_offset: Option<u64>,
         /// Whether the operation creates solid rather than sheet geometry.
         solid_operation: bool,
         /// Byte offset of `solid_operation`.
-        solid_operation_offset: u64,
+        solid_operation_offset: Option<u64>,
         /// Starting support.
         start: DesignExtrudeStart,
         /// Byte offset of `start`.
-        start_offset: u64,
+        start_offset: Option<u64>,
     },
     /// Shifted layout without the reference-aware prefix.
     LegacyShifted {
-        /// Byte offset of the optional marker 1 before the operation.
-        operation_prefix_marker_offset: Option<u64>,
+        /// The optional marker 1 before the operation.
+        operation_prefix_marker: Option<Sourced<()>>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
         /// Byte offset of `operation`.
-        operation_offset: u64,
+        operation_offset: Option<u64>,
         /// Raw travel-direction and face-extension values.
         #[serde(alias = "extent_discriminators")]
         direction_face_extend_values: [u32; 2],
@@ -254,26 +243,24 @@ pub(crate) enum DesignExtrudePrologue {
         #[serde(default)]
         side_extent_discriminators: [u32; 2],
         /// Byte offsets parallel to `side_extent_discriminators`.
-        #[serde(default)]
-        side_extent_discriminator_offsets: [u64; 2],
+        side_extent_discriminator_offsets: Option<[u64; 2]>,
         /// Decoded extent form.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<DesignExtrudeExtent>,
         /// Byte offsets parallel to `direction_face_extend_values`.
-        #[serde(alias = "extent_discriminator_offsets")]
-        direction_face_extend_offsets: [u64; 2],
+        direction_face_extend_offsets: Option<[u64; 2]>,
         /// Direction-reversal state.
         direction_reversed: bool,
         /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
+        direction_reversed_offset: Option<u64>,
         /// Whether the operation creates solid rather than sheet geometry.
         solid_operation: bool,
         /// Byte offset of `solid_operation`.
-        solid_operation_offset: u64,
+        solid_operation_offset: Option<u64>,
         /// Starting support.
         start: DesignExtrudeStart,
         /// Byte offset of `start`.
-        start_offset: u64,
+        start_offset: Option<u64>,
     },
 }
 
@@ -284,26 +271,15 @@ enum DesignExtrudePrologueWire {
     LegacyDistance {
         /// Value of the nullable prefix field when its marker is present.
         prefix_value: Option<u32>,
-        /// Byte offset of `prefix_value` when present.
-        prefix_value_offset: Option<u64>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
-        /// Byte offset of `operation`.
-        operation_offset: u64,
         /// Raw extent-kind value (`2 = one-sided distance`).
         #[serde(alias = "extent_discriminator")]
         extent_kind: u32,
-        /// Byte offset of `extent_kind`.
-        #[serde(alias = "extent_discriminator_offset")]
-        extent_kind_offset: u64,
         /// Direction-reversal state.
         direction_reversed: bool,
-        /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
         /// Raw geometry-kind discriminator (`0 = sheet`, `1 = solid`).
         geometry_kind: u32,
-        /// Byte offset of `geometry_kind`.
-        geometry_kind_offset: u64,
     },
     /// Reference-aware layout with an optional indexed-reference prefix.
     ReferenceAware {
@@ -311,110 +287,65 @@ enum DesignExtrudePrologueWire {
         reference: Option<DesignExtrudePrologueReference>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
-        /// Byte offset of `operation`.
-        operation_offset: u64,
         /// Raw travel-direction and face-extension values.
         #[serde(alias = "extent_discriminators")]
         direction_face_extend_values: [u32; 2],
         /// Per-side extent discriminators stored after the profile normal and reference slots.
         #[serde(default)]
         side_extent_discriminators: [u32; 2],
-        /// Byte offsets parallel to `side_extent_discriminators`.
-        #[serde(default)]
-        side_extent_discriminator_offsets: [u64; 2],
         /// Repeated target-group ordinal in the whole-body target form.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         first_side_target_ordinal: Option<DesignExtrudeTargetOrdinal>,
         /// Decoded extent form.
         extent: DesignExtrudeExtent,
-        /// Byte offsets parallel to `direction_face_extend_values`.
-        #[serde(alias = "extent_discriminator_offsets")]
-        direction_face_extend_offsets: [u64; 2],
         /// Direction-reversal state.
         direction_reversed: bool,
-        /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
         /// Whether the operation creates solid rather than sheet geometry.
         solid_operation: bool,
-        /// Byte offset of `solid_operation`.
-        solid_operation_offset: u64,
         /// Starting support.
         start: DesignExtrudeStart,
-        /// Byte offset of `start`.
-        start_offset: u64,
     },
     /// Shifted reference-aware two-sided face-target layout.
     ShiftedReferenceAware {
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
-        /// Byte offset of `operation`.
-        operation_offset: u64,
         /// Raw travel-direction and face-extension values.
         #[serde(alias = "extent_discriminators")]
         direction_face_extend_values: [u32; 2],
         /// Per-side extent discriminators stored in the fixed legacy tail.
         #[serde(default)]
         side_extent_discriminators: [u32; 2],
-        /// Byte offsets parallel to `side_extent_discriminators`.
-        #[serde(default)]
-        side_extent_discriminator_offsets: [u64; 2],
         /// Decoded extent form.
         extent: DesignExtrudeExtent,
-        /// Byte offsets parallel to `direction_face_extend_values`.
-        #[serde(alias = "extent_discriminator_offsets")]
-        direction_face_extend_offsets: [u64; 2],
         /// Direction-reversal state.
         direction_reversed: bool,
-        /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
         /// Whether the operation creates solid rather than sheet geometry.
         solid_operation: bool,
-        /// Byte offset of `solid_operation`.
-        solid_operation_offset: u64,
         /// Starting support.
         start: DesignExtrudeStart,
-        /// Byte offset of `start`.
-        start_offset: u64,
     },
     /// Shifted layout without the reference-aware prefix.
     LegacyShifted {
         /// Optional marker immediately before the operation fields.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         operation_prefix_marker: Option<u8>,
-        /// Byte offset of `operation_prefix_marker` when present.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        operation_prefix_marker_offset: Option<u64>,
         /// Boolean result operation.
         operation: DesignExtrudeOperation,
-        /// Byte offset of `operation`.
-        operation_offset: u64,
         /// Raw travel-direction and face-extension values.
         #[serde(alias = "extent_discriminators")]
         direction_face_extend_values: [u32; 2],
         /// Per-side termination discriminators stored after the profile-normal slots.
         #[serde(default)]
         side_extent_discriminators: [u32; 2],
-        /// Byte offsets parallel to `side_extent_discriminators`.
-        #[serde(default)]
-        side_extent_discriminator_offsets: [u64; 2],
         /// Decoded extent form.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extent: Option<DesignExtrudeExtent>,
-        /// Byte offsets parallel to `direction_face_extend_values`.
-        #[serde(alias = "extent_discriminator_offsets")]
-        direction_face_extend_offsets: [u64; 2],
         /// Direction-reversal state.
         direction_reversed: bool,
-        /// Byte offset of `direction_reversed`.
-        direction_reversed_offset: u64,
         /// Whether the operation creates solid rather than sheet geometry.
         solid_operation: bool,
-        /// Byte offset of `solid_operation`.
-        solid_operation_offset: u64,
         /// Starting support.
         start: DesignExtrudeStart,
-        /// Byte offset of `start`.
-        start_offset: u64,
     },
 }
 
@@ -422,11 +353,20 @@ impl TryFrom<DesignExtrudePrologueWire> for DesignExtrudePrologue {
     type Error = String;
     fn try_from(wire: DesignExtrudePrologueWire) -> Result<Self, Self::Error> {
         Ok(match wire {
-            DesignExtrudePrologueWire::LegacyDistance { prefix_value, prefix_value_offset, operation, operation_offset, extent_kind, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind, geometry_kind_offset } => {
-                let prefix_zero_offset = match (prefix_value, prefix_value_offset) {
-                    (None, None) => None,
-                    (Some(0), Some(offset)) => Some(offset),
-                    _ => return Err("prefix_value must be zero and occur with prefix_value_offset".into()),
+            DesignExtrudePrologueWire::LegacyDistance {
+                prefix_value,
+                operation,
+                extent_kind,
+                direction_reversed,
+                geometry_kind,
+            } => {
+                let prefix_zero = match prefix_value {
+                    None => None,
+                    Some(0) => Some(Sourced {
+                        value: (),
+                        offset: None,
+                    }),
+                    Some(_) => return Err("prefix_value must be zero".into()),
                 };
                 if extent_kind != 2 {
                     return Err("extent_kind must be 2 in a legacy distance prologue".into());
@@ -436,15 +376,92 @@ impl TryFrom<DesignExtrudePrologueWire> for DesignExtrudePrologue {
                     1 => true,
                     _ => return Err("geometry_kind must be 0 or 1".into()),
                 };
-                Self::LegacyDistance { prefix_zero_offset, operation, operation_offset, extent_kind_offset, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset: geometry_kind_offset }
+                Self::LegacyDistance {
+                    prefix_zero,
+                    operation,
+                    operation_offset: None,
+                    extent_kind_offset: None,
+                    direction_reversed,
+                    direction_reversed_offset: None,
+                    solid_operation,
+                    solid_operation_offset: None,
+                }
+            }
+            DesignExtrudePrologueWire::ReferenceAware {
+                reference,
+                operation,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                first_side_target_ordinal,
+                extent,
+                direction_reversed,
+                solid_operation,
+                start,
+            } => Self::ReferenceAware {
+                reference,
+                operation,
+                operation_offset: None,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets: None,
+                first_side_target_ordinal,
+                extent,
+                direction_face_extend_offsets: None,
+                direction_reversed,
+                direction_reversed_offset: None,
+                solid_operation,
+                solid_operation_offset: None,
+                start,
+                start_offset: None,
             },
-            DesignExtrudePrologueWire::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
-            DesignExtrudePrologueWire::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
-            DesignExtrudePrologueWire::LegacyShifted { operation_prefix_marker, operation_prefix_marker_offset, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::LegacyShifted { operation_prefix_marker_offset: match (operation_prefix_marker, operation_prefix_marker_offset) {
-                (None, None) => None,
-                (Some(1), Some(offset)) => Some(offset),
-                _ => return Err("operation_prefix_marker must be 1 and occur with operation_prefix_marker_offset".into()),
-            }, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
+            DesignExtrudePrologueWire::ShiftedReferenceAware {
+                operation,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                extent,
+                direction_reversed,
+                solid_operation,
+                start,
+            } => Self::ShiftedReferenceAware {
+                operation,
+                operation_offset: None,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets: None,
+                extent,
+                direction_face_extend_offsets: None,
+                direction_reversed,
+                direction_reversed_offset: None,
+                solid_operation,
+                solid_operation_offset: None,
+                start,
+                start_offset: None,
+            },
+            DesignExtrudePrologueWire::LegacyShifted {
+                operation_prefix_marker: marker,
+                operation,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                extent,
+                direction_reversed,
+                solid_operation,
+                start,
+            } => Self::LegacyShifted {
+                operation_prefix_marker: operation_prefix_marker(marker)?,
+                operation,
+                operation_offset: None,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets: None,
+                extent,
+                direction_face_extend_offsets: None,
+                direction_reversed,
+                direction_reversed_offset: None,
+                solid_operation,
+                solid_operation_offset: None,
+                start,
+                start_offset: None,
+            },
         })
     }
 }
@@ -453,119 +470,77 @@ impl From<DesignExtrudePrologue> for DesignExtrudePrologueWire {
     fn from(record: DesignExtrudePrologue) -> Self {
         match record {
             DesignExtrudePrologue::LegacyDistance {
-                prefix_zero_offset,
+                prefix_zero,
                 operation,
-                operation_offset,
-                extent_kind_offset,
                 direction_reversed,
-                direction_reversed_offset,
                 solid_operation,
-                solid_operation_offset,
+                ..
             } => Self::LegacyDistance {
-                prefix_value: prefix_zero_offset.map(|_| 0),
-                prefix_value_offset: prefix_zero_offset,
+                prefix_value: prefix_zero.map(|_| 0),
                 operation,
-                operation_offset,
                 extent_kind: 2,
-                extent_kind_offset,
                 direction_reversed,
-                direction_reversed_offset,
                 geometry_kind: u32::from(solid_operation),
-                geometry_kind_offset: solid_operation_offset,
             },
             DesignExtrudePrologue::ReferenceAware {
                 reference,
                 operation,
-                operation_offset,
                 direction_face_extend_values,
                 side_extent_discriminators,
-                side_extent_discriminator_offsets,
                 first_side_target_ordinal,
                 extent,
-                direction_face_extend_offsets,
                 direction_reversed,
-                direction_reversed_offset,
                 solid_operation,
-                solid_operation_offset,
                 start,
-                start_offset,
+                ..
             } => Self::ReferenceAware {
                 reference,
                 operation,
-                operation_offset,
                 direction_face_extend_values,
                 side_extent_discriminators,
-                side_extent_discriminator_offsets,
                 first_side_target_ordinal,
                 extent,
-                direction_face_extend_offsets,
                 direction_reversed,
-                direction_reversed_offset,
                 solid_operation,
-                solid_operation_offset,
                 start,
-                start_offset,
             },
             DesignExtrudePrologue::ShiftedReferenceAware {
                 operation,
-                operation_offset,
                 direction_face_extend_values,
                 side_extent_discriminators,
-                side_extent_discriminator_offsets,
                 extent,
-                direction_face_extend_offsets,
                 direction_reversed,
-                direction_reversed_offset,
                 solid_operation,
-                solid_operation_offset,
                 start,
-                start_offset,
+                ..
             } => Self::ShiftedReferenceAware {
                 operation,
-                operation_offset,
                 direction_face_extend_values,
                 side_extent_discriminators,
-                side_extent_discriminator_offsets,
                 extent,
-                direction_face_extend_offsets,
                 direction_reversed,
-                direction_reversed_offset,
                 solid_operation,
-                solid_operation_offset,
                 start,
-                start_offset,
             },
             DesignExtrudePrologue::LegacyShifted {
-                operation_prefix_marker_offset,
+                operation_prefix_marker,
                 operation,
-                operation_offset,
                 direction_face_extend_values,
                 side_extent_discriminators,
-                side_extent_discriminator_offsets,
                 extent,
-                direction_face_extend_offsets,
                 direction_reversed,
-                direction_reversed_offset,
                 solid_operation,
-                solid_operation_offset,
                 start,
-                start_offset,
+                ..
             } => Self::LegacyShifted {
-                operation_prefix_marker: operation_prefix_marker_offset.map(|_| 1),
-                operation_prefix_marker_offset,
+                operation_prefix_marker: operation_prefix_marker.map(|_| 1),
                 operation,
-                operation_offset,
                 direction_face_extend_values,
                 side_extent_discriminators,
-                side_extent_discriminator_offsets,
                 extent,
-                direction_face_extend_offsets,
                 direction_reversed,
-                direction_reversed_offset,
                 solid_operation,
-                solid_operation_offset,
                 start,
-                start_offset,
             },
         }
     }

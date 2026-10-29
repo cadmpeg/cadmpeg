@@ -147,7 +147,8 @@ pub(super) fn thicken_feature_definition(
         IrFeatureOperation::Thicken {
             faces,
             thickness: offset
-                .and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude)),
+                .and_then(|(magnitude, _)| cadmpeg_ir::scalar::PositiveLength::new(magnitude))
+                .map(Into::into),
             side: offset.map(|(_, side)| side),
         },
     ))
@@ -465,7 +466,7 @@ pub(in super::super) fn schema_feature_definition(
                     })
                     && extent.as_ref().is_none_or(|extent| {
                         matches!(extent, LinearTermination::Blind { length }
-                        if (FiniteReal::new(length.get())).zip(
+                        if (length.literal().and_then(|length| FiniteReal::new(length.get()))).zip(
                             FiniteReal::new(*drilled_depth)
                         ).is_some_and(
                             |(first, second)| approximately_equal(first, second)
@@ -506,10 +507,12 @@ pub(in super::super) fn schema_feature_definition(
                         stepped_dimensions,
                     ) {
                         (Some((_, drill_point_angle, _)), false, None, None) => {
-                            cadmpeg_ir::scalar::InteriorAngle::new(drill_point_angle)
-                                .map_or(HoleKind::Unresolved(None), |drill_point_angle| {
-                                    HoleKind::SimpleDrilled { drill_point_angle }
-                                })
+                            cadmpeg_ir::scalar::InteriorAngle::new(drill_point_angle).map_or(
+                                HoleKind::Unresolved(None),
+                                |drill_point_angle| HoleKind::SimpleDrilled {
+                                    drill_point_angle: (drill_point_angle).into(),
+                                },
+                            )
                         }
                         (None, true, None, None) => HoleKind::Simple,
                         (_, _, Some(HoleForm::Counterbore), dimensions) if dimensions.is_some() => {
@@ -521,14 +524,17 @@ pub(in super::super) fn schema_feature_definition(
                                     cadmpeg_ir::scalar::PositiveLength::new(depth)
                                 }),
                             ) {
-                                (Some(diameter), Some(depth)) => {
-                                    HoleKind::Counterbore { diameter, depth }
-                                }
+                                (Some(diameter), Some(depth)) => HoleKind::Counterbore {
+                                    diameter: (diameter).into(),
+                                    depth: (depth).into(),
+                                },
                                 (Some(diameter), None) => HoleKind::PartialCounterbore(
-                                    cadmpeg_ir::features::holes::PartialPair::First(diameter),
+                                    cadmpeg_ir::features::holes::PartialPair::First(
+                                        diameter.into(),
+                                    ),
                                 ),
                                 (None, Some(depth)) => HoleKind::PartialCounterbore(
-                                    cadmpeg_ir::features::holes::PartialPair::Second(depth),
+                                    cadmpeg_ir::features::holes::PartialPair::Second(depth.into()),
                                 ),
                                 (None, None) => HoleKind::Unresolved(Some(HoleForm::Counterbore)),
                             }
@@ -547,14 +553,17 @@ pub(in super::super) fn schema_feature_definition(
                     })
                     .and_then(|diameter| {
                         cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
-                    }),
+                    })
+                    .map(Into::into),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
             extent: extent.or_else(|| {
                 drilled_dimensions
                     .and_then(|(_, _, depth)| cadmpeg_ir::scalar::NonZeroLength::new(depth))
-                    .map(|length| LinearTermination::Blind { length })
+                    .map(|length| LinearTermination::Blind {
+                        length: (length).into(),
+                    })
             }),
             bottom,
             taper_angle: None,
@@ -577,7 +586,9 @@ pub(in super::super) fn schema_feature_definition(
                         RadiusSpec::Unresolved { form: None }
                     }
                 },
-                |radius| RadiusSpec::Constant { radius },
+                |radius| RadiusSpec::Constant {
+                    radius: (radius).into(),
+                },
             );
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -601,7 +612,9 @@ pub(in super::super) fn schema_feature_definition(
                             .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                             .map_or_else(
                                 || ChamferSpec::Unresolved { form: None },
-                                |distance| ChamferSpec::Distance { distance },
+                                |distance| ChamferSpec::Distance {
+                                    distance: (distance).into(),
+                                },
                             ),
                     },
                 ),
@@ -958,7 +971,7 @@ pub(in super::super) fn schema_feature_definition(
         kind: kind.into(),
         parameters: cadmpeg_core::text::named_entries(
             format_args!("creo:model:feature#{feature_id}"),
-            feature_parameters(scan, feature_id),
+            super::outputs::native_parameter_expressions(feature_parameters(scan, feature_id)),
         )?,
     }))
 }

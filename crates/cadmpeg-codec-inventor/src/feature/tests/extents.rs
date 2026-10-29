@@ -61,7 +61,7 @@ fn extent_extrusion(
     symmetric: bool,
     slots: &[(usize, u32)],
     extra: Vec<PmDcFeatureProperty>,
-) -> Option<Feature> {
+) -> Option<(Feature, Vec<DesignParameter>)> {
     configured_extent_extrusion(extent, symmetric, slots, extra, |_| {}, |_, _, _, _| {})
 }
 
@@ -77,7 +77,7 @@ fn configured_extent_extrusion(
         &crate::feature::ProjectionIndex<'_>,
         Option<&Feature>,
     ),
-) -> Option<Feature> {
+) -> Option<(Feature, Vec<DesignParameter>)> {
     let raw_parameters = vec![
         raw_parameter(70),
         raw_parameter(71),
@@ -298,11 +298,13 @@ fn configured_extent_extrusion(
         assert!(losses.is_empty());
     }
     check(&feature, &label, &index, projected.as_ref());
-    projected
+    projected.map(|projected| (projected, neutral_parameters))
 }
 
-fn extrude_definition(feature: &Feature) -> (&ExtrudeExtent, &cadmpeg_ir::features::ExtrudeStart) {
-    match feature.evaluation.definition() {
+fn extrude_definition(
+    projected: &(Feature, Vec<DesignParameter>),
+) -> (&ExtrudeExtent, &cadmpeg_ir::features::ExtrudeStart) {
+    match projected.0.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Extrude { extent, start, .. }) => {
             (extent, start)
         }
@@ -336,7 +338,7 @@ fn plane_surface(ordinal: u32) -> PmDcFeatureProperty {
     )
 }
 
-fn typed_extent_extrusion(version: u8, type_value: i16) -> Option<Feature> {
+fn typed_extent_extrusion(version: u8, type_value: i16) -> Option<(Feature, Vec<DesignParameter>)> {
     let property = Located::new(
         PmDcFeaturePropertyPayload {
             save_version_major: version,
@@ -364,13 +366,13 @@ fn versioned_extent_types_project_the_same_one_sided_extrusion() {
                 termination: LinearTermination::Blind { length },
                 draft: None,
             }
-        } if length.get() == 12.0
+        } if length.value_from(&expected.1).expect("bound length").get() == 12.0
     ));
     for version in [22, 23, 25, 28, 29, 30, 31] {
         let actual = typed_extent_extrusion(version, 12).expect("type-12 distance extrusion");
         assert_eq!(
-            actual.evaluation.definition(),
-            expected.evaluation.definition()
+            actual.0.evaluation.definition(),
+            expected.0.evaluation.definition()
         );
     }
 }
@@ -394,7 +396,7 @@ fn extrusion_extent_branches_project_exactly() {
                 termination: LinearTermination::Blind { length },
                 draft: None,
             }
-        } if length.get() == 12.0
+        } if length.value_from(&symmetric.1).expect("bound symmetric length").get() == 12.0
     ));
     assert!(extent_extrusion(2, false, &[], Vec::new()).is_none());
     assert!(extent_extrusion(7, true, &[(11, 40)], Vec::new()).is_none());
@@ -479,7 +481,7 @@ fn extrusion_extent_branches_project_exactly() {
                 termination: LinearTermination::Blind { length: second },
                 ..
             },
-        } if first.get() == 12.0 && second.get() == 3.0
+        } if first.value_from(&two_sided.1).expect("bound first length").get() == 12.0 && second.value_from(&two_sided.1).expect("bound second length").get() == 3.0
     ));
     assert!(extent_extrusion(
         1,
@@ -743,6 +745,7 @@ fn native_profile_extrusion_forms_and_validator_operands() {
         );
         let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) = projected
             .expect("native profile form")
+            .0
             .evaluation
             .definition()
             .clone()
@@ -994,8 +997,26 @@ fn native_profile_retains_signed_taper_on_each_side() {
     let ExtrudeExtent::TwoSided { first, second } = extrude_definition(&projected).0 else {
         panic!("two-sided fixture");
     };
-    assert_eq!(first.draft.expect("first draft").get(), 0.2);
-    assert_eq!(second.draft.expect("second draft").get(), -0.2);
+    assert_eq!(
+        first
+            .draft
+            .as_ref()
+            .expect("first draft")
+            .value_from(&projected.1)
+            .expect("bound first draft")
+            .get(),
+        0.2
+    );
+    assert_eq!(
+        second
+            .draft
+            .as_ref()
+            .expect("second draft")
+            .value_from(&projected.1)
+            .expect("bound second draft")
+            .get(),
+        -0.2
+    );
 }
 
 #[test]
@@ -1033,7 +1054,7 @@ fn native_profile_direction_and_operation_values_are_exact() {
         )
         .expect("reversed extrusion");
         let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, op, .. }) =
-            feature.evaluation.definition()
+            feature.0.evaluation.definition()
         else {
             panic!("extrusion fixture");
         };

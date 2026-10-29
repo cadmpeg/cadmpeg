@@ -18,8 +18,9 @@ fn expected_extent() -> (ExtrudeExtent, [f64; 3]) {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(42.0)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(42.0)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },
@@ -46,7 +47,9 @@ fn section() -> crate::feature::definitions::FeatureSection3d {
 fn blind(length: f64) -> ExtrudeSide {
     ExtrudeSide {
         termination: LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(length).expect("nonzero length fixture"),
+            length: (cadmpeg_ir::scalar::NonZeroLength::new(length)
+                .expect("nonzero length fixture"))
+            .into(),
         },
         draft: None,
     }
@@ -84,6 +87,7 @@ fn generated_fixture(
         offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, origin, normal| Surface {
+        native_ref: None,
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -304,6 +308,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
             offset: usize::try_from(id).expect("fixture index fits usize"),
         };
         let plane = |id, origin, normal| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -328,6 +333,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#37".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),

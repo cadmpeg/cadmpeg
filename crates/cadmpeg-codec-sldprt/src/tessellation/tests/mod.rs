@@ -229,6 +229,7 @@ fn add_face(
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
     model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry,
         source_object: None,
@@ -251,6 +252,7 @@ fn add_face(
             None,
         ));
         model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id,
             point: point_id,
             tolerance: None,
@@ -264,6 +266,7 @@ fn add_face(
             .expect("identity grammar");
         let direction = corners[next].vector_from(origin).unit().unwrap();
         model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -272,6 +275,7 @@ fn add_face(
             source_object: None,
         });
         model.edges.push(Edge {
+            native_ref: None,
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
@@ -281,6 +285,7 @@ fn add_face(
             tolerance: None,
         });
         model.coedges.push(Coedge {
+            native_ref: None,
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -291,6 +296,7 @@ fn add_face(
         });
     }
     model.loops.push(Loop {
+        native_ref: None,
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -298,6 +304,7 @@ fn add_face(
         ),
     });
     model.faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
@@ -454,6 +461,7 @@ fn add_cylindrical_patch_face(
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
     model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -482,6 +490,7 @@ fn add_cylindrical_patch_face(
                 None,
             ));
             model.vertices.push(Vertex {
+                native_ref: None,
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
@@ -536,12 +545,14 @@ fn add_cylindrical_patch_face(
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
         model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry,
             source_object: None,
         });
         model.edges.push(Edge {
+            native_ref: None,
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: vertex_ids[index].clone(),
@@ -549,6 +560,7 @@ fn add_cylindrical_patch_face(
             tolerance: None,
         });
         model.coedges.push(Coedge {
+            native_ref: None,
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -559,6 +571,7 @@ fn add_cylindrical_patch_face(
         });
     }
     model.loops.push(Loop {
+        native_ref: None,
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -566,6 +579,7 @@ fn add_cylindrical_patch_face(
         ),
     });
     model.faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
@@ -581,6 +595,7 @@ fn add_cylindrical_patch_face(
 fn model_with_body() -> cadmpeg_ir::document::Model {
     let mut model = cadmpeg_ir::document::Model::default();
     model.bodies = vec![Body {
+        native_ref: None,
         id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
@@ -590,6 +605,7 @@ fn model_with_body() -> cadmpeg_ir::document::Model {
         visible: None,
     }];
     model.regions = vec![Region {
+        native_ref: None,
         id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
         body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
@@ -1434,7 +1450,6 @@ fn decode_reports_display_list_geometry() {
             .unwrap(),
     );
     let source = result.ir().source.as_ref().expect("source metadata");
-
     assert_eq!(
         source
             .attributes
@@ -1557,6 +1572,13 @@ fn decode_rejects_inconsistent_display_list_table() {
         .unwrap()
         .attributes
         .contains_key("displaylist_vertices"));
+    assert!(!result
+        .ir()
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .contains_key("displaylist_triangles"));
 }
 
 #[test]

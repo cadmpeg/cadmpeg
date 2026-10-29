@@ -173,6 +173,7 @@ mod tests {
     fn stream_resource_variant_contains_only_the_original_refusal() {
         crate::test_support::with_service_context(&[], |ctx| {
             let refusal = ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::Session,
                 dimension: ResourceDimension::RetainedBytes,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: 2,

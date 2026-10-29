@@ -59,6 +59,7 @@ fn add_subset(
         },
     };
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: id(name),
         geometry,
         parameter_range: None,
@@ -74,6 +75,7 @@ fn add_subset(
 fn nested(inner_sense: bool, outer_sense: bool, inner_cached: bool) -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.model.curves.push(Curve {
+        native_ref: None,
         id: id("root"),
         geometry: CurveGeometry::Solved(line()),
         parameter_range: None,
@@ -235,6 +237,7 @@ fn a_spline_cache_moves_back_onto_the_source_parameter() {
     for sense in [true, false] {
         let mut ir = crate::examples::unit_cube().unwrap();
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: id("root"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(root.clone())),
             parameter_range: None,

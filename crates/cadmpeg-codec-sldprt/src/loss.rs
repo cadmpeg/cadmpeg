@@ -51,6 +51,8 @@ pub(crate) enum SldprtLossCode {
     PmiDimensionUnbound,
     /// `PMISemanticDataDB` `MessagePack` map failed to parse into a dimension.
     PmiSemanticRecordMalformed,
+    /// Semantic map or extra dimension item has no typed payload representation.
+    PmiSemanticRecordUntyped,
     /// A `PMISemanticDataDB` section reached its parse work cap; later
     /// candidate maps were not read.
     PmiSemanticParseCapped,
@@ -193,6 +195,27 @@ pub(crate) enum SldprtLossCode {
     SourceDialectDisplaced,
     /// A source record states a property whose key holds no non-whitespace
     /// character, so the property cannot be keyed and is not transferred.
+    /// Export degrades records identified by the loss message.
+    WriterArenaOmitted,
+    /// Export degrades records identified by the loss message.
+    WriterEntityOmitted,
+    /// Export degrades records identified by the loss message.
+    WriterFieldsOmitted,
+    /// Export writes a parameter that its owner's operation no longer uses
+    /// under the generated global parameter owner. The message names the
+    /// parameter, its former owner and the new owner.
+    WriterParameterMovedToGlobal,
+    /// Export degrades records identified by the loss message.
+    WriterNativeRecordsOmitted,
+    /// Export degrades records identified by the loss message.
+    WriterNoExportableSolids,
+    /// Export degrades records identified by the loss message.
+    WriterDesignReduced,
+    /// Source content remains only in untyped retained container payloads.
+    SourceOpaqueRecordsUnrepresented,
+    /// Export degrades the records named by the loss message.
+    /// Export degrades the records named by the loss message.
+    WriterProceduralReduced,
     SourcePropertyKeyBlank,
 }
 
@@ -213,6 +236,7 @@ impl SldprtLossCode {
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
         Self::PmiSemanticRecordMalformed,
+        Self::PmiSemanticRecordUntyped,
         Self::PmiSemanticParseCapped,
         Self::PmiSwiftAnnotationUnsupported,
         Self::PmiSwiftFeatureWalkCapped,
@@ -274,6 +298,15 @@ impl SldprtLossCode {
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::SourceDialectDisplaced,
+        Self::WriterArenaOmitted,
+        Self::WriterEntityOmitted,
+        Self::WriterFieldsOmitted,
+        Self::WriterParameterMovedToGlobal,
+        Self::WriterNativeRecordsOmitted,
+        Self::WriterNoExportableSolids,
+        Self::WriterDesignReduced,
+        Self::SourceOpaqueRecordsUnrepresented,
+        Self::WriterProceduralReduced,
         Self::SourcePropertyKeyBlank,
     ];
 
@@ -294,6 +327,7 @@ impl SldprtLossCode {
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
             Self::PmiSemanticRecordMalformed => "pmi.semantic-record-malformed",
+            Self::PmiSemanticRecordUntyped => "pmi.semantic-record-untyped",
             Self::PmiSemanticParseCapped => "pmi.semantic-parse-capped",
             Self::PmiSwiftAnnotationUnsupported => "pmi.swift-annotation-unsupported",
             Self::PmiSwiftFeatureWalkCapped => "pmi.swift-feature-walk-capped",
@@ -357,6 +391,15 @@ impl SldprtLossCode {
                 "writer.native-envelope-auxiliary-omitted"
             }
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::WriterArenaOmitted => "writer.arena-omitted",
+            Self::WriterEntityOmitted => "writer.entity-omitted",
+            Self::WriterFieldsOmitted => "writer.fields-omitted",
+            Self::WriterParameterMovedToGlobal => "writer.parameter-moved-to-global",
+            Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
+            Self::WriterNoExportableSolids => "export.no-exportable-solids",
+            Self::WriterDesignReduced => "writer.design-reduced",
+            Self::SourceOpaqueRecordsUnrepresented => "source.opaque-records-unrepresented",
+            Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
         }
     }
@@ -365,6 +408,15 @@ impl SldprtLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::WriterArenaOmitted => Severity::Warning,
+            Self::WriterEntityOmitted => Severity::Error,
+            Self::WriterFieldsOmitted => Severity::Warning,
+            Self::WriterParameterMovedToGlobal => Severity::Info,
+            Self::WriterNativeRecordsOmitted => Severity::Warning,
+            Self::WriterNoExportableSolids => Severity::Error,
+            Self::WriterDesignReduced => Severity::Error,
+            Self::SourceOpaqueRecordsUnrepresented => Severity::Warning,
+            Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
@@ -390,6 +442,7 @@ impl SldprtLossCode {
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
             | Self::PmiSemanticRecordMalformed
+            | Self::PmiSemanticRecordUntyped
             | Self::PmiSemanticParseCapped
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
@@ -445,6 +498,17 @@ impl SldprtLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterArenaOmitted => LossTaxonomy::RecordNotTyped,
+            Self::WriterEntityOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterFieldsOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterParameterMovedToGlobal => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterNativeRecordsOmitted => LossTaxonomy::RecordNotTyped,
+            Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
+            Self::WriterDesignReduced => LossTaxonomy::FeatureHistoryRetained,
+            Self::SourceOpaqueRecordsUnrepresented | Self::PmiSemanticRecordUntyped => {
+                LossTaxonomy::RecordNotTyped
+            }
+            Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
@@ -551,6 +615,420 @@ impl SldprtLossCode {
     }
 }
 
+/// Loss classification concerns records in the source, not neutral projection depth.
+/// Native feature and sketch inputs retain typed records even when neutral admission fails.
+#[cfg(test)]
+#[derive(Clone, Copy)]
+enum Representation {
+    Model,
+    Design,
+    NativeRelations,
+    Reduced,
+    Diagnostic,
+    Writer,
+}
+
+#[cfg(test)]
+const REPRESENTATION: &[(SldprtLossCode, Representation)] = &[
+    (
+        SldprtLossCode::ConfigActiveIdentityUnresolved,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigActivePartitionMismatch,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigInferredWithoutNative,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigLaneIdentityUnresolved,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigAmbiguousPartition,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigAmbiguousNaming,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigIncoherentBodyRefs,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigIncompleteSnapshot,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ConfigProjectionWorkCapped,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ParameterUnevaluated,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::ParameterAmbiguousIdentity,
+        Representation::Reduced,
+    ),
+    (SldprtLossCode::PmiDimensionUnbound, Representation::Reduced),
+    (
+        SldprtLossCode::PmiSemanticRecordMalformed,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::PmiSemanticRecordUntyped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::PmiSemanticParseCapped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::PmiSwiftAnnotationUnsupported,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::PmiSwiftFeatureWalkCapped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::HistoryIncompleteReferences,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureIncoherentEdges,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureIncoherentContent,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureUnresolvedOutputScope,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureIncoherentOutputs,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::SketchNativeConstraint,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::SketchNativeGeometry,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::SketchProfileRejected,
+        Representation::Design,
+    ),
+    (
+        SldprtLossCode::SketchRelationUnprojected,
+        Representation::NativeRelations,
+    ),
+    (
+        SldprtLossCode::SketchRelationMultiplyProjected,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureNativeKindRetained,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureInputObjectUnbound,
+        Representation::Design,
+    ),
+    (
+        SldprtLossCode::FeatureInputSolidBodyRetained,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureInputArchiveWalkStopped,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureTypedOperandIncomplete,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureThinOperationAmbiguous,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::FeatureBodyRetentionUnresolved,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::GeometryFaceSupportSurfaceUntyped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometryEdgeSupportCurveUntyped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometryPointRecordAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometryPcurveAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometrySurfaceSolverWorkCapped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometrySplineLanesUnpaired,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AppearanceFaceColorUnresolved,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::AppearanceAssignmentUnresolved,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::NativeAppearanceScopeUnresolved,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TessellationFaceOwnershipUnresolved,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::TessellationOwnerWorkCapped,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::TessellationReusedTagAmbiguous,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::TessellationDisplayWithoutGeometry,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::TopologyBodyHierarchyDerived,
+        Representation::Reduced,
+    ),
+    (
+        SldprtLossCode::TopologyFaceSenseConflict,
+        Representation::Reduced,
+    ),
+    (SldprtLossCode::TopologyFaceUnclaimed, Representation::Model),
+    (
+        SldprtLossCode::TopologyFinRecordAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyFinPartnerUnresolved,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyFinLinkUnresolved,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyRingEdgeWithheld,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyLoopRecordAmbiguous,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyVertexRecordUnresolved,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyPcurveCarrierOffSurface,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::GeometryParasolidNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::TopologyGraphNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::MaterialMetadataNotTransferred,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::ContainerNoParasolidStream,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::ContainerParasolidProbeCapped,
+        Representation::Model,
+    ),
+    (
+        SldprtLossCode::SourcePreservedImageUnavailable,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::SourceDialectUnverified,
+        Representation::Diagnostic,
+    ),
+    (
+        SldprtLossCode::KernelDialectUnverified,
+        Representation::Diagnostic,
+    ),
+    (
+        SldprtLossCode::DialectLayerCollision,
+        Representation::Diagnostic,
+    ),
+    (
+        SldprtLossCode::WriterShellWireTopologyOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterCoedgePcurveUsesOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterSphereSeamCurvesOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterAppearanceBindingsOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterAttributesOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterUnboundAppearancesOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterTessellationMetadataOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterNativeEnvelopeAuxiliaryOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::SourceDialectDisplaced,
+        Representation::Writer,
+    ),
+    (SldprtLossCode::WriterArenaOmitted, Representation::Writer),
+    (SldprtLossCode::WriterEntityOmitted, Representation::Writer),
+    (SldprtLossCode::WriterFieldsOmitted, Representation::Writer),
+    (
+        SldprtLossCode::WriterParameterMovedToGlobal,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterNativeRecordsOmitted,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::WriterNoExportableSolids,
+        Representation::Writer,
+    ),
+    (SldprtLossCode::WriterDesignReduced, Representation::Writer),
+    (
+        SldprtLossCode::SourceOpaqueRecordsUnrepresented,
+        Representation::Diagnostic,
+    ),
+    (
+        SldprtLossCode::WriterProceduralReduced,
+        Representation::Writer,
+    ),
+    (
+        SldprtLossCode::SourcePropertyKeyBlank,
+        Representation::Model,
+    ),
+];
+
+/// Arena classes whose source records have no typed neutral or native representation.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    native: Option<&crate::native::SldprtNative>,
+) -> cadmpeg_ir::document::ArenaClasses {
+    use cadmpeg_ir::document::ArenaClass;
+    let mut classes: cadmpeg_ir::document::ArenaClasses = REPRESENTATION
+        .iter()
+        .filter_map(|(code, representation)| {
+            if !losses.iter().any(|loss| loss.code == code.kind()) {
+                return None;
+            }
+            match representation {
+                Representation::Model => Some(ArenaClass::Model),
+                Representation::Design => Some(ArenaClass::Design),
+                Representation::NativeRelations
+                    if !native.is_some_and(retains_relation_semantics) =>
+                {
+                    Some(ArenaClass::Design)
+                }
+                Representation::NativeRelations
+                | Representation::Reduced
+                | Representation::Diagnostic
+                | Representation::Writer => None,
+            }
+        })
+        .collect();
+    if losses
+        .iter()
+        .any(|loss| loss.code == SldprtLossCode::SourceOpaqueRecordsUnrepresented.kind())
+    {
+        classes.insert(ArenaClass::Model);
+        classes.insert(ArenaClass::Design);
+    }
+    classes
+}
+
+/// A class marker and an object name frame a record; they do not retain its operands.
+/// Relation instances and linked relation markers retain typed family and operand records.
+#[cfg(test)]
+fn retains_relation_semantics(native: &crate::native::SldprtNative) -> bool {
+    let mut retained = false;
+    for lane in &native.feature_input_lanes {
+        for binding in &lane.relation_bindings {
+            let complete = lane.relation_instances.iter().any(|relation| {
+                relation.class_ref == binding.class_ref
+                    && relation.scalar_refs().contains(&binding.scalar_ref)
+            }) || lane
+                .scalars
+                .iter()
+                .any(|scalar| scalar.id == binding.scalar_ref && !scalar.operands.is_empty());
+            if !complete {
+                return false;
+            }
+            retained = true;
+        }
+        for relation in &lane.relation_instances {
+            if relation.operands.is_empty() {
+                return false;
+            }
+            retained = true;
+        }
+        for marker in &lane.sketch_entities {
+            if matches!(marker.kind(), crate::records::SketchInputKind::Relation(_)) {
+                if marker.links().is_empty() {
+                    return false;
+                }
+                retained = true;
+            }
+        }
+    }
+    retained
+}
+
 /// Instances an aggregated loss note names before it only counts the rest.
 pub(crate) const NAMED_INSTANCES_PER_NOTE: usize = 8;
 
@@ -618,6 +1096,48 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn representation_table_covers_each_loss_code_once() {
+        let codes = super::REPRESENTATION
+            .iter()
+            .map(|(code, _)| *code)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(codes.len(), super::REPRESENTATION.len());
+        assert_eq!(codes, SldprtLossCode::ALL.iter().copied().collect());
+    }
+
+    #[test]
+    fn neutral_native_operations_are_typed_content() {
+        let note = SldprtLossCode::FeatureNativeKindRetained.note("typed native operation");
+        assert!(super::unrepresented(&[note], None).is_empty());
+    }
+
+    #[test]
+    fn native_history_framing_does_not_represent_a_rejected_profile() {
+        let note = SldprtLossCode::SketchProfileRejected.note("profile admission rejected");
+        let native = crate::native::SldprtNative::default();
+        assert!(
+            super::unrepresented(&[note], Some(&native)).contains(&cadmpeg_ir::ArenaClass::Design)
+        );
+    }
+
+    #[test]
+    fn native_operation_framing_does_not_represent_an_unbound_operation() {
+        let note = SldprtLossCode::FeatureInputObjectUnbound.note("unbound operation object");
+        let native = crate::native::SldprtNative::default();
+        assert!(
+            super::unrepresented(&[note], Some(&native)).contains(&cadmpeg_ir::ArenaClass::Design)
+        );
+    }
+
+    #[test]
+    fn opaque_geometry_and_withheld_pcurve_records_block_patch() {
+        let opaque = SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note("opaque support");
+        assert!(super::unrepresented(&[opaque], None).contains(&cadmpeg_ir::ArenaClass::Model));
+        let derived = SldprtLossCode::GeometryPcurveAmbiguous.note("no unique derived pcurve");
+        assert!(super::unrepresented(&[derived], None).contains(&cadmpeg_ir::ArenaClass::Model));
+    }
+
+    #[test]
     fn named_count_names_the_first_instances_and_counts_the_rest() {
         let mut first = super::NamedCount::default();
         for index in 0..super::NAMED_INSTANCES_PER_NOTE - 1 {
@@ -677,6 +1197,7 @@ mod tests {
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
                 "pmi.semantic-record-malformed",
+                "pmi.semantic-record-untyped",
                 "pmi.semantic-parse-capped",
                 "pmi.swift-annotation-unsupported",
                 "pmi.swift-feature-walk-capped",
@@ -738,6 +1259,15 @@ mod tests {
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
                 "target.source-dialect-displaced",
+                "writer.arena-omitted",
+                "writer.entity-omitted",
+                "writer.fields-omitted",
+                "writer.parameter-moved-to-global",
+                "writer.native-records-omitted",
+                "export.no-exportable-solids",
+                "writer.design-reduced",
+                "source.opaque-records-unrepresented",
+                "writer.procedural-reduced",
                 "source.property-key-blank",
             ]
         );

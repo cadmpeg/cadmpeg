@@ -43,6 +43,7 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
+            needs_recompute: false,
             dependencies: Default::default(),
             source_properties: Default::default(),
             source_tag: None,

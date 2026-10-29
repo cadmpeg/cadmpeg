@@ -52,9 +52,9 @@ fn dispatcher_projects_datum_feature_scopes() {
         *slot = Some(
             crate::records::feature::work_geometry::DesignWorkPointConstruction {
                 point_record_index: 4,
-                point_record_byte_offset: 0,
+                point_record_byte_offset: Some(0),
                 position: crate::test_support::reals([4.0, 5.0, 6.0]),
-                position_offset: 0,
+                position_offset: Some(0),
                 rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                     crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
                         reference_type: 1,
@@ -62,7 +62,7 @@ fn dispatcher_projects_datum_feature_scopes() {
                     },
                 )
                 .expect("compatible WorkPoint rule"),
-                reference_type_offset: 0,
+                reference_type_offset: Some(0),
             },
         );
     }
@@ -114,13 +114,13 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
             center_record_index: 6,
-            center_position: Some(crate::records::identity::Located {
+            center_position: Some(crate::records::identity::Sourced {
                 value: crate::test_support::reals([1.25, -2.5, 3.75]),
-                offset: 40,
+                offset: Some(40),
             }),
             uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
                 .expect("checked fixture value"),
-            uniform_factor_offset: 20,
+            uniform_factor_offset: Some(20),
         });
     }
 
@@ -159,7 +159,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
     assert!(matches!(
         factors,
         cadmpeg_ir::features::ScaleFactors::Uniform { factor: uniform }
-            if (uniform.get() - 2.5).abs() < f64::EPSILON
+            if (uniform.literal().unwrap().get() - 2.5).abs() < f64::EPSILON
     ));
 }
 
@@ -302,7 +302,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let input = |record_index, work_plane_scope_record_index| {
         DesignWorkPointInput::try_new(
             record_index,
-            u64::from(record_index),
+            Some(u64::from(record_index)),
             Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection::try_new(
                     record_index,
@@ -345,16 +345,16 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 41,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([1.0, 2.0, 3.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::ThreePlaneIntersection {
                     inputs: [input(42, 10), input(46, 20), input(50, 30)],
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let mut scopes = planes.to_vec();
@@ -459,14 +459,14 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([4.0, 3.0, 0.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {
                     input: DesignWorkPointInput::try_new(
                         22,
-                        0,
+                        Some(0),
                         Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
                             recipe,
                         })),
@@ -475,7 +475,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
                 },
             )
             .expect("compatible WorkPoint rule"),
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let timeline = DesignFeatureTimeline::try_new(
@@ -620,7 +620,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     {
         let value = Some(DesignBaseFlangeOperation {
             thickness: cadmpeg_ir::scalar::PositiveReal::new(0.2).unwrap(),
-            thickness_offset: 0,
+            thickness_offset: Some(0),
             profile_group_record_index: 100,
             profile_record_index: 101,
             thickness_record_index: 102,
@@ -692,7 +692,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
             DesignSurfaceStitchOperation {
                 gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
-                gap_tolerance_offset: 0,
+                gap_tolerance_offset: Some(0),
                 tolerance_record_index: 302,
                 settings_record_index: 303,
             },
@@ -735,9 +735,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .try_into()
                 .expect("GUID"),
             source_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            source_transform_offset: 0,
+            source_transform_offset: Some(0),
             copied_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-            copied_transform_offset: 0,
+            copied_transform_offset: Some(0),
         });
     }
 
@@ -752,17 +752,17 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         *slot = Some(
             DesignCopyPasteBodiesOperation::try_new(
                 vec![crate::records::feature::body_ops::DesignCopiedBody {
-                    operand: crate::records::identity::Located {
+                    operand: crate::records::identity::Sourced {
                         value: 502,
-                        offset: 26,
+                        offset: Some(26),
                     },
-                    source: crate::records::identity::Located {
+                    source: crate::records::identity::Sourced {
                         value: 11,
-                        offset: 25,
+                        offset: Some(25),
                     },
-                    copied: crate::records::identity::Located {
+                    copied: crate::records::identity::Sourced {
                         value: 12,
-                        offset: 40,
+                        offset: Some(40),
                     },
                 }],
                 crate::records::feature::body_ops::CopyPasteRecordLocation {
@@ -799,23 +799,23 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 crate::records::feature::base_feature::DesignBaseFeatureResultBody {
                     entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 21,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                     reference: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 601,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                     result: crate::records::feature::base_feature::DesignBaseFeatureEntry {
                         value: 603,
-                        offset: 0,
+                        offset: Some(0),
                         field: [0; 6],
                     },
                 },
             ]),
             metadata_record: 602,
-            metadata_record_offset: 0,
+            metadata_record_offset: Some(0),
             metadata_field: vec![0, 0].into(),
         });
     }
@@ -830,7 +830,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     {
         *slot = Some(DesignThreadConstruction {
             form: DesignThreadForm::Compact(None),
-            designation_offset: 0,
+            designation_offset: Some(0),
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
             nominal_size: crate::records::feature::thread::DesignThreadNominalSize::try_from(
                 "3.5".to_owned(),
@@ -936,7 +936,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert!(ruled_projection.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })
-            if thickness.get() == 2.5
+            if thickness.literal().is_some_and(|thickness| thickness.get() == 2.5)
     )));
     let definition = |kind: &str| {
         features
@@ -952,7 +952,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("BaseFlange"),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(neutral_sketch_id(&placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+            thickness: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap()
+            ),
             side: SheetMetalThicknessSide::Forward,
         })
     );
@@ -969,7 +971,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             faces: FaceSelection::Native(scopes[2].id.clone()),
             merge_entities: Some(true),
             create_solid: Some(true),
-            gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
+            gap_tolerance: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()
+            )),
         })
     );
     assert_eq!(
@@ -999,7 +1003,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("Thread"),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
             face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()),
+            diameter: Some(cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()
+            )),
             extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {}),
         })
     );
@@ -1091,6 +1097,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: 0,
         name: None,
@@ -1112,6 +1119,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         native_ref: Some(scope.id.clone()),
     }];
     let cages = [cadmpeg_ir::SubdSurface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: None,
@@ -1233,6 +1241,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             .unwrap();
         let feature_id = crate::ids::neutral_feature_id(&scope);
         let mut features = vec![cadmpeg_ir::features::Feature {
+            needs_recompute: false,
             id: feature_id,
             ordinal: 0,
             name: None,
@@ -1254,6 +1263,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             native_ref: Some(scope.id.clone()),
         }];
         let cages = [cadmpeg_ir::SubdSurface {
+            native_ref: None,
             id: cadmpeg_ir::ids::SubdId::mint("f3d:model:subd#1").expect("identity grammar"),
             scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
             source_object: None,

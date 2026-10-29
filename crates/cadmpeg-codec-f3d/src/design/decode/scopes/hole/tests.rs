@@ -141,14 +141,17 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
     .expect("hole point carrier");
 
     assert_eq!(construction.point_record_index, 55);
-    assert_eq!(construction.point_record_byte_offset, 0);
+    assert_eq!(construction.point_record_byte_offset, Some(0));
     assert_f64_array(
         construction
             .position
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75],
     );
-    assert_eq!(construction.position_offset, u64_from_index(position_at));
+    assert_eq!(
+        construction.position_offset,
+        Some(u64_from_index(position_at))
+    );
     assert_f64_array(
         construction
             .direction
@@ -157,7 +160,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
     );
     assert_eq!(
         construction.direction_offset,
-        u64_from_index(position_at + 24)
+        Some(u64_from_index(position_at + 24))
     );
     assert_f64_array(
         construction
@@ -195,7 +198,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
             .iter()
             .map(|reference| reference.offset)
             .collect::<Vec<_>>(),
-        [u64_from_index(input_reference_at + 1)]
+        [Some(u64_from_index(input_reference_at + 1))]
     );
 }
 
@@ -218,7 +221,10 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75],
     );
-    assert_eq!(construction.position_offset, u64_from_index(position_at));
+    assert_eq!(
+        construction.position_offset,
+        Some(u64_from_index(position_at))
+    );
     assert_f64_array(
         construction
             .direction
@@ -261,7 +267,7 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
             .iter()
             .map(|reference| reference.offset)
             .collect::<Vec<_>>(),
-        [u64_from_index(input_reference_at + 1)]
+        [Some(u64_from_index(input_reference_at + 1))]
     );
 }
 
@@ -328,15 +334,15 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
     assert_eq!(selection.identity_record_index, 103);
     assert_eq!(
         selection.identity_record_offset,
-        u64_from_index(identity_at)
+        Some(u64_from_index(identity_at))
     );
     assert_eq!(selection.primary_identity, 246);
     assert_eq!(
         selection.primary_identity_offset,
-        u64_from_index(primary_identity_at)
+        Some(u64_from_index(primary_identity_at))
     );
     assert_eq!(selection.next_record_index, 104);
-    assert_eq!(selection.next_byte_offset, u64_from_index(next_at));
+    assert_eq!(selection.next_byte_offset, Some(u64_from_index(next_at)));
     assert!(selection.historical_face_candidates.is_empty());
 }
 
@@ -379,7 +385,10 @@ fn hole_extent_reads_distance_and_saved_through_all() {
         let word = extent.leading_word.unwrap();
         assert_eq!(word.value, 0);
         assert_eq!(
-            cadmpeg_core::decode::View::u32_le_at(&bytes, usize::try_from(word.offset).unwrap()),
+            cadmpeg_core::decode::View::u32_le_at(
+                &bytes,
+                usize::try_from(word.offset.unwrap()).unwrap()
+            ),
             Some(0)
         );
         let saved = extent.saved_non_distance_depth;
@@ -389,7 +398,7 @@ fn hole_extent_reads_distance_and_saved_through_all() {
             assert_eq!(
                 cadmpeg_core::decode::View::f64_le_at(
                     &bytes,
-                    usize::try_from(saved.offset).unwrap()
+                    usize::try_from(saved.offset.unwrap()).unwrap()
                 ),
                 Some(1.0)
             );

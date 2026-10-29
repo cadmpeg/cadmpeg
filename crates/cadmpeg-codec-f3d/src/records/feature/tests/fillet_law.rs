@@ -7,7 +7,7 @@ fn scalar(value: f64) -> DesignFixedFilletScalar {
     DesignFixedFilletScalar {
         value: crate::test_support::real(value),
         record_index: 1,
-        value_offset: 40,
+        value_offset: Some(40),
     }
 }
 
@@ -76,12 +76,12 @@ fn fillet_law_admission_rejects_invalid_numeric_values() {
 fn fillet_law_serde_rejects_negative_zero_only_and_unordered_laws() {
     let input = serde_json::json!({
         "radii": [0.0, 0.0, 1.0, 0.0],
-        "radius_record_indexes": [1, 2, 3, 4], "radius_offsets": [40, 48, 56, 64],
+        "radius_record_indexes": [1, 2, 3, 4],
         "intermediate_parameters": [0.0, 0.5],
-        "intermediate_parameter_record_indexes": [5, 6], "intermediate_parameter_offsets": [72, 80],
+        "intermediate_parameter_record_indexes": [5, 6],
     });
     let group: DesignFixedFilletGroup = serde_json::from_value(input.clone()).unwrap();
-    assert_eq!(serde_json::to_value(group).unwrap(), input);
+    assert_eq!(serde_json::to_value(&group).unwrap(), input);
     for (field, value) in [
         ("radii", serde_json::json!([-1.0, 0.0, 1.0, 0.0])),
         ("radii", serde_json::json!([0.0, 0.0, 0.0, 0.0])),

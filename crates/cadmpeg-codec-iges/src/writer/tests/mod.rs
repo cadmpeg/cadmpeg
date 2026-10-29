@@ -50,7 +50,7 @@ use std::time::UNIX_EPOCH;
 #[test]
 fn generated_card_sequence_exhaustion_is_not_implemented() {
     let error = card(b"", b'D', 10_000_000).expect_err("seven-digit sequence field");
-    assert!(matches!(error, CodecError::NotImplemented(_)));
+    assert!(matches!(error, CodecError::InvalidInput(_)));
 }
 
 use crate::loss::IgesLossCode;
@@ -63,6 +63,7 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
 mod closed_edge_range;
+mod degradation;
 mod encode;
 mod extrusion_directrix;
 mod ownership;
@@ -71,10 +72,33 @@ mod physical_dependence;
 mod quarantine;
 mod roundtrip;
 
+fn assert_degraded_plan(
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    reason: &str,
+) {
+    let plan = result.expect("unsupported entities produce a lossy export plan");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
+                && loss.message.contains(reason)),
+        "missing Error-severity degradation loss: {:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)
+        .expect("a degraded graph remains writable");
+    IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("a degraded IGES graph is a valid input file");
+}
+
 fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
     matches!(
         taxonomy,
-        cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
+        cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
+            | cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
@@ -84,7 +108,8 @@ fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTax
 fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
     matches!(
         taxonomy,
-        cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
+        cadmpeg_ir::report::loss::LossTaxonomy::RecordNotTyped
+            | cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
             | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
     )
@@ -144,7 +169,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
     );
-    assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+    assert_degraded_plan(result, "");
 }
 
 #[test]
@@ -179,7 +204,7 @@ fn type_508_requires_an_explicit_isoparametric_flag() {
     };
     assert!(matches!(
         isoparametric_flag(&pcurve, "loop"),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -261,17 +286,20 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: vertex_start.clone(),
             point: point_start,
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: vertex_end.clone(),
             point: point_end,
             tolerance: None,
         },
     ]);
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -284,6 +312,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
         source_object: None,
     });
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
             .expect("valid edge carrier"),
@@ -503,9 +532,14 @@ fn target_profiles_cover_every_emitted_entity_form() {
         (514, 1),
     ];
     let entity = |(type_code, form)| Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
         type_code,
         form,
-        label: "TEST",
+        label: "TEST".into(),
         status: super::EntityStatus::Independent,
         parameter_body: Vec::new(),
         transform: None,
@@ -523,21 +557,21 @@ fn target_profiles_cover_every_emitted_entity_form() {
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
         assert!(matches!(
             ensure_version_support(std::slice::from_ref(&open_shell), version),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedContent(_))
         ));
     }
     assert!(ensure_version_support(std::slice::from_ref(&open_shell), IgesVersion::V5_3).is_ok());
     for unsupported in [(514, 3), (999, 0)] {
         assert!(matches!(
             ensure_version_support(&[entity(unsupported)], IgesVersion::V5_3),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedContent(_))
         ));
     }
 
     for unsupported in [(123, 0), (141, 0), (143, 0), (186, 0), (190, 1), (502, 1)] {
         assert!(matches!(
             ensure_version_support(&[entity(unsupported)], IgesVersion::V4_0),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedContent(_))
         ));
     }
     for supported in [(108, 0), (120, 0), (122, 0), (141, 0), (143, 0)] {
@@ -550,20 +584,25 @@ fn target_profiles_cover_every_emitted_entity_form() {
     for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
         assert!(matches!(
             ensure_version_support(&[entity(unsupported)], IgesVersion::V5_0),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedContent(_))
         ));
     }
     let single_constituent = Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
         type_code: 102,
         form: 0,
-        label: "TEST",
+        label: "TEST".into(),
         status: super::EntityStatus::Independent,
         parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
     };
     assert!(matches!(
         ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V4_0),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
     assert!(
         ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V5_0)
@@ -720,7 +759,7 @@ fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -740,7 +779,7 @@ fn negative_sphere_radius_is_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -762,7 +801,7 @@ fn torus_radii_outside_iges_interval_are_not_implemented() {
                 0,
                 IgesVersion::V5_3
             ),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedContent(_))
         ));
     }
 }
@@ -910,9 +949,14 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
     parameter_body.extend(std::iter::repeat_n(b'A', payload_len));
     parameter_body.push(b';');
     let entity = super::Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
         type_code: 110,
         form: 0,
-        label: "TEST",
+        label: "TEST".into(),
         status: super::EntityStatus::Independent,
         parameter_body,
         transform: None,
@@ -1002,7 +1046,7 @@ fn revolution_sweep_within_the_angular_tolerance_states_a_full_turn() {
     else {
         panic!("a sweep beyond the angular tolerance of a full turn must be refused");
     };
-    assert!(matches!(error, CodecError::InvalidInput(_)));
+    assert!(matches!(error, CodecError::UnsupportedContent(_)));
     let text = error.to_string();
     assert!(text.contains("angular_interval"));
     assert!(text.contains("outside (0, ") && text.contains(" + ") && text.ends_with(']'));
@@ -1015,7 +1059,7 @@ fn revolution_sweep_that_overflows_between_finite_endpoints_is_refused() {
     let Err(error) = RevolutionSweep::classify(interval) else {
         panic!("a sweep that overflows must be refused");
     };
-    assert!(matches!(error, CodecError::InvalidInput(_)));
+    assert!(matches!(error, CodecError::UnsupportedContent(_)));
     let text = error.to_string();
     assert!(text.contains("angular_interval"));
     assert!(text.contains("sweep overflows"));
@@ -1031,6 +1075,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
     let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
     let outer_id = LoopId::mint("test:model:loop#outer").expect("valid identity");
     let face = Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
         surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
@@ -1046,6 +1091,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
     let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
+            native_ref: None,
             id: inner_id,
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1058,6 +1104,7 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
             ),
         },
         Loop {
+            native_ref: None,
             id: outer_id.clone(),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1084,6 +1131,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     let inner_id = LoopId::mint("test:model:loop#inner").expect("valid identity");
     let unclassified_id = LoopId::mint("test:model:loop#unclassified").expect("valid identity");
     let face = Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: ShellId::mint("test:model:shell#shell").expect("valid identity"),
         surface: SurfaceId::mint("test:model:surface#surface").expect("valid identity"),
@@ -1099,6 +1147,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
     let mut ir = CadIr::empty();
     ir.model.loops = vec![
         Loop {
+            native_ref: None,
             id: inner_id,
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1111,6 +1160,7 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
             ),
         },
         Loop {
+            native_ref: None,
             id: unclassified_id.clone(),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1164,7 +1214,7 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
             None,
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -1188,7 +1238,7 @@ fn negative_nurbs_weights_are_not_implemented() {
             }),
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 
     let axis =
@@ -1213,7 +1263,7 @@ fn negative_nurbs_weights_are_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -1241,7 +1291,7 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
             0,
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -1279,7 +1329,7 @@ fn hyperbola_endpoint_overflow_is_not_implemented() {
             Some(&span),
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -1303,7 +1353,7 @@ fn parabola_endpoint_overflow_is_not_implemented() {
             Some(&span),
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -1335,7 +1385,7 @@ fn zero_conic_parameter_span_is_not_implemented() {
     ] {
         assert!(matches!(
             curve_entity(&geometry, Some(&span), IgesVersion::V5_3),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedContent(_))
         ));
     }
 }
@@ -1368,7 +1418,7 @@ fn decreasing_polyline_parameters_are_not_implemented() {
             }),
             IgesVersion::V5_3
         ),
-        Err(CodecError::NotImplemented(_))
+        Err(CodecError::UnsupportedContent(_))
     ));
 }
 
@@ -1395,7 +1445,7 @@ fn parabola_coefficient_that_overflows_is_not_implemented() {
         Some(&span),
         IgesVersion::V5_3,
     );
-    let Err(CodecError::NotImplemented(message)) = written else {
+    let Err(CodecError::UnsupportedContent(message)) = written else {
         panic!(
             "{:?}",
             written.map(|entity| String::from_utf8_lossy(&entity.parameter_body).into_owned())

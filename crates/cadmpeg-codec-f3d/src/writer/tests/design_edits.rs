@@ -33,16 +33,15 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .iter_mut()
         .find(|reference| reference.value == 439)
         .expect("generated persistent reference");
-    assert!(reference.byte_offset > 0);
-    assert!(reference.value_offset > 0);
+    assert!(reference.byte_offset > Some(0));
+    assert!(reference.value_offset > Some(0));
     reference.value = 9_001;
     let recipe = &mut native.construction_recipes[0];
-    assert!(recipe.byte_offset > 0);
     assert!(recipe.record_index.is_some());
     assert!(recipe
         .design
         .as_ref()
-        .is_some_and(|design| design.id.offset > 0));
+        .is_some_and(|design| design.id.offset > Some(0)));
     recipe.record_index =
         recipe
             .record_index
@@ -56,7 +55,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .iter_mut()
         .find(|member| member.entity_suffix == 985)
         .expect("generated body member");
-    assert!(member.byte_offset() > 0);
+    assert!(member.byte_offset() > Some(0));
     member.entity_suffix = 12_345;
     member.flags = 7;
     let header = native
@@ -64,7 +63,6 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .iter_mut()
         .find(|header| header.in_sketch_module())
         .expect("generated sketch entity header");
-    assert!(header.byte_offset > 0);
     let list = header
         .sketch_references_mut()
         .expect("parsed reference list");
@@ -97,7 +95,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
             .to_owned()
             .try_into()
             .expect("base GUID"),
-        offset: base_offset,
+        offset: Some(base_offset),
     });
     object.set_version(9);
     let act_guid = native
@@ -142,8 +140,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     lost_edge.class_tag = "420".to_owned().try_into().unwrap();
     lost_edge.record_index = 4_700;
     let assignment = &mut native.design_material_assignments[0];
-    assert!(assignment.entity_id_offset > 0);
-    assert!(assignment.asm_body_key_offset > 0);
+    assert!(assignment.entity_id_offset > Some(0));
+    assert!(assignment.asm_body_key_offset > Some(0));
     assignment
         .physical_token
         .as_mut()

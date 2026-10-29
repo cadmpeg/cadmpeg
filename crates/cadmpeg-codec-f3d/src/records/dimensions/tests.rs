@@ -15,31 +15,31 @@ fn locus_group(state: u32, count: usize) -> super::DesignDimensionLocusGroup {
     super::DesignDimensionLocusGroup {
         id: "locus-group".into(),
         companion_record_index: 2,
-        byte_offset: 100,
+        byte_offset: Some(100),
         class_tag: "256".to_owned().try_into().unwrap(),
         record_index: 3,
-        frame_length: 200,
+        frame_length: Some(200),
         loci: (0..count)
             .map(|index| super::DesignDimensionLocus {
                 returned: Located {
                     value: 30 + u32::try_from(index).expect("fixture value fits u32"),
-                    offset: 140 + u64_from_index(index) * 8,
+                    offset: Some(140 + u64_from_index(index) * 8),
                 },
                 geometry_record_index: 10 + u32::try_from(index).expect("fixture value fits u32"),
-                geometry_reference_offset: 120 + u64_from_index(index) * 8,
+                geometry_reference_offset: Some(120 + u64_from_index(index) * 8),
                 role: 1,
-                role_offset: 124 + u64_from_index(index) * 8,
+                role_offset: Some(124 + u64_from_index(index) * 8),
             })
             .collect(),
         owner_reference: 4,
-        owner_reference_offset: 180,
+        owner_reference_offset: Some(180),
         owner_role: 1,
-        owner_role_offset: 184,
+        owner_role_offset: Some(184),
         state,
-        state_offset: 188,
+        state_offset: Some(188),
         next_class_tag: "259".to_owned().try_into().unwrap(),
         next_record_index: 5,
-        next_byte_offset: 300,
+        next_byte_offset: Some(300),
     }
 }
 
@@ -52,13 +52,15 @@ fn dimension_locus_group_borrowed_wire_matches_owned_wire_bytes() {
             serde_json::to_vec(&group).unwrap(),
             serde_json::to_vec(&owned).unwrap()
         );
-        assert_eq!(
-            serde_json::from_slice::<super::DesignDimensionLocusGroup>(
-                &serde_json::to_vec(&group).unwrap()
-            )
-            .unwrap(),
-            group
-        );
+        let wire = serde_json::to_value(&group).unwrap();
+        let reloaded: super::DesignDimensionLocusGroup =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert!(reloaded.byte_offset.is_none());
+        assert!(reloaded
+            .loci
+            .iter()
+            .all(|locus| locus.returned.offset.is_none()));
+        assert_eq!(serde_json::to_value(reloaded).unwrap(), wire);
     }
 }
 
@@ -96,9 +98,9 @@ fn draft(base: u64) -> Draft {
             .enumerate()
             .map(|(ordinal, index)| Operand {
                 geometry_record_index: NonZeroU32::new(index),
-                geometry_reference_offset: base + 25 + u64_from_index(ordinal) * 15,
+                geometry_reference_offset: Some(base + 25 + u64_from_index(ordinal) * 15),
                 role: 1,
-                role_offset: base + 35 + u64_from_index(ordinal) * 15,
+                role_offset: Some(base + 35 + u64_from_index(ordinal) * 15),
             })
             .collect(),
         entity_genesis: 0,
@@ -127,11 +129,12 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
     let frame = Frame::try_new(original.clone())
         .map_err(|error| error.to_string())
         .unwrap();
-    assert_eq!(frame.clone().into_draft(), original);
+    assert_eq!(frame.clone().into_draft().unwrap(), original);
     assert_eq!(
         frame
             .clone()
             .into_draft()
+            .unwrap()
             .return_members
             .iter()
             .map(|index| index.value.get())
@@ -139,7 +142,10 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
         [10, 10, 11]
     );
     let wire = serde_json::to_value(&frame).unwrap();
-    assert_eq!(serde_json::from_value::<Frame>(wire).unwrap(), frame);
+    let reloaded: Frame = serde_json::from_value(wire.clone()).unwrap();
+    assert!(reloaded.byte_offset().is_none());
+    assert!(reloaded.clone().into_draft().is_err());
+    assert_eq!(serde_json::to_value(&reloaded).unwrap(), wire);
     let mut all_null = original;
     for operand in &mut all_null.operands {
         operand.geometry_record_index = None;
@@ -201,7 +207,7 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
         "owner_reference_offset",
     ] {
         let mut invalid = wire.clone();
-        invalid[field] = (invalid[field].as_u64().unwrap() + 1).into();
+        invalid[field] = 101.into();
         assert!(serde_json::from_value::<Frame>(invalid)
             .unwrap_err()
             .to_string()
@@ -216,7 +222,7 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
             .contains(field));
     }
     let mut invalid = wire.clone();
-    invalid["return_member_offsets"][0] = 0.into();
+    invalid["return_member_offsets"] = serde_json::json!([0]);
     assert!(serde_json::from_value::<Frame>(invalid)
         .unwrap_err()
         .to_string()
@@ -243,7 +249,7 @@ fn annotation_frame_rejects_unrepresentable_extents() {
             .map_err(|error| error.to_string())
             .unwrap()
             .owner_reference_offset(),
-        u64::MAX
+        Some(u64::MAX)
     );
     let mut overflow = valid;
     overflow.frame_length += 1;
@@ -276,15 +282,15 @@ fn locus_pair(has_first: bool) -> super::DesignDimensionLocusPair {
         loci: [
             Operand {
                 geometry_record_index: has_first.then(|| NonZeroU32::new(7).unwrap()),
-                geometry_reference_offset: 100 + prefix,
+                geometry_reference_offset: Some(100 + prefix),
                 role: 1,
-                role_offset: 110 + prefix,
+                role_offset: Some(110 + prefix),
             },
             Operand {
                 geometry_record_index: NonZeroU32::new(8),
-                geometry_reference_offset: 115 + prefix,
+                geometry_reference_offset: Some(115 + prefix),
                 role: 2,
-                role_offset: 125 + prefix,
+                role_offset: Some(125 + prefix),
             },
         ],
         paired_class_tag: "257".to_owned().try_into().unwrap(),

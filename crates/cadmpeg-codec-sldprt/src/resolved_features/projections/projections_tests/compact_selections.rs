@@ -27,6 +27,7 @@ fn parameter_scalar_binding_fixture() -> (
     let mut feature = compact_edge_projection_feature();
     feature.native_ref = Some("native-feature".into());
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#bound-parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -36,7 +37,6 @@ fn parameter_scalar_binding_fixture() -> (
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -72,6 +72,8 @@ fn parameter_scalar_binding_fixture() -> (
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "feature-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -80,6 +82,8 @@ fn parameter_scalar_binding_fixture() -> (
                 value: "NativeFeature".into(),
             },
             FeatureInputName {
+                sequence: 10,
+                feature_ref: None,
                 id: "parameter-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -89,6 +93,7 @@ fn parameter_scalar_binding_fixture() -> (
             },
         ],
         scalars: vec![FeatureInputScalar {
+            sequence: 20,
             id: "native-scalar".into(),
             parent: "lane".into(),
             feature_ref: Some("native-feature".into()),
@@ -215,6 +220,7 @@ fn display_relation_synthesis_fixture() -> (
             id: "sldprt:feature-input:relation-instance#lane:10".into(),
             parent: "lane".into(),
             ordinal: 0,
+            sequence: 0,
             offset: 10,
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
@@ -238,12 +244,8 @@ fn display_relation_synthesis_preserves_reference_parameter() {
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].name, "D1@reference");
     assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
-    assert_eq!(
-        parameters[0]
-            .properties
-            .get("sldprt_relation_parameter_role"),
-        Some(&"reference".into())
-    );
+    // D11: the typed driving field is the sole reference/driving fact.
+    assert!(!parameters[0].driving);
 }
 
 #[test]
@@ -278,7 +280,9 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::DatumOffsetPlane {
                 reference: None,
-                distance: Length::new(2.0).expect("offset distance"),
+                distance: cadmpeg_ir::Dimension::Literal(
+                    Length::new(2.0).expect("offset distance"),
+                ),
             },
         ));
     let mut features = [thread, plane];
@@ -339,7 +343,7 @@ fn compact_generated_edges_match_the_linear_repeat_check() {
                 id: format!("edge-{ordinal}"),
                 parent: "lane".into(),
                 ordinal,
-                offset: u64::from(ordinal),
+                sequence: ordinal,
                 object_name_ref: "name".into(),
                 feature_ref: "fillet".into(),
                 local_edge_ids: (0..next(3)).map(|_| next(4)).collect(),
@@ -374,6 +378,7 @@ fn compact_edge_projection_feature() -> cadmpeg_ir::features::Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::Fillet,
@@ -401,10 +406,10 @@ fn compact_body_projection_fixture() -> (cadmpeg_ir::features::Feature, FeatureI
         relation_bindings: Vec::new(),
         relation_instances: Vec::new(),
         body_selections: vec![FeatureInputBodySelection {
+            sequence: 0,
             id: "body".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
             object_name_ref: "name".into(),
             feature_ref: "fillet".into(),
             local_body_ids: vec![3, 4],
@@ -450,6 +455,7 @@ fn full_round_selection() -> FeatureInputSurfaceSelection {
         id: "surface".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         selector: 0,
         kind: FeatureInputSurfaceSelectionKind::Component,

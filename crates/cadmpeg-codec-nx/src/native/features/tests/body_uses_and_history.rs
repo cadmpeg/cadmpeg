@@ -987,11 +987,12 @@ fn decoded_operation_frames_resolve_unique_offset_store_targets() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("required invariant");
-    let namespace = result
+    let namespace = &result
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant");
+        .expect("nx namespace")
+        .clone();
     let common_frames = namespace
         .arena_as::<FeatureOperationCommonFrame>("feature_operation_common_frames")
         .expect("required invariant");

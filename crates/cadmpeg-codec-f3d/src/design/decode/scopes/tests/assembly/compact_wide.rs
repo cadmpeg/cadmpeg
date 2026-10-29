@@ -70,6 +70,27 @@ pub(super) fn push_wide_operand_path(
     push_marked(bytes, index + 1);
 }
 
+pub(super) fn exact_assembly_alignment_with_types(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    owners: &[DesignParameterOwner],
+    types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> Result<
+    Option<crate::records::feature::assembly::DesignAssemblyAlignment>,
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types(
+        source, records, scope, owners, types,
+    )
+}
+
 /// An 850-byte compact wide scope (record 10) with its owners first, its two
 /// operand frames and two wide operand paths after its paired header.
 fn compact_wide_scope_fixture(
@@ -168,7 +189,6 @@ fn compact_wide_scope_fixture(
 
 #[test]
 fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     let locator = "2E3AC990-483D-4A55-8662-C064B976A957";
     let types = std::collections::HashMap::from([
@@ -187,11 +207,11 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
     assert_eq!(alignment.angle(), -1.0);
     assert_eq!(alignment.offset(), [0.0, 0.0, 0.5]);
     let frames = alignment.operand_frames().expect("frames");
-    assert_eq!(frames[0].transform_offset, 50);
+    assert_eq!(frames[0].transform_offset, Some(50));
     assert_eq!(frames[1].transform.rows()[2][3], 1.7);
     let paths = alignment.operand_path_refs().expect("both operand paths");
     assert_eq!(
-        paths[0].occurrence_guids()[0].value.as_str(),
+        paths[0].occurrence_guids()[0].as_str(),
         "11111111-1111-1111-1111-111111111111"
     );
     assert_eq!(paths[1].link().locator_record_index, 67);
@@ -218,7 +238,6 @@ fn compact_wide_assemble_scope_reads_owners_frames_and_wide_operand_paths() {
 
 #[test]
 fn compact_wide_operand_flag_is_the_frame_sense() {
-    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::DesignJointFrameSense;
     let types = std::collections::HashMap::new();
     let alignment = |flag: u8| {

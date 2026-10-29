@@ -204,6 +204,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
             cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -225,7 +226,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
                     feature: FeatureId::mint("synthetic:test:id#plane").expect("identity grammar"),
                 }),
-                distance: Length::new(3.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(3.0).unwrap()),
             }),
         ),
     ];

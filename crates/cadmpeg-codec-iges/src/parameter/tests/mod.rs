@@ -107,14 +107,17 @@ fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
         directory_sequence: sequence,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .iter()
             .copied()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     }
@@ -138,10 +141,13 @@ fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRe
         directory_sequence: sequence,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token { value, span: 0..0 })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end,
         comment: Vec::new(),
     }
@@ -186,3 +192,5 @@ fn parameter_summary_counts_an_empty_record_set() {
         ]
     );
 }
+
+mod document_wire;

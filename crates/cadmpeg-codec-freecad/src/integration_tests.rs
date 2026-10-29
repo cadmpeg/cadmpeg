@@ -2,11 +2,18 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod archive_recovery;
+mod content_scope;
+mod design_ordinals;
+mod mandatory_document_parts;
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
+mod object_declaration_parts;
+mod product_native_order;
 mod ring_traversal;
 mod shape_placement;
+mod source_parts;
 mod visibility;
 
 use super::FcstdCodec;
@@ -203,10 +210,15 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
             "Edited & encoded",
         )
         .unwrap();
-    crate::mutation::replace_entry(&mut ir, "Payload.bin", b"second payload".to_vec()).unwrap();
+    crate::test_support::mutation::assert_entry_source_fields_rejected(
+        &mut ir,
+        "Payload.bin",
+        &[b"first payload", b"second payload"],
+    )
+    .unwrap();
 
     let mut bytes = Vec::new();
-    FcstdCodec
+    let report = FcstdCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
@@ -216,12 +228,13 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .unwrap();
     assert_eq!(
-        entries
-            .iter()
-            .find(|entry| entry.name() == "Payload.bin")
-            .map(crate::native::EntryRecord::data),
-        Some(b"second payload".as_slice())
+        entries.iter().find(|entry| entry.name() == "Payload.bin"),
+        None
     );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
     assert_valid(&round_trip);
 }
 
@@ -285,13 +298,6 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
         .expect("container-only FCStd decode");
     assert!(result.report().container_only());
     assert!(result.ir().model.features.is_empty());
-    assert!(result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .unwrap()
-        .arenas()
-        .contains_key("physical_ledger"));
     assert_valid(&result);
 }
 
@@ -404,6 +410,78 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
             "{name}: {:#?}",
             first.report().losses
         );
+        let objects = first
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap();
+        let native_features = first
+            .ir()
+            .model
+            .features
+            .iter()
+            .filter_map(|feature| match feature.definition().operation() {
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. } => {
+                    Some((feature, kind))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if name == "application_payloads.FCStd" {
+            for (source_name, source_kind) in [
+                ("FemAnalysis", "Fem::FemAnalysis"),
+                ("TemperatureConstraint", "Fem::ConstraintTemperature"),
+                ("Toolpath", "Path::Feature"),
+            ] {
+                let object = objects
+                    .iter()
+                    .find(|object| object.name() == source_name)
+                    .expect("the original public fixture source object");
+                assert_eq!(object.type_name, source_kind);
+                assert_eq!(
+                    native_features
+                        .iter()
+                        .filter(|(feature, kind)| {
+                            feature.native_ref.as_deref() == Some(object.id().as_str())
+                                && kind.as_str() == source_kind
+                        })
+                        .count(),
+                    1,
+                    "{name}: {source_name} keeps its attributable Native operation"
+                );
+            }
+        }
+        for (feature, kind) in &native_features {
+            let source = feature
+                .native_ref
+                .as_deref()
+                .expect("the actual Native object owner");
+            let object = objects
+                .iter()
+                .find(|object| object.id().as_str() == source)
+                .expect("Native features keep their actual source object");
+            assert_eq!(kind.as_str(), object.type_name, "{name}");
+            assert_eq!(
+                first
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .filter(|candidate| candidate.native_ref == feature.native_ref)
+                    .count(),
+                1,
+                "{name}: one feature per source object"
+            );
+        }
+        for loss in &first.report().losses {
+            assert_ne!(
+                loss.code.local_code(),
+                "feature.object-unprojected",
+                "{name}"
+            );
+        }
         let native_findings = crate::test_support::validate_native(first.ir());
         assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
         assert_valid_document(first.ir());
@@ -635,4 +713,32 @@ fn a_structurally_alien_document_under_a_foreign_version_still_fails() {
     }
 }
 
+mod source_document_reads;
+mod source_object_reads;
+mod source_property_reads;
+mod source_scalar_reads;
+
+mod source_vector_reads;
+
+mod source_property_group_reads;
+
+mod document_root_parts;
+
+mod document_string_parts;
+
+mod document_integer_parts;
+
+mod document_scalar_parts;
+
+mod document_vector_parts;
+
+mod document_value_parts;
+
+mod source_native_missing_values;
+
+mod nullable_attributes;
+
+mod annotation_carriers;
+
+mod persistent_id_reads;
 mod techdraw;

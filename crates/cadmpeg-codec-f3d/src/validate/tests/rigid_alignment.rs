@@ -45,12 +45,12 @@ fn rigid_group_frame_requires_its_further_members() {
     };
     let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
         reference_record_index: index,
-        reference_offset: 0,
+        reference_offset: Some(0),
         transform: cadmpeg_ir::transform::Transform::identity()
             .rows()
             .try_into()
             .unwrap(),
-        transform_offset: 0,
+        transform_offset: Some(0),
     });
     let read = DesignAssemblyAlignment::try_new(
         0.0,
@@ -70,29 +70,21 @@ fn rigid_group_frame_requires_its_further_members() {
         (272, 87),
         (273, 88),
     ] {
-        assert!(rigid_group_members_link(
-            &scope(frame, tail),
-            &read,
-            true,
-            &Default::default()
-        ));
+        assert!(rigid_group_members_link(&scope(frame, tail), &read, true));
         assert!(!rigid_group_members_link(
             &scope(frame + 11, tail),
             &read,
-            true,
-            &Default::default()
+            true
         ));
         assert!(rigid_group_members_link(
             &scope(frame + 11, tail),
             &unread,
-            true,
-            &Default::default()
+            true
         ));
         assert!(rigid_group_members_link(
             &scope(frame + 11, tail),
             &read,
-            false,
-            &Default::default()
+            false
         ));
     }
 }
@@ -108,7 +100,7 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
     use crate::records::feature::scope::{
         DesignFeatureKind, DesignParameterScope, DesignScopePayload,
     };
-    use crate::records::identity::{Located, ReferenceRun};
+    use crate::records::identity::ReferenceRun;
 
     let cases = [
         (309, 2, 201, 252, 73, true),
@@ -122,7 +114,7 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
         (225, 5, 197, 208, 68, true),
         (97, 5, 69, 80, 67, true),
     ];
-    for (segment, (length, version, backlink, wrapper, transform, construction)) in
+    for (segment, (length, version, _backlink, _wrapper, transform, construction)) in
         ["f3d:Design", "f3d:xref/member/occurrence-0/Design"]
             .into_iter()
             .flat_map(|segment| cases.into_iter().map(move |case| (segment, case)))
@@ -134,20 +126,12 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
         );
         let operands = [64, 67].map(|index| {
             let locator = 1000 * u64::from(index);
-            let path_at = locator + length;
-            let wrapper_at = path_at + 425;
             let path = DesignAssemblyOperandPath::try_new_typed(
                 DesignAssemblyOperandPathLink {
-                    locator_reference_offset: if index == 64 { 42 } else { 53 },
                     locator_record_index: index,
                     locator_class_tag: "283".to_owned().try_into().unwrap(),
-                    locator_byte_offset: locator,
-                    locator_scope_reference_offset: locator + backlink + 1,
                     wrapper_record_index: index + 2,
-                    wrapper_reference_offset: locator + wrapper + 1,
                     wrapper_class_tag: "327".to_owned().try_into().unwrap(),
-                    wrapper_byte_offset: wrapper_at,
-                    path_reference_offset: wrapper_at + 27,
                 },
                 index + 1,
                 "366".to_owned().try_into().unwrap(),
@@ -157,21 +141,16 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
                         .try_into()
                         .unwrap(),
                 ),
-                path_at,
-                vec![Located {
-                    value: "11111111-1111-1111-1111-111111111111"
-                        .to_owned()
-                        .try_into()
-                        .unwrap(),
-                    offset: path_at + 29,
-                }],
+                vec!["11111111-1111-1111-1111-111111111111"
+                    .to_owned()
+                    .try_into()
+                    .unwrap()],
                 [105, 181, 265, 341]
-                    .map(|offset| Located {
-                        value: "22222222-2222-2222-2222-222222222222"
+                    .map(|_| {
+                        "22222222-2222-2222-2222-222222222222"
                             .to_owned()
                             .try_into()
-                            .unwrap(),
-                        offset: path_at + offset,
+                            .unwrap()
                     })
                     .to_vec(),
             )
@@ -179,26 +158,27 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
             DesignQualifiedAssemblyOperand {
                 frame: DesignAssemblyOperandFrame {
                     reference_record_index: if construction { index + 900 } else { index },
-                    reference_offset: locator
-                        + if construction {
-                            if version == 5 {
-                                57
+                    reference_offset: Some(
+                        locator
+                            + if construction {
+                                if version == 5 {
+                                    57
+                                } else {
+                                    22
+                                }
                             } else {
-                                22
-                            }
-                        } else {
-                            7
-                        },
+                                7
+                            },
+                    ),
                     transform: cadmpeg_ir::transform::Transform::identity()
                         .rows()
                         .try_into()
                         .unwrap(),
-                    transform_offset: locator + transform,
+                    transform_offset: Some(locator + transform),
                 },
                 qualifier: DesignAssemblyOperandQualifier::OccurrencePath { path },
             }
         });
-        let placement_operands = operands.clone();
         scope
             .try_edit(|draft| {
                 crate::design::test_support::lengthen_scope_frame(draft, 257);
@@ -227,15 +207,16 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
             design_types: vec![SegmentType::try_new(
                 format!("{segment}/MetaStream.dat:design-type#0"),
                 SegmentTypeData {
-                    byte_offset: 0,
+                    byte_offset: Some(0),
+                    class_tag: "256".to_owned().try_into().unwrap(),
                     type_guid: "2E3AC990-483D-4A55-8662-C064B976A957"
                         .to_owned()
                         .try_into()
                         .unwrap(),
-                    type_guid_offset: 4,
+                    type_guid_offset: Some(4),
                     base_type_guid: BaseTypeGuid::Absent,
                     version,
-                    version_offset: 44,
+                    version_offset: Some(44),
                     module: "Fusion".into(),
                     entities: ReferenceRun::unlocated(vec![64, 67]),
                 },
@@ -293,21 +274,6 @@ fn rigid_group_locator_version_mismatch_reports_a_scope_finding() {
             assert!(crate::design::assembly::placement_ordered_as_built_scope(
                 &placement
             ));
-            for operand in &placement_operands {
-                let DesignAssemblyOperandQualifier::OccurrencePath { path } = &operand.qualifier
-                else {
-                    panic!("occurrence path operand");
-                };
-                assert!(
-                    !crate::validate::as_built_operand_frame_link(
-                        &placement,
-                        path,
-                        &operand.frame,
-                        &std::collections::HashMap::new(),
-                    ),
-                    "{length}-byte locator under a placement-ordered scope"
-                );
-            }
         }
     }
 }

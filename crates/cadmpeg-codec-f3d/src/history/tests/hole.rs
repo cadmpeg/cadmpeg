@@ -32,7 +32,7 @@ fn state(
         AsmDeltaState {
             id: format!("history-state-{state_id}"),
             parent: "history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id,
             version_flag: 1,
             state_flag: 0,
@@ -106,42 +106,42 @@ fn test_history() -> AsmHistory {
 fn hole_scope() -> crate::records::feature::scope::DesignParameterScope {
     let face_selection = crate::records::feature::hole::DesignHoleFaceSelection {
         record_index: 1,
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap(),
         asset_id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
             .to_owned()
             .try_into()
             .unwrap(),
-        asset_id_offset: 0,
+        asset_id_offset: Some(0),
         context_id: "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
             .to_owned()
             .try_into()
             .unwrap(),
-        context_id_offset: 0,
+        context_id_offset: Some(0),
         identity_record_index: 2,
-        identity_record_offset: 0,
+        identity_record_offset: Some(0),
         primary_identity: 7,
-        primary_identity_offset: 0,
+        primary_identity_offset: Some(0),
         secondary: None,
         historical_face_candidates: Vec::new(),
         next_record_index: 3,
-        next_byte_offset: 0,
+        next_byte_offset: Some(0),
     };
     let construction = crate::records::feature::hole::DesignHoleConstruction {
         point_record_index: 4,
-        point_record_byte_offset: 0,
+        point_record_byte_offset: Some(0),
         position: crate::test_support::reals([0.0, 0.0, 0.0]),
-        position_offset: 0,
+        position_offset: Some(0),
         direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-        direction_offset: 0,
+        direction_offset: Some(0),
         point_parameters: crate::test_support::reals([0.0, 0.0]),
-        point_parameter_offsets: [0, 0],
+        point_parameter_offsets: Some([0, 0]),
         reference_type: 13,
-        reference_type_offset: 0,
+        reference_type_offset: Some(0),
         tangent_point_data: None,
-        input_records: vec![crate::records::identity::Located {
+        input_records: vec![crate::records::identity::Sourced {
             value: 1,
-            offset: 0,
+            offset: Some(0),
         }],
         face_selection: Some(face_selection),
     };

@@ -297,13 +297,6 @@ pub(super) fn selection_indices_native(indices: impl Iterator<Item = u32>) -> St
     text
 }
 
-pub(super) fn parameter_consumer_identity(operation_label: &str) -> String {
-    match operation_label.split_once("operation-label") {
-        Some((prefix, suffix)) => format!("{prefix}feature{suffix}"),
-        None => operation_label.to_owned(),
-    }
-}
-
 pub(super) fn insert_parameter_property(
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     key: std::fmt::Arguments<'_>,
@@ -337,7 +330,7 @@ pub(super) fn offset_surface_feature_definition(
     Some((
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
             faces,
-            distance: distance.map(Length::from_assigned_real),
+            distance: (distance.map(Length::from_assigned_real)).map(Into::into),
         }),
         supports,
     ))
@@ -429,7 +422,7 @@ pub(super) fn thicken_feature_definition(
     Some((
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
-            thickness: Some(thickness),
+            thickness: Some(Into::into(thickness)),
             side,
         }),
         supports,
@@ -1050,7 +1043,10 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
     block_dimensions: Option<[f64; 3]>,
     block_placement: Option<Transform>,
     hole: HoleProjection,
-    native_parameters: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    native_parameters: BTreeMap<
+        cadmpeg_core::text::NonBlankString,
+        cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>,
+    >,
 ) -> Result<FeatureDefinition, CodecError> {
     let hole_template = unique_simple_hole_template(payload_strings);
     if matches!(kind, "BLEND" | "FACE_BLEND") {
@@ -1064,7 +1060,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         block_dimensions.map(|dimensions| dimensions.map(cadmpeg_ir::scalar::PositiveLength::new)),
     ) {
         return Ok(FeatureDefinition::Operation(FeatureOperation::Block {
-            dimensions: Some([length, width, height]),
+            dimensions: (Some([length, width, height])).map(|values| values.map(Into::into)),
             placement: block_placement.and_then(cadmpeg_ir::features::FeatureRigidPlacement::new),
             op: BooleanOp::Unresolved,
         }));
@@ -1240,8 +1236,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                 ),
             ) {
                 (Some(dimensions), true) => HoleKind::Counterbore {
-                    diameter: dimensions.diameter,
-                    depth: dimensions.depth,
+                    diameter: (dimensions.diameter).into(),
+                    depth: (dimensions.depth).into(),
                 },
                 _ => template_kind,
             };
@@ -1253,7 +1249,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                 placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
                 shape: cadmpeg_ir::features::holes::HoleShape::new(
                     cadmpeg_ir::features::holes::HoleConstruction::Form {
-                        kind: match (measured_chamfer, hole_template) {
+                        kind: match (measured_chamfer.clone(), hole_template) {
                             (
                                 Some(chamfer),
                                 Some((
@@ -1279,9 +1275,11 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                         ) => Some(chamfer),
                         _ => template_exit_kind,
                     },
-                    hole.diameter.and_then(|diameter| {
-                        cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
-                    }),
+                    hole.diameter
+                        .and_then(|diameter| {
+                            cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
+                        })
+                        .map(Into::into),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -1300,7 +1298,7 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
             shape: cadmpeg_ir::features::holes::HoleShape::new(
                 cadmpeg_ir::features::holes::HoleConstruction::Form {
                     kind: if hole.grouped_simple_through {
-                        hole.chamfer.unwrap_or(HoleKind::Simple)
+                        hole.chamfer.clone().unwrap_or(HoleKind::Simple)
                     } else {
                         HoleKind::Unresolved(None)
                     },
@@ -1309,9 +1307,11 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
                 hole.grouped_simple_through
                     .then_some(hole.chamfer)
                     .flatten(),
-                hole.diameter.and_then(|diameter| {
-                    cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
-                }),
+                hole.diameter
+                    .and_then(|diameter| {
+                        cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
+                    })
+                    .map(Into::into),
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
 
@@ -1475,7 +1475,7 @@ pub(super) fn expressions_by_id(
 pub(super) fn native_feature_parameters(
     uses: &[&crate::native::features::FeatureParameterUse],
     expressions_by_id: &BTreeMap<&str, &crate::native::om::ParameterFormula>,
-) -> BTreeMap<String, String> {
+) -> BTreeMap<String, cadmpeg_ir::features::Dimension<cadmpeg_ir::features::Expression>> {
     let mut parameters = BTreeMap::new();
     for parameter_use in uses {
         let Some(expression) = expressions_by_id.get(parameter_use.expression.as_str()) else {
@@ -1486,7 +1486,14 @@ pub(super) fn native_feature_parameters(
         }
         parameters.insert(
             expression.name.as_str().to_owned(),
-            expression.expression.clone(),
+            super::expressions::expression_parameter_id(&expression.id).map_or_else(
+                || {
+                    cadmpeg_ir::features::Dimension::Literal(
+                        cadmpeg_ir::features::Expression::text(expression.expression.clone()),
+                    )
+                },
+                cadmpeg_ir::features::Dimension::Parameter,
+            ),
         );
     }
     parameters
@@ -1790,7 +1797,7 @@ pub(super) fn hole_package_projection(
                 .first()
                 .map(|member| &member.operation_label)
                 .and_then(|operation| chamfers.get(operation))
-                .copied()
+                .cloned()
             else {
                 continue;
             };
@@ -1798,7 +1805,7 @@ pub(super) fn hole_package_projection(
                 .members
                 .iter()
                 .map(|member| &member.operation_label)
-                .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
+                .any(|operation| chamfers.get(operation) != Some(&chamfer))
             {
                 continue;
             }
@@ -2919,9 +2926,12 @@ pub(super) fn simple_hole_chamfers(
         ) else {
             return Ok(BTreeMap::new());
         };
-        let treatment = HoleKind::Chamfer { diameter, angle };
+        let treatment = HoleKind::Chamfer {
+            diameter: (diameter).into(),
+            angle: (angle).into(),
+        };
         for operation in operations {
-            treatments.insert(operation, treatment);
+            treatments.insert(operation, treatment.clone());
         }
     }
     Ok(treatments)

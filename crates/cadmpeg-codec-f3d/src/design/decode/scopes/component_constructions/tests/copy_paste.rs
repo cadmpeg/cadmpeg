@@ -99,11 +99,11 @@ fn copy_paste_matrices_keep_their_source_locations() {
         assert_eq!(operation.copied_transform, copied);
         assert_eq!(
             operation.source_transform_offset,
-            u64::try_from(start + source_at).unwrap()
+            Some(u64::try_from(start + source_at).unwrap())
         );
         assert_eq!(
             operation.copied_transform_offset,
-            u64::try_from(start + source_at + 156).unwrap()
+            Some(u64::try_from(start + source_at + 156).unwrap())
         );
     }
 }

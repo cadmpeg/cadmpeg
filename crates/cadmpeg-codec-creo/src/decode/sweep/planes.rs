@@ -413,7 +413,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::from(length),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::from(length)).into(),
                 },
                 draft: None,
             },

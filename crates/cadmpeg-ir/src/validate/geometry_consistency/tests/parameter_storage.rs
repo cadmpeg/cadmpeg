@@ -15,6 +15,7 @@ fn parameter_uniqueness_preserves_first_values_and_negative_zero() {
 #[test]
 fn declared_parameter_candidates_keep_order() {
     let pcurve = crate::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#ranges".try_into().unwrap(),
         geometry: crate::geometry::pcurve::PcurveGeometry::Line(
             crate::geometry::pcurve::LinePcurve::try_new(

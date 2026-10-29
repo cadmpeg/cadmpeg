@@ -149,11 +149,15 @@ pub(crate) fn decode_dimension_recipe_records(
         let Some(payload) = companion.payload() else {
             continue;
         };
-        let Some(start) = usize::try_from(payload.byte_offset()).ok() else {
+        let Some(start) = payload
+            .byte_offset()
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
-        let Some(end) = usize::try_from(payload.byte_length())
-            .ok()
+        let Some(end) = payload
+            .byte_length()
+            .and_then(|offset| usize::try_from(offset).ok())
             .and_then(|length| start.checked_add(length))
             .filter(|end| *end <= bytes.len())
         else {
@@ -163,7 +167,10 @@ pub(crate) fn decode_dimension_recipe_records(
             let Some(recipe) = recipe_index.get(recipe_id.as_str()).copied() else {
                 continue;
             };
-            let Some(recipe_offset) = usize::try_from(recipe.byte_offset).ok() else {
+            let Some(recipe_offset) = recipe
+                .byte_offset
+                .and_then(|offset| usize::try_from(offset).ok())
+            else {
                 continue;
             };
             let Some((at, class_tag, record_index, record_end)) =
@@ -209,7 +216,7 @@ pub(crate) fn decode_dimension_recipe_records(
             let id = design_record_id(
                 &entry.name,
                 ":design-dimension-recipe-record#",
-                recipe.byte_offset,
+                u64_from_index(recipe_offset),
             );
             let recipe_id = recipe.id.clone();
 
@@ -219,14 +226,14 @@ pub(crate) fn decode_dimension_recipe_records(
                 recipe_ordinal,
                 recipe_id,
                 recipe_kind: recipe.kind,
-                byte_offset,
+                byte_offset: Some(byte_offset),
                 class_tag,
                 record_index,
-                frame_length,
-                prefix_offset,
+                frame_length: Some(frame_length),
+                prefix_offset: Some(prefix_offset),
                 prefix_bytes: prefix_bytes.into(),
                 references,
-                program_offset,
+                program_offset: Some(program_offset),
                 program,
                 matching_edge_operand_ids: Vec::new(),
             });
@@ -248,7 +255,7 @@ pub(crate) fn decode_recipe_references(
     {
         return Vec::new();
     }
-    match View::u32_le_at(prefix, 14) {
+    let mut references = match View::u32_le_at(prefix, 14) {
         Some(2) => decode_paired_recipe_references(prefix, prefix_offset),
         Some(3) => decode_standard_recipe_references(prefix, prefix_offset),
         Some(group_count) if group_count >= 4 => usize::try_from(group_count)
@@ -257,7 +264,16 @@ pub(crate) fn decode_recipe_references(
                 decode_grouped_recipe_references(prefix, prefix_offset, group_count)
             }),
         _ => Vec::new(),
+    };
+    let mut clauses = std::collections::BTreeMap::new();
+    for reference in &mut references {
+        let key = (reference.selector_offset, reference.token_offset);
+        let Ok(next) = u32::try_from(clauses.len()) else {
+            return Vec::new();
+        };
+        reference.clause_index = *clauses.entry(key).or_insert(next);
     }
+    references
 }
 
 fn decode_standard_recipe_references(
@@ -638,12 +654,13 @@ fn decode_recipe_reference_operand(
             prefix_offset.checked_add(u64::try_from(design_reference_at).ok()?)?;
         let token_copy = scanned.token.to_owned();
         let reference = crate::records::dimensions::DesignRecipeReference {
+            clause_index: 0,
             selector: i64::from(scanned.selector),
-            selector_offset,
+            selector_offset: Some(selector_offset),
             token: token_copy,
-            token_offset,
+            token_offset: Some(token_offset),
             design_reference: i64::from(design_reference),
-            design_reference_offset,
+            design_reference_offset: Some(design_reference_offset),
             candidate_faces: Vec::new(),
             candidate_edges: Vec::new(),
             alternate_selector_faces: Vec::new(),
@@ -907,14 +924,16 @@ pub(crate) fn decode_dimension_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = design_record_id(
-            &entry.name,
-            ":design-dimension-locus-pair#",
-            pair.byte_offset(),
-        );
+        let Some(pair_offset) = pair.byte_offset() else {
+            continue;
+        };
+        let Some(paired_offset) = pair.paired_byte_offset() else {
+            continue;
+        };
+        pair.id = design_record_id(&entry.name, ":design-dimension-locus-pair#", pair_offset);
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset(),
+            paired_offset,
             owners,
             parameters.values().copied(),
         ) else {
@@ -942,15 +961,18 @@ where
     let parameter_records = parameter_records.into_iter();
     let following_offset = paired_byte_offset.checked_add(59)?;
     let mut matches = owners.iter().filter(|owner| {
-        native_stream(owner.id()) == Some(scope) && owner.byte_offset() == following_offset && {
-            let mut candidates = parameter_records.clone().filter(|parameter| {
-                native_stream(&parameter.id) == Some(scope)
-                    && parameter.record_index == owner.parameter_record_index()
-            });
-            candidates.next().is_some_and(|parameter| {
-                parameter.kind() == DesignParameterKind::Dimension && candidates.next().is_none()
-            })
-        }
+        native_stream(owner.id()) == Some(scope)
+            && owner.byte_offset() == Some(following_offset)
+            && {
+                let mut candidates = parameter_records.clone().filter(|parameter| {
+                    native_stream(&parameter.id) == Some(scope)
+                        && parameter.record_index == owner.parameter_record_index()
+                });
+                candidates.next().is_some_and(|parameter| {
+                    parameter.kind() == DesignParameterKind::Dimension
+                        && candidates.next().is_none()
+                })
+            }
     });
     let owner = matches.next()?;
     matches
@@ -967,8 +989,12 @@ fn find_dimension_locus_pair(
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
-        parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
+        parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices).filter(
+            |pair| {
+                pair.paired_byte_offset()
+                    .is_some_and(|offset| offset < u64_from_index(end))
+            },
+        )
     };
     let mut candidate = parse(start);
     let mut position = start.checked_add(1);
@@ -1042,15 +1068,15 @@ fn parse_dimension_locus_pair(
         loci: [
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: Some(NonZeroU32::new(first_geometry_record_index)?),
-                geometry_reference_offset: u64_from_index(start + 40),
+                geometry_reference_offset: Some(u64_from_index(start + 40)),
                 role: View::u32_le_at(bytes, start + 50)?,
-                role_offset: u64_from_index(start + 50),
+                role_offset: Some(u64_from_index(start + 50)),
             },
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: Some(NonZeroU32::new(second_geometry_record_index)?),
-                geometry_reference_offset: u64_from_index(start + 55),
+                geometry_reference_offset: Some(u64_from_index(start + 55)),
                 role: View::u32_le_at(bytes, start + 65)?,
-                role_offset: u64_from_index(start + 65),
+                role_offset: Some(u64_from_index(start + 65)),
             },
         ],
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
@@ -1123,14 +1149,20 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
+        let Some(pair_offset) = pair.byte_offset() else {
+            continue;
+        };
+        let Some(paired_offset) = pair.paired_byte_offset() else {
+            continue;
+        };
         pair.id = design_record_id(
             &entry.name,
             ":design-dimension-null-locus-pair#",
-            pair.byte_offset(),
+            pair_offset,
         );
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
-            pair.paired_byte_offset(),
+            paired_offset,
             owners,
             parameters.values().copied(),
         ) else {
@@ -1152,8 +1184,12 @@ fn find_dimension_null_locus_pair(
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
     let parse = |at| {
-        parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
-            .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
+        parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices).filter(
+            |pair| {
+                pair.paired_byte_offset()
+                    .is_some_and(|offset| offset < u64_from_index(end))
+            },
+        )
     };
     let mut candidate = parse(start);
     let mut position = start.checked_add(1);
@@ -1219,15 +1255,15 @@ fn parse_dimension_null_locus_pair(
         loci: [
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: None,
-                geometry_reference_offset: u64_from_index(start + 25),
+                geometry_reference_offset: Some(u64_from_index(start + 25)),
                 role: View::u32_le_at(bytes, start + 35)?,
-                role_offset: u64_from_index(start + 35),
+                role_offset: Some(u64_from_index(start + 35)),
             },
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: Some(NonZeroU32::new(geometry_record_index)?),
-                geometry_reference_offset: u64_from_index(start + 40),
+                geometry_reference_offset: Some(u64_from_index(start + 40)),
                 role: View::u32_le_at(bytes, start + 50)?,
-                role_offset: u64_from_index(start + 50),
+                role_offset: Some(u64_from_index(start + 50)),
             },
         ],
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
@@ -1318,7 +1354,7 @@ pub(crate) fn decode_dimension_annotation_frames(
                 .iter()
                 .filter(|owner| {
                     native_stream(owner.id()) == Some(stream)
-                        && owner.scope_record_index() == scope.record_index
+                        && owner.scope_record_index() == Some(scope.record_index)
                 })
                 .filter_map(|owner| {
                     companions
@@ -1327,10 +1363,14 @@ pub(crate) fn decode_dimension_annotation_frames(
                             native_stream(companion.id()) == Some(stream)
                                 && companion.record_index() == owner.companion_record_index()
                         })
-                        .and_then(|companion| usize::try_from(companion.byte_offset()).ok())
+                        .and_then(|companion| {
+                            companion
+                                .byte_offset()
+                                .and_then(|offset| usize::try_from(offset).ok())
+                        })
                 })
                 .min()?;
-            let start = usize::try_from(scope.byte_offset()).ok()?;
+            let start = usize::try_from(scope.byte_offset()?).ok()?;
             (start < end).then_some((start, end, None))
         }) {
             intervals.push(interval);
@@ -1350,22 +1390,30 @@ pub(crate) fn decode_dimension_annotation_frames(
                     &geometry_indices,
                     &sketch_entities,
                 ) {
-                    if frame.paired_byte_offset() >= u64_from_index(end) {
+                    let Some(frame_offset) = frame.byte_offset() else {
+                        position = at + 1;
+                        continue;
+                    };
+                    let Some(paired_offset) = frame.paired_byte_offset() else {
+                        position = at + 1;
+                        continue;
+                    };
+                    if paired_offset >= u64_from_index(end) {
                         position = at + 1;
                         continue;
                     }
                     frame.id = design_record_id(
                         &entry.name,
                         ":design-dimension-annotation-frame#",
-                        frame.byte_offset(),
+                        frame_offset,
                     );
-                    let Ok(paired_at) = usize::try_from(frame.paired_byte_offset()) else {
+                    let Ok(paired_at) = usize::try_from(paired_offset) else {
                         return Err(CodecError::Malformed(
                             "F3D annotation paired offset is not representable".into(),
                         ));
                     };
                     position = paired_at + 1;
-                    let key = (stream, frame.byte_offset());
+                    let key = (stream, frame_offset);
                     if !decoded_offsets.contains(&key) {
                         decoded_offsets.insert(key);
 
@@ -1418,9 +1466,9 @@ fn parse_dimension_annotation_frame(
         }
         operands.push(DesignDimensionAnnotationOperand {
             geometry_record_index,
-            geometry_reference_offset: u64_from_index(position + 1),
+            geometry_reference_offset: Some(u64_from_index(position + 1)),
             role: View::u32_le_at(bytes, position + 11)?,
-            role_offset: u64_from_index(position + 11),
+            role_offset: Some(u64_from_index(position + 11)),
         });
         position = position.checked_add(15)?;
     }
@@ -1668,6 +1716,12 @@ pub(crate) fn decode_dimension_presentation_frames(
                 continue;
             };
             let mut frame = parsed;
+            let Some(frame_offset) = frame.byte_offset else {
+                continue;
+            };
+            let Some(paired_offset) = frame.paired_byte_offset else {
+                continue;
+            };
             let Some(owner) = owners
                 .iter()
                 .filter(|owner| {
@@ -1677,11 +1731,13 @@ pub(crate) fn decode_dimension_presentation_frames(
                             .is_some_and(|parameter| {
                                 parameter.kind() == DesignParameterKind::Dimension
                             })
-                        && owner.byte_offset() > frame.paired_byte_offset
+                        && owner
+                            .byte_offset()
+                            .is_some_and(|offset| offset > paired_offset)
                         && sketch_scope_by_entity
                             .get(&(stream.as_str(), u64::from(frame.owner_reference)))
                             .is_some_and(|scope_record_index| {
-                                owner.scope_record_index() == *scope_record_index
+                                owner.scope_record_index() == Some(*scope_record_index)
                             })
                 })
                 .min_by_key(|owner| owner.byte_offset())
@@ -1691,7 +1747,7 @@ pub(crate) fn decode_dimension_presentation_frames(
             frame.id = design_record_id(
                 &entry.name,
                 ":design-dimension-presentation-frame#",
-                frame.byte_offset,
+                frame_offset,
             );
             frame.governing_owner_record_index = owner.record_index();
             frame.governing_parameter_record_index = owner.parameter_record_index();
@@ -1743,9 +1799,9 @@ fn parse_dimension_presentation_frame(
         }
         operands.push(DesignDimensionPresentationOperand {
             geometry_record_index,
-            geometry_reference_offset: u64::try_from(position + 1).ok()?,
+            geometry_reference_offset: Some(u64::try_from(position + 1).ok()?),
             role: View::u32_le_at(bytes, position + 11)?,
-            role_offset: u64::try_from(position + 11).ok()?,
+            role_offset: Some(u64::try_from(position + 11).ok()?),
         });
         position = position.checked_add(15)?;
     }
@@ -1777,18 +1833,18 @@ fn parse_dimension_presentation_frame(
         .to_vec();
     Some(DesignDimensionPresentationFrame {
         id: String::new(),
-        byte_offset: u64::try_from(start).ok()?,
+        byte_offset: Some(u64::try_from(start).ok()?),
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
-        frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
+        frame_length: Some(u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?),
         operands,
-        presentation_bytes: presentation_bytes.into(),
-        presentation_byte_offset: u64::try_from(presentation_byte_offset).ok()?,
+        presentation_bytes: Some(presentation_bytes.into()),
+        presentation_byte_offset: Some(u64::try_from(presentation_byte_offset).ok()?),
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
             .ok()?,
-        paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
+        paired_byte_offset: Some(u64::try_from(paired_byte_offset).ok()?),
         owner_reference,
-        owner_reference_offset: u64::try_from(paired_byte_offset + 20).ok()?,
+        owner_reference_offset: Some(u64::try_from(paired_byte_offset + 20).ok()?),
         governing_owner_record_index: 0,
         governing_parameter_record_index: 0,
         governing_companion_record_index: 0,
@@ -1857,11 +1913,11 @@ pub(crate) fn decode_dimension_locus_groups(
             &sketch_entities,
         );
         for mut group in candidates {
-            group.id = design_record_id(
-                &entry.name,
-                ":design-dimension-locus-group#",
-                group.byte_offset,
-            );
+            let Some(group_offset) = group.byte_offset else {
+                continue;
+            };
+            group.id =
+                design_record_id(&entry.name, ":design-dimension-locus-group#", group_offset);
 
             out.push(group);
         }
@@ -1886,7 +1942,11 @@ fn find_dimension_locus_groups(
             geometry_indices,
             sketch_entities,
         )
-        .filter(|group| group.next_byte_offset <= u64_from_index(end))
+        .filter(|group| {
+            group
+                .next_byte_offset
+                .is_some_and(|offset| offset <= u64_from_index(end))
+        })
     };
     let mut candidates = Vec::new();
     if let Some(group) = parse(start) {
@@ -1922,7 +1982,7 @@ pub(super) fn companion_owned_interval<'a>(
             native_stream(owner.id()) == Some(native_scope)
                 && owner.record_index() == companion.owner_record_index()
         })
-        .map(crate::records::parameters::DesignParameterOwner::scope_record_index);
+        .and_then(crate::records::parameters::DesignParameterOwner::scope_record_index);
     let mut foreign_scope_members = HashSet::new();
     for member in scopes
         .iter()
@@ -1945,7 +2005,11 @@ pub(super) fn companion_owned_interval<'a>(
             native_stream(owner.id()) == Some(native_scope)
                 && owner.byte_offset() > companion.byte_offset()
         })
-        .filter_map(|owner| usize::try_from(owner.byte_offset()).ok())
+        .filter_map(|owner| {
+            owner
+                .byte_offset()
+                .and_then(|offset| usize::try_from(offset).ok())
+        })
         .chain(
             parameters
                 .into_iter()
@@ -1953,26 +2017,39 @@ pub(super) fn companion_owned_interval<'a>(
                     native_stream(&parameter.id) == Some(native_scope)
                         && parameter.byte_offset() > companion.byte_offset()
                 })
-                .filter_map(|parameter| usize::try_from(parameter.byte_offset()).ok()),
+                .filter_map(|parameter| {
+                    parameter
+                        .byte_offset()
+                        .and_then(|offset| usize::try_from(offset).ok())
+                }),
         )
         .chain(
             scopes
                 .iter()
                 .filter(|scope| {
                     native_stream(&scope.id) == Some(native_scope)
-                        && scope.byte_offset() > companion.byte_offset()
+                        && companion
+                            .byte_offset()
+                            .is_some_and(|offset| scope.byte_offset() > Some(offset))
                 })
-                .filter_map(|scope| usize::try_from(scope.byte_offset()).ok()),
+                .filter_map(|scope| usize::try_from(scope.byte_offset()?).ok()),
         )
         .chain(
             headers
                 .iter()
                 .filter(|header| {
                     native_stream(&header.id) == Some(native_scope)
-                        && header.byte_offset > companion.byte_offset()
+                        && companion
+                            .byte_offset()
+                            .zip(header.byte_offset)
+                            .is_some_and(|(offset, header_offset)| header_offset > offset)
                         && foreign_scope_members.contains(&header.record_index)
                 })
-                .filter_map(|header| usize::try_from(header.byte_offset).ok()),
+                .filter_map(|header| {
+                    header
+                        .byte_offset
+                        .and_then(|offset| usize::try_from(offset).ok())
+                }),
         )
         .min()
         .unwrap_or(stream_length);
@@ -2055,12 +2132,12 @@ fn parse_dimension_locus_group(
         }
         loci.push(DesignDimensionLocus {
             geometry_record_index,
-            geometry_reference_offset,
+            geometry_reference_offset: Some(geometry_reference_offset),
             role,
-            role_offset,
+            role_offset: Some(role_offset),
             returned: crate::records::identity::Located {
                 value: record_index,
-                offset: u64_from_index(position + 1),
+                offset: Some(u64_from_index(position + 1)),
             },
         });
         position = position.checked_add(11)?;
@@ -2077,20 +2154,20 @@ fn parse_dimension_locus_group(
     Some(DesignDimensionLocusGroup {
         id: String::new(),
         companion_record_index,
-        byte_offset: u64_from_index(start),
+        byte_offset: Some(u64_from_index(start)),
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
-        frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
+        frame_length: Some(u64::try_from(next_byte_offset.checked_sub(start)?).ok()?),
         loci,
         owner_reference,
-        owner_reference_offset,
+        owner_reference_offset: Some(owner_reference_offset),
         owner_role,
-        owner_role_offset,
+        owner_role_offset: Some(owner_role_offset),
         state,
-        state_offset,
+        state_offset: Some(state_offset),
         next_class_tag: crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?,
         next_record_index: View::u32_le_at(bytes, next_after_tag)?,
-        next_byte_offset: u64_from_index(next_byte_offset),
+        next_byte_offset: Some(u64_from_index(next_byte_offset)),
     })
 }
 

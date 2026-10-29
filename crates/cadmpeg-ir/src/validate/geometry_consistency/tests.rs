@@ -27,6 +27,7 @@ use crate::validate::validate_neutral;
 #[test]
 fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
     let pcurve = Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#wide-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: crate::geometry::pcurve::PcurveNurbs::new(
@@ -73,12 +74,14 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
     let surface_id = SurfaceId::mint("test:model:surface#large-domain").unwrap();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let pcurve = Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#large-surface-domain".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
             crate::geometry::pcurve::LinePcurve::try_new(
@@ -167,6 +170,7 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
     let surface =
         SurfaceId::mint("test:model:surface#surface".to_string()).expect("valid identity");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -179,6 +183,7 @@ fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::analytic::PlaneSurface::try_new(
@@ -230,6 +235,7 @@ fn mapped_surface_offset() -> CadIr {
         .unwrap(),
     );
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: base.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -284,6 +290,7 @@ fn untrimmed_surface_curve() -> CadIr {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: "test:model:vertex#vertex-start"
                 .try_into()
                 .expect("valid identity"),
@@ -293,6 +300,7 @@ fn untrimmed_surface_curve() -> CadIr {
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: "test:model:vertex#vertex-end"
                 .try_into()
                 .expect("valid identity"),
@@ -303,6 +311,7 @@ fn untrimmed_surface_curve() -> CadIr {
         },
     ]);
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: "test:model:curve#curve".try_into().expect("valid identity"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -317,6 +326,7 @@ fn untrimmed_surface_curve() -> CadIr {
         source_object: None,
     });
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: "test:model:edge#edge".try_into().expect("valid identity"),
         carrier: crate::topology::EdgeCarrier::unbounded(Some(
             "test:model:curve#curve".try_into().expect("valid identity"),
@@ -330,6 +340,7 @@ fn untrimmed_surface_curve() -> CadIr {
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: "test:model:surface#surface"
             .try_into()
             .expect("valid identity"),
@@ -344,6 +355,7 @@ fn untrimmed_surface_curve() -> CadIr {
         source_object: None,
     });
     ir.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#pcurve"
             .try_into()
             .expect("valid identity"),
@@ -359,6 +371,7 @@ fn untrimmed_surface_curve() -> CadIr {
         metadata: PcurveMetadata::default(),
     });
     ir.model.coedges.push(Coedge {
+        native_ref: None,
         id: "test:model:coedge#coedge"
             .try_into()
             .expect("valid identity"),
@@ -378,6 +391,7 @@ fn untrimmed_surface_curve() -> CadIr {
         use_curve: None,
     });
     ir.model.loops.push(Loop {
+        native_ref: None,
         id: "test:model:loop#loop".try_into().expect("valid identity"),
         face: "test:model:face#face".try_into().expect("valid identity"),
         boundary: crate::topology::LoopBoundary::Ring(
@@ -391,6 +405,7 @@ fn untrimmed_surface_curve() -> CadIr {
         ),
     });
     ir.model.faces.push(Face {
+        native_ref: None,
         id: "test:model:face#face".try_into().expect("valid identity"),
         shell: "test:model:shell#shell".try_into().expect("valid identity"),
         surface: "test:model:surface#surface"
@@ -561,6 +576,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     let base_geometry = ir.model.surfaces[0].geometry.clone();
     ir.model.surfaces[0].id = base_id.clone();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: "test:model:surface#surface"
             .try_into()
             .expect("valid identity"),
@@ -700,6 +716,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
 #[test]
 fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
     let pcurve = Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#pcurve"
             .try_into()
             .expect("valid identity"),
@@ -801,12 +818,14 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         SurfaceId::mint("test:model:surface#surface".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let pcurve = Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#pcurve"
             .try_into()
             .expect("valid identity"),
@@ -928,6 +947,7 @@ fn self_referential_composite_curve_is_invalid() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let id = CurveId::mint("synthetic:test:curve#recursive").expect("valid identity");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -1058,6 +1078,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     let checked = |u_end: f64, v_end: f64, fit_tolerance: Option<f64>| {
         let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+            native_ref: None,
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#0").expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
                 nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1130,6 +1151,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .model
         .pcurves
         .push(crate::geometry::pcurve::Pcurve {
+            native_ref: None,
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#procedural")
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
@@ -1224,6 +1246,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .model
         .pcurves
         .push(crate::geometry::pcurve::Pcurve {
+            native_ref: None,
             id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#negative")
                 .expect("valid identity"),
             geometry: crate::geometry::pcurve::PcurveGeometry::Nurbs {
@@ -1381,6 +1404,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     // with no finite coordinate.
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.pcurves.push(Pcurve {
+        native_ref: None,
         id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#overflow").expect("valid identity"),
         geometry: PcurveGeometry::Offset(
             crate::geometry::pcurve::OffsetPcurve::try_new(
@@ -1449,6 +1473,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         SurfaceId::mint("test:model:surface#overflow".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -1513,6 +1538,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
         SurfaceId::mint("test:model:surface#far-line".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,
@@ -1575,6 +1601,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
         SurfaceId::mint("test:model:surface#plane".to_string()).expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: surface.clone(),
         source_object: None,

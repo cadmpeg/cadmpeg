@@ -14,7 +14,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::anyhow;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext};
 use cadmpeg_ir::report::decode::DecodeReport;
 use cadmpeg_ir::DecodeOptions;
 use cadmpeg_measure::report::MeasureReport;
@@ -26,9 +26,9 @@ pub(crate) use args::SelectionArgs;
 
 use crate::application::artifact_store::FileDestination;
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::{ApplicationError, ConversionRefusal, DepthReport, RefusalStage};
+use crate::application::refusal::{ApplicationError, RefusalStage};
 use crate::commands::reporting::{command_report_json, print_decode_report, write_json_report};
-use crate::commands::{print_load_notice, report_failure};
+use crate::commands::{print_load_notice, print_scope_note, report_failure};
 use crate::loader;
 
 /// How the command prints its result.
@@ -59,7 +59,7 @@ pub(crate) struct MeasureCommand<'a> {
 struct InputSummary<'a> {
     format: Option<&'a str>,
     origin: &'static str,
-    decode_depth: DecodeDepth,
+    scope: cadmpeg_ir::document::ContentScope,
 }
 
 #[derive(Serialize)]
@@ -84,7 +84,7 @@ fn input_summary(document: &LoadedDocument) -> InputSummary<'_> {
             LoadOrigin::Restored { .. } => "restored",
             LoadOrigin::Decoded { .. } => "decoded",
         },
-        decode_depth: document.ir.decode_depth(),
+        scope: document.ir.scope,
     }
 }
 
@@ -108,7 +108,7 @@ pub(crate) fn measure(
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
         }
-        require_geometry(&loaded)?;
+        print_scope_note(&mut io::stderr(), loaded.ir.scope)?;
         let selection = command.selection.resolve(&loaded.ir)?;
         let geometry_transferred = loaded
             .decode_report()
@@ -160,21 +160,6 @@ struct Session<'a> {
     options: &'a DecodeOptions,
     profile: WorkProfile,
     density: Option<cadmpeg_measure::Density>,
-}
-
-/// Refuse a document that holds no geometry.
-fn require_geometry(loaded: &LoadedDocument) -> Result<(), ApplicationError> {
-    if loaded.ir.decode_depth() == DecodeDepth::Container {
-        return Err(ConversionRefusal::InsufficientMeasureDepth {
-            depth: DepthReport {
-                needed: DecodeDepth::Geometry,
-                recorded: DecodeDepth::Container,
-            },
-            decode_report: loaded.decode_report().cloned(),
-        }
-        .into());
-    }
-    Ok(())
 }
 
 /// Measure the loaded document under one session.

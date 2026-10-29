@@ -35,7 +35,6 @@ use super::super::records::{
     surface_merge_replay_affected_id_records, surface_parameter_records, surface_prototype_records,
     surface_row_records, tabulated_cylinder_curve_replay_records, topological_vertex_records,
 };
-use super::super::surfaces::brep::BrepTransferDiagnostics;
 
 /// Emit the `MdlRefInfo` reference-geometry arenas.
 ///
@@ -116,7 +115,6 @@ pub(super) fn emit_geometry_arenas(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    brep_diagnostics: &BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
     let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
     emit_uniform(
@@ -483,13 +481,6 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let face_components = face_component_records(scan);
     store_arena(ctx, ir, CreoArena::FaceComponents, &face_components)?;
-    let face_admission_rejections = brep_diagnostics.face_admission_rejection_records();
-    store_arena(
-        ctx,
-        ir,
-        CreoArena::BrepFaceAdmissionRejections,
-        &face_admission_rejections,
-    )?;
     let surface_parameters = surface_parameter_records(
         scan,
         &scan.surfaces.rows,

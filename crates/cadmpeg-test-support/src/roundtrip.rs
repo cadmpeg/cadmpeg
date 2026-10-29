@@ -43,7 +43,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
 
 /// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
@@ -62,7 +61,7 @@ where
     C: Codec + Encoder,
 {
     let decoded = crate::EditableDecodeResult::from(
-        Codec::decode(
+        crate::golden::decode(
             codec,
             &mut std::io::Cursor::new(fixture.to_vec()),
             &DecodeOptions::default(),
@@ -111,18 +110,15 @@ pub enum SemanticOutcome {
     },
 }
 
-/// Decodes `fixture`, removes the document-level write baseline, encodes it, and
+/// Decodes `fixture`, withholds source fidelity, encodes it, and
 /// hands the outcome to `check`.
 ///
-/// Removing [`DOCUMENT_LOCAL_DIGEST_ATTRIBUTE`] denies verbatim replay without
-/// editing the document. The encoder must write or refuse; it must not copy.
-/// Lane digests stay so writers that need them can still plan.
+/// Withholding fidelity selects synthesis without modifying the document.
 ///
 /// # Panics
 ///
-/// Panics when the decode fails, when the document carries no baseline to
-/// remove, when the write fails after planning succeeded, or when the encoder
-/// still took [`WritePath::VerbatimReplay`].
+/// Panics when decoding or writing fails, or when the encoder consumes retained
+/// bytes despite having no source fidelity.
 pub fn semantic_roundtrip<C>(
     codec: &C,
     label: &str,
@@ -131,28 +127,15 @@ pub fn semantic_roundtrip<C>(
 ) where
     C: Codec + Encoder,
 {
-    let decoded = Codec::decode(
+    let decoded = crate::golden::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
-    let (mut ir, _decode_report, source_fidelity) = decoded.into_parts();
-    let removed = ir
-        .source
-        .as_mut()
-        .and_then(|source| source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
-    assert!(
-        removed.is_some(),
-        "{label}: the decoded document carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}`, so removing it cannot \
-         force the semantic path; this helper would report whatever the encoder happened to do"
-    );
+    let (ir, _decode_report, _source_fidelity) = decoded.into_parts();
     // Plan borrows the document until write completes.
-    let written = match Encoder::plan(
-        codec,
-        EncodeInput::new(&ir, Some(&source_fidelity)),
-        TargetRequest::Inherit,
-    ) {
+    let written = match Encoder::plan(codec, EncodeInput::new(&ir, None), TargetRequest::Inherit) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
             let mut bytes = Vec::new();
@@ -166,9 +149,8 @@ pub fn semantic_roundtrip<C>(
     let outcome = match written {
         Ok((path, report, bytes)) => {
             assert!(
-                !matches!(path, WritePath::VerbatimReplay { .. }),
-                "{label}: the baseline was removed, so the encoder could not show the retained bytes still \
-                 describe this document, yet it replayed them"
+                matches!(path, WritePath::Synthesized { .. }),
+                "{label}: source-less output must be synthesized"
             );
             SemanticOutcome::Written {
                 report: Box::new(report),
@@ -231,15 +213,15 @@ impl std::fmt::Display for ExpectedWritePath {
 }
 
 /// Decodes `fixture`, applies `mutate` to the decoded document, encodes it with
-/// the write baseline left in place, and hands the outcome to `check`.
+/// source fidelity supplied, and hands the outcome to `check`.
 ///
-/// Returns whether `mutate` reported an edit. Keeps the baseline and changes a
+/// Returns whether `mutate` reported an edit. Retains fidelity and changes a
 /// value; `check` can decode the output and demand that change back.
 ///
 /// # Panics
 ///
 /// Panics when the decode fails, when `mutate` reports an edit that left the
-/// document equal to the decode, when `mutate` removed the baseline, when the
+/// document equal to the decode, when the
 /// write fails after planning succeeded, or when the encoder took a write path
 /// other than `expected_path`.
 pub fn mutation_roundtrip<C>(
@@ -253,7 +235,7 @@ pub fn mutation_roundtrip<C>(
 where
     C: Codec + Encoder,
 {
-    let decoded = Codec::decode(
+    let decoded = crate::golden::decode(
         codec,
         &mut std::io::Cursor::new(fixture.to_vec()),
         &DecodeOptions::default(),
@@ -268,14 +250,6 @@ where
         edited != baseline,
         "{label}: the mutation reported an edit but left the document equal to the decode, so the encoder \
          would still be free to replay its retained bytes and this test would describe nothing"
-    );
-    assert!(
-        edited
-            .source
-            .as_ref()
-            .is_some_and(|source| source.attributes.contains_key(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)),
-        "{label}: the mutation removed `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}`; this helper covers the edited \
-         document with its baseline intact, and without it the codec answers a different question"
     );
     // Plan borrows the document until write completes.
     let written = match Encoder::plan(

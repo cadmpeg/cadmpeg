@@ -406,12 +406,14 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     );
     let mut source = CadIr::empty();
     source.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
         geometry: CurveGeometry::Solved(curve_geometry.clone()),
         source_object: None,
     });
     source.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:surface#transformed-surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(surface_geometry.clone()),
         source_object: None,

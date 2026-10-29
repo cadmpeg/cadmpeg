@@ -50,6 +50,8 @@ pub(crate) enum F3dLossCode {
     ConfigurationFeatureSuppressionUnbound,
     /// ACT component links have no resolved neutral product role.
     ActComponentLinkUnresolved,
+    /// ACT records whose semantic payload could not be decoded.
+    ActRecordUntyped,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
     /// A local occurrence owner joins no unique component definition.
@@ -112,6 +114,8 @@ pub(crate) enum F3dLossCode {
     HistoryBindingWorkExceeded,
     /// A Design recipe side-sequence search exceeded its local work cap.
     RecipeSideSearchBudgetExceeded,
+    /// A dimension recipe retains prefix grouping outside its typed references.
+    RecipePrefixUntyped,
     /// Ordering one owner scope's Design parameters exceeded its local work cap.
     ParameterOrderBudgetExceeded,
     /// An ASM history span stays opaque because record framing failed.
@@ -150,6 +154,8 @@ pub(crate) enum F3dLossCode {
     ParameterUnitUntyped,
     /// Material Distance properties retain unit tags without a length conversion.
     MaterialDistanceUnitUntyped,
+    /// An embedded Design image remains outside the typed asset arena.
+    ImageAssetUntransferred,
     /// A face material GUID names distinct visual tokens without a selection rule.
     FaceAppearanceAmbiguous,
     /// Parameter expression symbols name same-stream parameters without an edge.
@@ -347,6 +353,33 @@ pub(crate) enum F3dLossCode {
     ManifestMetadataUnresolved,
     /// An optional bounded archive payload is unreadable.
     ArchiveEntryUnreadable,
+    /// Typed native content without a supported synthesized record form.
+    WriterNativeRecordsOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterDesignRecordsOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterGeometryOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterAuxiliaryOmitted,
+    /// Content that the synthesized writer cannot represent.
+    WriterProceduralReduced,
+    /// Content that the synthesized writer cannot represent.
+    WriterNoExportableSolids,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterSubdOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterAssetOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterTessellationOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterPcurveOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterPmiOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterProductOmitted,
+    /// Content outside the synthesized F3D encoding profile.
+    WriterSourceAssociationOmitted,
+
     /// A Design `BulkStream` stores a record run after its last indexed
     /// record; the run is not decoded and its bytes are retained natively.
     UnindexedRecordsRetained,
@@ -355,163 +388,6 @@ pub(crate) enum F3dLossCode {
 }
 
 impl F3dLossCode {
-    /// Every code, in declaration order.
-    #[cfg(test)]
-    const ALL: &'static [F3dLossCode] = &[
-        Self::OperationPoseApplied,
-        Self::OperationPoseDisagrees,
-        Self::OperationPoseNative,
-        Self::DimensionCompanionUntyped,
-        Self::BodyReferenceTailUntyped,
-        Self::PlacementConstructionUntyped,
-        Self::WorkPlaneFrameUnbound,
-        Self::ConstructionTrackingPathUntyped,
-        Self::ConfigurationMemberUnassigned,
-        Self::ConfigurationRuleUnbound,
-        Self::ConfigurationParameterOverrideUnbound,
-        Self::ConfigurationFeatureSuppressionUnbound,
-        Self::ActComponentLinkUnresolved,
-        Self::LocalOccurrenceUnplaced,
-        Self::LocalOccurrenceOwnerUnbound,
-        Self::ComponentBodyOwnerUnresolved,
-        Self::ComponentBodyOwnerFallback,
-        Self::LocalOccurrenceOwnerCycle,
-        Self::LocalOccurrenceExpansionLimit,
-        Self::FeatureOccurrencePathUnresolved,
-        Self::SketchOwnerUnresolved,
-        Self::ComponentInsertUnplaced,
-        Self::ComponentInsertOrderUnknown,
-        Self::ComponentDefinitionRevised,
-        Self::ComponentNamingSpaceUnbound,
-        Self::RootInstanceDefinitionUnbound,
-        Self::LocalOccurrenceEnvelopeSuperseded,
-        Self::SavedFreeEdgeBodyUnowned,
-        Self::AssemblyJointUnprojected,
-        Self::AssemblyRigidGroupFrameUnparsed,
-        Self::AssemblyJointMotionUndecoded,
-        Self::AssemblyJointRestUnprojected,
-        Self::AssemblyJointAngularLimitsNative,
-        Self::AssemblyOperandPathPairsNative,
-        Self::AssemblyRootPathIdentitiesNative,
-        Self::AssemblyOperandDescentAmbiguous,
-        Self::DrawingDocumentOmitted,
-        Self::HistoryBindingBudgetExceeded,
-        Self::HistoryBindingWorkExceeded,
-        Self::RecipeSideSearchBudgetExceeded,
-        Self::ParameterOrderBudgetExceeded,
-        Self::HistoryRecordFramingFailed,
-        Self::DesignBodyBindingUnresolved,
-        Self::ReferenceImageNativeRetained,
-        Self::DecalNativeRetained,
-        Self::EdgeReferenceLostUnrepaired,
-        Self::FeatureDefinitionIncomplete,
-        Self::SheetThicknessUnruled,
-        Self::FeatureScopeUnprojected,
-        Self::HoleExtentUnproven,
-        Self::FeatureScopePayloadUninterpreted,
-        Self::FeatureScopeEnvelopeSuperseded,
-        Self::ParameterUnprojected,
-        Self::ParameterRecordUnparsed,
-        Self::ParameterOwnerUnrecognized,
-        Self::ParameterOwnerUnparsed,
-        Self::ParameterUnitUntyped,
-        Self::MaterialDistanceUnitUntyped,
-        Self::FaceAppearanceAmbiguous,
-        Self::ParameterExpressionUnbound,
-        Self::HistoryDependencyUnprojected,
-        Self::HistoryDependencyAmbiguous,
-        Self::HistoricalFaceSelectionUnbound,
-        Self::SketchRelationNativeRetained,
-        Self::SketchDimensionNativeRetained,
-        Self::SketchPlacementUnprojected,
-        Self::SketchPointUnprojected,
-        Self::SketchCurveUnprojected,
-        Self::SketchSurfaceUnprojected,
-        Self::SketchTextUnprojected,
-        Self::SketchTextStyleUnprojected,
-        Self::SketchRelationUnprojected,
-        Self::SketchPatternStateUnprojected,
-        Self::SketchProfileSearchCapped,
-        Self::DimensionUnprojected,
-        Self::FeatureProfileSelectionNative,
-        Self::FeatureProfileArrangementCapped,
-        Self::FeatureProfileDensificationCapped,
-        Self::FeaturePathSelectionNative,
-        Self::FeatureFaceSelectionNative,
-        Self::FeatureFaceSelectionActiveSubstituted,
-        Self::FeatureBodySelectionNative,
-        Self::FeatureExtrudeExtentNative,
-        Self::FeatureFaceOperandUnresolved,
-        Self::FeatureEdgeSelectionNative,
-        Self::FeatureEdgeOperandUnresolved,
-        Self::FeatureEdgeSelectionLost,
-        Self::FeaturePatternInstanceSearchCapped,
-        Self::BrepBlobUndecoded,
-        Self::MeshContainerUnjoined,
-        Self::MeshContainerUndecoded,
-        Self::MeshContainerMissing,
-        Self::MeshAttributeNotTransferred,
-        Self::XrefTableUndecoded,
-        Self::XrefPlacementUndecoded,
-        Self::XrefPlacementMetadataNative,
-        Self::XrefPlacementRoleUnbound,
-        Self::XrefPlacementCurrentPose,
-        Self::XrefCurrentPoseNative,
-        Self::XrefCurrentPoseAmbiguous,
-        Self::LocalOccurrenceCurrentPose,
-        Self::LocalOccurrenceCurrentPoseNative,
-        Self::LocalOccurrenceCurrentPoseAmbiguous,
-        Self::XrefContainedPose,
-        Self::XrefContainedPoseDisagrees,
-        Self::XrefContainedPoseNative,
-        Self::XrefOwnedPose,
-        Self::XrefOwnedPoseDisagrees,
-        Self::XrefOwnedPoseNative,
-        Self::XrefPlacementMetadataMissing,
-        Self::XrefPlacementSuperseded,
-        Self::XrefOwnerUnresolved,
-        Self::JointPlacedOccurrenceUnsolved,
-        Self::MeshVertexPrecisionReduced,
-        Self::BodylessDesignCarrier,
-        Self::AssemblyComponentsExternal,
-        Self::NurbsSurfaceCarrier,
-        Self::NurbsCurveCarrier,
-        Self::FaceSurfaceReferenceDangling,
-        Self::SurfaceShapeNotDecoded,
-        Self::MeshSurfaceSentinel,
-        Self::ProceduralCurveUndecoded,
-        Self::VertexToleranceWidened,
-        Self::SpringSupportPcurveUnresolved,
-        Self::ProceduralSupportChartUnresolved,
-        Self::PcurveUndecoded,
-        Self::BlendSupportPartial,
-        Self::SolvedRecordUntyped,
-        Self::MaterialNotTransferred,
-        Self::GeometryNotTransferred,
-        Self::TopologyNotTransferred,
-        Self::MissingGeometryStream,
-        Self::XrefCycle,
-        Self::XrefMemberMissing,
-        Self::XrefMemberUndecoded,
-        Self::TsplineRecordUntyped,
-        Self::TsplineRadialMapUnresolved,
-        Self::TsplineCageUndecoded,
-        Self::SourcePreservedImageUnavailable,
-        Self::SourceDialectUnverified,
-        Self::WriterAppearancePropertiesOmitted,
-        Self::SourceDialectDisplaced,
-        Self::KernelDialectUnverified,
-        Self::KernelCarrierUnparseable,
-        Self::DialectLayerCollision,
-        Self::TextHeaderNoncanonical,
-        Self::KernelHeaderToleranceUnresolved,
-        Self::KernelHeaderMetadataUnresolved,
-        Self::ManifestMetadataUnresolved,
-        Self::ArchiveEntryUnreadable,
-        Self::UnindexedRecordsRetained,
-        Self::DesignIntentUndecoded,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     const fn code(self) -> &'static str {
@@ -533,6 +409,7 @@ impl F3dLossCode {
                 "configuration.feature-suppression-unbound"
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
+            Self::ActRecordUntyped => "act.record-untyped",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
             Self::ComponentBodyOwnerFallback => "assembly.component-body-owner-fallback",
@@ -562,6 +439,7 @@ impl F3dLossCode {
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
+            Self::RecipePrefixUntyped => "dimension.recipe-prefix-untyped",
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
@@ -580,6 +458,7 @@ impl F3dLossCode {
             Self::ParameterOwnerUnparsed => "parameter.owner-unparsed",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
+            Self::ImageAssetUntransferred => "appearance.image-asset-untransferred",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
@@ -680,6 +559,20 @@ impl F3dLossCode {
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
             Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
+            Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
+            Self::WriterDesignRecordsOmitted => "writer.design-records-omitted",
+            Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterAuxiliaryOmitted => "writer.auxiliary-omitted",
+            Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterNoExportableSolids => "writer.no-exportable-solids",
+            Self::WriterSubdOmitted => "writer.subd-omitted",
+            Self::WriterAssetOmitted => "writer.asset-omitted",
+            Self::WriterTessellationOmitted => "writer.tessellation-omitted",
+            Self::WriterPcurveOmitted => "writer.pcurve-omitted",
+            Self::WriterPmiOmitted => "writer.pmi-omitted",
+            Self::WriterProductOmitted => "writer.product-omitted",
+            Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
+
             Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
         }
@@ -689,6 +582,21 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::WriterNativeRecordsOmitted => Severity::Warning,
+            Self::ImageAssetUntransferred => Severity::Warning,
+            Self::WriterDesignRecordsOmitted => Severity::Error,
+            Self::WriterGeometryOmitted => Severity::Error,
+            Self::WriterAuxiliaryOmitted => Severity::Warning,
+            Self::WriterProceduralReduced => Severity::Warning,
+            Self::WriterNoExportableSolids => Severity::Warning,
+            Self::WriterSubdOmitted => Severity::Warning,
+            Self::WriterAssetOmitted => Severity::Warning,
+            Self::WriterTessellationOmitted => Severity::Warning,
+            Self::WriterPcurveOmitted => Severity::Error,
+            Self::WriterPmiOmitted => Severity::Warning,
+            Self::WriterProductOmitted => Severity::Warning,
+            Self::WriterSourceAssociationOmitted => Severity::Warning,
+
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::OperationPoseApplied
             | Self::OperationPoseNative
@@ -723,6 +631,7 @@ impl F3dLossCode {
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
             Self::OperationPoseDisagrees
             | Self::DimensionCompanionUntyped
+            | Self::RecipePrefixUntyped
             | Self::BodyReferenceTailUntyped
             | Self::WorkPlaneFrameUnbound
             | Self::PlacementConstructionUntyped
@@ -732,6 +641,7 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::ActRecordUntyped
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
@@ -847,6 +757,20 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::WriterNativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
+            Self::WriterDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterAuxiliaryOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
+            Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterAssetOmitted => LossTaxonomy::AssetNotTransferred,
+            Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
+            Self::WriterPcurveOmitted => LossTaxonomy::PcurveOmitted,
+            Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
+            Self::WriterProductOmitted => LossTaxonomy::AssemblyComponentsExternal,
+            Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
+
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -879,7 +803,8 @@ impl F3dLossCode {
             | Self::XrefOwnedPose
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
-            | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
+            | Self::XrefTableUndecoded
+            | Self::ActRecordUntyped => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
@@ -894,6 +819,7 @@ impl F3dLossCode {
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
+            | Self::RecipePrefixUntyped
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
@@ -943,6 +869,7 @@ impl F3dLossCode {
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
+            Self::ImageAssetUntransferred => LossTaxonomy::AssetNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
             | Self::ComponentBodyOwnerUnresolved
@@ -1041,13 +968,15 @@ impl F3dLossCode {
 
 #[cfg(test)]
 mod tests {
-    use super::F3dLossCode;
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
     #[test]
     fn code_strings_are_pinned() {
-        let codes: Vec<&str> = F3dLossCode::ALL.iter().map(|c| c.code()).collect();
+        let codes: Vec<&str> = crate::test_support::loss_codes::ALL
+            .iter()
+            .map(|c| c.code())
+            .collect();
         assert_eq!(
             codes,
             [
@@ -1064,6 +993,7 @@ mod tests {
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
+                "act.record-untyped",
                 "assembly.local-occurrence-unplaced",
                 "assembly.local-occurrence-owner-unbound",
                 "assembly.component-body-owner-unresolved",
@@ -1091,6 +1021,7 @@ mod tests {
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
                 "feature.recipe-search-budget-exceeded",
+                "dimension.recipe-prefix-untyped",
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
@@ -1109,6 +1040,7 @@ mod tests {
                 "parameter.owner-unparsed",
                 "parameter.unit-untyped",
                 "material.distance-unit-untyped",
+                "appearance.image-asset-untransferred",
                 "material.face-appearance-ambiguous",
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
@@ -1201,6 +1133,19 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "source.archive-entry-unreadable",
+                "writer.native-records-omitted",
+                "writer.design-records-omitted",
+                "writer.geometry-omitted",
+                "writer.auxiliary-omitted",
+                "writer.procedural-reduced",
+                "writer.no-exportable-solids",
+                "writer.subd-omitted",
+                "writer.asset-omitted",
+                "writer.tessellation-omitted",
+                "writer.pcurve-omitted",
+                "writer.pmi-omitted",
+                "writer.product-omitted",
+                "writer.source-association-omitted",
                 "source.unindexed-records-retained",
                 "design.intent-undecoded",
             ]
@@ -1211,7 +1156,7 @@ mod tests {
     #[test]
     fn codes_are_unique_and_well_formed() {
         let mut seen = BTreeSet::new();
-        for code in F3dLossCode::ALL {
+        for code in crate::test_support::loss_codes::ALL {
             let text = code.code();
             assert!(seen.insert(text), "duplicate code {text}");
             let (family, detail) = text.split_once('.').expect("family.detail shape");
@@ -1227,7 +1172,7 @@ mod tests {
     /// The note builder fixes severity from the codec-specific code.
     #[test]
     fn note_takes_severity_from_the_code() {
-        for code in F3dLossCode::ALL {
+        for code in crate::test_support::loss_codes::ALL {
             let note = code.note("x");
             assert_eq!(note.severity, code.severity());
             assert_eq!(note.message, "x");

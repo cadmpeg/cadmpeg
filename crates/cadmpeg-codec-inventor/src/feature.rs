@@ -30,7 +30,7 @@ use crate::pmdc::{
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
+use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
 pub(crate) mod base;
@@ -628,7 +628,7 @@ pub(crate) fn inventory(
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
             continue;
         };
-        let RecordFrameState::Framed(table) = &bulk.records else {
+        let Some(table) = bulk.records.table() else {
             continue;
         };
         let record_types = inventory
@@ -1985,6 +1985,7 @@ pub(crate) struct ProjectionIndex<'a> {
     properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
     parameters: HashMap<(&'a str, u32), Option<&'a crate::design::PmDcParameter>>,
     parameter_values: HashMap<&'a str, Option<&'a DesignParameter>>,
+    parameter_ids: HashMap<&'a str, &'a cadmpeg_ir::features::ParameterId>,
     sketches: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcSketch>>,
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
     sketches_by_id: HashMap<&'a str, &'a Sketch>,
@@ -2151,6 +2152,10 @@ pub(crate) fn project(
         })),
         properties: unique_properties,
         parameters: unique_parameters,
+        parameter_ids: parameters
+            .iter()
+            .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
+            .collect(),
         parameter_values: unique_index(
             parameters
                 .iter()
@@ -2639,6 +2644,7 @@ fn native_feature(
     let kind = native_kind(label.map(|label| label.class_id()));
     Ok(Feature {
         id: history_feature_id(identity)?,
+        needs_recompute: false,
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),
         suppressed: None,
@@ -2669,6 +2675,7 @@ fn sketch_feature(
     let sketch = index.sketch_ids.get(native_id.as_str()).cloned();
     Ok(Feature {
         id: history_feature_id(&record.identity)?,
+        needs_recompute: false,
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),
         suppressed: None,
@@ -2824,6 +2831,7 @@ fn project_thread(
         Err(error) => return Some(Err(error)),
     };
     Some(Ok(Feature {
+        needs_recompute: false,
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             key,
@@ -2980,6 +2988,7 @@ fn project_extrusion(
         ordinal: u64::from(label.index),
         name: label.name().map(str::to_owned),
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties,
         source_tag: Some("extrude".into()),
@@ -3035,6 +3044,7 @@ fn project_revolve(
         ordinal: u64::from(label.index),
         name: label.name().map(str::to_owned),
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("revolve".into()),
@@ -3156,6 +3166,7 @@ fn project_plate(
         ordinal: u64::from(label.index),
         name: label.name().map(str::to_owned),
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some("sheet_metal_face".into()),
@@ -3164,7 +3175,7 @@ fn project_plate(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
                 profile,
-                thickness,
+                thickness: thickness.into(),
                 side,
             }),
         ),
@@ -3327,14 +3338,15 @@ fn extrusion_side(
             .ok()?;
     let termination = match extent {
         EXTENT_DISTANCE | EXTENT_SYMMETRIC_DISTANCE => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(
+            length: {
                 cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
                     source,
                     slots.length,
                     index,
                 )?)
-                .ok()?,
-            ),
+                .ok()?;
+                parameter_binding(source, slots.length, index)?
+            },
         },
         EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
         EXTENT_THROUGH_ALL => LinearTermination::ThroughAll {},
@@ -3346,7 +3358,9 @@ fn extrusion_side(
     };
     Some(ExtrudeSide {
         termination,
-        draft: (taper.get() != 0.0).then_some(taper),
+        draft: (taper.get() != 0.0)
+            .then(|| parameter_binding(source, slots.taper, index))
+            .flatten(),
     })
 }
 
@@ -3495,7 +3509,8 @@ fn project_fillet(
         if !closed_edge_items(source.identity.segment_token.as_str(), items, index) {
             return None;
         }
-        let radius = cadmpeg_ir::scalar::PositiveLength::new(
+        let radius_reference = radius.index();
+        cadmpeg_ir::scalar::PositiveLength::new(
             length_reference(
                 source.identity.segment_token.as_str(),
                 radius.index(),
@@ -3510,7 +3525,13 @@ fn project_fillet(
                 }
                 _ => EdgeSelection::Native(set.id()),
             },
-            radius: RadiusSpec::Constant { radius },
+            radius: RadiusSpec::Constant {
+                radius: reference_binding(
+                    source.identity.segment_token.as_str(),
+                    radius_reference,
+                    index,
+                )?,
+            },
             tangency_weight: None,
         });
     }
@@ -3531,6 +3552,7 @@ fn project_fillet(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties,
             source_tag: Some("fillet".into()),
@@ -3566,8 +3588,9 @@ fn project_chamfer(
     if !closed_edge_items(source.identity.segment_token.as_str(), items, index) {
         return None;
     }
-    let distance =
+    let distance_value =
         cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(source, 2, index)?).ok()?;
+    let distance = parameter_binding(source, 2, index)?;
     let spec = match form {
         0 => ChamferSpec::Distance { distance },
         1 | 2 => {
@@ -3595,14 +3618,14 @@ fn project_chamfer(
                     form: Some(ChamferForm::DistanceAngle),
                 }
             } else {
-                let second = cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
+                let second_value = cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
                     source, 3, index,
                 )?)
                 .ok()?;
-                if distance == second {
+                if distance_value == second_value {
                     ChamferSpec::TwoDistances {
                         first: distance,
-                        second,
+                        second: parameter_binding(source, 3, index)?,
                     }
                 } else {
                     ChamferSpec::Unresolved {
@@ -3628,6 +3651,7 @@ fn project_chamfer(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties,
             source_tag: Some("chamfer".into()),
@@ -3704,6 +3728,7 @@ fn project_shell(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: Some("shell".into()),
@@ -3713,7 +3738,7 @@ fn project_shell(
                 FeatureDefinition::Operation(FeatureOperation::Shell {
                     bodies: None,
                     removed_faces,
-                    thickness: Some(thickness),
+                    thickness: Some(thickness.into()),
                     outward: None,
                     mode: None,
                     join: None,
@@ -3746,23 +3771,50 @@ fn project_hole(
     let kind = match hole_form {
         0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?,
+            drill_point_angle: {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_binding(source, 6, index)?
+            },
         },
         1 => HoleKind::Countersink {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
-            angle: cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?,
+            diameter: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_binding(source, 3, index)?
+            },
+            angle: {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?;
+                parameter_binding(source, 5, index)?
+            },
         },
         2 | 3 if point_angle.get() == 0.0 => HoleKind::Counterbore {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
-            depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
+            diameter: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_binding(source, 3, index)?
+            },
+            depth: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_binding(source, 4, index)?
+            },
         },
         2 | 3 => HoleKind::CounterboreDrilled {
-            diameter: cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?,
-            depth: cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?,
-            drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?,
+            diameter: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_binding(source, 3, index)?
+            },
+            depth: {
+                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_binding(source, 4, index)?
+            },
+            drill_point_angle: {
+                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_binding(source, 6, index)?
+            },
         },
         _ => return None,
     };
+    if hole_form != 0 && head_diameter.get() <= diameter.get() {
+        return None;
+    }
     let extent = hole::termination(source, index, depth)?;
     let transform_reference = source.properties.references().get(8)?;
     let transform = index
@@ -3795,7 +3847,10 @@ fn project_hole(
             specification: None,
         },
         None,
-        Some(cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?),
+        Some({
+            cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?;
+            parameter_binding(source, 1, index)?
+        }),
     )
     .ok()?;
     let (feature_id, result) = match feature_result(ctx, source, 24, index)? {
@@ -3811,6 +3866,7 @@ fn project_hole(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties: if hole_form == 3 {
                 BTreeMap::from([(
@@ -3850,7 +3906,13 @@ fn project_hole(
 pub(crate) fn thicken_operation<'a>(
     source: &PmDcFeature,
     property_at: impl Fn(usize) -> Option<&'a PmDcFeatureProperty>,
-    parameter_at: impl Fn(usize) -> Option<(&'a crate::design::PmDcParameter, &'a ParameterValue)>,
+    parameter_at: impl Fn(
+        usize,
+    ) -> Option<(
+        &'a crate::design::PmDcParameter,
+        &'a ParameterValue,
+        &'a cadmpeg_ir::features::ParameterId,
+    )>,
     record_type_at: impl Fn(u32) -> Option<&'a str>,
 ) -> Option<FeatureOperation> {
     if source.properties.references().len() != 18
@@ -3901,14 +3963,14 @@ pub(crate) fn thicken_operation<'a>(
             return None;
         }
     }
-    let (raw_thickness, value) = parameter_at(6)?;
+    let (raw_thickness, value, thickness_parameter) = parameter_at(6)?;
     let ParameterValue::Length(thickness) = value else {
         return None;
     };
     if Length::new(raw_thickness.model_value.get() * 10.0)? != *thickness {
         return None;
     }
-    let (raw_control, control) = parameter_at(12)?;
+    let (raw_control, control, _) = parameter_at(12)?;
     if !matches!(control, ParameterValue::Real(value) if *value == raw_control.model_value) {
         return None;
     }
@@ -3934,7 +3996,12 @@ pub(crate) fn thicken_operation<'a>(
     }
     Some(FeatureOperation::Thicken {
         faces: FaceSelection::Native(selections.id()),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::try_from(*thickness).ok()?),
+        thickness: {
+            cadmpeg_ir::scalar::PositiveLength::try_from(*thickness).ok()?;
+            Some(cadmpeg_ir::features::Dimension::Parameter(
+                thickness_parameter.clone(),
+            ))
+        },
         side: None,
     })
 }
@@ -3976,13 +4043,11 @@ fn project_thicken(
                 .parameters
                 .get(&(source.identity.segment_token.as_str(), ordinal))?
                 .as_ref()?;
-            let value = index
+            let design = index
                 .parameter_values
                 .get(parameter.id().as_str())?
-                .as_ref()?
-                .value
                 .as_ref()?;
-            Some((*parameter, value))
+            Some((*parameter, design.value.as_ref()?, &design.id))
         },
         |ordinal| {
             inventory
@@ -4001,6 +4066,7 @@ fn project_thicken(
     }
     Some(Ok((
         Feature {
+            needs_recompute: false,
             id: feature_id,
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
@@ -4199,6 +4265,32 @@ fn resolve_direction<'a>(
         ))
         .and_then(Option::as_ref)
         .copied()
+}
+
+fn parameter_binding<Q>(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+) -> Option<cadmpeg_ir::features::Dimension<Q>> {
+    reference_binding(
+        source.identity.segment_token.as_str(),
+        source.properties.references().get(slot)?.index(),
+        index,
+    )
+}
+
+fn reference_binding<Q>(
+    token: &str,
+    reference: u32,
+    index: &ProjectionIndex<'_>,
+) -> Option<cadmpeg_ir::features::Dimension<Q>> {
+    let parameter = index
+        .parameters
+        .get(&(token, reference.checked_sub(1)?))
+        .and_then(Option::as_ref)?;
+    Some(cadmpeg_ir::features::Dimension::Parameter(
+        (*index.parameter_ids.get(parameter.id().as_str())?).clone(),
+    ))
 }
 
 fn length_parameter(
@@ -4858,6 +4950,7 @@ pub(crate) mod tests {
         value: ParameterValue,
     ) -> DesignParameter {
         DesignParameter {
+            driving: true,
             id: ParameterId::mint(format!(
                 "inventor:design:parameter#{}",
                 raw.identity.record_ordinal
@@ -4866,10 +4959,10 @@ pub(crate) mod tests {
             owner: None,
             ordinal: raw.identity.record_ordinal,
             name: raw.name.clone(),
-            expression: String::new(),
+            expression: cadmpeg_ir::features::Expression::text(String::new()),
             display: None,
             value: Some(value),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some(raw.id()),
@@ -4911,6 +5004,10 @@ pub(crate) mod tests {
                     record,
                 )
             })),
+            parameter_ids: neutral_parameters
+                .iter()
+                .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
+                .collect(),
             parameter_values: super::unique_index(
                 neutral_parameters
                     .iter()
@@ -5289,7 +5386,7 @@ pub(crate) mod tests {
         assert!(matches!(
             projected.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-                if matches!(groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.get() == 2.5)
+                if matches!(&groups[0].radius, RadiusSpec::Constant { radius: actual_radius } if actual_radius.value_from(std::slice::from_ref(&neutral_radius)).expect("bound radius").get() == 2.5)
         ));
         assert_eq!(
             result
@@ -5350,7 +5447,7 @@ pub(crate) mod tests {
                     FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
                         if matches!(&groups[0].edges, cadmpeg_ir::features::EdgeSelection::Native(id)
                             if id == &properties[2].id())
-                        && matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 2.5)
+                        && matches!(&groups[0].radius, RadiusSpec::Constant { radius } if radius.value_from(std::slice::from_ref(&neutral_radius)).expect("bound radius").get() == 2.5)
                 ));
             } else {
                 assert!(projected.is_none());
@@ -5488,7 +5585,7 @@ pub(crate) mod tests {
             FeatureDefinition::Operation(FeatureOperation::Chamfer {
                 groups,
                 flip_direction: true
-            }) if matches!(groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.get() == 1.25)
+            }) if matches!(&groups[0].spec, ChamferSpec::Distance { distance: actual_distance } if actual_distance.value_from(std::slice::from_ref(&neutral_distance)).expect("bound distance").get() == 1.25)
         ));
         let mut named_index = index;
         named_index.edge_names.insert(
@@ -5512,10 +5609,12 @@ pub(crate) mod tests {
         );
     }
 
+    type GeneratedExtrusion = (Feature, FeatureResultTopology, Vec<DesignParameter>);
+
     fn generated_extrusion(
         selections: &[u32],
         policy: DecodePolicy,
-    ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
+    ) -> Option<Result<GeneratedExtrusion, CodecError>> {
         let raw_length = raw_parameter(70);
         let raw_taper = raw_parameter(71);
         let neutral_parameters = vec![
@@ -5695,6 +5794,7 @@ pub(crate) mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("projection context");
         project_extrusion(&ctx, &feature, &label, &index)
+            .map(|result| result.map(|(feature, topology)| (feature, topology, neutral_parameters)))
     }
 
     #[test]
@@ -5706,7 +5806,7 @@ pub(crate) mod tests {
 
     #[test]
     fn projects_generated_extrusion() {
-        let (projected, _) = generated_extrusion(&[4], DecodePolicy::service())
+        let (projected, _, neutral_parameters) = generated_extrusion(&[4], DecodePolicy::service())
             .expect("extrusion candidate")
             .expect("extrusion projection");
         assert!(matches!(
@@ -5727,7 +5827,7 @@ pub(crate) mod tests {
                 },
                 op: BooleanOp::NewBody,
                 ..
-            }) if ( actual_length.get() == 12.0 && actual_draft.get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
+            }) if ( actual_length.value_from(&neutral_parameters).expect("bound extrusion length").get() == 12.0 && actual_draft.value_from(&neutral_parameters).expect("bound draft").get() == 0.1) && matches!(geometry_1.get(), Vector3 { z: -1.0, .. })
         ));
     }
 
@@ -5893,7 +5993,7 @@ pub(crate) mod tests {
                     position: geometry_1,
                     direction: geometry_2
                 }])
-             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: 1.0, .. }))) && actual_diameter.get() == 9.0 && actual_depth.get() == 3.0 && actual_drill_point_angle.get() == 2.0 && actual_diameter_2.get() == 5.0)));
+             if matches!(geometry_1.get(), Point3 { x: 10.0, y: 20.0, z: 30.0 }) && matches!(geometry_2.get(), Vector3 { z: 1.0, .. }))) && actual_diameter.value_from(&neutral_parameters).expect("bound hole dimension").get() == 9.0 && actual_depth.value_from(&neutral_parameters).expect("bound hole dimension").get() == 3.0 && actual_drill_point_angle.value_from(&neutral_parameters).expect("bound hole dimension").get() == 2.0 && actual_diameter_2.value_from(&neutral_parameters).expect("bound hole dimension").get() == 5.0)));
     }
 
     #[test]

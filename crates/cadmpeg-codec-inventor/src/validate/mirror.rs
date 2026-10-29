@@ -39,7 +39,7 @@ pub(super) fn validate_mirrors(
         data.records
             .iter()
             .filter(|record| record.type_id == selection_type || record.type_id == options_type)
-            .map(|record| (record.token.as_str(), record.ordinal, record.payload_len)),
+            .map(|record| (record.token.as_str(), record.ordinal, record.payload_len())),
     );
     let patterns = unique_index(data.pm_dc_pattern_features.iter().map(|p| (p.id(), p)));
     let labels = unique_index(data.pm_dc_feature_labels.iter().filter_map(|l| {

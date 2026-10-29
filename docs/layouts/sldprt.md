@@ -2964,6 +2964,93 @@ Unstated regions:
 - `29..48` (19 B): Marker state, selector, and reserved bytes precede the state value.
 - `56..64` (8 B): Zero bytes before the coordinate tag.
 
+## `unqlite_hash_pager_header`
+
+Spec §1 · layout: byte offsets · size: 29 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 7 | `signature` | `bytes[7]` | big | spec | seven bytes `unqlite` |
+| 7 | 4 | `magic` | `u32` | big | spec | magic u32 `db7c2712` at +7 |
+| 11 | 4 | `creation_time` | `u32` | big | spec | DOS creation time u32 at +11 |
+| 15 | 4 | `sector_size` | `u32` | big | spec | sector size u32 at +15 |
+| 19 | 4 | `page_size` | `u32` | big | spec | page size u32 at +19 |
+| 23 | 2 | `engine_length` | `u16` | big | spec | engine-name length u16 at +23 |
+| 25 | 4 | `engine` | `bytes[4]` | big | spec | The hash engine name is `hash`. |
+
+## `unqlite_hash_header`
+
+Spec §1 · layout: byte offsets · size: 44 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `magic` | `u32` | big | spec | magic u32 `fa782dcb` at +0 |
+| 4 | 4 | `hash_check` | `u32` | big | spec | hash-function check u32 at +4 |
+| 8 | 8 | `free_page` | `u64` | big | spec | free-page head u64 at +8 |
+| 16 | 8 | `split_bucket` | `u64` | big | spec | split bucket u64 at +16 |
+| 24 | 8 | `maximum_split` | `u64` | big | spec | maximum split bucket u64 at +24 |
+| 32 | 8 | `next_map` | `u64` | big | spec | next bucket-map page u64 at +32 |
+| 40 | 4 | `map_count` | `u32` | big | spec | bucket-map count u32 at +40 |
+
+## `unqlite_bucket_map`
+
+Spec §1 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `logical` | `u64` | big | spec | logical bucket u64 at +0 |
+| 8 | 8 | `physical` | `u64` | big | spec | physical page u64 at +8 |
+
+## `unqlite_bucket_header`
+
+Spec §1 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `first_cell` | `u16` | big | spec | first-cell offset u16 at +0 |
+| 2 | 2 | `first_free` | `u16` | big | spec | first-free-block offset u16 at +2 |
+| 4 | 8 | `slave_page` | `u64` | big | spec | slave-page number u64 at +4 |
+
+## `unqlite_cell_header`
+
+Spec §1 · layout: byte offsets · size: 26 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `hash` | `u32` | big | spec | key hash u32 at +0 |
+| 4 | 4 | `key_length` | `u32` | big | spec | key byte length u32 at +4 |
+| 8 | 8 | `value_length` | `u64` | big | spec | value byte length u64 at +8 |
+| 16 | 2 | `next_cell` | `u16` | big | spec | next-cell offset u16 at +16 |
+| 18 | 8 | `overflow` | `u64` | big | spec | overflow-page number u64 at +18 |
+
+## `unqlite_first_overflow_header`
+
+Spec §1 · layout: byte offsets · size: 18 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `next` | `u64` | big | spec | next-overflow-page u64 at +0 |
+| 8 | 8 | `value_page` | `u64` | big | spec | value-start page u64 at +8 |
+| 16 | 2 | `value_offset` | `u16` | big | spec | value-start offset u16 at +16 |
+
 ## `named_object_header`
 
 Spec §2.3 · layout: byte offsets · size: 16 B

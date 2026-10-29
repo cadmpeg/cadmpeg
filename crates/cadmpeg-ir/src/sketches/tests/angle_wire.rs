@@ -11,11 +11,11 @@ fn fixed_arc_and_ellipse_angles_admit_only_a_positive_angle_on_the_wire() {
     for input in [
         SketchConstraintDefinitionInput::ArcAngle {
             entity: entity.clone(),
-            angle: PositiveAngle::QUARTER_TURN,
+            angle: crate::features::Dimension::Literal(PositiveAngle::QUARTER_TURN),
         },
         SketchConstraintDefinitionInput::EllipseAngle {
             entity: entity.clone(),
-            angle: PositiveAngle::THREE_QUARTER_TURN,
+            angle: crate::features::Dimension::Literal(PositiveAngle::THREE_QUARTER_TURN),
         },
     ] {
         let definition = SketchConstraintDefinition::try_from(input).unwrap();
@@ -26,7 +26,7 @@ fn fixed_arc_and_ellipse_angles_admit_only_a_positive_angle_on_the_wire() {
         );
         for refused in [0.0, -0.0, -std::f64::consts::FRAC_PI_2] {
             let mut refused_wire = wire.clone();
-            refused_wire["angle"] = serde_json::json!(refused);
+            refused_wire["angle"]["value"] = serde_json::json!(refused);
             let error = serde_json::from_value::<SketchConstraintDefinition>(refused_wire)
                 .unwrap_err()
                 .to_string();

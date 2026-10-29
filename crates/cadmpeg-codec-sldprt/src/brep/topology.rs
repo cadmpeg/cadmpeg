@@ -268,10 +268,8 @@ fn parse_loop_candidates(buf: &[u8], off: usize) -> Vec<(Loop, usize)> {
     out
 }
 
-/// Return complete or compact edge-use readings at one offset, each with the
-/// body-relative end of the framing it matched. Bare ends are the fixed body
-/// lengths; compact ends are the end of the triple run the reading consumed.
-fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
+/// Return complete or compact edge-use readings at one offset.
+fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
     let Some(p) = body_start(buf, off, 0x10) else {
         return Vec::new();
     };
@@ -293,36 +291,25 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                 && View::u16_be_at(buf, p + edge_delta::ATTRIBUTES_HEAD)
                     .is_some_and(|head| head <= MAX_SHORT_POINTER_INDEX)
         }) {
-            let Some(end) = p.checked_add(edge_delta::LEN) else {
-                return Vec::new();
-            };
-            return vec![(
-                EdgeUse {
-                    attr,
-                    sequence,
-                    references: EdgeReferences::Bare([
-                        refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
-                    ]),
-                    offset: off,
-                },
-                end,
-            )];
+            return vec![EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare([
+                    refs[0], refs[1], refs[2], refs[3], refs[4], refs[5],
+                ]),
+                offset: off,
+            }];
         }
     }
     let mut out = Vec::new();
     if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
         if let Some(refs) = refs_be::<6>(buf, p + 16) {
-            if let Some(end) = p.checked_add(edge_body::LEN) {
-                out.push((
-                    EdgeUse {
-                        attr,
-                        sequence,
-                        references: EdgeReferences::Bare(refs),
-                        offset: off,
-                    },
-                    end,
-                ));
-            }
+            out.push(EdgeUse {
+                attr,
+                sequence,
+                references: EdgeReferences::Bare(refs),
+                offset: off,
+            });
         }
     }
 
@@ -353,15 +340,12 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<(EdgeUse, usize)> {
                 at += 3;
             }
             if decoded.len() >= 3 {
-                out.push((
-                    EdgeUse {
-                        attr,
-                        sequence,
-                        references: EdgeReferences::Compact { curve: decoded[2] },
-                        offset: off,
-                    },
-                    at,
-                ));
+                out.push(EdgeUse {
+                    attr,
+                    sequence,
+                    references: EdgeReferences::Compact { curve: decoded[2] },
+                    offset: off,
+                });
             }
         }
     }
@@ -1069,33 +1053,6 @@ impl Candidate for Coedge {
         self.offset
     }
 }
-
-impl Candidate for Loop {
-    fn attr(&self) -> u16 {
-        self.attr
-    }
-    fn offset(&self) -> usize {
-        self.offset
-    }
-}
-
-impl Candidate for VertexUse {
-    fn attr(&self) -> u16 {
-        self.attr
-    }
-    fn offset(&self) -> usize {
-        self.offset
-    }
-}
-
-impl Candidate for Point {
-    fn attr(&self) -> u16 {
-        self.attr
-    }
-    fn offset(&self) -> usize {
-        self.offset
-    }
-}
 #[derive(Clone, Copy)]
 struct CoedgeEvidence<'a> {
     owner: Option<&'a Loop>,
@@ -1315,6 +1272,7 @@ pub(crate) fn patch_point_values(
 }
 
 /// Replace one world-point record while preserving its framing.
+#[cfg(test)]
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
     let mut tables = scan_records(buf, false, None, None, None, None);
     let Some(record) = tables.points.remove(&attr) else {
@@ -1374,101 +1332,6 @@ pub(super) fn scan_deltas_with_owner_attrs(
         Some(base),
         (!owner_attrs.is_empty()).then_some(owner_attrs),
     )
-}
-
-/// Exact-read spans of the admitted topology records of one stream body.
-///
-/// Loops, coedges, vertex uses, and points name their retained frame bytes:
-/// an admitted record implies an unambiguous frame, so the span is the record
-/// offset plus the frame length. Ambiguous frames carry no record and no span.
-/// Bridges and edge uses carry no frames; their spans re-derive the framing
-/// the admission predicates matched, in match order.
-pub(super) fn topology_spans(body: &[u8]) -> Vec<super::read_ledger::RawSpan> {
-    let tables = scan(body);
-    let mut spans = Vec::new();
-    for record in tables.bridges.values() {
-        if let Some(end) = bridge_end(body, record.offset) {
-            push_span(&mut spans, record.offset, end, 0x0e, record.attr);
-        }
-    }
-    for record in tables.edge_uses.values() {
-        if let Some(end) = edge_use_end(body, record) {
-            push_span(&mut spans, record.offset, end, 0x10, record.attr);
-        }
-    }
-    framed_spans(&mut spans, &tables.loops, &tables.loop_frames, 0x0f);
-    framed_spans(&mut spans, &tables.coedges, &tables.coedge_frames, 0x11);
-    framed_spans(&mut spans, &tables.vertex_uses, &tables.vertex_frames, 0x12);
-    framed_spans(&mut spans, &tables.points, &tables.point_frames, 0x1d);
-    spans
-}
-
-fn push_span(
-    spans: &mut Vec<super::read_ledger::RawSpan>,
-    offset: usize,
-    end: usize,
-    tag: u8,
-    record: u16,
-) {
-    if let Some(length) = end.checked_sub(offset) {
-        if let Some(span) = super::read_ledger::RawSpan::at(offset, length, tag, record) {
-            spans.push(span);
-        }
-    }
-}
-
-fn framed_spans<T: Candidate>(
-    spans: &mut Vec<super::read_ledger::RawSpan>,
-    records: &HashMap<u16, T>,
-    frames: &HashMap<u16, RecordFrame>,
-    tag: u8,
-) {
-    for record in records.values() {
-        let length = frames
-            .get(&record.attr())
-            .and_then(|frame| frame.bytes.as_ref())
-            .map_or(0, Vec::len);
-        if let Some(span) =
-            super::read_ledger::RawSpan::at(record.offset(), length, tag, record.attr())
-        {
-            spans.push(span);
-        }
-    }
-}
-
-/// The body-relative end of the bridge framing [`parse_bridge`] admits at
-/// `off`, following its shapes in match order.
-fn bridge_end(buf: &[u8], off: usize) -> Option<usize> {
-    let p = body_start(buf, off, 0x0e)?;
-    if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
-        attr_at(buf, p)?;
-        refs_tripled::<5>(buf, p + 17)?;
-        parse_sense(*buf.get(p + 32)?)?;
-        return p.checked_add(33);
-    }
-    if p + 37 > buf.len() || buf.get(p + 8..p + 16)? != MAGIC {
-        return None;
-    }
-    attr_at(buf, p)?;
-    let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
-    if tripled {
-        refs_tripled::<5>(buf, p + 16)?;
-        parse_sense(*buf.get(p + 31)?)?;
-        p.checked_add(32)
-    } else {
-        refs_be::<5>(buf, p + 16)?;
-        parse_sense(*buf.get(p + 26)?)?;
-        p.checked_add(27)
-    }
-}
-
-/// The body-relative end of the edge-use framing the admitted `record`
-/// matched: the first candidate equal to it, in parse order.
-fn edge_use_end(buf: &[u8], record: &EdgeUse) -> Option<usize> {
-    parse_edge_use_candidates(buf, record.offset)
-        .into_iter()
-        .find(|(candidate, _)| candidate == record)
-        .map(|(_, end)| end)
 }
 
 #[cfg(test)]
@@ -1551,13 +1414,7 @@ fn scan_records(
                     loop_frames.push((record, end));
                 }
             }
-            0x10 => insert_candidates(
-                &mut edge_candidates,
-                parse_edge_use_candidates(body, i)
-                    .into_iter()
-                    .map(|(record, _)| record)
-                    .collect(),
-            ),
+            0x10 => insert_candidates(&mut edge_candidates, parse_edge_use_candidates(body, i)),
             0x11 => {
                 let frames = parse_coedge_candidates(body, i);
                 for (record, _) in &frames {
@@ -2706,12 +2563,12 @@ mod tests {
             let records = super::parse_edge_use_candidates(&bytes, 0);
             assert_eq!(records.len(), 1);
             assert_eq!(
-                records[0].0.references,
+                records[0].references,
                 EdgeReferences::Bare([171, 172, 173, 174, 175, 176])
             );
-            assert_eq!(records[0].0.references.canonical(), Some(171));
-            assert_eq!(records[0].0.references.curve(), 174);
-            assert_eq!(records[0].0.sequence, 947);
+            assert_eq!(records[0].references.canonical(), Some(171));
+            assert_eq!(records[0].references.curve(), 174);
+            assert_eq!(records[0].sequence, 947);
         }
     }
 

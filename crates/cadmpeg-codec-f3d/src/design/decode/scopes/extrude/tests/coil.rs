@@ -155,14 +155,14 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             record_index: 12,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .unwrap()
@@ -186,19 +186,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(DesignExtrudePrologue::ReferenceAware {
             reference: None,
             operation: DesignExtrudeOperation::Join,
-            operation_offset: 28,
+            operation_offset: Some(28),
             direction_face_extend_values: [1, 2],
             side_extent_discriminators: [1, 0],
-            side_extent_discriminator_offsets: [77, 90],
+            side_extent_discriminator_offsets: Some([77, 90]),
             first_side_target_ordinal: None,
             extent: DesignExtrudeExtent::OneSidedDistance,
-            direction_face_extend_offsets: [32, 36],
+            direction_face_extend_offsets: Some([32, 36]),
             direction_reversed: false,
-            direction_reversed_offset: 40,
+            direction_reversed_offset: Some(40),
             solid_operation: true,
-            solid_operation_offset: 41,
+            solid_operation_offset: Some(41),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: 42,
+            start_offset: Some(42),
         })
     );
     let referenced = scope(
@@ -220,25 +220,25 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             reference: Some(
                 crate::records::feature::extrude::DesignExtrudePrologueReference {
                     record_index: 77,
-                    record_index_offset: 26,
+                    record_index_offset: Some(26),
                     trailing_zero_count: 8,
-                    operation_prefix_marker_offset: None,
+                    operation_prefix_marker: None,
                 }
             ),
             operation: DesignExtrudeOperation::Intersect,
-            operation_offset: 38,
+            operation_offset: Some(38),
             direction_face_extend_values: [2, 0],
             side_extent_discriminators: [1, 1],
-            side_extent_discriminator_offsets: [87, 100],
+            side_extent_discriminator_offsets: Some([87, 100]),
             first_side_target_ordinal: None,
             extent: DesignExtrudeExtent::TwoSidedDistance,
-            direction_face_extend_offsets: [42, 46],
+            direction_face_extend_offsets: Some([42, 46]),
             direction_reversed: false,
-            direction_reversed_offset: 50,
+            direction_reversed_offset: Some(50),
             solid_operation: true,
-            solid_operation_offset: 51,
+            solid_operation_offset: Some(51),
             start: DesignExtrudeStart::OffsetProfilePlane,
-            start_offset: 52,
+            start_offset: Some(52),
         })
     );
     let two_sided_to_faces = scope(
@@ -282,7 +282,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         panic!("compact referenced Extrude prologue");
     };
     assert_eq!(reference.trailing_zero_count, 7);
-    assert_eq!(operation_offset, 37);
+    assert_eq!(operation_offset, Some(37));
 
     let marked_reference = scope(
         "Extrude",
@@ -305,8 +305,13 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     else {
         panic!("marked indexed-reference Extrude prologue");
     };
-    assert_eq!(reference.operation_prefix_marker_offset, Some(37));
-    assert_eq!(operation_offset, 38);
+    assert_eq!(
+        reference
+            .operation_prefix_marker
+            .and_then(|marker| marker.offset),
+        Some(37)
+    );
+    assert_eq!(operation_offset, Some(38));
 
     let to_face = scope(
         "Extrusion",
@@ -387,11 +392,11 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         target_ordinal.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
             side_extent_discriminators: [2, 0],
-            side_extent_discriminator_offsets: [92, 176],
+            side_extent_discriminator_offsets: Some([92, 176]),
             first_side_target_ordinal: Some(
                 crate::records::feature::extrude::DesignExtrudeTargetOrdinal {
                     scope_reference_ordinal: 0,
-                    scope_reference_ordinal_offset: 87,
+                    scope_reference_ordinal_offset: Some(87),
                 }
             ),
             extent: DesignExtrudeExtent::OneSidedToFace,
@@ -440,7 +445,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            side_extent_discriminator_offsets: [116, 130],
+            side_extent_discriminator_offsets: Some([116, 130]),
             ..
         })
     ));
@@ -460,8 +465,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_compact_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker_offset: None,
-            side_extent_discriminator_offsets: [116, 130],
+            operation_prefix_marker: None,
+            side_extent_discriminator_offsets: Some([116, 130]),
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
             ..
         })
@@ -482,16 +487,19 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_marked_symmetric.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker_offset: Some(27),
+            operation_prefix_marker: Some(crate::records::identity::Sourced {
+                offset: Some(27),
+                ..
+            }),
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 28,
+            operation_offset: Some(28),
             direction_face_extend_values: [3, 2],
-            side_extent_discriminator_offsets: [117, 131],
+            side_extent_discriminator_offsets: Some([117, 131]),
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
-            direction_face_extend_offsets: [32, 36],
-            direction_reversed_offset: 40,
-            solid_operation_offset: 41,
-            start_offset: 42,
+            direction_face_extend_offsets: Some([32, 36]),
+            direction_reversed_offset: Some(40),
+            solid_operation_offset: Some(41),
+            start_offset: Some(42),
             ..
         })
     ));
@@ -511,13 +519,13 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_offset_profile.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker_offset: None,
+            operation_prefix_marker: None,
             operation: DesignExtrudeOperation::Cut,
-            operation_offset: 27,
-            side_extent_discriminator_offsets: [116, 130],
+            operation_offset: Some(27),
+            side_extent_discriminator_offsets: Some([116, 130]),
             extent: Some(DesignExtrudeExtent::OneSidedDistance),
             start: DesignExtrudeStart::OffsetProfilePlane,
-            start_offset: 41,
+            start_offset: Some(41),
             ..
         })
     ));
@@ -556,7 +564,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_compact_two_sided.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            side_extent_discriminator_offsets: [166, 181],
+            side_extent_discriminator_offsets: Some([166, 181]),
             extent: Some(DesignExtrudeExtent::TwoSidedDistance),
             ..
         })
@@ -603,7 +611,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert!(matches!(
         shifted_to_face.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            side_extent_discriminator_offsets: [116, 268],
+            side_extent_discriminator_offsets: Some([116, 268]),
             ..
         })
     ));
@@ -626,7 +634,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             shifted_compact_to_face.extrude_prologue(),
             Some(DesignExtrudePrologue::LegacyShifted {
                 extent: Some(DesignExtrudeExtent::OneSidedToFace),
-                side_extent_discriminator_offsets: [106, offset],
+                side_extent_discriminator_offsets: Some([106, offset]),
                 ..
             }) if offset == u64::try_from(reference_count_offset - 4).unwrap()
         ));
@@ -649,7 +657,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         shifted_symmetric_through_all.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             extent: Some(DesignExtrudeExtent::SymmetricThroughAll),
-            side_extent_discriminator_offsets: [116, 129],
+            side_extent_discriminator_offsets: Some([116, 129]),
             ..
         })
     ));
@@ -781,14 +789,14 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
             record_index: 12,
             class_tag: crate::records::references::DesignClassTag::try_from("376".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .unwrap()
@@ -797,27 +805,27 @@ fn legacy_distance_extrude_scope_decodes_nullable_prefix_forms() {
     assert_eq!(
         scope(false, 1, 1).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
-            prefix_zero_offset: None,
+            prefix_zero: None,
             operation: DesignExtrudeOperation::Join,
-            operation_offset: 21,
-            extent_kind_offset: 25,
+            operation_offset: Some(21),
+            extent_kind_offset: Some(25),
             direction_reversed: true,
-            direction_reversed_offset: 29,
+            direction_reversed_offset: Some(29),
             solid_operation: true,
-            solid_operation_offset: 30,
+            solid_operation_offset: Some(30),
         })
     );
     assert_eq!(
         scope(true, 4, 0).extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyDistance {
-            prefix_zero_offset: Some(21),
+            prefix_zero: Some(crate::records::identity::Sourced::at((), 21)),
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 25,
-            extent_kind_offset: 29,
+            operation_offset: Some(25),
+            extent_kind_offset: Some(29),
             direction_reversed: true,
-            direction_reversed_offset: 33,
+            direction_reversed_offset: Some(33),
             solid_operation: false,
-            solid_operation_offset: 34,
+            solid_operation_offset: Some(34),
         })
     );
 }
@@ -863,41 +871,41 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("compact shifted Extrude scope");
     assert_eq!(
         scope.reference_count_offset(),
-        u64_from_index(REFERENCE_COUNT_OFFSET)
+        Some(u64_from_index(REFERENCE_COUNT_OFFSET))
     );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker_offset: None,
+            operation_prefix_marker: None,
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: u64_from_index(OPERATION_OFFSET),
+            operation_offset: Some(u64_from_index(OPERATION_OFFSET)),
             direction_face_extend_values: [1, 2],
             side_extent_discriminators: [1, 0],
-            side_extent_discriminator_offsets: [
+            side_extent_discriminator_offsets: Some([
                 u64_from_index(FIRST_SIDE_EXTENT_OFFSET),
                 u64_from_index(SECOND_SIDE_EXTENT_OFFSET),
-            ],
+            ]),
             extent: Some(DesignExtrudeExtent::OneSidedDistance),
-            direction_face_extend_offsets: [30, 34],
+            direction_face_extend_offsets: Some([30, 34]),
             direction_reversed: false,
-            direction_reversed_offset: 38,
+            direction_reversed_offset: Some(38),
             solid_operation: true,
-            solid_operation_offset: 39,
+            solid_operation_offset: Some(39),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: 40,
+            start_offset: Some(40),
         })
     );
 }
@@ -950,20 +958,20 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("compact mixed Extrude scope");
     assert_eq!(
         scope.reference_count_offset(),
-        u64_from_index(REFERENCE_COUNT_OFFSET)
+        Some(u64_from_index(REFERENCE_COUNT_OFFSET))
     );
     assert_eq!(
         scope
@@ -976,23 +984,23 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
-            operation_prefix_marker_offset: None,
+            operation_prefix_marker: None,
             operation: DesignExtrudeOperation::Join,
-            operation_offset: u64_from_index(OPERATION_OFFSET),
+            operation_offset: Some(u64_from_index(OPERATION_OFFSET)),
             direction_face_extend_values: [2, 0],
             side_extent_discriminators: [1, 2],
-            side_extent_discriminator_offsets: [
+            side_extent_discriminator_offsets: Some([
                 u64_from_index(FIRST_SIDE_EXTENT_OFFSET),
                 u64_from_index(SECOND_SIDE_EXTENT_OFFSET),
-            ],
+            ]),
             extent: Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
-            direction_face_extend_offsets: [30, 34],
+            direction_face_extend_offsets: Some([30, 34]),
             direction_reversed: false,
-            direction_reversed_offset: 38,
+            direction_reversed_offset: Some(38),
             solid_operation: true,
-            solid_operation_offset: 39,
+            solid_operation_offset: Some(39),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: 40,
+            start_offset: Some(40),
         })
     );
 }
@@ -1071,14 +1079,14 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
             record_index: RECORD_INDEX,
             class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("class-415 scope envelope")
@@ -1105,35 +1113,35 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
             },
         );
         let scope = parse(&bytes, "415");
-        assert_eq!(scope.frame_length(), frame_length);
+        assert_eq!(scope.frame_length(), Some(frame_length));
         assert_eq!(
             scope.reference_count_offset(),
-            u64_from_index(layout::REFERENCE_COUNT)
+            Some(u64_from_index(layout::REFERENCE_COUNT))
         );
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation,
-                operation_offset: u64_from_index(layout::OPERATION),
+                operation_offset: Some(u64_from_index(layout::OPERATION)),
                 direction_face_extend_values: [3, 2],
                 side_extent_discriminators: [1, 1],
-                side_extent_discriminator_offsets: [
+                side_extent_discriminator_offsets: Some([
                     u64_from_index(layout::FIRST_SIDE_EXTENT),
                     u64_from_index(layout::SECOND_SIDE_EXTENT),
-                ],
+                ]),
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::SymmetricDistance,
-                direction_face_extend_offsets: [
+                direction_face_extend_offsets: Some([
                     u64_from_index(layout::DIRECTION),
                     u64_from_index(layout::FACE_EXTEND),
-                ],
+                ]),
                 direction_reversed: false,
-                direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
+                direction_reversed_offset: Some(u64_from_index(layout::DIRECTION_REVERSED)),
                 solid_operation: true,
-                solid_operation_offset: u64_from_index(layout::GEOMETRY_KIND),
+                solid_operation_offset: Some(u64_from_index(layout::GEOMETRY_KIND)),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: u64_from_index(layout::START_SUPPORT),
+                start_offset: Some(u64_from_index(layout::START_SUPPORT)),
             })
         );
     }
@@ -1233,22 +1241,22 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
             record_index: RECORD_INDEX,
             class_tag: crate::records::references::DesignClassTag::try_from("415".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("class-415 one-sided scope envelope")
     };
 
     let to_face = parse(&make_bytes(true, &TO_FACE_REFERENCES));
-    assert_eq!(to_face.frame_length(), 481);
-    assert_eq!(to_face.reference_count_offset(), 278);
+    assert_eq!(to_face.frame_length(), Some(481));
+    assert_eq!(to_face.reference_count_offset(), Some(278));
     assert_eq!(
         to_face
             .reference_members()
@@ -1272,13 +1280,13 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     assert_eq!(operation, DesignExtrudeOperation::Cut);
     assert_eq!(direction_face_extend_values, [1, 1]);
     assert_eq!(side_extent_discriminators, [2, 0]);
-    assert_eq!(side_extent_discriminator_offsets, [107, 274]);
+    assert_eq!(side_extent_discriminator_offsets, Some([107, 274]));
     assert_eq!(extent, DesignExtrudeExtent::OneSidedToFace);
     assert!(direction_reversed);
 
     let distance = parse(&make_bytes(false, &DISTANCE_REFERENCES));
-    assert_eq!(distance.frame_length(), 449);
-    assert_eq!(distance.reference_count_offset(), 268);
+    assert_eq!(distance.frame_length(), Some(449));
+    assert_eq!(distance.reference_count_offset(), Some(268));
     assert_eq!(
         distance
             .reference_members()
@@ -1300,7 +1308,7 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
     };
     assert_eq!(direction_face_extend_values, [1, 2]);
     assert_eq!(side_extent_discriminators, [1, 0]);
-    assert_eq!(side_extent_discriminator_offsets, [107, 264]);
+    assert_eq!(side_extent_discriminator_offsets, Some([107, 264]));
     assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
     assert!(!direction_reversed);
 
@@ -1385,14 +1393,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
             record_index: RECORD_INDEX,
             class_tag: crate::records::references::DesignClassTag::try_from(class_tag.to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: Some(0),
         };
         parse_parameter_scope(
             bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("shifted reference-aware Extrude scope")
@@ -1404,27 +1412,27 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         ("397", b"397", b"262"),
     ] {
         let scope = parse(&make_bytes(primary_class, paired_class, 2), class_tag);
-        assert_eq!(scope.frame_length(), u64_from_index(FRAME_LENGTH));
+        assert_eq!(scope.frame_length(), Some(u64_from_index(FRAME_LENGTH)));
         assert_eq!(
             scope.reference_count_offset(),
-            u64_from_index(REFERENCE_COUNT_OFFSET)
+            Some(u64_from_index(REFERENCE_COUNT_OFFSET))
         );
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ShiftedReferenceAware {
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: 27,
+                operation_offset: Some(27),
                 direction_face_extend_values: [2, 1],
                 side_extent_discriminators: [2, 0],
-                side_extent_discriminator_offsets: [116, 288],
+                side_extent_discriminator_offsets: Some([116, 288]),
                 extent: DesignExtrudeExtent::TwoSidedToFaces,
-                direction_face_extend_offsets: [31, 35],
+                direction_face_extend_offsets: Some([31, 35]),
                 direction_reversed: false,
-                direction_reversed_offset: 39,
+                direction_reversed_offset: Some(39),
                 solid_operation: true,
-                solid_operation_offset: 40,
+                solid_operation_offset: Some(40),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 41,
+                start_offset: Some(41),
             })
         );
     }
@@ -1448,14 +1456,14 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("357".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let invalid_scope = parse_parameter_scope(
         &invalid_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_tail),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope envelope remains parseable");
@@ -1481,21 +1489,26 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         id: "generated:scope-header#nonzero".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("349".to_owned()).unwrap(),
-        byte_offset: u64_from_index(prefix_length),
+        byte_offset: Some(u64_from_index(prefix_length)),
     };
     let nonzero_scope = parse_parameter_scope(
         &nonzero_start,
         &crate::design::test_support::indexed_record_offsets_for_test(&nonzero_start),
         nonzero_header.record_index,
         &nonzero_header.class_tag,
-        nonzero_header.byte_offset,
+        nonzero_header
+            .byte_offset
+            .expect("actual scanner header position"),
     )
     .unwrap()
     .expect("nonzero-start shifted reference-aware Extrude scope");
-    assert_eq!(nonzero_scope.byte_offset(), u64_from_index(prefix_length));
+    assert_eq!(
+        nonzero_scope.byte_offset(),
+        Some(u64_from_index(prefix_length))
+    );
     assert_eq!(
         nonzero_scope.reference_count_offset(),
-        u64_from_index(prefix_length + REFERENCE_COUNT_OFFSET)
+        Some(u64_from_index(prefix_length + REFERENCE_COUNT_OFFSET))
     );
     assert!(nonzero_scope.extrude_prologue().is_some());
 }
@@ -1594,44 +1607,44 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("shifted reference-aware class-323 Extrude scope");
-    assert_eq!(scope.frame_length(), u64_from_index(FRAME_LENGTH));
+    assert_eq!(scope.frame_length(), Some(u64_from_index(FRAME_LENGTH)));
     assert_eq!(
         scope.reference_count_offset(),
-        u64_from_index(layout::REFERENCE_COUNT)
+        Some(u64_from_index(layout::REFERENCE_COUNT))
     );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: u64_from_index(layout::OPERATION),
+            operation_offset: Some(u64_from_index(layout::OPERATION)),
             direction_face_extend_values: [2, 1],
             side_extent_discriminators: [2, 0],
-            side_extent_discriminator_offsets: [
+            side_extent_discriminator_offsets: Some([
                 u64_from_index(layout::FIRST_SIDE_EXTENT),
                 u64_from_index(layout::SECOND_SIDE_EXTENT),
-            ],
+            ]),
             extent: DesignExtrudeExtent::TwoSidedToFaces,
-            direction_face_extend_offsets: [
+            direction_face_extend_offsets: Some([
                 u64_from_index(layout::DIRECTION),
                 u64_from_index(layout::FACE_EXTEND),
-            ],
+            ]),
             direction_reversed: false,
-            direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
+            direction_reversed_offset: Some(u64_from_index(layout::DIRECTION_REVERSED)),
             solid_operation: true,
-            solid_operation_offset: u64_from_index(layout::GEOMETRY_KIND),
+            solid_operation_offset: Some(u64_from_index(layout::GEOMETRY_KIND)),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: u64_from_index(layout::START_SUPPORT),
+            start_offset: Some(u64_from_index(layout::START_SUPPORT)),
         })
     );
 
@@ -1644,7 +1657,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_trailing_reference),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope envelope remains parseable");
@@ -1657,7 +1670,7 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
         &crate::design::test_support::indexed_record_offsets_for_test(&invalid_class),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("scope envelope remains parseable");
@@ -1752,7 +1765,7 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
         id: "generated:scope-header#0".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
@@ -1760,39 +1773,39 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
             &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
-            header.byte_offset,
+            header.byte_offset.expect("actual scanner header position"),
         )
         .unwrap()
         .expect("shifted reference-aware symmetric Extrude scope")
     };
     let scope = parse(&bytes);
-    assert_eq!(scope.frame_length(), u64_from_index(FRAME_LENGTH));
+    assert_eq!(scope.frame_length(), Some(u64_from_index(FRAME_LENGTH)));
     assert_eq!(
         scope.reference_count_offset(),
-        u64_from_index(symmetric::REFERENCE_COUNT)
+        Some(u64_from_index(symmetric::REFERENCE_COUNT))
     );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::Cut,
-            operation_offset: u64_from_index(layout::OPERATION),
+            operation_offset: Some(u64_from_index(layout::OPERATION)),
             direction_face_extend_values: [3, 0],
             side_extent_discriminators: [4, 4],
-            side_extent_discriminator_offsets: [
+            side_extent_discriminator_offsets: Some([
                 u64_from_index(symmetric::FIRST_SIDE_EXTENT),
                 u64_from_index(symmetric::SECOND_SIDE_EXTENT),
-            ],
+            ]),
             extent: DesignExtrudeExtent::SymmetricThroughAll,
-            direction_face_extend_offsets: [
+            direction_face_extend_offsets: Some([
                 u64_from_index(layout::DIRECTION),
                 u64_from_index(layout::FACE_EXTEND)
-            ],
+            ]),
             direction_reversed: false,
-            direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
+            direction_reversed_offset: Some(u64_from_index(layout::DIRECTION_REVERSED)),
             solid_operation: true,
-            solid_operation_offset: u64_from_index(layout::GEOMETRY_KIND),
+            solid_operation_offset: Some(u64_from_index(layout::GEOMETRY_KIND)),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: u64_from_index(layout::START_SUPPORT),
+            start_offset: Some(u64_from_index(layout::START_SUPPORT)),
         })
     );
 

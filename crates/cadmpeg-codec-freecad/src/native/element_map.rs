@@ -188,24 +188,6 @@ impl ElementMapNodes {
         &self.0[self.0.len() - 1]
     }
 
-    /// Add a topology binding without exposing child-map descriptors for mutation.
-    pub(crate) fn bind_root_topology(&mut self, indexed_name: &str, source_index: usize, id: &str) {
-        let index = self.0.len() - 1;
-        for group in &mut self.0[index].groups {
-            if group.indexed_name != indexed_name {
-                continue;
-            }
-            let Some(names) = group.names.get_mut(source_index) else {
-                continue;
-            };
-            for name in names {
-                if !name.topology_ids.iter().any(|existing| existing == id) {
-                    name.topology_ids.push(id.to_owned());
-                }
-            }
-        }
-    }
-
     /// Returns nodes in serialized order.
     pub(crate) fn iter(&self) -> std::slice::Iter<'_, ElementMapNode> {
         self.0.iter()
@@ -253,8 +235,9 @@ pub(crate) struct ElementMapGroup {
     pub(crate) names: Vec<Vec<ElementMappedName>>,
 }
 
-/// One persistent mapped-name encoding and its neutral topology bindings.
+/// One persistent mapped-name encoding in its canonical native home.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ElementMappedName {
     /// Exact encoded mapped name.
     pub(crate) encoded: String,
@@ -262,8 +245,6 @@ pub(crate) struct ElementMappedName {
     pub(crate) resolved: Option<String>,
     /// Referenced persistent string identities.
     pub(crate) string_ids: Vec<i64>,
-    /// Neutral topology ids for every placed occurrence of this element.
-    pub(crate) topology_ids: Vec<String>,
 }
 
 #[cfg(test)]

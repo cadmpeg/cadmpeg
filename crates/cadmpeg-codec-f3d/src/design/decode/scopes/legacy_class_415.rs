@@ -214,24 +214,24 @@ pub(super) fn exact_one_sided_extrude_prologue(
     Some(DesignExtrudePrologue::ReferenceAware {
         reference: None,
         operation,
-        operation_offset: u64::try_from(operation_offset).ok()?,
+        operation_offset: Some(u64::try_from(operation_offset).ok()?),
         direction_face_extend_values,
         side_extent_discriminators,
-        side_extent_discriminator_offsets: [
+        side_extent_discriminator_offsets: Some([
             u64::try_from(first_side_extent_offset).ok()?,
             u64::try_from(second_side_extent_offset).ok()?,
-        ],
+        ]),
         first_side_target_ordinal: None,
         extent,
-        direction_face_extend_offsets: [
+        direction_face_extend_offsets: Some([
             u64::try_from(direction_offset).ok()?,
             u64::try_from(face_extend_offset).ok()?,
-        ],
+        ]),
         direction_reversed,
-        direction_reversed_offset: u64::try_from(direction_reversed_offset).ok()?,
+        direction_reversed_offset: Some(u64::try_from(direction_reversed_offset).ok()?),
         solid_operation,
-        solid_operation_offset: u64::try_from(solid_operation_offset).ok()?,
+        solid_operation_offset: Some(u64::try_from(solid_operation_offset).ok()?),
         start: start_support,
-        start_offset: u64::try_from(start_offset).ok()?,
+        start_offset: Some(u64::try_from(start_offset).ok()?),
     })
 }

@@ -2,6 +2,8 @@
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
 
+mod dependencies;
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -9,146 +11,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::history::resolved_feature_classes_with_ids;
-use crate::test_support::history::sldprt_with_body_and_history;
 use crate::test_support::native::sldprt_native;
 use crate::test_support::native::update_sldprt_native;
 use crate::test_support::parasolid::entity51;
 use crate::test_support::parasolid::owned_triangle;
 use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
-
-#[test]
-fn semantic_writer_projects_and_validates_parameter_dependencies() {
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Base" EquationId="D1@Equations">2mm</Dimension><Dimension Name="Wall Thickness">4mm</Dimension><Dimension Name="Datum &quot;A&quot;">1mm</Dimension><Dimension Name="Driven" EquationId="D2@Equations">&quot;Wall Thickness&quot; + &quot;Datum &quot;&quot;A&quot;&quot;&quot; + D1@Equations + &quot;Wall Thickness&quot;</Dimension></Feature></Keywords>"#,
-    ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    assert_eq!(decoded.ir().model.parameters.len(), 4);
-    assert_eq!(
-        decoded.ir().model.parameters[3].dependencies.as_slice(),
-        vec![
-            decoded.ir().model.parameters[1].id.clone(),
-            decoded.ir().model.parameters[2].id.clone(),
-            decoded.ir().model.parameters[0].id.clone(),
-        ]
-    );
-
-    decoded.ir_mut().model.parameters[0].properties.insert(
-        cadmpeg_core::nonblank_literal!("EquationId"),
-        "D1@Renamed".into(),
-    );
-    decoded.ir_mut().model.parameters[1].name = "Wall Gauge".into();
-    let mut renamed = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut renamed,
-    )
-    .unwrap();
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    assert_eq!(
-        decoded.ir().model.parameters[3].expression,
-        "\"Wall Gauge\" + \"Datum \"\"A\"\"\" + D1@Renamed + \"Wall Gauge\""
-    );
-    assert_eq!(
-        decoded.ir().model.parameters[3].dependencies.as_slice(),
-        vec![
-            decoded.ir().model.parameters[1].id.clone(),
-            decoded.ir().model.parameters[2].id.clone(),
-            decoded.ir().model.parameters[0].id.clone(),
-        ]
-    );
-
-    decoded.ir_mut().model.parameters[3].expression = "6mm".into();
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("dependencies are inconsistent with their expressions"));
-}
-
-#[test]
-fn semantic_writer_orders_forward_parameter_dependencies_before_consumers() {
-    use crate::records::FeatureContent;
-    use cadmpeg_ir::features::ParameterValue;
-
-    let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Feature Name="Equations" Type="EquationDriven" id="7"><Dimension Name="Result">Input + 1</Dimension><Dimension Name="Input">2</Dimension></Feature></Keywords>"#,
-    ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let mut parameter_order = decoded
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.ordinal, parameter.name.as_str()))
-        .collect::<Vec<_>>();
-    parameter_order.sort_unstable();
-    assert_eq!(parameter_order, vec![(0, "Input"), (1, "Result")]);
-
-    {
-        let mut ir_edit = decoded.ir_mut();
-        let result = ir_edit
-            .model
-            .parameters
-            .iter_mut()
-            .find(|parameter| parameter.name == "Result")
-            .unwrap();
-        result.expression = "Input + 2".into();
-        result.value = Some(ParameterValue::Integer(4));
-    }
-    let mut encoded = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    let feature = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
-    assert_eq!(
-        feature
-            .content
-            .iter()
-            .filter_map(|content| match content {
-                FeatureContent::Dimension(name) => Some(name.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>(),
-        vec!["Input", "Result"]
-    );
-    let result = regenerated
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.name == "Result")
-        .unwrap();
-    assert_eq!(result.expression, "Input + 2");
-    assert_eq!(result.value, Some(ParameterValue::Integer(4)));
-    assert_eq!(result.dependencies.len(), 1);
-}
 
 #[test]
 fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
@@ -192,7 +60,12 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
             .find(|parameter| parameter.name == "Result")
             .unwrap();
         assert_eq!(
-            result.dependencies.as_slice(),
+            result
+                .expression
+                .dependencies()
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
             vec![sketch1_parameter.clone()]
         );
     }
@@ -222,100 +95,90 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .iter()
         .find(|parameter| parameter.name == "Result")
         .unwrap();
-    assert_eq!(result.expression, "Width@Sketch1 * 2");
-    assert_eq!(result.dependencies.len(), 1);
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(regenerated.ir(), result),
+        "Width@Sketch1 * 2"
+    );
+    assert_eq!(
+        result
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .len(),
+        1
+    );
 }
 
 #[test]
-fn semantic_writer_rewrites_qualified_bare_equation_ids() {
+fn semantic_writer_renders_source_equation_aliases_from_current_parameter_names() {
     let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1">2mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="11"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#,
-    ));
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .unwrap();
-    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    {
-        let mut ir_edit = decoded.ir_mut();
-        let width = ir_edit
-            .model
-            .parameters
-            .iter_mut()
-            .find(|parameter| parameter.name == "Width")
-            .unwrap();
-        width
-            .properties
-            .insert(cadmpeg_core::nonblank_literal!("EquationId"), "D2".into());
-    }
-
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    let mut regenerated = cadmpeg_test_support::EditableDecodeResult::from(regenerated);
-    let result = regenerated
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| parameter.name == "Result")
-        .unwrap();
-    assert_eq!(result.expression, "D2@Sketch1 * 2");
-    assert_eq!(result.dependencies.len(), 1);
-    assert_eq!(
-        regenerated
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1">2mm</Dimension></Feature><Feature Name="Equations" Type="EquationDriven" id="11"><Dimension Name="Result">D1@Sketch1 * 2</Dimension></Feature></Keywords>"#));
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
+    for name in ["D2", "D3"] {
+        let id = decoded
             .ir()
             .model
             .parameters
             .iter()
-            .find(|parameter| parameter.name == "Width")
+            .find(|parameter| parameter.name != "Result")
             .unwrap()
-            .properties["EquationId"],
-        "D2"
-    );
-
-    regenerated
-        .ir_mut()
-        .model
-        .parameters
-        .iter_mut()
-        .find(|parameter| parameter.name == "Width")
-        .unwrap()
-        .properties
-        .insert(
-            cadmpeg_core::nonblank_literal!("EquationId"),
-            "D3@Sketch1".into(),
-        );
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
-        regenerated.ir(),
-        regenerated.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .id
+            .clone();
+        decoded
+            .ir_mut()
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| parameter.id == id)
+            .unwrap()
+            .name = name.into();
+        let mut encoded = Vec::new();
+        crate::test_support::serialize_edited_history(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut encoded,
+        )
         .unwrap();
-    assert_eq!(
-        regenerated
+        decoded = cadmpeg_test_support::EditableDecodeResult::from(
+            SldprtCodec
+                .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+                .unwrap(),
+        );
+        let result = decoded
             .ir()
             .model
             .parameters
             .iter()
             .find(|parameter| parameter.name == "Result")
-            .unwrap()
-            .expression,
-        "D3@Sketch1 * 2"
-    );
+            .unwrap();
+        let target = decoded
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap();
+        assert_eq!(
+            crate::test_support::history::rendered_parameter(decoded.ir(), result),
+            format!("{name}@Sketch1 * 2")
+        );
+        assert_eq!(
+            result.expression.dependencies().collect::<Vec<_>>(),
+            vec![&target.id]
+        );
+        assert!(!target.properties.contains_key("EquationId"));
+        assert!(sldprt_native(decoded.ir())
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .flat_map(|feature| feature.dimension_properties.values())
+            .all(|properties| !properties.contains_key("EquationId")));
+    }
 }
 
 #[test]
@@ -376,7 +239,7 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         .iter()
         .find(|parameter| parameter.name == "Gauge")
         .unwrap();
-    assert_eq!(gauge.properties["EquationId"], "D1@Profile");
+    assert!(!gauge.properties.contains_key("EquationId"));
     let result = regenerated
         .ir()
         .model
@@ -384,8 +247,19 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         .iter()
         .find(|parameter| parameter.name == "Result")
         .unwrap();
-    assert_eq!(result.expression, "D1@Profile * 2");
-    assert_eq!(result.dependencies.as_slice(), vec![gauge.id.clone()]);
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(regenerated.ir(), result),
+        "Gauge@Profile * 2"
+    );
+    assert_eq!(
+        result
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        vec![gauge.id.clone()]
+    );
 }
 
 #[test]
@@ -409,7 +283,10 @@ fn semantic_writer_preserves_empty_dimensions() {
         .iter()
         .find(|parameter| parameter.name == "External")
         .unwrap();
-    assert_eq!(empty.expression, "");
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(decoded.ir(), empty),
+        ""
+    );
     assert_eq!(empty.value, None);
     {
         let mut ir_edit = decoded.ir_mut();
@@ -424,7 +301,7 @@ fn semantic_writer_preserves_empty_dimensions() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -460,7 +337,7 @@ fn semantic_writer_preserves_keywords_attributes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -503,7 +380,7 @@ fn semantic_writer_preserves_keywords_child_order() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -546,7 +423,7 @@ fn semantic_writer_applies_history_root_ordinals() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -640,14 +517,17 @@ fn semantic_writer_applies_neutral_parameter_order() {
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_parameter_edits() {
+fn semantic_writer_uses_neutral_parameters_over_native_edits() {
     use cadmpeg_ir::{features::ParameterValue, scalar::Length};
 
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Equation" Type="EquationDriven" id="41"><Dimension Name="Depth">12mm</Dimension></Feature></Keywords>"#,
+    ));
     let decoded = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
@@ -667,19 +547,35 @@ fn semantic_writer_rejects_conflicting_parameter_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT parameter edits"));
+    let mut bytes = Vec::new();
+    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut bytes)
+        .expect("neutral parameters override conflicting native fields");
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written parameters decode");
+    let parameter = regenerated
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Depth")
+        .expect("neutral depth is written");
+    assert_eq!(
+        crate::test_support::history::rendered_parameter(regenerated.ir(), parameter),
+        "20mm"
+    );
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Length(Length::new(20.0).unwrap()))
+    );
+    assert_eq!(
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].parameters["Depth"],
+        "20mm"
+    );
 }
 
 #[test]
-fn semantic_writer_rejects_conflicting_dimension_property_edits() {
+fn semantic_writer_uses_neutral_dimension_properties_over_native_edits() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -690,9 +586,7 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    decoded.ir_mut().model.parameters[0]
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("Driven"), "neutral".into());
+    decoded.ir_mut().model.parameters[0].driving = false;
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .dimension_properties
@@ -701,15 +595,18 @@ fn semantic_writer_rejects_conflicting_dimension_property_edits() {
             .insert(cadmpeg_core::nonblank_literal!("Driven"), "native".into());
     });
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("conflicting neutral and native SLDPRT parameter edits"));
+    let mut bytes = Vec::new();
+    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut bytes)
+        .expect("neutral dimension properties override the native projection");
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written dimension properties decode");
+    assert!(!regenerated.ir().model.parameters[0].driving);
+    assert_eq!(
+        sldprt_native(regenerated.ir()).feature_histories[0].features[0].dimension_properties
+            ["Depth"]["Driven"],
+        "true"
+    );
 }
 
 #[test]
@@ -751,7 +648,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
                 },
                 op: BooleanOp::Unresolved,
                 ..
-            }) if actual_length.get() == 200.0
+            }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 200.0
         ),
         "{first_definition:?}"
     );
@@ -768,7 +665,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if actual_length.get() == 3.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 3.0
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -783,7 +680,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if actual_length.get() == 4.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 4.0
     ));
     assert_eq!(
         decoded.ir().model.parameters[0].value,
@@ -800,44 +697,20 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude {
-                extent:
-                    ExtrudeExtent::OneSided {
-                        side:
-                            ExtrudeSide {
-                                termination: LinearTermination::Blind { length },
-                                ..
-                            },
-                    },
-                ..
-            }) = definition
-            else {
-                panic!("typed positional boss extrusion");
-            };
-            *length = cadmpeg_ir::scalar::NonZeroLength::new(250.0).unwrap();
-        });
-        ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude {
-                extent:
-                    ExtrudeExtent::OneSided {
-                        side:
-                            ExtrudeSide {
-                                termination: LinearTermination::Blind { length },
-                                ..
-                            },
-                    },
-                ..
-            }) = definition
-            else {
-                panic!("typed positional cut extrusion");
-            };
-            *length = cadmpeg_ir::scalar::NonZeroLength::new(4.5).unwrap();
-        });
+        for (index, value) in [(0, 250.0), (1, 4.5)] {
+            let id = ir_edit.model.features[index].id.clone();
+            ir_edit
+                .set_dimension(
+                    &id,
+                    "/extent/side/termination/length",
+                    cadmpeg_ir::scalar::NonZeroLength::new(value).unwrap(),
+                )
+                .unwrap();
+        }
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -869,7 +742,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if actual_length.get() == 250.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 250.0
     ));
     assert!(matches!(
         regenerated.ir().model.features[1].evaluation.definition(),
@@ -884,7 +757,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if actual_length.get() == 4.5
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 4.5
     ));
     assert!(matches!(
         regenerated.ir().model.features[2].evaluation.definition(),
@@ -899,14 +772,14 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
             },
             op: BooleanOp::Unresolved,
             ..
-        }) if actual_length.get() == 4.0
+        }) if regenerated.ir().dimension_value(actual_length).unwrap().get() == 4.0
     ));
 
     regenerated.ir_mut().model.parameters[0].expression = "225".into();
     regenerated.ir_mut().model.parameters[0].value =
         Some(ParameterValue::Length(Length::new(225.0).unwrap()));
     let mut parameter_encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut parameter_encoded,
@@ -952,13 +825,6 @@ fn semantic_writer_round_trips_feature_output_scope() {
         )
         .as_bytes(),
     ));
-    let source_partition = crate::test_support::container::scan(&source)
-        .blocks
-        .iter()
-        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
-        .unwrap()
-        .payload
-        .clone();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -973,23 +839,46 @@ fn semantic_writer_round_trips_feature_output_scope() {
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(vec![output]).unwrap());
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
     )
     .unwrap();
-    let written_partition = crate::test_support::container::scan(&encoded)
-        .blocks
-        .iter()
-        .find(|block| block.section.name() == Some("Contents/Config-0-Partition"))
-        .unwrap()
-        .payload
-        .clone();
-    assert_eq!(written_partition, source_partition);
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(
+        regenerated.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
+    assert_eq!(
+        regenerated.ir().model.faces.len(),
+        decoded.ir().model.faces.len()
+    );
+    assert_eq!(
+        regenerated.ir().model.edges.len(),
+        decoded.ir().model.edges.len()
+    );
+    let points = |ir: &cadmpeg_ir::CadIr| {
+        let mut points = ir
+            .model
+            .points
+            .iter()
+            .map(|point| {
+                let point = point.position().get();
+                [point.x, point.y, point.z]
+            })
+            .collect::<Vec<_>>();
+        points.sort_by(|left, right| {
+            left[0]
+                .total_cmp(&right[0])
+                .then(left[1].total_cmp(&right[1]))
+                .then(left[2].total_cmp(&right[2]))
+        });
+        points
+    };
+    assert_eq!(points(regenerated.ir()), points(decoded.ir()));
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].properties["Scope"],
         regenerated.ir().model.bodies[1].id.as_str()
@@ -1034,7 +923,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::Join,
             ..
-        }) if (profile == &profile_feature) && actual_length.get() == 2.0
+        }) if (profile == &profile_feature) && decoded.ir().dimension_value(actual_length).unwrap().get() == 2.0
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -1052,7 +941,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::NewBody,
             ..
-        }) if ( ((value.get() - 5f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == 4.0)
+        }) if ( ((decoded.ir().dimension_value(value).unwrap().get() - 5f64.to_radians()).abs() < 1.0e-12) && decoded.ir().dimension_value(actual_length).unwrap().get() == 4.0)
         && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert!(matches!(
@@ -1074,7 +963,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::Cut,
             ..
-        }) if actual_length.get() == 3.0 && actual_length_2.get() == 7.0
+        }) if decoded.ir().dimension_value(actual_length).unwrap().get() == 3.0 && decoded.ir().dimension_value(actual_length_2).unwrap().get() == 7.0
     ));
     assert!(matches!(
        decoded.ir().model.features[4].evaluation.definition(),
@@ -1097,8 +986,31 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                    z: 0.0,
                })));
 
+    let removed_use_parameters = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.as_ref() == Some(&decoded.ir().model.features[3].id))
+        .map(|parameter| {
+            (
+                parameter.id.clone(),
+                parameter.name.clone(),
+                parameter.value.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(removed_use_parameters.len(), 2);
     {
         let mut ir_edit = decoded.ir_mut();
+        let blind = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &blind,
+                "/extent/side/termination/length",
+                cadmpeg_ir::scalar::NonZeroLength::new(8.0).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 direction,
@@ -1114,16 +1026,29 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
                     .unwrap(),
                 source: None,
             };
+            let ExtrudeExtent::OneSided {
+                side:
+                    ExtrudeSide {
+                        termination: LinearTermination::Blind { length },
+                        ..
+                    },
+            } = extent
+            else {
+                panic!("original blind extrusion");
+            };
+            let length = length.clone();
             *extent = ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
-                    termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(8.0).unwrap(),
-                    },
-                    draft: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+                    termination: LinearTermination::Blind { length },
+                    draft: Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
+                    )),
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
+                        ),
                     },
                     draft: None,
                 },
@@ -1148,7 +1073,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1165,8 +1090,31 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert_eq!(native[1].parameters["Depth2"], "9mm");
     assert_eq!(native[1].parameters["Draft"], "0.1rad");
     assert_eq!(native[3].properties["EndCondition"], "ThroughAll");
-    assert!(!native[3].parameters.contains_key("Depth"));
-    assert!(!native[3].parameters.contains_key("Depth2"));
+    // D1: ThroughAll removes both operation uses; independent parameters remain.
+    for (id, name, value) in removed_use_parameters {
+        assert!(native[3].parameters.contains_key(name.as_str()));
+        let parameter = regenerated
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .expect("same independent extrusion parameter");
+        assert_eq!(parameter.name, name);
+        assert_eq!(parameter.value, value);
+    }
+    assert!(matches!(
+        regenerated.ir().model.features[3].definition().operation(),
+        FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::ThroughAll {},
+                    ..
+                }
+            },
+            ..
+        }
+    ));
     assert!(!native[3].properties.contains_key("Direction"));
 }
 
@@ -1221,7 +1169,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1301,24 +1249,14 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         }])
     ));
 
-    let mut detached = decoded.ir().clone();
-    detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &detached,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved fillet radius law"));
-    detached.model.features[0] = decoded.ir().model.features[0].clone();
-    detached.model.features[1].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &detached,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved chamfer dimensions"));
+    for (index, reason) in [
+        (0, "unresolved fillet radius law"),
+        (1, "unresolved chamfer dimensions"),
+    ] {
+        let mut detached = decoded.ir().clone();
+        detached.model.features[index].native_ref = None;
+        assert_solved_feature_reduction(&detached, decoded.source_fidelity(), index, reason);
+    }
 
     decoded.ir_mut().model.features[0].name = Some("Renamed round".into());
     decoded.ir_mut().model.features[1].name = Some("Renamed bevel".into());
@@ -1361,11 +1299,19 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
                 radius: actual_radius,
             },
             ..
-        }] if (selection == "edge:1,edge:2") && actual_radius.get() == 2.0)
+        }] if (selection == "edge:1,edge:2") && decoded.ir().dimension_value(actual_radius).unwrap().get() == 2.0)
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
+        let id = ir_edit.model.features[0].id.clone();
+        ir_edit
+            .set_dimension(
+                &id,
+                "/groups/0/radius/radius",
+                cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
+            )
+            .unwrap();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Fillet { groups },
@@ -1373,15 +1319,12 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
             else {
                 panic!("typed fillet feature");
             };
-            groups[0].radius = cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
-            };
             groups[0].edges = cadmpeg_ir::features::EdgeSelection::Native("edge:3".into());
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1407,7 +1350,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
                 radius: actual_radius,
             },
             ..
-        }] if actual_radius.get() == 3.5)
+        }] if regenerated.ir().dimension_value(actual_radius).unwrap().get() == 3.5)
     ));
 }
 
@@ -1452,7 +1395,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             radius: RadiusSpec::Constant {
                 radius: actual_radius
             }, ..
-        }] if actual_radius.get() == 1.0)
+        }] if decoded.ir().dimension_value(actual_radius).unwrap().get() == 1.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -1465,7 +1408,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 distance: actual_distance,
                 angle,
             },
-        }] if ((angle.get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && actual_distance.get() == 0.3)
+        }] if ((decoded.ir().dimension_value(angle).unwrap().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && decoded.ir().dimension_value(actual_distance).unwrap().get() == 0.3)
     ));
     assert_eq!(
         decoded.ir().model.parameters[1].value,
@@ -1474,29 +1417,33 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
 
     {
         let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Fillet { groups, .. }) = definition
-            else {
-                panic!("typed positional fillet");
-            };
-            groups[0].radius = RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
-            };
-        });
-        ir_edit.model.features[1].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
-            else {
-                panic!("typed positional chamfer");
-            };
-            groups[0].spec = ChamferSpec::DistanceAngle {
-                distance: cadmpeg_ir::scalar::PositiveLength::new(0.6).unwrap(),
-                angle: cadmpeg_ir::scalar::InteriorAngle::new(30.0_f64.to_radians()).unwrap(),
-            };
-        });
+        let fillet = ir_edit.model.features[0].id.clone();
+        let chamfer = ir_edit.model.features[1].id.clone();
+        ir_edit
+            .set_dimension(
+                &fillet,
+                "/groups/0/radius/radius",
+                cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
+            )
+            .unwrap();
+        ir_edit
+            .set_dimension(
+                &chamfer,
+                "/groups/0/spec/distance",
+                cadmpeg_ir::scalar::PositiveLength::new(0.6).unwrap(),
+            )
+            .unwrap();
+        ir_edit
+            .set_dimension(
+                &chamfer,
+                "/groups/0/spec/angle",
+                cadmpeg_ir::scalar::InteriorAngle::new(30.0_f64.to_radians()).unwrap(),
+            )
+            .unwrap();
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1522,7 +1469,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 radius: actual_radius
             },
             ..
-        }] if actual_radius.get() == 2.5)
+        }] if regenerated.ir().dimension_value(actual_radius).unwrap().get() == 2.5)
     ));
     assert!(matches!(
         regenerated.ir().model.features[1].evaluation.definition(),
@@ -1535,7 +1482,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 angle,
             },
             ..
-        }] if ((angle.get() - 30.0_f64.to_radians()).abs() < 1.0e-12) && actual_distance.get() == 0.6)
+        }] if ((regenerated.ir().dimension_value(angle).unwrap().get() - 30.0_f64.to_radians()).abs() < 1.0e-12) && regenerated.ir().dimension_value(actual_distance).unwrap().get() == 0.6)
     ));
 }
 
@@ -1567,9 +1514,9 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
         }] if points.as_slice().iter().map(VariableRadius::to_raw).collect::<Vec<_>>() == [
-            VariableRadius { parameter: 0.0, radius: Length::new(2.0).unwrap() },
-            VariableRadius { parameter: 0.5, radius: Length::new(4.0).unwrap() },
-            VariableRadius { parameter: 1.0, radius: Length::new(3.0).unwrap() },
+            VariableRadius { parameter: 0.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(2.0).unwrap()) },
+            VariableRadius { parameter: 0.5, radius: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()) },
+            VariableRadius { parameter: 1.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(3.0).unwrap()) },
         ])
     ));
     {
@@ -1590,13 +1537,13 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
             .map(VariableRadius::to_raw)
             .collect::<Vec<_>>();
         samples[1].parameter = 0.4;
-        samples[1].radius = Length::new(5.0).unwrap();
+        samples[1].radius = cadmpeg_ir::Dimension::Literal(Length::new(5.0).unwrap());
         *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples).unwrap();
         updated_ir_edit_evaluation.set_definition(updated_ir_edit_definition);
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1624,12 +1571,14 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
                 panic!("variable fillet after regeneration");
             };
             groups[0].radius = RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+                radius: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+                ),
             };
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -1677,7 +1626,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
                 distance: actual_distance,
             },
             ..
-        }] if (edges == "edge:1") && actual_distance.get() == 2.0)
+        }] if (edges == "edge:1") && decoded.ir().dimension_value(actual_distance).unwrap().get() == 2.0)
     ));
     assert!(matches!(
         decoded.ir().model.features[1].evaluation.definition(),
@@ -1690,7 +1639,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
                 second: actual_second,
             },
             ..
-        }] if actual_first.get() == 3.0 && actual_second.get() == 6.35)
+        }] if decoded.ir().dimension_value(actual_first).unwrap().get() == 3.0 && decoded.ir().dimension_value(actual_second).unwrap().get() == 6.35)
     ));
     assert!(matches!(
         decoded.ir().model.features[2].evaluation.definition(),
@@ -1703,42 +1652,46 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
                 angle,
             },
             ..
-        }] if ((angle.get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && actual_distance.get() == 4.0)
+        }] if ((decoded.ir().dimension_value(angle).unwrap().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12) && decoded.ir().dimension_value(actual_distance).unwrap().get() == 4.0)
     ));
 
-    let replacements = [
-        ChamferSpec::Distance {
-            distance: cadmpeg_ir::scalar::PositiveLength::new(2.5).unwrap(),
-        },
-        ChamferSpec::TwoDistances {
-            first: cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap(),
-            second: cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap(),
-        },
-        ChamferSpec::DistanceAngle {
-            distance: cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap(),
-            angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_6).unwrap(),
-        },
-    ];
-    for (index, (feature, replacement)) in decoded
-        .ir_mut()
-        .model
-        .features
-        .iter_mut()
-        .zip(replacements)
-        .enumerate()
     {
-        feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) = definition
-            else {
-                panic!("typed chamfer feature");
-            };
-            groups[0].spec = replacement;
-            groups[0].edges = EdgeSelection::Native(format!("edge:{}", index + 4));
-        });
+        let mut ir = decoded.ir_mut();
+        for (index, path, value) in [
+            (0, "/groups/0/spec/distance", 2.5),
+            (1, "/groups/0/spec/first", 3.5),
+            (1, "/groups/0/spec/second", 7.0),
+            (2, "/groups/0/spec/distance", 4.5),
+        ] {
+            let id = ir.model.features[index].id.clone();
+            ir.set_dimension(
+                &id,
+                path,
+                cadmpeg_ir::scalar::PositiveLength::new(value).unwrap(),
+            )
+            .unwrap();
+        }
+        let id = ir.model.features[2].id.clone();
+        ir.set_dimension(
+            &id,
+            "/groups/0/spec/angle",
+            cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_6).unwrap(),
+        )
+        .unwrap();
+        for (index, feature) in ir.model.features.iter_mut().enumerate() {
+            feature.evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) =
+                    definition
+                else {
+                    panic!("typed chamfer feature");
+                };
+                groups[0].edges = EdgeSelection::Native(format!("edge:{}", index + 4));
+            });
+        }
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::serialize_edited_history(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1798,26 +1751,14 @@ fn semantic_writer_retains_partial_native_wall_operations() {
         }) if faces == "face:2"
     ));
 
-    let mut detached = decoded.ir().clone();
-    detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &detached,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved shell construction"));
-    detached.model.features[0] = decoded.ir().model.features[0].clone();
-    detached.model.features[1].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        &detached,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("unresolved thicken construction"));
+    for (index, reason) in [
+        (0, "unresolved shell construction"),
+        (1, "unresolved thicken construction"),
+    ] {
+        let mut detached = decoded.ir().clone();
+        detached.model.features[index].native_ref = None;
+        assert_solved_feature_reduction(&detached, decoded.source_fidelity(), index, reason);
+    }
 
     decoded.ir_mut().model.features[0].name = Some("Renamed shell".into());
     decoded.ir_mut().model.features[1].name = Some("Renamed thicken".into());
@@ -1836,4 +1777,46 @@ fn semantic_writer_retains_partial_native_wall_operations() {
     assert!(!native[0].properties.contains_key("Outward"));
     assert_eq!(native[1].parameters["Thickness"], "NaNmm");
     assert_eq!(native[1].properties["BothSides"], "invalid");
+}
+
+/// An unsupported operation retains its solved result and names the export loss.
+pub(super) fn assert_solved_feature_reduction(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+    feature_index: usize,
+    reason: &str,
+) {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::report::{export::WritePath, Severity};
+
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .expect("an unsupported operation selects synthesis");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.design-reduced"
+            && loss.severity == Severity::Error
+            && loss.message.contains(reason)
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)
+        .expect("write the held solved carrier");
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the degraded part decodes");
+    assert_eq!(regenerated.ir().model.bodies.len(), ir.model.bodies.len());
+    assert_eq!(
+        regenerated.ir().model.features.len(),
+        ir.model.features.len()
+    );
+    assert!(matches!(
+        regenerated.ir().model.features[feature_index]
+            .evaluation
+            .definition(),
+        FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+    ));
 }

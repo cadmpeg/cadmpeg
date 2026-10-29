@@ -554,26 +554,24 @@ fn duplicate_layer_indexes_keep_each_source_summary_entry() {
         ],
     );
     let result = decode(bytes);
-    let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    let layer_entries = attributes
+    let layers = &result.ir().model.presentation_layers;
+    assert_eq!(layers.len(), 2);
+    assert_ne!(layers[0].id, layers[1].id);
+    let native = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
+    assert_eq!(native.len(), 2);
+    assert!(native
         .iter()
-        .filter(|(key, _)| key.as_str().starts_with("layer.7."))
-        .collect::<Vec<_>>();
-    assert_eq!(layer_entries.len(), 10);
-    assert_eq!(
-        layer_entries
-            .iter()
-            .filter(|(key, _)| {
-                key.as_str()
-                    .rsplit_once('.')
-                    .is_some_and(|(_, tail)| tail == "index")
-            })
-            .count(),
-        2
-    );
-    assert!(layer_entries.iter().all(|(key, _)| {
-        key.as_str().contains("record-000000-offset-")
-            || key.as_str().contains("record-000001-offset-")
-    }));
+        .all(|record| record.field("archive_index") == Some(serde_json::json!(7))));
+    assert_ne!(native[0].id(), native[1].id());
+    assert!(result
+        .ir()
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .keys()
+        .all(|key| !key.as_str().starts_with("layer.")));
     assert_valid(&result);
 }
+
+mod linkage;

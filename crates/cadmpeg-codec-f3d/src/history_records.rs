@@ -2,8 +2,6 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion ASM construction-history record shapes.
 
-use cadmpeg_ir::native::bytes::NativeBytes;
-
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -19,7 +17,7 @@ pub(crate) struct AsmPreamble {
 #[serde(try_from = "AsmHistorySerde", into = "AsmHistorySerde")]
 pub(crate) struct AsmHistory {
     pub(crate) id: String,
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     pub(crate) preamble: Option<AsmPreamble>,
     /// True when historical topology binding was not attempted because its
     /// estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -39,7 +37,7 @@ impl AsmHistory {
     ) -> Self {
         Self {
             id,
-            byte_offset,
+            byte_offset: Some(byte_offset),
             preamble,
             binding_budget_exceeded,
             states,
@@ -67,9 +65,15 @@ impl AsmHistory {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AsmHistorySerde {
     id: String,
-    byte_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
+    byte_offset: Option<u64>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -81,7 +85,6 @@ struct AsmHistorySerde {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_history_entry_count"
     )]
-    #[serde(alias = "high_water_mark")]
     history_entry_count: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     binding_budget_exceeded: bool,
@@ -139,7 +142,7 @@ impl From<AsmHistory> for AsmHistorySerde {
 pub(crate) struct AsmDeltaState {
     pub(crate) id: String,
     pub(crate) parent: String,
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     pub(crate) state_id: i64,
     pub(crate) version_flag: i64,
     pub(crate) state_flag: i64,
@@ -166,10 +169,16 @@ pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AsmDeltaStateWire {
     id: String,
     parent: String,
-    byte_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
+    byte_offset: Option<u64>,
     state_id: i64,
     version_flag: i64,
     state_flag: i64,
@@ -495,9 +504,9 @@ pub(crate) struct AsmHistoryRecord {
     pub(crate) id: String,
     pub(crate) parent: String,
     pub(crate) revision_id: Option<i64>,
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     pub(crate) framing: AsmHistoryRecordFraming,
-    pub(crate) raw_bytes: NativeBytes<Vec<u8>>,
+    pub(crate) raw_bytes: crate::records::source_frame::SourceFrame,
 }
 
 #[cfg(test)]
@@ -525,15 +534,16 @@ struct AsmHistoryRecordWireRef<'a> {
     id: &'a str,
     parent: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     revision_id: Option<i64>,
     index: u64,
-    byte_offset: u64,
     name: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     framing_error: Option<&'a str>,
     #[serde(skip_serializing_if = "<[i64]>::is_empty")]
     entity_references: &'a [i64],
-    raw_bytes: NativeBytes<&'a [u8]>,
+    frame: &'a crate::records::source_frame::SourceFrame,
 }
 
 impl Serialize for AsmHistoryRecord {
@@ -551,13 +561,13 @@ impl Serialize for AsmHistoryRecord {
         AsmHistoryRecordWireRef {
             id: &self.id,
             parent: &self.parent,
+            byte_offset: self.byte_offset,
             revision_id: self.revision_id,
             index,
-            byte_offset: self.byte_offset,
             name,
             framing_error,
             entity_references,
-            raw_bytes: (&self.raw_bytes).into(),
+            frame: &self.raw_bytes,
         }
         .serialize(serializer)
     }
@@ -593,9 +603,16 @@ impl AsmHistoryRecord {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
 struct AsmHistoryRecordWire {
     id: String,
     parent: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
+    byte_offset: Option<u64>,
     /// Construction-history revision identity paired from the ordered
     /// old-reference run; absent only for the stream terminator or an opaque
     /// snapshot whose pairing cannot be established.
@@ -607,9 +624,6 @@ struct AsmHistoryRecordWire {
     revision_id: Option<i64>,
     /// Snapshot-local record ordinal. This is not the revision identity.
     index: u64,
-    /// Byte offset of the record in the decompressed ASM stream.
-    #[serde(default)]
-    byte_offset: u64,
     name: String,
     /// Framing failure that forced this span to remain opaque.
     #[serde(
@@ -621,7 +635,7 @@ struct AsmHistoryRecordWire {
     /// Ordered `0x0c` entity-reference tokens in the history revision namespace.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     entity_references: Vec<i64>,
-    raw_bytes: NativeBytes<Vec<u8>>,
+    frame: crate::records::source_frame::SourceFrame,
 }
 
 impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
@@ -650,7 +664,7 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
             revision_id: wire.revision_id,
             byte_offset: wire.byte_offset,
             framing,
-            raw_bytes: (wire.raw_bytes),
+            raw_bytes: wire.frame,
         })
     }
 }
@@ -671,13 +685,13 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
         Self {
             id: record.id,
             parent: record.parent,
+            byte_offset: record.byte_offset,
             revision_id: record.revision_id,
             index,
-            byte_offset: record.byte_offset,
             name,
             framing_error,
             entity_references,
-            raw_bytes: (record.raw_bytes),
+            frame: record.raw_bytes,
         }
     }
 }
@@ -686,7 +700,12 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
 pub(crate) struct AsmBulletinBoard {
     pub(crate) id: String,
     pub(crate) parent: String,
-    pub(crate) byte_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
+    pub(crate) byte_offset: Option<u64>,
     pub(crate) owner_ref: i64,
     pub(crate) number: i64,
     pub(crate) changes: Vec<AsmEntityChange>,
@@ -698,7 +717,7 @@ pub(crate) struct AsmBulletinBoard {
 pub(crate) struct AsmEntityChange {
     pub(crate) id: String,
     pub(crate) parent: String,
-    pub(crate) byte_offset: u64,
+    pub(crate) byte_offset: Option<u64>,
     pub(crate) kind: AsmEntityChangeKind,
 }
 
@@ -724,7 +743,8 @@ impl Clone for AsmEntityChange {
 struct AsmEntityChangeWireRef<'a> {
     id: &'a str,
     parent: &'a str,
-    byte_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     kind: AsmEntityChangeKindWire,
     #[serde(skip_serializing_if = "Option::is_none")]
     old_ref: Option<i64>,
@@ -786,10 +806,16 @@ impl AsmEntityChange {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
 struct AsmEntityChangeSerde {
     id: String,
     parent: String,
-    byte_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_offset_u64"
+    )]
+    byte_offset: Option<u64>,
     kind: AsmEntityChangeKindWire,
     #[serde(
         default,
@@ -887,7 +913,7 @@ mod tests {
                 id: "f3d:native:history_record#1".into(),
                 parent: "f3d:native:state#1".into(),
                 revision_id: Some(7),
-                byte_offset: 12,
+                byte_offset: Some(12),
                 framing,
                 raw_bytes: (b"history payload".to_vec()).into(),
             };
@@ -907,7 +933,7 @@ mod tests {
             id: "f3d:native:history_record#1".into(),
             parent: "f3d:native:state#1".into(),
             revision_id: Some(7),
-            byte_offset: 12,
+            byte_offset: Some(12),
             framing: super::AsmHistoryRecordFraming::Framed {
                 index: 4,
                 name: "edge".into(),
@@ -965,7 +991,7 @@ mod tests {
             let change = AsmEntityChange {
                 id: "f3d:native:entity_change#1".into(),
                 parent: "f3d:native:bulletin#1".into(),
-                byte_offset: 12,
+                byte_offset: Some(12),
                 kind,
             };
             let owned = AsmEntityChangeSerde::from(change.clone());
@@ -983,7 +1009,7 @@ mod tests {
         let change = super::AsmEntityChange {
             id: "f3d:native:entity_change#1".into(),
             parent: "f3d:native:bulletin#1".into(),
-            byte_offset: 12,
+            byte_offset: Some(12),
             kind: super::AsmEntityChangeKind::Update { old: 8, new: 7 },
         };
         let needed = serde_json::to_vec(&change).unwrap().len();
@@ -1025,39 +1051,73 @@ mod tests {
 
     #[test]
     fn delta_state_wire_contains_only_transition_topology() {
-        let wire = r#"{"id":"state","parent":"history","byte_offset":0,"state_id":1,"version_flag":1,"state_flag":0,"node_index":1,"owner_ref":0,"bulletin_boards":[],"records":[]}"#;
+        let wire = r#"{"id":"state","parent":"history","state_id":1,"version_flag":1,"state_flag":0,"node_index":1,"owner_ref":0,"bulletin_boards":[],"records":[]}"#;
         let state: AsmDeltaState = serde_json::from_str(wire).unwrap();
         assert!(state.transition.is_none());
         assert_eq!(serde_json::to_string(&state).unwrap(), wire);
     }
     #[test]
     fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
-        let prefix =
-            r#"{"id":"record","parent":"state","revision_id":7,"index":0,"byte_offset":12,"name":"#;
+        let frame = serde_json::json!({"length": 0, "sha256": cadmpeg_ir::hash::digest::Sha256Digest::digest(&[])});
+        let wire = |fields: serde_json::Value| {
+            let mut wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7,
+                "index":0, "byte_offset":12, "frame":frame});
+            for (key, value) in fields.as_object().expect("record fields") {
+                wire[key] = value.clone();
+            }
+            wire
+        };
         for fields in [
-            r#""edge","entity_references":[7,-1]"#,
-            r#""opaque_history_payload","framing_error":"invalid frame""#,
+            serde_json::json!({"name":"edge", "entity_references":[7, -1]}),
+            serde_json::json!({"name":"opaque_history_payload", "framing_error":"invalid frame"}),
         ] {
-            let wire = format!("{prefix}{fields},\"raw_bytes\":\"\"}}");
-            let record: super::AsmHistoryRecord = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+            let wire = wire(fields);
+            let record: super::AsmHistoryRecord = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&record).unwrap(), wire);
         }
         for fields in [
-            r#""edge","framing_error":"invalid frame""#,
-            r#""opaque_history_payload","framing_error":"invalid frame","entity_references":[7]"#,
+            serde_json::json!({"name":"edge", "framing_error":"invalid frame"}),
+            serde_json::json!({"name":"opaque_history_payload", "framing_error":"invalid frame",
+                "entity_references":[7]}),
         ] {
-            let wire = format!("{prefix}{fields},\"raw_bytes\":\"\"}}");
-            let error = serde_json::from_str::<super::AsmHistoryRecord>(&wire)
+            let error = serde_json::from_value::<super::AsmHistoryRecord>(wire(fields))
                 .unwrap_err()
                 .to_string();
             assert!(error.contains("framing_error"));
         }
     }
+    #[test]
+    fn history_record_framing_keeps_typed_metadata_without_parser_bytes_or_location() {
+        let frame = serde_json::json!({"length": 0, "sha256": cadmpeg_ir::hash::digest::Sha256Digest::digest(&[])});
+        for (name, error, references) in [
+            ("edge", None, vec![7, -1]),
+            ("opaque_history_payload", Some("invalid frame"), vec![]),
+        ] {
+            let mut wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7, "index":0,
+                "name":name, "frame":frame});
+            if let Some(error) = error {
+                wire["framing_error"] = error.into();
+            }
+            if !references.is_empty() {
+                wire["entity_references"] = serde_json::json!(references);
+            }
+            let record: super::AsmHistoryRecord = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+            assert!(record.byte_offset.is_none());
+            assert!(record.raw_bytes.data().is_none());
+        }
+        let wire = serde_json::json!({"id":"record", "parent":"state", "revision_id":7, "index":0,
+            "name":"edge", "framing_error":"invalid frame", "frame":frame});
+        assert!(serde_json::from_value::<super::AsmHistoryRecord>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("framing_error"));
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.
-cadmpeg_core::named_optional_field!(deserialize_stream_size, i64, "stream_size");
 cadmpeg_core::named_optional_field!(deserialize_edge_sample_tangent, Vector3, "tangent");
+cadmpeg_core::named_optional_field!(deserialize_stream_size, i64, "stream_size");
 cadmpeg_core::named_optional_field!(deserialize_history_entry_count, i64, "history_entry_count");
 cadmpeg_core::named_optional_field!(deserialize_previous_ref, i64, "previous_ref");
 cadmpeg_core::named_optional_field!(deserialize_next_ref, i64, "next_ref");
@@ -1289,3 +1349,6 @@ pub(crate) enum AsmTransitionError {
 
 pub(crate) use chain::{AsmStateSnapshot, MaterializedTopologies};
 mod chain;
+
+// Each optional source offset below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_byte_offset_u64, u64, "byte_offset");

@@ -32,17 +32,6 @@ fn insert_dimension_property(
     properties.insert(key, value);
 }
 
-struct HexToken<'a>(&'a [u8]);
-
-impl std::fmt::Display for HexToken<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for byte in self.0 {
-            write!(formatter, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
-
 fn dimension_expression(value: Option<f64>) -> Result<String, cadmpeg_core::CodecError> {
     value
         .map(|value| Ok(format!("{value}")))
@@ -379,7 +368,6 @@ pub(in super::super) fn transfer_feature_dimensions(
             };
             if let Some(encoding) = encoding {
                 insert_dimension_property(&mut properties, "value_encoding", encoding);
-                insert_dimension_property(&mut properties, "value_token", HexToken(token));
             }
         }
         let expression = dimension_expression(dimension_measurement_value(dimension))?;
@@ -403,10 +391,10 @@ pub(in super::super) fn transfer_feature_dimensions(
                 owner: Some(owner_id.clone()),
                 ordinal,
                 name,
-                expression,
+                expression: expression.into(),
                 display: feature_dimension_display(dimension.dimension_type),
                 value,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                driving: true,
                 properties: cadmpeg_core::text::named_entries(id.as_str(), properties)?,
                 pmi: None,
                 native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),

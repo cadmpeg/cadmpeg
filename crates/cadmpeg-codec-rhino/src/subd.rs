@@ -1232,6 +1232,7 @@ fn materialize(
         );
     }
     Ok(SubdSurface {
+        native_ref: None,
         id,
         scheme: SubdScheme::CatmullClark,
         source_object: None,

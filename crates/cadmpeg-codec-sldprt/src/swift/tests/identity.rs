@@ -73,7 +73,7 @@ fn id_prefix_positions_match_the_prefix_filter() {
 #[test]
 fn empty_swift_pattern_uses_one_native_hole_join() {
     let features = pattern_hole_features();
-    let context = pattern_hole_nominal_context(&features);
+    let context = pattern_hole_nominal_context(&features, &[]);
     assert_eq!(
         context.get("Hole Pattern6").copied().map(PositiveReal::get),
         Some(6.1468)
@@ -114,7 +114,10 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         panic!("dimension definition");
     };
     let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(6.1468).expect("finite length"));
+    assert_eq!(
+        *nominal,
+        cadmpeg_ir::Dimension::Literal(length(6.1468).expect("finite length"))
+    );
 
     let mut ambiguous = features.clone();
     ambiguous.push(neutral_feature(
@@ -124,7 +127,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
         simple_hole_definition(6.1468),
     ));
-    assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
+    assert!(pattern_hole_nominal_context(&ambiguous, &[]).is_empty());
 
     let mut unresolved = features;
     let mut unresolved_hole = neutral_feature(
@@ -141,7 +144,7 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
         shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
     });
     unresolved.push(unresolved_hole);
-    assert!(pattern_hole_nominal_context(&unresolved).is_empty());
+    assert!(pattern_hole_nominal_context(&unresolved, &[]).is_empty());
 }
 
 #[test]
@@ -190,9 +193,13 @@ fn pattern_hole_index_matches_the_feature_scans() {
                         && native(candidate)
                 })
                 .filter_map(|candidate| match candidate.evaluation.definition() {
-                    FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) => {
-                        Some(shape.diameter().map(PositiveReal::from_assigned_length))
-                    }
+                    FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) => Some(
+                        shape
+                            .diameter()
+                            .and_then(cadmpeg_ir::Dimension::literal)
+                            .copied()
+                            .map(PositiveReal::from_assigned_length),
+                    ),
                     _ => None,
                 })
                 .take(2)
@@ -285,7 +292,7 @@ fn pattern_hole_index_matches_the_feature_scans() {
         }
         let expected = linear(&features);
         found += expected.len();
-        assert_eq!(pattern_hole_nominal_context(&features), expected);
+        assert_eq!(pattern_hole_nominal_context(&features, &[]), expected);
     }
     assert!(found > 0);
 }
@@ -410,6 +417,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
 
     let body = Body {
+        native_ref: None,
         id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
         kind: BodyKind::default(),
         regions: Vec::new(),
@@ -419,6 +427,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         visible: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),
         shell: ShellId::mint("sldprt:brep:shell#1").expect("identity grammar"),
         surface: SurfaceId::mint("sldprt:brep:surf#22").expect("identity grammar"),
@@ -429,6 +438,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         tolerance: None,
     };
     let edge = Edge {
+        native_ref: None,
         id: EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
@@ -436,6 +446,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         tolerance: None,
     };
     let vertex = Vertex {
+        native_ref: None,
         id: VertexId::mint("sldprt:brep:vertex#44").expect("identity grammar"),
         point: PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
         tolerance: None,

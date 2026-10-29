@@ -1,8 +1,7 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "9",
+      "ir_version": "10",
       "model": {
         "appearance_bindings": [],
         "appearances": [],
@@ -202,6 +201,10 @@
           ]
         }
       },
+      "scope": {
+        "design": true,
+        "model": true
+      },
       "source": {
         "attributes": {
           "deltas_streams": "0",
@@ -209,7 +212,6 @@
           "file_size": "445",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "431",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -310,7 +312,10 @@
       ],
       "transfer": {
         "geometry_transferred": true,
-        "transfer": "full"
+        "scope": {
+          "design": true,
+          "model": true
+        }
       }
     },
     "source_fidelity": {
@@ -419,9 +424,20 @@
             "retention": "inline"
           },
           "offset": 209,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
+        },
+        "nx:source:image#whole": {
+          "bytes": {
+            "data": "U1BMTVNTVFIGAAAAAAAAAACvAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABjAQAAAAAAAP////8AAAAAAAAAdU9N//8AAQIUVUdTOjpGRUFUVVJFX1JFQ09SRKCBIQEjRWeJq83vBiFVR1M6Ok1vZGxVdGlsczo6Qm9vbGVhbkNvbXBvbmVudGUJbV90YXJnZXSAAQIIbV90b29sc4EDBHVuZnJhbWVkIFVHUzo6UGF5bG9hZFRleHR4AY1MvQsBYRh/8rFYLFZ6F0W3+IpY3iRfhXC3Xz7eQfnqHIWJSJklk9EoZVH+AH+CwcRqMViVtzt3nXTl6fn4ffT88iwA4AjiitEcm01zKJHOxJGrXRLEmlhrNd2oIpCSSKqo3EeNVpXU60RAPSJ0qIn8AY/HGwrSCCsbS/FcnOV4Lx+mBWAHA9XVxjsVSgDPDV1nwrIBHxglQV0M3o/Ol+fspSo6AD9kQ7ky02w/mDSMQobOX61E4vbyuDrdxgr/eXaA+Vtj8GRwTW5tQ7z43PWhcJ86DnoRb+z1Oe9GT09URVIAAAAAAAAAAA==",
+            "retention": "inline"
+          },
+          "offset": 0,
+          "stream": "nx:source",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": []
     }
   },
   "inspect": {

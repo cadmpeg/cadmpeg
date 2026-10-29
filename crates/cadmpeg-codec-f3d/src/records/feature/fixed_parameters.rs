@@ -52,8 +52,9 @@ pub(crate) struct DesignFixedExtrudeScalar<T = FiniteReal> {
     pub(crate) value: T,
     /// Referenced record carrying the scalar.
     pub(crate) record_index: u32,
-    /// Byte offset of the scalar.
-    pub(crate) value_offset: u64,
+    /// Byte offset of the scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) value_offset: Option<u64>,
 }
 
 /// Exact carrier of an Extrude's one-sided distance.
@@ -78,7 +79,7 @@ mod tests {
     fn fixed_extrude_distance_construction_json_refuses_nonpositive_value() {
         let mut wire = serde_json::json!({
             "carrier": "distance_construction",
-            "scalar": { "value": 1.0, "record_index": 1, "value_offset": 2 }
+            "scalar": { "value": 1.0, "record_index": 1 }
         });
         assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
         wire["scalar"]["value"] = serde_json::json!(0.0);
@@ -91,7 +92,7 @@ mod tests {
     fn fixed_extrude_scalar_json_refuses_zero_distance() {
         let mut wire = serde_json::json!({
             "carrier": "fixed_scalar",
-            "scalar": { "value": -1.0, "record_index": 1, "value_offset": 2 }
+            "scalar": { "value": -1.0, "record_index": 1 }
         });
         assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
         wire["scalar"]["value"] = serde_json::json!(0.0);
@@ -103,21 +104,17 @@ mod tests {
             serde_json::json!({
                 "radii": [1.0, 2.0, 3.0],
                 "radius_record_indexes": [10, 11, 12],
-                "radius_offsets": [100, 108, 116],
                 "intermediate_parameters": [0.25],
-                "intermediate_parameter_record_indexes": [20],
-                "intermediate_parameter_offsets": [200]
+                "intermediate_parameter_record_indexes": [20]
             })
         } else {
             serde_json::json!({
                 "radii": [1.0],
-                "radius_record_indexes": [10],
-                "radius_offsets": [100]
+                "radius_record_indexes": [10]
             })
         };
         if tangency {
-            wire["tangency_weight"] =
-                serde_json::json!({"value": 1.0, "record_index": 5, "value_offset": 50});
+            wire["tangency_weight"] = serde_json::json!({"value": 1.0, "record_index": 5});
         }
         serde_json::from_value(wire).unwrap()
     }
@@ -348,24 +345,18 @@ struct DesignFixedFilletGroupWire {
     radii: Vec<FiniteReal>,
     /// Referenced radius scalar records in semantic radius order.
     radius_record_indexes: Vec<u32>,
-    /// Byte offsets of the radius scalars in semantic radius order.
-    radius_offsets: Vec<u64>,
     /// Normalized edge-chain positions paired with the intermediate radii.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     intermediate_parameters: Vec<FiniteReal>,
     /// Referenced intermediate-position scalar records in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     intermediate_parameter_record_indexes: Vec<u32>,
-    /// Byte offsets of intermediate-position scalars in source order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    intermediate_parameter_offsets: Vec<u64>,
 }
 
 #[derive(Clone, Copy)]
 enum FilletRadiusField {
     Value,
     RecordIndex,
-    Offset,
 }
 
 struct FilletRadiusColumn<'a> {
@@ -382,9 +373,6 @@ impl Serialize for FilletRadiusColumn<'_> {
             FilletRadiusField::RecordIndex => {
                 serializer.collect_seq(self.law.radii().map(|scalar| scalar.record_index))
             }
-            FilletRadiusField::Offset => {
-                serializer.collect_seq(self.law.radii().map(|scalar| scalar.value_offset))
-            }
         }
     }
 }
@@ -395,13 +383,10 @@ struct DesignFixedFilletGroupWireRef<'a> {
     tangency_weight: Option<&'a DesignFixedFilletScalar>,
     radii: FilletRadiusColumn<'a>,
     radius_record_indexes: FilletRadiusColumn<'a>,
-    radius_offsets: FilletRadiusColumn<'a>,
     #[serde(skip_serializing_if = "SliceColumn::is_empty")]
     intermediate_parameters: SliceColumn<'a, DesignFixedFilletIntermediate, FiniteReal>,
     #[serde(skip_serializing_if = "SliceColumn::is_empty")]
     intermediate_parameter_record_indexes: SliceColumn<'a, DesignFixedFilletIntermediate, u32>,
-    #[serde(skip_serializing_if = "SliceColumn::is_empty")]
-    intermediate_parameter_offsets: SliceColumn<'a, DesignFixedFilletIntermediate, u64>,
 }
 
 impl Serialize for DesignFixedFilletGroup {
@@ -415,13 +400,9 @@ impl Serialize for DesignFixedFilletGroup {
             tangency_weight: self.tangency_weight.as_ref(),
             radii: radius(FilletRadiusField::Value),
             radius_record_indexes: radius(FilletRadiusField::RecordIndex),
-            radius_offsets: radius(FilletRadiusField::Offset),
             intermediate_parameters: SliceColumn::new(intermediate, |row| row.parameter.value),
             intermediate_parameter_record_indexes: SliceColumn::new(intermediate, |row| {
                 row.parameter.record_index
-            }),
-            intermediate_parameter_offsets: SliceColumn::new(intermediate, |row| {
-                row.parameter.value_offset
             }),
         }
         .serialize(serializer)
@@ -432,30 +413,21 @@ impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
     type Error = String;
 
     fn try_from(wire: DesignFixedFilletGroupWire) -> Result<Self, Self::Error> {
-        if wire.radii.len() != wire.radius_record_indexes.len()
-            || wire.radii.len() != wire.radius_offsets.len()
-        {
-            return Err(
-                "radii, radius_record_indexes, and radius_offsets must have equal lengths".into(),
-            );
+        if wire.radii.len() != wire.radius_record_indexes.len() {
+            return Err("radii and radius_record_indexes must have equal lengths".into());
         }
-        if wire.intermediate_parameters.len() != wire.intermediate_parameter_record_indexes.len()
-            || wire.intermediate_parameters.len() != wire.intermediate_parameter_offsets.len()
-        {
-            return Err("intermediate_parameters, intermediate_parameter_record_indexes, and intermediate_parameter_offsets must have equal lengths".into());
+        if wire.intermediate_parameters.len() != wire.intermediate_parameter_record_indexes.len() {
+            return Err("intermediate_parameters and intermediate_parameter_record_indexes must have equal lengths".into());
         }
-        let mut radii = wire
-            .radii
-            .into_iter()
-            .zip(wire.radius_record_indexes)
-            .zip(wire.radius_offsets)
-            .map(
-                |((value, record_index), value_offset)| DesignFixedFilletScalar {
+        let mut radii =
+            wire.radii
+                .into_iter()
+                .zip(wire.radius_record_indexes)
+                .map(|(value, record_index)| DesignFixedFilletScalar {
                     value,
                     record_index,
-                    value_offset,
-                },
-            );
+                    value_offset: None,
+                });
         let start = radii
             .next()
             .ok_or("radii requires a constant radius or two endpoints")?;
@@ -472,14 +444,11 @@ impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
                     .intermediate_parameters
                     .into_iter()
                     .zip(wire.intermediate_parameter_record_indexes)
-                    .zip(wire.intermediate_parameter_offsets)
-                    .map(
-                        |((value, record_index), value_offset)| DesignFixedFilletScalar {
-                            value,
-                            record_index,
-                            value_offset,
-                        },
-                    );
+                    .map(|(value, record_index)| DesignFixedFilletScalar {
+                        value,
+                        record_index,
+                        value_offset: None,
+                    });
                 DesignFixedFilletLaw::Variable {
                     start,
                     end,
@@ -508,11 +477,6 @@ impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
                 .radii()
                 .map(|scalar| scalar.record_index)
                 .collect(),
-            radius_offsets: group
-                .law
-                .radii()
-                .map(|scalar| scalar.value_offset)
-                .collect(),
             intermediate_parameters: group
                 .law
                 .intermediate()
@@ -525,12 +489,6 @@ impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
                 .iter()
                 .map(|row| row.parameter.record_index)
                 .collect(),
-            intermediate_parameter_offsets: group
-                .law
-                .intermediate()
-                .iter()
-                .map(|row| row.parameter.value_offset)
-                .collect(),
         }
     }
 }
@@ -542,8 +500,9 @@ pub(crate) struct DesignFixedFilletScalar {
     pub(crate) value: FiniteReal,
     /// Referenced scalar record.
     pub(crate) record_index: u32,
-    /// Byte offset of the scalar.
-    pub(crate) value_offset: u64,
+    /// Byte offset of the scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) value_offset: Option<u64>,
 }
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.
@@ -571,8 +530,9 @@ pub(crate) struct DesignFixedChamferDistance {
     pub(crate) value: PositiveReal,
     /// Referenced scalar record.
     pub(crate) record_index: u32,
-    /// Byte offset of the scalar.
-    pub(crate) value_offset: u64,
+    /// Byte offset of the scalar of a located scope.
+    #[serde(skip)]
+    pub(crate) value_offset: Option<u64>,
 }
 
 mod identity_rewrite;

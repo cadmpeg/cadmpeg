@@ -141,6 +141,7 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
         LossTaxonomy::SourceDialectUnverified,
         LossTaxonomy::SourceDialectDisplaced,
         LossTaxonomy::MeshVertexPrecision,
+        LossTaxonomy::ValueQuantized,
         LossTaxonomy::ObjectRecordsUntransferred,
         LossTaxonomy::UnsupportedObjectFamily,
         LossTaxonomy::AssetNotTransferred,
@@ -290,4 +291,25 @@ fn loss_clone_preserves_provenance() {
     .with_provenance(crate::SourceProvenance::root("rhino", 7).with_tag("object"));
     let copied = original.clone();
     assert_eq!(copied, original);
+}
+
+#[test]
+fn generic_value_quantization_does_not_change_the_mesh_taxonomy_contract() {
+    let generic = LossTaxonomy::ValueQuantized;
+    assert_eq!(generic.as_str(), "value_quantized");
+    assert_eq!(generic.category(), LossCategory::Other);
+    assert_eq!(generic.default_severity(), Severity::Info);
+    assert_eq!(generic.strict_floor(), None);
+    assert_eq!(
+        LossTaxonomy::MeshVertexPrecision.as_str(),
+        "mesh_vertex_precision"
+    );
+    assert_eq!(
+        LossTaxonomy::MeshVertexPrecision.category(),
+        LossCategory::Geometry
+    );
+    assert_eq!(
+        LossTaxonomy::MeshVertexPrecision.default_severity(),
+        Severity::Warning
+    );
 }

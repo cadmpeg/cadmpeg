@@ -118,8 +118,8 @@ pub(super) fn exact_occurrence_transfer(
     scope: &DesignParameterScope,
     types: &std::collections::HashMap<u64, (&str, u32)>,
 ) -> Option<DesignOccurrenceTransfer> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let (shift, is_cut, identity) = match (scope.kind_name(), scope.frame_length()) {
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
+    let (shift, is_cut, identity) = match (scope.kind_name(), scope.frame_length()?) {
         ("CutPaste", 277) => (0, true, true),
         ("CutPaste", 405) => (0, true, false),
         ("CutPaste", 409) => (4, true, false),
@@ -255,11 +255,11 @@ pub(super) fn exact_occurrence_transfer(
             Some(u64::try_from(target_at).ok()?),
             DesignOccurrenceTransferSource::Copy {
                 source_transform,
-                source_transform_offset: u64::try_from(source_at).ok()?,
+                source_transform_offset: Some(u64::try_from(source_at).ok()?),
             },
         )
     };
-    if u64::try_from(view.position()).ok()? != scope.reference_count_offset() {
+    if Some(u64::try_from(view.position()).ok()?) != scope.reference_count_offset() {
         return None;
     }
     let value = DesignOccurrenceTransfer {

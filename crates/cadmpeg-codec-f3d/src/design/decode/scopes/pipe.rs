@@ -128,11 +128,11 @@ fn exact_pipe_prefix(bytes: &[u8], start: usize) -> Option<DesignPipeConstructio
         .ok()?;
     Some(DesignPipeConstruction {
         operation: extrude_operation_at(frame, operation_at)?,
-        operation_offset: at(operation_at)?,
+        operation_offset: Some(at(operation_at)?),
         is_hollow,
-        is_hollow_offset: at(hollow_at)?,
+        is_hollow_offset: Some(at(hollow_at)?),
         opaque_post_operation: opaque.into(),
-        opaque_post_operation_offset: at(opaque_at)?,
+        opaque_post_operation_offset: Some(at(opaque_at)?),
         record_indexes: [0; 4],
         point_selection: None,
     })
@@ -148,15 +148,15 @@ fn read_construction(
     let frame = |id: u32| frames.get(&u64::from(id)).copied().flatten();
     let own = frame(scope.record_index)?;
     if !pipe::is_pipe(own.design_type)
-        || u64_from_index(own.start) != scope.byte_offset()
-        || u64_from_index(own.member_end) != scope.paired_byte_offset()
+        || Some(u64_from_index(own.start)) != scope.byte_offset()
+        || Some(u64_from_index(own.member_end)) != scope.paired_byte_offset()
         || own.class_tag != scope.class_tag
     {
         return None;
     }
     let segment = design_segment(&scope.id)?;
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let table = usize::try_from(scope.reference_count_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
+    let table = usize::try_from(scope.reference_count_offset()?).ok()?;
     let mut construction = exact_pipe_prefix(bytes.get(..table)?, start)?;
     let mut lanes = 0_usize;
     let mut point = None;
@@ -171,12 +171,16 @@ fn read_construction(
                 || scalar.start != u64_from_index(selected.start)
                 || scalar.end != u64_from_index(selected.member_end)
                 || scalar.value.get().to_bits() != owner.evaluated_value().get().to_bits()
-                || scalar.value_offset != owner.evaluated_value_offset()
-                || owner.byte_offset() != scalar.start
-                || owner.byte_offset().checked_add(owner.frame_length()) != Some(scalar.end)
+                || Some(scalar.value_offset) != owner.evaluated_value_offset()
+                || owner.byte_offset() != Some(scalar.start)
+                || owner
+                    .byte_offset()
+                    .zip(owner.frame_length())
+                    .and_then(|(start, length)| start.checked_add(length))
+                    != Some(scalar.end)
                 || owner.class_tag() != &selected.class_tag
-                || owner.local_ordinal() != u32::from(scalar.ordinal)
-                || owner.scope_record_index() != scope.record_index
+                || owner.local_ordinal() != Some(u32::from(scalar.ordinal))
+                || owner.scope_record_index() != Some(scope.record_index)
             {
                 return None;
             }
@@ -191,8 +195,8 @@ fn read_construction(
     }
     for group in index.groups(segment, scope.record_index) {
         let selected = frame(group.record_index)?;
-        if u64_from_index(selected.start) != group.byte_offset
-            || u64_from_index(selected.member_end) != group.paired_byte_offset
+        if Some(u64_from_index(selected.start)) != group.byte_offset
+            || Some(u64_from_index(selected.member_end)) != group.paired_byte_offset
             || selected.class_tag != group.class_tag
         {
             return None;
@@ -208,7 +212,7 @@ fn read_construction(
         )]);
         let point_data =
             exact_point_data_construction(bytes, records, std::iter::once(&id), &types)?;
-        if point_data.point_record_byte_offset != u64_from_index(selected.start)
+        if point_data.point_record_byte_offset != Some(u64_from_index(selected.start))
             || !records
                 .frames(id)
                 .any(|(start, end)| start == selected.start && end == selected.member_end)
@@ -217,7 +221,7 @@ fn read_construction(
         }
         // Exactly one marked reference between the prefix and the reference
         // table names the point-data record.
-        let after_prefix = usize::try_from(construction.opaque_post_operation_offset)
+        let after_prefix = usize::try_from(construction.opaque_post_operation_offset?)
             .ok()?
             .checked_add(2)?;
         let mut prefix_reference_offset = None;
@@ -232,7 +236,7 @@ fn read_construction(
             }
         }
         construction.point_selection = Some(DesignPipePointSelection {
-            prefix_reference_offset: prefix_reference_offset?,
+            prefix_reference_offset: Some(prefix_reference_offset?),
             point_data,
         });
     }

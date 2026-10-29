@@ -1,11 +1,10 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722330",
           "id": "catia:appearance:binding#0:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -14,7 +13,7 @@
           }
         },
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722331",
           "id": "catia:appearance:binding#1:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -23,7 +22,7 @@
           }
         },
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722332",
           "id": "catia:appearance:binding#2:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -32,7 +31,7 @@
           }
         },
         {
-          "appearance": "catia:appearance:rgba#d2d2d2d2",
+          "appearance": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722333",
           "id": "catia:appearance:binding#3:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
@@ -49,7 +48,41 @@
             "g": 0.8235294222831726,
             "r": 0.8235294222831726
           },
-          "id": "catia:appearance:rgba#d2d2d2d2",
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722330",
+          "native_ref": "catia:presentation:display-color#0",
+          "schema": "CATIA V5 display color"
+        },
+        {
+          "base_color": {
+            "a": 0.8235294222831726,
+            "b": 0.8235294222831726,
+            "g": 0.8235294222831726,
+            "r": 0.8235294222831726
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722331",
+          "native_ref": "catia:presentation:display-color#1",
+          "schema": "CATIA V5 display color"
+        },
+        {
+          "base_color": {
+            "a": 0.8235294222831726,
+            "b": 0.8235294222831726,
+            "g": 0.8235294222831726,
+            "r": 0.8235294222831726
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722332",
+          "native_ref": "catia:presentation:display-color#2",
+          "schema": "CATIA V5 display color"
+        },
+        {
+          "base_color": {
+            "a": 0.8235294222831726,
+            "b": 0.8235294222831726,
+            "g": 0.8235294222831726,
+            "r": 0.8235294222831726
+          },
+          "id": "catia:appearance:rgba#d2d2d2d2:63617469613a70726573656e746174696f6e3a646973706c61792d636f6c6f722333",
+          "native_ref": "catia:presentation:display-color#3",
           "schema": "CATIA V5 display color"
         }
       ],
@@ -738,6 +771,28 @@
         "consolidated_tori": [],
         "consolidated_vertex_identities": [],
         "design_objects": [],
+        "display_colors": [
+          {
+            "id": "catia:presentation:display-color#0",
+            "source_kind": "fbb-face-color",
+            "source_record": null
+          },
+          {
+            "id": "catia:presentation:display-color#1",
+            "source_kind": "fbb-face-color",
+            "source_record": null
+          },
+          {
+            "id": "catia:presentation:display-color#2",
+            "source_kind": "fbb-face-color",
+            "source_record": null
+          },
+          {
+            "id": "catia:presentation:display-color#3",
+            "source_kind": "fbb-face-color",
+            "source_record": null
+          }
+        ],
         "e5_curve_supports": [],
         "entity_records": [],
         "external_references": [],
@@ -780,6 +835,10 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "brep_stream_len": "616",
@@ -789,8 +848,6 @@
         "fbb_runs": "1",
         "file_size": "879",
         "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "879",
         "preview_count": "0",
         "stream_count": "2",
         "vertex_records": "4"
@@ -1132,7 +1189,7 @@
       "standard_topology_multiple_endpoint_domain_count": 0,
       "standard_topology_native_endpoint_pair_count": 0,
       "standard_topology_singleton_endpoint_domain_count": 6,
-      "transferred_appearance_asset_count": 1,
+      "transferred_appearance_asset_count": 4,
       "transferred_appearance_binding_count": 4,
       "transferred_configuration_count": 0,
       "transferred_consolidated_line_profile_count": 0,
@@ -1235,7 +1292,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
@@ -1819,8 +1879,19 @@
           "retention": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
+      },
+      "catia:source:image#whole": {
+        "bytes": {
+          "data": "VjVfQ0ZWMgAAAANvAAAAAFY1X0NGVjIAAAACeAAAAOcBRAH/CwAAAAsB9AAeAAoAFAAfAAsAFQAgAAwAFgAeAUQB/wsAAAALAfUAKAANABcAKQAYAA4AKgAUAAoAKAFEAf8LAAAACwH2ADIADgAYADMAGQAPADQAFQALADIBRAH/CwAAAAsB9wA8AA8AGQA9ABcADQA+ABYADAA8MAQE/9LS0tIwBAT/0tLS0jAEBP/S0tLSMAQE/9LS0tIBAQYCBABkAAoAFABlAgQAZQALABUAZgIEAGYADAAWAGQCBABkAA0AFwBnAgQAZQAOABgAZwIEAGYADwAZAGcQJAT//wAAAAEGBAUIAQAAgD8AAIA/AACAPwUIAQAAgD8AAIC/AACAvwUIAQAAgL8AAIA/AACAvwUIAQAAgL8AAIC/AACAP2ABAAAAAgAzNgABYAIAAAACADM2AAJgAwAAAAIAMzYAA2AEAAAAAgAzNgEDYAUAAAACADM2AQJgBgAAAAIAMzYCAwEAAAASADM1Pqqqqz6qqqu+qqqrP9EF7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAgAAABIAMzU+qqqrvqqqqz6qqqs/0QXsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEDAAAAEgAzNb6qqqu+qqqrvqqqqz/RBewAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQQAAAASADM1vqqqqz6qqqs+qqqrP9EF7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQ0FUSUFfVjUgQ0IwMDAxAAAAAAAAAAAAAAAAAAAAAWRNAGEAaQBuAEQAYQB0AGEAUwB0AHIAZQBhAG0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAFkAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBFMAdQByAGYAYQBjAGkAYwBSAGUAcABzAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAABdAAAAQQAAAEEAAAAAAAAAABDQl9fRU5E",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "catia:source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

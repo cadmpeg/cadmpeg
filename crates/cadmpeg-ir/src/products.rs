@@ -205,8 +205,13 @@ pub struct Occurrence {
     pub parent: OccurrenceParent,
     /// Stable zero-based source order within the parent.
     pub ordinal: u32,
-    /// Placement relative to the direct container.
-    pub transform: Transform,
+    /// Placement relative to the direct container; absent when the source states none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub transform: Option<Transform>,
     /// Linked prototype placement contribution when link-transform policy applies.
     #[serde(
         default,
@@ -214,9 +219,6 @@ pub struct Occurrence {
         deserialize_with = "deserialize_linked_prototype"
     )]
     pub linked_prototype: Option<Transform>,
-    /// Per-axis instance scale.
-    #[serde(deserialize_with = "deserialize_occurrence_scale")]
-    pub scale: [FiniteReal; 3],
     /// Source occurrence identifier or display name.
     #[serde(
         default,
@@ -420,15 +422,17 @@ pub struct CopyOnChange {
     pub touched: Option<bool>,
 }
 
-crate::units::named_field!(deserialize_occurrence_scale, [FiniteReal; 3], "scale");
-
 impl Occurrence {
-    /// Placement after applying the linked prototype contribution, when present.
-    pub fn effective_transform(&self) -> Result<Transform, crate::transform::TransformError> {
-        self.linked_prototype
-            .map_or(Ok(self.transform), |prototype| {
-                self.transform.compose(prototype)
+    /// Placement after applying the linked prototype contribution, or unknown when the local pose is absent.
+    pub fn effective_transform(
+        &self,
+    ) -> Result<Option<Transform>, crate::transform::TransformError> {
+        self.transform
+            .map(|transform| {
+                self.linked_prototype
+                    .map_or(Ok(transform), |prototype| transform.compose(prototype))
             })
+            .transpose()
     }
 }
 
@@ -663,9 +667,8 @@ mod tests {
             prototype: PrototypeReference::Unresolved {},
             parent,
             ordinal: 0,
-            transform: translation(x),
+            transform: Some(translation(x)),
             linked_prototype: None,
-            scale: [crate::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -697,6 +700,7 @@ mod tests {
                 &crate::index::PublicStorage
             ))
             .expect("resolved child")
+            .expect("authored child placement")
             .rows()[0][3],
             13.0
         );
@@ -960,6 +964,14 @@ impl<'a> AssemblyGraph<'a> {
                 }
             }
         })
+    }
+
+    /// Computes placement in document coordinates from the occurrence parent tree.
+    ///
+    /// Body placements remain local to their product definition and compose on
+    /// the right of this transform; they never store this world placement.
+    pub fn effective_transform(&self, id: &OccurrenceId) -> Option<Transform> {
+        self.occurrences.effective_transform(id)
     }
 
     /// Returns an occurrence by identity.
@@ -1651,6 +1663,11 @@ impl AssemblyJoint {
         }
     }
 
+    /// Returns the complete typed operand frames and joint family.
+    pub const fn operands(&self) -> &JointOperands {
+        &self.operands
+    }
+
     /// How the two connector frames of a paired joint mate, when the source
     /// states it. A grounded joint has one connector and states none.
     pub fn frame_sense(&self) -> Option<PlaneSense> {
@@ -1757,3 +1774,5 @@ cadmpeg_core::named_optional_field!(
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_transform, Transform, "transform");

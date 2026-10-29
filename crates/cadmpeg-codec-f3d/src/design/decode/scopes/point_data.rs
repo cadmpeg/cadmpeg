@@ -89,7 +89,7 @@ fn point_data_level(
         inputs.push(
             DesignWorkPointInput::try_new(
                 u32::try_from(reference.target()?).ok()?,
-                u64::try_from(reference_offset).ok()?,
+                Some(u64::try_from(reference_offset).ok()?),
                 None,
             )
             .ok()?,
@@ -181,12 +181,12 @@ pub(in crate::design::decode) fn exact_point_data_construction<'a>(
             if let Some(position) = finite_reals_at(bytes, level.position_at) {
                 let construction = DesignWorkPointConstruction {
                     point_record_index: *record_index,
-                    point_record_byte_offset: u64::try_from(start).ok()?,
+                    point_record_byte_offset: Some(u64::try_from(start).ok()?),
                     position,
-                    position_offset: u64::try_from(level.position_at).ok()?,
+                    position_offset: Some(u64::try_from(level.position_at).ok()?),
                     rule: DesignWorkPointRule::from_serialized(level.reference_type, level.inputs)
                         .ok()?,
-                    reference_type_offset: u64::try_from(level.reference_type_at).ok()?,
+                    reference_type_offset: Some(u64::try_from(level.reference_type_at).ok()?),
                 };
                 if candidate.replace(construction).is_some() {
                     return None;

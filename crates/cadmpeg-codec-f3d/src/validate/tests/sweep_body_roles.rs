@@ -23,10 +23,10 @@ fn sweep_body_roles_preserve_group_frames_and_operation_contracts() {
                         draft.payload = DesignScopePayload::Sweep(Some(DesignSweepScope {
                             construction: Some(DesignSweepConstruction {
                                 operation,
-                                operation_offset: 31,
+                                operation_offset: Some(31),
                                 values: crate::test_support::reals([1.0, 1.0, 1.0, 1.0, 0.0, 0.0]),
                                 record_indexes: [211, 223, 227, 229, 233, 239],
-                                value_offsets: [311, 323, 327, 329, 333, 339],
+                                value_offsets: Some([311, 323, 327, 329, 333, 339]),
                             }),
                             sweep_profile: None,
                         }));

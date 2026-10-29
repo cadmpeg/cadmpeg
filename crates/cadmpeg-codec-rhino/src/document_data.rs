@@ -36,7 +36,6 @@ struct RenderUserdataDescriptor {
 #[derive(Debug, Serialize)]
 struct RevisionRecord {
     id: String,
-    source_offset: u64,
     created_by: String,
     created_utc_fields: [i32; 8],
     last_edited_by: String,
@@ -47,7 +46,6 @@ struct RevisionRecord {
 #[derive(Debug, Serialize)]
 struct NotesRecord {
     id: String,
-    source_offset: u64,
     html: bool,
     text: String,
     visible: bool,
@@ -58,7 +56,6 @@ struct NotesRecord {
 #[derive(Debug, Serialize)]
 struct ApplicationRecord {
     id: String,
-    source_offset: u64,
     name: String,
     url: String,
     details: String,
@@ -67,7 +64,6 @@ struct ApplicationRecord {
 #[derive(Debug, Serialize)]
 struct DocumentSettingsRecord {
     id: String,
-    writer_version: Option<i64>,
     archive_file_name: Option<String>,
     model_url: Option<String>,
     current_layer_index: Option<i64>,
@@ -83,7 +79,6 @@ struct DocumentSettingsRecord {
 #[derive(Debug, Serialize)]
 struct PreviewRecord {
     id: String,
-    source_offset: u64,
     byte_len: u64,
     compressed: bool,
     sha256: String,
@@ -92,7 +87,6 @@ struct PreviewRecord {
 #[derive(Debug, Serialize)]
 struct SettingRecord {
     id: String,
-    source_offset: u64,
     byte_len: u64,
     typecode: String,
     sha256: String,
@@ -102,7 +96,6 @@ struct SettingRecord {
 #[derive(Debug, Serialize)]
 struct AnnotationSettingsRecord {
     id: String,
-    source_offset: u64,
     dimension_scale: FiniteReal,
     text_height_mm: FiniteReal,
     extension_line_extension_mm: FiniteReal,
@@ -131,7 +124,6 @@ struct AnnotationSettingsRecord {
 #[derive(Debug, Serialize)]
 struct GridDefaultsRecord {
     id: String,
-    source_offset: u64,
     grid_spacing_mm: FiniteReal,
     snap_spacing_mm: FiniteReal,
     grid_line_count: i32,
@@ -144,7 +136,6 @@ struct GridDefaultsRecord {
 #[derive(Debug, Serialize)]
 struct RenderSettingsRecord {
     id: String,
-    source_offset: u64,
     #[serde(flatten)]
     image_flags: RenderImageFlags,
     image_width_pixels: i32,
@@ -222,7 +213,6 @@ fn annotation_settings(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
-    source_offset: usize,
     scale: MillimeterScale,
 ) -> Result<AnnotationSettingsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
@@ -237,7 +227,6 @@ fn annotation_settings(
     let dimension_scale = annotation_scale(&mut reader)?;
     let value = AnnotationSettingsRecord {
         id: "rhino:document:annotation_settings#current".to_owned(),
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         dimension_scale,
         text_height_mm: length(&mut reader, scale)?,
         extension_line_extension_mm: length(&mut reader, scale)?,
@@ -282,7 +271,6 @@ fn annotation_settings(
 fn grid_defaults(
     data: &[u8],
     body: std::ops::Range<usize>,
-    source_offset: usize,
     scale: MillimeterScale,
 ) -> Result<GridDefaultsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
@@ -294,7 +282,6 @@ fn grid_defaults(
     }
     let value = GridDefaultsRecord {
         id: "rhino:document:grid_defaults#current".to_owned(),
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         grid_spacing_mm: length(&mut reader, scale)?,
         snap_spacing_mm: length(&mut reader, scale)?,
         grid_line_count: reader.i32()?,
@@ -311,7 +298,6 @@ fn render_settings(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     body: std::ops::Range<usize>,
-    source_offset: usize,
     archive: ArchiveVersion,
     scale: MillimeterScale,
 ) -> Result<RenderSettingsRecord, FramingError> {
@@ -442,7 +428,6 @@ fn render_settings(
     reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
         id: "rhino:document:render_settings#current".to_owned(),
-        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         image_flags: RenderImageFlags {
             custom_image_size,
             scale_background_to_fit,
@@ -568,7 +553,6 @@ pub(crate) fn install(
     if let Some(value) = &properties.revision_history {
         revisions.push(RevisionRecord {
             id: "rhino:document:revision#current".to_owned(),
-            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             created_by: value.created_by.clone(),
             created_utc_fields: value.created.fields,
             last_edited_by: value.last_edited_by.clone(),
@@ -580,7 +564,6 @@ pub(crate) fn install(
     if let Some(value) = &properties.notes {
         notes.push(NotesRecord {
             id: "rhino:document:notes#current".to_owned(),
-            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             html: value.html,
             text: value.text.clone(),
             visible: value.visible,
@@ -592,7 +575,6 @@ pub(crate) fn install(
     if let Some(value) = &properties.application {
         applications.push(ApplicationRecord {
             id: "rhino:document:application#writer".to_owned(),
-            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             name: value.name.clone(),
             url: value.url.clone(),
             details: value.details.clone(),
@@ -601,7 +583,6 @@ pub(crate) fn install(
     let settings = &scan.metadata.settings;
     let document_settings = [DocumentSettingsRecord {
         id: "rhino:document:settings#current".to_owned(),
-        writer_version: properties.writer_version,
         archive_file_name: properties
             .as_file_name
             .as_deref()
@@ -623,7 +604,6 @@ pub(crate) fn install(
     for (index, value) in properties.previews.iter().enumerate() {
         previews.push(PreviewRecord {
             id: numbered_id("rhino:document:preview#", index),
-            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
             compressed: value.compressed,
             sha256: sha256_text(&scan.data[value.source.range.clone()]),
@@ -633,7 +613,6 @@ pub(crate) fn install(
     for (index, value) in settings.unsupported.iter().enumerate() {
         setting_records.push(SettingRecord {
             id: numbered_id("rhino:document:setting#", index),
-            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
             typecode: typecode_text(value.typecode),
             sha256: sha256_text(&scan.data[value.source.range.clone()]),
@@ -646,6 +625,26 @@ pub(crate) fn install(
     let mut renders = Vec::new();
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
+    for (index, preview) in properties.previews.iter().enumerate() {
+        losses.push(
+            crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
+                "{}: preview image has no admitted typed image resource",
+                numbered_id("rhino:document:preview#", index)
+            )),
+        );
+        if let Some((table, record)) = scan.tables.iter().find_map(|table| {
+            table
+                .records
+                .iter()
+                .find(|record| record.range == preview.source.range)
+                .map(|record| (table, record))
+        }) {
+            opaque_records.push(OpaqueRecord {
+                table_typecode: table.typecode,
+                record: record.clone(),
+            });
+        }
+    }
     let mut render_settings_seen = false;
     for table in &scan.tables {
         if table.typecode & !0x0000_8000 != SETTINGS_TABLE {
@@ -674,7 +673,6 @@ pub(crate) fn install(
                         "rhino:document:setting#unit-binding-",
                         setting_records.len(),
                     ),
-                    source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
                     byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
                     typecode: typecode_text(record.typecode),
                     sha256: sha256_text(&scan.data[record.range.clone()]),
@@ -686,8 +684,7 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match annotation_settings(ctx, scan.data, record.body(), record.range.start, scale)
-                {
+                match annotation_settings(ctx, scan.data, record.body(), scale) {
                     Ok(value) => {
                         annotations.push(value);
                         Ok(())
@@ -698,7 +695,7 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match grid_defaults(scan.data, record.body(), record.range.start, scale) {
+                match grid_defaults(scan.data, record.body(), scale) {
                     Ok(value) => {
                         grids.push(value);
                         Ok(())
@@ -709,14 +706,7 @@ pub(crate) fn install(
                 let Some(scale) = binding.neutral_scale() else {
                     continue;
                 };
-                match render_settings(
-                    ctx,
-                    scan.data,
-                    record.body(),
-                    record.range.start,
-                    scan.archive,
-                    scale,
-                ) {
+                match render_settings(ctx, scan.data, record.body(), scan.archive, scale) {
                     Ok(value) => {
                         renders.push(value);
                         render_settings_seen = true;
@@ -761,7 +751,6 @@ pub(crate) fn install(
 
                 setting_records.push(SettingRecord {
                     id: numbered_id("rhino:document:setting#error-", setting_records.len()),
-                    source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
                     byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
                     typecode: typecode_text(record.typecode),
                     sha256: sha256_text(&scan.data[record.range.clone()]),

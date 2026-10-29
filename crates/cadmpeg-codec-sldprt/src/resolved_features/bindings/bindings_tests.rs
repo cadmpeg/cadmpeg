@@ -1,5 +1,7 @@
 //! Tests for the `bindings` module.
 
+use crate::test_support::dimensions::source_value;
+
 use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
     bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
@@ -90,9 +92,11 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         features: vec![extrusion, child, following, attribute],
     };
     let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset,
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
@@ -102,6 +106,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         parent: "lane".into(),
         feature_ref: None,
         ordinal: 0,
+        sequence: 0,
         offset,
         object_id: 20,
         name: name.into(),
@@ -152,8 +157,16 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         }],
     };
 
+    let source = lane.native_payload.to_vec();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     bind_scalar_operands(
-        &cadmpeg_test_support::service_decode_context(),
+        &ctx,
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
     )
@@ -181,6 +194,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         id: "selection".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -220,6 +234,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
@@ -253,6 +268,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         }],
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
@@ -269,6 +285,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     ])
     .expect("affine transform");
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
             cadmpeg_ir::geometry::PlacedSurface::try_new(
@@ -301,8 +318,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
     assert!(matches!(&(feature.evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
@@ -336,8 +352,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         )],
         std::slice::from_ref(&face),
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
     assert!(matches!(&(feature.evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
@@ -372,8 +387,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         ],
         &[face, second_face],
         std::slice::from_ref(&surface),
-    )
-    .unwrap();
+    );
     assert!(matches!(&(feature.evaluation.definition()),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
             pattern: admitted_pattern,
@@ -438,6 +452,8 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         native_payload: vec![0; 256].into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -452,10 +468,10 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         edge_selections: Vec::new(),
         surface_selections: Vec::new(),
         generated_surface_identities: vec![FeatureInputGeneratedSurfaceIdentity {
+            sequence: 150,
             id: "identity".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 150,
             type_prefix: [0xc2, 0x83, 0xfb, 0x08].into(),
             feature_source_id: 224_u32.try_into().unwrap(),
             local_identity: 2,
@@ -486,6 +502,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -504,6 +521,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: Vec::new(),
@@ -609,6 +627,8 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 100,
+            feature_ref: None,
             id: "pattern-name".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -640,6 +660,7 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(
@@ -665,8 +686,8 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
                 count,
             } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
             && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
-            && angle.get() == std::f64::consts::FRAC_PI_2
-            && *count == 4)
+            && source_value(angle.dimension(), &history.features).get() == std::f64::consts::FRAC_PI_2
+            && source_value(count, &history.features) == 4)
     ));
 }
 
@@ -840,17 +861,24 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         text: None,
         content: Vec::new(),
     };
-    let class = |offset, name: &str| FeatureInputClass {
-        id: format!("class-{offset}"),
-        parent: "sldprt:feature-input:config-objects#1".into(),
-        ordinal: 0,
-        offset,
-        name: name.into(),
+    let class = |offset, name: &str| {
+        let class = FeatureInputClass {
+            feature_ref: None,
+            id: format!("class-{offset}"),
+            parent: "sldprt:feature-input:config-objects#1".into(),
+            ordinal: 0,
+            sequence: 0,
+            offset,
+            name: name.into(),
+        };
+        (class, offset)
     };
     let name = |index, value: &str| FeatureInputName {
+        feature_ref: None,
         id: format!("name-{index}"),
         parent: "sldprt:feature-input:config-objects#1".into(),
         ordinal: index,
+        sequence: index,
         offset: 250 + u64::from(index),
         object_id: None,
         value: value.into(),
@@ -860,6 +888,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         parent: "sldprt:feature-input:config-objects#1".into(),
         feature_ref: None,
         ordinal: index,
+        sequence: index,
         offset: 300 + 20 * u64::from(index),
         object_id: index,
         name: format!("name-{index}"),
@@ -880,15 +909,16 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         constructed_marker.links = None;
         constructed_marker
     };
+    let declared = [
+        class(100, "moRelMgr_c"),
+        class(200, "sg3DPlaneHandle"),
+        class(500, "suObList"),
+    ];
     let mut lane = FeatureInputLane {
         id: "sldprt:feature-input:config-objects#1".into(),
         configuration: Some("0".into()),
         native_payload: vec![0; 700].into(),
-        classes: vec![
-            class(100, "moRelMgr_c"),
-            class(200, "sg3DPlaneHandle"),
-            class(500, "suObList"),
-        ],
+        classes: declared.into_iter().map(|(class, _)| class).collect(),
         names: vec![name(0, "D1"), name(1, "D2"), name(2, "D3")],
         scalars: vec![scalar(0, 0.01), scalar(1, 0.02), scalar(2, 0.03)],
         relation_bindings: Vec::new(),

@@ -156,17 +156,21 @@ fn zero_angle_elliptical_cone_round_trips_as_an_extruded_ellipse() {
 }
 
 #[test]
-fn zero_angle_cone_of_zero_radius_is_refused_at_planning() {
+fn zero_angle_cone_of_zero_radius_omits_the_unsupported_face() {
     let (ir, _) = zero_angle_cone_cube(0.0, 1.0);
-    let error = StepCodec::default()
+    let plan = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
         )
-        .expect_err("a semi-angle 0 cone of radius 0 is a line");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("is a line"))
-    );
+        .expect("a line carrier does not refuse the document");
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == StepLossCode::UnknownSurfaceFaceOmitted.kind())
+        .expect("unsupported face is reported");
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
 }
 
 #[test]
@@ -180,6 +184,7 @@ fn point_edge_ring_is_written_as_vertex_loop() {
         .retain(|point| point.id.as_str() != "test:model:point#p1");
     let point_curve = CurveId::mint("test:model:curve#point").expect("identity grammar");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: point_curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(

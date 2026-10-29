@@ -21,7 +21,7 @@ fn current_two_face_extent_uses_payload_field_before_terminal_zero() {
         parsed,
         DesignExtrudePrologue::ReferenceAware {
             side_extent_discriminators: [2, 2],
-            side_extent_discriminator_offsets: [77, 100],
+            side_extent_discriminator_offsets: Some([77, 100]),
             extent: DesignExtrudeExtent::TwoSidedToFaces,
             ..
         }

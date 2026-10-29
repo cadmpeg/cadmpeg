@@ -128,7 +128,7 @@ fn face_motion_records_keep_native_topology_indices_and_validate_their_selection
         panic!("face translation")
     };
     assert_eq!(direction.get(), Vector3::new(1.0, 0.0, 0.0));
-    assert_eq!(distance.get(), 20.0);
+    assert_eq!(distance.literal().expect("literal distance").get(), 20.0);
     assert_ne!(
         Some(faces.as_str()),
         ir.model.feature_result_topologies[0].native_ref.as_deref()
@@ -216,14 +216,23 @@ fn body_motion_records_project_and_validate_their_rigid_transform_and_result() {
             bodies: BodySelection::Local { bodies, .. },
             translation,
             rotation: Some(rotation),
-            copies: 0,
+            copies: cadmpeg_ir::features::Dimension::Literal(0),
         }) = ir.model.features[0].evaluation.definition()
         else {
             panic!("body motion")
         };
         assert_eq!(bodies.len(), 1);
-        assert_eq!(translation.get(), Vector3::new(10.0, -20.0, 30.0));
-        assert!((rotation.angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert_eq!(
+            translation
+                .each_ref()
+                .map(|component| component.literal().expect("literal translation").get()),
+            [10.0, -20.0, 30.0]
+        );
+        assert!(
+            (rotation.angle.literal().expect("literal angle").get() - std::f64::consts::FRAC_PI_2)
+                .abs()
+                < 1e-12
+        );
         assert_eq!(
             ir.model.feature_result_topologies[0]
                 .bodies()
@@ -250,7 +259,7 @@ fn body_motion_records_project_and_validate_their_rigid_transform_and_result() {
             panic!("operation")
         };
         if let FeatureOperation::MoveBody { copies, .. } = &mut operation {
-            *copies = 1;
+            *copies = 1.into();
         }
         ir.model.features[0].evaluation =
             FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation));

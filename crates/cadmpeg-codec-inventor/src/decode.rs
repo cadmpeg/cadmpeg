@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
-mod presentation_native_projection;
+mod database_parts;
+mod document_native_projection;
+pub(super) mod meta_type_parts;
+mod property_sections;
+mod property_streams;
+mod revision_parts;
 mod rse_native_projection;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -9,7 +14,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, SpaceId, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
@@ -17,9 +22,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
+use cadmpeg_ir::source_fidelity::parts::PartSpec;
+use cadmpeg_ir::{AnnotationBuilder, UnknownRecord};
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
@@ -39,33 +44,55 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyGroundingRecord, AssemblyOccurrenceRecord,
-    AssemblyPlacementRecord, AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord,
-    DesignViewRepresentationRecord, DesignViewVisibilityOffRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
-    RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, VersionTupleRecord,
+    AssemblyPlacementRecord, DatabaseIssueRecord, DatabaseRecord, DesignViewRepresentationRecord,
+    DesignViewVisibilityOffRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord,
+    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    decode_container(ctx, &InventorContainer::open(ctx, root)?)
+    decode_container(ctx, InventorContainer::open(ctx, root)?)
+}
+
+/// A part over `extent`, naming `stream` when the extent is outside the root input.
+pub(crate) fn part_spec(
+    label: &'static str,
+    extent: View<'_>,
+    stream: impl FnOnce() -> String,
+) -> Result<PartSpec, CodecError> {
+    let spec = PartSpec::new(label);
+    if extent.location().space == SpaceId::ROOT {
+        return Ok(spec);
+    }
+    let name = cadmpeg_ir::StreamName::try_from(stream()).map_err(CodecError::malformed)?;
+    Ok(spec.in_stream(name))
+}
+
+/// The stream name of a segment's expanded bulk body.
+pub(crate) fn expanded_bulk_stream(token: &str) -> String {
+    format!("RSeStorage/B{token}:expanded")
 }
 
 fn decode_container<'a>(
     ctx: &DecodeContext<'a>,
-    container: &InventorContainer<'a>,
+    mut container: InventorContainer<'a>,
 ) -> Result<Decoded, CodecError> {
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
-    let recovery = DialectRecovery::of(container);
+    let recovery = DialectRecovery::of(&container);
     let matched = recovery.classify();
     let dialects = crate::dialect::layers(&matched, &container.rse.active_carrier)?;
-    let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse)?;
-    let mut presentation_inventory = crate::presentation::inventory(ctx, &container.rse)?;
+    let source_parts = std::mem::replace(
+        &mut container.rse.source_parts,
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Inventor),
+    );
+    let mut assembly_inventory = crate::assembly::inventory(ctx, &container.rse, source_parts)?;
+    let presentation_inventory =
+        crate::presentation::inventory(ctx, &container.rse, &mut assembly_inventory.parts)?;
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
@@ -78,6 +105,7 @@ fn decode_container<'a>(
     } else {
         ctx.depth()
     };
+    ir.scope = delivered.required_scope();
     let mut admitted_entities = cadmpeg_core::decode::u64_from_index(ir.model.entity_count());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -94,11 +122,43 @@ fn decode_container<'a>(
     );
     let mut document_kind = container.rse.document_kind();
     let mut metadata = MetadataProjection::default();
-    let mut property_sets = Vec::new();
+    let mut property_set_count = 0;
     let mut property_sections = Vec::new();
     let mut properties = Vec::new();
+    let mut property_count = 0;
+    let mut preview_ordinal = 0;
     let mut property_set_issues = Vec::new();
     for descriptor in &container.property_sets {
+        if descriptor.source.is_some() {
+            if let Some(stream) = property_streams::stage(
+                ctx,
+                &mut assembly_inventory.parts,
+                descriptor,
+                &mut preview_ordinal,
+            )? {
+                property_set_count += usize::from(stream.header_formed);
+                for (section_ordinal, section) in stream.sections {
+                    property_count += section.properties.len();
+                    for property in &section.properties {
+                        let native_id = format!(
+                            "inventor:property:value#{}-{section_ordinal}-{}",
+                            descriptor.stream.directory_id(),
+                            property.id
+                        );
+                        let scalar_value = property.value.scalar_text();
+                        metadata.consider(
+                            &section.fmtid,
+                            property.id,
+                            property.name.as_deref(),
+                            scalar_value.as_deref(),
+                            &native_id,
+                        );
+                    }
+                }
+            }
+            continue;
+        }
+
         match &descriptor.state {
             PropertySetState::Malformed(detail) => {
                 admit_native_items(ctx, 1)?;
@@ -109,19 +169,15 @@ fn decode_container<'a>(
                 ));
             }
             PropertySetState::Parsed(property_set) => {
-                admit_native_items(ctx, 1)?;
-                let id = format!("inventor:property:set#{}", descriptor.stream.directory_id());
-                property_sets.push(PropertySetRecord {
-                    id,
-                    path: descriptor.path.clone(),
-                    directory_id: descriptor.stream.directory_id(),
-                    version: property_set.version,
-                    system_identifier: property_set.system_identifier,
-                    clsid: hex(&property_set.clsid),
-                    section_count: cadmpeg_core::decode::u64_from_index(
-                        property_set.sections.len(),
-                    ),
-                });
+                if !crate::property_set::source_admission::stage_header(
+                    ctx,
+                    &mut assembly_inventory.parts,
+                    descriptor,
+                    property_set,
+                )? {
+                    continue;
+                }
+                property_set_count += 1;
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
                     let set_name = property_set_name(section);
                     let identity_matches = set_name
@@ -187,17 +243,19 @@ fn decode_container<'a>(
                         );
                         if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
-                                let ordinal = ir.model.assets.len();
-                                ir.model.assets.push(project_preview_asset(
+                                let asset = project_preview_asset(
                                     ctx,
                                     &mut admitted_entities,
-                                    ordinal,
+                                    preview_ordinal,
                                     &native_id,
                                     bytes,
                                     media_type,
-                                )?);
+                                )?;
+                                preview_ordinal += 1;
+                                ir.model.assets.push(asset);
                             }
                         }
+                        property_count += 1;
                         properties.push(PropertyRecord {
                             id: native_id,
                             set_path: descriptor.path.clone(),
@@ -259,7 +317,6 @@ fn decode_container<'a>(
         "document_kind".to_owned(),
         document_kind.label().to_string(),
     );
-    metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta::classified(
         dialects,
         cadmpeg_core::text::named_entries("the inventor document", attributes)?,
@@ -287,11 +344,22 @@ fn decode_container<'a>(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let mut source_database_count = 0;
+    for descriptor in &container.rse.databases {
+        if descriptor.source.is_some()
+            && database_parts::stage(ctx, &mut assembly_inventory.parts, descriptor)?
+        {
+            source_database_count += 1;
+        }
+    }
     let databases = container
         .rse
         .databases
         .iter()
         .filter_map(|descriptor| {
+            if descriptor.source.is_some() {
+                return None;
+            }
             let DatabaseState::Parsed(database) = &descriptor.state else {
                 return None;
             };
@@ -314,6 +382,9 @@ fn decode_container<'a>(
         .collect::<Result<Vec<_>, CodecError>>()?;
     let mut database_issues = Vec::new();
     for descriptor in &container.rse.databases {
+        if descriptor.source.is_some() {
+            continue;
+        }
         if let Some(detail) = descriptor.issue_detail() {
             admit_native_items(ctx, 1)?;
             database_issues.push(DatabaseIssueRecord {
@@ -344,8 +415,12 @@ fn decode_container<'a>(
             .collect::<Result<Vec<_>, _>>()?,
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
+    let source_revision_count = match container.rse.revision_source {
+        Some(source) => revision_parts::stage(ctx, &mut assembly_inventory.parts, source)?,
+        None => 0,
+    };
     let revisions = match &container.rse.revisions {
-        ParsedState::Parsed(table) => table
+        ParsedState::Parsed(table) if container.rse.revision_source.is_none() => table
             .entries
             .iter()
             .enumerate()
@@ -365,71 +440,85 @@ fn decode_container<'a>(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
+        ParsedState::Parsed(_) | ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
     if let ParsedState::Unavailable(detail) = &container.rse.registry {
         structural_issues.push(structural_issue(ctx, "segment_registry", detail)?);
     }
-    if let ParsedState::Unavailable(detail) = &container.rse.revisions {
-        structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
+    if container.rse.revision_source.is_none() {
+        if let ParsedState::Unavailable(detail) = &container.rse.revisions {
+            structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
+        }
     }
-    let projection = rse_native_projection::project(ctx, container)?;
+    let source_meta_type_count = container.rse.source_meta_type_count;
+    let projection = rse_native_projection::project(ctx, &container)?;
     structural_issues.extend(projection.identity_issues);
     let segment_pairs = projection.segment_pairs;
     let segment_meta = projection.segment_meta;
     let meta_sections = projection.meta_sections;
-    let meta_types = projection.meta_types;
     let segment_meta_issues = projection.segment_meta_issues;
     let rse_records = projection.rse_records;
-    let drawing_inventory = crate::drawing::inventory(ctx, container, &rse_records)?;
+    let drawing_inventory = crate::drawing::inventory(ctx, &container, &rse_records)?;
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
     let unpaired_segments = projection.unpaired_segments;
     admit_native_items(ctx, 1)?;
     let active_carrier = ActiveCarrierRecord::from_state(&container.rse.active_carrier);
     let assembly_occurrences = assembly_inventory
-        .occurrences
-        .iter()
-        .map(|occurrence| AssemblyOccurrenceRecord::from_occurrence(ctx, occurrence))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<AssemblyOccurrenceRecord>(ctx, "assembly_occurrences")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let staged_rse_record_count = assembly_inventory
+        .parts
+        .native()
+        .namespace("inventor")
+        .and_then(|namespace| namespace.arenas().get("rse_records"))
+        .map_or(0, Vec::len);
     let assembly_placements = assembly_inventory
-        .placements
-        .iter()
-        .map(|placement| {
-            admit_assembly_placement(
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<AssemblyPlacementRecord>(ctx, "assembly_placements")
+        })
+        .transpose()?
+        .unwrap_or_default();
+    let design_view_representations = assembly_inventory
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<DesignViewRepresentationRecord>(
                 ctx,
-                AssemblyPlacementRecordWire::from_placement(placement),
-                &mut assembly_inventory.issues,
+                "design_view_representations",
             )
         })
-        .collect::<Result<Vec<_>, CodecError>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let design_view_representations = assembly_inventory
-        .representations
-        .iter()
-        .map(|representation| {
-            DesignViewRepresentationRecord::from_representation(ctx, representation)
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .transpose()?
+        .unwrap_or_default();
     let design_view_visibility = assembly_inventory
-        .visibility_off
-        .iter()
-        .map(|state| DesignViewVisibilityOffRecord::from_state(ctx, state))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace
+                .arena_as_for_decode::<DesignViewVisibilityOffRecord>(ctx, "design_view_visibility")
+        })
+        .transpose()?
+        .unwrap_or_default();
     let assembly_groundings = assembly_inventory
-        .groundings
-        .iter()
-        .map(|grounding| AssemblyGroundingRecord::from_grounding(ctx, grounding))
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let presentation_native =
-        presentation_native_projection::project(ctx, &mut presentation_inventory)?;
-    let pm_app_default_styles = presentation_native.default_styles;
-    let pm_app_rendering_styles = presentation_native.rendering_styles;
-    let pm_graphics_faces = presentation_native.graphics_faces;
-    let pm_graphics_style_collections = presentation_native.graphics_style_collections;
-    let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
+        .parts
+        .native()
+        .namespace("inventor")
+        .map(|namespace| {
+            namespace.arena_as_for_decode::<AssemblyGroundingRecord>(ctx, "assembly_groundings")
+        })
+        .transpose()?
+        .unwrap_or_default();
     ctx.admit_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         &mut admitted_entities,
@@ -438,8 +527,7 @@ fn decode_container<'a>(
     let active_design_view = ufrx
         .representation()
         .map(|representation| representation.active_design_view.as_str());
-    let assembly_projection = crate::assembly::project_occurrences(
-        ctx,
+    let unprojected_occurrences = crate::assembly::project_occurrences_into(
         ufrx_occurrences,
         external_references,
         &assembly_occurrences,
@@ -450,9 +538,13 @@ fn decode_container<'a>(
             visibility_off: &design_view_visibility,
             groundings: &assembly_groundings,
         },
+        |occurrence, joint| {
+            assembly_inventory.parts.insert_model(ctx, occurrence)?;
+            joint.map_or(Ok(()), |joint| {
+                assembly_inventory.parts.insert_model(ctx, joint)
+            })
+        },
     )?;
-    ir.model.occurrences = assembly_projection.occurrences;
-    ir.model.assembly_joints = assembly_projection.joints;
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
@@ -460,7 +552,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
     namespace.set_arena(ctx, "revisions", &revisions)?;
     namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
-    namespace.set_arena(ctx, "property_sets", &property_sets)?;
+    namespace.set_arena::<PropertySetRecord>(ctx, "property_sets", &[])?;
     namespace.set_arena(ctx, "property_sections", &property_sections)?;
     namespace.set_arena(ctx, "properties", &properties)?;
     namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
@@ -468,33 +560,35 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
     namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
-    namespace.set_arena(ctx, "assembly_occurrences", &assembly_occurrences)?;
-    namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
-    namespace.set_arena(
+    namespace.set_arena::<AssemblyOccurrenceRecord>(ctx, "assembly_occurrences", &[])?;
+    namespace.set_arena::<AssemblyPlacementRecord>(ctx, "assembly_placements", &[])?;
+    namespace.set_arena::<DesignViewRepresentationRecord>(
         ctx,
         "design_view_representations",
-        &design_view_representations,
+        &[],
     )?;
-    namespace.set_arena(ctx, "design_view_visibility", &design_view_visibility)?;
-    namespace.set_arena(ctx, "assembly_groundings", &assembly_groundings)?;
-    namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
-    namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
-    namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;
-    namespace.set_arena(ctx, "pm_graphics_faces", &pm_graphics_faces)?;
-    namespace.set_arena(
+    namespace.set_arena::<DesignViewVisibilityOffRecord>(ctx, "design_view_visibility", &[])?;
+    namespace.set_arena::<AssemblyGroundingRecord>(ctx, "assembly_groundings", &[])?;
+    namespace.set_arena::<crate::native::PmAppDefaultStyleRecord>(
+        ctx,
+        "pm_app_default_styles",
+        &[],
+    )?;
+    namespace.set_arena::<crate::native::PmAppRenderingStyleRecord>(
+        ctx,
+        "pm_app_rendering_styles",
+        &[],
+    )?;
+    namespace.set_arena::<crate::native::PmGraphicsFaceRecord>(ctx, "pm_graphics_faces", &[])?;
+    namespace.set_arena::<crate::native::PmGraphicsStyleCollectionRecord>(
         ctx,
         "pm_graphics_style_collections",
-        &pm_graphics_style_collections,
+        &[],
     )?;
-    namespace.set_arena(
+    namespace.set_arena::<crate::native::PmGraphicsPrimaryColorStyleRecord>(
         ctx,
         "pm_graphics_primary_color_styles",
-        &pm_graphics_primary_color_styles,
-    )?;
-    namespace.set_arena(
-        ctx,
-        "presentation_record_issues",
-        &presentation_inventory.issues,
+        &[],
     )?;
     namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
     namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
@@ -571,7 +665,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
     namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
     namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
-    namespace.set_arena(ctx, "meta_types", &meta_types)?;
+    namespace.set_arena::<crate::native::MetaTypeRecord>(ctx, "meta_types", &[])?;
     namespace.set_arena(ctx, "segment_meta_issues", &segment_meta_issues)?;
     namespace.set_arena(ctx, "segment_bulk", &segment_bulk)?;
     namespace.set_arena(ctx, "rse_records", &rse_records)?;
@@ -582,32 +676,35 @@ fn decode_container<'a>(
     drawing_inventory.write(ctx, namespace)?;
     let mut losses = crate::container::deviation_losses(&container.snapshot);
     losses.extend(drawing_inventory.losses());
+    let mut untyped = cadmpeg_ir::ArenaClasses::default();
     let mut geometry_failure = None;
     let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
-        ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
-            Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
-                Ok(decoded) => {
-                    empty_kernel_stream = decoded.model_records == 0;
-                    apply_kernel_header(
-                        &mut ir,
-                        carrier.family,
-                        &decoded.header.metadata,
-                        &mut losses,
-                    );
-                    Some(decoded.brep)
-                }
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => {
-                    geometry_failure = Some(format!("{error}"));
+        ActiveCarrierState::Selected(carrier) if !ctx.container_only() => {
+            match carrier.header.as_ref() {
+                Ok(header) => match crate::kernel::decode_kernel_carrier(ctx, carrier, header) {
+                    Ok(decoded) => {
+                        empty_kernel_stream = decoded.model_records == 0;
+                        apply_kernel_header(
+                            &mut ir,
+                            carrier.family,
+                            &decoded.header.metadata,
+                            &mut losses,
+                        );
+                        Some(decoded.brep)
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(error) => {
+                        geometry_failure = Some(format!("{error}"));
+                        None
+                    }
+                },
+                Err(detail) => {
+                    geometry_failure = Some(detail.to_owned());
                     None
                 }
-            },
-            Err(detail) => {
-                geometry_failure = Some(detail.to_owned());
-                None
             }
-        },
+        }
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
@@ -621,11 +718,11 @@ fn decode_container<'a>(
     } else {
         Vec::new()
     };
-    let face_keys = kernel_brep
-        .face_native_keys
-        .iter()
-        .filter_map(|record| record.asm_face_key.map(|key| (record.face.clone(), key)))
-        .collect::<HashMap<_, _>>();
+    let face_keys = cadmpeg_asm::brep::key_maps::face_keys(
+        &kernel_brep.faces,
+        &kernel_brep.face_native_keys,
+        &kernel_brep.face_sidedness,
+    );
     let (
         _,
         AsmTransferRemainder {
@@ -663,6 +760,9 @@ fn decode_container<'a>(
                 CodecError::malformed("Inventor Base projection exceeds unresolved feature count")
             })?;
     }
+    if !ctx.container_only() {
+        document_native_projection::project(ctx, &mut ir, &ufrx, &properties, &mut losses)?;
+    }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
@@ -693,19 +793,19 @@ fn decode_container<'a>(
         &ir.model.appearances,
         &body_ids,
         &face_keys,
+        Some(&mut assembly_inventory.parts),
     )?;
-    let face_color_appearance_count = presentation_projection.appearances.len();
-    let projected_colors = presentation_projection
+    let face_color_appearance_count = assembly_inventory.parts.model().appearances.len();
+    let projected_colors = assembly_inventory
+        .parts
+        .model()
         .appearances
         .iter()
         .filter_map(|appearance| Some((appearance.id.clone(), appearance.base_color?)))
         .collect::<HashMap<_, _>>();
-    ir.model
-        .appearances
-        .extend(presentation_projection.appearances);
-    ir.model.appearance_bindings = presentation_projection.bindings;
-    let face_colors = ir
-        .model
+    let face_colors = assembly_inventory
+        .parts
+        .model()
         .appearance_bindings
         .iter()
         .filter_map(|binding| {
@@ -727,9 +827,9 @@ fn decode_container<'a>(
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     if protein_admission_issue_count != 0 {
-        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
+        losses.push(InventorLossCode::ProteinAssetRejected.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
             "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
-        )));
+        ) }));
     }
     losses.extend(dialect_loss(&matched, &recovery));
     if let Some(kernel) = ir
@@ -762,58 +862,73 @@ fn decode_container<'a>(
                 }
             },
         };
-        losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail.clone()));
+        losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note({
+            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+            detail.clone()
+        }));
     }
     if !ctx.container_only() {
         if kernel_stats.unknown_surface_faces() != 0 {
             losses.push(
-                InventorLossCode::GeometryProceduralSurfaceNotTransferred.note(format!(
-                    "{} face(s) use procedural surfaces without a decoded carrier.",
-                    kernel_stats.unknown_surface_faces()
-                )),
+                InventorLossCode::GeometryProceduralSurfaceNotTransferred.note({
+                    untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                    format!(
+                        "{} face(s) use procedural surfaces without a decoded carrier.",
+                        kernel_stats.unknown_surface_faces()
+                    )
+                }),
             );
         }
         if !segment_pairs.is_empty() {
-            losses.push(InventorLossCode::RseSegmentPairUntyped.note(format!(
-                "Retained {} structurally paired RSe segment(s) without record semantics.",
-                segment_pairs.len()
-            )));
+            losses.push(InventorLossCode::RseSegmentPairUntyped.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
+                        "Retained {} structurally paired RSe segment(s) without record semantics.",
+                        segment_pairs.len()
+                    )
+                }
+            }));
         }
         if !segment_meta_issues.is_empty() {
-            losses.push(InventorLossCode::RseMetadataStreamMalformed.note(format!(
+            losses.push(InventorLossCode::RseMetadataStreamMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
                 "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
                 segment_meta_issues.len()
-            )));
+            )
+                }
+            }));
         }
         if !segment_bulk_issues.is_empty() {
-            losses.push(InventorLossCode::RseBulkStreamMalformed.note(format!(
-                "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
-                segment_bulk_issues.len()
-            )));
-        }
-        if !assembly_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::AssemblyRecordMalformed.note(format!(
-                "{} typed Inventor assembly record(s) are malformed or outside the implemented branch.",
-                assembly_inventory.issues.len()
-            )));
-        }
-        if !presentation_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::PresentationRecordMalformed.note(format!(
-                "{} typed Inventor presentation record(s) are malformed or outside the implemented branch.",
-                presentation_inventory.issues.len()
-            )));
+            losses.push(InventorLossCode::RseBulkStreamMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
+                        "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
+                        segment_bulk_issues.len()
+                    )
+                }
+            }));
         }
         if !design_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::DesignRecordMalformed.note(format!(
+            losses.push(InventorLossCode::DesignRecordMalformed.note({ untyped.insert(cadmpeg_ir::ArenaClass::Design); format!(
                 "{} typed Inventor design record(s) are malformed or outside the implemented branch.",
                 design_inventory.issues.len()
-            )));
+            ) }));
         }
         if !sketch_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::SketchRecordMalformed.note(format!(
-                "{} typed Inventor sketch record(s) could not be parsed exactly.",
-                sketch_inventory.issues.len()
-            )));
+            losses.push(InventorLossCode::SketchRecordMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
+                    "{} typed Inventor sketch record(s) could not be parsed exactly.",
+                    sketch_inventory.issues.len()
+                )
+            }));
         }
         let unnamed_labels = feature_inventory
             .labels
@@ -836,16 +951,21 @@ fn decode_container<'a>(
             )));
         }
         if !feature_inventory.issues.is_empty() {
-            losses.push(InventorLossCode::FeatureRecordMalformed.note(format!(
-                "{} typed Inventor feature record(s) could not be parsed exactly.",
-                feature_inventory.issues.len()
-            )));
+            losses.push(InventorLossCode::FeatureRecordMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                format!(
+                    "{} typed Inventor feature record(s) could not be parsed exactly.",
+                    feature_inventory.issues.len()
+                )
+            }));
         }
         if unresolved.features != 0 {
-            losses.push(InventorLossCode::FeatureOperationGraphOpen.note(format!(
+            losses.push(InventorLossCode::FeatureOperationGraphOpen.note({
+                format!(
                 "Retained {} typed Inventor feature record(s) whose operation graph is not closed.",
                 unresolved.features
-            )));
+            )
+            }));
         }
         losses.extend(crate::feature::derived::native_source_loss(
             &feature_inventory.labels,
@@ -934,10 +1054,10 @@ fn decode_container<'a>(
             )));
         }
         if unresolved.parameters != 0 {
-            losses.push(InventorLossCode::ParameterGraphOpen.note(format!(
+            losses.push(InventorLossCode::ParameterGraphOpen.note({ format!(
                 "Retained {} Inventor parameter record(s) whose unit or expression graph is not closed.",
                 unresolved.parameters
-            )));
+            ) }));
         }
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
@@ -946,10 +1066,10 @@ fn decode_container<'a>(
             || unresolved.sketch_entities != 0
             || unresolved.sketch_constraints != 0
         {
-            losses.push(InventorLossCode::SketchGraphOpen.note(format!(
+            losses.push(InventorLossCode::SketchGraphOpen.note({ format!(
                 "Retained {} Inventor sketch record(s), {} sketch-entity record(s), and {} sketch-constraint record(s) whose neutral graph is not closed.",
                 unresolved.sketches, unresolved.sketch_entities, unresolved.sketch_constraints
-            )));
+            ) }));
         }
         if unresolved.sketch_construction != 0 {
             losses.push(InventorLossCode::SketchConstructionUnresolved.note(format!(
@@ -961,11 +1081,17 @@ fn decode_container<'a>(
             &sketch_inventory,
         ));
         if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
-            losses.push(InventorLossCode::RseStreamUnpaired.note(format!(
+            losses.push(InventorLossCode::RseStreamUnpaired.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                {
+                    untyped.insert(cadmpeg_ir::ArenaClass::Design);
+                    format!(
                 "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
                 container.rse.unpaired_metadata.len(),
                 container.rse.unpaired_bulk.len()
-            )));
+            )
+                }
+            }));
         }
         if !property_set_issues.is_empty() {
             losses.push(InventorLossCode::PropertySetStreamMalformed.note(format!(
@@ -982,28 +1108,30 @@ fn decode_container<'a>(
         match &container.protein {
             ProteinState::Package(_) => {
                 if let Some(detail) = &protein_semantic_issue {
-                    losses.push(InventorLossCode::ProteinCatalogUndecodable.note(format!(
-                        "The Protein asset catalog could not be decoded: {detail}"
-                    )));
+                    losses.push(InventorLossCode::ProteinCatalogUndecodable.note({
+                        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                        format!("The Protein asset catalog could not be decoded: {detail}")
+                    }));
                 } else {
                     if !protein_rejections.is_empty() {
-                        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
+                        losses.push(InventorLossCode::ProteinAssetRejected.note({ untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
                             "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
                             protein_rejections.len()
-                        )));
+                        ) }));
                     }
                     if ir.model.appearances.is_empty() {
-                        losses.push(
-                            InventorLossCode::ProteinAppearanceAbsent.note(
-                                "The Protein package contains no decoded appearance assets."
-                                    .to_string(),
-                            ),
-                        );
+                        losses.push(InventorLossCode::ProteinAppearanceAbsent.note({
+                            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                            "The Protein package contains no decoded appearance assets.".to_string()
+                        }));
                     } else if presentation_projection.unresolved_defaults != 0 {
-                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
+                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note({
+                            untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                            format!(
                             "Could not resolve {} PmApp document-default appearance assignment(s).",
                             presentation_projection.unresolved_defaults
-                        )));
+                        )
+                        }));
                     }
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
@@ -1026,17 +1154,19 @@ fn decode_container<'a>(
             ProteinState::Absent | ProteinState::Empty { .. } => {}
         }
         for (cause, count) in &presentation_projection.unresolved_face_overrides {
-            losses.push(
-                InventorLossCode::AppearanceFaceOverrideUnresolved.note(format!(
+            losses.push(InventorLossCode::AppearanceFaceOverrideUnresolved.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                format!(
                     "Could not resolve {count} PmGraphics face appearance override(s): {}.",
                     cause.description()
-                )),
-            );
+                )
+            }));
         }
         if ufrx_issue_count != 0 {
-            losses.push(InventorLossCode::UfrxTableMalformed.note(format!(
-                "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
-            )));
+            losses.push(InventorLossCode::UfrxTableMalformed.note({
+                untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                format!("Skipped {ufrx_issue_count} invalid UFRxDoc native record(s).")
+            }));
         }
         match &container.ufrx {
             UfrxState::Malformed { .. } => losses.push(
@@ -1055,26 +1185,124 @@ fn decode_container<'a>(
             }
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
                 if !external_references.is_empty() {
-                    losses.push(InventorLossCode::AssemblyComponentExternal.note(format!(
-                        "Retained {} unresolved external component reference(s).",
-                        external_references.len()
-                    )));
+                    losses.push(InventorLossCode::AssemblyComponentExternal.note({
+                        format!(
+                            "Retained {} unresolved external component reference(s).",
+                            external_references.len()
+                        )
+                    }));
                 }
-                losses.extend(nested_visibility_loss(assembly_projection.nested_hidden));
-                for (cause, count) in &assembly_projection.unresolved_placements {
-                    losses.push(
-                        InventorLossCode::AssemblyPlacementNotTransferred.note(format!(
+                losses.extend(nested_visibility_loss(
+                    unprojected_occurrences.nested_hidden,
+                ));
+                for (cause, count) in &unprojected_occurrences.unresolved_placements {
+                    losses.push(InventorLossCode::AssemblyPlacementNotTransferred.note({
+                        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+                        format!(
                             "Could not transfer {count} assembly occurrence placement(s): {}.",
                             cause.description()
-                        )),
-                    );
+                        )
+                    }));
                 }
             }
             UfrxState::Absent | UfrxState::Parsed(_) => {}
         }
     }
+    // A container document holds only the typed native inventory. Analytic
+    // kernel carriers have no native copy, so retain their source below.
+    let omitted_model = ctx.container_only()
+        && (ir.model.entity_count() != 0 || assembly_inventory.parts.model().entity_count() != 0);
+    if ctx.container_only() {
+        ir.model = cadmpeg_ir::document::Model::default();
+    }
+    let (part_model, mut part_native, part_fidelity, mut part_losses) =
+        assembly_inventory.parts.into_parts();
+    if !ctx.container_only() {
+        ir.model.occurrences = part_model.occurrences;
+        ir.model.assembly_joints = part_model.assembly_joints;
+        ir.model.appearance_bindings = part_model.appearance_bindings;
+        if ir.model.appearances.is_empty() {
+            ir.model.appearances = part_model.appearances;
+        } else if !part_model.appearances.is_empty() {
+            let additional = part_model
+                .appearances
+                .len()
+                .checked_mul(size_of::<cadmpeg_ir::appearance::Appearance>())
+                .map(cadmpeg_core::decode::u64_from_index)
+                .ok_or_else(|| {
+                    CodecError::malformed("Inventor appearance composition size overflows")
+                })?;
+            ir.model
+                .appearances
+                .try_reserve(part_model.appearances.len())
+                .map_err(|_| {
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                        ctx.policy().limits.max_retained_bytes,
+                        additional,
+                        "Inventor staged appearance composition",
+                    )
+                })?;
+            ir.model.appearances.extend(part_model.appearances);
+        }
+        if ir.model.assets.is_empty() {
+            ir.model.assets = part_model.assets;
+        } else if !part_model.assets.is_empty() {
+            let additional = part_model
+                .assets
+                .len()
+                .checked_mul(size_of::<Asset>())
+                .map(cadmpeg_core::decode::u64_from_index)
+                .ok_or_else(|| {
+                    CodecError::malformed("Inventor asset composition size overflows")
+                })?;
+            ir.model
+                .assets
+                .try_reserve(part_model.assets.len())
+                .map_err(|_| {
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                        ctx.policy().limits.max_retained_bytes,
+                        additional,
+                        "Inventor staged asset composition",
+                    )
+                })?;
+            ir.model.assets.extend(part_model.assets);
+        }
+    }
+    if !ctx.container_only() {
+        document_native_projection::project_source_properties(
+            ctx,
+            &mut ir,
+            &part_native,
+            &mut losses,
+        )?;
+    }
+    for (arena, mut records) in std::mem::take(part_native.namespace_mut("inventor").arenas_mut()) {
+        let destination = ir
+            .native
+            .namespace_mut("inventor")
+            .arenas_mut()
+            .entry(arena)
+            .or_default();
+        let additional = records
+            .len()
+            .checked_mul(size_of::<cadmpeg_ir::NativeRecord>())
+            .map(cadmpeg_core::decode::u64_from_index)
+            .ok_or_else(|| CodecError::malformed("Inventor part arena size overflows"))?;
+        destination.try_reserve(records.len()).map_err(|_| {
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                additional,
+                "Inventor shared part arena composition",
+            )
+        })?;
+        destination.append(&mut records);
+    }
+    losses.append(&mut part_losses);
     let preview_asset_count = ir.model.assets.len();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = part_fidelity;
     let mut annotations = AnnotationBuilder::new();
     for record in kernel_annotations {
         admit_kernel_annotation(&mut annotations, &record)?;
@@ -1091,7 +1319,7 @@ fn decode_container<'a>(
             )?;
             let data = carrier.bytes.window().to_vec();
             source_fidelity.retain_unknown_records(
-                format!("RSeStorage/B{}:expanded", carrier.segment_token),
+                expanded_bulk_stream(carrier.segment_token.as_str()),
                 [UnknownRecord::retained(
                     UnknownId::compose(
                         &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
@@ -1124,27 +1352,36 @@ fn decode_container<'a>(
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
     let coverage_entries = [
         (crate::coverage::RSE_STORAGE_BANDS, storage_bands.len()),
-        (crate::coverage::RSE_DATABASES, databases.len()),
+        (
+            crate::coverage::RSE_DATABASES,
+            databases.len() + source_database_count,
+        ),
         (
             crate::coverage::RSE_REGISTRY_ENTRIES,
             segment_registry.len(),
         ),
-        (crate::coverage::RSE_REVISIONS, revisions.len()),
+        (
+            crate::coverage::RSE_REVISIONS,
+            revisions.len() + source_revision_count,
+        ),
         (crate::coverage::RSE_SEGMENT_PAIRS, segment_pairs.len()),
         (crate::coverage::RSE_SEGMENT_META, segment_meta.len()),
-        (crate::coverage::RSE_META_TYPES, meta_types.len()),
+        (crate::coverage::RSE_META_TYPES, source_meta_type_count),
         (
             crate::coverage::RSE_SEGMENT_META_ISSUES,
             segment_meta_issues.len(),
         ),
         (crate::coverage::RSE_SEGMENT_BULK, segment_bulk.len()),
-        (crate::coverage::RSE_RECORDS, rse_records.len()),
+        (
+            crate::coverage::RSE_RECORDS,
+            rse_records.len() + staged_rse_record_count,
+        ),
         (
             crate::coverage::RSE_SEGMENT_BULK_ISSUES,
             segment_bulk_issues.len(),
         ),
-        (crate::coverage::PROPERTY_SETS, property_sets.len()),
-        (crate::coverage::PROPERTIES, properties.len()),
+        (crate::coverage::PROPERTY_SETS, property_set_count),
+        (crate::coverage::PROPERTIES, property_count),
         (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
         (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
         (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
@@ -1162,28 +1399,27 @@ fn decode_container<'a>(
         ),
         (
             crate::coverage::PM_APP_DEFAULT_STYLES,
-            pm_app_default_styles.len(),
+            presentation_inventory.default_styles.len(),
         ),
         (
             crate::coverage::PM_APP_RENDERING_STYLES,
-            pm_app_rendering_styles.len(),
+            presentation_inventory.rendering_styles.len(),
         ),
-        (crate::coverage::PM_GRAPHICS_FACES, pm_graphics_faces.len()),
+        (
+            crate::coverage::PM_GRAPHICS_FACES,
+            presentation_inventory.graphics_faces.len(),
+        ),
         (
             crate::coverage::PM_GRAPHICS_STYLE_COLLECTIONS,
-            pm_graphics_style_collections.len(),
+            presentation_inventory.graphics_style_collections.len(),
         ),
         (
             crate::coverage::PM_GRAPHICS_PRIMARY_COLOR_STYLES,
-            pm_graphics_primary_color_styles.len(),
+            presentation_inventory.graphics_primary_color_styles.len(),
         ),
         (
             crate::coverage::FACE_COLOR_APPEARANCES,
             face_color_appearance_count,
-        ),
-        (
-            crate::coverage::PRESENTATION_RECORD_ISSUES,
-            presentation_inventory.issues.len(),
         ),
         (
             crate::coverage::PM_DC_PARAMETERS,
@@ -1294,19 +1530,15 @@ fn decode_container<'a>(
         (crate::coverage::UFRX_OCCURRENCES, ufrx_occurrences.len()),
         (
             crate::coverage::ASSEMBLY_OCCURRENCES,
-            assembly_occurrences.len(),
+            assembly_inventory.occurrences.len(),
         ),
         (
             crate::coverage::ASSEMBLY_PLACEMENTS,
-            assembly_placements.len(),
+            assembly_inventory.placements.len(),
         ),
         (
             crate::coverage::ASSEMBLY_OCCURRENCES_TRANSFERRED,
             transferred_occurrence_count,
-        ),
-        (
-            crate::coverage::ASSEMBLY_RECORD_ISSUES,
-            assembly_inventory.issues.len(),
         ),
         (
             crate::coverage::ACTIVE_KERNEL_CARRIERS,
@@ -1342,12 +1574,65 @@ fn decode_container<'a>(
                 .filter(|(_, count)| *count != 0),
         )
         .collect();
+    if !ctx.container_only()
+        && !geometry_transferred
+        && carrier_read_no_geometry
+        && ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Model)
+            .is_none()
+    {
+        ir.scope.model = false;
+    }
+    if ctx.container_only()
+        && (omitted_model
+            || matches!(
+                container.rse.active_carrier,
+                ActiveCarrierState::Selected(_)
+            ))
+    {
+        untyped.insert(cadmpeg_ir::ArenaClass::Model);
+    }
+    let source_id =
+        UnknownId::mint("inventor:source:image#whole").map_err(CodecError::malformed)?;
+    // Raw style headers and embedded-reference evidence moved out of native
+    // records. Retain their real containing image; otherwise a digest suffices
+    // for source records that were omitted altogether.
+    let source_bytes = if !presentation_inventory
+        .graphics_primary_color_styles
+        .is_empty()
+        || !embedded_references.is_empty()
+    {
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(container.root.window().len()),
+            "retain Inventor source evidence outside CADIR",
+        )?;
+        cadmpeg_ir::source_fidelity::RetainedBytes::Inline {
+            data: container.root.window().to_vec(),
+        }
+    } else {
+        cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+            byte_len: cadmpeg_core::decode::u64_from_index(container.root.window().len()),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(container.root.window()),
+        }
+    };
+    source_fidelity.insert_retained_record(
+        source_id,
+        cadmpeg_ir::source_fidelity::RetainedSourceRecord::from_bytes(
+            "inventor:source",
+            0,
+            source_bytes,
+        )?
+        .with_untyped(untyped),
+    )?;
     let body = DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: ir.scope,
+            geometry_transferred,
+        },
         coverage,
         losses,
         notes: Vec::new(),
-        transfer_ledger: TransferLedger::default(),
     };
     Ok(Decoded {
         ir,
@@ -1471,7 +1756,7 @@ fn project_root_product(
         "admit Inventor root product",
     )?;
     let source_name = metadata.title.as_deref().map(str::to_owned);
-    let label = metadata.title.as_deref().map(str::to_owned);
+    let label = None;
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
     Ok(ProductDefinition {
@@ -1545,6 +1830,16 @@ fn project_preview_asset(
         admitted_entities,
         "admit Inventor preview asset entity",
     )?;
+    form_preview_asset(ctx, ordinal, native_id, bytes, media_type)
+}
+
+fn form_preview_asset(
+    ctx: &DecodeContext<'_>,
+    ordinal: usize,
+    native_id: &str,
+    bytes: &[u8],
+    media_type: &str,
+) -> Result<Asset, CodecError> {
     ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "retain Inventor preview asset",
@@ -1883,7 +2178,8 @@ fn project_ufrx_embedded_reference(
         library_name: reference.library_name.clone(),
         state: reference.state,
         display_name: reference.display_name.clone(),
-        state_values: reference.state_values.into(),
+        state_values_len: 8,
+        state_values_sha256: cadmpeg_ir::hash::sha256_hex(&reference.state_values),
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
         record_sha256: String::from(cadmpeg_ir::hash::digest::Sha256Digest::digest(
             reference.source.window(),
@@ -2070,32 +2366,6 @@ fn admit_protein_rejection(
     admit_ufrx_record(ctx, ProteinRejectionRecord::try_from(wire), &scope, issues)
 }
 
-fn admit_assembly_placement(
-    ctx: &DecodeContext<'_>,
-    wire: AssemblyPlacementRecordWire,
-    issues: &mut Vec<RecordIssue>,
-) -> Result<Option<AssemblyPlacementRecord>, CodecError> {
-    let segment_token = wire.segment_token.clone();
-    let record_ordinal = wire.record_ordinal;
-    match AssemblyPlacementRecord::try_from(wire) {
-        Ok(record) => {
-            ctx.charge_entities(1, "admit Inventor native assembly placement")?;
-            Ok(Some(record))
-        }
-        Err(detail) => {
-            ctx.charge_entities(1, "admit Inventor placement conversion issue")?;
-            issues.push(RecordIssue {
-                family: RecordIssueFamily::Assembly,
-                segment_token: cadmpeg_ir::ids::IdentityKey::try_new(segment_token)
-                    .map_err(CodecError::malformed)?,
-                record_ordinal,
-                detail,
-            });
-            Ok(None)
-        }
-    }
-}
-
 fn structural_issue(
     ctx: &DecodeContext<'_>,
     scope: &str,
@@ -2169,24 +2439,32 @@ impl MetadataProjection {
             return;
         }
         if let Some(name) = name {
-            self.bom_properties.insert(name.into(), value.into());
+            if is_bom_property_name(name) {
+                self.bom_properties.insert(name.into(), value.into());
+            }
         } else {
             self.unmapped += 1;
         }
     }
+}
 
-    fn apply_attributes(&self, attributes: &mut BTreeMap<String, String>) {
-        for (name, value) in [
-            ("title", &self.title),
-            ("author", &self.author),
-            ("description", &self.description),
-            ("part_number", &self.part_number),
-        ] {
-            if let Some(value) = value {
-                attributes.insert(name.into(), value.clone());
-            }
-        }
-    }
+/// Source keys consumed by the root product identity/BOM projection.
+fn is_bom_property_name(name: &str) -> bool {
+    matches!(
+        normalize_property_name(name).as_str(),
+        "title"
+            | "description"
+            | "comments"
+            | "partnumber"
+            | "stocknumber"
+            | "documentkind"
+            | "documenttype"
+            | "revisionnumber"
+            | "project"
+            | "costcenter"
+            | "vendor"
+            | "company"
+    )
 }
 
 fn normalize_property_name(name: &str) -> String {

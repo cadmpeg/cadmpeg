@@ -244,6 +244,7 @@ impl<'ir> Measurer<'ir> {
         let items = model.faces.len() + model.edges.len();
         let Some(allowance) = self.options.work.pass_allowance(items) else {
             return Err(ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::Session,
                 dimension: ResourceDimension::Entities,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: 0,

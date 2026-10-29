@@ -166,9 +166,16 @@ fn decode<'a>(
             Some(Motion {
                 operation: FeatureOperation::MoveBody {
                     bodies: BodySelection::local(bodies.clone(), selection.id()).ok()?,
-                    translation,
+                    translation: {
+                        let vector = translation.get();
+                        [
+                            cadmpeg_ir::scalar::Length::new(vector.x)?.into(),
+                            cadmpeg_ir::scalar::Length::new(vector.y)?.into(),
+                            cadmpeg_ir::scalar::Length::new(vector.z)?.into(),
+                        ]
+                    },
                     rotation,
-                    copies: 0,
+                    copies: 0.into(),
                 },
                 selection,
                 bodies,
@@ -249,7 +256,7 @@ fn decode<'a>(
                     faces: FaceSelection::Native(faces.id()),
                     motion: FaceMotion::Translate {
                         direction: FeatureDirection3::from(direction),
-                        distance: cadmpeg_ir::scalar::Length::new(distance)?,
+                        distance: cadmpeg_ir::scalar::Length::new(distance)?.into(),
                     },
                 },
                 selection,
@@ -323,7 +330,7 @@ fn rigid_motion(matrix: [[f64; 4]; 4]) -> Option<(FiniteVector3, Option<AxisAngl
         Some(AxisAngle {
             origin: FinitePoint3::ZERO,
             direction: FeatureDirection3::from(direction),
-            angle,
+            angle: angle.into(),
         }),
     ))
 }

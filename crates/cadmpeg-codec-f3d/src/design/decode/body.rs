@@ -119,7 +119,10 @@ pub(crate) fn decode_body_bounds(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(start) = usize::try_from(entity.byte_offset).ok() else {
+        let Some(start) = entity
+            .byte_offset
+            .and_then(|offset| usize::try_from(offset).ok())
+        else {
             continue;
         };
         let end = entities
@@ -128,7 +131,11 @@ pub(crate) fn decode_body_bounds(
                 native_stream(&candidate.id) == Some(stream)
                     && candidate.byte_offset > entity.byte_offset
             })
-            .filter_map(|candidate| usize::try_from(candidate.byte_offset).ok())
+            .filter_map(|candidate| {
+                candidate
+                    .byte_offset
+                    .and_then(|offset| usize::try_from(offset).ok())
+            })
             .min()
             .unwrap_or(bytes.len());
         let Ok(record_index) = u32::try_from(entity.entity_id.suffix()) else {
@@ -209,11 +216,11 @@ pub(crate) fn decode_body_bounds(
                 CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
             })
         };
-        let id = design_record_id(&entry.name, ":design-body-bounds#", entity.byte_offset);
+        let id = design_record_id(&entry.name, ":design-body-bounds#", u64_from_index(start));
         let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
             id,
             entity_suffix: entity.entity_id.suffix(),
-            entity_byte_offset: entity.byte_offset,
+            entity_byte_offset: u64_from_index(start),
             record_indices,
             record_byte_offsets: [
                 u64_from_index(first),
@@ -318,13 +325,13 @@ pub(super) fn decode_stream(
                         .and_then(|selector_at| {
                             Some(ConstructionRecipeSelector {
                                 value: View::u32_le_at(bytes, selector_at)?,
-                                byte_offset: u64::try_from(selector_at).ok()?,
+                                byte_offset: Some(u64::try_from(selector_at).ok()?),
                             })
                         });
                     Ok(crate::records::recipes::ConstructionRecipeDesign {
                         id: crate::records::identity::RecordedValue {
                             value: value.to_owned(),
-                            offset: u64_from_index(design_id_at),
+                            offset: Some(u64_from_index(design_id_at)),
                         },
                         selector,
                     })
@@ -341,12 +348,12 @@ pub(super) fn decode_stream(
             let record_index = offset.checked_sub(16).and_then(|at| {
                 Some(crate::records::identity::RecordedValue {
                     value: View::i32_le_at(bytes, at)?,
-                    offset: u64_from_index(at),
+                    offset: Some(u64_from_index(at)),
                 })
             });
             let recipe = ConstructionRecipe {
                 id: design_record_id(stream, ":construction-recipe#", u64_from_index(offset)),
-                byte_offset: u64_from_index(offset),
+                byte_offset: Some(u64_from_index(offset)),
                 kind,
                 design,
                 recipe_index,
@@ -1103,7 +1110,12 @@ pub(crate) fn decode_design_body_bindings(
             continue;
         };
         let owners = super::component_bodies::owners(ctx, bytes, &metadata)?;
-        for record in selected_body_map_records(bytes, &metadata)? {
+        for (map_ordinal, record) in selected_body_map_records(bytes, &metadata)?
+            .into_iter()
+            .enumerate()
+        {
+            let map_ordinal = u32::try_from(map_ordinal)
+                .map_err(|_| CodecError::malformed("F3D Design body map count exceeds u32::MAX"))?;
             let pair_count = u32::try_from(record.bindings.len())
                 .map_err(|_| CodecError::malformed("F3D Design body map exceeds u32::MAX pairs"))?;
             let mut source_bodies = Vec::new();
@@ -1131,6 +1143,7 @@ pub(crate) fn decode_design_body_bindings(
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id,
                         stream: entry.name.clone(),
+                        map_ordinal,
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
@@ -1177,7 +1190,7 @@ pub(crate) fn bind_body_bounds(
             }
             matches.push(binding);
         }
-        matches.sort_by_key(|binding| binding.asm_body_key_offset());
+        matches.sort_by_key(|binding| (binding.map_ordinal(), binding.pair_ordinal()));
         let mut ids = Vec::new();
         for binding in matches {
             ids.push(
@@ -1494,21 +1507,22 @@ mod tests {
         crate::metastream::MetaStream {
             types: vec![
                 crate::records::entity_header::SegmentTypeData {
-                    byte_offset: 0,
+                    class_tag: (256u32).to_string().try_into().expect("fixture class tag"),
+                    byte_offset: Some(0),
                     type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID
                         .to_owned()
                         .try_into()
                         .expect("type GUID"),
-                    type_guid_offset: 0,
+                    type_guid_offset: Some(0),
                     base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                         value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID
                             .to_owned()
                             .try_into()
                             .expect("base GUID"),
-                        offset: 0,
+                        offset: Some(0),
                     },
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
-                    version_offset: 0,
+                    version_offset: Some(0),
                     module: DESIGN_MODULE_BODY.into(),
                     entities: crate::records::identity::ReferenceRun::located(vec![
                         crate::records::identity::Located {
@@ -1518,6 +1532,7 @@ mod tests {
                     ]),
                 },
                 design_type(
+                    257,
                     crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
@@ -1603,6 +1618,7 @@ mod tests {
         crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_GUID,
                     Some(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID),
                     1,
@@ -1610,6 +1626,7 @@ mod tests {
                     vec![900],
                 ),
                 design_type(
+                    257,
                     crate::design::body::SNAPSHOT_BODY_LIST_TYPE_GUID,
                     None,
                     0,
@@ -1617,6 +1634,7 @@ mod tests {
                     vec![901],
                 ),
                 design_type(
+                    258,
                     crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
                     None,
                     0,
@@ -1624,6 +1642,7 @@ mod tests {
                     vec![500],
                 ),
                 design_type(
+                    259,
                     crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
                     None,
                     0,
@@ -1951,6 +1970,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -1958,6 +1978,7 @@ mod tests {
                     vec![entity],
                 ),
                 design_type(
+                    257,
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
@@ -1965,6 +1986,7 @@ mod tests {
                     vec![100, 101],
                 ),
                 design_type(
+                    258,
                     BREP_CONTAINER_TYPE_GUID,
                     None,
                     BREP_CONTAINER_TYPE_VERSION,
@@ -1972,6 +1994,7 @@ mod tests {
                     vec![7],
                 ),
                 design_type(
+                    259,
                     BODY_SCENE_NODE_TYPE_GUID,
                     None,
                     BODY_SCENE_NODE_TYPE_VERSION,
@@ -2000,6 +2023,7 @@ mod tests {
         let meta = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -2007,6 +2031,7 @@ mod tests {
                     Vec::new(),
                 ),
                 design_type(
+                    257,
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
@@ -2041,6 +2066,7 @@ mod tests {
         let metadata = crate::metastream::MetaStream {
             types: vec![
                 design_type(
+                    256,
                     BODY_PRESENTATION_TYPE_GUID,
                     Some(BODY_PRESENTATION_BASE_TYPE_GUID),
                     BODY_PRESENTATION_TYPE_VERSION,
@@ -2048,6 +2074,7 @@ mod tests {
                     Vec::new(),
                 ),
                 design_type(
+                    257,
                     BROWSER_NODE_TYPE_GUID,
                     Some(BROWSER_NODE_BASE_TYPE_GUID),
                     BROWSER_NODE_TYPE_VERSION,
@@ -2101,6 +2128,7 @@ mod tests {
         };
         const STREAM: &str = "Design/BulkStream.dat";
         let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
+            map_ordinal: 0,
             component_owner: None,
             component_owner_unresolved: false,
             id: "f3d:Design/BulkStream.dat:design-body-binding#20".into(),
@@ -2153,12 +2181,12 @@ mod tests {
         }
         let entity = crate::records::entity_header::DesignEntityHeader {
             id: format!("{}:design-entity-header#0", crate::ids::native_scope(ENTRY)),
-            byte_offset: 0,
+            byte_offset: Some(0),
             entity_id: crate::records::identity::DesignEntityId::try_from("0_7".to_owned())
                 .unwrap(),
             class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                 .unwrap(),
-            optional_slot_present: false,
+            optional_slot_present: Some(false),
             registration: crate::records::entity_header::DesignEntityRegistration::new(
                 Some(DESIGN_MODULE_BODY.to_owned()),
                 None,
@@ -2238,7 +2266,7 @@ mod tests {
         );
         assert_eq!(
             recipes[0].design.as_ref().map(|design| design.id.offset),
-            Some(4)
+            Some(Some(4))
         );
         assert_eq!(
             recipes[0]
@@ -2247,7 +2275,7 @@ mod tests {
                 .and_then(|design| design.selector),
             Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 3,
-                byte_offset: 8,
+                byte_offset: Some(8),
             })
         );
     }

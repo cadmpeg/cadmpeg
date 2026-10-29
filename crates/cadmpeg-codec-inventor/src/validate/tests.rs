@@ -1,4 +1,133 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Each kept native state names one pair; a pair may have no state.
+
+use std::collections::HashSet;
+
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::check::Finding;
+use cadmpeg_ir::CadIr;
+
+use crate::test_support::test_fixtures::{
+    primary_envelope_fixture, primary_envelope_fixture_with_design,
+};
+use crate::InventorCodec;
+
+const PAIR_TOKEN: &str = "seg";
+const UNPAIRED: &str = "Inventor segment metadata state has no paired segment";
+
+#[test]
+fn every_kept_metadata_state_still_needs_its_actual_pair() {
+    let pairs = HashSet::from(["seg"]);
+    let mut findings = Vec::new();
+    super::validate_segment_states(&mut findings, &pairs, ["orphan"], [], "metadata");
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains("has no paired segment"));
+}
+
+#[test]
+fn duplicate_kept_metadata_states_are_still_rejected() {
+    let pairs = HashSet::from(["seg"]);
+    let mut findings = Vec::new();
+    super::validate_segment_states(&mut findings, &pairs, ["seg", "seg"], [], "metadata");
+    assert_eq!(findings.len(), 1);
+    assert!(findings[0].message.contains("repeats"));
+}
+
+fn decoded() -> CadIr {
+    decode(primary_envelope_fixture())
+}
+
+fn decode(bytes: Vec<u8>) -> CadIr {
+    InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("primary envelope decodes")
+        .ir()
+        .clone()
+}
+
+fn segment_state_findings(ir: &CadIr) -> Vec<Finding> {
+    let ctx = crate::native::test_ctx();
+    InventorCodec
+        .validate_native(&ctx, ir, None)
+        .expect("validation")
+        .into_iter()
+        .filter(|finding| finding.message.ends_with("state has no paired segment"))
+        .collect()
+}
+
+fn edit_metadata_states(ir: &mut CadIr, edit: impl FnOnce(&mut Vec<serde_json::Value>)) {
+    let ctx = crate::native::test_ctx();
+    let namespace = ir.native.namespace_mut("inventor");
+    let mut states = namespace
+        .arena_as::<serde_json::Value>("segment_meta")
+        .expect("metadata states");
+    edit(&mut states);
+    namespace
+        .set_arena(&ctx, "segment_meta", &states)
+        .expect("edited metadata states");
+}
+
+fn remove_metadata_state(ir: &mut CadIr) {
+    edit_metadata_states(ir, |states| {
+        let before = states.len();
+        states.retain(|state| state["token"] != PAIR_TOKEN);
+        assert_eq!(before - states.len(), 1);
+    });
+}
+
+#[test]
+fn the_decoded_states_equal_the_pairs() {
+    assert!(segment_state_findings(&decoded()).is_empty());
+}
+
+#[test]
+fn a_pair_without_a_state_is_accepted() {
+    let mut ir = decoded();
+    remove_metadata_state(&mut ir);
+    assert!(segment_state_findings(&ir).is_empty());
+}
+
+#[test]
+fn an_extra_state_that_matches_no_pair_is_refused() {
+    let mut ir = decoded();
+    edit_metadata_states(&mut ir, |states| {
+        let mut extra = states[0].clone();
+        extra["id"] = "inventor:rse:segment-meta#orphan".into();
+        extra["token"] = "orphan".into();
+        states.push(extra);
+    });
+    let findings = segment_state_findings(&ir);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].message, UNPAIRED);
+}
+
+#[test]
+fn a_given_up_type_table_links_its_segment_record_and_its_missing_states_validate() {
+    let design = vec![([0x11; 16], Vec::new()); 300];
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(primary_envelope_fixture_with_design(&[], &design)),
+            &DecodeOptions::default(),
+        )
+        .expect("given-up type table decodes");
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0]
+        .message
+        .contains("inventor.meta_forward_section"));
+    let ir = decoded.ir();
+    let namespace = ir.native.namespace("inventor").expect("namespace");
+    let metadata = namespace
+        .arena_as::<serde_json::Value>("segment_meta")
+        .expect("metadata states");
+    assert!(metadata.iter().all(|state| state["token"] != "dc"));
+    assert!(segment_state_findings(ir).is_empty());
+}
 
 use super::face_property_is_admitted;
 use crate::feature::{
@@ -22,6 +151,7 @@ fn annotation(native: String) -> Feature {
         ordinal: 0,
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: Some("thread".into()),
@@ -188,15 +318,14 @@ fn empty_data() -> super::NativeData {
         design_view_representations: Vec::new(),
         design_view_visibility: Vec::new(),
         assembly_groundings: Vec::new(),
-        assembly_record_issues: Vec::new(),
         pm_app_default_styles: Vec::new(),
         pm_app_rendering_styles: Vec::new(),
         pm_graphics_faces: Vec::new(),
         pm_graphics_style_collections: Vec::new(),
         pm_graphics_primary_color_styles: Vec::new(),
         face_native_keys: Vec::new(),
+        face_sidedness: Vec::new(),
         body_native_keys: Vec::new(),
-        presentation_record_issues: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),
         pm_dc_units: Vec::new(),
@@ -453,6 +582,75 @@ fn thread_validation_requires_decoded_numeric_parameters_and_the_thread_class() 
         "Inventor thread annotation does not match its PmDc face selection"
     );
     Ok(())
+}
+
+#[test]
+fn asm_face_key_validation_resolves_the_typed_neutral_native_reference() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("the unit cube example builds");
+    let key = cadmpeg_asm::brep::records::FaceNativeKey {
+        source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
+            cadmpeg_asm::asm_format!("inventor"),
+        ),
+        record_index: 17,
+        asm_face_key: Some(7),
+    };
+    let mut data = empty_data();
+    let native_ref = key.id();
+    data.face_native_keys.push(key);
+    let mut findings = Vec::new();
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
+    ir.model.faces[0].native_ref = Some(native_ref);
+    findings.clear();
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert!(findings.is_empty(), "{findings:?}");
+    ir.model.faces[0].native_ref = Some("inventor:asm:face-native-key#18".to_owned());
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
+}
+
+#[test]
+fn asm_face_key_validation_follows_the_actual_native_sidedness_reference() {
+    use cadmpeg_asm::brep::records::{
+        identity::NativeRecordNamespace, FaceNativeKey, FaceSidedness,
+    };
+    use cadmpeg_ir::topology::Sense;
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("the unit cube example builds");
+    let key = FaceNativeKey {
+        source_namespace: NativeRecordNamespace::new(cadmpeg_asm::asm_format!("inventor")),
+        record_index: 17,
+        asm_face_key: Some(7),
+    };
+    let side = FaceSidedness {
+        source_namespace: key.source_namespace.clone(),
+        record_index: 17,
+        face_key: Some(key.id()),
+        native_sense: Sense::Forward,
+        carrier_flipped: false,
+        containment: None,
+    };
+    ir.model.faces[0].native_ref = Some(side.id());
+    let mut data = empty_data();
+    data.face_native_keys.push(key);
+    data.face_sidedness.push(side);
+    let mut findings = Vec::new();
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert!(findings.is_empty(), "{findings:?}");
+    data.face_sidedness[0].face_key = Some("inventor:asm:face-native-key#18".into());
+    super::validate_presentation(&ir, &data, &mut findings);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].check,
+        cadmpeg_ir::report::check::Check::NativeLinks
+    );
 }
 
 #[test]

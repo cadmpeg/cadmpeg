@@ -58,7 +58,7 @@ fn unsaved_dependencies_carry_an_inferred_marker() {
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
     let histories = crate::history::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
-    let projection = crate::history::project::project_feature_model(&histories).unwrap();
+    let projection = crate::history::project::project_feature_model(&ctx, &histories).unwrap();
     let feature = projection
         .features
         .iter()

@@ -89,10 +89,6 @@ fn placed_source_object(
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -882,6 +878,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,
@@ -928,6 +925,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,
@@ -974,6 +972,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,
@@ -1004,6 +1003,7 @@ pub(super) fn transfer_section_entities(
                 ctx,
                 ir,
                 Curve {
+                    native_ref: None,
                     parameter_range: None,
                     id,
                     geometry,

@@ -66,6 +66,7 @@ fn pcurve_vertex_case() -> (
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for face_id in [10, 11] {
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
                 .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -115,6 +116,7 @@ fn pcurve_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError
 fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecError> {
     let (mut scan, mut ir, carriers) = pcurve_vertex_case();
     let make_curve = |curve_id: u32, direction: [f64; 3]| cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         parameter_range: None,
         id: cadmpeg_ir::ids::CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
             .expect("identity grammar"),

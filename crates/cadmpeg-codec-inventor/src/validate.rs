@@ -44,12 +44,11 @@ use crate::native::{
 use crate::pmdc::PmDcReferenceList;
 use crate::record_issue::RecordIssue;
 
-const ARENAS: &[&str] = &[
+pub(crate) const ARENAS: &[&str] = &[
     "active_carrier",
     "assembly_groundings",
     "assembly_occurrences",
     "assembly_placements",
-    "assembly_record_issues",
     "body_native_keys",
     "database_issues",
     "databases",
@@ -91,7 +90,6 @@ const ARENAS: &[&str] = &[
     "pm_graphics_faces",
     "pm_graphics_style_collections",
     "pm_graphics_primary_color_styles",
-    "presentation_record_issues",
     "property_sections",
     "property_set_issues",
     "property_sets",
@@ -1685,12 +1683,8 @@ fn validate_features(
                         .record_ordinal()?;
                     let parameter = feature_parameters.get(&(token, ordinal))?.as_ref()?;
                     let native = parameter.id();
-                    let value = parameter_values
-                        .get(native.as_str())?
-                        .as_ref()?
-                        .value
-                        .as_ref()?;
-                    Some((*parameter, value))
+                    let design = parameter_values.get(native.as_str())?.as_ref()?;
+                    Some((*parameter, design.value.as_ref()?, &design.id))
                 },
                 |ordinal| {
                     thicken_record_types
@@ -2137,14 +2131,13 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             .filter_map(|record| record.asm_face_key),
         "ASM non-null face Design key",
     );
-    let neutral_faces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| &face.id)
-        .collect::<HashSet<_>>();
     for record in &data.face_native_keys {
-        if !neutral_faces.contains(&record.face) {
+        if !ir
+            .model
+            .faces
+            .iter()
+            .any(|face| record.owns_native_ref(face.native_ref.as_deref(), &data.face_sidedness))
+        {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor ASM face-native-key record does not resolve to a neutral face".into(),
@@ -2279,13 +2272,6 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             ));
         }
     }
-    for issue in &data.presentation_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor presentation record: {}", issue.detail),
-            Some(issue.id()),
-        ));
-    }
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
@@ -2341,15 +2327,14 @@ struct NativeData {
     design_view_representations: Vec<crate::native::DesignViewRepresentationRecord>,
     design_view_visibility: Vec<crate::native::DesignViewVisibilityOffRecord>,
     assembly_groundings: Vec<crate::native::AssemblyGroundingRecord>,
-    assembly_record_issues: Vec<RecordIssue>,
     pm_app_default_styles: Vec<PmAppDefaultStyleRecord>,
     pm_app_rendering_styles: Vec<PmAppRenderingStyleRecord>,
     pm_graphics_faces: Vec<PmGraphicsFaceRecord>,
     pm_graphics_style_collections: Vec<PmGraphicsStyleCollectionRecord>,
     pm_graphics_primary_color_styles: Vec<PmGraphicsPrimaryColorStyleRecord>,
     face_native_keys: Vec<FaceNativeKey>,
+    face_sidedness: Vec<cadmpeg_asm::brep::records::FaceSidedness>,
     body_native_keys: Vec<BodyNativeKey>,
-    presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
@@ -2414,7 +2399,6 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "design_view_representations")?,
             design_view_visibility: namespace.arena_as_for_decode(ctx, "design_view_visibility")?,
             assembly_groundings: namespace.arena_as_for_decode(ctx, "assembly_groundings")?,
-            assembly_record_issues: namespace.arena_as_for_decode(ctx, "assembly_record_issues")?,
             pm_app_default_styles: namespace.arena_as_for_decode(ctx, "pm_app_default_styles")?,
             pm_app_rendering_styles: namespace
                 .arena_as_for_decode(ctx, "pm_app_rendering_styles")?,
@@ -2424,9 +2408,8 @@ impl NativeData {
             pm_graphics_primary_color_styles: namespace
                 .arena_as_for_decode(ctx, "pm_graphics_primary_color_styles")?,
             face_native_keys: namespace.arena_as_for_decode(ctx, "face_native_keys")?,
+            face_sidedness: namespace.arena_as_for_decode(ctx, "face_sidedness")?,
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
-            presentation_record_issues: namespace
-                .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
             pm_dc_expressions: namespace.arena_as_for_decode(ctx, "pm_dc_expressions")?,
             pm_dc_units: namespace.arena_as_for_decode(ctx, "pm_dc_units")?,
@@ -2684,26 +2667,8 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
             }
         }
     }
-    let expanded_lengths = data
-        .bulk
-        .iter()
-        .map(|bulk| (bulk.token.as_str(), bulk.expanded_len))
-        .collect::<HashMap<_, _>>();
-    for record in &data.records {
-        let end = record.payload_offset.checked_add(record.payload_len());
-        if end.is_none_or(|end| {
-            end > expanded_lengths
-                .get(record.token.as_str())
-                .copied()
-                .unwrap_or(0)
-        }) {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor RSe record payload range exceeds its bulk stream".into(),
-                Some(record.id.clone()),
-            ));
-        }
-    }
+    // Byte extents are checked while framing the source bulk streams. Native
+    // document validation checks record identities and typed references only.
     for record in &data.unpaired {
         if pair_tokens.contains(record.token.as_str()) {
             findings.push(finding(
@@ -2715,6 +2680,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
     }
 }
 
+/// Each kept state names one pair. A pair may have no state.
 fn validate_segment_states<'a>(
     findings: &mut Vec<Finding>,
     pairs: &HashSet<&'a str>,
@@ -2728,10 +2694,11 @@ fn validate_segment_states<'a>(
         states.iter().copied(),
         &format!("segment {member} state"),
     );
-    if states.into_iter().collect::<HashSet<_>>() != *pairs {
+    let states = states.into_iter().collect::<HashSet<_>>();
+    if states.iter().any(|token| !pairs.contains(token)) {
         findings.push(finding(
             Check::NativeLinks,
-            format!("Inventor segment {member} states do not cover paired segments exactly"),
+            format!("Inventor segment {member} state has no paired segment"),
             None,
         ));
     }
@@ -3077,21 +3044,11 @@ fn validate_assembly(
             ));
         }
     }
-    for issue in &data.assembly_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor assembly record {}:{} is unavailable: {}",
-                issue.segment_token, issue.record_ordinal, issue.detail
-            ),
-            Some(issue.id()),
-        ));
-    }
     let active_design_view = data
         .ufrx
         .representation()
         .map(|representation| representation.active_design_view.as_str());
-    let mut projected = crate::assembly::project_occurrences(
+    let (mut projected, _) = crate::assembly::project_occurrences(
         ctx,
         data.ufrx.occurrences(),
         data.ufrx.external_references(),

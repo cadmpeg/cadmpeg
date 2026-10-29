@@ -13,6 +13,7 @@ use std::collections::{hash_map::RandomState, HashMap, HashSet};
 /// Follow `entity`'s attribute chain, emitting each record not yet in
 /// `emitted` as a [`SourceAttribute`] bound to `target`.
 pub fn collect_attributes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity: &Record,
     target: &AttributeTarget,
     by_index: &HashMap<i64, &Record, RandomState>,
@@ -30,7 +31,7 @@ pub fn collect_attributes(
             break;
         };
         if emitted.insert(index) {
-            out.push(source_attribute(record, target.clone(), format)?);
+            out.push(source_attribute(ctx, record, target.clone(), format)?);
         }
         current = attribute_next(record);
     }
@@ -145,6 +146,7 @@ pub fn attribute_key(attribute: &SourceAttribute) -> &str {
 /// Serialize one attribute record's value chunks as a [`SourceAttribute`]
 /// bound to `target`. A NaN or infinite number refuses the record.
 pub fn source_attribute(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &Record,
     target: AttributeTarget,
     format: IdFormat,
@@ -162,12 +164,14 @@ pub fn source_attribute(
         })?;
         values.push(value);
     }
-    Ok(SourceAttribute {
-        id: brep_id!(format, AttributeId, "attribute", record.index),
+    SourceAttribute::new(
+        ctx,
+        brep_id!(format, AttributeId, "attribute", record.index),
+        None,
         target,
-        name: record.name.clone(),
+        record.name.clone(),
         values,
-    })
+    )
 }
 
 /// The attribute value one token carries, or `None` for a number that is not

@@ -120,6 +120,7 @@ pub(super) fn project(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::default(),
             source_tag: Some("combine".into()),

@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::wire;
-
-use crate::report::decode::{DecodeReport, DecodeTransfer, TransferLedger};
+use crate::report::decode::{DecodeReport, DecodeTransfer};
 use cadmpeg_core::dialect::DialectLayers;
 use std::collections::BTreeMap;
 
-use crate::report::decode::{TransferDisposition, TransferOutcome, TransferRecord};
+fn decode_report_for_wire_tests() -> DecodeReport {
+    DecodeReport::unclassified(
+        "test",
+        DecodeTransfer {
+            scope: crate::document::ContentScope::full(),
+            geometry_transferred: false,
+        },
+        BTreeMap::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+}
 
 #[test]
 fn hex_coverage_records_the_formatted_name() {
@@ -51,41 +60,52 @@ fn current_decode_report_schema_requires_its_format_identity() {
         required.iter().any(|field| field == "identity"),
         "{schema:#}"
     );
+    assert!(schema["properties"].get("transfer_ledger").is_none());
+    assert_eq!(schema["additionalProperties"], false);
+    for name in [
+        "TransferDisposition",
+        "TransferOutcome",
+        "TransferRecord",
+        "TransferLedger",
+    ] {
+        for definitions in ["$defs", "definitions"] {
+            assert!(
+                schema
+                    .get(definitions)
+                    .and_then(|types| types.get(name))
+                    .is_none(),
+                "{name}: {schema:#}"
+            );
+        }
+    }
 }
 
 #[test]
 fn transfer_record_keeps_the_nested_outcome_wire_shape() {
-    let record = TransferRecord {
-        source: "D1".into(),
-        outcome: TransferOutcome::Retained {
-            target: "iges:entity:directory#1".into(),
-            note: Some("retained".into()),
-        },
-    };
-    let wire = serde_json::to_value(&record).expect("transfer record serializes");
+    let record = serde_json::json!({
+        "source": "D1",
+        "outcome": {
+            "disposition": "retained",
+            "target": "iges:entity:directory#1",
+            "note": "retained"
+        }
+    });
+    let report = decode_report_for_wire_tests();
+    let mut wire = serde_json::to_value(&report).expect("decode report serializes");
+    assert!(wire.get("transfer_ledger").is_none());
     assert_eq!(
-        wire,
-        serde_json::json!({
-            "source": "D1",
-            "outcome": {
-                "disposition": "retained",
-                "target": "iges:entity:directory#1",
-                "note": "retained"
-            }
-        })
+        serde_json::from_value::<DecodeReport>(wire.clone()).unwrap(),
+        report
     );
-    assert_eq!(
-        serde_json::from_value::<TransferRecord>(wire).expect("transfer record deserializes"),
-        record
-    );
+    wire["transfer_ledger"] = serde_json::json!({"entries": [record]});
+    let error = serde_json::from_value::<DecodeReport>(wire)
+        .expect_err("the removed transfer ledger is not a decode-report field");
+    assert!(error.to_string().contains("transfer_ledger"), "{error}");
 }
 
 #[test]
 fn transfer_record_wire_rejects_disposition_target_disagreement() {
-    // The disposition is the tag, so a target and a note exist only on the
-    // dispositions that carry them: each disagreement is a missing or an
-    // unknown field, not a value a reader has to refuse.
-    for wire in [
+    for record in [
         serde_json::json!({
             "source": "D1",
             "outcome": {"disposition": "retained"}
@@ -102,27 +122,17 @@ fn transfer_record_wire_rejects_disposition_target_disagreement() {
             "source": "D1",
             "outcome": {"disposition": "emitted"}
         }),
+        serde_json::json!({
+            "source": "D2",
+            "outcome": {"disposition": "omitted", "note": "unsupported"}
+        }),
     ] {
-        assert!(serde_json::from_value::<TransferRecord>(wire).is_err());
+        let mut wire = serde_json::to_value(decode_report_for_wire_tests()).unwrap();
+        wire["transfer_ledger"] = serde_json::json!({"entries": [record]});
+        let error = serde_json::from_value::<DecodeReport>(wire)
+            .expect_err("no former outcome shape restores the removed report field");
+        assert!(error.to_string().contains("transfer_ledger"), "{error}");
     }
-
-    let omitted: TransferRecord = serde_json::from_value(serde_json::json!({
-        "source": "D2",
-        "outcome": {"disposition": "omitted", "note": "unsupported"}
-    }))
-    .expect("omitted record has no target");
-    assert_eq!(omitted.target(), None);
-    assert_eq!(
-        wire::field::<crate::report::decode::TransferDisposition>(
-            &(omitted.outcome),
-            "disposition"
-        ),
-        TransferDisposition::Omitted
-    );
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(&(omitted.outcome), "note").as_deref(),
-        Some("unsupported")
-    );
 }
 
 #[test]
@@ -131,28 +141,22 @@ fn classified_report_wire_requires_its_primary_format() {
         DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("rhino:archive-80"),
         )),
-        DecodeTransfer::full(true),
+        DecodeTransfer {
+            scope: crate::document::ContentScope::full(),
+            geometry_transferred: true,
+        },
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        TransferLedger::default(),
     );
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
         golden,
-        r#"{"identity":{"classification":"classified","dialects":{"primary":{"dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"transfer":"full","geometry_transferred":true},"losses":[],"notes":[]}"#
+        r#"{"identity":{"classification":"classified","dialects":{"primary":{"dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"scope":{"model":true,"design":true},"geometry_transferred":true},"losses":[],"notes":[]}"#
     );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&golden).unwrap(),
         report
-    );
-
-    let contradictory = golden.replacen("\"transfer\":\"full\"", "\"transfer\":\"container\"", 1);
-    let error = serde_json::from_str::<DecodeReport>(&contradictory)
-        .expect_err("a container-only report has no geometry outcome to state");
-    assert!(
-        error.to_string().contains("geometry_transferred"),
-        "{error}"
     );
 
     let restated = golden.replacen(
@@ -169,19 +173,24 @@ fn classified_report_wire_requires_its_primary_format() {
 fn container_only_report_wire_preserves_the_coherent_transfer_state() {
     let report = DecodeReport::unclassified(
         "test",
-        DecodeTransfer::ContainerOnly {},
+        DecodeTransfer {
+            scope: crate::document::ContentScope::container(),
+            geometry_transferred: false,
+        },
         BTreeMap::new(),
         Vec::new(),
         Vec::new(),
-        TransferLedger::default(),
     );
 
     let rendered = serde_json::to_string(&report).unwrap();
     assert!(
-        rendered.contains("\"transfer\":\"container\""),
+        rendered.contains("\"scope\":{\"model\":false,\"design\":false}"),
         "{rendered}"
     );
-    assert!(!rendered.contains("geometry_transferred"), "{rendered}");
+    assert!(
+        rendered.contains("\"geometry_transferred\":false"),
+        "{rendered}"
+    );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&rendered).unwrap(),
         report
@@ -189,59 +198,37 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
 }
 
 #[test]
-fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
-    let base = serde_json::json!({
-        "identity": {"classification": "unclassified", "format": "rhino"},
-        "transfer": {"transfer": "full", "geometry_transferred": true},
-        "losses": [],
-        "notes": [],
-    });
-    let report = serde_json::from_value::<DecodeReport>(base.clone()).expect("a full decode");
-    assert_eq!(report.transfer, DecodeTransfer::full(true));
+fn a_decode_transfer_requires_scope_classes_and_geometry_outcome() {
+    let transfer = DecodeTransfer {
+        scope: crate::ContentScope {
+            model: false,
+            design: true,
+        },
+        geometry_transferred: false,
+    };
+    let value = serde_json::to_value(transfer).unwrap();
     assert_eq!(
-        serde_json::to_value(&report).unwrap()["transfer"]["transfer"],
-        "full"
+        value,
+        serde_json::json!({"scope":{"model":false,"design":true},"geometry_transferred":false})
     );
-
-    let mut container_only = base.clone();
-    container_only["transfer"]["transfer"] = serde_json::json!("container");
-    let error = serde_json::from_value::<DecodeReport>(container_only.clone())
-        .expect_err("a container-only report has no geometry outcome");
-    assert!(
-        error.to_string().contains("geometry_transferred"),
-        "{error}"
-    );
-
-    container_only["transfer"]
-        .as_object_mut()
-        .expect("map")
-        .remove("geometry_transferred");
-    let report =
-        serde_json::from_value::<DecodeReport>(container_only.clone()).expect("container only");
-    assert_eq!(report.transfer, DecodeTransfer::ContainerOnly {});
-    let wire = serde_json::to_value(&report).unwrap();
-    assert_eq!(wire["transfer"]["transfer"], "container");
     assert_eq!(
-        wire["transfer"]["transfer"],
-        serde_json::to_value(cadmpeg_core::decode::DecodeDepth::Container).unwrap(),
-        "the transfer tag spells the depth it delivered"
+        serde_json::from_value::<DecodeTransfer>(value.clone()).unwrap(),
+        transfer
     );
-    container_only["transfer"]["transfer"] = serde_json::json!("container_only");
-    serde_json::from_value::<DecodeReport>(container_only)
-        .expect_err("the depth token is `container`");
-    assert!(wire["transfer"].get("geometry_transferred").is_none());
-
-    let mut without_outcome = base;
-    without_outcome["transfer"]
-        .as_object_mut()
-        .expect("map")
-        .remove("geometry_transferred");
-    let error = serde_json::from_value::<DecodeReport>(without_outcome)
-        .expect_err("a full decode states its geometry outcome");
-    assert!(
-        error.to_string().contains("geometry_transferred"),
-        "{error}"
-    );
+    for key in ["scope", "geometry_transferred"] {
+        let mut missing = value.clone();
+        missing.as_object_mut().unwrap().remove(key);
+        assert!(serde_json::from_value::<DecodeTransfer>(missing)
+            .unwrap_err()
+            .to_string()
+            .contains(key));
+    }
+    let mut unknown = value;
+    unknown["scope"]["unknown"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<DecodeTransfer>(unknown)
+        .unwrap_err()
+        .to_string()
+        .contains("unknown"));
 }
 
 #[test]

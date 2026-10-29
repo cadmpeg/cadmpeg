@@ -201,6 +201,7 @@ pub(in crate::feature) fn project_plate(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies: DistinctMembers::default(),
             source_properties: BTreeMap::default(),
             source_tag: Some("sheet_metal_attached_plate".into()),

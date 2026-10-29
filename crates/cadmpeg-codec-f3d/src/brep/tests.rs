@@ -35,10 +35,11 @@ fn generic_tag_attribute(
     groups: Vec<AttributeValue>,
 ) -> SourceAttribute {
     SourceAttribute {
+        native_ref: None,
         id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
         target,
         name: "ATTRIB_CUSTOM-attrib".into(),
-        values: [
+        values: ([
             AttributeValue::String("generic_tag_attrib_def".into()),
             AttributeValue::Integer(versions.0),
             AttributeValue::Integer(versions.1),
@@ -48,6 +49,9 @@ fn generic_tag_attribute(
         ]
         .into_iter()
         .chain(groups)
+        .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
         .collect(),
     }
 }
@@ -154,6 +158,7 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
     let mut brep = Brep {
         asm: AsmBrep {
             bodies: vec![Body {
+                native_ref: None,
                 id: body.clone(),
                 kind: BodyKind::default(),
                 regions: vec![region.clone()],
@@ -163,6 +168,7 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
                 visible: None,
             }],
             regions: vec![Region {
+                native_ref: None,
                 id: region,
                 body: body.clone(),
                 shells: Vec::new(),
@@ -215,6 +221,7 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
 #[test]
 fn body_key_retention_keeps_only_the_selected_connected_graph() {
     let body = |index, region| Body {
+        native_ref: None,
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: vec![
@@ -246,11 +253,13 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
             ],
             regions: vec![
                 Region {
+                    native_ref: None,
                     id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
                     body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
                     shells: Vec::new(),
                 },
                 Region {
+                    native_ref: None,
                     id: RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
                     body: BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
                     shells: Vec::new(),
@@ -284,6 +293,7 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
 #[test]
 fn body_key_retention_preserves_derived_links_for_reachable_targets() {
     let body = |index| Body {
+        native_ref: None,
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: Vec::new(),
@@ -404,6 +414,7 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
         asm: AsmBrep {
             bodies: vec![
                 Body {
+                    native_ref: None,
                     id: native_body.clone(),
                     kind: BodyKind::Solid,
                     regions: Vec::new(),
@@ -413,6 +424,7 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
                     visible: None,
                 },
                 Body {
+                    native_ref: None,
                     id: projected_body.clone(),
                     kind: BodyKind::Wire,
                     regions: Vec::new(),
@@ -547,7 +559,9 @@ fn source_curve_keys_retain_distinct_qualifiers_in_every_payload_form() {
             }
         }
         for values in forms {
-            let payload = super::sketch_link_payload(&values).expect("source-curve key");
+            let payload =
+                super::sketch_link_payload(&values.into_iter().map(Some).collect::<Vec<_>>())
+                    .expect("source-curve key");
             assert_eq!((payload.sketch_curve_id, payload.ref_b), (149, qualifier));
         }
     }

@@ -66,12 +66,13 @@ fn settings_frames_require_exact_boundary_version_flags_and_typed_links() {
                 .enumerate()
                 .map(
                     |(index, (guid, version))| crate::records::entity_header::SegmentTypeData {
-                        byte_offset: u64_from_index(index),
+                        class_tag: (256 + index).to_string().try_into().unwrap(),
+                        byte_offset: Some(u64_from_index(index)),
                         type_guid: guid.to_owned().try_into().unwrap(),
-                        type_guid_offset: 4,
+                        type_guid_offset: Some(4),
                         base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                         version,
-                        version_offset: 44,
+                        version_offset: Some(44),
                         module: "Fusion".into(),
                         entities: crate::records::identity::ReferenceRun::unlocated(
                             if index == 0 { vec![50] } else { Vec::new() },

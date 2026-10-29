@@ -24,6 +24,7 @@ fn exact_curve(offset: f64) -> CadIr {
             id: VertexId::mint(format!("test:brep:vertex#{slot}")).unwrap(),
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
     for (slot, start, end) in [
@@ -62,6 +63,7 @@ fn exact_curve(offset: f64) -> CadIr {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         ir.model
             .add_procedural_curves(vec![(
@@ -81,6 +83,7 @@ fn exact_curve(offset: f64) -> CadIr {
             start: ir.model.vertices[slot].id.clone(),
             end: ir.model.vertices[slot + 1].id.clone(),
             tolerance: None,
+            native_ref: None,
         });
     }
     let body = cadmpeg_ir::ids::BodyId::mint("test:brep:body#0").unwrap();
@@ -94,11 +97,13 @@ fn exact_curve(offset: f64) -> CadIr {
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.model.regions.push(cadmpeg_ir::topology::Region {
         id: region.clone(),
         body,
         shells: vec![shell.clone()],
+        native_ref: None,
     });
     ir.model.shells.push(
         cadmpeg_ir::topology::Shell::new(

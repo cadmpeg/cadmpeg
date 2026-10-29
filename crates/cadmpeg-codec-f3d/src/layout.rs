@@ -3804,6 +3804,7 @@ pub(crate) mod class_296_261_legacy_extrude_prefix_scalar_at_70 {
 /// ```
 pub(crate) mod class_296_261_legacy_one_sided_to_face_tail {
     /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const SECOND_SIDE_EXTENT: usize = 277;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 281;
@@ -3818,6 +3819,7 @@ pub(crate) mod class_296_261_legacy_one_sided_to_face_tail {
 /// ```
 pub(crate) mod class_296_261_legacy_one_sided_distance_tail {
     /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const SECOND_SIDE_EXTENT: usize = 267;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 271;
@@ -3844,22 +3846,28 @@ pub(crate) mod legacy_class_415_symmetric_extrude_prefix {
     #[cfg(test)]
     pub(crate) const OPERATION_PREFIX_MARKER_VALUE: u8 = 1;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const OPERATION: usize = 28;
     /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const DIRECTION: usize = 32;
     /// Stated value of `direction` (`u32`). Spec §3.1.
     #[cfg(test)]
     pub(crate) const DIRECTION_VALUE: u32 = 0x0000_0003;
     /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const FACE_EXTEND: usize = 36;
     /// Stated value of `face_extend` (`u32`). Spec §3.1.
     #[cfg(test)]
     pub(crate) const FACE_EXTEND_VALUE: u32 = 0x0000_0002;
     /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const DIRECTION_REVERSED: usize = 40;
     /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const GEOMETRY_KIND: usize = 41;
     /// Offset of `start_support` (`u8`). Spec §3.1.
+    #[cfg(test)]
     pub(crate) const START_SUPPORT: usize = 42;
     /// Offset of `profile_normal` (`f64[3]`, little-endian). Spec §3.1.
     #[cfg(test)]
@@ -5267,6 +5275,52 @@ pub(crate) mod assembly_compact_wide_scope {
     pub(crate) const SECOND_OPERAND_REFERENCE: usize = 254;
     /// Offset of `second_operand_transform` (`f64[16]`, little-endian). Spec §Assembly operands.
     pub(crate) const SECOND_OPERAND_TRANSFORM: usize = 272;
+}
+
+/// Byte offsets for the `design_parameter_state` record.
+///
+/// Spec §3.1. Record length 61 B.
+pub(crate) mod design_parameter_state {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 61;
+    /// Offset of `zero_run_23` (`bytes[23]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_23: usize = 11;
+    /// Offset of `companion_marker` (`u8`). Spec §3.1.
+    pub(crate) const COMPANION_MARKER: usize = 34;
+    /// Offset of `companion_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const COMPANION_INDEX: usize = 35;
+    /// Offset of `companion_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const COMPANION_FLAGS: usize = 43;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 45;
+    /// Offset of `root_marker` (`u8`). Spec §3.1.
+    pub(crate) const ROOT_MARKER: usize = 50;
+    /// Offset of `root_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const ROOT_INDEX: usize = 51;
+    /// Offset of `root_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ROOT_FLAGS: usize = 59;
+}
+
+/// Byte offsets for the `design_parameter_state_companion` record.
+///
+/// Spec §3.1. Record length 44 B.
+pub(crate) mod design_parameter_state_companion {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 44;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 11;
+    /// Offset of `control` (`u8`). Spec §3.1.
+    pub(crate) const CONTROL: usize = 19;
+    /// Offset of `control_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONTROL_WORD: usize = 20;
+    /// Offset of `state_marker` (`u8`). Spec §3.1.
+    pub(crate) const STATE_MARKER: usize = 24;
+    /// Offset of `state_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const STATE_INDEX: usize = 25;
+    /// Offset of `state_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const STATE_FLAGS: usize = 33;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 35;
 }
 
 /// Byte offsets for the `body_reference_tail_prefix` record.

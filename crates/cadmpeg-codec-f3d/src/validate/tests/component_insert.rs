@@ -48,7 +48,7 @@ fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
             carrier_record_index: 166,
             occurrence_identity: Some(17),
             neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
-            neutron_role_offset: 259,
+            neutron_role_offset: Some(259),
             placement: None,
         });
     }
@@ -62,14 +62,14 @@ fn validation_accepts_identity_insert_frame_and_rejects_wrong_pair() {
                 record_index: 167,
                 class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned())
                     .unwrap(),
-                byte_offset: 0,
+                byte_offset: Some(0),
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#169"),
                 record_index: 169,
                 class_tag: crate::records::references::DesignClassTag::try_from("357".to_owned())
                     .unwrap(),
-                byte_offset: 100,
+                byte_offset: Some(100),
             },
         ]);
         native.design_parameter_scopes.push(scope);

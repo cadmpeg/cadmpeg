@@ -17,10 +17,10 @@ use crate::IgesCodec;
 
 #[test]
 fn native_macro_instance_keeps_parameter_wire_fields() {
-    let tokens = [crate::parameter::Token {
+    let tokens = [Some(crate::parameter::Token {
         value: crate::parameter::TokenValue::String(b"abc".to_vec().into()),
         span: 0..3,
-    }];
+    })];
     let instance = super::NativeMacroInstance {
         id: "iges:native:macro-instance#D3".into(),
         source_entity: "iges:entity:directory#3".into(),
@@ -30,6 +30,7 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
         macro_library: None,
         parameters: &tokens,
     };
+    assert_eq!(tokens[0].as_ref().unwrap().span, 0..3);
     assert_eq!(
         serde_json::to_value(instance).unwrap(),
         serde_json::json!({
@@ -40,8 +41,6 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
             "macro_definition": null,
             "macro_library": null,
             "parameters": [{
-                "start": 0,
-                "end": 3,
                 "value": {"kind": "string", "value": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice())},
             }],
         })
@@ -61,15 +60,13 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
         }],
         b"e".to_vec(),
     );
+    assert_eq!(record.line_range, 1..2);
+    assert_eq!(record.bytes, b"abc");
+    assert_eq!(record.tokens()[0].as_ref().unwrap().span, 0..1);
     assert_eq!(
         serde_json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
         serde_json::json!({
-            "parameter_line_start": 1,
-            "parameter_line_end": 2,
-            "parameter_bytes": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice()),
             "parameters": [{
-                "start": 0,
-                "end": 1,
                 "value": {"kind": "string", "value": cadmpeg_ir::native::bytes::NativeBytes::from(b"d".as_slice())},
             }],
             "comment": cadmpeg_ir::native::bytes::NativeBytes::from(b"e".as_slice()),
@@ -314,9 +311,6 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
         })
         .unwrap(),
         serde_json::json!({
-            "parameter_line_start": null,
-            "parameter_line_end": null,
-            "parameter_bytes": "",
             "parameters": [],
             "comment": "",
         })

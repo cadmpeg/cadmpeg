@@ -2,7 +2,7 @@
 //! Emboss selection links, scalar owners, and native control lanes.
 
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use cadmpeg_core::decode::u64_from_index;
 use serde::{Deserialize, Serialize};
@@ -19,13 +19,13 @@ cadmpeg_core::named_optional_field!(
 pub(crate) struct DesignEmbossConstruction {
     pub(crate) control_words: [u32; 2],
     pub(crate) native_pair: [u64; 2],
-    pub(crate) depth_owner: Located<u32>,
-    pub(crate) auxiliary_group: Located<u32>,
-    pub(crate) horizontal_owner: Located<u32>,
-    pub(crate) rotation_owner: Located<u32>,
-    pub(crate) face_group: Located<u32>,
-    pub(crate) vertical_owner: Located<u32>,
-    pub(crate) profile_group: Located<u32>,
+    pub(crate) depth_owner: Sourced<u32>,
+    pub(crate) auxiliary_group: Sourced<u32>,
+    pub(crate) horizontal_owner: Sourced<u32>,
+    pub(crate) rotation_owner: Sourced<u32>,
+    pub(crate) face_group: Sourced<u32>,
+    pub(crate) vertical_owner: Sourced<u32>,
+    pub(crate) profile_group: Sourced<u32>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -35,7 +35,7 @@ pub(crate) struct DesignEmbossConstruction {
 }
 
 impl DesignEmbossConstruction {
-    pub(crate) fn scalar_owners(&self) -> [(Located<u32>, &'static str); 4] {
+    pub(crate) fn scalar_owners(&self) -> [(Sourced<u32>, &'static str); 4] {
         [
             (self.depth_owner, "Depth"),
             (self.horizontal_owner, "Horizontal Distance"),
@@ -44,11 +44,10 @@ impl DesignEmbossConstruction {
         ]
     }
 
+    /// Whether the construction agrees with the reference table of `scope`,
+    /// and, for a located scope, with its frame offsets.
     pub(crate) fn links_match(&self, scope: &DesignParameterScope) -> bool {
-        if scope.kind() != DesignFeatureKind::Emboss
-            || scope.reference_members().len() != 9
-            || scope.byte_offset().checked_add(235) != Some(scope.reference_count_offset())
-        {
+        if scope.kind() != DesignFeatureKind::Emboss || scope.reference_members().len() != 9 {
             return false;
         }
         if scope
@@ -61,19 +60,6 @@ impl DesignEmbossConstruction {
                     .values()
                     .take(ordinal)
                     .any(|prior| prior == value)
-            })
-        {
-            return false;
-        }
-        if scope
-            .reference_members()
-            .offsets()
-            .enumerate()
-            .any(|(ordinal, offset)| {
-                scope
-                    .reference_count_offset()
-                    .checked_add(5 + 11 * u64_from_index(ordinal))
-                    != Some(*offset)
             })
         {
             return false;
@@ -93,20 +79,40 @@ impl DesignEmbossConstruction {
         }) {
             return false;
         }
-        fields
+        let content = fields
             .iter()
             .enumerate()
-            .all(|(ordinal, (field, table, relative))| {
+            .all(|(ordinal, (field, table, _))| {
                 field.value != 0
                     && scope.reference_members().values().nth(*table) == Some(&field.value)
-                    && scope.byte_offset().checked_add(*relative) == Some(field.offset)
-                    && scope.byte_offset() < field.offset
-                    && field.offset < scope.reference_count_offset()
-                    && (ordinal == 0 || fields[ordinal - 1].0.offset < field.offset)
                     && fields[..ordinal]
                         .iter()
                         .all(|(prior, _, _)| prior.value != field.value)
-            })
+            });
+        let (Some(start), Some(count)) = (scope.byte_offset(), scope.reference_count_offset())
+        else {
+            return content;
+        };
+        content
+            && start.checked_add(235) == Some(count)
+            && scope
+                .reference_members()
+                .offsets()
+                .enumerate()
+                .all(|(ordinal, offset)| {
+                    count.checked_add(5 + 11 * u64_from_index(ordinal)) == Some(*offset)
+                })
+            && fields
+                .iter()
+                .enumerate()
+                .all(|(ordinal, (field, _, relative))| {
+                    field.offset.is_some_and(|offset| {
+                        start.checked_add(*relative) == Some(offset)
+                            && start < offset
+                            && offset < count
+                            && (ordinal == 0 || fields[ordinal - 1].0.offset < Some(offset))
+                    })
+                })
     }
 }
 

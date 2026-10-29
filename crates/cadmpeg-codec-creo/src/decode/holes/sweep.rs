@@ -222,7 +222,7 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
         entry_surface_id: None,
         cylinder_rows,
         extent: LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::from(length),
+            length: (cadmpeg_ir::scalar::NonZeroLength::from(length)).into(),
         },
         geometry: CylinderSurface::new(
             frame.frame().finite_origin(),
@@ -599,7 +599,7 @@ pub(in crate::decode) fn extrusion_extent_and_direction(
 pub(in crate::decode) fn blind_extrude_side(length: f64) -> Option<ExtrudeSide> {
     Some(ExtrudeSide {
         termination: LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
+            length: (cadmpeg_ir::scalar::NonZeroLength::new(length)?).into(),
         },
         draft: None,
     })

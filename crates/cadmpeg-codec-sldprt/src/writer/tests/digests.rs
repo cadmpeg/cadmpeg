@@ -15,6 +15,7 @@ fn metadata_document() -> CadIr {
         ("sldprt:test:attribute#10:3", "source_linear_unit_code"),
     ] {
         ir.model.attributes.push(SourceAttribute {
+            native_ref: None,
             id: AttributeId::mint(id).unwrap(),
             target: AttributeTarget::Document,
             name: name.to_owned(),
@@ -85,14 +86,15 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
     use cadmpeg_ir::attributes::AttributeValue;
     let mut ir = CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
         id: AttributeId::mint("sldprt:metadata:transformed_reference_enclosure#0:6").unwrap(),
         target: AttributeTarget::Document,
         name: "transformed_reference_enclosure".into(),
         values: vec![
-            AttributeValue::vector([0., 0., 0.]).unwrap(),
-            AttributeValue::vector([100., 100., 100.]).unwrap(),
-            AttributeValue::vector([-100., -100., -100.]).unwrap(),
-            AttributeValue::float(200.).unwrap(),
+            Some(AttributeValue::vector([0., 0., 0.]).unwrap()),
+            Some(AttributeValue::vector([100., 100., 100.]).unwrap()),
+            Some(AttributeValue::vector([-100., -100., -100.]).unwrap()),
+            Some(AttributeValue::float(200.).unwrap()),
         ],
     });
     assert!(matches!(

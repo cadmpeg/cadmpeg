@@ -54,9 +54,11 @@ fn variable_fillet_objects_match_the_history_and_lane_scans() {
                 classes: Vec::new(),
                 names: (0..20)
                     .map(|ordinal| FeatureInputName {
+                        feature_ref: None,
                         id: format!("name-{lane}-{ordinal}"),
                         parent: format!("lane-{lane}"),
                         ordinal,
+                        sequence: ordinal,
                         offset: u64::from(next(12)) * 4,
                         object_id: ObjectId::from_value(next(24)),
                         value: format!("Feature{}", next(20)),

@@ -135,9 +135,8 @@ fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
             },
             parent: OccurrenceParent::Root {},
             ordinal: i,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -170,7 +169,7 @@ fn operation_pose_updates_every_instance_of_one_definition() {
         2
     );
     for occurrence in &ir.model.occurrences {
-        assert_eq!(occurrence.transform.rows()[0][3], 10.0);
+        assert_eq!(occurrence.transform.unwrap().rows()[0][3], 10.0);
     }
     assert!(losses
         .iter()
@@ -275,12 +274,14 @@ fn operation_pose_registration_refuses_other_versions_and_duplicate_targets() {
 fn operation_pose_uses_one_matrix_even_inside_the_agreement_tolerance() {
     let (mut ir, poses) = model();
     for (i, o) in ir.model.occurrences.iter_mut().enumerate() {
-        o.transform = Transform::affine([
-            [1.0, 0.0, 0.0, if i == 0 { 10.0 } else { 10.0 + 1.0e-13 }],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .unwrap();
+        o.transform = Some(
+            Transform::affine([
+                [1.0, 0.0, 0.0, if i == 0 { 10.0 } else { 10.0 + 1.0e-13 }],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap(),
+        );
     }
     let mut losses = Vec::new();
     assert_eq!(
@@ -298,7 +299,10 @@ fn operation_pose_uses_one_matrix_even_inside_the_agreement_tolerance() {
         ir.model.occurrences[0].transform,
         ir.model.occurrences[1].transform
     );
-    assert_eq!(ir.model.occurrences[0].transform.rows()[0][3], 10.0);
+    assert_eq!(
+        ir.model.occurrences[0].transform.unwrap().rows()[0][3],
+        10.0
+    );
 }
 
 #[test]

@@ -105,6 +105,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -113,6 +114,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#32".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -126,6 +128,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#33".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -139,12 +142,14 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#34".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
@@ -164,8 +169,10 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
-                                .expect("nonzero length fixture"),
+                            length: cadmpeg_ir::Dimension::Literal(
+                                cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                                    .expect("nonzero length fixture")
+                            ),
                         },
                         draft: None,
                     },
@@ -1250,8 +1257,9 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let mut distance = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Center(second.clone()),
-        parameter: ParameterId::mint("synthetic:test:id#distance".to_string())
-            .expect("identity grammar"),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(
+            ParameterId::mint("synthetic:test:id#distance".to_string()).expect("identity grammar"),
+        ),
     };
     assert!(!reconcile_constraint_entity_references(
         &mut distance,
@@ -1283,7 +1291,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let mut radius = SketchConstraintDefinitionInput::Radius {
         entity: SketchEntityId::mint("synthetic:test:id#first".to_string())
             .expect("valid test fixture"),
-        parameter: parameter.clone(),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(parameter.clone()),
     };
     assert!(reconcile_constraint_parameter_reference(
         &mut radius,
@@ -1291,8 +1299,9 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     let mut missing_distance = SketchConstraintDefinitionInput::Distance {
         entities: Vec::new(),
-        parameter: ParameterId::mint("synthetic:test:id#missing".to_string())
-            .expect("identity grammar"),
+        parameter: cadmpeg_ir::features::Dimension::Parameter(
+            ParameterId::mint("synthetic:test:id#missing".to_string()).expect("identity grammar"),
+        ),
     };
     assert!(!reconcile_constraint_parameter_reference(
         &mut missing_distance,

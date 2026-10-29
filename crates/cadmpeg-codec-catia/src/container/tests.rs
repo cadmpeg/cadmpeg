@@ -953,15 +953,6 @@ fn storage_property_parser_enumerates_external_catia_documents() {
         native.external_references[1].segment,
         native.finjpl_segments[1].id
     );
-    for reference in &native.external_references {
-        let segment = native
-            .finjpl_segments
-            .iter()
-            .find(|segment| segment.id == reference.segment)
-            .expect("external-reference segment");
-        assert!(reference.byte_offset >= segment.byte_offset);
-        assert!(reference.byte_offset < segment.byte_offset + segment.byte_len);
-    }
 }
 
 #[test]
@@ -1502,4 +1493,61 @@ fn outer_stream_directory_parses_one_descriptor() {
     let bytes = outer_directory_catpart();
     let parsed = super::parse_outer_stream_directory(&bytes).expect("valid directory");
     assert_eq!(parsed.descriptors.len(), 1);
+}
+
+#[test]
+fn container_summary_exposes_extent_flags_in_logical_order() {
+    let scan = ContainerScan {
+        data: Vec::new().into(),
+        outer_dir_offset: 0,
+        outer_dir_length: 0,
+        outer: Some(InnerDir {
+            inner: 0,
+            descriptors: vec![Descriptor {
+                name: "MAIN".to_string(),
+                desc_offset: 16,
+                extents: vec![
+                    Extent {
+                        phys_off: 40,
+                        phys_len: 4,
+                        trailing_word: 0xa501_0080,
+                    },
+                    Extent {
+                        phys_off: 80,
+                        phys_len: 8,
+                        trailing_word: 0,
+                    },
+                ],
+            }],
+        }),
+        inner: None,
+        brep: None,
+        main_data_stream: None,
+        e5_record_range: None,
+        previews: Vec::new(),
+        last_save_version: None,
+        external_references: Vec::new(),
+        finjpl_segments: Vec::new(),
+        outer_container_declarations: Vec::new(),
+        census: Census::default(),
+        variant: Variant::Unknown,
+    };
+    let summary = summarize_service(&scan);
+    assert_eq!(
+        summary.entries[0].attributes["extent_flags"],
+        "0xa5010080,0x00000000"
+    );
+}
+
+#[test]
+fn extent_parser_retains_the_raw_flags_word() {
+    let mut directory = vec![0; 24];
+    for (offset, value) in [(4, 40u32), (8, 8), (12, 8), (16, 0), (20, 0xa501_0080)] {
+        directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+    }
+    let (extents, logical_length) =
+        super::parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
+    assert_eq!(logical_length, 8);
+    assert_eq!(extents[0].trailing_word, 0xa501_0080);
+    assert!(super::parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
 }

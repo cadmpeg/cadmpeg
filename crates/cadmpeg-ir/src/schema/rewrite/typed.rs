@@ -8,11 +8,74 @@ use cadmpeg_core::CodecError;
 
 mod cache;
 pub mod native_fields;
+pub mod prune;
 
 use cache::ReplacementIndex;
 
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
+    /// True only for a declared semantic reference, including transparent wrappers.
+    const IS_REFERENCE_LEAF: bool = false;
+
+    /// Visit actual typed references with their required/list wire positions.
+    /// Owners whose flat visitor lacks positions explicitly defer affected refs.
+    fn visit_dependency_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(prune::DependencyReference<'_>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        self.visit_identity_references(ctx, &mut |target| {
+            visitor(prune::DependencyReference {
+                target,
+                position: if Self::IS_REFERENCE_LEAF {
+                    prune::DependencyPosition::Required
+                } else {
+                    prune::DependencyPosition::Unknown {
+                        owner: std::any::type_name::<Self>(),
+                    }
+                },
+                field: None,
+            })
+        })
+    }
+
+    /// Remove only representable list entries after typed dependency analysis.
+    /// Deferred positions and required drops remain typed results, not errors.
+    fn prune_reference_lists(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        deleted: &std::collections::BTreeSet<String>,
+    ) -> Result<prune::ReferencePruneEffect, CodecError> {
+        let effect = prune::analyze(self, ctx, deleted)?;
+        Ok(if effect == prune::ReferencePruneEffect::ListsChanged {
+            prune::ReferencePruneEffect::UnknownReferencePosition {
+                owner: std::any::type_name::<Self>(),
+            }
+        } else {
+            effect
+        })
+    }
+
+    /// Resolve dimensional bindings in a temporary encoder evaluation.
+    /// Scalar owners without dimensions retain their exact value.
+    fn resolve_dimensions(
+        self,
+        _ir: &crate::CadIr,
+        _ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        Ok(self)
+    }
+
+    /// Check every dimensional binding without requiring unevaluated caches.
+    fn validate_dimensions(
+        &self,
+        _ir: &crate::CadIr,
+        _ctx: &DecodeContext<'_>,
+        _errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        Ok(())
+    }
+
     /// False only when identity and text replacement cannot change this value.
     const HAS_IDENTITY_FIELDS: bool = true;
 
@@ -162,6 +225,7 @@ impl<'ctx, F: FnMut(&str) -> Result<String, CodecError>> IdentityMap<'ctx, F> {
 }
 
 impl RewriteIdentities for crate::ids::Identity {
+    const IS_REFERENCE_LEAF: bool = true;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
         value: &mut serde_json::Value,
@@ -253,6 +317,53 @@ impl RewriteIdentities for String {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
+    const IS_REFERENCE_LEAF: bool = T::IS_REFERENCE_LEAF;
+    fn visit_dependency_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(prune::DependencyReference<'_>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk transparent dependency wrapper")?;
+        if let Some(value) = self {
+            value.visit_dependency_references(ctx, visitor)?;
+        }
+        Ok(())
+    }
+    fn prune_reference_lists(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        deleted: &std::collections::BTreeSet<String>,
+    ) -> Result<prune::ReferencePruneEffect, CodecError> {
+        let _depth = ctx.enter_nested("prune transparent dependency wrapper")?;
+        self.as_mut()
+            .map_or(Ok(prune::ReferencePruneEffect::Unchanged), |value| {
+                value.prune_reference_lists(ctx, deleted)
+            })
+    }
+
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        if let Some(value) = self {
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional collection")?;
+        self.map(|value| value.resolve_dimensions(ir, ctx))
+            .transpose()
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -304,6 +415,45 @@ impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
 }
 
 impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
+    fn visit_dependency_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(prune::DependencyReference<'_>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        prune::visit_vec(self, ctx, visitor)
+    }
+    fn prune_reference_lists(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        deleted: &std::collections::BTreeSet<String>,
+    ) -> Result<prune::ReferencePruneEffect, CodecError> {
+        prune::apply_vec(self, ctx, deleted)
+    }
+
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        for value in self {
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional collection")?;
+        self.into_iter()
+            .map(|value| value.resolve_dimensions(ir, ctx))
+            .collect()
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -363,6 +513,58 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
 }
 
 impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
+    fn visit_dependency_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(prune::DependencyReference<'_>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        prune::visit_array(self, ctx, visitor)
+    }
+    fn prune_reference_lists(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        deleted: &std::collections::BTreeSet<String>,
+    ) -> Result<prune::ReferencePruneEffect, CodecError> {
+        let effect = prune::analyze(self, ctx, deleted)?;
+        if effect.can_apply() {
+            for value in self {
+                value.prune_reference_lists(ctx, deleted)?;
+            }
+        }
+        Ok(effect)
+    }
+
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        for value in self {
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional array")?;
+        let mut resolved = self
+            .into_iter()
+            .map(|value| value.resolve_dimensions(ir, ctx));
+        // The iterator has precisely N elements, but array construction remains fallible.
+        let values = (&mut resolved).collect::<Result<Vec<_>, _>>()?;
+        values.try_into().map_err(|_| {
+            crate::features::DimensionResolutionError::InvalidDefinition {
+                reason: "dimensional array length changed".into(),
+            }
+        })
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -421,6 +623,71 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
 }
 
 impl<K: RewriteIdentities + Ord, V: RewriteIdentities> RewriteIdentities for BTreeMap<K, V> {
+    fn visit_dependency_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(prune::DependencyReference<'_>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk object-map dependencies")?;
+        for (key, value) in self {
+            key.visit_dependency_references(ctx, &mut |mut reference| {
+                if let prune::DependencyPosition::List { length, index } = reference.position {
+                    reference.position = prune::DependencyPosition::UnrepresentablePrunedList {
+                        owner: std::any::type_name::<K>(),
+                        length,
+                        index,
+                    };
+                }
+                visitor(reference)
+            })?;
+            value.visit_dependency_references(ctx, visitor)?;
+        }
+        Ok(())
+    }
+    fn prune_reference_lists(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        deleted: &std::collections::BTreeSet<String>,
+    ) -> Result<prune::ReferencePruneEffect, CodecError> {
+        let effect = prune::analyze(self, ctx, deleted)?;
+        if effect.can_apply() {
+            for value in self.values_mut() {
+                value.prune_reference_lists(ctx, deleted)?;
+            }
+        }
+        Ok(effect)
+    }
+
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        for (key, value) in self {
+            key.validate_dimensions(ir, ctx, errors)?;
+            value.validate_dimensions(ir, ctx, errors)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional map")?;
+        self.into_iter()
+            .map(|(key, value)| {
+                Ok((
+                    key.resolve_dimensions(ir, ctx)?,
+                    value.resolve_dimensions(ir, ctx)?,
+                ))
+            })
+            .collect()
+    }
+
     const HAS_IDENTITY_FIELDS: bool = K::HAS_IDENTITY_FIELDS || V::HAS_IDENTITY_FIELDS;
     fn visit_identity_references(
         &self,
@@ -496,6 +763,45 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
 rewrite_scalars!(std::num::NonZeroI64, std::num::NonZeroU32);
 
 impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
+    const IS_REFERENCE_LEAF: bool = T::IS_REFERENCE_LEAF;
+    fn visit_dependency_references(
+        &self,
+        ctx: &DecodeContext<'_>,
+        visitor: &mut dyn FnMut(prune::DependencyReference<'_>) -> Result<(), CodecError>,
+    ) -> Result<(), CodecError> {
+        let _depth = ctx.enter_nested("walk transparent dependency wrapper")?;
+        self.as_ref().visit_dependency_references(ctx, visitor)?;
+        Ok(())
+    }
+    fn prune_reference_lists(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        deleted: &std::collections::BTreeSet<String>,
+    ) -> Result<prune::ReferencePruneEffect, CodecError> {
+        let _depth = ctx.enter_nested("prune transparent dependency wrapper")?;
+        self.as_mut().prune_reference_lists(ctx, deleted)
+    }
+
+    fn validate_dimensions(
+        &self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+        errors: &mut Vec<crate::features::DimensionResolutionError>,
+    ) -> Result<(), ResourceLimit> {
+        let _depth = ctx.enter_nested_limit("check dimensional collection")?;
+        (**self).validate_dimensions(ir, ctx, errors)?;
+        Ok(())
+    }
+
+    fn resolve_dimensions(
+        self,
+        ir: &crate::CadIr,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, crate::features::DimensionResolutionError> {
+        let _depth = ctx.enter_nested_limit("resolve dimensional collection")?;
+        Ok(Box::new((*self).resolve_dimensions(ir, ctx)?))
+    }
+
     const HAS_IDENTITY_FIELDS: bool = T::HAS_IDENTITY_FIELDS;
     fn rewrite_native_value<F: FnMut(&str) -> Result<String, CodecError>>(
         ctx: &DecodeContext<'_>,
@@ -542,6 +848,17 @@ impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
 macro_rules! rewrite_tuple {
     ($($type:ident: $field:ident),*) => {
         impl<$($type: RewriteIdentities),*> RewriteIdentities for ($($type,)*) {
+            fn resolve_dimensions(self, ir: &crate::CadIr, ctx: &DecodeContext<'_>) -> Result<Self, crate::features::DimensionResolutionError> {
+                let _depth = ctx.enter_nested_limit("resolve dimensional tuple")?;
+                let ($($field,)*) = self;
+                Ok(($($field.resolve_dimensions(ir, ctx)?,)*))
+            }
+            fn validate_dimensions(&self, ir: &crate::CadIr, ctx: &DecodeContext<'_>, errors: &mut Vec<crate::features::DimensionResolutionError>) -> Result<(), ResourceLimit> {
+                let _depth = ctx.enter_nested_limit("check dimensional tuple")?;
+                let ($($field,)*) = self;
+                $($field.validate_dimensions(ir, ctx, errors)?;)*
+                Ok(())
+            }
             const HAS_IDENTITY_FIELDS: bool = false $(|| $type::HAS_IDENTITY_FIELDS)*;
             fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
                 let _depth = ctx.enter_nested("walk typed reference tuple")?;

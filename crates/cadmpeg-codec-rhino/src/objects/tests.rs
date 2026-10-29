@@ -710,7 +710,7 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
 
 #[test]
 fn degraded_object_record_resolves_to_one_identity() {
-    let objects = vec![ObjectRecord::Degraded {
+    let objects: Vec<ObjectRecord<()>> = vec![ObjectRecord::Degraded {
         range: 0..1,
         warning: "fixture".to_owned(),
     }];

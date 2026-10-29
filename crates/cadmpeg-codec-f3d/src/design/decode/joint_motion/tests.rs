@@ -313,9 +313,9 @@ fn malformed_rest_lanes_keep_limits() {
                 DesignAssemblyAlignment::try_new(0.0, [0.0; 3], Vec::new(), Some(
                     DesignAssemblyAlignmentForm::qualified(
                         [1, 2].map(|index| DesignAssemblyOperandFrame {
-                            reference_record_index: index, reference_offset: 0,
+                            reference_record_index: index, reference_offset: Some(0),
                             transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
-                            transform_offset: 0,
+                            transform_offset: Some(0),
                         }),
                         [1, 2].map(|scope_record_index| DesignAssemblyOperandQualifier::AxialTarget {
                             target: DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index },

@@ -48,18 +48,15 @@ use cadmpeg_ir::sketches::{
 use std::collections::{HashMap, HashSet};
 
 pub(super) const RELATION_PARAMETER_ID_PROPERTY: &str = "sldprt_relation_id";
-pub(super) const RELATION_PARAMETER_ROLE_PROPERTY: &str = "sldprt_relation_parameter_role";
-pub(super) const RELATION_PARAMETER_ROLE_REFERENCE: &str = "reference";
 pub(super) const RELATION_DISPLAY_SCALAR_ID_PROPERTY: &str = "sldprt_display_scalar_id";
 
 pub(crate) fn is_reference_relation_parameter(
     parameter: &cadmpeg_ir::features::DesignParameter,
 ) -> bool {
-    parameter
-        .properties
-        .get(RELATION_PARAMETER_ROLE_PROPERTY)
-        .map(String::as_str)
-        == Some(RELATION_PARAMETER_ROLE_REFERENCE)
+    !parameter.driving
+        && parameter
+            .properties
+            .contains_key(RELATION_PARAMETER_ID_PROPERTY)
 }
 
 fn relation_native_kind(family: FeatureInputRelationFamily) -> cadmpeg_core::text::NonBlankString {
@@ -117,7 +114,7 @@ fn ensure_spatial_relation_point(
     if let Some(entity) = first {
         return Some(entity.id().clone());
     }
-    let id_text = format!("{}:relation-point:{}", sketch.as_str(), marker.offset());
+    let id_text = format!("{}:relation-point:{}", sketch.as_str(), marker.ordinal());
     let Ok(id) = SpatialSketchEntityId::mint(id_text) else {
         return None;
     };
@@ -331,7 +328,7 @@ pub(crate) fn project_spatial_relation_bindings(
                 SpatialSketchConstraintDefinitionInput::PointLineDistance {
                     point,
                     line,
-                    parameter: parameter_id.clone(),
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter_id.clone()),
                 }
             } else {
                 let mut operands = Vec::new();
@@ -358,7 +355,7 @@ pub(crate) fn project_spatial_relation_bindings(
             };
             let id_text = format!(
                 "sldprt:model:spatial-sketch-constraint#relation:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
             let projected = SpatialSketchConstraint {
                 id: match SketchConstraintId::mint(id_text) {
@@ -582,7 +579,7 @@ pub(crate) fn project_relation_point_geometry(
             let position = Point2::new(position_u * QUANTUM, position_v * QUANTUM);
             let id_text = format!(
                 "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
-                marker.offset()
+                marker.ordinal()
             );
             let Ok(id) = SketchEntityId::mint(id_text) else {
                 continue;
@@ -774,7 +771,7 @@ pub(crate) fn project_relation_point_geometry(
             }
             let id_text = format!(
                 "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
-                marker.offset()
+                marker.ordinal()
             );
             let Ok(id) = SketchEntityId::mint(id_text) else {
                 continue;
@@ -1615,7 +1612,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                     let geometry_ref = format!("{}:operand:{index}", relation.id);
                     let id_text = format!(
                         "sldprt:model:sketch-entity#solver-point:{lane_key}:{}:{index}",
-                        relation.offset
+                        relation.ordinal
                     );
                     let Ok(id) = SketchEntityId::mint(id_text) else {
                         continue;
@@ -1703,7 +1700,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             }
             let id_text = format!(
                 "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}:{missing_index}",
-                relation.offset
+                relation.ordinal
             );
             let Ok(id) = SketchEntityId::mint(id_text) else {
                 continue;
@@ -1947,9 +1944,7 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
                 SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
             )
     })?;
-    let Ok(marker_offset) = usize::try_from(marker.offset()) else {
-        return None;
-    };
+    let marker_offset = usize::try_from(marker.offset()).ok()?;
     let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
     let class_ref = lane
         .references
@@ -2676,8 +2671,13 @@ pub(crate) fn project_relation_bindings(
             };
             let id_text = format!(
                 "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
-                relation.offset
+                relation.ordinal
             );
+            let bound = !definition
+                .kind()
+                .dimension_parameters()
+                .map_err(cadmpeg_core::CodecError::malformed)?
+                .is_empty();
             let projected = SketchConstraint {
                 id: match SketchConstraintId::mint(id_text) {
                     Ok(id) => id,
@@ -2686,10 +2686,14 @@ pub(crate) fn project_relation_bindings(
                 sketch: (*sketch).clone(),
                 definition,
                 name: None,
-                driving: relation
-                    .parameter_scalar_ref()
-                    .map(|_| true)
-                    .or_else(|| has_display_scalar.then_some(false)),
+                driving: (!bound)
+                    .then(|| {
+                        relation
+                            .parameter_scalar_ref()
+                            .map(|_| true)
+                            .or_else(|| has_display_scalar.then_some(false))
+                    })
+                    .flatten(),
                 active,
                 virtual_space: None,
                 visible: None,
@@ -2749,7 +2753,7 @@ pub(crate) fn project_relation_bindings(
             };
             let id_text = format!(
                 "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
-                marker.offset()
+                marker.ordinal()
             );
             let projected = SketchConstraint {
                 id: match SketchConstraintId::mint(id_text) {
@@ -3246,6 +3250,7 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -3275,6 +3280,7 @@ mod relation_geometry_tests {
                 parent: "lane#test".into(),
                 feature_ref: Some("feature-native".into()),
                 ordinal: 0,
+                sequence: 0,
                 offset,
                 object_id: 0,
                 name: "distance".into(),
@@ -3287,6 +3293,7 @@ mod relation_geometry_tests {
             id: "relation".into(),
             parent: "lane#test".into(),
             ordinal: 0,
+            sequence: 0,
             offset: 30,
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class".into(),
@@ -3299,6 +3306,8 @@ mod relation_geometry_tests {
             .unwrap(),
             operands: vec![operand(40, 12), operand(52, 13)],
         };
+        assert_eq!(relation.ordinal, 0);
+        assert_eq!(relation.offset, 30);
         let lane = FeatureInputLane {
             id: "lane#test".into(),
             configuration: None,
@@ -3342,7 +3351,7 @@ mod relation_geometry_tests {
             expression: "7mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(7.0).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("terminal".into()),
@@ -3407,9 +3416,9 @@ mod relation_geometry_tests {
             constraint.definition.kind(),
             SketchConstraintDefinitionInput::DistanceLoci { first, second, .. }
                 if first == &SketchLocus::Entity(
-                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:30:0").unwrap()
+                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:0:0").unwrap()
                 ) && second == &SketchLocus::Entity(
-                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:30:1").unwrap()
+                    SketchEntityId::mint("sldprt:model:sketch-entity#solver-point:test:0:1").unwrap()
                 )
         ));
     }
@@ -3440,6 +3449,7 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -3502,6 +3512,7 @@ mod relation_geometry_tests {
             id: "relation".into(),
             parent: LANE.into(),
             ordinal: 0,
+            sequence: 0,
             offset: 30,
             family: FeatureInputRelationFamily::LineLineDistance,
             class_ref: "class".into(),
@@ -3533,6 +3544,7 @@ mod relation_geometry_tests {
             classes: Vec::new(),
             names: Vec::new(),
             scalars: vec![FeatureInputScalar {
+                sequence: 30,
                 id: "scalar".into(),
                 parent: LANE.into(),
                 feature_ref: Some(FEATURE.into()),
@@ -3571,7 +3583,7 @@ mod relation_geometry_tests {
             expression: "5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
@@ -3837,6 +3849,7 @@ mod relation_geometry_tests {
             parent: LANE.into(),
             feature_ref: Some(FEATURE.into()),
             ordinal: 0,
+            sequence: 0,
             offset: 600,
             object_id: 0,
             name: "distance".into(),
@@ -3856,6 +3869,7 @@ mod relation_geometry_tests {
             id: "synthetic:test:relation#point-line".into(),
             parent: LANE.into(),
             ordinal: 0,
+            sequence: 0,
             offset: 650,
             family: FeatureInputRelationFamily::PointLineDistance,
             class_ref: "class".into(),
@@ -3902,6 +3916,7 @@ mod relation_geometry_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                     sketch: Some(sketch.id.clone()),
@@ -3917,7 +3932,7 @@ mod relation_geometry_tests {
             expression: "6.5mm".into(),
             display: None,
             value: Some(ParameterValue::Length(Length::new(6.5).unwrap())),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            driving: true,
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: Some("scalar".into()),
@@ -3946,7 +3961,7 @@ mod relation_geometry_tests {
             panic!("tagged marker roster has a unique point-line witness");
         };
         assert_eq!(
-            parameter,
+            parameter.parameter().expect("canonical relation parameter"),
             &ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar")
         );
         let point_entity = entities

@@ -14,6 +14,7 @@ const EPS_FIT: f64 = 1e-6;
 #[test]
 fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
     let source = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:audit:edge#1").unwrap(),
         carrier: EdgeCarrier::new(
             Some(CurveId::mint("test:audit:curve#1").unwrap()),
@@ -49,6 +50,7 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
             .unwrap();
             let uv = vec![Point2::new(x * d, 0.), Point2::new(x * d, 1.)];
             let p = Pcurve {
+                native_ref: None,
                 id: PcurveId::mint("test:audit:pcurve#1").unwrap(),
                 geometry: PcurveGeometry::Nurbs {
                     nurbs: PcurveNurbs::from_lanes(
@@ -87,7 +89,6 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
             let explicit = WritablePcurve {
                 source: &p,
                 payload: ([0; 16], vec![]),
-                domain_extent_points: uv,
             };
             assert_eq!(
                 validate_nurbs_trim(&surface, EPS_FIT, &edge, Sense::Forward, &explicit).is_ok(),
@@ -113,6 +114,16 @@ fn trim_error(geometry: PcurveGeometry) -> String {
 /// The refusal of a trim over the unit NURBS square whose pcurve is
 /// `geometry` and whose edge runs along `curve` over `domain`.
 fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) -> String {
+    trim_result(geometry, curve, domain)
+        .expect_err("trim admission declines")
+        .to_string()
+}
+
+fn trim_result(
+    geometry: PcurveGeometry,
+    curve: &NurbsCurve,
+    domain: [f64; 2],
+) -> Result<(), cadmpeg_core::CodecError> {
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
@@ -126,7 +137,7 @@ fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) 
         false,
     )
     .unwrap();
-    trim_refusal_on(&surface, geometry, curve, domain)
+    trim_result_on(&surface, geometry, curve, domain)
 }
 
 /// The refusal of a trim over `surface` whose pcurve is `geometry` and whose
@@ -137,7 +148,19 @@ fn trim_refusal_on(
     curve: &NurbsCurve,
     domain: [f64; 2],
 ) -> String {
+    trim_result_on(surface, geometry, curve, domain)
+        .expect_err("trim admission declines")
+        .to_string()
+}
+
+fn trim_result_on(
+    surface: &NurbsSurface,
+    geometry: PcurveGeometry,
+    curve: &NurbsCurve,
+    domain: [f64; 2],
+) -> Result<(), cadmpeg_core::CodecError> {
     let source = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:overflow:edge#1").unwrap(),
         carrier: EdgeCarrier::new(
             Some(CurveId::mint("test:overflow:curve#1").unwrap()),
@@ -149,6 +172,7 @@ fn trim_refusal_on(
         tolerance: None,
     };
     let p = Pcurve {
+        native_ref: None,
         id: PcurveId::mint("test:overflow:pcurve#1").unwrap(),
         geometry,
         metadata: PcurveMetadata::default(),
@@ -165,11 +189,8 @@ fn trim_refusal_on(
     let explicit = WritablePcurve {
         source: &p,
         payload: ([0; 16], vec![]),
-        domain_extent_points: vec![Point2::new(0.5, 0.), Point2::new(0.5, 1.)],
     };
     validate_nurbs_trim(surface, EPS_FIT, &edge, Sense::Forward, &explicit)
-        .expect_err("the pcurve has no point in the surface domain")
-        .to_string()
 }
 
 fn vertical_line_at_max() -> PcurveGeometry {
@@ -293,4 +314,61 @@ fn a_trim_surface_whose_point_overflows_misses_the_edge_by_the_distance_it_reach
         ),
         "{error}"
     );
+}
+
+#[test]
+fn independent_trim_parameterization_is_a_capability_decline() {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0., 0., 1., 1.],
+        vec![Point3::new(0.5, 0., 0.), Point3::new(0.5, 1., 0.)],
+        None,
+        false,
+    )
+    .unwrap();
+    // Both carriers trace the same vertical segment, with matching endpoints.
+    // The quadratic trim traverses it at a different speed.
+    let geometry = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            2,
+            vec![0., 0., 0., 1., 1., 1.],
+            vec![
+                Point2::new(0.5, 0.),
+                Point2::new(0.5, 0.1),
+                Point2::new(0.5, 1.),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    assert!(matches!(trim_result(geometry, &curve, [0., 1.]),
+        Err(cadmpeg_core::CodecError::UnsupportedContent(reason))
+            if reason.contains("misses directed edge curve")));
+}
+
+#[test]
+fn a_trim_control_polygon_outside_the_surface_is_not_an_outside_curve() {
+    let points = [
+        Point2::new(0.5, 0.),
+        Point2::new(-0.1, 0.5),
+        Point2::new(0.5, 1.),
+    ];
+    let knots = vec![0., 0., 0., 1., 1., 1.];
+    // The quadratic's minimum U is 0.2 although one control point is outside.
+    let curve = NurbsCurve::from_lanes(
+        2,
+        knots.clone(),
+        points
+            .iter()
+            .map(|point| Point3::new(point.u, point.v, 0.))
+            .collect(),
+        None,
+        false,
+    )
+    .unwrap();
+    let geometry = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(2, knots, points.to_vec(), None, false).unwrap(),
+    };
+    trim_result(geometry, &curve, [0., 1.]).expect("the actual curve stays within the surface");
 }

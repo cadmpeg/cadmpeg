@@ -119,7 +119,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
 
             depth: actual_depth,
             angle,
-        } if matches!((&diameters.diameter(), &diameters.entry_diameter(),), (actual_diameter, None,) if ((angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && actual_diameter.get() == 12.0 && actual_depth.get() == 2.0)));
+        } if matches!((&diameters.diameter(), &diameters.entry_diameter(),), (actual_diameter, None,) if ((result.ir().dimension_value(angle).expect("resolved dimension").get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12) && result.ir().dimension_value(actual_diameter).expect("resolved dimension").get() == 12.0 && result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 2.0)));
     assert!(matches!(
         extent,
         Some(cadmpeg_ir::features::LinearTermination::ThroughAll {})
@@ -175,7 +175,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
         depth,
         cadmpeg_ir::features::holes::HoleThreadDepth::Blind {
             depth: actual_depth
-        } if actual_depth.get() == 12.0
+        } if result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 12.0
     ));
     assert_eq!(hole.dependencies.len(), 1);
     assert!(result.report().losses.is_empty());
@@ -234,7 +234,7 @@ fn distinguishes_absent_and_malformed_hole_enumerations() {
         }) if matches!((shape.construction(),), (cadmpeg_ir::features::holes::HoleConstruction::Form {
                 kind: cadmpeg_ir::features::holes::HoleKind::Simple,
                 specification: None,
-            },) if actual_length.get() == 25.0)));
+            },) if absent.ir().dimension_value(actual_length).expect("resolved dimension").get() == 25.0)));
     assert!(absent.report().losses.is_empty());
 
     let malformed_values = [
@@ -293,7 +293,13 @@ fn uses_only_direct_custom_hole_enumeration_labels() {
             })
             .is_some_and(|properties| {
                 properties.iter().any(|property| {
-                    property.name == "ThreadSize" && property.xml.text().contains(raw_value)
+                    property.name == "ThreadSize"
+                        && std::str::from_utf8(&crate::test_support::source_fidelity::bytes(
+                            result.source_fidelity(),
+                            &property.id,
+                        ))
+                        .expect("source property XML")
+                        .contains(raw_value)
                 })
             })
     }
@@ -483,12 +489,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
             hole_definition(result),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "PartDesign::Hole"
         ));
-        assert_eq!(result.report().losses.len(), 1);
-        assert!(result.report().losses.iter().all(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "feature.native-kind-retained"
-                && loss.severity == cadmpeg_ir::report::Severity::Blocking
-        }));
+        crate::design::tests::assert_native_retention(result, 1);
     };
 
     let targets = [
@@ -539,7 +540,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
                 cosmetic,
                 clearance,
                 ..
-            } => (*modeled, *cosmetic, *clearance),
+            } => (*modeled, *cosmetic, clearance.clone()),
         };
         match target {
             "Threaded" => assert!(matches!(
@@ -638,7 +639,7 @@ fn distinguishes_absent_and_malformed_hole_flags() {
                 cosmetic,
                 clearance,
                 ..
-            } => (*modeled, *cosmetic, *clearance),
+            } => (*modeled, *cosmetic, clearance.clone()),
         };
         match target {
             "Threaded" => assert!(matches!(
@@ -655,7 +656,12 @@ fn distinguishes_absent_and_malformed_hole_flags() {
                 })
             )),
             "Tapered" => assert!(taper_angle.is_some()),
-            "UseCustomThreadClearance" => assert_eq!(clearance, Some(Length::new(0.2).unwrap())),
+            "UseCustomThreadClearance" => assert_eq!(
+                clearance
+                    .as_ref()
+                    .and_then(|value| result.ir().dimension_value(value)),
+                Some(Length::new(0.2).unwrap())
+            ),
             "AllowMultiFace" => assert_eq!(*allow_multi_profile_faces, Some(false)),
             "BaseProfileType" => assert_eq!(
                 *profile_filter,
@@ -783,7 +789,7 @@ fn resolves_deprecated_fcstd_hole_cut_indices() {
                     depth: actual_depth,
                 },
                 ..
-            },) if actual_diameter.get() == 6.0 && actual_depth.get() == 5.0)));
+            },) if result.ir().dimension_value(actual_diameter).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(actual_depth).expect("resolved dimension").get() == 5.0)));
     assert!(result.report().losses.is_empty());
 }
 
@@ -910,7 +916,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }) if actual_offset.get() == 2.5
+        }) if result.ir().dimension_value(actual_offset).expect("resolved dimension").get() == 2.5
     ));
     assert!(matches!(
         definition("ToShape"),
@@ -952,7 +958,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }) if direction.z == -1.0 && length.get() == 12.0 && (draft.get() - 5_f64.to_radians()).abs() < 1.0e-12
+        }) if direction.z == -1.0 && result.ir().dimension_value(length).expect("resolved dimension").get() == 12.0 && (result.ir().dimension_value(draft).expect("resolved dimension").get() - 5_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("PartExtrusion"),
@@ -981,9 +987,9 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
             op: BooleanOp::NewBody,
             ..
-        }) if direction.y == 1.0 && first.get() == 7.0 && second.get() == 3.0
-            && (draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
-            && (reverse_draft.get() - 4_f64.to_radians()).abs() < 1.0e-12
+        }) if direction.y == 1.0 && result.ir().dimension_value(first).expect("resolved dimension").get() == 7.0 && result.ir().dimension_value(second).expect("resolved dimension").get() == 3.0
+            && (result.ir().dimension_value(draft).expect("resolved dimension").get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(reverse_draft).expect("resolved dimension").get() - 4_f64.to_radians()).abs() < 1.0e-12
             && reference.ends_with(":DirLink")
             && *face_maker == cadmpeg_ir::features::FaceMaker::Unified
     ));
@@ -1001,7 +1007,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        }) if direction.z == -1.0 && length.get() == 5.0
+        }) if direction.z == -1.0 && result.ir().dimension_value(length).expect("resolved dimension").get() == 5.0
     ));
 }
 
@@ -1040,7 +1046,34 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
             && direction.y.abs() < 1.0e-12
             && direction.z.abs() < 1.0e-12
     ));
-    assert!(result.report().losses.is_empty());
+    assert_eq!(result.report().losses.len(), 1);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(
+            |loss| loss.code.local_code() == "feature.object-unprojected"
+                && loss.severity == cadmpeg_ir::report::Severity::Blocking
+                && loss.message.contains("Profile")
+        ));
+    assert!(
+        result.source_fidelity().unrepresented().is_empty(),
+        "typed profile placement remains available"
+    );
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("typed properties");
+    assert!(properties.iter().any(|property| property.owner
+        == crate::native::native_id("object", "Profile")
+        && property.name == "Placement"
+        && matches!(
+            property.body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        )));
     assert_valid_document(result.ir());
 }
 
@@ -1109,7 +1142,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             },
             solid: Some(false),
             ..
-        }) if length.get() == 12.0 && (draft.get() - 3_f64.to_radians()).abs() < 1.0e-12
+        }) if result.ir().dimension_value(length).expect("resolved dimension").get() == 12.0 && (result.ir().dimension_value(draft).expect("resolved dimension").get() - 3_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1150,7 +1183,7 @@ fn distinguishes_absent_and_malformed_part_extrusion_direction_mode() {
                 }
             },
             ..
-        }) if (direction.z == 1.0) && actual_length.get() == 5.0
+        }) if (direction.z == 1.0) && result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 5.0
     ));
     assert!(result.report().losses.is_empty());
     assert_valid_document(result.ir());
@@ -1346,8 +1379,8 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             ..
         }) if (direction.y == 1.0
             && reference.ends_with(":ReferenceAxis")
-            && (first_draft.get() - 2_f64.to_radians()).abs() < 1.0e-12
-            && (second_draft.get() + 3_f64.to_radians()).abs() < 1.0e-12) && actual_length.get() == -5.0
+            && (result.ir().dimension_value(first_draft).expect("resolved dimension").get() - 2_f64.to_radians()).abs() < 1.0e-12
+            && (result.ir().dimension_value(second_draft).expect("resolved dimension").get() + 3_f64.to_radians()).abs() < 1.0e-12) && result.ir().dimension_value(actual_length).expect("resolved dimension").get() == -5.0
     ));
     assert!(matches!(
         definition("Symmetric"),
@@ -1379,7 +1412,7 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
                 },
             },
             ..
-        }) if actual_length.get() == 6.0 && actual_length_2.get() == 2.0
+        }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 6.0 && result.ir().dimension_value(actual_length_2).expect("resolved dimension").get() == 2.0
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1450,7 +1483,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_selectors() {
                         }
                     },
                     ..
-                }) if actual_length.get() == 6.0
+                }) if result.ir().dimension_value(actual_length).expect("resolved dimension").get() == 6.0
             ));
         } else {
             assert!(matches!(
@@ -1746,255 +1779,15 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                     FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == format!("PartDesign::{name}")
                 ));
             }
-            assert_eq!(result.report().losses.len(), 2);
+            crate::design::tests::assert_native_retention(&result, 2);
             assert_valid_document(result.ir());
         }
     }
 }
 
-#[test]
-fn transfers_sketch_pad_and_pocket_design_history() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4" Dependencies="1">
-  <ObjectDeps Name="Body" Count="0"/>
-  <ObjectDeps Name="Sketch" Count="0"/>
-  <ObjectDeps Name="Pad" Count="1"><Dep Name="Sketch"/></ObjectDeps>
-  <ObjectDeps Name="Pocket" Count="2"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
-  <Object type="PartDesign::Body" name="Body" id="1"/>
-  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
-  <Object type="PartDesign::Pad" name="Pad" id="2"/>
-  <Object type="PartDesign::Pocket" name="Pocket" id="3"/>
-</Objects>
-<ObjectData Count="4">
-  <Object name="Body"><Properties Count="2">
-    <Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="Sketch"/><Link value="Pad"/><Link value="Pocket"/></LinkList></Property>
-    <Property name="Tip" type="App::PropertyLink"><Link value="Pocket"/></Property>
-  </Properties></Object>
-  <Object name="Sketch"><Properties Count="3">
-    <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
-      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="10" EndY="0"/><Construction value="0"/></Geometry>
-      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="0" EndX="10" EndY="5"/><Construction value="0"/></Geometry>
-      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="5" EndX="0" EndY="5"/><Construction value="0"/></Geometry>
-      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="5" EndX="0" EndY="0"/><Construction value="0"/></Geometry>
-    </GeometryList></Property>
-    <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="2">
-      <Constrain Type="2" First="0" FirstPos="0"/>
-      <Constrain Name="Width" Type="7" Value="10" IsDriving="1" First="0" FirstPos="1" Second="1" SecondPos="1"/>
-    </ConstraintList></Property>
-    <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property>
-  </Properties></Object>
-  <Object name="Pad"><Properties Count="2">
-    <Property name="Sketch" type="App::PropertyLink"><Link value="Sketch"/></Property>
-    <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
-  </Properties></Object>
-  <Object name="Pocket"><Properties Count="4">
-    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
-    <Property name="Length" type="App::PropertyLength"><Float value="2.5"/></Property>
-    <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
-    <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Pad.Length / 4"/></ExpressionEngine></Property>
-  </Properties></Object>
-</ObjectData>
-</Document>"#;
-    let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .expect("design history");
-    assert_eq!(result.ir().model.sketches.len(), 1);
-    assert_eq!(result.ir().model.sketch_entities.len(), 4);
-    let profiles = &result.ir().model.sketches[0].profiles;
-    assert_eq!(profiles.len(), 4);
-    assert!(profiles.iter().all(|profile| profile.len() == 1));
-    let (origin, normal, _) = result.ir().model.sketches[0]
-        .resolved_placement()
-        .expect("resolved sketch placement");
-    assert_eq!(origin.x, 1.0);
-    assert!((normal.y + 1.0).abs() < 1.0e-12);
-    assert_eq!(result.ir().model.features.len(), 4);
-    assert_eq!(result.ir().model.sketch_constraints.len(), 2);
-    assert_eq!(result.ir().model.parameters.len(), 3);
-    assert!(result
-        .ir()
-        .model
-        .sketch_constraints
-        .iter()
-        .any(|constraint| {
-            matches!(
-                constraint.definition.kind(),
-                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Horizontal { .. }
-            )
-        }));
-    assert!(result
-        .ir()
-        .model
-        .sketch_constraints
-        .iter()
-        .any(|constraint| {
-            matches!(
-                constraint.definition.kind(),
-                cadmpeg_ir::sketches::SketchConstraintDefinitionInput::HorizontalDistance { .. }
-            )
-        }));
-    let pad = result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Pad"))
-        .expect("pad");
-    let pocket = result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Pocket"))
-        .expect("pocket");
-    let body = result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Body"))
-        .expect("body");
-    assert_eq!(result.ir().model.feature_parent(&pad.id), Some(&body.id));
-    assert_eq!(result.ir().model.feature_parent(&pocket.id), Some(&body.id));
-    assert_eq!(
-        body.source_properties.get("Tip").map(String::as_str),
-        Some("fcstd:native:object#Pocket")
-    );
-    assert_eq!(pocket.suppressed, Some(true));
-    assert_eq!(
-        pocket
-            .source_properties
-            .get("Suppressed")
-            .map(String::as_str),
-        Some("true")
-    );
-    let pocket_length = result
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .find(|parameter| {
-            parameter.owner.as_ref() == Some(&pocket.id) && parameter.name == "Length"
-        })
-        .expect("pocket length");
-    assert_eq!(pocket_length.expression, "Pad.Length / 4");
-    assert_eq!(pocket_length.dependencies.len(), 1);
-    assert!(matches!(
-        pad.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(_)),
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: actual_length
-                    },
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Join,
-            ..
-        }) if actual_length.get() == 10.0
-    ));
-    assert!(matches!(
-        pocket.evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Extrude {
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
-                    termination: cadmpeg_ir::features::LinearTermination::Blind {
-                        length: actual_length
-                    },
-                    ..
-                }
-            },
-            op: cadmpeg_ir::features::BooleanOp::Cut,
-            ..
-        }) if actual_length.get() == 2.5
-    ));
-    let native_findings = crate::test_support::validate_native(result.ir());
-    assert!(native_findings.is_empty(), "{native_findings:#?}");
-    let validation =
-        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
-    let design_findings = validation
-        .findings
-        .iter()
-        .filter(|finding| {
-            finding
-                .entity
-                .as_deref()
-                .is_some_and(|entity| entity.starts_with("fcstd:design:"))
-        })
-        .collect::<Vec<_>>();
-    assert!(design_findings.is_empty(), "{design_findings:#?}");
-}
-
 /// `TaperAngle2` states the draft of a second, independent side. A one-sided
 /// pad has no second side, so a malformed value there maps nowhere and the
 /// feature decodes; a two-sided pad carries it, so the same value refuses.
-#[test]
-fn a_second_side_draft_is_read_only_by_the_extent_that_carries_one() {
-    let document = |side_type: u32| {
-        format!(
-            r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
- <Object type="PartDesign::Pad" name="Pad" id="3"/>
- <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
-</Objects>
-<ObjectData Count="2">
- <Object name="Profile"><Properties Count="0"/></Object>
- <Object name="Pad"><Properties Count="6">
-  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
-  <Property name="SideType" type="App::PropertyEnumeration"><Integer value="{side_type}"/></Property>
-  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
-  <Property name="Length" type="App::PropertyLength"><Float value="5"/></Property>
-  <Property name="Type2" type="App::PropertyEnumeration"><Integer value="0"/></Property>
-  <Property name="TaperAngle2" type="App::PropertyAngle"><Float value="120"/></Property>
- </Properties></Object>
-</ObjectData></Document>"#
-        )
-    };
+mod extent_edge_cases;
 
-    let one_sided = FcstdCodec.decode(
-        &mut Cursor::new(archive(&document(0))),
-        &DecodeOptions::default(),
-    );
-    assert!(
-        one_sided.is_ok(),
-        "a one-sided pad states no second side to receive TaperAngle2"
-    );
-
-    let two_sided = FcstdCodec.decode(
-        &mut Cursor::new(archive(&document(1))),
-        &DecodeOptions::default(),
-    );
-    let error = two_sided
-        .expect_err("a two-sided pad carries the second side's draft")
-        .to_string();
-    assert!(error.contains("TaperAngle2"), "{error}");
-}
-
-#[test]
-fn implicit_extrusion_length_preserves_a_large_finite_direction() {
-    let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2"><Object type="Part::Feature" name="Profile"/><Object type="Part::Extrusion" name="Extrusion"/></Objects>
-<ObjectData Count="2"><Object name="Profile"><Properties Count="0"/></Object>
-<Object name="Extrusion"><Properties Count="4">
-<Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
-<Property name="Dir" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1e200"/></Property>
-<Property name="LengthFwd" type="App::PropertyDistance"><Float value="0"/></Property>
-<Property name="LengthRev" type="App::PropertyDistance"><Float value="0"/></Property>
-</Properties></Object></ObjectData></Document>"#;
-    let result = FcstdCodec
-        .decode(
-            &mut Cursor::new(archive(document)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    assert!(matches!(extrusion_definition(&result),
-        FeatureDefinition::Operation(FeatureOperation::Extrude {
-            extent: ExtrudeExtent::OneSided { side: ExtrudeSide {
-                termination: LinearTermination::Blind { length }, .. } }, ..
-        }) if length.get() == 1e200));
-}
+mod sketch_history;

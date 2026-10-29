@@ -501,6 +501,7 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
             ctx,
             &mut ir,
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#31").expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -523,8 +524,9 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
     assert_eq!(admitted.origin().get().x, 50.8);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
-                .expect("full turn"),
+            angle: (cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                .expect("full turn"))
+            .into(),
         },
     };
     let axis =
@@ -554,6 +556,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#31".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -567,6 +570,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -582,6 +586,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -597,8 +602,9 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ]);
     let full_turn = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
-                .expect("valid test fixture"),
+            angle: (cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                .expect("valid test fixture"))
+            .into(),
         },
     };
 
@@ -667,7 +673,8 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     );
     let partial = RevolveExtent::OneSided {
         termination: AngularTermination::Angle {
-            angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"),
+            angle: (cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"))
+                .into(),
         },
     };
     assert!(full_turn_revolution_carrier_axis(
@@ -850,6 +857,7 @@ fn named_revolve_transfers_profile_axis() {
         });
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:revolution#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -889,6 +897,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),
@@ -923,6 +932,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: BodyId::mint("creo:feature:extrusion#822:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: Vec::new(),

@@ -98,6 +98,8 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: crate::features::NonEmptyMembers::one(FilletGroup {
@@ -108,7 +110,9 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
                     )
                     .unwrap(),
                     radius: RadiusSpec::Constant {
-                        radius: crate::scalar::PositiveLength::new(1.0).unwrap(),
+                        radius: crate::features::Dimension::Literal(
+                            crate::scalar::PositiveLength::new(1.0).unwrap(),
+                        ),
                     },
                     tangency_weight: None,
                 }),
@@ -276,6 +280,7 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::SolidBodies,
@@ -361,6 +366,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
     use cadmpeg_core::decode::{ResourceDimension, ResourceLimit};
     use cadmpeg_core::CodecError;
     let entity = crate::topology::Vertex {
+        native_ref: None,
         id: "test:model:vertex#owner".try_into().unwrap(),
         point: "test:model:point#target".try_into().unwrap(),
         tolerance: None,
@@ -376,4 +382,70 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         .visit_references(&ctx, &mut |_| Err(CodecError::ResourceLimit(limit)))
         .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(original) if original == limit));
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn model_procedural_schema_requires_actual_carrier_wire_links() {
+    use crate::geometry::{
+        ProceduralCurve, ProceduralCurveDefinition, ProceduralCurveRow, ProceduralSurface,
+        ProceduralSurfaceDefinition, ProceduralSurfaceRow,
+    };
+    use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+
+    let surface = ProceduralSurface::new(
+        ProceduralSurfaceId::mint("test:model:surface-construction#schema").unwrap(),
+        ProceduralSurfaceDefinition::Unknown {
+            record: None,
+            cache: None,
+        },
+        None,
+    );
+    let curve = ProceduralCurve::new(
+        ProceduralCurveId::mint("test:model:curve-construction#schema").unwrap(),
+        ProceduralCurveDefinition::Exact { cache: None },
+    );
+    let surface_wire = serde_json::to_value(ProceduralSurfaceRow::new(
+        SurfaceId::mint("test:model:surface#schema").unwrap(),
+        &surface,
+    ))
+    .unwrap();
+    let curve_wire = serde_json::to_value(ProceduralCurveRow::new(
+        CurveId::mint("test:model:curve#schema").unwrap(),
+        &curve,
+    ))
+    .unwrap();
+    assert!(serde_json::from_value::<ProceduralSurfaceRow>(surface_wire.clone()).is_ok());
+    assert!(serde_json::from_value::<ProceduralCurveRow>(curve_wire.clone()).is_ok());
+
+    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    for (arena, carrier, wire) in [
+        ("procedural_surfaces", "surface", surface_wire),
+        ("procedural_curves", "curve", curve_wire),
+    ] {
+        let path = format!("/$defs/Model/properties/{arena}/items/$ref");
+        let reference = schema.pointer(&path).unwrap().as_str().unwrap();
+        let row = schema
+            .pointer(reference.strip_prefix('#').unwrap())
+            .unwrap();
+        assert_eq!(row["additionalProperties"], false);
+        assert!(row["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!(carrier)));
+        for field in wire.as_object().unwrap().keys() {
+            assert!(row["properties"].get(field).is_some(), "{arena}.{field}");
+        }
+        let mut missing_link = wire.clone();
+        missing_link.as_object_mut().unwrap().remove(carrier);
+        let mut unknown_field = wire;
+        unknown_field["unknown"] = serde_json::json!(true);
+        if arena == "procedural_surfaces" {
+            assert!(serde_json::from_value::<ProceduralSurfaceRow>(missing_link).is_err());
+            assert!(serde_json::from_value::<ProceduralSurfaceRow>(unknown_field).is_err());
+        } else {
+            assert!(serde_json::from_value::<ProceduralCurveRow>(missing_link).is_err());
+            assert!(serde_json::from_value::<ProceduralCurveRow>(unknown_field).is_err());
+        }
+    }
 }

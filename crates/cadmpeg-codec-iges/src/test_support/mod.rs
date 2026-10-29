@@ -2,6 +2,9 @@
 //! Shared synthetic IGES byte-fixture builders for crate tests.
 #![allow(clippy::unwrap_used)]
 
+pub(crate) mod binary_parts;
+pub(crate) mod compressed_parts;
+pub(crate) mod parameter_parts;
 pub(crate) mod test_cards;
 pub(crate) mod test_closed_cylinder;
 pub(crate) mod test_curves_and_surfaces;
@@ -38,9 +41,36 @@ pub(crate) fn plan_at(
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::IgesCodec.plan(
-        EncodeInput { ir, fidelity },
+        EncodeInput::new(ir, fidelity),
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
+}
+
+/// The retained records of given-up parts, in identity order.
+pub(crate) fn given_up_parts(
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> Vec<&cadmpeg_ir::RetainedSourceRecord> {
+    fidelity
+        .retained_records()
+        .iter()
+        .filter(|(id, _)| id.as_str().starts_with("iges:source:part#"))
+        .map(|(_, record)| record)
+        .collect()
+}
+
+/// The number of parts labelled `label` that the decode gave up.
+pub(crate) fn given_up_count(
+    report: &cadmpeg_ir::report::decode::DecodeReport,
+    label: &str,
+) -> usize {
+    let prefix = format!("part {label} ");
+    report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code.local_code() == "record.unreadable" && loss.message.starts_with(&prefix)
+        })
+        .count()
 }
 
 /// Decode options in strict mode.
@@ -168,4 +198,33 @@ pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
     serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
         .expect("native hexadecimal byte string")
         .into_inner()
+}
+
+/// Parse the exact retained Fixed ASCII source when an assertion concerns fidelity.
+pub(crate) fn retained_fixed_ascii(
+    result: &cadmpeg_ir::codec::DecodeResult,
+) -> (
+    Vec<crate::directory::QuarantinedDirectoryRecord>,
+    crate::parameter::ParameterAssembly,
+) {
+    let bytes = result
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("source image retained")
+        .data()
+        .expect("exact source bytes retained");
+    with_service_context(bytes, |ctx| {
+        let scan = crate::card::scan(bytes).expect("retained Fixed ASCII source scans");
+        let (global, _) = crate::global::parse(&scan).expect("retained global parses");
+        let (directory, quarantined) = crate::directory::parse(&scan, global.global_table(), ctx)
+            .expect("retained directory parses");
+        let parameters = crate::parameter::assemble(
+            &scan,
+            &directory,
+            quarantined.iter().map(|record| record.sequence),
+            &global,
+        )
+        .expect("retained parameters assemble");
+        (quarantined, parameters)
+    })
 }

@@ -19,7 +19,7 @@ use crate::records::{
 };
 use cadmpeg_ir::features::{
     DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
-    ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+    ParameterId, ParameterValue,
 };
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketchEntity,
@@ -111,6 +111,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -146,6 +147,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         id: "relation-instance".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -163,6 +165,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             id: id.into(),
             parent: "lane".into(),
             ordinal,
+            sequence: ordinal,
             offset: u64::from(ordinal),
             class_ref: class_ref.into(),
             family: FeatureInputRelationFamily::PointPointDistance,
@@ -323,13 +326,20 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         configuration: None,
         native_payload: Vec::new().into(),
         classes: vec![FeatureInputClass {
+            sequence: 10,
+            offset: 10,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 10,
             name: class_name.into(),
         }],
         names: vec![FeatureInputName {
+            sequence: u32::try_from(
+                10 + 6 + cadmpeg_core::decode::u64_from_index(class_name.len()),
+            )
+            .unwrap(),
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -413,7 +423,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
 }
 
 #[test]
-fn native_dimension_subtypes_are_reported() {
+fn authored_other_pmi_does_not_record_a_historical_decode_failure() {
     let mut ir = CadIr::empty();
     let owner = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
     ir.model.features.push(Feature {
@@ -426,6 +436,7 @@ fn native_dimension_subtypes_are_reported() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -435,6 +446,7 @@ fn native_dimension_subtypes_are_reported() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
@@ -444,18 +456,24 @@ fn native_dimension_subtypes_are_reported() {
         value: Some(ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
-        pmi: Some(ParameterPmi {
-            subtype: PmiDimensionSubtype::Native("Ordinate".into()),
-            precision: 3,
-            display_text: None,
-            basic: false,
-            inspection: false,
-            reference_only: false,
-            native_ref: "native:pmi".into(),
-        }),
+        pmi: Some(cadmpeg_ir::ids::PmiId::mint("synthetic:test:pmi#other").unwrap()),
         native_ref: None,
+    });
+    ir.model.pmi.push(cadmpeg_ir::pmi::PmiAnnotation {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PmiId::mint("synthetic:test:pmi#other").unwrap(),
+        name: None,
+        visible: None,
+        targets: Vec::new(),
+        definition: cadmpeg_ir::pmi::PmiDefinition::Dimension(
+            cadmpeg_ir::pmi::PmiDimension::new(
+                cadmpeg_ir::pmi::DimensionKind::Other("Future dimension".into()),
+                None,
+                None,
+            )
+            .unwrap(),
+        ),
     });
     let mut report = super::empty_report(true);
 
@@ -466,10 +484,13 @@ fn native_dimension_subtypes_are_reported() {
     )
     .unwrap();
 
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            == "0 semantic dimension record(s) are not bound to parameters; 1 parameter dimension(s) retain native subtypes."
-    }));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::SldprtLossCode::PmiDimensionUnbound.kind()));
+    assert!(
+        matches!(&ir.model.pmi[0].definition, cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) if dimension.kind() == &cadmpeg_ir::pmi::DimensionKind::Other("Future dimension".into()))
+    );
 }
 
 #[test]
@@ -478,9 +499,11 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
         source_image: &[],
         version: 0,
         blocks: Vec::new(),
+        block_views: std::collections::BTreeMap::new(),
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        compound_views: std::collections::BTreeMap::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();
@@ -507,9 +530,11 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
         source_image: &[],
         version: 0,
         blocks: Vec::new(),
+        block_views: std::collections::BTreeMap::new(),
         directory: Vec::new(),
         cache_cells: Vec::new(),
         compound_streams: Vec::new(),
+        compound_views: std::collections::BTreeMap::new(),
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
     };
     let mut decoded = Brep::default();

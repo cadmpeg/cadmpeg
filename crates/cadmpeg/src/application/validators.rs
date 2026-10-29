@@ -145,15 +145,35 @@ mod tests {
     fn a_registered_namespace_reaches_its_own_codec_validator() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("fcstd");
+        // The typed GUI document is readable, but its required GuiDocument.xml
+        // archive entry is absent. This violates FCStd's native graph contract;
+        // an empty namespace alone has no such inconsistency.
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("native fixture context");
+        ir.native
+            .namespace_mut("fcstd")
+            .set_arena(
+                &ctx,
+                "gui_documents",
+                &[serde_json::json!({
+                    "id": "fcstd:gui:document#0",
+                    "attributes": {},
+                    "states": [],
+                })],
+            )
+            .expect("native GUI document fixture");
         let findings = findings(&inputs, &ir);
-        assert!(!findings.is_empty());
-        assert!(
-            findings
-                .iter()
-                .any(|finding| finding.message.contains("FCStd")),
-            "{findings:?}"
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        let finding = &findings[0];
+        assert_eq!(finding.check, cadmpeg_ir::report::check::Check::Counts);
+        assert_eq!(finding.severity, cadmpeg_ir::report::Severity::Error);
+        assert_eq!(
+            finding.message,
+            "FCStd GUI document record does not match GuiDocument.xml presence"
         );
+        assert_eq!(finding.entity, None);
+        assert!(finding.related.is_empty());
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

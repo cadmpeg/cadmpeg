@@ -26,7 +26,7 @@ use crate::pmdc::{
 };
 use crate::record_identity::{push_record, Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
+use crate::rse::{RseInventory, SegmentBulkState, SegmentKind};
 
 pub(crate) mod point_tail;
 
@@ -626,7 +626,7 @@ pub(crate) fn inventory(
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
             continue;
         };
-        let RecordFrameState::Framed(table) = &bulk.records else {
+        let Some(table) = bulk.records.table() else {
             continue;
         };
         for record in &table.records {
@@ -1926,7 +1926,7 @@ fn project_constraint(
                 SketchConstraintDefinitionInput::HorizontalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 members,
@@ -1944,7 +1944,7 @@ fn project_constraint(
                 SketchConstraintDefinitionInput::VerticalDistance {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 members,
@@ -1957,7 +1957,7 @@ fn project_constraint(
             (
                 SketchConstraintDefinitionInput::Radius {
                     entity: member.id().clone(),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 [member, member],
@@ -1970,7 +1970,7 @@ fn project_constraint(
             (
                 SketchConstraintDefinitionInput::Diameter {
                     entity: member.id().clone(),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 [member, member],
@@ -2051,7 +2051,7 @@ fn project_constraint(
                 SketchConstraintDefinitionInput::DistanceLoci {
                     first: SketchLocus::Entity(members[0].id().clone()),
                     second: SketchLocus::Entity(members[1].id().clone()),
-                    parameter,
+                    parameter: cadmpeg_ir::features::Dimension::Parameter(parameter),
                 },
                 None,
                 members,

@@ -1,7 +1,7 @@
 //! Cosmetic-thread selection and child-reference tests.
 
 use super::super::super::CLASS_MARKER;
-use super::super::selection_vector_tail;
+use super::helpers::selection_vector_tail;
 use crate::records::{
     Feature, FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputScalar,
     FeatureInputScalarRole, FeatureSource, ObjectId,
@@ -302,6 +302,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         parent: "lane".into(),
         feature_ref: Some("other-feature".into()),
         ordinal: 0,
+        sequence: 0,
         offset: 150,
         object_id: 52,
         name: "diameter-name".into(),
@@ -317,6 +318,8 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         classes: Vec::new(),
         names: vec![
             FeatureInputName {
+                sequence: 120,
+                feature_ref: None,
                 id: "diameter-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -325,6 +328,8 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
                 value: "D2".into(),
             },
             FeatureInputName {
+                sequence: 400,
+                feature_ref: None,
                 id: "next-feature".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -384,6 +389,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         parent: "lane".into(),
         feature_ref: None,
         ordinal: 1,
+        sequence: 1,
         offset: 200,
         object_id: 54,
         name: "next-feature".into(),
@@ -445,10 +451,12 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            feature_ref: None,
             id: "component-edge".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -535,6 +543,11 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
         native_payload: payload.into(),
         classes: vec![
             FeatureInputClass {
+                sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(
+                    component_edge_offset,
+                ))
+                .unwrap(),
+                feature_ref: None,
                 id: "component-edge".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -542,6 +555,9 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
                 name: component_edge_name.into(),
             },
             FeatureInputClass {
+                sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(edge_ref_offset))
+                    .unwrap(),
+                feature_ref: None,
                 id: "edge-ref".into(),
                 parent: "lane".into(),
                 ordinal: 1,

@@ -1,24 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
-
 #[test]
 // Fixture fields are appended from the bounded table of explicit test cases.
 #[allow(clippy::format_push_string)]
 fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
     {
-        let prefix = r#"{"axis_record_index":0,"axis_class_tag":"327","axis_byte_offset":0,"axis_paired_class_tag":"327","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"327","selector_byte_offset":0,"selector_paired_class_tag":"327","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":0,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
-        let suffix = r#","role_record_index":0,"role_class_tag":"327","role_byte_offset":0,"occurrence_role":"00000007-1111-4111-8111-111111111111","occurrence_role_offset":0}"#;
+        let prefix = r#"{"axis_record_index":0,"axis_class_tag":"327","axis_paired_class_tag":"327","selector_record_index":0,"selector_class_tag":"327","selector_paired_class_tag":"327","nested_record_index":0,"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_context_id":"00000005-1111-4111-8111-111111111111","occurrence_reference":0,"external_object_reference":0,"external_segment":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_link_name":"identity""#;
+        let suffix = r#","role_record_index":0,"role_class_tag":"327","occurrence_role":"00000007-1111-4111-8111-111111111111"}"#;
         let fields = [
             (
                 "external_property_key",
                 "\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"",
             ),
-            ("external_property_key_offset", "100"),
             ("external_version_urn", "\"urn\""),
-            ("external_version_urn_offset", "110"),
         ];
-        for mask in 0..16 {
+        for mask in 0..4 {
             let mut wire = prefix.to_owned();
             for (index, (field, value)) in fields.iter().enumerate() {
                 if mask & (1 << index) != 0 {
@@ -29,7 +25,7 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
             let result = serde_json::from_str::<
                 crate::records::feature::assembly::DesignAssemblyAxialSelectorIdentity,
             >(&wire);
-            if mask == 0 || mask == 15 {
+            if mask == 0 || mask == 3 {
                 let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
                 assert_relaxed_guid_fields::<
                     crate::records::feature::assembly::DesignAssemblyAxialSelectorIdentity,
@@ -43,7 +39,7 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                     ],
                     |_, _| {},
                 );
-                if mask == 15 {
+                if mask == 3 {
                     assert_relaxed_guid_fields::<
                         crate::records::feature::assembly::DesignAssemblyAxialSelectorIdentity,
                     >(&value, &["external_property_key"], |_, _| {});
@@ -62,33 +58,27 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
         }
     }
     {
-        let prefix = r#"{"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":44,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":120,"occurrence_reference":1,"occurrence_reference_offset":205,"external_body_reference":2,"external_body_reference_offset":220,"external_segment":0,"external_segment_offset":229,"external_asset_id":"00000004-1111-4111-8111-111111111111","external_asset_id_offset":237,"external_link_name":"identity","external_link_name_offset":314"#;
-        let suffix = r#","tail_values":[0,0],"tail_value_offsets":[337,349]}"#;
+        let prefix = r#"{"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_context_id":"00000005-1111-4111-8111-111111111111","occurrence_reference":1,"external_body_reference":2,"external_segment":0,"external_asset_id":"00000004-1111-4111-8111-111111111111","external_link_name":"identity""#;
+        let suffix = r#","tail_values":[0,0]}"#;
         let fields = [
             (
                 "external_property_key",
                 "\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"",
             ),
-            ("external_property_key_offset", "335"),
             ("external_version_urn", "\"urn\""),
-            ("external_version_urn_offset", "411"),
         ];
-        for mask in 0..16 {
+        for mask in 0..4 {
             let mut wire = prefix.to_owned();
             for (index, (field, value)) in fields.iter().enumerate() {
                 if mask & (1 << index) != 0 {
                     wire.push_str(&format!(",\"{field}\":{value}"));
                 }
             }
-            wire.push_str(&if mask == 15 {
-                suffix.replace("[337,349]", "[423,435]")
-            } else {
-                suffix.to_owned()
-            });
+            wire.push_str(suffix);
             let result = serde_json::from_str::<
                 crate::records::feature::combine::DesignCombineExternalBodyIdentity,
             >(&wire);
-            if mask == 0 || mask == 15 {
+            if mask == 0 || mask == 3 {
                 let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
                 assert_relaxed_guid_fields::<
                     crate::records::feature::combine::DesignCombineExternalBodyIdentity,
@@ -101,7 +91,7 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                     ],
                     complete_combine_field_edit,
                 );
-                if mask == 15 {
+                if mask == 3 {
                     assert_relaxed_guid_fields::<
                         crate::records::feature::combine::DesignCombineExternalBodyIdentity,
                     >(
@@ -172,7 +162,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
 fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
     let frame = crate::records::feature::assembly::DesignAssemblyOperandFrame {
         reference_record_index: 10,
-        reference_offset: 11,
+        reference_offset: Some(11),
         transform: [
             [1.0, 0.0, 0.0, 0.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -181,44 +171,45 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         ]
         .try_into()
         .unwrap(),
-        transform_offset: 22,
+        transform_offset: Some(22),
     };
     let path = crate::records::feature::assembly::DesignAssemblyOperandPath::try_new(
         crate::records::feature::assembly::DesignAssemblyOperandPathLink {
-            locator_reference_offset: 11,
             locator_record_index: 10,
             locator_class_tag: crate::records::references::DesignClassTag::try_from(
                 "363".to_owned(),
             )
             .unwrap(),
-            locator_byte_offset: 100,
-            locator_scope_reference_offset: 111,
+
             wrapper_record_index: 20,
-            wrapper_reference_offset: 122,
+
             wrapper_class_tag: crate::records::references::DesignClassTag::try_from(
                 "388".to_owned(),
             )
             .unwrap(),
-            wrapper_byte_offset: 200,
-            path_reference_offset: 211,
         },
         30,
         crate::records::references::DesignClassTag::try_from("386".to_owned()).unwrap(),
-        300,
-        vec![crate::records::identity::Located {
+        (vec![crate::records::identity::Sourced {
             value: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            offset: 311,
-        }],
-        vec![crate::records::identity::Located {
+            offset: Some(311),
+        }])
+        .into_iter()
+        .map(|field| field.value)
+        .collect(),
+        (vec![crate::records::identity::Sourced {
             value: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
-            offset: 322,
-        }],
+            offset: Some(322),
+        }])
+        .into_iter()
+        .map(|field| field.value)
+        .collect(),
     )
     .unwrap();
     let limits: crate::records::feature::assembly::DesignAssemblyLimits =
@@ -227,7 +218,6 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             minimum: -1.0,
             maximum: 1.0,
             owner_record_indices: [40, 50],
-            value_offsets: [411, 511],
         }
         .try_into()
         .unwrap();
@@ -236,12 +226,12 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             scope_record_index: 60,
             class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned())
                 .unwrap(),
-            byte_offset: 600,
+            byte_offset: Some(600),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "264".to_owned(),
             )
             .unwrap(),
-            paired_byte_offset: 700,
+            paired_byte_offset: Some(700),
         };
     let axial = crate::records::feature::assembly::DesignAssemblyOperandQualifier::AxialTarget {
         target:
@@ -264,14 +254,14 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             crate::records::feature::assembly::DesignAssemblyAlignmentForm::SolvedOnly {
                 solved_frame: crate::records::feature::assembly::DesignAssemblySolvedFrame {
                     reference_record_index: 30,
-                    reference_offset: 33,
-                    record_byte_offset: 300,
+                    reference_offset: Some(33),
+                    record_byte_offset: Some(300),
                     class_tag: crate::records::references::DesignClassTag::try_from(
                         "258".to_owned(),
                     )
                     .unwrap(),
                     transform: frame.transform,
-                    transform_offset: 325,
+                    transform_offset: Some(325),
                 },
                 limits: Some(limits.clone()),
             },
@@ -305,13 +295,13 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             0.0,
             [0.0; 3],
             vec![
-                crate::records::identity::Located {
+                crate::records::identity::Sourced {
                     value: 10,
-                    offset: 11,
+                    offset: Some(11),
                 },
-                crate::records::identity::Located {
+                crate::records::identity::Sourced {
                     value: 20,
-                    offset: 22,
+                    offset: Some(22),
                 },
             ],
             form,
@@ -320,7 +310,6 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         let wire = serde_json::to_string(&alignment).unwrap();
         let decoded: crate::records::feature::assembly::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
-        assert_eq!(decoded, alignment);
         assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
         if alignment.operand_paths().is_some() {
             let mut unframed = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
@@ -331,15 +320,6 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             .unwrap_err();
             assert!(error.to_string().contains("operand_frames"));
         }
-        let mut invalid = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
-        invalid["value_offsets"] = serde_json::json!([11]);
-        let error = serde_json::from_value::<
-            crate::records::feature::assembly::DesignAssemblyAlignment,
-        >(invalid)
-        .unwrap_err()
-        .to_string();
-        assert!(error.contains("owner_record_indices"));
-        assert!(error.contains("value_offsets"));
     }
 }
 
@@ -354,25 +334,25 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
     let selection =
         |record_index| crate::records::feature::assembly::DesignAssemblyLegacySelection {
             record_index,
-            byte_offset: 400,
+            byte_offset: Some(400),
             class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned())
                 .unwrap(),
             asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            asset_id_offset: 411,
+            asset_id_offset: Some(411),
             context_id: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            context_id_offset: 422,
+            context_id_offset: Some(422),
             recipe_record_index: 50,
-            recipe_record_byte_offset: 500,
+            recipe_record_byte_offset: Some(500),
             recipe_id: "recipe".into(),
             recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
             recipe_references: Vec::new(),
-            next_byte_offset: 600,
+            next_byte_offset: Some(600),
         };
     let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
         crate::records::feature::assembly::DesignAssemblyLegacyOperand {
@@ -380,13 +360,13 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                 "256".to_owned(),
             )
             .unwrap(),
-            reference_offset: 11,
+            reference_offset: Some(11),
             construction: Box::new(
                 crate::records::feature::work_geometry::DesignWorkPointConstruction {
                     point_record_index: 10,
-                    point_record_byte_offset: 100,
+                    point_record_byte_offset: Some(100),
                     position: crate::test_support::reals([1.0, 2.0, 3.0]),
-                    position_offset: 125,
+                    position_offset: Some(125),
                     rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                         crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
                             reference_type: 0,
@@ -394,7 +374,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                         },
                     )
                     .expect("compatible WorkPoint rule"),
-                    reference_type_offset: 150,
+                    reference_type_offset: Some(150),
                 },
             ),
             selection: selection(40),
@@ -404,18 +384,18 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                 "257".to_owned(),
             )
             .unwrap(),
-            reference_offset: 22,
+            reference_offset: Some(22),
             construction: Box::new(crate::records::feature::hole::DesignHoleConstruction {
                 point_record_index: 20,
-                point_record_byte_offset: 200,
+                point_record_byte_offset: Some(200),
                 position: crate::test_support::reals([4.0, 5.0, 6.0]),
-                position_offset: 225,
+                position_offset: Some(225),
                 direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-                direction_offset: 250,
+                direction_offset: Some(250),
                 point_parameters: crate::test_support::reals([0.0, 0.0]),
-                point_parameter_offsets: [275, 283],
+                point_parameter_offsets: Some([275, 283]),
                 reference_type: 0,
-                reference_type_offset: 291,
+                reference_type_offset: Some(291),
                 tangent_point_data: None,
                 input_records: Vec::new(),
                 face_selection: None,
@@ -425,11 +405,11 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
     );
     let solved_frame = crate::records::feature::assembly::DesignAssemblySolvedFrame {
         reference_record_index: 30,
-        reference_offset: 33,
-        record_byte_offset: 300,
+        reference_offset: Some(33),
+        record_byte_offset: Some(300),
         class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
         transform: identity.try_into().unwrap(),
-        transform_offset: 325,
+        transform_offset: Some(325),
     };
     for frames_field_present in [false, true] {
         let alignment = crate::records::feature::assembly::DesignAssemblyAlignment::try_new(
@@ -449,7 +429,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         let frames = alignment.operand_frames().unwrap();
         assert_eq!(frames[0].reference_record_index, 10);
         assert_eq!(frames[1].reference_record_index, 20);
-        assert_eq!(frames[0].transform_offset, 325);
+        assert_eq!(frames[0].transform_offset, Some(325));
         assert_eq!(
             frames[0].transform,
             [
@@ -465,13 +445,11 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         let wire = serde_json::to_string(&alignment).unwrap();
         let decoded: crate::records::feature::assembly::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
-        assert_eq!(decoded, alignment);
         assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
         let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert_eq!(value.get("operand_frames").is_some(), frames_field_present);
         for (field, replacement) in [
             ("construction_record_index", serde_json::json!(99)),
-            ("construction_byte_offset", serde_json::json!(99)),
             ("frame", serde_json::to_value(&frames[1]).unwrap()),
         ] {
             let mut invalid = value.clone();
@@ -515,48 +493,30 @@ fn assembly_path_wire_pairs_guid_locations() {
         let values: Vec<_> = (0..count)
             .map(|index| format!("{index:08}-1111-4111-8111-111111111111"))
             .collect();
-        let offsets: Vec<_> = (0..count).map(|index| 400 + index * 80).collect();
         let wire = serde_json::json!({
             "link": {
-                "locator_reference_offset": 11, "locator_record_index": 10,
-                "locator_class_tag": "363", "locator_byte_offset": 100,
-                "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
-                "wrapper_reference_offset": 122, "wrapper_class_tag": "388",
-                "wrapper_byte_offset": 200, "path_reference_offset": 211
+                "locator_record_index": 10, "locator_class_tag": "363",
+                "wrapper_record_index": 20, "wrapper_class_tag": "388"
             },
-            "record_index": 30, "class_tag": "329", "byte_offset": 300,
-            "occurrence_guids": values, "occurrence_guid_offsets": offsets
+            "record_index": 30, "class_tag": "329",
+            "occurrence_guids": values
         });
         for identities in [false, true] {
             let mut wire = wire.clone();
             if identities {
                 wire["identity_guids"] = serde_json::json!(vec![values[0].clone(); 4]);
-                wire["identity_guid_offsets"] = serde_json::json!([700, 780, 860, 940]);
             }
             let path: crate::records::feature::assembly::DesignAssemblyOperandPath =
                 serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(path.occurrence_guids().len(), count);
+            assert_eq!(
+                path.occurrence_guids()
+                    .iter()
+                    .map(crate::records::mesh::DesignOccurrenceKey::as_str)
+                    .collect::<Vec<_>>(),
+                values.iter().map(String::as_str).collect::<Vec<_>>()
+            );
             assert_eq!(serde_json::to_value(&path).unwrap(), wire);
-            for (value_field, offset_field) in [
-                ("occurrence_guids", "occurrence_guid_offsets"),
-                ("identity_guids", "identity_guid_offsets"),
-            ] {
-                let mut invalid = wire.clone();
-                let mut bad_offsets = invalid
-                    .get(offset_field)
-                    .and_then(serde_json::Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                bad_offsets.push(serde_json::json!(999));
-                invalid[offset_field] = serde_json::Value::Array(bad_offsets);
-                let error = serde_json::from_value::<
-                    crate::records::feature::assembly::DesignAssemblyOperandPath,
-                >(invalid)
-                .unwrap_err()
-                .to_string();
-                assert!(error.contains(value_field));
-                assert!(error.contains(offset_field));
-            }
         }
     }
 }
@@ -619,38 +579,45 @@ fn assembly_operand_path_native_retained_limit_refuses_before_clone() {
 
 #[test]
 fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
-    let prefix = r#"{"relation_record_index":1,"carrier_record_index":2,"neutron_role":"role","neutron_role_offset":30,"transform":"#;
+    let prefix = r#"{"relation_record_index":1,"carrier_record_index":2,"neutron_role":"role""#;
     let identity = "[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
     let translated = "[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]]";
-    for (matrix, offsets) in [
-        (identity, ""),
-        (identity, ",\"transform_offset\":50"),
-        (translated, ",\"transform_offset\":50"),
-        (
-            translated,
-            ",\"transform_offset\":50,\"carrier_transform_offset\":40",
-        ),
+    for (matrix, carrier) in [
+        (None, false),
+        (Some(identity), false),
+        (Some(translated), false),
+        (Some(translated), true),
     ] {
-        let wire = format!("{prefix}{matrix}{offsets}}}");
+        let mut wire = prefix.to_owned();
+        if let Some(matrix) = matrix {
+            std::fmt::Write::write_fmt(&mut wire, format_args!(",\"transform\":{matrix}"))
+                .expect("writing to a String succeeds");
+        }
+        if carrier {
+            wire.push_str(",\"carrier_transform_stored\":true");
+        }
+        wire.push('}');
         let construction: crate::records::feature::assembly_features::DesignComponentInsertConstruction =
             serde_json::from_str(&wire).expect("component placement");
         assert_eq!(
             serde_json::to_string(&construction).expect("component placement wire"),
             wire
         );
-        assert_eq!(construction.placement.is_some(), !offsets.is_empty());
+        assert_eq!(construction.placement.is_some(), matrix.is_some());
+        let mut pointers = vec![("neutron_role_offset", 30)];
+        if matrix.is_some() {
+            pointers.push(("transform_offset", 50));
+        }
+        if carrier {
+            pointers.push(("carrier_transform_offset", 40));
+        }
     }
-    for (matrix, offsets) in [
-        (translated, ""),
-        (identity, ",\"carrier_transform_offset\":40"),
-    ] {
-        let wire = format!("{prefix}{matrix}{offsets}}}");
-        let error = serde_json::from_str::<
-            crate::records::feature::assembly_features::DesignComponentInsertConstruction,
-        >(&wire)
-        .expect_err("missing scope matrix location");
-        assert!(error.to_string().contains("transform_offset"));
-    }
+    let wire = format!("{prefix},\"carrier_transform_stored\":true}}");
+    let error = serde_json::from_str::<
+        crate::records::feature::assembly_features::DesignComponentInsertConstruction,
+    >(&wire)
+    .expect_err("carrier matrix without scope matrix");
+    assert!(error.to_string().contains("transform"));
 }
 
 #[test]
@@ -740,7 +707,6 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
             minimum,
             maximum,
             owner_record_indices: [1, 2],
-            value_offsets: [10, 20],
         };
         assert_eq!(DesignAssemblyLimits::try_from(wire.clone()).is_ok(), valid);
         if minimum.is_finite() && maximum.is_finite() {
@@ -757,7 +723,7 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
 #[test]
 fn assembly_alignment_native_writer_refuses_retained_limit_before_record_completion() {
     use crate::records::feature::assembly::DesignAssemblyAlignment;
-    use crate::records::identity::Located;
+    use crate::records::identity::Sourced;
 
     #[derive(serde::Serialize)]
     struct Record<'a> {
@@ -768,9 +734,9 @@ fn assembly_alignment_native_writer_refuses_retained_limit_before_record_complet
     let alignment = DesignAssemblyAlignment::try_new(
         1.0,
         [0.0; 3],
-        vec![Located {
+        vec![Sourced {
             value: 7,
-            offset: 9,
+            offset: Some(9),
         }],
         None,
     )
@@ -787,7 +753,6 @@ fn assembly_alignment_native_writer_refuses_retained_limit_before_record_complet
                 "angle": 1.0,
                 "offset": [0.0, 0.0, 0.0],
                 "owner_record_indices": [7],
-                "value_offsets": [9],
             }
         }),
     );
@@ -818,9 +783,14 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
                 link.clone(),
                 30,
                 tag.to_owned().try_into().unwrap(),
-                300,
-                guids(&[400]),
-                guids(&offsets),
+                (guids(&[400]))
+                    .into_iter()
+                    .map(|field| field.value)
+                    .collect(),
+                (guids(&offsets))
+                    .into_iter()
+                    .map(|field| field.value)
+                    .collect(),
             );
             assert_eq!(result.is_ok(), valid);
         }
@@ -829,26 +799,20 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
         link,
         30,
         "390".to_owned().try_into().unwrap(),
-        300,
-        guids(&[400, 480]),
-        guids(&[560, 640, 720, 800]),
+        (guids(&[400, 480]))
+            .into_iter()
+            .map(|field| field.value)
+            .collect(),
+        (guids(&[560, 640, 720, 800]))
+            .into_iter()
+            .map(|field| field.value)
+            .collect(),
     )
     .unwrap();
     let wire = serde_json::to_value(path).unwrap();
     assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wire.clone()).is_ok());
-    for (field, offsets) in [
-        ("occurrence_guid_offsets", vec![300, 480]),
-        ("occurrence_guid_offsets", vec![480, 400]),
-        ("identity_guid_offsets", vec![560, 560, 720, 800]),
-        ("identity_guid_offsets", vec![299, 640, 720, 800]),
-    ] {
-        let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!(offsets);
-        assert!(serde_json::from_value::<DesignAssemblyOperandPath>(invalid).is_err());
-    }
     let mut empty = wire.clone();
     empty["occurrence_guids"] = serde_json::json!([]);
-    empty["occurrence_guid_offsets"] = serde_json::json!([]);
     assert!(serde_json::from_value::<DesignAssemblyOperandPath>(empty).is_err());
     let mut wrong_class = wire;
     wrong_class["link"]["locator_class_tag"] = serde_json::json!("363");
@@ -863,37 +827,6 @@ fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
     if field == "selector_asset_id" {
         wire["external_asset_id"] = wire[field].clone();
     }
-    let end = |wire: &serde_json::Value, value: &str, offset: &str| {
-        wire[offset].as_u64().unwrap()
-            + 2 * u64_from_index(wire[value].as_str().unwrap().encode_utf16().count())
-    };
-    wire["selector_context_id_offset"] =
-        serde_json::json!(end(wire, "selector_asset_id", "selector_asset_id_offset") + 4);
-    wire["occurrence_reference_offset"] =
-        serde_json::json!(end(wire, "selector_context_id", "selector_context_id_offset") + 13);
-    wire["external_body_reference_offset"] =
-        serde_json::json!(wire["occurrence_reference_offset"].as_u64().unwrap() + 15);
-    wire["external_segment_offset"] =
-        serde_json::json!(wire["external_body_reference_offset"].as_u64().unwrap() + 9);
-    wire["external_asset_id_offset"] =
-        serde_json::json!(wire["external_segment_offset"].as_u64().unwrap() + 8);
-    wire["external_link_name_offset"] =
-        serde_json::json!(end(wire, "external_asset_id", "external_asset_id_offset") + 5);
-    let link_end = end(wire, "external_link_name", "external_link_name_offset");
-    let tail = if wire.get("external_property_key").is_some() {
-        wire["external_property_key_offset"] = serde_json::json!(link_end + 5);
-        wire["external_version_urn_offset"] = serde_json::json!(
-            end(
-                wire,
-                "external_property_key",
-                "external_property_key_offset"
-            ) + 4
-        );
-        end(wire, "external_version_urn", "external_version_urn_offset") + 6
-    } else {
-        link_end + 7
-    };
-    wire["tail_value_offsets"] = serde_json::json!([tail, tail + 12]);
 }
 
 #[test]
@@ -1023,48 +956,58 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let selection = |record_index| {
-        crate::records::feature::assembly::DesignAssemblyLegacySelection {
+    let selection =
+        |record_index| crate::records::feature::assembly::DesignAssemblyLegacySelection {
             record_index,
-            byte_offset: 400,
+            byte_offset: Some(400),
             class_tag: crate::records::references::DesignClassTag::try_from("307".to_owned())
                 .unwrap(),
             asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            asset_id_offset: 411,
+            asset_id_offset: Some(411),
             context_id: "22222222-2222-4222-8222-222222222222"
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            context_id_offset: 422,
+            context_id_offset: Some(422),
             recipe_record_index: 50,
-            recipe_record_byte_offset: 500,
+            recipe_record_byte_offset: Some(500),
             recipe_id: "recipe".into(),
             recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
-            recipe_references: vec![serde_json::from_value(serde_json::json!({
-                "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
-                "design_reference": 1, "design_reference_offset": 3,
-                "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
-                "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
-            })).unwrap()],
-            next_byte_offset: 600,
-        }
-    };
+            recipe_references: vec![crate::records::dimensions::DesignRecipeReference {
+                clause_index: 0,
+                selector: 1,
+                selector_offset: Some(1),
+                token: "f3d:model:face#one".into(),
+                token_offset: Some(2),
+                design_reference: 1,
+                design_reference_offset: Some(3),
+                candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+                candidate_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
+                alternate_selector_faces: vec![
+                    cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()
+                ],
+                alternate_selector_edges: vec![
+                    cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()
+                ],
+            }],
+            next_byte_offset: Some(600),
+        };
     let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
         crate::records::feature::assembly::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::references::DesignClassTag::try_from(
                 "256".to_owned(),
             )
             .unwrap(),
-            reference_offset: 11,
+            reference_offset: Some(11),
             construction: Box::new(
                 crate::records::feature::work_geometry::DesignWorkPointConstruction {
                     point_record_index: 10,
-                    point_record_byte_offset: 100,
+                    point_record_byte_offset: Some(100),
                     position: crate::test_support::reals([1.0, 2.0, 3.0]),
-                    position_offset: 125,
+                    position_offset: Some(125),
                     rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                         crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
                             reference_type: 0,
@@ -1072,7 +1015,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
                         },
                     )
                     .expect("compatible WorkPoint rule"),
-                    reference_type_offset: 150,
+                    reference_type_offset: Some(150),
                 },
             ),
             selection: selection(40),
@@ -1082,18 +1025,18 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
                 "257".to_owned(),
             )
             .unwrap(),
-            reference_offset: 22,
+            reference_offset: Some(22),
             construction: Box::new(crate::records::feature::hole::DesignHoleConstruction {
                 point_record_index: 20,
-                point_record_byte_offset: 200,
+                point_record_byte_offset: Some(200),
                 position: crate::test_support::reals([4.0, 5.0, 6.0]),
-                position_offset: 225,
+                position_offset: Some(225),
                 direction: crate::test_support::reals([0.0, 0.0, 1.0]),
-                direction_offset: 250,
+                direction_offset: Some(250),
                 point_parameters: crate::test_support::reals([0.0, 0.0]),
-                point_parameter_offsets: [275, 283],
+                point_parameter_offsets: Some([275, 283]),
                 reference_type: 0,
-                reference_type_offset: 291,
+                reference_type_offset: Some(291),
                 tangent_point_data: None,
                 input_records: Vec::new(),
                 face_selection: None,
@@ -1103,11 +1046,11 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
     );
     let solved_frame = crate::records::feature::assembly::DesignAssemblySolvedFrame {
         reference_record_index: 30,
-        reference_offset: 33,
-        record_byte_offset: 300,
+        reference_offset: Some(33),
+        record_byte_offset: Some(300),
         class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
         transform: identity.try_into().unwrap(),
-        transform_offset: 325,
+        transform_offset: Some(325),
     };
 
     let alignment = super::DesignAssemblyAlignment::try_new(

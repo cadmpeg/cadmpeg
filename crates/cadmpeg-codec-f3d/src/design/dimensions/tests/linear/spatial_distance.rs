@@ -111,15 +111,15 @@ fn spatial_distance_projects_vertical_distance_and_skips_spatial_sketches() {
             loci: [
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(40),
-                    geometry_reference_offset: 70,
+                    geometry_reference_offset: Some(70),
                     role: 7,
-                    role_offset: 80,
+                    role_offset: Some(80),
                 },
                 crate::records::dimensions::DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(41),
-                    geometry_reference_offset: 85,
+                    geometry_reference_offset: Some(85),
                     role: 8,
-                    role_offset: 95,
+                    role_offset: Some(95),
                 },
             ],
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
@@ -133,30 +133,30 @@ fn spatial_distance_projects_vertical_distance_and_skips_spatial_sketches() {
     let group = DesignDimensionLocusGroup {
         id: format!("{stream}:design-dimension-locus-group#140"),
         companion_record_index: 99,
-        byte_offset: 140,
+        byte_offset: Some(140),
         class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 31,
-        frame_length: 100,
+        frame_length: Some(100),
         loci: vec![DesignDimensionLocus {
             returned: crate::records::identity::Located {
                 value: 40,
-                offset: 210,
+                offset: Some(210),
             },
             geometry_record_index: 40,
-            geometry_reference_offset: 170,
+            geometry_reference_offset: Some(170),
             role: 0,
-            role_offset: 180,
+            role_offset: Some(180),
         }],
         owner_reference: 100,
-        owner_reference_offset: 185,
+        owner_reference_offset: Some(185),
         owner_role: 0,
-        owner_role_offset: 195,
+        owner_role_offset: Some(195),
         state: 0,
-        state_offset: 199,
+        state_offset: Some(199),
         next_class_tag: crate::records::references::DesignClassTag::try_from("273".to_owned())
             .unwrap(),
         next_record_index: 32,
-        next_byte_offset: 240,
+        next_byte_offset: Some(240),
     };
     let point = |record_index, y| {
         SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
@@ -165,8 +165,8 @@ fn spatial_distance_projects_vertical_distance_and_skips_spatial_sketches() {
             owner_reference: Some(100),
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            coordinate_offset: 0,
+            byte_offset: Some(0),
+            coordinate_offset: Some(0),
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },

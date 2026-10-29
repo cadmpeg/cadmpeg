@@ -57,7 +57,6 @@ pub(super) enum CreoArena {
     TopologicalVertices,
     HalfEdgeVertexIncidence,
     FaceComponents,
-    BrepFaceAdmissionRejections,
     SurfaceParameters,
     NonvisibleSurfaceParameters,
     CrossSectionSurfaceParameters,
@@ -147,7 +146,6 @@ impl CreoArena {
             Self::TopologicalVertices => "topological_vertices",
             Self::HalfEdgeVertexIncidence => "half_edge_vertex_incidence",
             Self::FaceComponents => "face_components",
-            Self::BrepFaceAdmissionRejections => "brep_face_admission_rejections",
             Self::SurfaceParameters => "surface_parameters",
             Self::NonvisibleSurfaceParameters => "nonvisible_surface_parameters",
             Self::CrossSectionSurfaceParameters => "cross_section_surface_parameters",
@@ -374,10 +372,6 @@ mod tests {
                 "half_edge_vertex_incidence",
             ),
             (CreoArena::FaceComponents, "face_components"),
-            (
-                CreoArena::BrepFaceAdmissionRejections,
-                "brep_face_admission_rejections",
-            ),
             (CreoArena::SurfaceParameters, "surface_parameters"),
             (
                 CreoArena::NonvisibleSurfaceParameters,

@@ -234,6 +234,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
     let vertex_id = ir.model.vertices[0].id.clone();
     let loop_id = crate::ids::LoopId::mint("synthetic:cube:vertex-loop#0").expect("valid identity");
     ir.model.loops.push(crate::topology::Loop {
+        native_ref: None,
         id: loop_id.clone(),
         face: face_id,
         boundary: crate::topology::LoopBoundary::Vertex {

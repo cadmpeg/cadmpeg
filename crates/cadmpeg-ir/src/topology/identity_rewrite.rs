@@ -8,25 +8,25 @@ use super::{
 };
 
 rewrite_record!(AnchoredVertexUse, []; {vertex, after, pcurves});
-rewrite_record!(Body, []; {id, kind, regions, transform, name, color, visible});
+rewrite_record!(Body, []; {id, kind, regions, transform, name, color, visible, native_ref});
 rewrite_scalar!(BodyKind);
-rewrite_record!(Coedge, []; {id, owner_loop, edge, radial_next, sense, pcurves, use_curve});
+rewrite_record!(Coedge, []; {id, owner_loop, edge, radial_next, sense, pcurves, use_curve, native_ref});
 rewrite_record!(CoedgeUseCurve, []; {curve, parameter_range});
 rewrite_scalar!(Color);
-rewrite_record!(Edge, []; {id, carrier, start, end, tolerance});
+rewrite_record!(Edge, []; {id, carrier, start, end, tolerance, native_ref});
 rewrite_enum!(EdgeCarrier, []; {
     Free,
     Endpoints(field0),
     Curve(field0),
     Bounded(field0, field1),
 });
-rewrite_record!(Face, []; {id, shell, surface, sense, loops, name, color, tolerance});
+rewrite_record!(Face, []; {id, shell, surface, sense, loops, name, color, tolerance, native_ref});
 rewrite_enum!(FaceLoops, []; {
     Unspecified {loops},
     Classified {outer, inner},
 });
 rewrite_scalar!(IncreasingParameterInterval);
-rewrite_record!(Loop, []; {id, face, boundary});
+rewrite_record!(Loop, []; {id, face, boundary, native_ref});
 rewrite_enum!(LoopBoundary, []; {
     Vertex {vertex, pcurves},
     Ring(field0),
@@ -34,9 +34,9 @@ rewrite_enum!(LoopBoundary, []; {
 rewrite_record!(LoopRing, []; {coedges, vertex_uses});
 rewrite_scalar!(ParameterInterval);
 rewrite_record!(PcurveUse, []; {pcurve, isoparametric, parameter_range});
-rewrite_record!(Point, []; {id, position, source_object});
-rewrite_record!(Region, []; {id, body, shells});
+rewrite_record!(Point, []; {id, position, source_object, native_ref});
+rewrite_record!(Region, []; {id, body, shells, native_ref});
 rewrite_scalar!(Sense);
-rewrite_record!(Shell, []; {id, region, members});
+rewrite_record!(Shell, []; {id, region, members, native_ref});
 rewrite_record!(ShellMembers, []; {faces, wire_edges, free_vertices});
-rewrite_record!(Vertex, []; {id, point, tolerance});
+rewrite_record!(Vertex, []; {id, point, tolerance, native_ref});

@@ -3,10 +3,8 @@
 
 #[test]
 fn sketch_entity_binding_borrowed_wire_matches_owned_wire_bytes() {
-    let binding: super::DesignSketchEntityBinding = serde_json::from_str(
-        r#"{"entity_id":"0_35","entity_suffix":35,"entity_reference_offset":12}"#,
-    )
-    .unwrap();
+    let binding: super::DesignSketchEntityBinding =
+        serde_json::from_str(r#"{"entity_id":"0_35","entity_suffix":35}"#).unwrap();
     let owned = super::DesignSketchEntityBindingWire::from(binding.clone());
     assert_eq!(
         serde_json::to_vec(&binding).unwrap(),
@@ -22,10 +20,8 @@ fn sketch_entity_binding_native_retained_limit_refuses_before_record_clone() {
         binding: &'a super::DesignSketchEntityBinding,
     }
 
-    let binding: super::DesignSketchEntityBinding = serde_json::from_str(
-        r#"{"entity_id":"0_35","entity_suffix":35,"entity_reference_offset":12}"#,
-    )
-    .unwrap();
+    let binding: super::DesignSketchEntityBinding =
+        serde_json::from_str(r#"{"entity_id":"0_35","entity_suffix":35}"#).unwrap();
     let record = NativeRecord {
         id: "f3d:native:sketch-binding#0",
         binding: &binding,
@@ -93,7 +89,7 @@ fn parameter_scope_nested_vertex_recipe_streams_without_cloning() {
     .expect("vertex recipe wire");
     let input = DesignWorkPointInput::try_new(
         2,
-        12,
+        Some(12),
         Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
             recipe,
         })),
@@ -109,11 +105,11 @@ fn parameter_scope_nested_vertex_recipe_streams_without_cloning() {
     if let super::DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([4.0, 3.0, 0.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule,
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let owned = super::DesignParameterScopeSerde::from(scope.clone());
@@ -141,9 +137,7 @@ fn work_plane_frame_wire_refuses_a_null_key() {
     }
     for key in [
         "work_plane_transform",
-        "work_plane_transform_offset",
         "work_plane_reference",
-        "work_plane_reference_offset",
         "work_plane_construction",
     ] {
         let mut wire = serde_json::json!({});
@@ -164,12 +158,7 @@ fn joint_origin_frame_wire_refuses_a_null_key() {
         #[serde(flatten, deserialize_with = "super::deserialize_joint_origin_frame")]
         frame: Option<super::DesignJointOriginTransform>,
     }
-    for key in [
-        "joint_origin_transform",
-        "joint_origin_transform_offset",
-        "joint_origin_reference",
-        "joint_origin_reference_offset",
-    ] {
+    for key in ["joint_origin_transform", "joint_origin_reference"] {
         let mut wire = serde_json::json!({});
         wire[key] = serde_json::Value::Null;
         assert!(
@@ -188,7 +177,7 @@ fn sketch_entity_wire_refuses_a_null_key() {
         #[serde(flatten, deserialize_with = "super::deserialize_sketch_entity")]
         entity: Option<super::DesignSketchEntityBinding>,
     }
-    for key in ["entity_id", "entity_suffix", "entity_reference_offset"] {
+    for key in ["entity_id", "entity_suffix"] {
         let mut wire = serde_json::json!({});
         wire[key] = serde_json::Value::Null;
         assert!(
@@ -234,16 +223,8 @@ fn a_flattened_scope_reader_names_the_null_key_it_refuses() {
             refusal::<WorkPlane>("work_plane_transform"),
         ),
         (
-            "work_plane_transform_offset",
-            refusal::<WorkPlane>("work_plane_transform_offset"),
-        ),
-        (
             "work_plane_reference",
             refusal::<WorkPlane>("work_plane_reference"),
-        ),
-        (
-            "work_plane_reference_offset",
-            refusal::<WorkPlane>("work_plane_reference_offset"),
         ),
         (
             "work_plane_construction",
@@ -254,23 +235,11 @@ fn a_flattened_scope_reader_names_the_null_key_it_refuses() {
             refusal::<JointOrigin>("joint_origin_transform"),
         ),
         (
-            "joint_origin_transform_offset",
-            refusal::<JointOrigin>("joint_origin_transform_offset"),
-        ),
-        (
             "joint_origin_reference",
             refusal::<JointOrigin>("joint_origin_reference"),
         ),
-        (
-            "joint_origin_reference_offset",
-            refusal::<JointOrigin>("joint_origin_reference_offset"),
-        ),
         ("entity_id", refusal::<SketchEntity>("entity_id")),
         ("entity_suffix", refusal::<SketchEntity>("entity_suffix")),
-        (
-            "entity_reference_offset",
-            refusal::<SketchEntity>("entity_reference_offset"),
-        ),
     ];
     for (key, message) in refusals {
         assert!(
@@ -291,19 +260,40 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
         DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule,
         DesignWorkPointRuleForm,
     };
-    let reference = serde_json::json!({
-        "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
-        "design_reference": 1, "design_reference_offset": 3,
-        "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
-        "alternate_selector_faces": ["f3d:model:face#one"], "alternate_selector_edges": ["f3d:model:edge#one"]
-    });
-    let recipe: DesignVertexRecipe = serde_json::from_value(serde_json::json!({
-        "record_index": 2, "byte_offset": 10, "class_tag": "369", "paired_byte_offset": 20,
-        "paired_class_tag": "261", "recipe_record_index": 5, "recipe_record_byte_offset": 30,
-        "recipe_id": "f3d:design:recipe#1", "recipe_prefix_offset": 41,
-        "recipe_prefix_bytes": "00ff", "recipe_references": [reference],
-        "recipe_program_offset": 43, "recipe_program": [0], "next_record_index": 7, "next_byte_offset": 50
-    })).unwrap();
+    let reference = crate::records::dimensions::DesignRecipeReference {
+        clause_index: 0,
+        selector: 1,
+        selector_offset: Some(1),
+        token: "f3d:model:face#one".into(),
+        token_offset: Some(2),
+        design_reference: 1,
+        design_reference_offset: Some(3),
+        candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+        candidate_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
+        alternate_selector_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:model:face#one").unwrap()],
+        alternate_selector_edges: vec![cadmpeg_ir::ids::EdgeId::mint("f3d:model:edge#one").unwrap()],
+    };
+    let recipe = DesignVertexRecipe::try_new(
+        crate::records::feature::work_geometry::DesignVertexRecipeDraft {
+            record_index: 2,
+            byte_offset: 10,
+            class_tag: "369".to_owned().try_into().unwrap(),
+            paired_byte_offset: 20,
+            paired_class_tag: "261".to_owned().try_into().unwrap(),
+            recipe_record_index: 5,
+            recipe_record_byte_offset: 30,
+            recipe_id: "f3d:design:recipe#1".into(),
+            recipe_prefix_offset: 41,
+            recipe_prefix_bytes: vec![0, 255],
+            recipe_references: vec![reference],
+            recipe_program_offset: 43,
+            recipe_program: vec![0],
+            resolution: None,
+            next_record_index: 7,
+            next_byte_offset: 50,
+        },
+    )
+    .unwrap();
     let plane = DesignWorkPlaneConstruction::try_new(
         21,
         Box::new([recipe.clone(), recipe.clone(), recipe.clone()]),
@@ -320,7 +310,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
             ]
             .try_into()
             .unwrap(),
-            work_plane_transform_offset: 0,
+            work_plane_transform_offset: Some(0),
             reference: None,
             work_plane_construction: Some(plane),
         })),
@@ -328,7 +318,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
     );
     let input = DesignWorkPointInput::try_new(
         2,
-        12,
+        Some(12),
         Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
             recipe,
         })),
@@ -343,11 +333,11 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
     if let super::DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
-            point_record_byte_offset: 0,
+            point_record_byte_offset: Some(0),
             position: crate::test_support::reals([4.0, 3.0, 0.0]),
-            position_offset: 0,
+            position_offset: Some(0),
             rule,
-            reference_type_offset: 0,
+            reference_type_offset: Some(0),
         });
     }
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -420,18 +410,18 @@ fn emboss_scope() -> super::DesignParameterScope {
         super::DesignFeatureKind::Emboss,
         40,
     );
-    let construction = serde_json::from_value(serde_json::json!({
-        "control_words": [7, 9],
-        "native_pair": [17, 23],
-        "depth_owner": {"value": 60, "offset": 29},
-        "auxiliary_group": {"value": 72, "offset": 40},
-        "horizontal_owner": {"value": 63, "offset": 51},
-        "rotation_owner": {"value": 69, "offset": 82},
-        "face_group": {"value": 48, "offset": 93},
-        "vertical_owner": {"value": 66, "offset": 104},
-        "profile_group": {"value": 41, "offset": 119}
-    }))
-    .unwrap();
+    let construction = crate::records::feature::emboss::DesignEmbossConstruction {
+        control_words: [7, 9],
+        native_pair: [17, 23],
+        depth_owner: crate::records::identity::Sourced::at(60, 29),
+        auxiliary_group: crate::records::identity::Sourced::at(72, 40),
+        horizontal_owner: crate::records::identity::Sourced::at(63, 51),
+        rotation_owner: crate::records::identity::Sourced::at(69, 82),
+        face_group: crate::records::identity::Sourced::at(48, 93),
+        vertical_owner: crate::records::identity::Sourced::at(66, 104),
+        profile_group: crate::records::identity::Sourced::at(41, 119),
+        sketch_profile: None,
+    };
     scope
         .try_edit(|draft| {
             draft.frame_length = 430;

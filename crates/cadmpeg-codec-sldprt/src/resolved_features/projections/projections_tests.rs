@@ -1,5 +1,7 @@
 //! Tests for the `projections` module.
 
+use crate::test_support::dimensions::source_value;
+
 use super::{
     full_round_fillet_selection_triple, project_compact_surface_selections,
     project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
@@ -27,6 +29,7 @@ use cadmpeg_ir::{
 use std::collections::BTreeMap;
 
 mod compact_selections;
+mod parameter_cache;
 mod patterns;
 
 fn with_projection_context<R>(
@@ -45,6 +48,7 @@ fn with_projection_context<R>(
 #[test]
 fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -58,6 +62,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -109,6 +114,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
 #[test]
 fn frame_only_plane_support_requires_one_coincident_face() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -121,6 +127,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -165,6 +172,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
 #[test]
 fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -177,6 +185,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -196,6 +205,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::ResolvedPlane {
@@ -206,7 +216,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
                     )
                     .unwrap(),
                 }),
-                distance: Length::new(4.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -236,6 +246,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
 #[test]
 fn generic_native_offset_plane_support_stays_native() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#plane").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -248,6 +259,7 @@ fn generic_native_offset_plane_support_stays_native() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -268,12 +280,13 @@ fn generic_native_offset_plane_support_stays_native() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Face {
                     face: FaceSelection::Native(native.into()),
                 }),
-                distance: Length::new(4.0).unwrap(),
+                distance: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()),
             }),
         ),
         native_ref: None,
@@ -335,6 +348,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -368,6 +382,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         id: format!("selection-{parent}"),
         parent: parent.into(),
         ordinal: 0,
+        sequence: 0,
         offset,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -405,12 +420,26 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         sketch_entities: Vec::new(),
     };
 
+    let lanes = [lane("lane-a", 40), lane("lane-b", 60)];
+    assert_eq!(
+        lanes
+            .each_ref()
+            .map(|lane| lane.surface_selections[0].offset),
+        [40, 60]
+    );
+    assert_eq!(
+        lanes
+            .each_ref()
+            .map(|lane| lane.surface_selections[0].ordinal),
+        [0, 0]
+    );
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
             ctx,
             &mut features,
             std::slice::from_ref(&history),
-            &[lane("lane-a", 40), lane("lane-b", 60)],
+            &lanes,
+            &[],
             &[],
             &[],
         )
@@ -432,7 +461,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
                     "7".into(),
                 )
                 .unwrap()]
-                && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
+                && native == "sldprt:feature-input:cylinder-reference:lane-a:0,lane-b:0"
     ));
     assert_eq!(
         features[1].dependencies.as_slice(),
@@ -440,6 +469,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
     );
 
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -453,6 +483,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         source_object: None,
     };
     let topology_face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#cylinder-face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -470,7 +501,9 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             panic!("expected cosmetic thread");
         };
         *face = cadmpeg_ir::features::FaceSelection::Unresolved;
-        *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
+        *diameter = Some(cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+        ));
     });
     with_projection_context(|ctx| {
         project_unbound_cosmetic_thread_faces(
@@ -480,6 +513,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             &[],
             std::slice::from_ref(&topology_face),
             std::slice::from_ref(&surface),
+            &[],
         )
     })
     .expect("cosmetic thread face projection");
@@ -532,6 +566,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -563,6 +598,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         id: id.into(),
         parent: id.into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -633,6 +669,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
                 faces: FaceSelection::Unresolved,
@@ -653,6 +690,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: vec![FeatureInputSurfaceSelection {
+            sequence: 12,
             id: "selection".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -695,6 +733,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -739,6 +778,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
                 id: format!("selection-{ordinal}"),
                 parent: "lane".into(),
                 ordinal: u32::try_from(ordinal).unwrap(),
+                sequence: u32::try_from(ordinal).unwrap(),
                 offset: cadmpeg_core::decode::u64_from_index(ordinal),
                 selector: 0,
                 kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -815,6 +855,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -853,6 +894,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
             ordinal,
+            sequence: ordinal,
             offset: u64::from(ordinal),
             selector,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -940,6 +982,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -980,6 +1023,7 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
             ordinal,
+            sequence: ordinal,
             offset: u64::from(ordinal),
             selector: if ordinal == 0 { 6 } else { 4 },
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -1066,6 +1110,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1099,6 +1144,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         id: format!("selection-{parent}"),
         parent: parent.into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -1230,6 +1276,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -1268,6 +1315,7 @@ fn split_face_collects_distinct_generated_target_faces() {
             id: format!("selection-{ordinal}"),
             parent: "lane".into(),
             ordinal,
+            sequence: ordinal,
             offset: u64::from(ordinal),
             selector: 0,
             kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
@@ -1409,9 +1457,11 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         features: vec![feature, next],
     };
     let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset,
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
@@ -1421,10 +1471,12 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            feature_ref: None,
             id: "vertex-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![
@@ -1454,7 +1506,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         id: "edge".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 80,
+        sequence: 0,
         object_name_ref: "feature-name".into(),
         feature_ref: "variable".into(),
         local_edge_ids: vec![7, 6, 1, 0],
@@ -1484,8 +1536,8 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && actual_radius.get() == 2.0
-            && actual_radius_2.get() == 3.0) && selections.len() == 1
+            && source_value(actual_radius, &history.features).get() == 2.0
+            && source_value(actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
     ));
     lane.edge_selections.push(selection);
     let mut projected = [cadmpeg_ir::features::Feature {
@@ -1498,6 +1550,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
                 groups: cadmpeg_ir::features::NonEmptyMembers::one(
@@ -1600,9 +1653,11 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         features: vec![feature, next],
     };
     let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
+        feature_ref: None,
         id: id.into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset,
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
@@ -1612,10 +1667,12 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            feature_ref: None,
             id: "edge-class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![
@@ -1645,7 +1702,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         id: "edge".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 80,
+        sequence: 0,
         object_name_ref: "feature-name".into(),
         feature_ref: "variable".into(),
         local_edge_ids: vec![28, 29, 33, 4],
@@ -1662,7 +1719,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
 
     let groups = variable_fillet_radius_groups(
         "variable",
-        &mut VariableFilletObjects::new(&[history], &[lane]),
+        &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[lane]),
         &[&selection],
     )
     .expect("legacy edge-control join");
@@ -1674,8 +1731,8 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && actual_radius.get() == 2.0
-            && actual_radius_2.get() == 3.0) && selections.len() == 1
+            && source_value(actual_radius, &history.features).get() == 2.0
+            && source_value(actual_radius_2, &history.features).get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1718,7 +1775,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         id: "edge".into(),
         parent: "lane".into(),
         ordinal: 0,
-        offset: 80,
+        sequence: 0,
         object_name_ref: "name".into(),
         feature_ref: "variable".into(),
         local_edge_ids: vec![28, 36, 4],
@@ -1746,15 +1803,15 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0
             && second_parameter.get() == 1.0
-            && actual_radius.get() == 50.0
-            && actual_radius_2.get() == 4.0) && selections.len() == 1
+            && source_value(actual_radius, &history.features).get() == 50.0
+            && source_value(actual_radius_2, &history.features).get() == 4.0) && selections.len() == 1
     ));
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
     assert!(variable_fillet_radius_groups(
         "variable",
-        &mut VariableFilletObjects::new(&[history], &[]),
+        &mut VariableFilletObjects::new(std::slice::from_ref(&history), &[]),
         &[&collision]
     )
     .is_none());
@@ -1766,6 +1823,7 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
         id: format!("{parent}-{offset}"),
         parent: parent.into(),
         ordinal: 0,
+        sequence: 0,
         offset,
         selector: 0,
         kind: crate::records::FeatureInputSurfaceSelectionKind::Component,

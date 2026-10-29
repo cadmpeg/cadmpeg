@@ -49,7 +49,9 @@ fn container_only_result_reports_notes_and_scan_loss() {
     let mut scan = crate::test_support::test_dump::scan_with_objects(&[]);
     scan.warnings = crate::loss::Diagnostics::new();
     scan.warnings.push("fixture warning");
-    let decoded = super::container_only_result(&scan).expect("compute the container only result");
+    let decoded =
+        super::container_only_result(&cadmpeg_test_support::service_decode_context(), &scan)
+            .expect("compute the container only result");
     assert_eq!(decoded.body.notes.len(), 2);
     assert_eq!(decoded.body.losses.len(), 1);
 }
@@ -167,6 +169,40 @@ fn aggregates_object_classes_after_table_entries() {
     );
 }
 
+fn assert_bounded_model_parts_without_history(bytes: &[u8], expected_objects: usize) {
+    let scan = super::scan_owned(bytes.to_vec()).expect("actual bounded Rhino source parts");
+    assert_eq!(
+        scan.tables
+            .iter()
+            .map(|table| table.typecode)
+            .collect::<Vec<_>>(),
+        [0x1000_0014, 0x1000_0015, 0x1000_0013]
+    );
+    assert_eq!(scan.objects.len(), expected_objects);
+    assert!(scan.history.is_empty());
+    for table in &scan.tables {
+        let range = table.range();
+        assert!(range.start < range.end && range.end <= bytes.len());
+        let body = table.body();
+        assert!(range.start <= body.start && body.start <= body.end && body.end <= range.end);
+    }
+    for object in &scan.objects {
+        let range = object.range();
+        assert!(range.start < range.end && range.end <= bytes.len());
+        assert!(object
+            .framed()
+            .expect("the source point is framed")
+            .history
+            .is_none());
+    }
+    assert_eq!(
+        cadmpeg_ir::document::ArenaName::parse("points")
+            .expect("registered geometry arena")
+            .class(),
+        cadmpeg_ir::ArenaClass::Model
+    );
+}
+
 #[test]
 fn container_only_returns_empty_current_ir_for_full_bands() {
     for version in ["50", "60", "70", "80", "90"] {
@@ -181,6 +217,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
                 table(archive, 0x1000_0013, &[]),
             ],
         );
+        assert_bounded_model_parts_without_history(&bytes, 0);
         let result = RhinoCodec
             .decode(
                 &mut Cursor::new(bytes),
@@ -194,6 +231,7 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
         assert!(result.report().container_only());
+        assert!(!result.report().geometry_transferred());
         assert_eq!(result.report().format(), "rhino");
     }
 }
@@ -212,6 +250,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
                 table(archive, 0x1000_0013, &[]),
             ],
         );
+        assert_bounded_model_parts_without_history(&bytes, 0);
         let result = RhinoCodec
             .decode(
                 &mut Cursor::new(bytes),
@@ -225,6 +264,7 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
         assert!(result.ir().model.bodies.is_empty());
         assert!(result.ir().model.subds.is_empty());
         assert!(result.report().container_only());
+        assert!(!result.report().geometry_transferred());
     }
 }
 
@@ -251,6 +291,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
         ],
     );
 
+    assert_bounded_model_parts_without_history(&bytes, 1);
     let container_only = RhinoCodec
         .decode(
             &mut Cursor::new(bytes.clone()),
@@ -261,6 +302,7 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
         )
         .expect("V2 container-only decode");
     assert!(container_only.report().container_only());
+    assert!(!container_only.report().geometry_transferred());
     assert!(container_only.ir().model.points.is_empty());
 
     let decoded = RhinoCodec
@@ -298,6 +340,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
         &cadmpeg_core::dialect::Admission::Admitted
     );
 
+    assert_bounded_model_parts_without_history(&bytes, 0);
     let decoded = RhinoCodec
         .decode(
             &mut Cursor::new(bytes),
@@ -308,6 +351,7 @@ fn archive_word_5_uses_the_four_byte_chunk_scan() {
         )
         .expect("archive word 5 reaches chunked container decode");
     assert!(decoded.report().container_only());
+    assert!(!decoded.report().geometry_transferred());
     assert_eq!(
         decoded
             .report()

@@ -1262,11 +1262,13 @@ mod tests {
             builder.derived(id, "position").expect("nonempty field");
             let report = crate::report::decode::DecodeReport::unclassified(
                 "test",
-                crate::report::decode::DecodeTransfer::full(true),
+                crate::report::decode::DecodeTransfer {
+                    scope: crate::document::ContentScope::full(),
+                    geometry_transferred: true,
+                },
                 BTreeMap::new(),
                 Vec::new(),
                 Vec::new(),
-                crate::report::decode::TransferLedger::default(),
             );
             let sidecar = crate::source_fidelity::DecodeSidecar::bind_sha256(
                 crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),

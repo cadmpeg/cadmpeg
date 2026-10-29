@@ -662,6 +662,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -674,6 +675,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         source_object: None,
     });
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -687,6 +689,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     });
     let candidates = vec![
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -698,6 +701,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
             tolerance: None,
         },
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0]))
                 .unwrap(),
@@ -734,22 +738,26 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#matching-point-start")
                 .expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
             tolerance: None,
@@ -810,6 +818,7 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
 
     let mut ambiguous_candidates = candidates.clone();
     ambiguous_candidates.push(Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:edge#duplicate-occurrence").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(
             Some(CurveId::mint("test:model:curve#curve").expect("identity grammar")),

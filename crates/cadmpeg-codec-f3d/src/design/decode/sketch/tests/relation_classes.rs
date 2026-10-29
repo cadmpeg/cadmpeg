@@ -19,7 +19,7 @@ fn sketch_relation_assembly_admits_a_plain_relation() {
         id: "f3d:BulkStream.dat:design-record-header#0".to_owned(),
         record_index: 7,
         class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
         .expect("plain relation parse");
@@ -43,7 +43,7 @@ fn sketch_relation_assembly_admits_a_plain_relation() {
             crate::ids::native_scope("BulkStream.dat")
         )
     );
-    assert_eq!(admitted[0].raw_bytes(), record);
+    assert_eq!(admitted[0].raw_bytes(), Some(record.as_slice()));
 }
 
 fn tested_parse_classed_sketch_relation(
@@ -713,12 +713,12 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
         let relation = case.decode();
         assert_eq!(
             relation.raw_bytes(),
-            case.source_hex.as_ref(),
+            Some(case.source_hex.as_ref()),
             "{}",
             case.label
         );
         assert_eq!(
-            rectangular_pattern_flags(relation.raw_bytes()),
+            relation.raw_bytes().and_then(rectangular_pattern_flags),
             case.rectangular_flags,
             "{}",
             case.label
@@ -726,7 +726,13 @@ fn fixture_relation_frames_retain_source_bytes_and_rectangular_flags() {
         let json = serde_json::to_string(&relation).unwrap();
         let restored: crate::records::sketch_relations::SketchRelation =
             serde_json::from_str(&json).unwrap();
-        assert_eq!(restored, relation, "{}", case.label);
+        assert_eq!(
+            serde_json::to_string(&restored).unwrap(),
+            json,
+            "{}",
+            case.label
+        );
+        assert_eq!(restored.raw_bytes(), None, "{}", case.label);
     }
 }
 

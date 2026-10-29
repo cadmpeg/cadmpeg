@@ -34,8 +34,8 @@ fn sketch_visibility_member_decodes_both_boolean_values() {
     let hidden =
         decode_sketch_visibility_member(&member(1, 0), 0, ENTITY_SUFFIX).expect("hidden member");
     assert_eq!(hidden.stream_ordinal.get(), 1);
-    assert_eq!(hidden.stream_ordinal_offset(), 30);
-    assert_eq!(hidden.visible_offset(), 35);
+    assert_eq!(hidden.stream_ordinal_offset(), Some(30));
+    assert_eq!(hidden.visible_offset(), Some(35));
     assert!(!hidden.visible);
 
     let visible =
@@ -70,24 +70,29 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
     visibility[4..7].copy_from_slice(b"257");
     bytes.extend_from_slice(&visibility);
 
-    let segment_type = |type_guid: &str,
+    let segment_type = |class_tag: u32,
+                        type_guid: &str,
                         base_type_guid: Option<&str>,
                         version: u32,
                         module: &str,
                         entity_ids: Vec<u64>| {
         crate::records::entity_header::SegmentTypeData {
-            byte_offset: 0,
+            class_tag: (class_tag)
+                .to_string()
+                .try_into()
+                .expect("fixture class tag"),
+            byte_offset: Some(0),
             type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
+            type_guid_offset: Some(0),
             base_type_guid: base_type_guid.map_or(
                 crate::records::entity_header::BaseTypeGuid::Absent,
                 |value| crate::records::entity_header::BaseTypeGuid::Guid {
                     value: value.to_owned().try_into().expect("base GUID"),
-                    offset: 0,
+                    offset: Some(0),
                 },
             ),
             version,
-            version_offset: 0,
+            version_offset: Some(0),
             module: module.into(),
             entities: crate::records::identity::ReferenceRun::located(
                 entity_ids
@@ -100,6 +105,7 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
     let metadata = crate::metastream::MetaStream {
         types: vec![
             segment_type(
+                256,
                 SKETCH_CONTAINER_TYPE_GUID,
                 Some(SKETCH_CONTAINER_MEMBER_TYPE_GUID),
                 CURRENT_SKETCH_CONTAINER_VERSION,
@@ -107,6 +113,7 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
                 vec![ENTITY_SUFFIX],
             ),
             segment_type(
+                257,
                 SKETCH_CONTAINER_MEMBER_TYPE_GUID,
                 Some(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID),
                 SKETCH_CONTAINER_MEMBER_VERSION,

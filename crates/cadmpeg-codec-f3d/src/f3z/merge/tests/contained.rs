@@ -222,14 +222,15 @@ fn occurrence(id: &str, parent: Option<&str>, native_ref: Option<&str>, x: f64) 
             }
         }),
         ordinal: 0,
-        transform: Transform::affine([
-            [1.0, 0.0, 0.0, x],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .unwrap(),
+        transform: Some(
+            Transform::affine([
+                [1.0, 0.0, 0.0, x],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap(),
+        ),
         linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,
@@ -340,7 +341,8 @@ fn place_reference(
         .iter()
         .find(|occurrence| occurrence.id.as_str() == "f3d:model:occurrence#owner:xref-0-0")
         .unwrap()
-        .transform;
+        .transform
+        .unwrap();
     (instance, losses.into_iter().map(|loss| loss.code).collect())
 }
 

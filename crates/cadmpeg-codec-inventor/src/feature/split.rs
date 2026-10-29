@@ -209,6 +209,7 @@ pub(super) fn project(
             ordinal: u64::from(label.index),
             name: label.name().map(str::to_owned),
             suppressed: None,
+            needs_recompute: false,
             dependencies,
             source_properties: super::boolean_properties(source, &[6], index),
             source_tag: Some("split_body".into()),

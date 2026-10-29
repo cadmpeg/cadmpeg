@@ -12,11 +12,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::history::classify::{
     feature_tree_node_role, is_custom_property, principal_plane_in_history,
 };
-use crate::history::configuration::enrich_history_parameters_semantic;
-use crate::history::parameters::apply_evaluated_parameters;
 use crate::history::project::neutral_feature_id;
 
-use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
 use super::xml::{feature_xml_tag, valid_xml_name};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
@@ -24,9 +21,9 @@ use crate::records::FeatureSource;
 
 /// A write-side request to rewrite one serialized object name.
 ///
-/// A stored `FeatureInputName::value` states the payload bytes at that record's
-/// offset and is never edited. A neutral feature rename is this distinct input,
-/// which the writer splices into the payload it emits.
+/// The typed name is current document content. A neutral owner rename takes
+/// precedence over that copy. This request changes the retained layout only
+/// after the patch writer verifies its physical positions against the source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureInputRename {
     /// Identifier of the lane that owns the renamed object name.
@@ -41,6 +38,12 @@ fn synchronize_feature_input_names(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
+    // A history-only document has no serialized feature-input names to
+    // synchronize. Its current history name is still authored below, without
+    // turning an unrelated metadata edit into a refusal of retained B-rep.
+    if native.feature_input_lanes.is_empty() {
+        return Ok(Vec::new());
+    }
     let renames = features
         .iter()
         .filter_map(|feature| {
@@ -56,39 +59,32 @@ fn synchronize_feature_input_names(
             Some((
                 record.name.clone(),
                 new_name.to_string(),
-                record.input_class.clone()?,
+                record.id.clone(),
+                record.source_value()?,
             ))
         })
         .collect::<Vec<_>>();
 
     let mut requested = Vec::new();
-    for (old_name, new_name, input_class) in renames {
+    for (old_name, new_name, owner_id, object_id) in renames {
         let mut matches = Vec::<(usize, usize)>::new();
         for (lane_index, lane) in native.feature_input_lanes.iter().enumerate() {
-            for class in lane
-                .classes
-                .iter()
-                .filter(|class| class.name == input_class)
-            {
-                let name_offset =
-                    class.offset + 6 + cadmpeg_core::decode::u64_from_index(class.name.len());
-                if let Some((name_index, _)) = lane
-                    .names
-                    .iter()
-                    .enumerate()
-                    .find(|(_, name)| name.offset == name_offset && name.value == old_name)
+            for (name_index, name) in lane.names.iter().enumerate() {
+                if name.feature_ref.as_deref() == Some(owner_id.as_str())
+                    && name.object_id.and_then(crate::records::ObjectId::value) == Some(object_id)
+                    && name.value == old_name
                 {
                     matches.push((lane_index, name_index));
                 }
             }
         }
         let [(lane_index, name_index)] = matches.as_slice() else {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::UnsupportedContent(format!(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
             )));
         };
         let value = cadmpeg_core::text::NonBlankString::new(new_name).ok_or_else(|| {
-            CodecError::NotImplemented(format!(
+            CodecError::UnsupportedContent(format!(
                 "SLDPRT feature-input name for {old_name:?} has no non-blank replacement"
             ))
         })?;
@@ -159,6 +155,7 @@ fn allocate_feature_source_id(
 ) -> Result<u32, CodecError> {
     loop {
         let candidate = next.ok_or_else(|| {
+            // (O-capacity): the target field cannot encode a value outside its width.
             CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
         })?;
         *next = candidate.checked_add(1);
@@ -169,12 +166,32 @@ fn allocate_feature_source_id(
 }
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
-pub(in crate::history) fn sync_neutral_features(
+pub(crate) fn sync_neutral_features(
     model: &cadmpeg_ir::document::Model,
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
+    synchronize_features(model, parameters, bodies, native, true).map(|(renames, _)| renames)
+}
+
+/// Author history records without retained input-lane layout identities.
+pub(crate) fn synthesize_neutral_features(
+    model: &cadmpeg_ir::document::Model,
+    parameters: &[DesignParameter],
+    bodies: &[Body],
+    native: &mut Option<crate::native::SldprtNative>,
+) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
+    synchronize_features(model, parameters, bodies, native, false)
+}
+
+fn synchronize_features(
+    model: &cadmpeg_ir::document::Model,
+    parameters: &[DesignParameter],
+    bodies: &[Body],
+    native: &mut Option<crate::native::SldprtNative>,
+    patch_input_names: bool,
+) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
     let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -182,7 +199,7 @@ pub(in crate::history) fn sync_neutral_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok(Vec::new());
+        return Ok((Vec::new(), std::collections::BTreeSet::new()));
     }
     let native = native.get_or_insert_with(|| crate::native::SldprtNative {
         feature_histories: vec![FeatureHistory {
@@ -195,42 +212,8 @@ pub(in crate::history) fn sync_neutral_features(
         }],
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),
+        document_metadata: Vec::new(),
     });
-    let original_parameters = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.clone(), feature.parameters.clone()))
-        .collect::<HashMap<_, _>>();
-    let mut resolved_histories = native.feature_histories.clone();
-    let lane_bytes = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| lane.native_payload.iter().copied())
-        .collect::<Vec<_>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane_bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-    enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
-    let resolved_parameter_names = resolved_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| {
-            (
-                feature.id.clone(),
-                feature.parameters.keys().cloned().collect::<HashSet<_>>(),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    apply_evaluated_parameters(&ctx, &mut resolved_histories)?;
-    let evaluated_parameters = resolved_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.clone(), feature.parameters.clone()))
-        .collect::<HashMap<_, _>>();
     if native.feature_histories.is_empty() {
         native.feature_histories.push(FeatureHistory {
             id: "sldprt:generated:feature-history#0".into(),
@@ -242,7 +225,11 @@ pub(in crate::history) fn sync_neutral_features(
         });
     }
 
-    let renames = synchronize_feature_input_names(features, native)?;
+    let renames = if patch_input_names {
+        synchronize_feature_input_names(features, native)?
+    } else {
+        Vec::new()
+    };
 
     let generated_sources = generated_feature_source_ids(features, native)?;
     let parent_sources = features
@@ -282,6 +269,57 @@ pub(in crate::history) fn sync_neutral_features(
             (feature.id.clone(), record_id)
         })
         .collect::<HashMap<_, _>>();
+    let mut resolved_parameter_names =
+        HashMap::<String, HashSet<cadmpeg_core::text::NonBlankString>>::new();
+    for parameter in parameters {
+        if let Some(record) = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| record_ids.get(owner))
+        {
+            resolved_parameter_names
+                .entry(record.clone())
+                .or_default()
+                .insert(
+                    cadmpeg_core::text::NonBlankString::new(parameter.name.clone())
+                        .ok_or_else(|| CodecError::malformed("SLDPRT parameter name is empty"))?,
+                );
+        }
+    }
+    let feature_names = features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .name
+                .as_ref()
+                .map(|name| (feature.id.clone(), name.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let global_owners = crate::history::parameters::global_parameter_owners(features);
+    let mut canonical_parameter_texts =
+        HashMap::<FeatureId, BTreeMap<cadmpeg_core::text::NonBlankString, String>>::new();
+    for parameter in parameters {
+        let Some(owner) = parameter.owner.as_ref() else {
+            continue;
+        };
+        let text = crate::history::parameters::render_parameter_expression(
+            parameter,
+            parameters,
+            &feature_names,
+            &global_owners,
+        )
+        .ok_or_else(|| {
+            CodecError::malformed(
+                "SLDPRT canonical parameter expression references a missing identity",
+            )
+        })?;
+        let name = cadmpeg_core::text::NonBlankString::new(parameter.name.clone())
+            .ok_or_else(|| CodecError::malformed("SLDPRT parameter name is empty"))?;
+        canonical_parameter_texts
+            .entry(owner.clone())
+            .or_default()
+            .insert(name, text);
+    }
     let desired_record_ids = record_ids
         .values()
         .cloned()
@@ -369,22 +407,22 @@ pub(in crate::history) fn sync_neutral_features(
             .feature_histories
             .iter_mut()
             .flat_map(|history| &mut history.features)
-            .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
-        let suppressed = feature
-            .suppressed
-            .or_else(|| existing.as_deref().map(|record| record.suppressed))
-            .ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT writing requires resolved suppression for feature {}",
-                    feature.id
-                ))
-            })?;
+            .find(|candidate| record_ids.get(&feature.id) == Some(&candidate.id));
+        let suppressed = feature.suppressed.ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "SLDPRT feature {} has unresolved suppression",
+                feature.id
+            ))
+        })?;
         let NeutralFeatureEncoding {
             kind,
-            mut parameters,
+            parameters,
             mut properties,
         } = NeutralFeatureEncoder {
             feature,
+            canonical_parameters: parameters,
+            canonical_features: features,
+            canonical_parameter_texts: &canonical_parameter_texts,
             existing: existing.as_deref(),
             principal_planes_by_record: &principal_planes_by_record,
             record_sources: &record_sources,
@@ -395,14 +433,6 @@ pub(in crate::history) fn sync_neutral_features(
             resolved_parameter_names: &resolved_parameter_names,
         }
         .encode()?;
-        if let Some(record) = existing.as_deref() {
-            restore_equivalent_parameter_expressions(
-                record,
-                &original_parameters,
-                &evaluated_parameters,
-                &mut parameters,
-            );
-        }
         if feature.evaluation.outputs().is_empty() {
             if existing.is_none() {
                 properties.remove("Scope");
@@ -423,6 +453,7 @@ pub(in crate::history) fn sync_neutral_features(
             properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
         }
         let ordinal = u32::try_from(feature.ordinal)
+            // (O-capacity): the target field cannot encode a value outside its width.
             .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
         let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
             let source_id = structural_parent_sources.get(parent).copied().flatten();
@@ -444,6 +475,13 @@ pub(in crate::history) fn sync_neutral_features(
             existing.suppressed = suppressed;
             existing.tree_parent = tree_parent;
             existing.parameters = parameters;
+            existing
+                .dimension_properties
+                .retain(|name, _| existing.parameters.contains_key(name.as_str()));
+            for properties in existing.dimension_properties.values_mut() {
+                properties.remove("Value");
+                properties.remove("Driven");
+            }
             existing.properties = properties;
             if existing
                 .content
@@ -484,28 +522,106 @@ pub(in crate::history) fn sync_neutral_features(
             });
         }
     }
-    synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
-    let changed_parameters = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .flat_map(|feature| {
-            let original = original_parameters.get(&feature.id);
-            feature
-                .parameters
+    if !patch_input_names {
+        for feature in features {
+            if let Some(class) = super::input_classes::class(feature.definition().operation()) {
+                if let Some(record) = native
+                    .feature_histories
+                    .iter_mut()
+                    .flat_map(|history| &mut history.features)
+                    .find(|record| record_ids.get(&feature.id) == Some(&record.id))
+                {
+                    record.input_class = Some(class.into());
+                }
+            }
+        }
+    }
+    // Regenerate native evaluation copies before any temporary reprojection.
+    // These fields are target-format caches, never an authority for selecting
+    // between a parameter binding and a scalar on the feature definition.
+    for parameter in parameters {
+        let Some(record_id) = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| record_ids.get(owner))
+        else {
+            continue;
+        };
+        let Some(record) = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .find(|record| &record.id == record_id)
+        else {
+            continue;
+        };
+        let properties = record
+            .dimension_properties
+            .entry(parameter.name.clone())
+            .or_default();
+        properties.remove("Value");
+        properties.remove("Driven");
+        if let Some(value) = &parameter.value {
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Value"),
+                crate::history::literals::format_parameter_cache_value(value),
+            );
+        }
+        properties.insert(
+            cadmpeg_core::nonblank_literal!("Driven"),
+            (!parameter.driving).to_string(),
+        );
+    }
+    for feature in features {
+        let Some(record_id) = record_ids.get(&feature.id) else {
+            continue;
+        };
+        let Some(record) = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .find(|record| &record.id == record_id)
+        else {
+            continue;
+        };
+        let names = record.parameters.keys().cloned().collect::<Vec<_>>();
+        for name in names {
+            let Some(id) = crate::history::encode::bindings::role_parameter(
+                feature,
+                &record.parameters,
+                name.as_str(),
+            )?
+            else {
+                continue;
+            };
+            let parameter = parameters
                 .iter()
-                .filter(move |(name, expression)| {
-                    original.and_then(|parameters| parameters.get(*name)) != Some(*expression)
-                })
-                .map(move |(name, _)| (feature.id.clone(), name.clone()))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    crate::resolved_features::parameters::sync_changed_feature_scalars(
+                .find(|parameter| parameter.id == id)
+                .ok_or_else(|| {
+                    CodecError::malformed("native role references missing canonical parameter")
+                })?;
+            let properties = record
+                .dimension_properties
+                .entry(name.to_string())
+                .or_default();
+            if let Some(value) = &parameter.value {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("Value"),
+                    crate::history::literals::format_parameter_cache_value(value),
+                );
+            }
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("Driven"),
+                (!parameter.driving).to_string(),
+            );
+        }
+    }
+    synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
+    crate::resolved_features::parameters::sync_feature_scalars(
         &native.feature_histories,
         &mut native.feature_input_lanes,
-        &changed_parameters,
     )?;
-    let projected_features = project_features_with_native_inputs(native)?;
+    let projected_features = project_features_with_native_inputs(native, &model.sketches)?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
@@ -533,14 +649,19 @@ pub(in crate::history) fn sync_neutral_features(
             });
         if !consistent {
             return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} dependencies are inconsistent with its operands",
-                feature.id
+                "SLDPRT feature {} dependencies are inconsistent with its operands: expected {expected:?}, projected {:?}; definition {:?}",
+                feature.id, projected_features.get(&projected_id).map(|projected| &projected.dependencies), feature.definition()
             )));
         }
     }
+    let written_classes = if patch_input_names {
+        std::collections::BTreeSet::new()
+    } else {
+        crate::resolved_features::write_prepare::synthesize_feature_classes(native)?
+    };
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok(renames)
+    Ok((renames, written_classes))
 }
 
 fn synchronize_neutral_feature_content(
@@ -805,7 +926,48 @@ mod tests {
             .expect_err("two lanes state the same object name");
         assert_eq!(
             error.to_string(),
-            "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
+            "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
+        );
+    }
+
+    #[test]
+    fn a_history_only_rename_requires_no_feature_input_name_patch() {
+        let source = crate::test_support::history::sldprt_with_body_and_history(&triangle_body());
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("history-only fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        let mut native = Some(sldprt_native(decoded.ir()));
+        assert!(native.as_ref().unwrap().feature_input_lanes.is_empty());
+        model.features[0].name = Some("RenamedBoss".into());
+
+        let renames = sync_neutral_features(&model, &model.parameters, &model.bodies, &mut native)
+            .expect("no absent feature-input lane requires a name patch");
+        assert!(renames.is_empty());
+        assert_eq!(
+            native.unwrap().feature_histories[0].features[0].name,
+            "RenamedBoss"
+        );
+    }
+
+    #[test]
+    fn an_existing_feature_input_lane_still_requires_its_name_binding() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("linked fixture decodes");
+        let mut model = decoded.ir().model.clone();
+        model.features[0].name = Some("PatternRenamed".into());
+        let mut native = sldprt_native(decoded.ir());
+        native.feature_input_lanes[0].names.clear();
+
+        let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
+            .expect_err("an existing lane with a missing name binding cannot be patched");
+        assert_eq!(
+            error.to_string(),
+            "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
         );
     }
 
@@ -824,7 +986,7 @@ mod tests {
             .expect_err("a blank object name is not writable");
         assert_eq!(
             error.to_string(),
-            "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
+            "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
         );
     }
 

@@ -54,6 +54,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -67,6 +68,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     });
     ir.model.edges.extend([
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -78,6 +80,7 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
             tolerance: None,
         },
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -113,6 +116,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -128,6 +132,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     });
     ir.model.edges.extend([
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#first-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -139,6 +144,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
             tolerance: None,
         },
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#second-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -728,6 +734,7 @@ fn decode_resolves_a_pcurve_shared_by_many_edge_uses_like_a_single_reference() {
 
 fn test_coedge(id: &str, sense: Sense) -> Coedge {
     Coedge {
+        native_ref: None,
         id: CoedgeId::mint(id).unwrap(),
         owner_loop: LoopId::mint("test:model:loop#loop").unwrap(),
         edge: EdgeId::mint("test:model:edge#edge").unwrap(),

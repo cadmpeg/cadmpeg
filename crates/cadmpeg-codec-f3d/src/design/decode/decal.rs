@@ -34,12 +34,15 @@ pub(crate) fn decode_decal_images(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignDecalImage>, CodecError> {
-    super::image::decode_scoped_images(
+    super::image::decode_scoped_image_records(
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Decal,
+        |_, stream, scope| {
+            let start = usize::try_from(scope.byte_offset()?).ok()?;
+            Some(ids::native_design_decal_image_id(stream, start))
+        },
         parse_decal_image,
-        |image| image.id.as_str(),
     )
 }
 
@@ -123,42 +126,43 @@ fn parse_decal_image(
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
+    read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
-    let Ok(scope_at) = usize::try_from(scope.byte_offset()) else {
+    let Ok(scope_at) = usize::try_from(
+        scope
+            .byte_offset()
+            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+    ) else {
         return Ok(None);
     };
-    parse_decal_image_frame(bytes, stream, scope.record_index, scope_at)
+    parse_decal_image_frame(bytes, stream, scope.record_index, scope_at, read)
 }
 
+/// Parse one Decal image from the scope at `scope_at`. `bytes` is the
+/// stream, and its indexed-header-shaped runs locate the asset and name
+/// records. `read` returns the stream bytes of a range; the
+/// grammar reads the fixed prefix, each candidate asset record and its name
+/// record through it.
 fn parse_decal_image_frame(
     bytes: &[u8],
     stream: &str,
     scope_record_index: u32,
     scope_at: usize,
+    read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let parsed = (|| {
-        if bytes
-            .get(scope_at + decal_scope::ZERO_RUN_10..scope_at + decal_scope::ASSET_REFERENCE)?
-            != [0; 10]
-        {
+        let prefix = read(scope_at..scope_at.checked_add(decal_scope::LEN)?)?;
+        if prefix.get(decal_scope::ZERO_RUN_10..decal_scope::ASSET_REFERENCE)? != [0; 10] {
             return None;
         }
-        let asset_reference_at = scope_at + decal_scope::ASSET_REFERENCE;
-        let asset_record_index = marked_reference(bytes, asset_reference_at)?;
-        if bytes.get(
-            scope_at + decal_scope::ASSET_REFERENCE_ZERO_RUN..scope_at + decal_scope::MAPPING_MODE,
-        )? != [0; 6]
-        {
+        let asset_record_index = marked_reference(prefix, decal_scope::ASSET_REFERENCE)?;
+        if prefix.get(decal_scope::ASSET_REFERENCE_ZERO_RUN..decal_scope::MAPPING_MODE)? != [0; 6] {
             return None;
         }
-        let mapping_mode_at = scope_at + decal_scope::MAPPING_MODE;
-        let mapping_mode = *bytes.get(mapping_mode_at)?;
-        let target_group_reference_at = scope_at + decal_scope::TARGET_GROUP_REFERENCE;
-        let target_group_record_index = marked_reference(bytes, target_group_reference_at)?;
-        if bytes
-            .get(scope_at + decal_scope::TARGET_REFERENCE_ZERO_RUN..scope_at + decal_scope::LEN)?
-            != [0; 6]
-        {
+        let mapping_mode = *prefix.get(decal_scope::MAPPING_MODE)?;
+        let target_group_record_index =
+            marked_reference(prefix, decal_scope::TARGET_GROUP_REFERENCE)?;
+        if prefix.get(decal_scope::TARGET_REFERENCE_ZERO_RUN..decal_scope::LEN)? != [0; 6] {
             return None;
         }
 
@@ -169,11 +173,12 @@ fn parse_decal_image_frame(
             if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
                 continue;
             }
-            let candidate = match parse_decal_asset_record(bytes, asset_at, asset_record_index) {
-                Ok(Some(candidate)) => candidate,
-                Ok(None) => continue,
-                Err(error) => return Some(Err(error)),
-            };
+            let candidate =
+                match parse_decal_asset_record(bytes, asset_at, asset_record_index, read) {
+                    Ok(Some(candidate)) => candidate,
+                    Ok(None) => continue,
+                    Err(error) => return Some(Err(error)),
+                };
             if asset_record.replace(candidate).is_some() {
                 return None;
             }
@@ -194,47 +199,62 @@ fn parse_decal_image_frame(
     parsed.transpose()
 }
 
+/// Parse the asset record at `asset_at` and its image-name record, each read
+/// through `read`. The name record starts at the next indexed header, which
+/// is the asset record's end, and ends at the next indexed header after it.
 fn parse_decal_asset_record(
     bytes: &[u8],
     asset_at: usize,
     asset_record_index: u32,
+    read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignDecalAsset>, CodecError> {
     let parsed = (|| {
-        let (asset_class_tag, after_asset_tag) =
-            lp_ascii_filtered_view(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
-            || bytes.get(
-                asset_at + decal_asset::ZERO_RUN_8
-                    ..asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE,
-            )? != [0; 8]
-        {
-            return None;
-        }
-        let asset_entity_reference_at = asset_at + decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE;
-        let asset_entity_suffix = marked_reference(bytes, asset_entity_reference_at)?;
-        if bytes.get(asset_at + decal_asset::ZERO_RUN_6..asset_at + decal_asset::LEN)? != [0; 6] {
-            return None;
-        }
         let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;
         if name_at != asset_at + decal_asset::LEN {
             return None;
         }
-        let (name_class_tag, after_name_tag) =
-            lp_ascii_filtered_view(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
-        let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
-        if bytes.get(
-            name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
-        )? != [0; 10]
+        let asset = read(asset_at..name_at)?;
+        let (asset_class_tag, after_asset_tag) =
+            lp_ascii_filtered_view(asset, 0, 0..=2000, u8::is_ascii_graphic)?;
+        if View::u32_le_at(asset, after_asset_tag)? != asset_record_index
+            || asset.get(decal_asset::ZERO_RUN_8..decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE)?
+                != [0; 8]
         {
             return None;
         }
-        let (asset_name, after_asset_name) = lp_utf16_bounded(
-            bytes,
-            name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
-            1..=1024,
-        )?;
+        let asset_entity_suffix =
+            marked_reference(asset, decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE)?;
+        if asset.get(decal_asset::ZERO_RUN_6..decal_asset::LEN)? != [0; 6] {
+            return None;
+        }
+        let name_prefix = read(name_at..name_at + decal_name::LEN)?;
+        let (name_class_tag, after_name_tag) =
+            lp_ascii_filtered_view(name_prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
+        let name_record_index = View::u32_le_at(name_prefix, after_name_tag)?;
+        if name_prefix.get(decal_name::ZERO_RUN_10..decal_name::ASSET_NAME_CODE_UNIT_COUNT)?
+            != [0; 10]
+        {
+            return None;
+        }
+        let units = usize::try_from(View::u32_le_at(
+            name_prefix,
+            decal_name::ASSET_NAME_CODE_UNIT_COUNT,
+        )?)
+        .ok()?;
+        if !(1..=1024).contains(&units) {
+            return None;
+        }
+        let name_end = name_at
+            .checked_add(decal_name::LEN)?
+            .checked_add(units.checked_mul(2)?)?;
         let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
-        if after_asset_name != next_at {
+        if name_end != next_at {
+            return None;
+        }
+        let name = read(name_at..name_end)?;
+        let (asset_name, after_asset_name) =
+            lp_utf16_bounded(name, decal_name::ASSET_NAME_CODE_UNIT_COUNT, 1..=1024)?;
+        if after_asset_name != name.len() {
             return None;
         }
         let asset_class_tag = asset_class_tag.to_owned();
@@ -293,7 +313,10 @@ mod tests {
     #[test]
     fn decal_frame_decodes_image_mode_and_target() {
         let (bytes, scope_at) = fixture();
-        let image = parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at)
+        let image =
+            parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at, &|range| {
+                bytes.get(range)
+            })
             .unwrap()
             .expect("complete synthetic Decal frame");
         assert_eq!(image.asset.record_index(), 17);
@@ -316,9 +339,11 @@ mod tests {
         let (mut bytes, scope_at) = fixture();
         bytes[scope_at..scope_at + 4].fill(0);
         assert!(
-            parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at)
-                .unwrap()
-                .is_none()
+            parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at, &|range| {
+                bytes.get(range)
+            })
+            .unwrap()
+            .is_none()
         );
     }
 
@@ -334,9 +359,10 @@ mod tests {
         const STREAM: &str = "Design/BulkStream.dat";
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png";
         let (bytes, scope_at) = fixture();
-        let image = parse_decal_image_frame(&bytes, STREAM, 23, scope_at)
-            .unwrap()
-            .unwrap();
+        let image =
+            parse_decal_image_frame(&bytes, STREAM, 23, scope_at, &|range| bytes.get(range))
+                .unwrap()
+                .unwrap();
         let scope = crate::records::feature::scope::DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:scope#23",
             crate::records::feature::scope::DesignFeatureKind::Decal,
@@ -403,9 +429,9 @@ mod tests {
                 references: vec![
                     crate::records::topology::body_recipe::DesignBodyRecipeReference {
                         design_reference: 1,
-                        design_reference_offset: 1025,
+                        design_reference_offset: Some(1025),
                         form: 1,
-                        form_offset: 1033,
+                        form_offset: Some(1033),
                         candidate_faces: vec![face.clone()],
                         preceding_candidate_faces: Vec::new(),
                         preceding_body_slots: Vec::new(),
@@ -424,6 +450,7 @@ mod tests {
         )
         .unwrap();
         let feature = || Feature {
+            needs_recompute: false,
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,
             name: None,

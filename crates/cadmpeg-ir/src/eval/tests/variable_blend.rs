@@ -62,6 +62,7 @@ fn variable_blend_eval_fixture(
     let slice = CurveId::mint("test:model:entity#blend-slice").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: slice.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -75,6 +76,7 @@ fn variable_blend_eval_fixture(
     });
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: first_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -87,6 +89,7 @@ fn variable_blend_eval_fixture(
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: second_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -99,6 +102,7 @@ fn variable_blend_eval_fixture(
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: blend_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: ProceduralSurfaceId::mint(
@@ -742,6 +746,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         ProceduralSurfaceId::mint("test:model:entity#cacheless-rolling-ball-replica-def")
             .expect("valid identity");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: replica_surface.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: replica_construction.clone(),

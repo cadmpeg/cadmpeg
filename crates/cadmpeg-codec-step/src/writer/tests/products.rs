@@ -45,9 +45,8 @@ fn unnamed_occurrence(
             }
         }),
         ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
         linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,
@@ -236,7 +235,10 @@ fn world_translations(ir: &CadIr, label: &str) -> Vec<[f64; 3]> {
             matches!(&occurrence.prototype, cadmpeg_ir::products::PrototypeReference::Local { definition: used } if *used == definition)
         })
         .map(|occurrence| {
-            let mut world = occurrence.effective_transform().expect("rigid occurrence");
+            let mut world = occurrence
+                .effective_transform()
+                .expect("rigid occurrence")
+                .expect("placed occurrence");
             let mut parent = occurrence.parent.clone();
             while let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } = parent {
                 let owner = ir
@@ -248,6 +250,7 @@ fn world_translations(ir: &CadIr, label: &str) -> Vec<[f64; 3]> {
                 world = owner
                     .effective_transform()
                     .expect("rigid parent")
+                    .expect("placed parent")
                     .compose(world)
                     .expect("composed placement");
                 parent = owner.parent.clone();
@@ -272,18 +275,27 @@ fn writer_places_rigid_root_occurrences_under_the_model_product() {
         "test:model:product-definition#part-0",
         None,
     );
-    moved.transform = cadmpeg_ir::transform::Transform::affine([
-        [1.0, 0.0, 0.0, 10.0],
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-    ])
-    .expect("finite translation");
+    moved.transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("finite translation"),
+    );
     let mut scaled = unnamed_occurrence(
         "test:model:occurrence#scaled",
         "test:model:product-definition#part-0",
         None,
     );
-    scaled.scale = [2.0, 1.0, 1.0].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap());
+    scaled.transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("finite scale"),
+    );
     ir.model.occurrences = vec![
         unnamed_occurrence(
             "test:model:occurrence#origin",
@@ -342,7 +354,7 @@ fn writer_reports_a_placed_external_root_occurrence_only_as_external() {
         "test:model:product-definition#part-0",
         None,
     );
-    local.transform = translation;
+    local.transform = Some(translation);
     let mut external = unnamed_occurrence(
         "test:model:occurrence#external",
         "test:model:product-definition#part-0",
@@ -352,7 +364,7 @@ fn writer_reports_a_placed_external_root_occurrence_only_as_external() {
         document: cadmpeg_ir::products::ExternalDocument::path("other.FCStd"),
         object: Some("Box".into()),
     };
-    external.transform = translation;
+    external.transform = Some(translation);
     ir.model.occurrences = vec![local, external];
 
     let report = write_step(

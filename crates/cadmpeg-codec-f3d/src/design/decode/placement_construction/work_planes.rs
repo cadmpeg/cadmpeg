@@ -65,7 +65,7 @@ pub(crate) fn solved_frame(
     crate::design::feature_project::work_plane_datum_frame(matrix.rows())?;
     Some(DesignWorkPlaneTransform {
         work_plane_transform: matrix,
-        work_plane_transform_offset: offset,
+        work_plane_transform_offset: Some(offset),
         reference: None,
         work_plane_construction: None,
     })

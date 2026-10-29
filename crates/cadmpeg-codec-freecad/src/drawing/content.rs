@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{
@@ -18,7 +18,7 @@ use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
 
 pub(crate) fn enrich(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     model: &mut Model,
     properties: &[PropertyRecord],
     data: &BTreeMap<String, View<'_>>,
@@ -34,7 +34,8 @@ pub(crate) fn enrich(
             if let Some(property) =
                 super::typed_property(&owned, "EditableTexts", "App::PropertyMap")?
             {
-                let xml = ctx.parse_xml(property.xml.text(), "drawing title block")?;
+                let property_xml = ctx.property_xml(property)?;
+                let xml = ctx.parse_xml(property_xml.as_ref(), "drawing title block")?;
                 for item in xml
                     .root_element()
                     .children()
@@ -112,7 +113,8 @@ pub(crate) fn enrich(
                 ),
                 _ => continue,
             };
-            let xml = ctx.parse_xml(property.xml.text(), "drawing curve XML")?;
+            let property_xml = ctx.property_xml(property)?;
+            let xml = ctx.parse_xml(property_xml.as_ref(), "drawing curve XML")?;
             for record in xml
                 .root_element()
                 .children()

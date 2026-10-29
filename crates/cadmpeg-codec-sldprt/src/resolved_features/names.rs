@@ -49,33 +49,17 @@ pub(crate) fn object_names(
             cadmpeg_core::CodecError::malformed("SLDPRT feature input name ordinal overflows u32")
         })?;
         names.push(FeatureInputName {
+            feature_ref: None,
             id: record_id("name", lane_key, offset),
             parent: parent.to_owned(),
             ordinal,
+            sequence: ordinal,
             offset: u64_from_index(offset),
             object_id,
             value: decoded,
         });
     }
     Ok(names)
-}
-
-fn decimal_matches(text: &str, value: usize) -> bool {
-    !text.is_empty()
-        && (text == "0" || !text.starts_with('0'))
-        && text.bytes().all(|byte| byte.is_ascii_digit())
-        && text.parse::<usize>() == Ok(value)
-}
-
-fn native_id_matches(id: &str, family: &str, lane_key: &str, offset: usize) -> bool {
-    id.strip_prefix(family)
-        .and_then(|tail| tail.strip_prefix(lane_key))
-        .and_then(|tail| tail.strip_prefix(':'))
-        .is_some_and(|tail| decimal_matches(tail, offset))
-}
-
-pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
-    (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
 fn payload_name_candidates(
@@ -106,14 +90,7 @@ fn payload_name_candidates(
         })
 }
 
-fn payload_names(payload: &[u8]) -> impl Iterator<Item = (usize, Option<ObjectId>, &[u8])> {
-    payload_name_candidates(payload).filter(|(_, _, units)| {
-        std::char::decode_utf16(utf16_units(units))
-            .all(|character| character.is_ok_and(|character| !character.is_control()))
-    })
-}
-
-fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
+pub(super) fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
     payload
         .windows(CLASS_MARKER.len())
         .enumerate()
@@ -131,66 +108,6 @@ fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {
                 return None;
             }
             Some((offset, std::str::from_utf8(bytes).ok()?))
-        })
-}
-
-pub(crate) fn class_declarations_match(
-    payload: &[u8],
-    parent: &str,
-    classes: &[FeatureInputClass],
-) -> bool {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let mut expected = payload_classes(payload).enumerate();
-    let matches = classes.iter().enumerate().all(|(ordinal, actual)| {
-        expected.next().is_some_and(|(index, (offset, name))| {
-            index == ordinal
-                && native_id_matches(&actual.id, "sldprt:feature-input:class#", lane_key, offset)
-                && actual.parent == parent
-                && u32::try_from(ordinal) == Ok(actual.ordinal)
-                && u64::try_from(offset) == Ok(actual.offset)
-                && actual.name == name
-        })
-    });
-    matches && expected.next().is_none()
-}
-
-pub(crate) fn object_names_structure_match(
-    payload: &[u8],
-    parent: &str,
-    names: &[FeatureInputName],
-) -> bool {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let mut expected = payload_names(payload).enumerate();
-    let matches = names.iter().enumerate().all(|(ordinal, actual)| {
-        expected
-            .next()
-            .is_some_and(|(index, (offset, object_id, _))| {
-                index == ordinal
-                    && native_id_matches(&actual.id, "sldprt:feature-input:name#", lane_key, offset)
-                    && actual.parent == parent
-                    && u32::try_from(ordinal) == Ok(actual.ordinal)
-                    && u64::try_from(offset) == Ok(actual.offset)
-                    && actual.object_id == object_id
-            })
-    });
-    matches && expected.next().is_none()
-}
-
-pub(crate) fn first_object_name_value_mismatch<'a>(
-    payload: &'a [u8],
-    names: &'a [FeatureInputName],
-) -> Option<(usize, &'a FeatureInputName, &'a [u8])> {
-    names
-        .iter()
-        .zip(payload_names(payload))
-        .enumerate()
-        .find_map(|(index, (actual, (_, _, units)))| {
-            let expected = std::char::decode_utf16(utf16_units(units));
-            if actual.value.chars().eq(expected.filter_map(Result::ok)) {
-                None
-            } else {
-                Some((index, actual, units))
-            }
         })
 }
 
@@ -237,9 +154,11 @@ pub(crate) fn class_declarations(
             cadmpeg_core::CodecError::malformed("SLDPRT feature input class ordinal overflows u32")
         })?;
         classes.push(FeatureInputClass {
+            feature_ref: None,
             id: record_id("class", lane_key, offset),
             parent: parent.to_owned(),
             ordinal,
+            sequence: ordinal,
             offset: u64_from_index(offset),
             name: name.to_owned(),
         });

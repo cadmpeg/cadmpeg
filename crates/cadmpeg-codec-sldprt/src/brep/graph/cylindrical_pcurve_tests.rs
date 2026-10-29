@@ -25,6 +25,7 @@ fn axial_line_fixture(
     let end_point = PointId::mint("test:axial:end-point#1").expect("identity grammar");
     Brep {
         surfaces: vec![Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 CylinderSurface::try_new(
@@ -38,6 +39,7 @@ fn axial_line_fixture(
             source_object: None,
         }],
         curves: vec![Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -46,6 +48,7 @@ fn axial_line_fixture(
             source_object: None,
         }],
         faces: vec![Face {
+            native_ref: None,
             id: face_id.clone(),
             shell: shell_id,
             surface: surface_id,
@@ -56,6 +59,7 @@ fn axial_line_fixture(
             tolerance: None,
         }],
         loops: vec![Loop {
+            native_ref: None,
             id: loop_id.clone(),
             face: face_id,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -64,6 +68,7 @@ fn axial_line_fixture(
             ),
         }],
         coedges: vec![Coedge {
+            native_ref: None,
             id: coedge_id,
             owner_loop: loop_id,
             edge: edge_id.clone(),
@@ -73,6 +78,7 @@ fn axial_line_fixture(
             use_curve: None,
         }],
         edges: vec![Edge {
+            native_ref: None,
             id: edge_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
             start: start_vertex.clone(),
@@ -81,11 +87,13 @@ fn axial_line_fixture(
         }],
         vertices: vec![
             Vertex {
+                native_ref: None,
                 id: start_vertex,
                 point: start_point.clone(),
                 tolerance: None,
             },
             Vertex {
+                native_ref: None,
                 id: end_vertex,
                 point: end_point.clone(),
                 tolerance: None,

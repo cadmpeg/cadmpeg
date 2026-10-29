@@ -1,7 +1,6 @@
 use super::{
     is_reference_relation_parameter, owned_relation_parameters, LaneIds, RelationParameters,
-    RELATION_PARAMETER_ID_PROPERTY, RELATION_PARAMETER_ROLE_PROPERTY,
-    RELATION_PARAMETER_ROLE_REFERENCE,
+    RELATION_PARAMETER_ID_PROPERTY,
 };
 use crate::records::relation_scalars::RelationScalars;
 use crate::records::{
@@ -23,6 +22,7 @@ pub(super) fn relation_lane() -> FeatureInputLane {
         scalars: Vec::new(),
         relation_bindings: Vec::new(),
         relation_instances: vec![FeatureInputRelationInstance {
+            sequence: 0,
             id: "relation".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -74,6 +74,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 parent: "lane".into(),
                 feature_ref: None,
                 ordinal,
+                sequence: ordinal,
                 offset: u64::from(ordinal),
                 object_id: 1,
                 name: format!("name-{}", next(5)),
@@ -85,9 +86,11 @@ fn indexed_relation_lookups_match_the_linear_scans() {
             .collect();
         lane.names = (0..12)
             .map(|ordinal| FeatureInputName {
+                feature_ref: None,
                 id: format!("name-{}", next(5)),
                 parent: "lane".into(),
                 ordinal,
+                sequence: ordinal,
                 offset: u64::from(ordinal),
                 value: format!("D{}", next(3)),
                 object_id: None,
@@ -135,6 +138,7 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -152,13 +156,9 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                         format!("relation-{}", next(5)),
                     );
                 }
-                if next(3) != 0 {
-                    properties.insert(
-                        cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ROLE_PROPERTY),
-                        RELATION_PARAMETER_ROLE_REFERENCE.into(),
-                    );
-                }
+                let reference = next(3) != 0;
                 DesignParameter {
+                    driving: !reference,
                     id: ParameterId::mint(format!("synthetic:test:id#parameter-{}", next(20)))
                         .expect("identity grammar"),
                     owner: (next(5) != 0).then(|| {
@@ -173,7 +173,6 @@ fn indexed_relation_lookups_match_the_linear_scans() {
                     properties,
                     pmi: None,
                     native_ref: None,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 }
             })
             .collect::<Vec<_>>();

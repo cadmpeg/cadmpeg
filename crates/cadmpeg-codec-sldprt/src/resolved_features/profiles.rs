@@ -121,21 +121,34 @@ fn only_enclosed(offsets: &[(u64, usize)], start: u64, end: Option<u64>) -> Opti
 struct SortedOffsets(Vec<u64>);
 
 impl SortedOffsets {
-    fn new(offsets: impl IntoIterator<Item = u64>) -> Self {
-        let mut offsets = offsets.into_iter().collect::<Vec<_>>();
+    fn new<P: Into<Option<u64>>>(offsets: impl IntoIterator<Item = P>) -> Self {
+        let mut offsets = offsets
+            .into_iter()
+            .filter_map(Into::into)
+            .collect::<Vec<_>>();
         offsets.sort_unstable();
         Self(offsets)
     }
 
     /// The offsets in `start..end`.
-    fn within(&self, start: u64, end: u64) -> &[u64] {
+    fn within(&self, start: impl Into<Option<u64>>, end: impl Into<Option<u64>>) -> &[u64] {
+        let (Some(start), Some(end)) = (start.into(), end.into()) else {
+            return &[];
+        };
         let first = self.0.partition_point(|&offset| offset < start);
         let last = self.0.partition_point(|&offset| offset < end);
         self.0.get(first..last).unwrap_or_default()
     }
 
     /// Whether an offset lies strictly between `start` and `end`.
-    fn any_strictly_between(&self, start: u64, end: u64) -> bool {
+    fn any_strictly_between(
+        &self,
+        start: impl Into<Option<u64>>,
+        end: impl Into<Option<u64>>,
+    ) -> bool {
+        let (Some(start), Some(end)) = (start.into(), end.into()) else {
+            return false;
+        };
         let first = self.0.partition_point(|&offset| offset <= start);
         self.0.get(first).is_some_and(|&offset| offset < end)
     }
@@ -225,7 +238,8 @@ pub(crate) fn bind_sketch_profiles(
                 continue;
             };
             let ordinal = starts.len();
-            starts.push((name.offset, ordinal, feature));
+            let position = name.offset;
+            starts.push((position, ordinal, feature));
         }
         starts.sort_unstable_by_key(|left| (left.0, left.1));
         for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
@@ -424,7 +438,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
 }
 
 pub(crate) fn project_compact_sketch_profiles(
-    ctx: &DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
@@ -3406,6 +3420,8 @@ mod detached_legacy_sketch_tests {
             native_payload: vec![0; 32].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -3434,6 +3450,7 @@ mod detached_legacy_sketch_tests {
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -3485,6 +3502,8 @@ mod detached_legacy_sketch_tests {
             native_payload: vec![0; 32].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -3519,6 +3538,7 @@ mod detached_legacy_sketch_tests {
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
                 native_ref: Some(native.id.clone()),
+                needs_recompute: false,
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -3605,6 +3625,8 @@ mod detached_legacy_sketch_tests {
             native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "name".into(),
                 parent: "lane#1".into(),
                 ordinal: 0,
@@ -3644,6 +3666,7 @@ mod detached_legacy_sketch_tests {
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -3805,6 +3828,9 @@ mod detached_legacy_sketch_tests {
             configuration: None,
             native_payload: current_terminal_relation_payload().into(),
             classes: vec![FeatureInputClass {
+                sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(terminal::LEN))
+                    .unwrap(),
+                feature_ref: None,
                 id: class_id.into(),
                 parent: lane_id.into(),
                 ordinal: 0,
@@ -3815,6 +3841,7 @@ mod detached_legacy_sketch_tests {
             scalars: Vec::new(),
             relation_bindings: Vec::new(),
             relation_instances: vec![FeatureInputRelationInstance {
+                sequence: 200,
                 id: "relation".into(),
                 parent: lane_id.into(),
                 ordinal: 0,
@@ -3912,6 +3939,7 @@ mod detached_legacy_sketch_tests {
                     parent: "lane".into(),
                     feature_ref: None,
                     ordinal: u32::try_from(ordinal).unwrap(),
+                    sequence: u32::try_from(ordinal).unwrap(),
                     offset: ordinal,
                     object_id: 0,
                     name: "name".into(),
@@ -3932,6 +3960,7 @@ mod detached_legacy_sketch_tests {
                         id: format!("relation-{ordinal}"),
                         parent: "lane".into(),
                         ordinal: u32::try_from(ordinal).unwrap(),
+                        sequence: u32::try_from(ordinal).unwrap(),
                         offset: ordinal,
                         family: families[usize::try_from(xorshift(&mut state, 4)).unwrap()],
                         class_ref: "class".into(),
@@ -4053,6 +4082,8 @@ mod detached_legacy_sketch_tests {
             native_payload: vec![0; 64].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
+                sequence: 8,
+                feature_ref: None,
                 id: "name".into(),
                 parent: lane_id.into(),
                 ordinal: 0,
@@ -4082,6 +4113,7 @@ mod detached_legacy_sketch_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -4153,6 +4185,8 @@ mod detached_legacy_sketch_tests {
             native_payload: vec![0; 64].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
+                sequence: 8,
+                feature_ref: None,
                 id: "name".into(),
                 parent: lane_id.into(),
                 ordinal: 0,
@@ -4181,6 +4215,7 @@ mod detached_legacy_sketch_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -4249,6 +4284,8 @@ mod detached_legacy_sketch_tests {
             native_payload: vec![0; 64].into(),
             classes: Vec::new(),
             names: vec![crate::records::FeatureInputName {
+                sequence: 8,
+                feature_ref: None,
                 id: "name".into(),
                 parent: lane_id.into(),
                 ordinal: 0,
@@ -4277,6 +4314,7 @@ mod detached_legacy_sketch_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),

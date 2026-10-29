@@ -986,3 +986,27 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }
+
+mod directory_parts;
+
+mod global_parts;
+
+mod parameter_parts;
+
+mod binary_parts;
+
+mod compressed_parts;
+
+mod directory_locator_parts;
+
+mod compressed_parameter_parts;
+
+mod directory_field_parts;
+
+mod global_values;
+
+mod group_members;
+
+mod parameter_fields;
+
+mod binary_parameter_values;

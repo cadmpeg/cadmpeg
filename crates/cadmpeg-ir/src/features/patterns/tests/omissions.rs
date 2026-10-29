@@ -5,12 +5,12 @@ use super::*;
 fn grid<C>(omitted_instances: Vec<[u32; 2]>) -> PatternTransform<C> {
     PatternTransform::Linear {
         direction: Some(direction(1.0, 0.0, 0.0)),
-        spacing: PositiveLength::new(3.0).unwrap(),
-        count: 3,
+        distance: PositiveLength::new(3.0).unwrap().into(),
+        count: Dimension::Literal(3),
         second: Some(LinearPatternDirection {
             direction: direction(0.0, 1.0, 0.0),
-            spacing: PositiveLength::new(4.0).unwrap(),
-            count: 2,
+            distance: PositiveLength::new(4.0).unwrap().into(),
+            count: Dimension::Literal(2),
         }),
         omitted_instances,
     }
@@ -48,8 +48,11 @@ fn grid_counts_include_both_directions_and_exclude_omitted_positions() {
     let pattern = PatternKind::<CompositePattern>::new(grid(vec![[2, 1], [1, 0]])).unwrap();
     assert_eq!(pattern.occurrence_count(), Some(4));
     let wire = serde_json::to_value(&pattern).unwrap();
-    assert_eq!(wire["count"], 3);
-    assert_eq!(wire["second"]["count"], 2);
+    assert_eq!(wire["count"], json!({"kind": "literal", "value": 3}));
+    assert_eq!(
+        wire["second"]["count"],
+        json!({"kind": "literal", "value": 2})
+    );
     assert_eq!(wire["omitted_instances"], json!([[2, 1], [1, 0]]));
     assert_eq!(
         serde_json::from_value::<PatternKind>(wire).unwrap(),
@@ -83,8 +86,8 @@ fn length_edits_and_stage_widening_keep_grid_omissions() {
     let widened: PatternKind = pattern.widen();
     let scaled = widened
         .try_map_lengths::<()>(&mut |field| {
-            if let PatternLengthField::PositiveLength(value) = field {
-                *value = PositiveLength::new(value.get() * 2.0).unwrap();
+            if let PatternLengthField::Length(value) = field {
+                *value = Length::new(value.get() * 2.0).unwrap();
             }
             Ok(())
         })

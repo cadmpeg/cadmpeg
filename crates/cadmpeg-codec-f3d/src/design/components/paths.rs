@@ -224,6 +224,7 @@ mod tests {
                 FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence: id }),
             ),
             native_ref: Some("f3d:Design/BulkStream.dat:design-parameter-scope#1".to_owned()),
+            needs_recompute: false,
         };
         let losses = bind_feature_paths(std::slice::from_mut(&mut feature), &paths);
         assert_eq!(losses.len(), 1);
@@ -269,7 +270,7 @@ mod tests {
                 "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
                 "prototype": {"scope":"unresolved"}, "parent": {"kind":"root"},
                 "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
-                "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
+                "native_ref": reference.id
             })).unwrap()
         }).collect::<Vec<_>>();
         let paths = LocalOccurrencePaths::new(&[], &table.references, &occurrences);

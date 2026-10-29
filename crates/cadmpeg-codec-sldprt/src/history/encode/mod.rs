@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral-feature write encoders for `SolidWorks` history records.
 
+pub(crate) mod bindings;
 mod datum;
 mod format;
 mod misc;
@@ -20,7 +21,8 @@ use crate::records::Feature;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole, UnresolvedFamily,
+    DesignParameter, Dimension, DimensionValue, FeatureDefinition, FeatureId, FeatureOperation,
+    FeatureTreeNodeRole, UnresolvedFamily,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -33,6 +35,10 @@ pub(super) struct NeutralFeatureEncoding {
 
 pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
     pub(super) feature: &'context cadmpeg_ir::features::Feature,
+    pub(super) canonical_parameters: &'context [DesignParameter],
+    pub(super) canonical_features: &'context [cadmpeg_ir::features::Feature],
+    pub(super) canonical_parameter_texts:
+        &'context HashMap<FeatureId, BTreeMap<NonBlankString, String>>,
     pub(super) existing: Option<&'context Feature>,
     pub(super) principal_planes_by_record:
         &'context HashMap<String, cadmpeg_ir::features::PrincipalPlane>,
@@ -46,8 +52,52 @@ pub(super) struct NeutralFeatureEncoder<'context, 'feature_key, 'source> {
 }
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
+    fn base_parameters(&self) -> BTreeMap<NonBlankString, String> {
+        self.canonical_parameter_texts
+            .get(&self.feature.id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Preserve document-owned native detail while regenerating canonical fields.
+    fn base_properties(&self) -> BTreeMap<NonBlankString, String> {
+        let Some(existing) = self.existing else {
+            return self.feature.source_properties.clone();
+        };
+        let consumed =
+            crate::history::project::consumed::keys(self.feature.evaluation.definition());
+        existing
+            .properties
+            .iter()
+            .filter(|(key, _)| !consumed.contains(&key.as_str()) && key.as_str() != "Scope")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
+
+    /// Resolve a temporary target value from the document's single binding.
+    fn dimension<Q: DimensionValue>(&self, dimension: &Dimension<Q>) -> Result<Q, CodecError> {
+        match dimension {
+            Dimension::Literal(value) => Ok(value.clone()),
+            Dimension::Parameter(id) => {
+                let parameter = self
+                    .canonical_parameters
+                    .iter()
+                    .find(|parameter| parameter.id == *id)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "SLDPRT feature {} references missing parameter {id}",
+                            self.feature.id
+                        ))
+                    })?;
+                Q::resolve_parameter(parameter).ok_or_else(|| CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} cannot render unevaluated or incompatible parameter {id}", self.feature.id
+                )))
+            }
+        }
+    }
+
     pub(super) fn encode(&self) -> Result<NeutralFeatureEncoding, CodecError> {
-        match self.feature.evaluation.definition() {
+        let mut encoding = match self.feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::TreeNode { role, children }) => {
                 self.encode_tree_node(*role, children, children.active_child().as_ref())
             }
@@ -64,7 +114,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 placement,
             }) => self.encode_sketch_block_instance(block.as_ref(), placement.as_ref()),
             FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) => {
-                Ok(self.encode_native(kind, parameters))
+                self.encode_native(kind, parameters)
             }
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}) => {
                 Ok(self.encode_stored_geometry())
@@ -93,7 +143,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                 reference,
                 distance,
-            }) => self.encode_datum_offset_plane(reference.as_ref(), *distance),
+            }) => self.encode_datum_offset_plane(reference.as_ref(), self.dimension(distance)?),
             FeatureDefinition::Operation(FeatureOperation::TrimSurface {
                 faces,
                 tool,
@@ -146,7 +196,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 axis_direction,
                 radius,
                 shape,
-                revolutions,
                 start_angle,
                 clockwise,
                 segment_turns,
@@ -156,7 +205,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 axis_direction,
                 radius,
                 shape,
-                revolutions,
                 start_angle,
                 clockwise: *clockwise,
                 segment_turns: segment_turns.as_ref(),
@@ -164,17 +212,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }),
             FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
                 axis_native_ref,
-                axial_rise,
-                pitch,
-                revolutions,
+                law,
                 start_angle,
                 clockwise,
             }) => self.encode_helix_native_axis(
                 axis_native_ref.as_str(),
-                *axial_rise,
-                *pitch,
-                *revolutions,
-                *start_angle,
+                law,
+                self.dimension(start_angle)?,
                 *clockwise,
             ),
             FeatureDefinition::Operation(FeatureOperation::Wrap {
@@ -322,7 +366,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 translation,
                 rotation,
                 copies,
-            }) => self.encode_move_body(bodies, translation, rotation.as_ref(), *copies),
+            }) => {
+                let translation = cadmpeg_ir::math::Vector3::new(
+                    self.dimension(&translation[0])?.get(),
+                    self.dimension(&translation[1])?.get(),
+                    self.dimension(&translation[2])?.get(),
+                );
+                self.encode_move_body(
+                    bodies,
+                    &translation,
+                    rotation.as_ref(),
+                    self.dimension(copies)?,
+                )
+            }
             FeatureDefinition::Operation(FeatureOperation::Dome {
                 faces,
                 height,
@@ -351,7 +407,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }) => {
                 let construction = shape.construction();
                 let exit_kind = shape.exit_kind();
-                let diameter = &shape.diameter();
+                let diameter = shape.diameter();
                 self.encode_hole(HoleDefinition {
                     profile: profile.as_ref(),
                     profile_filter: profile_filter.as_ref(),
@@ -359,7 +415,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     placements: placements.as_deref(),
                     construction,
                     exit_kind: exit_kind.as_ref(),
-                    diameter: diameter.as_ref(),
+                    diameter,
                     extent: extent.as_ref(),
                     bottom: bottom.as_ref(),
                     taper_angle: taper_angle.as_ref(),
@@ -434,6 +490,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             FeatureDefinition::Operation(FeatureOperation::Binder { .. }) => self.encode_binder(),
             FeatureDefinition::Operation(_) => self.encode_unsupported(),
-        }
+        }?;
+        self.bind_operation_dimensions(&mut encoding)?;
+        Ok(encoding)
     }
 }

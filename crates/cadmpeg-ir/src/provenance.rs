@@ -10,7 +10,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::Arc;
 
-use crate::topology::Color;
 use serde::de::Error as _;
 use std::fmt;
 
@@ -202,14 +201,11 @@ pub enum SourceGeometryRole {
     Support,
 }
 
-/// Native object identity and effective display metadata for a free carrier.
+/// Native identity and ownership of a free carrier.
 ///
-/// `format` identifies the source format. `object_id` is the source format's
-/// native object identifier, not an IR arena identifier. `name`, `color`, and
-/// `visible` are the effective object display values. `layer` is the native
-/// layer identifier. `instance_path` contains native instance identifiers in
-/// outermost-to-innermost order; an empty path means that the object is not
-/// nested in an instance.
+/// Display names, colours, visibility and layer membership live in the neutral
+/// model. `instance_path` contains native instance identities in outermost-to-
+/// innermost order; an empty path means there is no containing instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -226,34 +222,6 @@ pub struct SourceObjectAssociation {
     /// Native source object identifier.
     #[serde(deserialize_with = "deserialize_object_id")]
     pub object_id: cadmpeg_core::text::NonBlankString,
-    /// Effective source object name, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_name"
-    )]
-    pub name: Option<String>,
-    /// Effective source object color, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_color"
-    )]
-    pub color: Option<Color>,
-    /// Effective source object visibility, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_visible"
-    )]
-    pub visible: Option<bool>,
-    /// Native source layer identifier, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_layer"
-    )]
-    pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_path: Vec<String>,
@@ -439,6 +407,7 @@ impl<'de> Deserialize<'de> for SourceOwner {
 pub struct SourceLocation {
     format: String,
     stream: Option<StreamName>,
+    byte_len: Option<u64>,
 }
 
 /// Source provenance attached to a report loss.
@@ -479,6 +448,7 @@ impl Provenance<SourceLocation> {
             location: SourceLocation {
                 format: format.into(),
                 stream: None,
+                byte_len: None,
             },
             offset,
             tag: None,
@@ -491,10 +461,69 @@ impl Provenance<SourceLocation> {
             location: SourceLocation {
                 format: format.into(),
                 stream: Some(stream),
+                byte_len: None,
             },
             offset,
             tag: None,
         }
+    }
+
+    /// Prefix the actual source stream when composing a container member.
+    /// The format, offset and optional tag remain unchanged.
+    pub fn with_stream_prefix(
+        mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        prefix: &str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        use cadmpeg_core::CodecError;
+        let source = self.location.stream.as_ref().map_or("", StreamName::as_str);
+        let length = prefix
+            .len()
+            .checked_add(source.len())
+            .ok_or_else(|| CodecError::malformed("composed provenance stream length overflows"))?;
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(length),
+            "composed provenance stream",
+        )?;
+        let mut stream = String::new();
+        stream.try_reserve_exact(length).map_err(|_| {
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                cadmpeg_core::decode::u64_from_index(length),
+                "composed provenance stream",
+            )
+        })?;
+        stream.push_str(prefix);
+        stream.push_str(source);
+        self.location.stream = Some(StreamName::try_from(stream).map_err(CodecError::malformed)?);
+        Ok(self)
+    }
+
+    /// Attach an exact positive byte length without overflowing the source domain.
+    pub fn with_byte_len(mut self, byte_len: u64) -> Result<Self, cadmpeg_core::CodecError> {
+        if byte_len == 0 || self.offset.checked_add(byte_len).is_none() {
+            return Err(cadmpeg_core::CodecError::malformed(
+                "source provenance extent is empty or overflows",
+            ));
+        }
+        self.location.byte_len = Some(byte_len);
+        Ok(self)
+    }
+
+    /// Format that owns this source location.
+    pub fn format(&self) -> &str {
+        &self.location.format
+    }
+
+    /// Explicit source stream; absent root names do not identify a named span.
+    pub fn stream_name(&self) -> Option<&str> {
+        self.location.stream.as_ref().map(StreamName::as_str)
+    }
+
+    /// Exact extent length when the loss names a complete byte span.
+    pub const fn byte_len(&self) -> Option<u64> {
+        self.location.byte_len
     }
 
     /// Attach a source record or class name.
@@ -568,21 +597,35 @@ struct SourceProvenanceWire {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_byte_len"
+    )]
+    byte_len: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_tag"
     )]
     tag: Option<String>,
 }
 
-impl From<SourceProvenanceWire> for Provenance<SourceLocation> {
-    fn from(wire: SourceProvenanceWire) -> Self {
-        Self {
+impl TryFrom<SourceProvenanceWire> for Provenance<SourceLocation> {
+    type Error = String;
+    fn try_from(wire: SourceProvenanceWire) -> Result<Self, Self::Error> {
+        if wire
+            .byte_len
+            .is_some_and(|len| len == 0 || wire.offset.checked_add(len).is_none())
+        {
+            return Err("source provenance extent is empty or overflows".into());
+        }
+        Ok(Self {
             location: SourceLocation {
                 format: wire.format,
                 stream: wire.stream,
+                byte_len: wire.byte_len,
             },
             offset: wire.offset,
             tag: wire.tag,
-        }
+        })
     }
 }
 
@@ -591,7 +634,8 @@ impl<'de> Deserialize<'de> for Provenance<SourceLocation> {
     where
         D: serde::Deserializer<'de>,
     {
-        SourceProvenanceWire::deserialize(deserializer).map(Self::from)
+        SourceProvenanceWire::deserialize(deserializer)
+            .and_then(|wire| Self::try_from(wire).map_err(D::Error::custom))
     }
 }
 
@@ -757,13 +801,11 @@ cadmpeg_core::named_optional_field!(
     SourceGeometryRole,
     "geometry_role"
 );
-cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
-cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
-cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
-cadmpeg_core::named_optional_field!(deserialize_layer, String, "layer");
 cadmpeg_core::named_optional_field!(deserialize_tag, String, "tag");
 cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");
 
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_byte_len, u64, "byte_len");

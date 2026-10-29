@@ -15,7 +15,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, Branch, Harness};
+use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use super::IgesCodec;
 
@@ -23,7 +23,7 @@ use super::IgesCodec;
 const FIXTURE_EXTENSION: &str = "igs";
 
 /// Crate-relative regeneration hint used in every failure message.
-const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden";
+const REGENERATE: &str = "UPDATE_GOLDEN=1 cargo test-fast golden";
 
 fn harness() -> Harness {
     Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
@@ -54,13 +54,13 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &IgesCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
-            let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
+            let result = cadmpeg_test_support::EditableDecodeResult::from(result);
             serde_json::json!({
                 "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
                 "report": serde_json::to_value(result.report()).expect("serialize report"),
@@ -79,15 +79,18 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 /// `decode_error` / `encode_error`. The writer stamps `SystemTime::now()` into
 /// G-section field 18; that wall-clock value is replaced before freeze.
 fn encode_snapshot(bytes: &[u8]) -> String {
-    let decoded =
-        match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => result,
-            Err(error) => {
-                return snapshot_text(&serde_json::json!({
-                    "decode_error": error.to_string()
-                }))
-            }
-        };
+    let decoded = match cadmpeg_test_support::golden::decode(
+        &IgesCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
+        Ok(result) => result,
+        Err(error) => {
+            return snapshot_text(&serde_json::json!({
+                "decode_error": error.to_string()
+            }))
+        }
+    };
     let outcome = Encoder::plan(
         &IgesCodec,
         EncodeInput::new(decoded.ir(), None),
@@ -161,4 +164,14 @@ fn geometry_depth_agrees_with_full_depth() {
         &harness().fixture_inputs(),
     );
     assert_eq!(summary.cut, 0, "{summary:?}");
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(
+        &IgesCodec,
+        &harness().fixture_inputs(),
+    );
 }

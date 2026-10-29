@@ -21,6 +21,7 @@ fn parsed_property_records_are_projected() {
     container.property_sets.push(PropertySetDescriptor {
         stream: container.rse.segments[0].pair.metadata,
         path: "test-property-set".into(),
+        source: None,
         state: PropertySetState::Parsed(PropertySetStream {
             version: 1,
             system_identifier: 0,
@@ -43,7 +44,7 @@ fn parsed_property_records_are_projected() {
         }),
     });
 
-    let decoded = decode_container(&setup_ctx, &container).expect("property projection");
+    let decoded = decode_container(&setup_ctx, container).expect("property projection");
     let namespace = decoded
         .ir
         .native

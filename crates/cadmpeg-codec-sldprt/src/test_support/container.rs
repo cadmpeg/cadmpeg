@@ -215,13 +215,16 @@ pub(crate) fn synthetic_sldprt() -> Vec<u8> {
     f
 }
 
-/// Scan a synthetic input with the service test context.
+/// Scan a synthetic input with its actual service-policy source context.
 pub(crate) fn scan(bytes: &[u8]) -> crate::container::ContainerScan<'_> {
-    crate::container::scan(
-        &cadmpeg_test_support::service_decode_context(),
-        cadmpeg_core::decode::View::over_retained(bytes),
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .expect("synthetic container fits service policy")
+    .expect("synthetic source fits service policy");
+    crate::container::scan(&ctx, root).expect("synthetic container fits service policy")
 }
 
 pub(crate) fn native_envelope_fixture(source: &[u8]) -> Vec<u8> {

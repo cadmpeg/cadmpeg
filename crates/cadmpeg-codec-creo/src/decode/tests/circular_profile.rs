@@ -39,8 +39,9 @@ fn circular_sweep_projects_profile_direction_and_extent() {
         extent: ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
-                        .expect("nonzero length fixture"),
+                    length: (cadmpeg_ir::scalar::NonZeroLength::new(6.5)
+                        .expect("nonzero length fixture"))
+                    .into(),
                 },
                 draft: None,
             },
@@ -75,8 +76,10 @@ fn circular_sweep_projects_profile_direction_and_extent() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(6.5)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -366,8 +369,9 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         Some((
             [1.0, 0.0, 0.0],
             LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
-                    .expect("nonzero length fixture"),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroLength::new(3.0).expect("nonzero length fixture")
+                ),
             },
         ))
     );
@@ -379,8 +383,9 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         Some((
             [-0.0, -1.0, -0.0],
             LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(1.0)
-                    .expect("nonzero length fixture"),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroLength::new(1.0).expect("nonzero length fixture")
+                ),
             },
         ))
     );
@@ -401,8 +406,9 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
             902,
             [0.0, 0.0, 1.0],
             LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(6.5)
-                    .expect("nonzero length fixture"),
+                length: cadmpeg_ir::Dimension::Literal(
+                    cadmpeg_ir::scalar::NonZeroLength::new(6.5).expect("nonzero length fixture")
+                ),
             },
         ))
     );

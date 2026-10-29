@@ -17,6 +17,7 @@ fn feature(position: usize, native_ref: Option<String>) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Sketch {
                 sketch: SketchFeatureBinding::Planar(None),

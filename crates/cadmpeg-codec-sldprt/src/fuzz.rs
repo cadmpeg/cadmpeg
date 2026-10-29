@@ -69,18 +69,26 @@ pub fn entity(data: &[u8]) {
 
 /// Exercise `PMISemanticDataDB` `MessagePack` parse/patch/reparse.
 ///
-/// Invariant: malformed input never panics; successful records keep patch
-/// offsets consistent across an in-place value edit and reparse.
+/// Invariant: malformed input never panics; successful records keep their
+/// offsets across an in-place value edit and reparse.
 pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
+    let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service())?;
     let mut losses = Vec::new();
-    let records = crate::pmi::parse_payload(&ctx, data, &mut losses)?;
-    for record in records {
+    let parsed = crate::pmi::parse_payload(&ctx, root, &mut losses)?;
+    for record in parsed {
         if record.item_count.get() != 1 {
             continue;
         }
-        let Ok(start) = usize::try_from(record.value_offset) else {
+        let mut slot = [0xcb; 9];
+        slot[1..].copy_from_slice(&record.value.get().to_be_bytes());
+        let Some(start) = usize::try_from(record.offset).ok().and_then(|offset| {
+            let found = data
+                .get(offset..)?
+                .windows(9)
+                .position(|bytes| bytes == slot)?;
+            offset.checked_add(found)?.checked_add(1)
+        }) else {
             continue;
         };
         let Some(end) = start.checked_add(8) else {
@@ -93,14 +101,12 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         let edited = f64::from_bits(record.value.get().to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
         let mut again_losses = Vec::new();
-        let again = crate::pmi::parse_payload(&ctx, &patched, &mut again_losses)?;
+        let (again_ctx, again_root) =
+            DecodeContext::from_root_bytes(&patched, &arena, &DecodePolicy::service())?;
+        let again = crate::pmi::parse_payload(&again_ctx, again_root, &mut again_losses)?;
         if let Some(parsed) = again.iter().find(|candidate| candidate.guid == record.guid) {
             assert_eq!(parsed.value.get().to_bits(), edited.to_bits());
-            assert_eq!(parsed.value_offset, record.value_offset);
-            assert_eq!(parsed.precision_offset, record.precision_offset);
-            assert_eq!(parsed.basic_offset, record.basic_offset);
-            assert_eq!(parsed.inspection_offset, record.inspection_offset);
-            assert_eq!(parsed.reference_only_offset, record.reference_only_offset);
+            assert_eq!(parsed.offset, record.offset);
             assert_eq!(parsed.display_text_offset(), record.display_text_offset());
         }
     }

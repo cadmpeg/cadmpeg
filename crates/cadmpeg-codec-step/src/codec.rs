@@ -11,7 +11,7 @@ use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -31,10 +31,11 @@ pub struct StepCodec {
 }
 
 impl EncoderBackend for StepCodec {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Writes B-rep, product structure, presentation and PMI; design arenas are
     /// reported as omitted, not read.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
+    const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(2));
 
@@ -123,7 +124,7 @@ impl CodecBackend for StepCodec {
         if self.detect_impl(ctx, root)? == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        reader::decode(bytes, ctx, reader::Packaging::Bare)
+        reader::parts::decode(root, ctx, reader::Packaging::Bare)
     }
 }
 

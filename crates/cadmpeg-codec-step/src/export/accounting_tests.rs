@@ -45,13 +45,17 @@ fn pmi_dropped_by_schema_does_not_skip_later_losses() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
-    assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
-        "{:?}",
-        report.losses
+    let omitted = report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "native.records-omitted"
+                && loss.message.contains("f3d.asm_histories")
+        })
+        .unwrap_or_else(|| panic!("{:?}", report.losses));
+    assert_eq!(
+        crate::test_support::omitted_record_ids(&omitted.message),
+        ["f3d:test:asm-history#0"]
     );
 }
 
@@ -157,9 +161,9 @@ fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: cadmpeg_ir::transform::Transform::identity(),
+            transform: Some(cadmpeg_ir::transform::Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+
             name: None,
             visible: None,
             link: None,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::DecodeDepth;
+use crate::document::ContentScope;
 
 use crate::document::{ArenaClass, ArenaName, EntityRewrite, Model, SourceMeta};
 use crate::examples::unit_cube;
@@ -19,6 +19,7 @@ use crate::{diff, CadIr};
 
 mod append;
 mod feature_parents;
+mod record_targets;
 mod unknowns;
 
 #[test]
@@ -27,6 +28,7 @@ fn procedural_curve_attachment_moves_the_solved_carrier_into_the_cache() {
         let owner = CurveId::mint("test:model:curve#charged").expect("valid curve identity");
         let mut model = Model::default();
         model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: owner.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -72,6 +74,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     let original_knot_storage = carrier.u_knots().as_ptr();
     let mut model = Model::default();
     model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(carrier)),
         source_object: None,
@@ -112,6 +115,7 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     let original_knot_storage = carrier.knots().as_ptr();
     let mut model = Model::default();
     model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(carrier)),
@@ -256,6 +260,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
@@ -278,6 +283,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
@@ -310,6 +316,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -325,6 +332,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -356,6 +364,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
                 "id": "test:model:feature#parent",
                 "ordinal": 0,
                 "suppressed": null,
+                "needs_recompute": false,
                 "definition": {
                     "definition": "tree_node",
                     "role": "history",
@@ -366,6 +375,7 @@ fn feature_wire_refuses_the_deleted_parent_key() {
                 "id": "test:model:feature#child",
                 "ordinal": 1,
                 "suppressed": null,
+                "needs_recompute": false,
                 "parent": "test:model:feature#parent",
                 "definition": {"definition": "stored_geometry"}
             }
@@ -399,6 +409,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::History,
@@ -418,6 +429,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -433,6 +445,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -458,6 +471,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let surface_construction =
         ProceduralSurfaceId::mint("test:model:surface-construction#cache").expect("valid identity");
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             crate::geometry::analytic::PlaneSurface::try_new(
@@ -487,6 +501,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let curve_construction =
         ProceduralCurveId::mint("test:model:curve-construction#direct").expect("valid identity");
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
@@ -529,6 +544,7 @@ fn procedural_surface_attachment_moves_solved_cache() {
     let construction = ProceduralSurfaceId::mint("test:model:surface-construction#1").unwrap();
     let mut base = CadIr::empty();
     base.model.surfaces.push(Surface {
+        native_ref: None,
         id: owner.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
@@ -572,6 +588,7 @@ fn procedural_curve_attachment_moves_solved_cache() {
     let construction = ProceduralCurveId::mint("test:model:curve-construction#1").unwrap();
     let mut base = CadIr::empty();
     base.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: owner.clone(),
         geometry: CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown {
@@ -687,7 +704,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
     for (version, found) in [
         (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
         (Some(serde_json::Value::String("8".into())), "Some(\"8\")"),
-        (Some(serde_json::Value::String("10".into())), "Some(\"10\")"),
+        (Some(serde_json::Value::String("9".into())), "Some(\"9\")"),
         (Some(serde_json::Value::String("11".into())), "Some(\"11\")"),
         (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
         (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
@@ -755,77 +772,117 @@ fn parameter(id: &str) -> crate::features::DesignParameter {
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
         pmi: None,
         native_ref: None,
     }
 }
 
-fn with_decode_depth(ir: &CadIr, depth: &str) -> String {
+fn with_scope(ir: &CadIr, scope: ContentScope) -> String {
     let mut value = serde_json::to_value(ir).unwrap();
-    value["decode_depth"] = serde_json::Value::String(depth.into());
+    value["scope"] = serde_json::to_value(scope).unwrap();
     serde_json::to_string(&value).unwrap()
 }
 
 #[test]
-fn decode_depth_is_a_required_wire_field() {
-    let ir = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(ir.decode_depth(), DecodeDepth::Full);
+fn scope_and_each_class_are_required_wire_fields() {
+    let ir = CadIr::empty();
+    assert_eq!(ir.scope, ContentScope::full());
     let mut value = serde_json::to_value(&ir).unwrap();
-    assert_eq!(value["decode_depth"], "full");
-
-    value.as_object_mut().unwrap().remove("decode_depth");
-    let json = serde_json::to_string(&value).unwrap();
-    let error = CadIr::from_json(&json).unwrap_err();
-    assert!(error.to_string().contains("decode_depth"), "{error}");
+    value.as_object_mut().unwrap().remove("scope");
+    assert!(serde_json::from_value::<CadIr>(value)
+        .unwrap_err()
+        .to_string()
+        .contains("scope"));
+    for key in ["model", "design"] {
+        let mut value = serde_json::to_value(&ir).unwrap();
+        value["scope"].as_object_mut().unwrap().remove(key);
+        assert!(serde_json::from_value::<CadIr>(value)
+            .unwrap_err()
+            .to_string()
+            .contains(key));
+    }
 }
 
 #[test]
 fn a_geometry_document_without_design_records_round_trips() {
-    let json = with_decode_depth(&unit_cube().expect("valid unit cube fixture"), "geometry");
+    let json = with_scope(
+        &unit_cube().expect("valid unit cube fixture"),
+        ContentScope::geometry(),
+    );
     let parsed = CadIr::from_json(&json).unwrap();
-    assert_eq!(parsed.decode_depth(), DecodeDepth::Geometry);
+    assert_eq!(parsed.scope, ContentScope::geometry());
     let reparsed = serde_json::from_str::<CadIr>(&parsed.to_canonical_json().unwrap()).unwrap();
     assert_eq!(reparsed, parsed);
 }
 
 #[test]
-fn a_geometry_document_with_a_design_arena_fails_to_parse() {
-    let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model
-        .parameters
-        .push(parameter("synthetic:test:parameter#depth"));
-    assert_eq!(
-        ir.model.populated_design_arena().map(ArenaName::as_str),
-        Some("parameters")
-    );
-    for depth in ["container", "geometry"] {
-        let json = with_decode_depth(&ir, depth);
-        let expected =
-            format!("a {depth}-depth document holds records in design arena `parameters`");
-        let error = CadIr::from_json(&json).unwrap_err();
-        assert!(error.to_string().contains(&expected), "{error}");
-        let direct = serde_json::from_str::<CadIr>(&json).unwrap_err();
-        assert!(direct.to_string().contains(&expected), "{direct}");
+fn excluded_populated_classes_fail_all_admission_paths() {
+    for (mut ir, scope, arena, class) in [
+        (
+            unit_cube().unwrap(),
+            ContentScope::container(),
+            "bodies",
+            ArenaClass::Model,
+        ),
+        (
+            {
+                let mut ir = CadIr::empty();
+                ir.model
+                    .parameters
+                    .push(parameter("synthetic:test:parameter#scope"));
+                ir
+            },
+            ContentScope::geometry(),
+            "parameters",
+            ArenaClass::Design,
+        ),
+    ] {
+        let original = ir.scope;
+        let error = ir.set_scope(scope).unwrap_err();
+        assert_eq!(error.class, class);
+        assert_eq!(error.arena.as_str(), arena);
+        assert_eq!(ir.scope, original);
+        let json = with_scope(&ir, scope);
+        assert!(CadIr::from_json(&json)
+            .unwrap_err()
+            .to_string()
+            .contains(arena));
+        assert!(serde_json::from_str::<CadIr>(&json)
+            .unwrap_err()
+            .to_string()
+            .contains(arena));
+        ir.scope = scope;
+        assert!(serde_json::to_value(&ir)
+            .unwrap_err()
+            .to_string()
+            .contains(arena));
     }
-    assert!(CadIr::from_json(&with_decode_depth(&ir, "full")).is_ok());
 }
 
 #[test]
-fn serialization_refuses_design_records_below_full_depth() {
-    let mut ir = unit_cube().expect("valid unit cube fixture");
+fn scope_classes_match_registered_arena_classes() {
+    let classes = ArenaName::ALL
+        .iter()
+        .map(|arena| arena.class())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(classes, ContentScope::full().classes().collect());
+    let design_only = ContentScope {
+        model: false,
+        design: true,
+    };
+    let mut ir = CadIr::empty();
+    ir.set_scope(design_only).unwrap();
     ir.model
         .parameters
-        .push(parameter("synthetic:test:parameter#depth"));
-    ir.set_decode_depth(DecodeDepth::Geometry);
-    let error = serde_json::to_string(&ir).unwrap_err();
-    assert!(
-        error.to_string().contains("design arena `parameters`"),
-        "{error}"
-    );
+        .push(parameter("synthetic:test:parameter#design-only"));
+    assert!(serde_json::to_value(&ir).is_ok());
+    assert!(design_only
+        .missing_from(ContentScope::full())
+        .contains(&ArenaClass::Model));
 }
 
 #[test]
@@ -949,6 +1006,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::SolidBodies,
@@ -967,6 +1025,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
+                needs_recompute: false,
                 evaluation: crate::features::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
@@ -1026,6 +1085,7 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
@@ -1107,6 +1167,7 @@ fn repeated_finalize_admits_thousands_of_sorted_long_identities() {
     let suffix = "x".repeat(128);
     for index in 0..4096 {
         model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: CurveId::mint(format!("test:model:curve#{index:04}{suffix}")).unwrap(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

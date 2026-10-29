@@ -47,9 +47,7 @@ const VIEWPORT_USERDATA_CHILD_CAP: usize = 1 << 20;
 struct ViewChild {
     typecode: String,
     kind: &'static str,
-    source_offset: u64,
     byte_len: u64,
-    sha256: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -82,7 +80,6 @@ impl Serialize for ViewListKind {
 #[derive(Debug, Serialize)]
 struct ViewRecord {
     id: String,
-    source_offset: u64,
     list_kind: ViewListKind,
     list_index: usize,
     name: String,
@@ -102,6 +99,58 @@ struct ViewRecord {
     parse_warnings: Vec<String>,
 }
 
+/// Construction-grid and axis visibility of one view.
+pub(crate) struct ViewGuides {
+    pub(crate) construction_grid: bool,
+    pub(crate) construction_axes: bool,
+    pub(crate) world_axes: bool,
+}
+
+pub(crate) struct ViewProjection {
+    pub(crate) native_id: String,
+    pub(crate) name: String,
+    pub(crate) guides: ViewGuides,
+    pub(crate) legacy_display_mode: Option<i64>,
+    pub(crate) modern_display_mode: Option<String>,
+    pub(crate) has_attributes: bool,
+    pub(crate) camera: Option<CameraProjection>,
+}
+
+pub(crate) struct CameraProjection {
+    pub(crate) location: [FiniteReal; 3],
+    pub(crate) direction: [FiniteReal; 3],
+    pub(crate) up: [FiniteReal; 3],
+    pub(crate) x_axis: [FiniteReal; 3],
+    pub(crate) y_axis: [FiniteReal; 3],
+    pub(crate) z_axis: [FiniteReal; 3],
+}
+
+impl From<ViewRecord> for ViewProjection {
+    fn from(view: ViewRecord) -> Self {
+        let has_attributes = view.attributes.is_some();
+        Self {
+            native_id: view.id,
+            name: view.name,
+            guides: ViewGuides {
+                construction_grid: view.show_construction_grid,
+                construction_axes: view.show_construction_axes,
+                world_axes: view.show_world_axes,
+            },
+            legacy_display_mode: view.legacy_display_mode,
+            modern_display_mode: view.attributes.and_then(|attributes| attributes.display),
+            has_attributes,
+            camera: view.viewport.map(|viewport| CameraProjection {
+                location: viewport.camera_location_mm,
+                direction: viewport.camera_direction,
+                up: viewport.camera_up,
+                x_axis: viewport.camera_x_axis,
+                y_axis: viewport.camera_y_axis,
+                z_axis: viewport.camera_z_axis,
+            }),
+        }
+    }
+}
+
 fn serialize_view_attributes_field<'a, S: serde::Serializer>(
     attributes: impl Into<Option<&'a ViewAttributes>>,
     serializer: S,
@@ -115,15 +164,7 @@ fn serialize_view_attributes<S: serde::Serializer>(
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
 
-    let mut map = serializer.serialize_map(Some(6))?;
-    map.serialize_entry("view_type", &attributes.map(|value| value.view_type))?;
-    map.serialize_entry("page_width_mm", &attributes.map(|value| value.width))?;
-    map.serialize_entry("page_height_mm", &attributes.map(|value| value.height))?;
-    map.serialize_entry(
-        "display_mode_uuid",
-        &attributes.and_then(|value| value.display.as_deref()),
-    )?;
-    map.serialize_entry("attributes_version", &attributes.map(|value| value.version))?;
+    let mut map = serializer.serialize_map(Some(1))?;
     map.serialize_entry("attributes", &attributes)?;
     map.end()
 }
@@ -151,7 +192,6 @@ struct ConstructionPlane {
 #[derive(Debug, Serialize)]
 struct NamedConstructionPlane {
     id: String,
-    source_offset: u64,
     list_index: usize,
     value: ConstructionPlane,
 }
@@ -1323,11 +1363,7 @@ fn parse_view(
         children.push(ViewChild {
             typecode: format!("{:#010x}", child.typecode),
             kind: child_kind(child.typecode),
-            source_offset: cadmpeg_core::decode::u64_from_index(offset),
             byte_len: cadmpeg_core::decode::u64_from_index(child.next_offset() - offset),
-            sha256: crate::instances::hex(&cadmpeg_ir::hash::sha256(
-                &data[offset..child.next_offset()],
-            )),
         });
         if terminated {
             break;
@@ -1359,7 +1395,6 @@ fn parse_view(
     }
     Ok(ViewRecord {
         id: format!("rhino:document:view#{}-{list_index:04}", list_kind.as_str()),
-        source_offset: cadmpeg_core::decode::u64_from_index(record.header_start),
         list_kind,
         list_index,
         name,
@@ -1547,7 +1582,6 @@ fn parse_named_cplanes(
 
         values.push(NamedConstructionPlane {
             id: format!("rhino:document:construction_plane#{index:04}"),
-            source_offset: cadmpeg_core::decode::u64_from_index(chunk.header_start),
             list_index: index,
             value: parse_cplane(ctx, data, chunk.body().clone(), scale)?,
         });
@@ -1584,7 +1618,7 @@ pub(crate) fn install(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan<'_>,
     ir: &mut CadIr,
-) -> Result<NativeInstall, CodecError> {
+) -> Result<(NativeInstall, Vec<ViewProjection>), CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut views = Vec::new();
     let mut cplanes = Vec::new();
@@ -1703,10 +1737,18 @@ pub(crate) fn install(
     let namespace = ir.native.namespace_mut("rhino");
     namespace.set_arena(ctx, "views", &views)?;
     namespace.set_arena(ctx, "construction_planes", &cplanes)?;
-    Ok(NativeInstall {
-        losses,
-        opaque_records,
-    })
+    let mut views = views
+        .into_iter()
+        .map(ViewProjection::from)
+        .collect::<Vec<_>>();
+    views.sort_by(|left, right| left.native_id.cmp(&right.native_id));
+    Ok((
+        NativeInstall {
+            losses,
+            opaque_records,
+        },
+        views,
+    ))
 }
 
 #[cfg(test)]
@@ -1823,7 +1865,7 @@ mod tests {
     #[test]
     fn malformed_named_view_list_install_reports_and_retains_the_list() {
         let scan = malformed_view_scan(super::NAMED_VIEWS);
-        let installed = super::install(
+        let (installed, _) = super::install(
             &cadmpeg_test_support::service_decode_context(),
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
@@ -1852,7 +1894,7 @@ mod tests {
     #[test]
     fn malformed_named_cplane_install_reports_and_retains_the_list() {
         let scan = malformed_view_scan(super::NAMED_CPLANES);
-        let installed = super::install(
+        let (installed, _) = super::install(
             &cadmpeg_test_support::service_decode_context(),
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
@@ -1865,7 +1907,7 @@ mod tests {
     #[test]
     fn malformed_active_view_install_retains_the_list() {
         let scan = malformed_view_scan(super::ACTIVE_VIEWS);
-        let installed = super::install(
+        let (installed, _) = super::install(
             &cadmpeg_test_support::service_decode_context(),
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),

@@ -1,54 +1,59 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Archive scan and physical-ledger unit tests.
+//! Archive scan unit tests.
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::test_support::test_archive::{
-    archive, archive_entries, streaming_archive, streaming_archive_with_options,
-};
+use crate::test_support::test_archive::{archive, archive_entries};
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
-use zip::write::SimpleFileOptions;
 
 #[test]
-fn unreadable_entry_payload_uses_checked_hex() {
+fn a_given_up_entry_has_one_exact_shared_source_home() {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
     let data: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
-    let record = super::UnreadableEntry {
-        id: "fcstd:native:unreadable_entry#Payload.bin".into(),
-        name: "Payload.bin".into(),
-        data_start: 0,
-        data_end: u64::try_from(data.len()).unwrap(),
-        stored_data: data.clone().into(),
-        error: "unsupported compression".into(),
+    let bytes = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", b"<Document SchemaVersion='4' FileVersion='1'><Objects Count='0'/><ObjectData Count='0'/></Document>"),
+        RawEntry::compressed("Payload.bin", 12, &data, &data),
+    ]);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, record)] = parts.as_slice() else {
+        panic!("one shared source home: {parts:?}")
     };
-    crate::test_support::with_service_context(&[], |ctx| {
-        let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        namespace
-            .set_arena(ctx, "unreadable_entries", &[record])
-            .unwrap();
-        let wire = namespace
-            .arena_as::<serde_json::Value>("unreadable_entries")
-            .unwrap();
-        assert_eq!(
-            wire[0]["stored_data"].as_str().unwrap().len(),
-            data.len() * 2
+    assert_eq!(record.data(), Some(data.as_slice()));
+    assert_eq!(record.byte_len(), u64::try_from(data.len()).unwrap());
+    assert_eq!(record.sha256(), cadmpeg_ir::hash::sha256_hex(&data));
+    assert!(!crate::native::ARENAS.contains(&"unreadable_entries"));
+    let legacy = serde_json::json!({"id":"fcstd:native:unreadable_entry#Payload.bin", "name":"Payload.bin", "byte_len":data.len(), "sha256":cadmpeg_ir::hash::sha256_hex(&data), "error":"unsupported compression"});
+    let mut invalid = decoded.ir().clone();
+    invalid
+        .native
+        .namespace_mut("fcstd")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "unreadable_entries",
+            &[legacy],
+        )
+        .unwrap();
+    assert!(crate::test_support::validate_native(&invalid)
+        .iter()
+        .any(|finding| finding.message == "unregistered FCStd native arena unreadable_entries"));
+    for payload in [
+        serde_json::json!("a"),
+        serde_json::json!("gg"),
+        serde_json::json!([0]),
+    ] {
+        let mut invalid = serde_json::to_value(record).unwrap();
+        invalid["bytes"]["data"] = payload;
+        assert!(
+            serde_json::from_value::<cadmpeg_ir::source_fidelity::RetainedSourceRecord>(invalid)
+                .is_err()
         );
-        let typed = namespace
-            .arena_as::<super::UnreadableEntry>("unreadable_entries")
-            .unwrap();
-        assert_eq!(typed[0].stored_data, data);
-        for payload in [
-            serde_json::json!("a"),
-            serde_json::json!("gg"),
-            serde_json::json!([0]),
-        ] {
-            let mut invalid = wire[0].clone();
-            invalid["stored_data"] = payload;
-            assert!(serde_json::from_value::<super::UnreadableEntry>(invalid).is_err());
-        }
-    });
+    }
 }
 
 fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
@@ -67,33 +72,31 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
     with_scanned_document(|scan| {
         let properties: Vec<_> = ["First", "Second"]
             .into_iter()
-            .map(|name| crate::native::PropertyRecord {
-                id: format!("fcstd:native:property#{name}"),
-                owner: "fcstd:native:object#Owner".into(),
-                name: name.into(),
-                type_name: "App::PropertyFileIncluded".into(),
-                family: crate::native::PropertyFamily::File,
-                status: None,
-                body: crate::native::PropertyBody::Persisted {
-                    values: Vec::new(),
-                    links: Vec::new(),
+            .map(|name| {
+                let property = crate::native::PropertyRecord {
                     dynamic: None,
-                    side_entries: vec![
-                        scan.entries[0].name.clone(),
-                        "Missing.bin".into(),
-                        scan.entries[0].name.clone(),
-                    ],
-                },
-                order: 0,
-                xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
+                    id: format!("fcstd:native:property#{name}"),
+                    owner: "fcstd:native:object#Owner".into(),
+                    name: name.into(),
+                    type_name: "App::PropertyFileIncluded".into(),
+                    family: crate::native::PropertyFamily::File,
+                    status: None,
+                    body: Some(crate::native::PropertyBody::Persisted {
+                        values: Vec::new(),
+                        links: Vec::new(),
+
+                        side_entries: vec![
+                            scan.entries[0].name.clone(),
+                            "Missing.bin".into(),
+                            scan.entries[0].name.clone(),
+                        ],
+                    }),
+                    order: 0,
+                };
+                property
             })
             .collect();
-        let entries = super::entry_records(
-            &cadmpeg_test_support::service_decode_context(),
-            scan,
-            &properties,
-        )
-        .unwrap();
+        let entries = super::entry_records(scan, &properties).unwrap();
         assert_eq!(
             entries[0].referenced_by(),
             [
@@ -105,13 +108,22 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
 }
 
 #[test]
-fn entry_data_copy_refuses_at_retained_limit() {
+fn archive_source_image_retention_refuses_at_retained_limit() {
     with_scanned_document(|scan| {
         let name = &scan.entries[0].name;
         scan.data.get(name).expect("entry data");
-        crate::test_support::assert_retained_refusal_at(&[], "retain FCStd entry", |ctx| {
-            super::entry_records(ctx, scan, &[])
-        });
+        let document = std::str::from_utf8(scan.data["Document.xml"].window()).unwrap();
+        let input = archive(document);
+        let limit = cadmpeg_test_support::decode::resource_refusal_at(
+            &FcstdCodec,
+            &input,
+            &mut DecodeOptions::default(),
+            ResourceDimension::RetainedBytes,
+            "retain FCStd source image",
+            0,
+        );
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "retain FCStd source image");
     });
 }
 
@@ -186,21 +198,18 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
     let [loss] = scan.losses.as_slice() else {
         panic!("one loss: {:?}", scan.losses);
     };
-    let unreadable = crate::loss::FreecadLossCode::ArchiveEntryUnreadable
-        .note(String::new())
-        .code;
-    assert_eq!(loss.code, unreadable);
+    assert_eq!(loss.code.local_code(), "record.unreadable");
+    let unreadable = loss.code.clone();
     assert!(
-        loss.message
-            .starts_with("thumbnails/Thumbnail.png cannot be opened")
+        loss.message.starts_with("part zip.entry stream=")
             && loss.message.contains("per-expansion allowance"),
         "{}",
         loss.message
     );
-    let [entry] = scan.unreadable_entries.as_slice() else {
-        panic!("one unreadable entry");
-    };
-    assert_eq!(entry.name, "thumbnails/Thumbnail.png");
+    assert_eq!(
+        scan.failed_members,
+        std::collections::BTreeSet::from(["thumbnails/Thumbnail.png".into()])
+    );
     assert!(scan.data.contains_key("Document.xml"));
     assert_eq!(ctx.resource_refusal(), None);
     assert!(ctx.finish_session().is_ok());
@@ -226,47 +235,6 @@ fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
 }
 
 #[test]
-fn frames_zip64_streaming_descriptor_and_local_extra() {
-    let bytes = streaming_archive_with_options(
-        "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",
-        SimpleFileOptions::default().large_file(true),
-    );
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-        .expect("ZIP64 archive fits root policy");
-    let scan = crate::container::scan(&ctx, root).expect("ZIP64 streaming ZIP");
-    assert!(scan
-        .ledger
-        .iter()
-        .any(|span| span.role.as_str() == "local-extra" && span.span.end() > span.span.start()));
-    let descriptor = scan
-        .ledger
-        .iter()
-        .find(|span| span.role.as_str() == "data-descriptor")
-        .expect("ZIP64 descriptor");
-    assert_eq!(descriptor.span.end() - descriptor.span.start(), 24);
-}
-
-#[test]
-fn frames_streaming_data_descriptor_separately_from_padding() {
-    let bytes = streaming_archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
-    let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
-        .expect("archive fits root policy");
-    let scan = crate::container::scan(&ctx, root).expect("streaming ZIP");
-    let descriptors = scan
-        .ledger
-        .iter()
-        .filter(|span| span.role.as_str() == "data-descriptor")
-        .collect::<Vec<_>>();
-    assert_eq!(descriptors.len(), 1);
-    assert!(matches!(
-        descriptors[0].span.end() - descriptors[0].span.start(),
-        16 | 24
-    ));
-}
-
-#[test]
 pub(crate) fn rejects_unsafe_names() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let unsafe_name = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
@@ -282,7 +250,6 @@ pub(crate) fn rejects_unsafe_names() {
 #[test]
 fn inspects_and_closes_physical_ledger() {
     let bytes = archive("<Document SchemaVersion=\"4\" FileVersion=\"1\" ProgramVersion=\"1.0\"><Object/></Document>");
-    let archive_len = cadmpeg_core::decode::u64_from_index(bytes.len());
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
@@ -301,34 +268,7 @@ fn inspects_and_closes_physical_ledger() {
         )
         .expect("decode");
     assert!(result.report().losses.is_empty());
-    let ledger = result
-        .ir()
-        .native
-        .namespace("fcstd")
-        .expect("namespace")
-        .arena_as::<crate::native::ArchiveSpan>("physical_ledger")
-        .expect("ledger");
-    assert_eq!(ledger.first().map(|span| span.span.start()), Some(0));
-    assert_eq!(ledger.last().map(|span| span.span.end()), Some(archive_len));
-    assert!(ledger
-        .windows(2)
-        .all(|pair| pair[0].span.end() == pair[1].span.start()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
-    for role in [
-        "local-signature",
-        "local-fields",
-        "local-name",
-        "compressed-payload",
-        "central-signature",
-        "central-fields",
-        "central-name",
-        "end-record",
-    ] {
-        assert!(
-            ledger.iter().any(|span| span.role.as_str() == role),
-            "missing {role}"
-        );
-    }
 }
 
 #[test]
@@ -360,7 +300,7 @@ fn decode_refuses_when_max_entities_is_below_object_cardinality() {
 #[test]
 fn decode_keeps_document_objects_and_model_entities_additive() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Part::Feature" name="Stored" id="1"/></Objects>
+<Objects Count="1"><Object type="Part::Box" name="Stored" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Stored"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
     let decoded = FcstdCodec
@@ -412,13 +352,17 @@ fn thumbnail_bytes_are_retained_with_digest() {
         1,
         "thumbnail has one product reference"
     );
-    let retained = result
-        .source_fidelity()
-        .retained_records()
-        .values()
-        .next()
-        .expect("retained thumbnail");
-    assert_eq!(retained.data(), Some(b"png".as_slice()));
+    let thumbnail = cadmpeg_ir::ids::UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "native", "thumbnail"),
+        cadmpeg_ir::ids::IdentityKey::encode_segment("thumbnails/Thumbnail.png"),
+    );
+    assert_eq!(
+        crate::test_support::source_fidelity::entry_bytes(
+            result.source_fidelity(),
+            thumbnail.as_str()
+        ),
+        b"png"
+    );
 }
 
 #[test]
@@ -446,18 +390,9 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .iter()
         .find(|entry| entry.name() == "Shared.bin")
         .expect("shared entry");
-    let spans = namespace
-        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
-        .expect("logical ledger");
-    let span = spans
-        .iter()
-        .find(|span| span.entry == "Shared.bin")
-        .expect("shared entry span");
 
     assert_eq!(shared.referenced_by().len(), 2);
     assert_ne!(shared.referenced_by()[0], shared.referenced_by()[1]);
-    assert_eq!(span.classification.as_str(), "named_opaque");
-    assert_eq!(span.classification.owner(), Some(shared.id()));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let mut corrupted = result.ir().clone();
@@ -468,13 +403,14 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .expect("shared entry");
     let mut references = shared.referenced_by().to_vec();
     references.pop();
-    *shared = crate::test_support::entry_record(
+    *shared = crate::test_support::entry_fixture(
         shared.id().to_owned(),
         shared.name().to_owned(),
         shared.role,
         references,
-        shared.data().to_vec(),
-    );
+        crate::test_support::source_fidelity::entry_bytes(result.source_fidelity(), shared.id()),
+    )
+    .record;
     corrupted
         .native
         .namespace_mut("fcstd")
@@ -539,6 +475,7 @@ fn producer_version_metadata_does_not_refuse_the_document() {
                 .note("")
                 .code));
         drop(scan);
+        drop(ctx);
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
@@ -648,122 +585,5 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
-    }
-}
-
-#[test]
-fn byte_coverage_checks_each_entry_that_shares_a_name_against_its_spans() {
-    use crate::native::{ByteSpan, EntryRecord, LogicalClassification, LogicalSpan};
-    let entry = |id: &str| {
-        EntryRecord::new(
-            id.into(),
-            "dup".into(),
-            cadmpeg_core::container::ContainerRole::Auxiliary,
-            Vec::new(),
-            vec![1, 2, 3],
-        )
-        .unwrap()
-    };
-    let entries = [entry("fcstd:native:entry#a"), entry("fcstd:native:entry#b")];
-    let logical = [LogicalSpan {
-        id: "fcstd:native:logical-span#0".into(),
-        entry: "dup".into(),
-        span: ByteSpan::try_new(0, 3).unwrap(),
-        classification: LogicalClassification::Structural,
-    }];
-    let physical = [crate::native::ArchiveSpan {
-        id: "fcstd:native:archive-span#0".into(),
-        span: ByteSpan::try_new(0, 10).unwrap(),
-        role: crate::native::ArchiveSpanRole::LocalName("dup".into()),
-    }];
-    assert!(super::byte_coverage(&physical, &entries[..1], &logical, 10).exact);
-    assert!(super::byte_coverage(&physical, &entries, &logical, 10).exact);
-}
-
-#[test]
-fn byte_coverage_is_inexact_when_a_span_leaves_a_gap_overlaps_or_names_no_entry() {
-    use crate::native::{
-        ArchiveSpan, ArchiveSpanRole, ByteSpan, EntryRecord, LogicalClassification, LogicalSpan,
-    };
-    let entry = |name: &str, len: usize| {
-        EntryRecord::new(
-            format!("fcstd:native:entry#{name}"),
-            name.into(),
-            cadmpeg_core::container::ContainerRole::Auxiliary,
-            Vec::new(),
-            vec![0; len],
-        )
-        .unwrap()
-    };
-    let logical = |spans: &[(&str, u64, u64)]| {
-        spans
-            .iter()
-            .enumerate()
-            .map(|(index, (entry, start, end))| LogicalSpan {
-                id: format!("fcstd:native:logical-span#{index}"),
-                entry: (*entry).into(),
-                span: ByteSpan::try_new(*start, *end).unwrap(),
-                classification: LogicalClassification::Structural,
-            })
-            .collect::<Vec<_>>()
-    };
-    let physical = |spans: &[(u64, u64)]| {
-        spans
-            .iter()
-            .enumerate()
-            .map(|(index, (start, end))| ArchiveSpan {
-                id: format!("fcstd:native:archive-span#{index}"),
-                span: ByteSpan::try_new(*start, *end).unwrap(),
-                role: ArchiveSpanRole::LocalName("a".into()),
-            })
-            .collect::<Vec<_>>()
-    };
-    let entries = [entry("a", 4), entry("b", 2), entry("empty", 0)];
-    let whole = physical(&[(0, 6), (6, 10)]);
-    let exact = |physical: &[ArchiveSpan], spans: &[(&str, u64, u64)]| {
-        super::byte_coverage(physical, &entries, &logical(spans), 10).exact
-    };
-
-    assert!(exact(&whole, &[("a", 0, 2), ("a", 2, 4), ("b", 0, 2)]));
-    assert!(
-        exact(&whole, &[("b", 0, 2), ("a", 2, 4), ("a", 0, 2)]),
-        "spans are ordered by start before they are checked"
-    );
-    assert!(
-        exact(
-            &physical(&[(6, 10), (0, 6)]),
-            &[("a", 0, 2), ("a", 2, 4), ("b", 0, 2)]
-        ),
-        "archive spans are ordered by start before they are checked"
-    );
-    for (case, spans) in [
-        ("gap", &[("a", 0, 1), ("a", 2, 4), ("b", 0, 2)][..]),
-        ("overlap", &[("a", 0, 3), ("a", 2, 4), ("b", 0, 2)][..]),
-        ("late start", &[("a", 1, 4), ("b", 0, 2)][..]),
-        ("short end", &[("a", 0, 3), ("b", 0, 2)][..]),
-        ("long end", &[("a", 0, 5), ("b", 0, 2)][..]),
-        ("entry without spans", &[("a", 0, 4)][..]),
-        (
-            "missing entry",
-            &[("a", 0, 4), ("b", 0, 2), ("c", 0, 1)][..],
-        ),
-        (
-            "span in an empty entry",
-            &[("a", 0, 4), ("b", 0, 2), ("empty", 0, 1)][..],
-        ),
-    ] {
-        assert!(!exact(&whole, spans), "{case}");
-    }
-
-    let spans = [("a", 0, 4), ("b", 0, 2)];
-    for (case, archive) in [
-        ("archive gap", physical(&[(0, 5), (6, 10)])),
-        ("archive overlap", physical(&[(0, 7), (6, 10)])),
-        ("archive late start", physical(&[(1, 10)])),
-        ("archive short of its length", physical(&[(0, 9)])),
-        ("archive past its length", physical(&[(0, 11)])),
-        ("no archive spans", Vec::new()),
-    ] {
-        assert!(!exact(&archive, &spans), "{case}");
     }
 }

@@ -21,7 +21,7 @@ fn history_state(
         AsmDeltaState {
             id: format!("history:state#{state_id}"),
             parent: "history".into(),
-            byte_offset: 0,
+            byte_offset: Some(0),
             state_id,
             version_flag: 1,
             state_flag: 0,
@@ -119,7 +119,7 @@ fn retains_the_unique_history_bound_scope_envelope() {
     .expect("unique envelope");
 
     assert_eq!(scopes.len(), 1);
-    assert_eq!(scopes[0].byte_offset(), 100);
+    assert_eq!(scopes[0].byte_offset(), Some(100));
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn refuses_duplicate_scope_envelopes_without_one_history_binding() {
         .expect("primary envelope");
         assert_eq!(superseded, 1);
         assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0].byte_offset(), byte_offset);
+        assert_eq!(selected[0].byte_offset(), Some(byte_offset));
     }
 
     let primary = std::collections::HashSet::from([
@@ -234,7 +234,7 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     .expect("equivalent envelope");
 
     assert_eq!(scopes.len(), 1);
-    assert_eq!(scopes[0].byte_offset(), 200);
+    assert_eq!(scopes[0].byte_offset(), Some(200));
 }
 
 /// Two same-index Thicken envelopes without a history binding, the second at
@@ -268,7 +268,7 @@ fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
                 crate::records::feature::direct_face::DesignThickenOperation {
                     signed_thickness: crate::test_support::real(thickness),
                     thickness_record_index: 74,
-                    thickness_offset: byte_offset + 40,
+                    thickness_offset: Some(byte_offset + 40),
                 },
             );
             scope
@@ -287,7 +287,7 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     })
     .expect("equivalent envelopes");
     assert_eq!(equivalent.len(), 1);
-    assert_eq!(equivalent[0].byte_offset(), 200);
+    assert_eq!(equivalent[0].byte_offset(), Some(200));
 
     let mut different = thicken_variants(-1.0, -1.0 - f64::EPSILON);
     assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
@@ -336,9 +336,9 @@ fn duplicate_scope_selection_follows_header_link_when_transition_disagrees() {
 
     assert_eq!(scopes.len(), 2);
     assert_eq!(scopes[0].record_index, 42);
-    assert_eq!(scopes[0].byte_offset(), 100);
+    assert_eq!(scopes[0].byte_offset(), Some(100));
     assert_eq!(scopes[1].record_index, 43);
-    assert_eq!(scopes[1].byte_offset(), 300);
+    assert_eq!(scopes[1].byte_offset(), Some(300));
 }
 
 #[test]
@@ -423,7 +423,7 @@ fn primary_indexed_scope_variant_is_admitted_without_a_history_binding() {
             .expect("primary-indexed envelope");
     assert_eq!(superseded, 1);
     assert_eq!(different.len(), 1);
-    assert_eq!(different[0].byte_offset(), 100);
+    assert_eq!(different[0].byte_offset(), Some(100));
 
     let mut both = thicken_variants(-1.0, -2.0);
     let primary = std::collections::HashSet::from([(stream.clone(), 100), (stream, 200)]);

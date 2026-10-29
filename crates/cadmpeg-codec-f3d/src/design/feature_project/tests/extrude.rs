@@ -35,11 +35,9 @@ use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::features::FeatureOperation;
-use cadmpeg_ir::features::ProfileRef;
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::sketches::SketchId;
 use std::collections::BTreeMap;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
@@ -167,8 +165,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             LinearTermination, PlanarProfileRef, ProfileRef,
         };
 
+        let next_parameter = std::cell::Cell::new(10_000_u32);
+        let native_parameters = std::cell::RefCell::new(Vec::new());
         let parameter = |source_kind: &str, unit: &str, value| {
-            parse_design_parameter_record(&parameter_record(
+            let mut parameter = parse_design_parameter_record(&parameter_record(
                 Some(44),
                 "value",
                 source_kind,
@@ -176,7 +176,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 "d1",
                 value,
             ))
-            .expect("generated feature parameter is canonical")
+            .expect("generated feature parameter is canonical");
+            parameter.record_index = next_parameter.get();
+            next_parameter.set(parameter.record_index + 1);
+            parameter.id = format!(
+                "f3d:Design/BulkStream.dat:parameter#{}",
+                parameter.record_index
+            );
+            native_parameters.borrow_mut().push(parameter.clone());
+            parameter
         };
         let mut scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
@@ -192,19 +200,19 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                         reference: None,
                         operation: DesignExtrudeOperation::NewBody,
-                        operation_offset: 128,
+                        operation_offset: Some(128),
                         direction_face_extend_values: [1, 2],
                         side_extent_discriminators: [1, 0],
-                        side_extent_discriminator_offsets: [177, 190],
+                        side_extent_discriminator_offsets: Some([177, 190]),
                         first_side_target_ordinal: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
-                        direction_face_extend_offsets: [132, 136],
+                        direction_face_extend_offsets: Some([132, 136]),
                         direction_reversed: false,
-                        direction_reversed_offset: 140,
+                        direction_reversed_offset: Some(140),
                         solid_operation: true,
-                        solid_operation_offset: 141,
+                        solid_operation_offset: Some(141),
                         start: DesignExtrudeStart::ProfilePlane,
-                        start_offset: 142,
+                        start_offset: Some(142),
                     }),
                     extrude_profile: Some(
                         DesignSketchProfileOperand::try_new(
@@ -323,7 +331,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 op: BooleanOp::NewBody,
                 solid: Some(true),
                 ..
-            }) if (profile == &neutral_sketch_id(&placement)) && actual_length.get() == 5.5 && actual_draft.get() == 0.2
+            }) if (profile == &neutral_sketch_id(&placement)) && super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         let reference_aware_prologue = scope.extrude_prologue();
         let Some(DesignExtrudePrologue::ReferenceAware {
@@ -360,20 +368,20 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         {
             slot.get_or_insert_with(Default::default).extrude_prologue =
                 Some(DesignExtrudePrologue::LegacyShifted {
-                    operation_prefix_marker_offset: None,
+                    operation_prefix_marker: None,
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: 127,
+                    operation_offset: Some(127),
                     direction_face_extend_values: [3, 2],
                     side_extent_discriminators: [1, 0],
-                    side_extent_discriminator_offsets: [206, 210],
+                    side_extent_discriminator_offsets: Some([206, 210]),
                     extent: Some(DesignExtrudeExtent::SymmetricDistance),
-                    direction_face_extend_offsets: [131, 135],
+                    direction_face_extend_offsets: Some([131, 135]),
                     direction_reversed: false,
-                    direction_reversed_offset: 139,
+                    direction_reversed_offset: Some(139),
                     solid_operation: true,
-                    solid_operation_offset: 140,
+                    solid_operation_offset: Some(140),
                     start: DesignExtrudeStart::ProfilePlane,
-                    start_offset: 141,
+                    start_offset: Some(141),
                 });
         }
         let symmetric = crate::test_support::with_decode_context(|decode_ctx| {
@@ -401,7 +409,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 5.5 && actual_draft.get() == 0.2
+            }) if super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedThroughAll);
         set_extrude_direction_reversed(&mut scope, true);
@@ -429,7 +437,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_draft.get() == 0.2
+            }) if super::dimension_value(&actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         set_extrude_direction_reversed(&mut scope, false);
         set_extrude_extent(&mut scope, DesignExtrudeExtent::SymmetricThroughAll);
@@ -457,7 +465,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_draft.get() == 0.2
+            }) if super::dimension_value(&actual_draft, &native_parameters.borrow()).get() == 0.2
         ));
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
         let selection = DesignExtrudeSelectionGroup::try_from(
@@ -483,6 +491,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         )
         .unwrap();
         let mut feature = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#extrude").expect("identity grammar"),
             ordinal: 0,
             name: Some("Extrude".into()),
@@ -600,7 +609,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 crate::records::parameters::DesignParameterSource::new(
                     owned_along.source_kind_str().to_owned(),
                     Some(44),
-                    owned_along.family_discriminator(),
+                    owned_along.family_discriminator().map(|located| {
+                        crate::records::identity::Located {
+                            value: located.value,
+                            offset: located.offset.expect("retained test discriminator"),
+                        }
+                    }),
                 )
                 .unwrap(),
             )
@@ -611,7 +625,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             .unwrap();
         {
             let mut wire =
-                crate::records::parameters::DesignParameterOwnerWire::from(owner.clone());
+                crate::records::parameters::DesignParameterOwnerWire::try_from(owner.clone())
+                    .unwrap();
             wire.id = "f3d:Design/BulkStream.dat:owner#44".into();
             wire.record_index = 44;
             wire.scope_record_index = scope.record_index;
@@ -832,14 +847,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 },
                 ..
             }) if sketch == &open_spatial_sketch.id
-                && selections.as_slice() == [format!(
-                    "f3d:Design/BulkStream.dat:design-record-header#{}",
-                    scope
-                        .extrude_profile()
-                        .as_ref()
-                        .expect("test profile operand")
-                        .byte_offset()
-                )]
+                && selections.as_slice() == [scope.id.clone()]
         ));
 
         let body_group = DesignConstructionOperandGroup::try_from(
@@ -941,7 +949,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         };
         *first_side_target_ordinal = Some(DesignExtrudeTargetOrdinal {
             scope_reference_ordinal: target_shape_group.scope_reference_ordinal,
-            scope_reference_ordinal_offset: 187,
+            scope_reference_ordinal_offset: Some(187),
         });
         let mut unrelated_target_group = target_shape_group.clone();
         unrelated_target_group.id = "f3d:Design/BulkStream.dat:operand-group#106".into();
@@ -950,7 +958,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         unrelated_target_group
             .try_set_members(vec![crate::records::identity::Located {
                 value: 202,
-                offset: unrelated_target_group.members()[0].offset,
+                offset: unrelated_target_group.members()[0]
+                    .offset
+                    .expect("retained test source"),
             }])
             .unwrap();
         let mut target_shape_operand = DesignBodyRecipeOperand::try_new(
@@ -979,9 +989,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
 
                 references: vec![DesignBodyRecipeReference {
                     design_reference: 301,
-                    design_reference_offset: 25,
+                    design_reference_offset: Some(25),
                     form: 33,
-                    form_offset: 33,
+                    form_offset: Some(33),
                     candidate_faces: vec![
                         FaceId::mint("f3d:brep:entity#12").expect("identity grammar"),
                         FaceId::mint("f3d:brep:entity#19").expect("identity grammar"),
@@ -1090,8 +1100,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     .copied()
                     .chain([crate::records::identity::Located {
                         value: 202,
-                        offset: 1037,
+                        offset: Some(1037),
                     }])
+                    .map(|member| crate::records::identity::Located {
+                        value: member.value,
+                        offset: member.offset.unwrap(),
+                    })
                     .collect(),
             )
             .unwrap();
@@ -1101,7 +1115,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             group_record_index: multi_target_group.record_index,
             group_member_ordinal: 1,
         };
-        let mut draft = second_target_operand.into_draft();
+        let mut draft = second_target_operand.into_draft().unwrap();
         draft.record_index = 202;
         draft.nested_record_index = u64::from(draft.record_index + 3);
         draft.next_record_index = draft.record_index + 4;
@@ -1225,7 +1239,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     DesignFixedExtrudeScalar {
                         value: cadmpeg_ir::scalar::PositiveReal::new(0.55).unwrap(),
                         record_index: 105,
-                        value_offset: 600,
+                        value_offset: Some(600),
                     },
                 )),
                 taper_angle: None,
@@ -1270,7 +1284,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 5.5
+            }) if super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5
         ));
         set_extrude_direction_reversed(&mut scope, true);
         let reversed_hybrid = crate::test_support::with_decode_context(|decode_ctx| {
@@ -1299,7 +1313,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 5.5
+            }) if super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5
         ));
         set_extrude_direction_reversed(&mut scope, false);
         {
@@ -1324,11 +1338,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 slot.get_or_insert_with(Default::default).extrude_profile = value;
             }
         }
+        let reversed_along = parameter("AlongDistance", "mm", -0.2);
         let reversed_native_profile = crate::test_support::with_decode_context(|decode_ctx| {
             project_extrude(
                 decode_ctx,
                 &native_profile_scope,
-                &[(0, &parameter("AlongDistance", "mm", -0.2)), (1, &taper)],
+                &[(0, &reversed_along), (1, &taper)],
                 &[body_group.clone(), profile_group.clone()],
                 &[],
                 &[],
@@ -1337,23 +1352,51 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         })
         .expect("project the extrude feature")
         .expect("typed reversed Extrude with a native profile");
-        assert!(matches!(
-            reversed_native_profile,
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::Planar(PlanarProfileRef::Native(ref native)),
-                direction: ExtrudeDirection::ReversedProfileNormal {},
-                extent: ExtrudeExtent::OneSided {
-                    side: ExtrudeSide {
-                        termination: LinearTermination::Blind {
-                            length: actual_length
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Native(native)),
+            direction: ExtrudeDirection::ProfileNormal {},
+            extent:
+                ExtrudeExtent::OneSided {
+                    side:
+                        ExtrudeSide {
+                            termination:
+                                LinearTermination::Blind {
+                                    length: actual_length,
+                                },
+                            ..
                         },
-                        ..
-                    },
                 },
-                op: BooleanOp::Join,
-                ..
-            }) if (native == &profile_group.id) && actual_length.get() == 2.0
-        ));
+            op: BooleanOp::Join,
+            ..
+        }) = reversed_native_profile
+        else {
+            panic!("expected a signed native-profile Extrude");
+        };
+        assert_eq!(native, profile_group.id);
+        assert!(!native_profile_scope
+            .extrude_prologue()
+            .unwrap()
+            .direction_reversed());
+        assert_eq!(reversed_along.evaluated_value().get(), -0.2);
+        let parameter_id = crate::ids::neutral_parameter_id(&reversed_along);
+        assert_eq!(actual_length.parameter(), Some(&parameter_id));
+        let ir = super::parameter_document(&native_parameters.borrow());
+        let bound = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == parameter_id)
+            .unwrap();
+        assert_eq!(bound.expression.literal_text().as_deref(), Some("value"));
+        assert_eq!(
+            bound.value,
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(-2.0).unwrap()
+            ))
+        );
+        let signed_sweep = ir.dimension_value(&actual_length).unwrap().get();
+        assert_eq!(signed_sweep, -2.0);
+        assert_eq!(signed_sweep.abs(), 2.0);
 
         let mut face_group = body_group.clone();
         face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
@@ -1423,7 +1466,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     offset: actual_offset
                 },
                 ..
-            }) if actual_offset.get() == 1.0
+            }) if super::dimension_value(&actual_offset, &native_parameters.borrow()).get() == 1.0
         ));
         set_extrude_start(&mut scope, DesignExtrudeStart::ProfilePlane);
 
@@ -1457,8 +1500,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("project the extrude feature")
         .expect("typed two-sided Extrude");
         assert!(matches!(
-            two_sided,
+            &two_sided,
             FeatureDefinition::Operation(FeatureOperation::Extrude {
+                direction: ExtrudeDirection::ProfileNormal {},
+                op: BooleanOp::NewBody,
                 extent: ExtrudeExtent::TwoSided {
                     first: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -1475,8 +1520,41 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 5.5 && actual_length_2.get() == 0.5 && actual_draft.get() == -0.3
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(actual_length_2, &native_parameters.borrow()).get() == -0.5 && super::dimension_value(actual_length_2, &native_parameters.borrow()).get().abs() == 0.5 && super::dimension_value(actual_draft, &native_parameters.borrow()).get() == -0.3
         ));
+        assert_eq!(against.evaluated_value().get(), -0.05);
+        assert!(!scope.extrude_prologue().unwrap().direction_reversed());
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent:
+                ExtrudeExtent::TwoSided {
+                    second:
+                        ExtrudeSide {
+                            termination: LinearTermination::Blind { length },
+                            ..
+                        },
+                    ..
+                },
+            ..
+        }) = &two_sided
+        else {
+            panic!("two-sided blind extent");
+        };
+        let parameter_id = crate::ids::neutral_parameter_id(&against);
+        assert_eq!(length.parameter(), Some(&parameter_id));
+        let ir = super::parameter_document(&native_parameters.borrow());
+        let bound = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == parameter_id)
+            .unwrap();
+        assert_eq!(bound.expression.literal_text().as_deref(), Some("value"));
+        assert_eq!(
+            bound.value,
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(-0.5).unwrap()
+            ))
+        );
         set_extrude_direction_reversed(&mut scope, true);
         assert!(
             crate::test_support::with_decode_context(|decode_ctx| project_extrude(
@@ -1509,9 +1587,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         .expect("project the extrude feature")
         .expect("typed reversed Extrude");
         assert!(matches!(
-            reversed,
+            &reversed,
             FeatureDefinition::Operation(FeatureOperation::Extrude {
-                direction: ExtrudeDirection::ReversedProfileNormal {},
+                direction: ExtrudeDirection::ProfileNormal {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
@@ -1521,9 +1599,29 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if actual_length.get() == 6.0
+            }) if super::dimension_value(actual_length, &native_parameters.borrow()).get() == -6.0 && super::dimension_value(actual_length, &native_parameters.borrow()).get().abs() == 6.0
         ));
 
+        assert_eq!(reversed_along.evaluated_value().get(), -0.6);
+        assert!(!scope.extrude_prologue().unwrap().direction_reversed());
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent:
+                ExtrudeExtent::OneSided {
+                    side:
+                        ExtrudeSide {
+                            termination: LinearTermination::Blind { length },
+                            ..
+                        },
+                },
+            ..
+        }) = &reversed
+        else {
+            panic!("signed one-sided blind extent");
+        };
+        assert_eq!(
+            length.parameter(),
+            Some(&crate::ids::neutral_parameter_id(&reversed_along))
+        );
         set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
         set_extrude_direction_reversed(&mut scope, true);
@@ -1561,7 +1659,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &face_group.id) && actual_offset.get() == 0.25
+            }) if (id == &face_group.id) && super::dimension_value(&actual_offset, &native_parameters.borrow()).get() == 0.25
         ));
 
         let mut omitted_zero_offset_scope = scope.clone();
@@ -1671,7 +1769,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (first_id == &face_group.id && second_id == &second_face_group.id) && actual_offset.get() == 0.25 && actual_draft.get() == 0.2 && actual_offset_2.get() == 0.5 && actual_draft_2.get() == -0.3
+            }) if (first_id == &face_group.id && second_id == &second_face_group.id) && super::dimension_value(&actual_offset, &native_parameters.borrow()).get() == 0.25 && super::dimension_value(&actual_draft, &native_parameters.borrow()).get() == 0.2 && super::dimension_value(&actual_offset_2, &native_parameters.borrow()).get() == 0.5 && super::dimension_value(&actual_draft_2, &native_parameters.borrow()).get() == -0.3
         ));
 
         set_extrude_direction_reversed(&mut scope, true);
@@ -1742,7 +1840,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     },
                 },
                 ..
-            }) if (id == &face_group.id) && actual_length.get() == 5.5 && actual_offset.get() == 0.5 && actual_draft.get() == -0.3
+            }) if (id == &face_group.id) && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && super::dimension_value(&actual_offset, &native_parameters.borrow()).get() == 0.5 && super::dimension_value(&actual_draft, &native_parameters.borrow()).get() == -0.3
         ));
 
         set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
@@ -1755,15 +1853,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                     crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
                 usage: DesignExtrudeFaceRole::Start,
             };
+        let profile_offset = parameter("ProfileOffset", "mm", 0.0);
+        let profile_offset_id = crate::ids::neutral_parameter_id(&profile_offset);
         let from_face = crate::test_support::with_decode_context(|decode_ctx| {
             project_extrude(
                 decode_ctx,
                 &scope,
-                &[
-                    (0, &parameter("ProfileOffset", "mm", 0.0)),
-                    (1, &side_offset),
-                    (2, &taper),
-                ],
+                &[(0, &profile_offset), (1, &side_offset), (2, &taper)],
                 &[body_group, start_group.clone(), face_group],
                 &[],
                 std::slice::from_ref(&placement),
@@ -1777,24 +1873,25 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 start: ExtrudeStart::FromFace {
                     face: FaceSelection::Native(ref id),
-                    offset: None,
+                    offset: Some(ref offset),
                 },
                 ..
             }) if id == &start_group.id
+                && offset == &cadmpeg_ir::Dimension::Parameter(profile_offset_id)
+                && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
         ));
 
         set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);
         set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistance);
         set_extrude_direction_reversed(&mut scope, false);
+        let two_sided_profile_offset = parameter("ProfileOffset", "mm", 0.0);
+        let two_sided_profile_offset_id =
+            crate::ids::neutral_parameter_id(&two_sided_profile_offset);
         let from_face_two_sided = crate::test_support::with_decode_context(|decode_ctx| {
             project_extrude(
                 decode_ctx,
                 &scope,
-                &[
-                    (0, &parameter("ProfileOffset", "mm", 0.0)),
-                    (1, &along),
-                    (2, &against),
-                ],
+                &[(0, &two_sided_profile_offset), (1, &along), (2, &against)],
                 &[start_group.clone()],
                 &[],
                 std::slice::from_ref(&placement),
@@ -1803,114 +1900,33 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         })
         .expect("project the extrude feature")
         .expect("typed selected-face-start two-sided Extrude");
-        assert!(matches!(
-            from_face_two_sided,
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                start: ExtrudeStart::FromFace {
-                    face: FaceSelection::Native(ref id),
-                    offset: None,
-                },
-                extent: ExtrudeExtent::TwoSided {
-                    first: ExtrudeSide {
-                        termination: LinearTermination::Blind { length: actual_length },
-                        ..
+        assert!(
+            matches!(
+                from_face_two_sided.clone(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude {
+                    start: ExtrudeStart::FromFace {
+                        face: FaceSelection::Native(ref id),
+                        offset: Some(ref offset),
                     },
-                    second: ExtrudeSide {
-                        termination: LinearTermination::Blind { length: actual_length_2 },
-                        ..
+                    extent: ExtrudeExtent::TwoSided {
+                        first: ExtrudeSide {
+                            termination: LinearTermination::Blind { length: actual_length },
+                            ..
+                        },
+                        second: ExtrudeSide {
+                            termination: LinearTermination::Blind { length: actual_length_2 },
+                            ..
+                        },
                     },
-                },
-                ..
-            }) if (id == &start_group.id) && actual_length.get() == 5.5 && actual_length_2.get() == 0.5
-        ));
+                    ..
+                }) if (id == &start_group.id)
+                    && offset == &cadmpeg_ir::Dimension::Parameter(two_sided_profile_offset_id)
+                    && super::dimension_value(offset, &native_parameters.borrow()).get() == 0.0
+                    && super::dimension_value(&actual_length, &native_parameters.borrow()).get() == 5.5 && actual_length_2.parameter() == Some(&crate::ids::neutral_parameter_id(&against))
+                && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get() == -0.5
+                && super::dimension_value(&actual_length_2, &native_parameters.borrow()).get().abs() == 0.5
+            ),
+            "{from_face_two_sided:#?}"
+        );
     });
-}
-
-#[test]
-fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
-    use cadmpeg_ir::features::{BooleanOp, LoftSection, PathRef, SheetMetalThicknessSide};
-    use cadmpeg_ir::sketches::SpatialSketchId;
-
-    let feature = |id: &str, ordinal, definition| Feature {
-        id: FeatureId::mint(id).expect("identity grammar"),
-        ordinal,
-        name: None,
-        suppressed: None,
-        dependencies: Default::default(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: Default::default(),
-
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
-        native_ref: None,
-    };
-    let planar_sketch = SketchId::mint("synthetic:test:id#f3d:sketch:planar").unwrap();
-    let spatial_sketch = SpatialSketchId::mint("synthetic:test:id#f3d:sketch:spatial").unwrap();
-    let planar_feature = feature(
-        "synthetic:test:id#f3d:feature:planar-sketch",
-        0,
-        FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(planar_sketch.clone())),
-        }),
-    );
-    let spatial_feature = feature(
-        "synthetic:test:id#f3d:feature:spatial-sketch",
-        1,
-        FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-            sketch: Some(spatial_sketch.clone()),
-        }),
-    );
-    let base_flange = feature(
-        "synthetic:test:id#f3d:feature:base-flange",
-        2,
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(planar_sketch.clone()),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            side: SheetMetalThicknessSide::Forward,
-        }),
-    );
-    let loft = feature(
-        "synthetic:test:id#f3d:feature:loft",
-        3,
-        FeatureDefinition::Operation(FeatureOperation::Loft {
-            sections: vec![
-                LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![2]).unwrap(),
-                ),
-                LoftSection::Profile(
-                    ProfileRef::spatial_sketch_profiles(spatial_sketch.clone(), vec![5]).unwrap(),
-                ),
-            ],
-            guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Sketch(
-                planar_sketch,
-            )),
-            op: BooleanOp::Join,
-            closed: false,
-            solid: true,
-            ruled: false,
-            linearize: false,
-            max_degree: None,
-            allow_multi_profile_faces: None,
-        }),
-    );
-    let expected_dependencies = [spatial_feature.id.clone(), planar_feature.id.clone()];
-    let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
-
-    {
-        crate::design::feature_project::bind_sketch_feature_geometry(
-            &mut features,
-            &[],
-            &[],
-            &[],
-            &[],
-        )
-    }
-    .unwrap();
-
-    assert_eq!(
-        features[2].dependencies.as_slice(),
-        [features[0].id.clone()]
-    );
-    assert_eq!(features[3].dependencies.as_slice(), expected_dependencies);
 }

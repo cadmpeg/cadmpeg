@@ -3,7 +3,7 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use super::{normalize, parse_data_entity, parse_directory_record};
+use super::{parameter_record_terminator, parse_directory_record, ParameterLexState};
 use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::{point_file, point_file_with_global};
 use crate::test_support::{global_with_version_flag, only_match};
@@ -17,35 +17,37 @@ use cadmpeg_ir::report::export::{FidelityResolution, WritePath};
 use std::fmt::Write as _;
 use std::io::Cursor;
 
+/// Normalize through the decode path; the normalized text only.
+fn normalize(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::parts::normalize(root, &ctx).map(|normalized| normalized.bytes)
+}
+
 #[test]
 fn compressed_sparse_directory_shares_unchanged_field_values() {
     let source = compressed_points_file();
-    let owned_lines = source_lines(&source);
-    let lines = owned_lines.iter().map(Vec::as_slice).collect::<Vec<_>>();
-    let first_directory = lines
-        .iter()
-        .position(|line| line.first() == Some(&b'D'))
-        .unwrap();
-    let (first, next) = parse_data_entity(&lines, first_directory, None, b',', b';').unwrap();
-    let (second, _) = parse_data_entity(&lines, next, Some(&first.fields), b',', b';').unwrap();
-
-    assert!(std::rc::Rc::ptr_eq(&first.fields.0[0], &second.fields.0[0]));
-    assert!(!std::rc::Rc::ptr_eq(
-        &first.fields.0[14],
-        &second.fields.0[14]
-    ));
-    assert_eq!(
-        first.fields.get(super::CompressedField::Shared(
-            crate::directory::DirectoryFieldSlot::Label
-        )),
-        b"POINT"
-    );
-    assert_eq!(
-        second.fields.get(super::CompressedField::Shared(
-            crate::directory::DirectoryFieldSlot::Label
-        )),
-        b"SECOND"
-    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let normalized = super::parts::normalize(root, &ctx).unwrap();
+    let [first, second] = normalized.admission.directory.as_slice() else {
+        panic!("expected two Directory records");
+    };
+    // The second record states no entity type and inherits the first one's;
+    // it states its own label.
+    assert_eq!(first.entity_type, 116);
+    assert_eq!(second.entity_type, first.entity_type);
+    assert_eq!(&first.label, b"   POINT");
+    assert_eq!(&second.label, b"  SECOND");
 }
 
 #[test]
@@ -56,11 +58,25 @@ fn compressed_optional_global_suffix_recovers_the_same_points_as_fixed_ascii() {
         .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.points.len(), 2);
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::GlobalNoncanonicalFraming.kind()));
+    // #222 C.5: the Global field whose end is unknown is one given-up
+    // `iges.global_field` part, as in Fixed ASCII.
+    assert_eq!(
+        crate::test_support::given_up_parts(decoded.source_fidelity()).len(),
+        1
+    );
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.global_field"),
+        1
+    );
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .count(),
+        1
+    );
 }
 
 fn source_lines(bytes: &[u8]) -> Vec<Vec<u8>> {
@@ -196,7 +212,12 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     );
     assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["representation"],
+        result
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes["representation"],
         "compressed-ascii"
     );
 
@@ -359,14 +380,12 @@ fn compressed_ascii_preserves_v4_and_v5_0_profiles() {
 
 #[test]
 fn compressed_ascii_record_termination_ignores_hollerith_payload_delimiters() {
-    let lines = [
-        b"D1@1_116@3_0@4_0@5_0@6_0@7_0@8_0@9_00000000".as_slice(),
-        b"@12_0@13_0@14_1@15_0@16_@17_@18_POINT@19_0;".as_slice(),
-        b"116,1.0,2.0,3H;X;;".as_slice(),
-    ];
-    let (entity, next) = parse_data_entity(&lines, 0, None, b',', b';').unwrap();
-    assert_eq!(next, 3);
-    assert_eq!(entity.parameter_lines.len(), 1);
+    // `3H;X;` is a Hollerith payload: its delimiters are data, so only the
+    // record delimiter after it ends the record.
+    let mut state = ParameterLexState::default();
+    assert!(!parameter_record_terminator(b"116,1.0,2.0,3H;X;", &mut state, b',', b';').unwrap());
+    let mut state = ParameterLexState::default();
+    assert!(parameter_record_terminator(b"116,1.0,2.0,3H;X;;", &mut state, b',', b';').unwrap());
 }
 
 #[test]
@@ -381,11 +400,21 @@ fn compressed_ascii_accepts_non_default_delimiters() {
         .unwrap();
     assert_eq!(result.ir().model.points.len(), 2);
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["parameter_delimiter"],
+        result
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes["parameter_delimiter"],
         "|"
     );
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["record_delimiter"],
+        result
+            .ir()
+            .source
+            .as_ref()
+            .expect("IGES source metadata")
+            .attributes["record_delimiter"],
         "!"
     );
 }
@@ -482,10 +511,11 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
 
 #[test]
 fn compressed_delimiters_read_the_global_prefix() {
-    let mut card = [b' '; 80];
-    card[..8].copy_from_slice(b"1H,,1H;,");
+    let mut card = [b' '; 72];
+    card[..9].copy_from_slice(b"1H,,1H;,;");
+    let (global, _) = crate::global::parse_stream(&card).unwrap();
     assert_eq!(
-        super::compressed_delimiters(&[&card]).unwrap(),
+        super::compressed_delimiters(global.parameter_delimiter, global.record_delimiter).unwrap(),
         (b',', b';')
     );
 }

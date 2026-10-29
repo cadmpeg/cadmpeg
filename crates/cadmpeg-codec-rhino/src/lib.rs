@@ -14,7 +14,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -43,6 +43,8 @@ mod loss;
 mod mesh;
 mod mesh_modifiers;
 mod morph;
+mod native_registry;
+mod neutral_projection;
 mod objects;
 mod polyedge;
 mod presentation;
@@ -169,10 +171,10 @@ impl CodecBackend for RhinoCodec {
 }
 
 impl EncoderBackend for RhinoCodec {
+    const REUSES_SOURCE: bool = false;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
-    /// Writes B-rep, meshes and placements only; design arenas are refused, not
-    /// read.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
+    /// Requests geometry for the neutral model output.
+    const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 

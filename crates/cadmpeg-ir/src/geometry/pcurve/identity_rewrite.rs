@@ -17,7 +17,7 @@ rewrite_scalar!(HyperbolicPcurve);
 rewrite_scalar!(LinePcurve);
 rewrite_record!(OffsetPcurve, []; {distance, basis, depth});
 rewrite_scalar!(ParabolaPcurve);
-rewrite_record!(Pcurve, []; {id, geometry, metadata});
+rewrite_record!(Pcurve, []; {id, geometry, metadata, native_ref});
 rewrite_record!(PcurveGeneralForm, []; {wrapper_reversed, parameter_range, fit_tolerance});
 rewrite_enum!(PcurveGeometry, []; {
     Line(field0),

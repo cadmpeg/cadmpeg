@@ -29,6 +29,7 @@ pub fn accepted_empty() -> CadIr {
 pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, FixtureError> {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: VertexId::mint(format!("{prefix}:vertex#0"))?,
         point: PointId::mint(format!("{prefix}:point#missing"))?,
         tolerance: None,
@@ -49,6 +50,7 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
         .points
         .push(Point::new(point.clone(), position, None));
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex.clone(),
         point,
         tolerance: None,

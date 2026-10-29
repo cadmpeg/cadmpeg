@@ -212,8 +212,18 @@ pub(crate) fn decode_sketch_placements(
         let Some(records) = record_offsets.get(&stream_scope) else {
             continue;
         };
-        let start = usize::try_from(scope.byte_offset()).ok();
-        let end = usize::try_from(scope.paired_byte_offset()).ok();
+        let start = usize::try_from(
+            scope
+                .byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+        )
+        .ok();
+        let end = usize::try_from(
+            scope
+                .paired_byte_offset()
+                .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
+        )
+        .ok();
         let Some(frame) = start
             .zip(end)
             .and_then(|(start, end)| bytes.get(start..end))
@@ -246,11 +256,11 @@ pub(crate) fn decode_sketch_placements(
             let Some(mut placement) = candidates.pop() else {
                 continue;
             };
-            placement.id = design_record_id(
-                &entry.name,
-                ":design-sketch-placement#",
-                placement.byte_offset(),
-            );
+            let Some(placement_offset) = placement.byte_offset() else {
+                continue;
+            };
+            placement.id =
+                design_record_id(&entry.name, ":design-sketch-placement#", placement_offset);
 
             out.push(placement);
         }
@@ -279,8 +289,11 @@ pub(crate) fn decode_sketch_placements(
         let Some(records) = record_offsets.get(stream) else {
             continue;
         };
+        let Some(entity_offset) = entity.byte_offset else {
+            continue;
+        };
         let Some(mut placement) =
-            parse_member_run_head_placement(bytes, entity.byte_offset, &entity.entity_id, records)
+            parse_member_run_head_placement(bytes, entity_offset, &entity.entity_id, records)
         else {
             continue;
         };
@@ -291,17 +304,16 @@ pub(crate) fn decode_sketch_placements(
                     && native_stream(&candidate.id) == Some(stream)
                     && candidate.byte_offset > entity.byte_offset
             })
-            .map(|candidate| candidate.byte_offset)
+            .filter_map(|candidate| candidate.byte_offset)
             .min();
         let owner = member_run_sketch_scope(scopes, stream, entity, next_entity_offset);
         if let Some(scope) = owner {
             placement.scope_record_index = Some(scope.record_index);
         }
-        placement.id = design_record_id(
-            entry_name,
-            ":design-sketch-placement#",
-            placement.byte_offset(),
-        );
+        let Some(placement_offset) = placement.byte_offset() else {
+            continue;
+        };
+        placement.id = design_record_id(entry_name, ":design-sketch-placement#", placement_offset);
 
         out.push(placement);
     }
@@ -589,6 +601,7 @@ fn member_run_sketch_scope<'a>(
     entity: &DesignEntityHeader,
     next_entity_offset: Option<u64>,
 ) -> Option<&'a DesignParameterScope> {
+    let entity_offset = entity.byte_offset?;
     let sketch_scopes = || {
         scopes.iter().filter(|scope| {
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
@@ -602,8 +615,8 @@ fn member_run_sketch_scope<'a>(
     });
     let mut interval_scopes = sketch_scopes().filter(|scope| {
         scope.sketch_entity().is_none()
-            && scope.byte_offset() > entity.byte_offset
-            && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
+            && scope.byte_offset() > Some(entity_offset)
+            && next_entity_offset.is_none_or(|end| scope.byte_offset() < Some(end))
     });
     match (bound_scopes.next(), bound_scopes.next()) {
         (Some(scope), None) => Some(scope),
@@ -841,8 +854,10 @@ pub(crate) fn decode_persistent_references(
         .enumerate()
         .filter(|(_, entry)| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        decode_persistent_references_from_stream(entry_ordinal, &entry.name, bytes, &mut out)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        decode_persistent_references_from_stream(entry_ordinal, &entry.name, source, &mut out)?;
     }
     Ok(finish_persistent_references(out))
 }
@@ -871,12 +886,61 @@ fn finish_persistent_references(
     references
 }
 
-fn decode_persistent_references_from_stream(
+/// The `IntrinsicMetaTypeuint64` type name of a persistent reference value.
+const PERSISTENT_REFERENCE_TYPE: &[u8] = b"IntrinsicMetaTypeuint64";
+
+/// The end of the persistent-reference property whose name ends at
+/// `after_name`: the type descriptor, the type name and the u64 value. The
+/// descriptor is the compact form (a u32 type-name length 23) or the long form
+/// (u32 2, u32 14, 14 bytes, then the u32 23). This locates the property
+/// for [`parse_persistent_property`].
+fn persistent_property_end(bytes: &[u8], after_name: usize) -> Option<usize> {
+    let type_offset = if View::u32_le_at(bytes, after_name) == Some(23) {
+        after_name
+    } else if View::u32_le_at(bytes, after_name) == Some(2)
+        && View::u32_le_at(bytes, after_name + 4) == Some(14)
+        && View::u32_le_at(bytes, after_name + 22) == Some(23)
+    {
+        after_name + 22
+    } else {
+        return None;
+    };
+    type_offset
+        .checked_add(4 + PERSISTENT_REFERENCE_TYPE.len() + 8)
+        .filter(|end| *end <= bytes.len())
+}
+
+/// Parse one persistent-reference property: the name, the type descriptor,
+/// the type name and the u64 value.
+/// Returns the value offset relative to the property start and the value.
+fn parse_persistent_property(property: &[u8], name: &[u8]) -> Option<(usize, u64)> {
+    if property.get(..name.len()) != Some(name) {
+        return None;
+    }
+    let after_name = name.len();
+    let type_offset = match View::u32_le_at(property, after_name)? {
+        23 => after_name,
+        2 if View::u32_le_at(property, after_name + 4) == Some(14) => after_name + 22,
+        _ => return None,
+    };
+    if View::u32_le_at(property, type_offset) != Some(23) {
+        return None;
+    }
+    let type_end = type_offset + 4 + PERSISTENT_REFERENCE_TYPE.len();
+    if property.get(type_offset + 4..type_end) != Some(PERSISTENT_REFERENCE_TYPE) {
+        return None;
+    }
+    let value = View::u64_le_at(property, type_end)?;
+    (type_end + 8 == property.len()).then_some((type_end, value))
+}
+
+pub(crate) fn decode_persistent_references_from_stream(
     entry_ordinal: usize,
     entry_name: &str,
-    bytes: &[u8],
+    source: View<'_>,
     out: &mut Vec<(usize, PersistentReference)>,
 ) -> Result<(), CodecError> {
+    let bytes = source.window();
     for &(name, kind) in &[
         (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
         (
@@ -891,50 +955,23 @@ fn decode_persistent_references_from_stream(
         let mut cursor = 0;
         while let Some(offset) = find_from(bytes, name, cursor) {
             cursor = offset + name.len();
-            let compact_type_offset = offset + name.len();
-            let type_offset = if View::u32_le_at(bytes, compact_type_offset) == Some(23) {
-                compact_type_offset
-            } else if View::u32_le_at(bytes, compact_type_offset) == Some(2)
-                && View::u32_le_at(bytes, compact_type_offset + 4) == Some(14)
-                && bytes
-                    .get(compact_type_offset + 8..compact_type_offset + 22)
-                    .is_some()
-                && View::u32_le_at(bytes, compact_type_offset + 22) == Some(23)
-            {
-                compact_type_offset + 22
-            } else {
+            let Some(end) = persistent_property_end(bytes, offset + name.len()) else {
                 continue;
             };
-            if View::u32_le_at(bytes, type_offset) != Some(23) {
-                continue;
-            }
-            let type_name = b"IntrinsicMetaTypeuint64";
-            if bytes.get(type_offset + 4..type_offset + 4 + type_name.len()) != Some(type_name) {
-                continue;
-            }
-            let value_offset = type_offset + 4 + type_name.len();
-            let Some(value) = View::u64_le_at(bytes, value_offset) else {
+            let Some((value_offset, value)) = parse_persistent_property(&bytes[offset..end], name)
+            else {
                 continue;
             };
-
-            out.push((
-                entry_ordinal,
-                PersistentReference {
-                    id: design_record_id(
-                        entry_name,
-                        ":persistent-reference#",
-                        u64_from_index(offset),
-                    ),
-                    byte_offset: u64_from_index(offset),
-                    value_offset: u32::try_from(value_offset - offset).map_err(|_| {
-                        CodecError::malformed(
-                            "f3d persistent reference relative offset exceeds u32",
-                        )
-                    })?,
-                    kind,
-                    value,
-                },
-            ));
+            let reference = PersistentReference {
+                id: design_record_id(entry_name, ":persistent-reference#", u64_from_index(offset)),
+                byte_offset: Some(u64_from_index(offset)),
+                value_offset: Some(u32::try_from(value_offset).map_err(|_| {
+                    CodecError::malformed("f3d persistent reference relative offset exceeds u32")
+                })?),
+                kind,
+                value,
+            };
+            out.push((entry_ordinal, reference));
         }
     }
     Ok(())
@@ -951,17 +988,53 @@ pub(crate) fn decode_lost_edge_references(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        decode_lost_edge_references_from_stream(&entry.name, bytes, &mut out)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        decode_lost_edge_references_from_stream(&entry.name, source.window(), &mut out);
     }
     Ok(out)
 }
 
-fn decode_lost_edge_references_from_stream(
+/// The byte length of an `EDGE_REFERENCE_LOST` record from its header to the
+/// following indexed header: the 29-byte header and the 19-byte marker.
+const LOST_EDGE_RECORD_LENGTH: usize = 48;
+/// The byte length of the following indexed header that the record names: a
+/// u32 class-tag length 3, three ASCII digits and the u32 record index.
+const LOST_EDGE_NEXT_HEADER_LENGTH: usize = 11;
+
+/// Parse one lost-edge record and the following indexed header. Returns the class tag, the record index, the
+/// next class tag and the next record index.
+fn parse_lost_edge_record<'a>(
+    record: &'a [u8],
+    next: &'a [u8],
+    marker: &[u8],
+) -> Option<(&'a str, u32, &'a str, u32)> {
+    let (class_tag, after_tag) = lp_ascii_filtered_view(record, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if after_tag != 7
+        || record.get(11..25) != Some(&[0; 14])
+        || View::u32_le_at(record, 25) != u32::try_from(marker.len()).ok()
+        || record.get(29..) != Some(marker)
+    {
+        return None;
+    }
+    let record_index = View::u32_le_at(record, after_tag)?;
+    let (next_class_tag, after_next_tag) =
+        lp_ascii_filtered_view(next, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if after_next_tag != 7 {
+        return None;
+    }
+    let next_record_index = View::u32_le_at(next, after_next_tag)?;
+    (class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        && next_class_tag.bytes().all(|byte| byte.is_ascii_digit()))
+    .then_some((class_tag, record_index, next_class_tag, next_record_index))
+}
+
+pub(crate) fn decode_lost_edge_references_from_stream(
     entry_name: &str,
     bytes: &[u8],
     out: &mut Vec<LostEdgeReference>,
-) -> Result<(), CodecError> {
+) {
     let marker = b"EDGE_REFERENCE_LOST";
     let mut cursor = 0;
     while let Some(relative) = bytes[cursor..]
@@ -973,41 +1046,18 @@ fn decode_lost_edge_references_from_stream(
         let Some(header_offset) = offset.checked_sub(29) else {
             continue;
         };
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, header_offset, 0..=2000, u8::is_ascii_graphic)
+        let record_end = header_offset + LOST_EDGE_RECORD_LENGTH;
+        let (Some(record), Some(next)) = (
+            bytes.get(header_offset..record_end),
+            bytes.get(record_end..record_end + LOST_EDGE_NEXT_HEADER_LENGTH),
+        ) else {
+            continue;
+        };
+        let Some((class_tag, record_index, next_class_tag, next_record_index)) =
+            parse_lost_edge_record(record, next, marker)
         else {
             continue;
         };
-        if after_tag != header_offset + 7
-            || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
-            || View::u32_le_at(bytes, header_offset + 25)
-                != Some(u32::try_from(marker.len()).map_err(|_| {
-                    CodecError::malformed("f3d lost edge marker length exceeds u32")
-                })?)
-        {
-            continue;
-        }
-        let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
-            continue;
-        };
-        let next_byte_offset = offset + marker.len();
-        let Some((next_class_tag, after_next_tag)) =
-            lp_ascii_filtered_view(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)
-        else {
-            continue;
-        };
-        if after_next_tag != next_byte_offset + 7 {
-            continue;
-        }
-        let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
-            continue;
-        };
-        if !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        {
-            continue;
-        }
-
         let Ok(reference) = LostEdgeReference::new(
             design_record_id(
                 entry_name,
@@ -1024,7 +1074,6 @@ fn decode_lost_edge_references_from_stream(
         };
         out.push(reference);
     }
-    Ok(())
 }
 
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
@@ -1351,8 +1400,15 @@ pub(crate) fn decode_entity_headers(
                 list.map(
                     |list| crate::records::entity_header::SketchHeaderReferences {
                         record_reference: list.record_reference.value,
-                        record_reference_offset: list.record_reference.offset,
-                        references: list.references,
+                        record_reference_offset: Some(list.record_reference.offset),
+                        references: list
+                            .references
+                            .into_iter()
+                            .map(|reference| crate::records::identity::Located {
+                                value: reference.value,
+                                offset: Some(reference.offset),
+                            })
+                            .collect(),
                     },
                 );
             let members = if genesis_form && in_sketch_module {
@@ -1362,10 +1418,10 @@ pub(crate) fn decode_entity_headers(
             };
             out.push(DesignEntityHeader {
                 id: design_record_id(&entry.name, ":design-entity-header#", u64_from_index(start)),
-                byte_offset: u64_from_index(start),
+                byte_offset: Some(u64_from_index(start)),
                 entity_id,
                 class_tag,
-                optional_slot_present,
+                optional_slot_present: Some(optional_slot_present),
                 registration: crate::records::entity_header::DesignEntityRegistration::new(
                     module,
                     references,
@@ -1413,13 +1469,13 @@ pub(crate) fn decode_entity_headers(
             existing.insert(entity_suffix);
             out.push(DesignEntityHeader {
                 id: design_record_id(&entry.name, ":design-entity-header#", u64_from_index(start)),
-                byte_offset: u64_from_index(start),
+                byte_offset: Some(u64_from_index(start)),
                 entity_id: crate::records::identity::DesignEntityId::from_parts(
                     "Sketch",
                     u64::from(entity_suffix),
                 ),
                 class_tag,
-                optional_slot_present: false,
+                optional_slot_present: Some(false),
                 registration: crate::records::entity_header::DesignEntityRegistration::new(
                     Some(DESIGN_MODULE_SKETCH.to_owned()),
                     None,
@@ -1587,7 +1643,7 @@ fn decode_headers_for_indices_from_stream(
                 ),
                 record_index,
                 class_tag: header.class_tag,
-                byte_offset: u64_from_index(position),
+                byte_offset: Some(u64_from_index(position)),
             });
         }
     }
@@ -1640,9 +1696,9 @@ pub(crate) fn decode_sketch_relations(
                     ),
                     record_index,
                     class_tag: frame.class_tag,
-                    byte_offset: u64_from_index(frame.start),
+                    byte_offset: Some(u64_from_index(frame.start)),
                 };
-                framed_offsets.insert(record.byte_offset);
+                framed_offsets.insert(u64_from_index(frame.start));
                 decode_sketch_relation_record(
                     &mut out,
                     &entry.name,
@@ -1657,10 +1713,13 @@ pub(crate) fn decode_sketch_relations(
             .iter()
             .filter(|record| native_stream(&record.id) == Some(scope.as_str()))
         {
-            if framed_offsets.contains(&record.byte_offset) {
+            let Some(record_offset) = record.byte_offset else {
+                continue;
+            };
+            if framed_offsets.contains(&record_offset) {
                 continue;
             }
-            let Ok(at) = usize::try_from(record.byte_offset) else {
+            let Ok(at) = usize::try_from(record_offset) else {
                 continue;
             };
             let record_end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
@@ -1736,10 +1795,10 @@ pub(crate) fn sketch_pattern_neutral_state(relation: &SketchRelation) -> Option<
         SketchPatternDefinition::Rectangular { .. } => SketchRelationClass::RectangularPattern,
         _ => return None,
     };
-    let parsed = parse_classed_sketch_relation(relation.raw_bytes(), class).ok()??;
+    let raw_bytes = relation.raw_bytes()?;
+    let parsed = parse_classed_sketch_relation(raw_bytes, class).ok()??;
     if parsed.state != relation.definition.state()
-        || relation
-            .raw_bytes()
+        || raw_bytes
             .get(parsed.parsed_end..)?
             .iter()
             .any(|byte| *byte != 0)
@@ -1803,7 +1862,9 @@ fn admit_sketch_relation(
         id: design_record_id(stream, ":sketch-relation#", u64::from(record.record_index)),
         record_index: record.record_index,
         class_tag: record.class_tag.clone(),
-        byte_offset: record.byte_offset,
+        byte_offset: record.byte_offset.ok_or_else(|| {
+            CodecError::malformed("F3D sketch relation has no actual scanner position")
+        })?,
         state_offset: u32::try_from(parsed.state_offset)
             .map_err(|_| CodecError::malformed("f3d sketch relation state offset exceeds u32"))?,
         owner_reference: parsed.owner_reference,
@@ -1926,7 +1987,7 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     View::u32_le_at(record, tail + 1)
 }
 
-fn decode_sketch_points_from_stream(
+pub(crate) fn decode_sketch_points_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
@@ -1948,6 +2009,11 @@ fn decode_sketch_points_from_stream(
             ),
         );
     }
+    let frame_bytes = |start: usize, end: usize| {
+        bytes
+            .get(start..end)
+            .ok_or_else(|| CodecError::malformed("F3D sketch-point frame exceeds its stream"))
+    };
     let mut out = Vec::new();
     for frame in &frames {
         if !frame
@@ -1960,66 +2026,70 @@ fn decode_sketch_points_from_stream(
         {
             continue;
         }
-        let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let decoded =
-            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                crate::design::text::malformed_design(format_args!(
-                    "F3D sketch point {record_index} has an invalid version-{} member sequence",
-                    frame.design_type.version
-                ))
-            })?;
-        let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
-        if !point_target_has_guid(
-            &types_by_entity,
-            decoded.trailing_reference(),
-            SKETCH_CONTAINER_TYPE_GUID,
-        ) {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch point {record_index} has an invalid trailing container reference"
-            )));
-        }
-        let (record_form, companion) = frames_by_entity
-            .get(&decoded.paired_reference)
-            .filter(|companion_frame| {
-                let design_type = companion_frame.design_type;
-                design_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
-                    && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
-                    && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
-            })
-            .and_then(|companion_frame| {
-                decode_sketch_point_companion(
-                    &bytes[companion_frame.start..companion_frame.end],
+        let id = design_record_id(stream, ":sketch-point#", u64_from_index(frame.start));
+        let point = {
+            let payload = frame_bytes(frame.start, frame.end)?;
+            let decoded = decode_sketch_point_record(payload, frame.design_type.version)
+                .ok_or_else(|| {
+                    crate::design::text::malformed_design(format_args!(
+                        "F3D sketch point {record_index} has an invalid version-{} member sequence",
+                        frame.design_type.version
+                    ))
+                })?;
+            let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
+            if !point_target_has_guid(
+                &types_by_entity,
+                decoded.trailing_reference(),
+                SKETCH_CONTAINER_TYPE_GUID,
+            ) {
+                return Err(crate::design::text::malformed_design(format_args!(
+                    "F3D sketch point {record_index} has an invalid trailing container reference"
+                )));
+            }
+            let companion_frame =
+                frames_by_entity
+                    .get(&decoded.paired_reference)
+                    .filter(|companion_frame| {
+                        let design_type = companion_frame.design_type;
+                        design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0)
+                            && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
+                            && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
+                    });
+            let (record_form, companion) = match companion_frame {
+                Some(companion_frame) => decode_sketch_point_companion(
+                    frame_bytes(companion_frame.start, companion_frame.end)?,
                     record_index,
                     decoded.record_form.clone(),
                     &types_by_entity,
-                )
-            })
+                ),
+                None => None,
+            }
             .ok_or_else(|| {
                 crate::design::text::malformed_design(format_args!(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
 
-        out.push(
             SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-                id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
+                id: id.clone(),
                 record_index,
                 owner_reference: decoded.owner_reference,
                 class_tag: frame.class_tag.clone(),
-                byte_offset: u64_from_index(frame.start),
-                coordinate_offset: decoded.coordinate_offset,
+                byte_offset: Some(u64_from_index(frame.start)),
+                coordinate_offset: Some(decoded.coordinate_offset),
                 record_form,
                 companion,
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
-            .map_err(CodecError::Malformed)?,
-        );
+            .map_err(CodecError::Malformed)?
+        };
+        out.push(point);
     }
     Ok(out)
 }
@@ -2032,7 +2102,19 @@ fn decode_sketch_points_from_stream(
 /// point record with a malformed or non-finite member sequence makes the
 /// stream malformed.
 pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_points_from_stream)
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        out.extend(decode_sketch_points_from_stream(bytes, &meta, &entry.name)?);
+    }
+    Ok(out)
 }
 
 struct SketchProperty<'a> {
@@ -2755,7 +2837,7 @@ fn decode_legacy_sketch_text_record_tail(
 }
 
 pub(crate) fn sketch_text_neutral_state(text: &SketchText) -> Option<bool> {
-    let payload = text.raw_bytes.as_ref();
+    let payload = text.raw_bytes.data()?;
     if let Some((head, identity)) = decode_sketch_text_head(payload, text.class_version).ok()? {
         if let Some(tail) = decode_legacy_sketch_text_record_tail(
             payload,
@@ -2814,7 +2896,7 @@ fn assemble_sketch_text(
         owner_reference: tail.owner_reference,
         class_tag,
         class_version,
-        byte_offset: u64_from_index(byte_offset),
+        byte_offset: Some(u64_from_index(byte_offset)),
         entity_genesis: head.entity_genesis,
         persistent_id: head.persistent_id,
         base_id: head.base_id,
@@ -3348,14 +3430,16 @@ fn decode_sketch_curve_identities_from_stream(
         } else {
             None
         };
-        let (geometry, geometry_offset, planar_z_noise) =
-            parsed_geometry.map_or((None, geometry_shift + 133, None), |parsed| {
-                (
-                    Some(parsed.geometry),
-                    parsed.geometry_offset,
-                    parsed.planar_z_noise,
-                )
-            });
+        let (geometry, geometry_offset, planar_z_noise) = match parsed_geometry {
+            Some(parsed) => (
+                Some(parsed.geometry),
+                Some(u32::try_from(parsed.geometry_offset).map_err(|_| {
+                    CodecError::malformed("f3d sketch curve geometry offset exceeds u32")
+                })?),
+                parsed.planar_z_noise,
+            ),
+            None => (None, None, None),
+        };
 
         out.push(SketchCurveIdentity {
             id: design_record_id(
@@ -3366,10 +3450,8 @@ fn decode_sketch_curve_identities_from_stream(
             record_index,
             owner_reference: trailing_sketch_owner_reference(payload),
             class_tag: frame.class_tag,
-            byte_offset: u64_from_index(frame.start),
-            geometry_offset: u32::try_from(geometry_offset).map_err(|_| {
-                CodecError::malformed("f3d sketch curve geometry offset exceeds u32")
-            })?,
+            byte_offset: Some(u64_from_index(frame.start)),
+            geometry_offset,
             entity_genesis,
             primary_id,
             secondary_id,

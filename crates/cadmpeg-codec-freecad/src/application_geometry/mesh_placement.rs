@@ -134,13 +134,27 @@ pub(crate) fn project(
         };
         let own_occurrence = scene.own_occurrences.get(property.owner.as_str()).copied();
         let transform = if let Some(occurrence) = own_occurrence {
-            world_transform(
+            let Some(transform) = world_transform(
                 ctx,
                 occurrence,
                 &occurrence_index,
                 &mut world,
                 &mut HashSet::new(),
             )?
+            else {
+                let message = format!(
+                    "mesh {} keeps its local frame because occurrence {} has no known placement",
+                    mesh.id, occurrence.id
+                );
+                ctx.retain_bytes(
+                    u64_from_index(message.len()),
+                    "retain FCStd mesh placement loss",
+                )?;
+                losses.push(FreecadLossCode::MeshPlacementNotTransferred.note(message));
+                output.push(mesh.clone());
+                continue;
+            };
+            transform
         } else {
             let placement = placements.get(property.owner.as_str()).copied();
             placement
@@ -182,6 +196,10 @@ pub(crate) fn project(
             population: &mut population,
             admitted_entities,
             path: vec![occurrence.id.as_str().to_owned()],
+        };
+        let Some(transform) = transform else {
+            sink.loss(ctx, prototype)?;
+            continue;
         };
         if record.linked_subelements().is_empty() {
             scene.expand(prototype, transform, &mut Vec::new(), &mut sink)?;
@@ -323,11 +341,14 @@ impl Scene<'_, '_> {
                 sink.path.pop();
                 continue;
             }
+            let Some(local) = child.effective_transform().map_err(CodecError::malformed)? else {
+                sink.loss(self.ctx, prototype)?;
+                sink.path.pop();
+                continue;
+            };
             self.expand(
                 prototype,
-                transform
-                    .compose(child.effective_transform().map_err(CodecError::malformed)?)
-                    .map_err(CodecError::malformed)?,
+                transform.compose(local).map_err(CodecError::malformed)?,
                 stack,
                 sink,
             )?;
@@ -345,9 +366,9 @@ fn world_transform(
     ctx: &DecodeContext<'_>,
     occurrence: &Occurrence,
     index: &HashMap<&str, &Occurrence>,
-    cache: &mut HashMap<String, Transform>,
+    cache: &mut HashMap<String, Option<Transform>>,
     active: &mut HashSet<String>,
-) -> Result<Transform, CodecError> {
+) -> Result<Option<Transform>, CodecError> {
     let _depth = ctx.enter_nested("compose FCStd mesh placement")?;
     if let Some(transform) = cache.get(occurrence.id.as_str()) {
         return Ok(*transform);
@@ -356,7 +377,7 @@ fn world_transform(
         return Err(CodecError::malformed("mesh occurrence parent cycle"));
     }
     let parent = match &occurrence.parent {
-        OccurrenceParent::Root {} => Transform::identity(),
+        OccurrenceParent::Root {} => Some(Transform::identity()),
         OccurrenceParent::Occurrence { occurrence: parent } => world_transform(
             ctx,
             index
@@ -367,12 +388,13 @@ fn world_transform(
             active,
         )?,
     };
+    let local = occurrence
+        .effective_transform()
+        .map_err(CodecError::malformed)?;
     let transform = parent
-        .compose(
-            occurrence
-                .effective_transform()
-                .map_err(CodecError::malformed)?,
-        )
+        .zip(local)
+        .map(|(parent, local)| parent.compose(local))
+        .transpose()
         .map_err(CodecError::malformed)?;
     active.remove(occurrence.id.as_str());
     cache.insert(occurrence.id.as_str().to_owned(), transform);

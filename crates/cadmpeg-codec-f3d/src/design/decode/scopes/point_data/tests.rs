@@ -102,14 +102,14 @@ fn work_point_stream(
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("WorkPoint scope");
@@ -132,7 +132,7 @@ fn work_point_reads_the_class_version_its_type_table_stores() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [4.0, 5.0, 6.0]
     );
-    assert_eq!(frame.position_offset, u64_from_index(position_at));
+    assert_eq!(frame.position_offset, Some(u64_from_index(position_at)));
     // The stored version drives the read: a version that describes a
     // different member sequence does not yield this frame's coordinate.
     assert_ne!(
@@ -142,7 +142,7 @@ fn work_point_reads_the_class_version_its_type_table_stores() {
             &scope,
             &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 0))])
         )
-        .map(|frame| frame.position_offset),
+        .and_then(|frame| frame.position_offset),
         Some(u64_from_index(position_at))
     );
     // An unregistered entity falls back to the agreement sweep.
@@ -181,7 +181,7 @@ fn work_point_position_does_not_depend_on_the_segment_local_class_tag() {
         );
         assert_eq!(
             frame.position_offset,
-            u64_from_index(position_at),
+            Some(u64_from_index(position_at)),
             "class tag {class_tag}"
         );
     }
@@ -203,7 +203,7 @@ fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75]
     );
-    assert_eq!(frame.position_offset, u64_from_index(position_at));
+    assert_eq!(frame.position_offset, Some(u64_from_index(position_at)));
     assert_eq!(work_point_input_indices(&frame.rule), [70]);
 }
 
@@ -227,7 +227,7 @@ fn work_point_position_reads_every_class_version_that_stores_one() {
         );
         assert_eq!(
             frame.position_offset,
-            u64_from_index(position_at),
+            Some(u64_from_index(position_at)),
             "class version {version}"
         );
     }
@@ -421,14 +421,14 @@ fn work_point_direct_record_carries_model_space_position() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let scope = parse_parameter_scope(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("WorkPoint scope");
@@ -443,7 +443,7 @@ fn work_point_direct_record_carries_model_space_position() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75]
     );
-    assert_eq!(frame.position_offset, u64_from_index(position_at));
+    assert_eq!(frame.position_offset, Some(u64_from_index(position_at)));
     assert_eq!(frame.rule.reference_type(), 7);
     assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
@@ -460,7 +460,7 @@ fn work_point_direct_record_carries_model_space_position() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75]
     );
-    assert_eq!(frame.position_offset, u64_from_index(position_at));
+    assert_eq!(frame.position_offset, Some(u64_from_index(position_at)));
     assert_eq!(frame.rule.reference_type(), 1);
     assert_eq!(work_point_input_indices(&frame.rule), [56]);
 }
@@ -519,7 +519,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
         id: "generated:scope-header#0".into(),
         record_index: 12,
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = parse_parameter_scope(
@@ -527,7 +527,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
         &records,
         header.record_index,
         &header.class_tag,
-        header.byte_offset,
+        header.byte_offset.expect("actual scanner header position"),
     )
     .unwrap()
     .expect("WorkPoint scope");

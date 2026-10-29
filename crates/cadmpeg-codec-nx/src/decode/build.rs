@@ -279,10 +279,13 @@ pub(super) fn try_decode_geometry(
             refusals: nurbs_refusals,
         } = parsed.parse_nurbs(si);
         for refusal in nurbs_refusals {
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
-                "parasolid#{si} {} at byte {} states no carrier: {}",
-                refusal.family, refusal.pos, refusal.error
-            )));
+            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note({
+                scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
+                format!(
+                    "parasolid#{si} {} at byte {} states no carrier: {}",
+                    refusal.family, refusal.pos, refusal.error
+                )
+            }));
         }
         let view = parsed.stream(si);
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
@@ -327,6 +330,7 @@ pub(super) fn try_decode_geometry(
                 .push(Point::new(pid.clone(), position, None));
 
             ir.model.vertices.push(Vertex {
+                native_ref: None,
                 id: vid.clone(),
                 point: pid.clone(),
                 tolerance: None,
@@ -367,6 +371,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(id.as_str(), "geometry")?;
 
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: id.clone(),
                 geometry,
                 source_object: None,
@@ -386,6 +391,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(id.as_str(), "geometry")?;
 
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: id.clone(),
                 geometry: surf.geometry,
                 source_object: None,
@@ -424,6 +430,7 @@ pub(super) fn try_decode_geometry(
                     annotations.derived(surface_id.as_str(), "geometry")?;
 
                     ir.model.surfaces.push(Surface {
+                        native_ref: None,
                         id: surface_id.clone(),
                         geometry: SurfaceGeometry::Procedural {
                             construction: procedural_id.clone(),
@@ -441,10 +448,6 @@ pub(super) fn try_decode_geometry(
                                     "source object_id must not be empty",
                                 )
                             })?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                     });
@@ -498,6 +501,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(surface_id.as_str(), "geometry")?;
 
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -513,10 +517,6 @@ pub(super) fn try_decode_geometry(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             });
@@ -614,6 +614,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(id.as_str(), "geometry")?;
 
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry,
@@ -634,6 +635,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(id.as_str(), "geometry")?;
 
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry: crv.geometry,
@@ -656,6 +658,7 @@ pub(super) fn try_decode_geometry(
             annotations.derived(id.as_str(), "geometry")?;
 
             ir.model.pcurves.push(Pcurve {
+                native_ref: None,
                 id: id.clone(),
                 geometry: pcurve.geometry,
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
@@ -826,6 +829,7 @@ pub(super) fn try_decode_geometry(
             }
 
             ir.model.curves.push(Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: curve_id.clone(),
                 geometry: if let Some(charted) = charted {
@@ -859,10 +863,6 @@ pub(super) fn try_decode_geometry(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             });
@@ -1108,6 +1108,7 @@ pub(super) fn try_decode_geometry(
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
         let initial_endpoint_witnesses = emit_topology(
+            (&mut scan.source_untyped(), &mut topology_losses),
             ctx,
             &mut ir,
             &crate::decode::emit::TopologyStream {
@@ -1131,7 +1132,6 @@ pub(super) fn try_decode_geometry(
                 adaptive_geometry: &adaptive_geometry_budget,
                 completion_geometry: &completion_geometry_budget,
             },
-            &mut topology_losses,
         )?;
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
@@ -1342,7 +1342,7 @@ pub(super) fn try_decode_geometry(
         },
         &ir,
         &model,
-    )?;
+    );
     for losses in [carrier_refusals, topology_losses, native_losses] {
         report.losses.extend(losses);
     }
@@ -2002,6 +2002,7 @@ fn finalize_point_topology(
         );
         annotations.exactness(vertex_id.as_str(), Exactness::Inferred);
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_id.clone(),
             point: point.id.clone(),
             tolerance: None,
@@ -2026,6 +2027,7 @@ fn finalize_point_topology(
 
     let region_shells = vec![shell_id];
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region_id.clone(),
         body: body_id.clone(),
         shells: region_shells,
@@ -2033,6 +2035,7 @@ fn finalize_point_topology(
 
     let body_regions = vec![region_id];
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::General,
         regions: body_regions,

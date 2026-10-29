@@ -251,6 +251,7 @@ fn transfer_reference_lines(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -260,10 +261,6 @@ fn transfer_reference_lines(
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -329,6 +326,7 @@ fn transfer_reference_circles(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -342,10 +340,6 @@ fn transfer_reference_circles(
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -404,6 +398,7 @@ fn transfer_reference_ellipses(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
@@ -427,10 +422,6 @@ fn transfer_reference_ellipses(
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -596,6 +587,7 @@ fn transfer_datum_plane_surfaces(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -613,10 +605,6 @@ fn transfer_datum_plane_surfaces(
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: source_object_id_checked(format_args!("ActDatums:{}", plane.id))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -687,6 +675,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -700,10 +689,6 @@ fn transfer_placed_plane_surfaces_into_ir(
                     geometry_role: None,
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: source_object_id_checked(format_args!("VisibGeom:{surface_id}"))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -762,7 +747,7 @@ pub(in super::super) fn build_ir(
         &mut source_carriers,
     )?;
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations)?;
     collect_feature_coverage(
         scan,
         &ir,
@@ -771,6 +756,8 @@ pub(in super::super) fn build_ir(
         feature_result_edge_count,
         &mut coverage,
     );
+    crate::decode::feature_history::bindings::bind_owned_dimensions(&mut ir, &mut transfer_losses)?;
+    transfer_losses.append(&mut source_carriers.projection_losses);
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),

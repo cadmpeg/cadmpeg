@@ -4,7 +4,7 @@
 use super::super::{
     append_text_curve, append_text_surface, CurveTransfer, SurfaceTransfer, TextCurve, TextSurface,
 };
-use crate::native::{PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+use crate::native::{PropertyBody, PropertyFamily, PropertyRecord};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use cadmpeg_ir::features::FinitePoint3;
@@ -102,36 +102,48 @@ fn transferred_nurbs_surface_keeps_one_geometry_copy() {
     );
 }
 
-fn shape_property(xml: &str) -> PropertyRecord {
-    PropertyRecord {
-        id: "fcstd:native:property#Owner:Shape".into(),
-        owner: "fcstd:native:object#Owner".into(),
-        name: "Shape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: PropertyFamily::Geometry,
-        status: None,
-        body: PropertyBody::Transient,
-        order: 0,
-        xml: RetainedXml::from_text(xml.into(), 0).expect("test XML span"),
-    }
+fn shape_property(xml: &str) -> crate::test_support::source_fidelity::PropertyFixture {
+    crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
+            dynamic: None,
+            id: "fcstd:native:property#Owner:Shape".into(),
+            owner: "fcstd:native:object#Owner".into(),
+            name: "Shape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: PropertyFamily::Geometry,
+            status: None,
+            body: Some(PropertyBody::Transient),
+            order: 0,
+        },
+        xml,
+    )
 }
 
 #[test]
 fn uppercase_binary_shape_extension_selects_binary_reader() {
     let property = shape_property("<Property><Part file=\"Body.BIN\"/></Property>");
-    let entry = crate::test_support::entry_record(
+    let entry = crate::test_support::entry_fixture(
         "fcstd:native:entry#Body.BIN".into(),
         "Body.BIN".into(),
         cadmpeg_core::container::ContainerRole::Brep,
         Vec::new(),
         b"garbage\n".to_vec(),
     );
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
-    let error = super::super::parse_payloads(&ctx, &[property], &[entry])
-        .expect_err("malformed binary payload");
+    let error = crate::test_support::source_fidelity::with_decode_sources(
+        &[],
+        &[&property],
+        &[&entry],
+        &DecodePolicy::default(),
+        |ctx, sources| {
+            super::super::parse_payloads(
+                ctx,
+                std::slice::from_ref(&property.property),
+                std::slice::from_ref(&entry.record),
+                sources,
+            )
+        },
+    )
+    .expect_err("malformed binary payload");
     assert!(error
         .to_string()
         .contains("unsupported binary B-rep header"));
@@ -142,10 +154,6 @@ fn source_association() -> SourceObjectAssociation {
         geometry_role: None,
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("Owner").expect("nonblank object"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }

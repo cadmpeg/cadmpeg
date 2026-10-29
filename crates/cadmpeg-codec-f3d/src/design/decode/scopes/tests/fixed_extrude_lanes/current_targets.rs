@@ -61,7 +61,9 @@ fn fixture(faces: bool) -> (Vec<u8>, DesignParameterScope) {
         }) = &mut slot.extrude_prologue
         {
             *side_extent_discriminators = if faces { [2, 2] } else { [1, 1] };
-            side_extent_discriminator_offsets[1] = u64_from_index(second);
+            if let Some(offsets) = side_extent_discriminator_offsets {
+                offsets[1] = u64_from_index(second);
+            }
         }
     }
     (bytes, scope)

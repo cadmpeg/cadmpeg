@@ -92,7 +92,7 @@ fn exact_ordered_fixed_extrude_lanes(
         DesignFixedExtrudeDistance::DistanceConstruction(DesignFixedExtrudeScalar {
             value: lane.value,
             record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         })
     });
     let mut taper_angle = None;
@@ -109,7 +109,7 @@ fn exact_ordered_fixed_extrude_lanes(
             .iter()
             .find(|owner| {
                 native_stream(owner.id()) == native_stream(&scope.id)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && owner.record_index() == record_index
             })
             .and_then(|owner| {
@@ -124,7 +124,7 @@ fn exact_ordered_fixed_extrude_lanes(
         let scalar = DesignFixedExtrudeScalar {
             value: lane.value,
             record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         };
         let nonzero = |scalar: DesignFixedExtrudeScalar| {
             Some(DesignFixedExtrudeScalar {
@@ -219,7 +219,7 @@ fn reference_aware_lane_owners(
     ) {
         return None;
     }
-    let mut at = usize::try_from(operation_offset)
+    let mut at = usize::try_from(operation_offset?)
         .ok()?
         .checked_add(extrude_fields::PROFILE_NORMAL + 3 * 8)?;
     let mut slots = [None; 7];
@@ -233,7 +233,7 @@ fn reference_aware_lane_owners(
             _ => return None,
         }
     }
-    if u64::try_from(at).ok()? != side_extent_discriminator_offsets[0] {
+    if u64::try_from(at).ok()? != side_extent_discriminator_offsets?[0] {
         return None;
     }
     let side_one_offset = match side_extent_discriminators[0] {
@@ -254,7 +254,7 @@ fn reference_aware_lane_owners(
             None,
             marked_record_reference(
                 bytes,
-                usize::try_from(side_extent_discriminator_offsets[1])
+                usize::try_from(side_extent_discriminator_offsets?[1])
                     .ok()?
                     .checked_add(4)?,
             ),
@@ -290,7 +290,7 @@ fn exact_named_fixed_extrude_lanes(
             .iter()
             .find(|owner| {
                 native_stream(owner.id()) == native_stream(&scope.id)
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
                     && owner.record_index() == record_index
             })
             .and_then(|owner| {
@@ -323,7 +323,7 @@ fn exact_named_fixed_extrude_lanes(
         let scalar = DesignFixedExtrudeScalar {
             value: lane.value,
             record_index: *record_index,
-            value_offset: lane.value_offset,
+            value_offset: Some(lane.value_offset),
         };
         let expected_kind = if owners.along_distance == Some(*record_index) {
             "AlongDistance"
@@ -467,7 +467,7 @@ pub(super) fn exact_fixed_fillet_parameters(
     let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
         value: scalar.value,
         record_index: *record_index,
-        value_offset: scalar.value_offset,
+        value_offset: Some(scalar.value_offset),
     };
     let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
         DesignFixedFilletGroup::try_new(tangency_lane.map(scalar), law).ok()
@@ -518,7 +518,7 @@ pub(super) fn exact_fixed_chamfer_parameters(
     if parameter_owners.iter().any(|owner| {
         stream.is_some()
             && native_stream(owner.id()) == stream
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
     }) {
         return None;
     }
@@ -540,7 +540,7 @@ pub(super) fn exact_fixed_chamfer_parameters(
         Some(DesignFixedChamferDistance {
             value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
             record_index,
-            value_offset: scalar.value_offset,
+            value_offset: Some(scalar.value_offset),
         })
     });
     let first = distances.next()??;
@@ -558,13 +558,13 @@ pub(super) fn unique_revolve_angle_owner<'a>(
 ) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
         native_stream(owner.id()) == native_stream(&scope.id)
-            && owner.scope_record_index() == scope.record_index
+            && owner.scope_record_index() == Some(scope.record_index)
             && scope
                 .reference_members()
                 .values()
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
-            && owner.local_ordinal() == 0
+            && owner.local_ordinal() == Some(0)
             && owner.evaluated_value().get() > 0.0
     });
     let angle = candidates.next()?;

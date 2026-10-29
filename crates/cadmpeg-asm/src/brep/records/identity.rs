@@ -25,6 +25,81 @@ impl NativeRecordNamespace {
         }
     }
 
+    pub(super) fn retain_id(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        kind: &str,
+        record_index: u32,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let length = self.reference_length(kind, record_index)?;
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(length),
+            "ASM face native reference",
+        )?;
+        self.working_id(ctx, kind, record_index)
+    }
+
+    fn reference_length(
+        &self,
+        kind: &str,
+        record_index: u32,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        let digits = record_index.checked_ilog10().unwrap_or(0);
+        let digits = usize::try_from(digits).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("ASM native reference digit count exceeds usize")
+        })?;
+        let digits = digits.checked_add(1).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("ASM native reference digit count overflows")
+        })?;
+        let length = self
+            .namespace
+            .len()
+            .checked_add(kind.len())
+            .and_then(|length| length.checked_add(digits))
+            .and_then(|length| length.checked_add(2))
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("ASM native reference length overflows")
+            })?;
+        Ok(length)
+    }
+
+    pub(super) fn working_id(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        kind: &str,
+        record_index: u32,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        use std::fmt::Write;
+        if let Some(refusal) = ctx.resource_refusal() {
+            return Err(refusal.into());
+        }
+        let length = self.reference_length(kind, record_index)?;
+        let mut text = String::new();
+        ctx.reserve_text_working(&mut text, length, "ASM face native reference")?;
+        write!(&mut text, "{}:{kind}#{record_index}", self.namespace).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("ASM native reference formatting failed")
+        })?;
+        Ok(text)
+    }
+
+    /// Compare the rendering of an actual typed native identity without allocation.
+    pub(super) fn matches(&self, kind: &str, record_index: u32, value: &str) -> bool {
+        use std::fmt::Write;
+        struct Match<'a>(&'a str);
+        impl std::fmt::Write for Match<'_> {
+            fn write_str(&mut self, text: &str) -> std::fmt::Result {
+                self.0 = self.0.strip_prefix(text).ok_or(std::fmt::Error)?;
+                Ok(())
+            }
+        }
+        let mut remaining = Match(value);
+        write!(&mut remaining, "{}", self.serialized_id(kind, record_index)).is_ok()
+            && remaining.0.is_empty()
+    }
+
     pub(super) fn id(&self, kind: &str, record_index: u32) -> String {
         self.serialized_id(kind, record_index).to_string()
     }
@@ -221,7 +296,7 @@ mod tests {
             "face-sidedness",
             serde_json::json!({
                 "id": "f3d:asm:face-sidedness#1", "record_index": 1,
-                "face": "f3d:brep:entity#1", "native_sense": "forward", "normalized_sense": "forward"
+                "native_sense": "forward", "normalized_sense": "forward"
             }),
         );
     }

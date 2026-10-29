@@ -224,14 +224,11 @@ fn pairwise_feature_ordinals<'a>(
     let mut object_by_id = HashMap::new();
     let mut object_by_name = HashMap::new();
     let mut object_by_feature = HashMap::new();
-    let mut source_ordinals = Vec::new();
     for object in &design_objects {
         object_by_id.insert(object.id().as_str(), *object);
         object_by_name.insert(object.name().as_str(), *object);
         object_by_feature.insert(feature_id(object)?, object.id().as_str());
-        source_ordinals.push(cadmpeg_core::decode::u64_from_index(object.order));
     }
-    source_ordinals.sort_unstable_by(Ord::cmp);
     let mut emitted = BTreeSet::new();
     let mut ordinals = HashMap::new();
     let mut cycle_affected = BTreeSet::new();
@@ -254,7 +251,7 @@ fn pairwise_feature_ordinals<'a>(
                 .flat_map(|property| property.values())
                 .filter_map(|value| value.attributes.get("expression"))
                 .flat_map(|expression| expression_identifiers(expression))
-                .filter_map(|identifier| identifier.split_once('.').map(|(owner, _)| owner))
+                .filter_map(|(_, identifier)| identifier.split_once('.').map(|(owner, _)| owner))
                 .filter_map(|owner| object_by_name.get(owner))
                 .all(|dependency| {
                     dependency.id() == object.id() || emitted.contains(dependency.id().as_str())
@@ -293,7 +290,7 @@ fn pairwise_feature_ordinals<'a>(
                 .min_by_key(|object| object.order)
                 .ok_or_else(|| CodecError::malformed("lost an un-emitted object"))?
         };
-        let ordinal = source_ordinals[ordinals.len()];
+        let ordinal = cadmpeg_core::decode::u64_from_index(ordinals.len());
         emitted.insert(next.id().as_str());
         ordinals.insert(next.id().as_str(), ordinal);
     }
@@ -403,13 +400,15 @@ fn parameter(id: usize, owner: usize, dependencies: &[usize]) -> DesignParameter
         owner: Some(FeatureId::mint(format!("test:test:feature#{owner}")).expect("feature id")),
         ordinal: 0,
         name: format!("P{id}"),
-        expression: String::new(),
+        expression: cadmpeg_ir::features::Expression {
+            tokens: dependencies
+                .iter()
+                .map(|&index| cadmpeg_ir::features::ExpressionToken::Parameter(parameter_id(index)))
+                .collect(),
+        },
         display: None,
         value: None,
-        dependencies: dependencies
-            .iter()
-            .map(|&index| parameter_id(index))
-            .collect(),
+        driving: true,
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -429,8 +428,8 @@ fn pairwise_parameter_order(parameters: &mut Vec<DesignParameter>) -> BTreeSet<F
     while !remaining.is_empty() {
         let Some(index) = remaining.iter().position(|parameter| {
             parameter
-                .dependencies
-                .iter()
+                .expression
+                .dependencies()
                 .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
         }) else {
             cycle_features.extend(

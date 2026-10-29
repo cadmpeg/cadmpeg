@@ -246,21 +246,24 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     };
     let header = |stream: &str| DesignEntityHeader {
         id: format!("f3d:{stream}:design-entity-header#0"),
-        byte_offset: 0,
+        byte_offset: Some(0),
 
         entity_id: crate::records::identity::DesignEntityId::try_from(format!("{stream}_100"))
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        optional_slot_present: true,
+        optional_slot_present: Some(true),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: None,
-                record_reference_offset: 0,
+                record_reference_offset: Some(0),
                 references: vec![30]
                     .into_iter()
                     .zip(vec![0])
-                    .map(|(value, offset)| crate::records::identity::Located { value, offset })
+                    .map(|(value, offset)| crate::records::identity::Located {
+                        value,
+                        offset: Some(offset),
+                    })
                     .collect(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),
@@ -274,8 +277,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             owner_reference: None,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            coordinate_offset: 89,
+            byte_offset: Some(0),
+            coordinate_offset: Some(89),
             companion: crate::records::sketch_geometry::SketchPointCompanion {
                 incident_curves: Vec::new(),
             },
@@ -291,13 +294,11 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         .unwrap()
     };
     let relation = |stream: &str| {
-        SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
+        SketchRelation::authored(crate::records::sketch_relations::SketchRelationContent {
             id: format!("f3d:{stream}:sketch-relation#30"),
             record_index: 30,
             class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            state_offset: 0,
             owner_reference: 100,
             owner_entity_id: None,
             auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
@@ -305,16 +306,13 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             members: (vec![SketchRelationMember::from_index(20)])
                 .try_into()
                 .expect("uniform member resolution"),
-            owner_reference_offset: 0,
             definition: crate::records::sketch_relations::SketchRelationDefinition::new(0, None)
                 .expect("valid relation definition"),
             entity_genesis: None,
             return_members: (vec![SketchRelationReturnMember::from_index(20)])
                 .try_into()
                 .expect("uniform member resolution"),
-            raw_bytes: vec![0; 160],
         })
-        .unwrap()
     };
 
     let placements = [placement("A"), placement("B")];
@@ -444,7 +442,11 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         })
         .expect("projected stream A Width parameter");
     assert_eq!(
-        half.dependencies.as_slice(),
+        half.expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>()
+            .as_slice(),
         std::slice::from_ref(&a_width.id)
     );
     assert_eq!(

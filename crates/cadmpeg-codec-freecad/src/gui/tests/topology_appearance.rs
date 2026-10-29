@@ -11,6 +11,17 @@ const GUI_MODEL: &[u8] = include_bytes!(concat!(
 
 #[test]
 fn face_materials_follow_shape_indices_without_complete_persistent_names() {
+    let loss_facts = |decoded: &cadmpeg_ir::codec::DecodeResult| {
+        decoded
+            .report()
+            .losses
+            .iter()
+            .map(|loss| (loss.code.clone(), loss.severity, loss.message.clone()))
+            .collect::<Vec<_>>()
+    };
+    let baseline = FcstdCodec
+        .decode(&mut Cursor::new(GUI_MODEL), &DecodeOptions::default())
+        .unwrap();
     for names in [
         "",
         "<ElementMap/>",
@@ -25,11 +36,7 @@ fn face_materials_follow_shape_indices_without_complete_persistent_names() {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        assert!(
-            decoded.report().losses.is_empty(),
-            "{:?}",
-            decoded.report().losses
-        );
+        assert_eq!(loss_facts(&decoded), loss_facts(&baseline));
         let model = &decoded.ir().model;
         assert_eq!(model.faces.len(), 8);
         let face_bindings = model

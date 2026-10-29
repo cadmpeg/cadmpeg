@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 
-use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
+use crate::directory::DirectoryEntry;
 use crate::global::{GlobalTable, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::bounded_len;
@@ -15,6 +15,10 @@ use serde::{Serialize, Serializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
+
+pub(crate) mod admitted;
+pub(crate) mod compressed;
+pub(crate) mod parts;
 
 struct BackPointer(Option<u32>);
 
@@ -28,15 +32,34 @@ impl fmt::Display for BackPointer {
 }
 
 /// One typed lexical value in an entity parameter record.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenValue {
     Omitted,
     Integer(i64),
     Real(FiniteReal),
     String(cadmpeg_ir::native::bytes::NativeBytes),
-    /// The field boundaries are known, but its literal cannot be interpreted.
-    Unreadable(ParameterDefect),
+}
+
+impl Serialize for TokenValue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+        enum Wire<'a> {
+            Omitted,
+            Integer(i64),
+            Real(FiniteReal),
+            String(cadmpeg_ir::native::bytes::NativeBytes<&'a [u8]>),
+        }
+        match self {
+            Self::Omitted => Wire::Omitted,
+            Self::Integer(value) => Wire::Integer(*value),
+            Self::Real(value) => Wire::Real(*value),
+            Self::String(bytes) => {
+                Wire::String(cadmpeg_ir::native::bytes::NativeBytes::from(bytes.as_ref()))
+            }
+        }
+        .serialize(serializer)
+    }
 }
 
 #[cfg(test)]
@@ -57,16 +80,9 @@ impl Serialize for Token {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            start: usize,
-            end: usize,
             value: &'a TokenValue,
         }
-        Wire {
-            start: self.span.start,
-            end: self.span.end,
-            value: &self.value,
-        }
-        .serialize(serializer)
+        Wire { value: &self.value }.serialize(serializer)
     }
 }
 
@@ -76,7 +92,7 @@ pub(crate) struct ParameterRecord {
     pub(crate) directory_sequence: u32,
     pub(crate) line_range: Range<u32>,
     pub(crate) bytes: Vec<u8>,
-    tokens: Vec<Token>,
+    tokens: Vec<Option<Token>>,
     /// Exclusive end of the entity-specific Parameter Data sequence.
     ///
     /// `tokens` retains the complete record so native preservation and
@@ -222,7 +238,7 @@ pub(crate) enum DefaultTailCount {
 }
 
 impl ParameterRecord {
-    pub(crate) fn tokens(&self) -> &[Token] {
+    pub(crate) fn tokens(&self) -> &[Option<Token>] {
         &self.tokens
     }
 
@@ -239,10 +255,14 @@ impl ParameterRecord {
             directory_sequence,
             line_range,
             bytes,
-            tokens,
+            tokens: tokens.into_iter().map(Some).collect(),
             parameter_end,
             comment,
         }
+    }
+
+    pub(crate) fn has_absent_fields(&self) -> bool {
+        self.tokens.iter().any(Option::is_none)
     }
 
     pub(crate) fn parameter_end(&self) -> usize {
@@ -250,7 +270,7 @@ impl ParameterRecord {
     }
 
     pub(crate) fn token(&self, index: usize) -> Option<&Token> {
-        (index < self.parameter_end()).then(|| self.tokens.get(index))?
+        (index < self.parameter_end()).then(|| self.tokens.get(index)?.as_ref())?
     }
 
     pub(crate) fn value(&self, index: usize) -> Option<&TokenValue> {
@@ -258,26 +278,20 @@ impl ParameterRecord {
     }
 
     fn raw_value(&self, index: usize) -> Option<&TokenValue> {
-        self.tokens.get(index).map(|token| &token.value)
+        self.tokens.get(index)?.as_ref().map(|token| &token.value)
     }
 
     fn raw_integer(&self, index: usize) -> Option<i64> {
         match self.raw_value(index)? {
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Omitted
-            | TokenValue::Real(_)
-            | TokenValue::String(_)
-            | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
     pub(crate) fn integer(&self, index: usize) -> Option<i64> {
         match self.value(index)? {
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Omitted
-            | TokenValue::Real(_)
-            | TokenValue::String(_)
-            | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
@@ -285,12 +299,12 @@ impl ParameterRecord {
         let token = match self.tokens.get(index) {
             None => return Some(default),
             Some(_) if index >= self.parameter_end() => return None,
-            Some(token) => token,
+            Some(token) => token.as_ref()?,
         };
         match &token.value {
             TokenValue::Omitted => Some(default),
             TokenValue::Integer(value) => Some(*value),
-            TokenValue::Real(_) | TokenValue::String(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::Real(_) | TokenValue::String(_) => None,
         }
     }
 
@@ -298,7 +312,7 @@ impl ParameterRecord {
         match self.value(index)? {
             TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
-            TokenValue::Omitted | TokenValue::String(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::String(_) => None,
         }
     }
 
@@ -306,13 +320,13 @@ impl ParameterRecord {
         let token = match self.tokens.get(index) {
             None => return Some(default),
             Some(_) if index >= self.parameter_end() => return None,
-            Some(token) => token,
+            Some(token) => token.as_ref()?,
         };
         match &token.value {
             TokenValue::Omitted => Some(default),
             TokenValue::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             TokenValue::Real(value) => Some(value.get()),
-            TokenValue::String(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::String(_) => None,
         }
     }
 
@@ -351,10 +365,7 @@ impl ParameterRecord {
     pub(crate) fn string(&self, index: usize) -> Option<&[u8]> {
         match self.value(index)? {
             TokenValue::String(value) => Some(value),
-            TokenValue::Omitted
-            | TokenValue::Integer(_)
-            | TokenValue::Real(_)
-            | TokenValue::Unreadable(_) => None,
+            TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
 
@@ -362,12 +373,12 @@ impl ParameterRecord {
         let token = match self.tokens.get(index) {
             None => return Some(&[]),
             Some(_) if index >= self.parameter_end() => return None,
-            Some(token) => token,
+            Some(token) => token.as_ref()?,
         };
         match &token.value {
             TokenValue::Omitted => Some(&[]),
             TokenValue::String(value) => Some(value),
-            TokenValue::Integer(_) | TokenValue::Real(_) | TokenValue::Unreadable(_) => None,
+            TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
 
@@ -526,7 +537,7 @@ impl ParameterRecord {
 /// IGES double-precision exponent spelling.
 pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
     records.iter().any(|record| {
-        record.tokens.iter().any(|token| {
+        record.tokens.iter().flatten().any(|token| {
             matches!(&token.value, TokenValue::Real(_))
                 && record
                     .bytes
@@ -2684,11 +2695,6 @@ impl QuarantinedParameterRecord {
         }
     }
 
-    /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:parameter#{}", self.sequence)
-    }
-
     pub(crate) fn loss_note(&self) -> Result<LossNote, CodecError> {
         let owned = match &self.ownership {
             QuarantinedCards::Owned { range, .. } => {
@@ -2829,6 +2835,7 @@ pub(crate) struct ParameterAssembly {
     pub(crate) trailing_pointer_analysis: BTreeMap<u32, TrailingPointerAnalysis>,
     pub(crate) quarantined: Vec<QuarantinedParameterRecord>,
     pub(crate) recoveries: FramingRecoveries,
+    pub(crate) given_up: BTreeSet<u32>,
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
@@ -3355,35 +3362,62 @@ fn numeric_with_limits(
     Ok(Token { value, span })
 }
 
-fn tokenize_with_limits(
+/// One Parameter Data field whose boundaries are known and whose literal is
+/// not admitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FailedField {
+    /// The field position in the record.
+    pub(crate) index: usize,
+    /// The field value in the record stream.
+    pub(crate) span: Range<usize>,
+    pub(crate) defect: ParameterDefect,
+    /// The record-stream offset that a record-level defect names.
+    pub(crate) offset: usize,
+}
+
+/// The fields of one Parameter Data record. A failed field has no token.
+#[derive(Debug)]
+pub(crate) struct TokenizedFields {
+    pub(crate) tokens: Vec<Option<Token>>,
+    pub(crate) failed: Vec<FailedField>,
+    /// The stream offset after the record delimiter.
+    pub(crate) end: usize,
+}
+
+fn tokenize_fields(
     bytes: &[u8],
     card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
     global_table: GlobalTable,
     limits: NumericLimits,
-) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    let mut tokens = Vec::new();
+) -> Result<TokenizedFields, TokenizeFailure> {
+    let mut fields = TokenizedFields {
+        tokens: Vec::new(),
+        failed: Vec::new(),
+        end: 0,
+    };
     let mut cursor = 0_usize;
     loop {
         while bytes.get(cursor) == Some(&b' ') {
             cursor += 1;
         }
         if bytes.get(cursor) == Some(&record_delimiter) {
-            return Ok((tokens, cursor + 1));
+            fields.end = cursor + 1;
+            return Ok(fields);
         }
         if bytes.get(cursor) == Some(&parameter_delimiter) {
-            tokens.push(Token {
+            fields.tokens.push(Some(Token {
                 value: TokenValue::Omitted,
                 span: cursor..cursor,
-            });
+            }));
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) =
+        let (token, end) = if let Some((token, end)) =
             hollerith(bytes, card_boundaries, cursor, global_table)?
         {
-            value
+            (Some(token), end)
         } else {
             let end = bytes[cursor..]
                 .iter()
@@ -3407,36 +3441,49 @@ fn tokenize_with_limits(
                     .iter()
                     .position(|byte| !byte.is_ascii_whitespace())
                     .unwrap_or(span.len());
-            if first_value < end && card_boundary_within(card_boundaries, first_value, end) {
-                return Err(TokenizeFailure::Defect(
-                    ParameterDefect::NumericCrossesCard,
-                    first_value,
-                ));
-            }
-            let token = match numeric_with_limits(bytes, span.clone(), limits) {
-                Ok(token) => token,
-                Err(TokenizeFailure::Defect(defect, _))
-                    if matches!(
-                        defect,
-                        ParameterDefect::NumericContainsBlanks
-                            | ParameterDefect::TokenNotAscii
-                            | ParameterDefect::TokenNotANumber
-                            | ParameterDefect::NumericOutOfRange
-                    ) =>
-                {
-                    Token {
-                        value: TokenValue::Unreadable(defect),
-                        span,
+            let failure =
+                if first_value < end && card_boundary_within(card_boundaries, first_value, end) {
+                    Some((ParameterDefect::NumericCrossesCard, first_value))
+                } else {
+                    match numeric_with_limits(bytes, span.clone(), limits) {
+                        Ok(token) => {
+                            fields.tokens.push(Some(token));
+                            None
+                        }
+                        Err(TokenizeFailure::Defect(defect, offset))
+                            if matches!(
+                                defect,
+                                ParameterDefect::NumericContainsBlanks
+                                    | ParameterDefect::TokenNotAscii
+                                    | ParameterDefect::TokenNotANumber
+                                    | ParameterDefect::NumericOutOfRange
+                            ) =>
+                        {
+                            Some((defect, offset))
+                        }
+                        Err(error) => return Err(error),
                     }
-                }
-                Err(error) => return Err(error),
-            };
-            (token, end)
+                };
+            if let Some((defect, offset)) = failure {
+                fields.failed.push(FailedField {
+                    index: fields.tokens.len(),
+                    span,
+                    defect,
+                    offset,
+                });
+                fields.tokens.push(None);
+            }
+            (None, end)
         };
-        tokens.push(token);
+        if let Some(token) = token {
+            fields.tokens.push(Some(token));
+        }
         match bytes.get(end).copied() {
             Some(value) if value == parameter_delimiter => cursor = end + 1,
-            Some(value) if value == record_delimiter => return Ok((tokens, end + 1)),
+            Some(value) if value == record_delimiter => {
+                fields.end = end + 1;
+                return Ok(fields);
+            }
             _ => {
                 return Err(TokenizeFailure::Defect(
                     ParameterDefect::DelimiterMissing,
@@ -3454,8 +3501,8 @@ fn tokenize(
     parameter_delimiter: u8,
     record_delimiter: u8,
     global_table: GlobalTable,
-) -> Result<(Vec<Token>, usize), TokenizeFailure> {
-    tokenize_with_limits(
+) -> Result<TokenizedFields, TokenizeFailure> {
+    tokenize_fields(
         bytes,
         card_boundaries,
         parameter_delimiter,
@@ -3791,11 +3838,221 @@ fn range_to_cards(range: Range<u32>) -> Vec<u32> {
     cards
 }
 
+enum OwnedParseFailure {
+    Defect(ParameterDefect, Option<usize>),
+    Error(CodecError),
+}
+
+impl From<TokenizeFailure> for OwnedParseFailure {
+    fn from(error: TokenizeFailure) -> Self {
+        match error {
+            TokenizeFailure::Defect(defect, offset) => Self::Defect(defect, Some(offset)),
+            TokenizeFailure::Error(error) => Self::Error(error),
+        }
+    }
+}
+
+fn parse_owned_record(
+    owned: &Ownership<'_>,
+    owned_bytes: OwnedParameterBytes,
+    global: &ResolvedGlobal,
+) -> Result<ParameterRecord, OwnedParseFailure> {
+    let (record, failed) = parse_owned_fields(owned, owned_bytes, global)?;
+    reject_failed_fields(&failed)?;
+    Ok(record)
+}
+
+/// Parse one owned record. A field whose literal is not admitted has no token
+/// and is returned for its caller to give up.
+fn parse_owned_fields(
+    owned: &Ownership<'_>,
+    owned_bytes: OwnedParameterBytes,
+    global: &ResolvedGlobal,
+) -> Result<(ParameterRecord, Vec<FailedField>), OwnedParseFailure> {
+    let (admitted, failed) = lex_admitted(
+        owned.entry.sequence,
+        owned.entry.entity_type,
+        owned_bytes,
+        global,
+    )?;
+    let line_start = owned.cards.first().copied().unwrap_or_default();
+    let line_end = match owned.cards.last() {
+        Some(last) => last.checked_add(1).ok_or_else(|| {
+            OwnedParseFailure::Error(CodecError::malformed(
+                "IGES parameter card sequence overflow",
+            ))
+        })?,
+        None => line_start,
+    };
+    Ok((admitted.bind_range(line_start..line_end), failed))
+}
+
+/// A caller with no field part refuses the record at its first failed field.
+fn reject_failed_fields(failed: &[FailedField]) -> Result<(), OwnedParseFailure> {
+    match failed.first() {
+        Some(field) => Err(OwnedParseFailure::Defect(field.defect, Some(field.offset))),
+        None => Ok(()),
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct AdmittedParameter {
+    directory_sequence: u32,
+    bytes: Vec<u8>,
+    tokens: Vec<Option<Token>>,
+    parameter_end: usize,
+    comment: Vec<u8>,
+}
+
+impl AdmittedParameter {
+    /// Clear the tokens of the fields at `fields`, which belong to one
+    /// given-up part. Each slot is `null`, so later fields keep their
+    /// positions. A given-up field after the last token still has its slot.
+    pub(crate) fn give_up_fields(&mut self, fields: Range<usize>) {
+        if self.tokens.len() < fields.end {
+            self.tokens.resize(fields.end, None);
+            self.parameter_end = self.tokens.len();
+        }
+        for slot in self.tokens.get_mut(fields).into_iter().flatten() {
+            *slot = None;
+        }
+    }
+
+    pub(crate) fn bind_range(self, line_range: Range<u32>) -> ParameterRecord {
+        ParameterRecord {
+            directory_sequence: self.directory_sequence,
+            line_range,
+            bytes: self.bytes,
+            tokens: self.tokens,
+            parameter_end: self.parameter_end,
+            comment: self.comment,
+        }
+    }
+}
+
+fn lex_admitted(
+    directory_sequence: u32,
+    entity_type: i64,
+    owned_bytes: OwnedParameterBytes,
+    global: &ResolvedGlobal,
+) -> Result<(AdmittedParameter, Vec<FailedField>), OwnedParseFailure> {
+    let fields = if entity_type == 306 {
+        tokenize_macro(
+            &owned_bytes.bytes,
+            global.parameter_delimiter,
+            global.record_delimiter,
+        )
+        .map(|(tokens, end)| TokenizedFields {
+            tokens: tokens.into_iter().map(Some).collect(),
+            failed: Vec::new(),
+            end,
+        })
+    } else {
+        tokenize_fields(
+            &owned_bytes.bytes,
+            &owned_bytes.card_boundaries,
+            global.parameter_delimiter,
+            global.record_delimiter,
+            global.global_table(),
+            global.numeric_limits(),
+        )
+    }
+    .map_err(OwnedParseFailure::from)?;
+    match fields.tokens.first() {
+        Some(Some(Token {
+            value: TokenValue::Integer(value),
+            ..
+        })) if *value == entity_type => {}
+        first => {
+            let offset = match first {
+                Some(Some(token)) => Some(token.span.start),
+                Some(None) => fields.failed.first().map(|field| field.span.start),
+                None => None,
+            };
+            return Err(OwnedParseFailure::Defect(
+                ParameterDefect::EntityTypeTokenMismatch,
+                offset,
+            ));
+        }
+    }
+    let parameter_end = fields.tokens.len();
+    Ok((
+        AdmittedParameter {
+            directory_sequence,
+            comment: owned_bytes
+                .bytes
+                .get(fields.end..)
+                .unwrap_or_default()
+                .to_vec(),
+            bytes: owned_bytes.bytes,
+            tokens: fields.tokens,
+            parameter_end,
+        },
+        fields.failed,
+    ))
+}
+
+fn parse_legacy_owned(
+    owned: &Ownership<'_>,
+    lines: &BTreeMap<u32, &PhysicalLine>,
+    global: &ResolvedGlobal,
+) -> Result<ParsedOwned, CodecError> {
+    if let Some(defect) = owned.quarantine {
+        return Ok(ParsedOwned::Quarantined(quarantine(
+            owned.entry,
+            &owned.cards,
+            lines,
+            defect,
+            None,
+        )?));
+    }
+    match parse_owned_record(owned, owned_bytes(&owned.cards, lines), global) {
+        Ok(record) => Ok(ParsedOwned::Record(record)),
+        Err(OwnedParseFailure::Error(error)) => Err(error),
+        Err(OwnedParseFailure::Defect(defect, offset)) => Ok(ParsedOwned::Quarantined(quarantine(
+            owned.entry,
+            &owned.cards,
+            lines,
+            defect,
+            offset,
+        )?)),
+    }
+}
+
+/// `excluded_directory` holds the first-card sequence of each quarantined or
+/// given-up Directory Entry. A Parameter Data card whose back-pointer names
+/// one is part of that excluded record, not an unclaimed card.
 pub(crate) fn assemble(
     scan: &CardScan,
     directory: &[DirectoryEntry],
-    quarantined_directory: &[QuarantinedDirectoryRecord],
+    excluded_directory: impl IntoIterator<Item = u32>,
     global: &ResolvedGlobal,
+) -> Result<ParameterAssembly, CodecError> {
+    assemble_with(
+        scan,
+        directory,
+        excluded_directory,
+        global,
+        |owned, lines, _| parse_legacy_owned(owned, lines, global),
+    )
+}
+
+enum ParsedOwned {
+    Record(ParameterRecord),
+    Quarantined(QuarantinedParameterRecord),
+    GivenUp,
+}
+
+fn assemble_with(
+    scan: &CardScan<'_>,
+    directory: &[DirectoryEntry],
+    excluded_directory: impl IntoIterator<Item = u32>,
+    global: &ResolvedGlobal,
+    mut parse: impl FnMut(
+        &Ownership<'_>,
+        &BTreeMap<u32, &PhysicalLine>,
+        &[Ownership<'_>],
+    ) -> Result<ParsedOwned, CodecError>,
 ) -> Result<ParameterAssembly, CodecError> {
     let mut lines = BTreeMap::new();
     for (sequence, line) in scan.section(Section::Parameter) {
@@ -3815,103 +4072,18 @@ pub(crate) fn assemble(
     let mut recoveries = FramingRecoveries::default();
     let ownership = resolve_ownership(directory, &lines, &back_pointers, &mut recoveries)?;
     let mut records = Vec::new();
-    let mut trailing_pointer_analysis = BTreeMap::new();
     let mut quarantined = Vec::new();
+    let mut given_up = BTreeSet::new();
     for owned in &ownership {
-        let entry = owned.entry;
-        if let Some(defect) = owned.quarantine {
-            quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None)?);
-            continue;
-        }
-        let owned_bytes = owned_bytes(&owned.cards, &lines);
-        let tokenized = if entry.entity_type == 306 {
-            tokenize_macro(
-                &owned_bytes.bytes,
-                global.parameter_delimiter,
-                global.record_delimiter,
-            )
-        } else {
-            tokenize_with_limits(
-                &owned_bytes.bytes,
-                &owned_bytes.card_boundaries,
-                global.parameter_delimiter,
-                global.record_delimiter,
-                global.global_table(),
-                global.numeric_limits(),
-            )
-        };
-        let (tokens, record_end) = match tokenized {
-            Ok(value) => value,
-            Err(TokenizeFailure::Error(error)) => return Err(error),
-            Err(TokenizeFailure::Defect(defect, offset)) => {
-                quarantined.push(quarantine(
-                    entry,
-                    &owned.cards,
-                    &lines,
-                    defect,
-                    Some(offset),
-                )?);
-                continue;
+        match parse(owned, &lines, &ownership)? {
+            ParsedOwned::Record(record) => records.push(record),
+            ParsedOwned::Quarantined(record) => quarantined.push(record),
+            ParsedOwned::GivenUp => {
+                given_up.insert(owned.entry.sequence);
             }
-        };
-        if !matches!(tokens.first().map(|token| &token.value), Some(TokenValue::Integer(value)) if *value == entry.entity_type)
-        {
-            quarantined.push(quarantine(
-                entry,
-                &owned.cards,
-                &lines,
-                ParameterDefect::EntityTypeTokenMismatch,
-                tokens.first().map(|token| token.span.start),
-            )?);
-            continue;
-        }
-        let line_start = owned.cards.first().copied().unwrap_or_default();
-        let line_end = match owned.cards.last() {
-            Some(last) => last
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?,
-            None => line_start,
-        };
-        let parameter_end = tokens.len();
-        let record = ParameterRecord {
-            directory_sequence: entry.sequence,
-            line_range: line_start..line_end,
-            comment: owned_bytes
-                .bytes
-                .get(record_end..)
-                .unwrap_or_default()
-                .to_vec(),
-            bytes: owned_bytes.bytes,
-            tokens,
-            parameter_end,
-        };
-
-        records.push(record);
-    }
-    {
-        let mut record_by_directory = BTreeMap::new();
-        for record in &records {
-            record_by_directory.insert(record.directory_sequence, record);
-        }
-        for record in &records {
-            let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
-                record,
-                &entries,
-                &record_by_directory,
-                global.global_table(),
-            );
-            trailing_pointer_analysis.insert(record.directory_sequence, analysis);
         }
     }
-    for record in &mut records {
-        record.parameter_end = trailing_pointer_analysis
-            .get(&record.directory_sequence)
-            .and_then(|analysis| match analysis {
-                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
-                _ => None,
-            })
-            .map_or(record.tokens.len(), |groups| groups.token_start);
-    }
+    let trailing_pointer_analysis = finish_records(&entries, &mut records, global);
     let mut accounted = BTreeSet::new();
     for sequence in ownership
         .iter()
@@ -3919,14 +4091,12 @@ pub(crate) fn assemble(
     {
         accounted.insert(sequence);
     }
-    let mut quarantined_sequences = BTreeSet::new();
-    for record in quarantined_directory {
-        quarantined_sequences.insert(record.sequence);
-    }
+    let mut excluded_sequences = BTreeSet::new();
+    excluded_sequences.extend(excluded_directory);
     for (sequence, line) in &lines {
         let pointer = back_pointers.get(sequence).copied().flatten();
         if accounted.contains(sequence)
-            || pointer.is_some_and(|value| quarantined_sequences.contains(&value))
+            || pointer.is_some_and(|value| excluded_sequences.contains(&value))
         {
             continue;
         }
@@ -3945,7 +4115,61 @@ pub(crate) fn assemble(
         trailing_pointer_analysis,
         quarantined,
         recoveries,
+        given_up,
     })
+}
+
+pub(crate) fn finish_admitted(
+    directory: &[DirectoryEntry],
+    mut records: Vec<ParameterRecord>,
+    global: &ResolvedGlobal,
+) -> ParameterAssembly {
+    let entries: BTreeMap<_, _> = directory
+        .iter()
+        .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
+        .map(|entry| (entry.sequence, entry))
+        .collect();
+    let trailing_pointer_analysis = finish_records(&entries, &mut records, global);
+    ParameterAssembly {
+        records,
+        trailing_pointer_analysis,
+        quarantined: Vec::new(),
+        recoveries: crate::card::FramingRecoveries::default(),
+        given_up: BTreeSet::new(),
+    }
+}
+
+fn finish_records(
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &mut [ParameterRecord],
+    global: &ResolvedGlobal,
+) -> BTreeMap<u32, TrailingPointerAnalysis> {
+    let mut trailing_pointer_analysis = BTreeMap::new();
+    {
+        let mut record_by_directory = BTreeMap::new();
+        for record in records.iter() {
+            record_by_directory.insert(record.directory_sequence, record);
+        }
+        for record in records.iter() {
+            let analysis = analyze_trailing_pointer_groups_with_records_for_global_table(
+                record,
+                entries,
+                &record_by_directory,
+                global.global_table(),
+            );
+            trailing_pointer_analysis.insert(record.directory_sequence, analysis);
+        }
+    }
+    for record in records.iter_mut() {
+        record.parameter_end = trailing_pointer_analysis
+            .get(&record.directory_sequence)
+            .and_then(|analysis| match analysis {
+                TrailingPointerAnalysis::Unambiguous(groups) => Some(groups),
+                _ => None,
+            })
+            .map_or(record.tokens.len(), |groups| groups.token_start);
+    }
+    trailing_pointer_analysis
 }
 
 pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {

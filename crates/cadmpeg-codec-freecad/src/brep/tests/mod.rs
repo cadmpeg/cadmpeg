@@ -21,7 +21,7 @@ use super::{
     TextCurve, TextCurve2d, TextEdgeRepresentation, TextShapeKind, TextSurface, TextTShape,
     TextTShapeGeometry, TextTShapeWire, TextTShapes, TokenCursor,
 };
-use crate::native::{EntryRecord, PropertyRecord};
+use crate::native::PropertyRecord;
 use crate::test_support::test_archive::archive_entries;
 use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -48,10 +48,26 @@ fn test_parse_binary_prefix(
 }
 
 fn test_parse_payloads(
-    properties: &[PropertyRecord],
-    entries: &[EntryRecord],
+    properties: &[crate::test_support::source_fidelity::PropertyFixture],
+    entries: &[crate::test_support::source_fidelity::EntryFixture],
 ) -> Result<Vec<ShapePayloadRecord>, CodecError> {
-    in_decode_context(|ctx| parse_payloads(ctx, properties, entries))
+    let sources = properties.iter().collect::<Vec<_>>();
+    let records = properties
+        .iter()
+        .map(|property| property.property.clone())
+        .collect::<Vec<_>>();
+    let entry_sources = entries.iter().collect::<Vec<_>>();
+    let native_entries = entries
+        .iter()
+        .map(|entry| entry.record.clone())
+        .collect::<Vec<_>>();
+    crate::test_support::source_fidelity::with_decode_sources(
+        &[],
+        &sources,
+        &entry_sources,
+        &DecodePolicy::default(),
+        |ctx, sources| parse_payloads(ctx, &records, &native_entries, sources),
+    )
 }
 
 #[test]
@@ -579,34 +595,32 @@ fn retains_indirect_analytic_surface_parameter_frames() {
 
 #[test]
 fn binds_only_the_direct_shape_entry_as_typed_payload() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape:SuppressedShape"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "SuppressedShape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Geometry,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
+    let property = crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
             dynamic: None,
+            id: crate::native::native_id("property", "Shape:SuppressedShape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "SuppressedShape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            body: Some(crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
+            }),
+            order: 0,
         },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#.into(),
-            0,
-        )
-        .unwrap(),
-    };
-    let entry = crate::test_support::entry_record(
+        r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#,
+    );
+    let entry = crate::test_support::entry_fixture(
         crate::native::native_id("entry", "empty.brp"),
         "empty.brp".into(),
         cadmpeg_core::container::ContainerRole::Brep,
         vec![property.id.clone()],
         Vec::new(),
     );
-    let second_entry = crate::test_support::entry_record(
+    let second_entry = crate::test_support::entry_fixture(
         crate::native::native_id("entry", "empty-2.brp"),
         "empty-2.brp".into(),
         cadmpeg_core::container::ContainerRole::Brep,
@@ -622,95 +636,91 @@ fn binds_only_the_direct_shape_entry_as_typed_payload() {
 
 #[test]
 fn ignores_nested_shape_part_carriers() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape:Nested"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "Nested".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Geometry,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["nested.brp".into()],
+    let property = crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
             dynamic: None,
+            id: crate::native::native_id("property", "Shape:Nested"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Nested".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            body: Some(crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["nested.brp".into()],
+            }),
+            order: 0,
         },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
-            0,
-        )
-        .unwrap(),
-    };
+        r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#,
+    );
     let payloads = test_parse_payloads(&[property], &[]).expect("nested carrier is ignored");
     assert!(payloads.is_empty());
 }
 
 #[test]
 fn rejects_duplicate_direct_shape_part_carriers() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape:Duplicate"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "Duplicate".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Geometry,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["first.brp".into(), "second.brp".into()],
+    let property = crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
             dynamic: None,
+            id: crate::native::native_id("property", "Shape:Duplicate"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Duplicate".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            body: Some(crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["first.brp".into(), "second.brp".into()],
+            }),
+            order: 0,
         },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#.into(),
-            0,
-        )
-        .unwrap(),
-    };
+        r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#,
+    );
     assert!(test_parse_payloads(&[property], &[]).is_err());
 }
 
 #[test]
 fn retains_transient_shape_without_a_carrier() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape:PreviewShape"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "PreviewShape".into(),
-        type_name: "Part::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Geometry,
-        status: Some(152),
-        body: crate::native::PropertyBody::Transient,
-        order: 0,
-        xml: crate::native::RetainedXml::from_text(
-            r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#
-                .into(),
-            0,
-        )
-        .unwrap(),
-    };
+    let property = crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
+            dynamic: None,
+            id: crate::native::native_id("property", "Shape:PreviewShape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "PreviewShape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: Some(152),
+            body: Some(crate::native::PropertyBody::Transient),
+            order: 0,
+        },
+        r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#,
+    );
     let payloads = test_parse_payloads(&[property], &[]).expect("transient shape is retained");
     assert!(payloads.is_empty());
 }
 
 #[test]
 fn ignores_non_shape_runtime_names_when_framing_payloads() {
-    let property = PropertyRecord {
-        id: crate::native::native_id("property", "Shape:Custom"),
-        owner: crate::native::native_id("object", "Shape"),
-        name: "Custom".into(),
-        type_name: "Custom::PropertyPartShape".into(),
-        family: crate::native::PropertyFamily::Unknown,
-        status: None,
-        body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(),
-            links: Vec::new(),
-            side_entries: vec!["custom.brp".into()],
+    let property = crate::test_support::source_fidelity::PropertyFixture::new(
+        PropertyRecord {
             dynamic: None,
+            id: crate::native::native_id("property", "Shape:Custom"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Custom".into(),
+            type_name: "Custom::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: Some(crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: Vec::new(),
+                side_entries: vec!["custom.brp".into()],
+            }),
+            order: 0,
         },
-        order: 0,
-        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0).unwrap(),
-    };
+        "<Property/>",
+    );
 
     let payloads = test_parse_payloads(&[property], &[]).expect("unknown type is retained");
     assert!(payloads.is_empty());
@@ -1332,10 +1342,6 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("object")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut transfer = crate::brep::CurveTransfer::default();
@@ -1455,10 +1461,6 @@ fn transfers_occt_revolution_surface_parameter_order() {
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut curves = crate::brep::CurveTransfer::default();
@@ -1497,10 +1499,6 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
         format: cadmpeg_ir::CodecFormat::Fcstd,
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut curves = crate::brep::CurveTransfer::default();

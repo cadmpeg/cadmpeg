@@ -304,11 +304,36 @@ fn unreadable_directory_metadata_preserves_independent_point_geometry() {
             serde_json::Value::Null,
             "{field}"
         );
-        assert!(decoded
+        let native = decoded.ir().native.namespace("iges").unwrap();
+        let owner = &native.arenas()["entities"][0];
+        let fidelity = decoded.source_fidelity();
+        let parts = crate::test_support::given_up_parts(fidelity);
+        assert_eq!(parts.len(), 1);
+        let part = parts[0];
+        assert!(!part.untyped().is_empty());
+        assert_eq!(part.stream(), "");
+        assert_eq!(part.offset(), u64::try_from(start).unwrap());
+        assert_eq!(part.byte_len(), 8);
+        assert_eq!(part.data(), Some(&changed[start..start + 8]));
+        assert_eq!(
+            crate::test_support::given_up_count(decoded.report(), "iges.directory_entry"),
+            0
+        );
+        let mut expected_owner = serde_json::to_value(
+            &expected.ir().native.namespace("iges").unwrap().arenas()["entities"][0],
+        )
+        .unwrap();
+        expected_owner[field] = serde_json::Value::Null;
+        assert_eq!(serde_json::to_value(owner).unwrap(), expected_owner);
+        let unreadable: Vec<_> = decoded
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::DirectoryMetadataUnreadable.kind()));
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .collect();
+        assert_eq!(unreadable.len(), 1);
+        assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+        assert!(unreadable[0].message.contains("iges.directory_field"));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
             .is_ok());

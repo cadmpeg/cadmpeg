@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{
-    features::{DesignParameter, ParameterId, ParameterValue},
+    features::{ParameterId, ParameterValue},
     scalar::{Angle, Length},
 };
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
@@ -15,6 +15,22 @@ use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use crate::legacy_entity::LegacyEvaluatedValueNames;
 use crate::native::{CatiaLegacyTextField, CatiaNative};
 
+/// Decode-local work record. Dependency discovery is transient; only expression
+/// tokens are transferred into the document.
+#[derive(Debug, Clone, PartialEq)]
+struct DesignParameter {
+    id: ParameterId,
+    owner: Option<cadmpeg_ir::features::FeatureId>,
+    ordinal: u32,
+    name: String,
+    expression: String,
+    display: Option<cadmpeg_ir::features::DimensionDisplay>,
+    value: Option<ParameterValue>,
+    dependencies: cadmpeg_ir::features::DistinctMembers<ParameterId>,
+    properties: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    pmi: Option<cadmpeg_ir::ids::PmiId>,
+    native_ref: Option<String>,
+}
 mod parameter_names;
 
 const FORMULA_INTEGER_LOWER: f64 = -9_223_372_036_854_775_808.0;
@@ -468,26 +484,6 @@ pub(crate) fn transfer_parameters(
             candidates.remove(&id);
         }
     }
-    let mut derivable = BTreeSet::new();
-    loop {
-        let previous_len = derivable.len();
-        for (id, candidate) in &candidates {
-            if candidate
-                .parameter
-                .dependencies
-                .iter()
-                .all(|dependency| derivable.contains(dependency))
-                && !derivable.contains(id)
-            {
-                let id = id.clone();
-                derivable.insert(id);
-            }
-        }
-        if derivable.len() == previous_len {
-            break;
-        }
-    }
-    candidates.retain(|id, _| derivable.contains(id));
     let relation_program_parameter_count = relation_program_parameters
         .iter()
         .filter(|(id, input)| {
@@ -556,8 +552,29 @@ pub(crate) fn transfer_parameters(
         }
     }
     *annotations = annotation_builder.build();
+    let parameter_names = parameters
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.parameter.id.clone(),
+                candidate
+                    .parameter
+                    .properties
+                    .get("catia_binding")
+                    .filter(|binding| !binding.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| candidate.parameter.name.clone()),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut tokenization_losses = Vec::new();
     for candidate in parameters {
-        ir.model.parameters.push(candidate.parameter);
+        ir.model.parameters.push(project_parameter_tokens(
+            candidate.parameter,
+            native,
+            &parameter_names,
+            &mut tokenization_losses,
+        )?);
     }
     parameter_names::normalize(&mut ir.model.parameters)?;
     let typed_parameter_count = transferred
@@ -573,6 +590,7 @@ pub(crate) fn transfer_parameters(
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
         legacy_formula_count: legacy_transfer.formulas,
         consumed_object_records,
+        tokenization_losses,
     })
 }
 
@@ -747,6 +765,7 @@ pub(crate) struct FormulaTransfer {
     pub(crate) legacy_selector_parameter_count: usize,
     pub(crate) legacy_formula_count: usize,
     pub(crate) consumed_object_records: HashSet<String>,
+    pub(crate) tokenization_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 #[derive(Default)]
@@ -1737,29 +1756,7 @@ fn copy_design_parameter(
         let value = value.to_owned();
         properties.insert(key, value);
     }
-    let pmi = match &source.pmi {
-        Some(pmi) => {
-            let subtype = match &pmi.subtype {
-                cadmpeg_ir::features::PmiDimensionSubtype::Native(kind) => {
-                    cadmpeg_ir::features::PmiDimensionSubtype::Native(kind.to_owned())
-                }
-                other => other.clone(),
-            };
-            Some(cadmpeg_ir::features::ParameterPmi {
-                subtype,
-                precision: pmi.precision,
-                display_text: pmi
-                    .display_text
-                    .as_ref()
-                    .map(std::borrow::ToOwned::to_owned),
-                basic: pmi.basic,
-                inspection: pmi.inspection,
-                reference_only: pmi.reference_only,
-                native_ref: pmi.native_ref.clone(),
-            })
-        }
-        None => None,
-    };
+    let pmi = source.pmi.clone();
     let native_ref = source
         .native_ref
         .as_ref()
@@ -1777,6 +1774,133 @@ fn copy_design_parameter(
         pmi,
         native_ref,
     })
+}
+
+fn project_parameter_tokens(
+    parameter: DesignParameter,
+    native: &CatiaNative,
+    names: &BTreeMap<ParameterId, String>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<cadmpeg_ir::features::DesignParameter, cadmpeg_core::CodecError> {
+    let mut spans = Vec::new();
+    // These offsets were decoded from the formula's own identifier incidences;
+    // do not infer dependencies from numeric values or neighboring records.
+    for entity in &native.entity_records {
+        let dependencies = if let Some(formula) = entity.formula_relation().filter(|formula| {
+            formula.output_entity.reference.entity() == parameter.native_ref.as_deref()
+        }) {
+            Some(formula.parameter_dependencies.as_slice())
+        } else {
+            entity
+                .relation_program_instance()
+                .filter(|program| {
+                    program.output_entity().and_then(|target| target.entity())
+                        == parameter.native_ref.as_deref()
+                })
+                .map(|program| program.parameter_dependencies.as_slice())
+        };
+        for dependency in dependencies.into_iter().flatten() {
+            let resolved = match dependency.candidates.as_slice() {
+                [target] => target
+                    .entity()
+                    .and_then(|target| neutral_parameter_id(target).ok())
+                    .filter(|id| names.contains_key(id)),
+                _ => None,
+            };
+            if let (Some(id), Ok(start)) = (resolved, usize::try_from(dependency.source_offset)) {
+                let end = start.checked_add(dependency.symbol.len());
+                if end.is_some_and(|end| {
+                    parameter.expression.get(start..end) == Some(dependency.symbol.as_str())
+                }) {
+                    spans.push((start..end.unwrap_or(start), id));
+                    continue;
+                }
+            }
+            losses.push(
+                crate::loss::CatiaLossCode::NeutralRecordUnprojected.note(format!(
+                    "Parameter {} expression symbol {:?} has no resolvable neutral token.",
+                    parameter.id, dependency.symbol
+                )),
+            );
+        }
+    }
+    if spans.is_empty() && !parameter.dependencies.is_empty() {
+        // Legacy expressions name their inputs directly. Preserve their source
+        // identifier spans, including repeated occurrences.
+        let mut occupied = BTreeSet::new();
+        for dependency in &parameter.dependencies {
+            let Some(name) = names.get(dependency) else {
+                continue;
+            };
+            for span in unquoted_name_spans(&parameter.expression, name) {
+                let start = span.start;
+                let end = span.end;
+                let boundary = |character: Option<char>| {
+                    character
+                        .is_none_or(|character| !(character.is_alphanumeric() || character == '_'))
+                };
+                if boundary(parameter.expression[..start].chars().next_back())
+                    && boundary(parameter.expression[end..].chars().next())
+                    && !(start..end).any(|at| occupied.contains(&at))
+                {
+                    occupied.extend(start..end);
+                    spans.push((start..end, dependency.clone()));
+                }
+            }
+            if !spans.iter().any(|(_, id)| id == dependency) {
+                losses.push(crate::loss::CatiaLossCode::NeutralRecordUnprojected.note(format!("Parameter {} dependency {} has no source identifier span; expression text remains unchanged.", parameter.id, dependency)));
+            }
+        }
+    }
+    let expression = cadmpeg_ir::features::Expression::from_spans(&parameter.expression, spans)
+        .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+    Ok(cadmpeg_ir::features::DesignParameter {
+        id: parameter.id,
+        owner: parameter.owner,
+        ordinal: parameter.ordinal,
+        name: parameter.name,
+        expression,
+        display: parameter.display,
+        value: parameter.value,
+        driving: true,
+        properties: parameter.properties,
+        pmi: parameter.pmi,
+        native_ref: parameter.native_ref,
+    })
+}
+
+/// Legacy formula names may also occur in quoted text; those occurrences are
+/// literal text, never parameter incidences.
+fn unquoted_name_spans(text: &str, name: &str) -> Vec<std::ops::Range<usize>> {
+    let mut quoted = Vec::new();
+    let mut quote = None;
+    let mut escaped = false;
+    for (at, character) in text.char_indices() {
+        if let Some((delimiter, start)) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == delimiter {
+                quoted.push(start..at + character.len_utf8());
+                quote = None;
+            }
+        } else if matches!(character, '\'' | '"') {
+            quote = Some((character, at));
+        }
+    }
+    if let Some((_, start)) = quote {
+        quoted.push(start..text.len());
+    }
+    text.match_indices(name)
+        .filter_map(|(start, _)| {
+            let end = start + name.len();
+            (!quoted
+                .iter()
+                .any(|range| range.start < end && start < range.end))
+            .then_some(start..end)
+        })
+        .collect()
 }
 
 fn string_literal_expression(value: &str) -> Option<String> {
@@ -3861,6 +3985,7 @@ fn neutral_parameter_id(native_id: &str) -> Result<ParameterId, cadmpeg_core::Co
 #[cfg(test)]
 mod parser_tests {
     use super::tests::{evaluated, evaluated_with_mode};
+    use super::DesignParameter;
     use super::{
         evaluate_legacy_output_assignment, finite_scalar, formula_parameter_candidates_agree,
         parameter_expression, static_formula_value, string_literal_expression,
@@ -3868,7 +3993,6 @@ mod parser_tests {
         EvaluatedFormulaValue, FormulaDimension, FormulaParameterCandidate, FormulaParameterRole,
         FormulaParameterType, TypedParameterEvaluation,
     };
-    use cadmpeg_ir::features::DesignParameter;
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::features::ParameterValue;
     use std::collections::BTreeMap;
@@ -4650,3 +4774,14 @@ mod parser_tests {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod token_span_tests {
+    #[test]
+    fn quoted_and_escaped_parameter_names_stay_literal() {
+        assert_eq!(
+            super::unquoted_name_spans("a + \"a\" + a + 'a'", "a"),
+            vec![0..1, 10..11]
+        );
+    }
+}

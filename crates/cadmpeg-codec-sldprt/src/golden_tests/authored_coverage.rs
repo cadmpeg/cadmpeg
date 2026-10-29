@@ -148,7 +148,10 @@ fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
                     .expect("authored part metadata");
                 assert!(matches!(
                     part.values.as_slice(),
-                    [AttributeValue::Integer(42), AttributeValue::Integer(2026)]
+                    [
+                        Some(AttributeValue::Integer(42)),
+                        Some(AttributeValue::Integer(2026))
+                    ]
                 ));
                 let bbox = ir
                     .model
@@ -156,7 +159,7 @@ fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
                     .iter()
                     .find(|a| a.name == "bounding_envelope")
                     .expect("authored bounding envelope");
-                let [AttributeValue::Vector(values)] = bbox.values.as_slice() else {
+                let [Some(AttributeValue::Vector(values))] = bbox.values.as_slice() else {
                     panic!("bounding vector");
                 };
                 assert_eq!(

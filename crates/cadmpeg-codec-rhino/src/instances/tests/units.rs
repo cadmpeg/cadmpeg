@@ -171,6 +171,8 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                             if admitted {
                                 let first = &definitions[0];
                                 assert_eq!(first["unit_system"], unit);
+                                // #212 restores the complete base unit detail,
+                                // including the source's redundant scale.
                                 if scale.is_finite() {
                                     assert_eq!(
                                         first["meters_per_unit"].as_f64().unwrap().to_bits(),
@@ -179,8 +181,8 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                                     assert!(first.get("meters_per_unit_bits").is_none());
                                 } else {
                                     assert_eq!(
-                                        first["meters_per_unit_bits"].as_u64(),
-                                        Some(scale.to_bits())
+                                        first["meters_per_unit_bits"].as_u64().unwrap(),
+                                        scale.to_bits()
                                     );
                                     assert!(first.get("meters_per_unit").is_none());
                                 }

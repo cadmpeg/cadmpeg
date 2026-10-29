@@ -188,6 +188,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             ctx,
             ir,
             Surface {
+                native_ref: None,
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
@@ -197,10 +198,6 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -269,10 +266,17 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Exactness::Unknown,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            crate::decode::source_carriers::admit_surface_visibility(
+                ctx,
+                ir,
+                &id,
+                namespace.is_visible(),
+            )?;
             source_carriers.admit_surface(
                 ctx,
                 ir,
                 Surface {
+                    native_ref: None,
                     id,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                         record: geometry_section_record(scan, row.offset)?,
@@ -285,14 +289,6 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                             namespace.source_prefix(),
                             row.id
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: if namespace.is_visible() {
-                            None
-                        } else {
-                            Some(false)
-                        },
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 },
@@ -318,6 +314,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -330,10 +327,6 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },

@@ -1,15 +1,10 @@
 //! Sketch write preparation and write-back validation.
 
 use super::bindings::bind_scalar_operands;
-use super::hashes::{constraint_hash, lane_hash, sketch_hash};
-use super::markers::{
-    admit_sketch_input_entities, marker_spatial_coordinate_offset, reference_cells,
-    relation_bindings, spatial_relation_marker_coordinates, spatial_sketches,
-    spatial_vertex_offsets,
-};
+use super::markers::{admit_sketch_input_entities, reference_cells, relation_bindings};
 use super::names::{class_declarations, object_names};
-use super::scalars::{feature_object_name, named_scalars, FeatureObjectNames, FeatureObjectStarts};
-use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
+use super::scalars::named_scalars;
+use super::sketch_write::{same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
 use super::write_generate::{
@@ -26,376 +21,34 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::units::FinitePoint2;
-use std::collections::HashMap;
 
-/// Reject unsupported neutral sketch edits before native lane replay.
-///
-/// Bitwise comparison against the machine-local document baseline; see
-/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side.
+/// Author input lanes from canonical sketch content.
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &hash_arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
-
-    let baseline_neutral = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_sketch_local_sha256"));
-    let baseline_native = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_native_sketch_sha256"));
-    let baseline_constraints = ir.source.as_ref().and_then(|source| {
-        source
-            .attributes
-            .get("sldprt_neutral_sketch_constraint_local_sha256")
-    });
-    let current_neutral = sketch_hash(&hash_ctx, ir)?;
-    let current_native = native
-        .as_ref()
-        .map(|native| lane_hash(&hash_ctx, &native.feature_input_lanes))
-        .transpose()?;
-    if baseline_neutral.is_none() && baseline_native.is_none() {
-        if ir.model.sketches.is_empty()
-            && ir.model.sketch_entities.is_empty()
-            && ir.model.sketch_constraints.is_empty()
-            && ir.model.spatial_sketches.is_empty()
-            && ir.model.spatial_sketch_entities.is_empty()
-        {
-            return Ok(());
-        }
-        validate_source_less_constraints(ir)?;
-        let native = native.get_or_insert_with(crate::native::SldprtNative::default);
-        let generated = source_less_lanes(ir, native)?;
-        native.feature_input_lanes.extend(generated);
+    if !ir.scope.design {
         return Ok(());
     }
-    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &current_neutral);
-    if !neutral_changed {
-        return Ok(());
-    }
-    let current_constraints = constraint_hash(&hash_ctx, ir)?;
-    if baseline_constraints.is_none_or(|hash| hash != &current_constraints) {
-        return Err(cadmpeg_core::CodecError::NotImplemented(
-            "SLDPRT native sketch relation editing is not implemented".into(),
-        ));
-    }
-    let native_changed = match (&current_native, baseline_native) {
-        (Some(current), Some(baseline)) => current != baseline,
-        (Some(_), None) | (None, Some(_)) => true,
-        (None, None) => false,
-    };
-    if native_changed {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "conflicting neutral and native SLDPRT sketch edits".into(),
-        ));
-    }
-    let retained = native.as_mut().ok_or_else(|| {
-        cadmpeg_core::CodecError::NotImplemented(
-            "SLDPRT sketch write-back requires retained feature-input lanes".into(),
-        )
-    })?;
-    patch_spatial_sketches(ir, retained)?;
-    patch_line_profiles(ir, retained)
-}
-
-/// Each marker id's first offset in every lane holding it, in lane order.
-fn first_marker_offsets_by_id<'a>(
-    lanes: impl IntoIterator<Item = &'a [crate::records::SketchInputEntity]>,
-) -> HashMap<String, Vec<(usize, u64)>> {
-    let mut by_id = HashMap::<String, Vec<(usize, u64)>>::new();
-    for (lane_index, markers) in lanes.into_iter().enumerate() {
-        for marker in markers {
-            let position = (lane_index, marker.offset());
-            match by_id.get_mut(marker.id()) {
-                Some(positions) => {
-                    if positions.last().is_none_or(|&(last, _)| last != lane_index) {
-                        positions.push(position);
-                    }
-                }
-                None => {
-                    by_id.insert(marker.id().to_owned(), vec![position]);
-                }
-            }
-        }
-    }
-    by_id
-}
-
-fn patch_spatial_sketches(
-    ir: &cadmpeg_ir::CadIr,
-    native: &mut crate::native::SldprtNative,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let mut lane_object_starts = None;
-    let mut marker_offsets = None;
-    for sketch in &ir.model.spatial_sketches {
-        let owners = ir
-            .model
-            .features
-            .iter()
-            .filter(|feature| {
-                matches!(
-                    feature.evaluation.definition(),
-                    FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                        sketch: Some(candidate),
-                    }) if candidate == &sketch.id
-                )
-            })
-            .collect::<Vec<_>>();
-        let [owner] = owners.as_slice() else {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "SLDPRT spatial sketch {} requires one owning feature",
-                sketch.id.as_str()
-            )));
-        };
-        let native_ref = owner.native_ref.as_deref().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT spatial sketch {} requires a retained feature object",
-                sketch.id.as_str()
-            ))
-        })?;
-        let record = native
-            .feature_histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .find(|record| record.id == native_ref)
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "SLDPRT spatial sketch {} references missing feature object {native_ref}",
-                    sketch.id.as_str()
-                ))
-            })?;
-        let entities = ir
-            .model
-            .spatial_sketch_entities
-            .iter()
-            .filter(|entity| entity.sketch == sketch.id)
-            .collect::<Vec<_>>();
-        if entities.is_empty() {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT spatial sketch {} requires at least one retained line",
-                sketch.id.as_str()
-            )));
-        }
-        let point_entities = entities
-            .iter()
-            .copied()
-            .filter_map(|entity| match *entity.geometry.definition() {
-                SpatialSketchGeometryDefinition::Point { position } => {
-                    Some((entity, position.get()))
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        for (entity, position) in &point_entities {
-            let position = *position;
-            let native_ref = entity.native_ref.as_deref().ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT spatial sketch point {} requires a retained native marker",
-                    entity.id()
-                ))
-            })?;
-            let marker_offsets = marker_offsets.get_or_insert_with(|| {
-                first_marker_offsets_by_id(
-                    native
-                        .feature_input_lanes
-                        .iter()
-                        .map(|lane| lane.sketch_entities.as_slice()),
-                )
-            });
-            let candidates = marker_offsets
-                .get(native_ref)
-                .into_iter()
-                .flatten()
-                .filter_map(|&(lane_index, offset)| {
-                    let lane = native.feature_input_lanes.get(lane_index)?;
-                    let offset = usize::try_from(offset).ok()?;
-                    let coordinate_offset =
-                        marker_spatial_coordinate_offset(&lane.native_payload, offset);
-                    if coordinate_offset.is_none()
-                        && !spatial_relation_marker_coordinates(&lane.native_payload, offset)
-                            .is_some_and(|native| native == position)
-                    {
-                        return None;
-                    }
-                    Some((lane_index, offset, coordinate_offset))
-                })
-                .collect::<Vec<_>>();
-            let [(lane_index, offset, coordinate_offset)] = candidates.as_slice() else {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT spatial sketch point {} does not resolve to one native marker",
-                    entity.id()
-                )));
-            };
-            if coordinate_offset.is_some() {
-                patch_spatial_marker_point(
-                    &mut native.feature_input_lanes[*lane_index].native_payload,
-                    *offset,
-                    position,
-                )?;
-            }
-        }
-        let line_entities = entities
-            .iter()
-            .copied()
-            .filter(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SpatialSketchGeometryDefinition::Line { .. }
-                )
-            })
-            .collect::<Vec<_>>();
-        if entities.len() != line_entities.len() + point_entities.len() {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT spatial sketch {} supports retained point and line geometry only",
-                sketch.id.as_str()
-            )));
-        }
-        let native_line_entities = line_entities
-            .iter()
-            .copied()
-            .filter(|entity| entity.endpoint_refs.is_empty())
-            .collect::<Vec<_>>();
-        if native_line_entities.is_empty() {
-            continue;
-        }
-        let object_starts = lane_object_starts.get_or_insert_with(|| {
-            native
-                .feature_input_lanes
-                .iter()
-                .map(|lane| {
-                    FeatureObjectStarts::new(
-                        &native.feature_histories,
-                        &FeatureObjectNames::new(&lane.names),
-                    )
-                })
-                .collect::<Vec<_>>()
-        });
-        let candidates = native
+    validate_source_less_constraints(ir)?;
+    let native = native.get_or_insert_with(crate::native::SldprtNative::default);
+    if (!ir.model.sketches.is_empty() || !ir.model.spatial_sketches.is_empty())
+        && native
             .feature_input_lanes
             .iter()
-            .zip(object_starts.iter())
-            .enumerate()
-            .filter(|(_, (lane, _))| sketch.native_ref.as_deref().is_none_or(|id| id == lane.id))
-            .filter_map(|(lane_index, (lane, starts))| {
-                let name = feature_object_name(record, lane)?;
-                let object_start = usize::try_from(name.offset).ok()?;
-                let object_end = starts.end(name.offset, lane.native_payload.len());
-                let object = lane.native_payload.get(object_start..object_end)?;
-                let offsets = spatial_vertex_offsets(object);
-                if native_line_entities
-                    .len()
-                    .checked_mul(2)
-                    .is_none_or(|expected| offsets.len() != expected)
-                {
-                    return None;
-                }
-                Some((
-                    lane_index,
-                    offsets
-                        .into_iter()
-                        .map(|offset| object_start + offset)
-                        .collect::<Vec<_>>(),
-                ))
-            })
-            .collect::<Vec<_>>();
-        let [(lane_index, offsets)] = candidates.as_slice() else {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT spatial sketch {} does not resolve to one feature object with two vertices per line",
-                sketch.id.as_str()
-            )));
-        };
-        let payload = &mut native.feature_input_lanes[*lane_index].native_payload;
-        for (entity, offsets) in native_line_entities.iter().zip(offsets.chunks_exact(2)) {
-            let SpatialSketchGeometryDefinition::Line { start, end } =
-                *entity.geometry.definition()
-            else {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT spatial sketch {} supports retained line geometry only",
-                    sketch.id.as_str()
-                )));
-            };
-            patch_spatial_vertex(payload, offsets[0], start.get())?;
-            patch_spatial_vertex(payload, offsets[1], end.get())?;
-        }
-    }
-
-    let mut features = crate::history::project::project_features(&native.feature_histories)?;
-    let (projected_sketches, mut projected_entities) = spatial_sketches(
-        &mut features,
-        &native.feature_histories,
-        &native.feature_input_lanes,
-    );
-    let mut projected_constraints = Vec::new();
-    super::relation_geometry::project_spatial_relation_bindings(
-        &mut projected_constraints,
-        &mut projected_entities,
-        &projected_sketches,
-        &features,
-        &ir.model.parameters,
-        &native.feature_input_lanes,
-    );
-    if ir.model.spatial_sketches != projected_sketches
-        || ir.model.spatial_sketch_entities != projected_entities
+            .any(|lane| !lane.id.starts_with("sldprt:generated:"))
     {
-        return Err(cadmpeg_core::CodecError::NotImplemented(
-            "SLDPRT spatial sketch edit has no complete native lane encoding".into(),
+        // (P): replacing a source sketch object can move references throughout
+        // its input lane. Author the current document through synthesis.
+        return Err(cadmpeg_core::CodecError::UnsupportedContent(
+            "SLDPRT canonical sketch regeneration requires synthesized input lanes".into(),
         ));
     }
-    Ok(())
-}
-
-fn patch_spatial_marker_point(
-    payload: &mut [u8],
-    offset: usize,
-    point: Point3,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let native = spatial_point_native_coordinates(point)?;
-    let coordinate_offset = marker_spatial_coordinate_offset(payload, offset).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(
-            "SLDPRT spatial point marker changed native storage shape".into(),
-        )
-    })?;
-    let coordinates = payload
-        .get_mut(coordinate_offset..coordinate_offset + 24)
-        .ok_or_else(|| {
-            cadmpeg_core::CodecError::Malformed(
-                "SLDPRT spatial point marker coordinates lie outside its feature-input lane".into(),
-            )
-        })?;
-    coordinates[0..8].copy_from_slice(&native[0].to_le_bytes());
-    coordinates[8..16].copy_from_slice(&native[1].to_le_bytes());
-    coordinates[16..24].copy_from_slice(&native[2].to_le_bytes());
-    Ok(())
-}
-
-fn patch_spatial_vertex(
-    payload: &mut [u8],
-    offset: usize,
-    point: Point3,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = payload.get_mut(offset..offset + 69).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(
-            "SLDPRT spatial vertex record lies outside its feature-input lane".into(),
-        )
-    })?;
-    if bytes.get(..SPATIAL_VERTEX_PREFIX.len()) != Some(SPATIAL_VERTEX_PREFIX)
-        || bytes.get(43..45) != Some(&[0x0e, 0x00])
-    {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT spatial vertex record changed shape".into(),
-        ));
-    }
-    bytes[45..53].copy_from_slice(&point.x.to_le_bytes());
-    bytes[53..61].copy_from_slice(&point.y.to_le_bytes());
-    bytes[61..69].copy_from_slice(&point.z.to_le_bytes());
+    native
+        .feature_input_lanes
+        .retain(|lane| !lane.id.starts_with("sldprt:generated:feature-input#"));
+    let generated = source_less_lanes(ir, native)?;
+    native.feature_input_lanes.extend(generated);
     Ok(())
 }
 
@@ -417,7 +70,9 @@ fn validate_source_less_constraints(
         let mut expected = None;
         for locus in loci {
             let point = constraint_locus_point(ir, constraint, locus)?;
-            if expected.is_some_and(|expected| !same_sketch_point(expected, point)) {
+            if !sketch_evaluation_is_stale(ir, &constraint.sketch)
+                && expected.is_some_and(|expected| !same_sketch_point(expected, point))
+            {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch constraint {} has noncoincident locus coordinates",
                     constraint.id.as_str()
@@ -505,7 +160,7 @@ fn validate_generated_marker_constraint(
             }) if sketch == &constraint.sketch
         )
     }) {
-        return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+        return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT marker relation {} requires an owning sketch feature",
             constraint.id.as_str()
         )));
@@ -521,7 +176,10 @@ fn validate_generated_marker_constraint(
                 SketchCoordinateAxis::U => (first_point.u - second_point.u).abs(),
                 SketchCoordinateAxis::V => (first_point.v - second_point.v).abs(),
             };
-            if constraint.active != Some(false) && delta > SKETCH_POINT_TOLERANCE {
+            if constraint.active != Some(false)
+                && !sketch_evaluation_is_stale(ir, &constraint.sketch)
+                && delta > SKETCH_POINT_TOLERANCE
+            {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch constraint {} is not satisfied by its locus coordinates",
                     constraint.id.as_str()
@@ -533,15 +191,17 @@ fn validate_generated_marker_constraint(
             let point = constraint_locus_point(ir, constraint, point)?;
             let entity = sketch_constraint_entity(ir, constraint, entity)?;
             let (start, end) = sketch_line(&entity.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
+                cadmpeg_core::CodecError::UnsupportedContent(format!(
                     "source-less SLDPRT midpoint constraint {} requires a line entity",
                     constraint.id.as_str()
                 ))
             })?;
-            if !same_point2(
-                point,
-                Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
-            ) {
+            if !sketch_evaluation_is_stale(ir, &constraint.sketch)
+                && !same_point2(
+                    point,
+                    Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
+                )
+            {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch constraint {} is not satisfied by its midpoint coordinates",
                     constraint.id.as_str()
@@ -563,7 +223,9 @@ fn validate_generated_marker_constraint(
             let point = constraint_locus_point(ir, constraint, point)?;
             for entity in [first, second] {
                 let entity = sketch_constraint_entity(ir, constraint, entity)?;
-                if !sketch_entity_contains_point(entity, point) {
+                if !sketch_evaluation_is_stale(ir, &constraint.sketch)
+                    && !sketch_entity_contains_point(entity, point)
+                {
                     return Err(cadmpeg_core::CodecError::malformed(format_args!(
                         "source-less SLDPRT at-intersection constraint {} is not satisfied by its entity geometry",
                         constraint.id.as_str()
@@ -592,7 +254,7 @@ fn validate_generated_marker_constraint(
                     constraint.id.as_str()
                 )));
             };
-            if !solved {
+            if !sketch_evaluation_is_stale(ir, &constraint.sketch) && !solved {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT symmetric constraint {} is not satisfied by its locus coordinates",
                     constraint.id.as_str()
@@ -602,47 +264,38 @@ fn validate_generated_marker_constraint(
         }
         _ => {}
     }
-    if let Some((dimension, parameter_id)) =
+    if let Some((dimension, value)) =
         DimensionDefinition::from_definition(constraint.definition.kind())
     {
-        let parameter = ir
-            .model
-            .parameters
-            .iter()
-            .find(|parameter| parameter.id == *parameter_id)
-            .ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "source-less SLDPRT dimension {} references missing parameter {}",
-                    constraint.id.as_str(),
-                    parameter_id.as_str()
-                ))
-            })?;
-        let Some(expected) = dimension.magnitude(parameter.value.as_ref()) else {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
-                parameter.id.as_str()
-            )));
-        };
-        if parameter.display != dimension.display() {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "source-less SLDPRT dimension parameter {} has incompatible display semantics",
-                parameter.id.as_str()
-            )));
-        }
-        let owner = ir.model.features.iter().find(|feature| {
-            matches!(
+        let expected = value.magnitude(ir).ok_or_else(|| {
+            cadmpeg_core::CodecError::UnsupportedContent(format!(
+                "SLDPRT sketch constraint {} has an unevaluated or incompatible dimension",
+                constraint.id
+            ))
+        })?;
+        if let Some(id) = value.parameter() {
+            let parameter = ir
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == *id)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(format_args!(
+                        "SLDPRT sketch constraint {} references missing parameter {id}",
+                        constraint.id
+                    ))
+                })?;
+            let owner = ir.model.features.iter().find(|feature| matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. })
-                    if sketch == &constraint.sketch
-            )
-        });
-        if owner.is_none_or(|owner| parameter.owner.as_ref() != Some(&owner.id)) {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "source-less SLDPRT dimension parameter {} is not owned by its sketch feature",
-                parameter.id.as_str()
-            )));
+                FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)), .. }) if sketch == &constraint.sketch
+            ));
+            if owner.is_none_or(|owner| parameter.owner.as_ref() != Some(&owner.id)) {
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    "SLDPRT dimension parameter {id} is not owned by its sketch feature"
+                )));
+            }
         }
-        if constraint.active != Some(false) {
+        if constraint.active != Some(false) && !sketch_evaluation_is_stale(ir, &constraint.sketch) {
             validate_solved_dimension(ir, constraint, &dimension, expected)?;
         }
         return Ok(());
@@ -650,7 +303,9 @@ fn validate_generated_marker_constraint(
     if let Some((kind, first, second)) = binary_marker_relation(constraint.definition.kind()) {
         let first = sketch_constraint_entity(ir, constraint, first)?;
         let second = sketch_constraint_entity(ir, constraint, second)?;
-        validate_solved_binary_relation(constraint, kind, first, second)?;
+        if !sketch_evaluation_is_stale(ir, &constraint.sketch) {
+            validate_solved_binary_relation(constraint, kind, first, second)?;
+        }
         return Ok(());
     }
     let (entity_id, axis) = match constraint.definition.kind() {
@@ -662,8 +317,18 @@ fn validate_generated_marker_constraint(
         }
         SketchConstraintDefinitionInput::Fixed { entity } => (entity, None),
         SketchConstraintDefinitionInput::ArcAngle { entity, angle } => {
-            if arc_angle_relation_kind(angle.get()).is_none() {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+            if arc_angle_relation_kind(
+                ir.dimension_value(angle)
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::UnsupportedContent(
+                            "SLDPRT arc-angle constraint is unevaluated".into(),
+                        )
+                    })?
+                    .get(),
+            )
+            .is_none()
+            {
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                     "source-less SLDPRT arc-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
                 )));
@@ -671,8 +336,18 @@ fn validate_generated_marker_constraint(
             (entity, None)
         }
         SketchConstraintDefinitionInput::EllipseAngle { entity, angle } => {
-            if ellipse_angle_relation_kind(angle.get()).is_none() {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+            if ellipse_angle_relation_kind(
+                ir.dimension_value(angle)
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::UnsupportedContent(
+                            "SLDPRT ellipse-angle constraint is unevaluated".into(),
+                        )
+                    })?
+                    .get(),
+            )
+            .is_none()
+            {
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                     "source-less SLDPRT ellipse-angle constraint {} is not 90, 180, or 270 degrees",
                     constraint.id.as_str()
                 )));
@@ -680,14 +355,14 @@ fn validate_generated_marker_constraint(
             (entity, None)
         }
         SketchConstraintDefinitionInput::Native { native_kind, .. } => {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT sketch constraint {} keeps native relation {}, which the synthesized writer cannot emit",
                 constraint.id.as_str(),
                 native_kind.as_str()
             )));
         }
         other => {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT sketch constraint {} is {}; source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations",
                 constraint.id.as_str(),
                 constraint_input_kind(other)
@@ -744,7 +419,10 @@ fn validate_generated_marker_constraint(
         SketchCoordinateAxis::U => (end.v - start.v).abs(),
         SketchCoordinateAxis::V => (end.u - start.u).abs(),
     };
-    if constraint.active != Some(false) && delta > SKETCH_POINT_TOLERANCE {
+    if constraint.active != Some(false)
+        && !sketch_evaluation_is_stale(ir, &constraint.sketch)
+        && delta > SKETCH_POINT_TOLERANCE
+    {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(
             "source-less SLDPRT sketch constraint {} is not satisfied by its line coordinates",
             constraint.id.as_str()
@@ -783,71 +461,98 @@ enum DimensionDefinition<'a> {
     },
 }
 
+#[derive(Clone, Copy)]
+enum DimensionValueRef<'a> {
+    Length(&'a cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::Length>),
+    Angle(&'a cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::Angle>),
+    Radius(&'a cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::PositiveLength>),
+}
+
+impl<'a> DimensionValueRef<'a> {
+    fn parameter(self) -> Option<&'a cadmpeg_ir::features::ParameterId> {
+        match self {
+            Self::Length(value) => value.parameter(),
+            Self::Angle(value) => value.parameter(),
+            Self::Radius(value) => value.parameter(),
+        }
+    }
+    fn magnitude(self, ir: &cadmpeg_ir::CadIr) -> Option<f64> {
+        Some(match self {
+            Self::Length(value) => ir.dimension_value(value)?.get(),
+            Self::Angle(value) => ir.dimension_value(value)?.get(),
+            Self::Radius(value) => ir.dimension_value(value)?.get(),
+        })
+    }
+}
+
 impl<'a> DimensionDefinition<'a> {
-    /// The dimension form of a constraint definition, with its driving parameter.
     fn from_definition(
         definition: &'a SketchConstraintDefinitionInput,
-    ) -> Option<(Self, &'a cadmpeg_ir::features::ParameterId)> {
+    ) -> Option<(Self, DimensionValueRef<'a>)> {
         Some(match definition {
             SketchConstraintDefinitionInput::Distance {
                 entities,
                 parameter,
             } => (
-                Self::Distance {
-                    entities: entities.as_slice(),
-                },
-                parameter,
+                Self::Distance { entities },
+                DimensionValueRef::Length(parameter),
             ),
             SketchConstraintDefinitionInput::DistanceLoci {
                 first,
                 second,
                 parameter,
-            } => (Self::DistanceLoci { first, second }, parameter),
+            } => (
+                Self::DistanceLoci { first, second },
+                DimensionValueRef::Length(parameter),
+            ),
+            SketchConstraintDefinitionInput::DistanceLociValue {
+                first,
+                second,
+                distance,
+            } => (
+                Self::DistanceLoci { first, second },
+                DimensionValueRef::Length(distance),
+            ),
             SketchConstraintDefinitionInput::HorizontalDistance {
                 first,
                 second,
                 parameter,
-            } => (Self::HorizontalDistance { first, second }, parameter),
+            } => (
+                Self::HorizontalDistance { first, second },
+                DimensionValueRef::Length(parameter),
+            ),
             SketchConstraintDefinitionInput::VerticalDistance {
                 first,
                 second,
                 parameter,
-            } => (Self::VerticalDistance { first, second }, parameter),
+            } => (
+                Self::VerticalDistance { first, second },
+                DimensionValueRef::Length(parameter),
+            ),
             SketchConstraintDefinitionInput::Angle {
                 first,
                 second,
                 parameter,
-            } => (Self::Angle { first, second }, parameter),
-            SketchConstraintDefinitionInput::Radius { entity, parameter } => {
-                (Self::Radius { entity }, parameter)
-            }
-            SketchConstraintDefinitionInput::Diameter { entity, parameter } => {
-                (Self::Diameter { entity }, parameter)
-            }
+            } => (
+                Self::Angle { first, second },
+                DimensionValueRef::Angle(parameter),
+            ),
+            SketchConstraintDefinitionInput::Radius { entity, parameter } => (
+                Self::Radius { entity },
+                DimensionValueRef::Radius(parameter),
+            ),
+            SketchConstraintDefinitionInput::Diameter { entity, parameter } => (
+                Self::Diameter { entity },
+                DimensionValueRef::Radius(parameter),
+            ),
             _ => return None,
         })
     }
+}
 
-    /// The display semantics a driving parameter must carry for this form.
-    fn display(&self) -> Option<cadmpeg_ir::features::DimensionDisplay> {
-        match self {
-            Self::Radius { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Radius),
-            Self::Diameter { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Diameter),
-            _ => None,
-        }
-    }
-
-    /// The evaluated magnitude this form measures, when the parameter carries a compatible value.
-    fn magnitude(&self, value: Option<&cadmpeg_ir::features::ParameterValue>) -> Option<f64> {
-        match (self, value) {
-            (Self::Angle { .. }, Some(cadmpeg_ir::features::ParameterValue::Angle(angle))) => {
-                Some(angle.get())
-            }
-            (Self::Angle { .. }, _) => None,
-            (_, Some(cadmpeg_ir::features::ParameterValue::Length(length))) => Some(length.get()),
-            (_, _) => None,
-        }
-    }
+fn sketch_evaluation_is_stale(ir: &cadmpeg_ir::CadIr, sketch_id: &SketchId) -> bool {
+    ir.model.features.iter().any(|feature| feature.needs_recompute && matches!(feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)) }) if sketch == sketch_id))
 }
 
 fn validate_solved_dimension(
@@ -890,7 +595,7 @@ fn validate_solved_dimension(
         },
         DimensionDefinition::Distance { entities } => {
             let [first, second] = entities else {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                     "source-less SLDPRT distance dimension {} requires exactly two lines",
                     constraint.id.as_str()
                 )));
@@ -915,13 +620,13 @@ fn validate_solved_dimension(
             let first = sketch_constraint_entity(ir, constraint, first)?;
             let second = sketch_constraint_entity(ir, constraint, second)?;
             let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
+                cadmpeg_core::CodecError::UnsupportedContent(format!(
                     "source-less SLDPRT angular dimension {} requires two lines",
                     constraint.id.as_str()
                 ))
             })?;
             let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
-                cadmpeg_core::CodecError::NotImplemented(format!(
+                cadmpeg_core::CodecError::UnsupportedContent(format!(
                     "source-less SLDPRT angular dimension {} requires two lines",
                     constraint.id.as_str()
                 ))
@@ -946,7 +651,7 @@ fn validate_solved_dimension(
                 SketchGeometryDefinition::Circle { radius, .. }
                 | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
                 _ => {
-                    return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                    return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                         "source-less SLDPRT radial dimension {} requires circular geometry",
                         constraint.id.as_str()
                     )));
@@ -983,7 +688,7 @@ fn point_line_dimension(
     constraint: &SketchConstraint,
 ) -> Result<f64, cadmpeg_core::CodecError> {
     let (start, end) = sketch_line(&line.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::NotImplemented(format!(
+        cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT point-line dimension {} requires a line",
             constraint.id.as_str()
         ))
@@ -1005,13 +710,13 @@ fn line_line_dimension(
     second: &SketchEntity,
 ) -> Result<f64, cadmpeg_core::CodecError> {
     let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::NotImplemented(format!(
+        cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT line-line dimension {} requires two lines",
             constraint.id.as_str()
         ))
     })?;
     let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
-        cadmpeg_core::CodecError::NotImplemented(format!(
+        cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT line-line dimension {} requires two lines",
             constraint.id.as_str()
         ))
@@ -1225,13 +930,13 @@ fn validate_solved_binary_relation(
             }
         },
         Equal => equal_sketch_size(&first.geometry, &second.geometry).ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(format!(
+            cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT equal constraint {} uses unsupported entity families",
                 constraint.id.as_str()
             ))
         })?,
         Tangent => solved_tangent(&first.geometry, &second.geometry).ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(format!(
+            cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT tangent constraint {} uses unsupported entity families",
                 constraint.id.as_str()
             ))
@@ -1476,6 +1181,74 @@ fn generated_sketch_owner_id(
     })
 }
 
+/// Author validated native class/name identities without retained lane bytes.
+pub(crate) fn synthesize_feature_classes(
+    native: &mut crate::native::SldprtNative,
+) -> Result<std::collections::BTreeSet<String>, cadmpeg_core::CodecError> {
+    const LANE_ID: &str = "sldprt:generated:feature-class-input#0";
+    native.feature_input_lanes.retain(|lane| lane.id != LANE_ID);
+    let mut used = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(crate::records::Feature::source_value)
+        .collect::<std::collections::HashSet<_>>();
+    let mut next = 1u32;
+    for feature in native
+        .feature_histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.input_class.is_some() && feature.source_value().is_none())
+    {
+        while used.contains(&next) {
+            next = next.checked_add(1).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "SLDPRT feature object identity space is exhausted",
+                )
+            })?;
+        }
+        let source = crate::records::FeatureSource::from_value(next).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("SLDPRT feature object identity space is exhausted")
+        })?;
+        feature.source_id = Some(source);
+        used.insert(next);
+    }
+    let mut payload = Vec::new();
+    for feature in native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+    {
+        let Some(class) = &feature.input_class else {
+            continue;
+        };
+        let object_id = feature.source_value().ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(
+                "SLDPRT native feature class requires a numeric object identity",
+            )
+        })?;
+        let length = u16::try_from(class.len()).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("SLDPRT native feature class exceeds 65535 bytes")
+        })?;
+        payload.extend_from_slice(super::CLASS_MARKER);
+        payload.extend_from_slice(&length.to_le_bytes());
+        payload.extend_from_slice(class.as_bytes());
+        let name = if feature.name.is_empty() {
+            format!("Feature{object_id}")
+        } else {
+            feature.name.clone()
+        };
+        append_generated_object_name(&mut payload, &name, object_id)?;
+    }
+    if payload.is_empty() {
+        return Ok(std::collections::BTreeSet::new());
+    }
+    let lane = generated_native_lane(&native.feature_histories, LANE_ID, None, payload)?;
+    let written = lane.classes.iter().map(|class| class.id.clone()).collect();
+    native.feature_input_lanes.push(lane);
+    Ok(written)
+}
+
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
@@ -1528,7 +1301,7 @@ fn source_less_lanes(
             .filter(|entity| entity.sketch == sketch.id)
             .collect::<Vec<_>>();
         if entities.is_empty() {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT spatial sketch {} requires at least one line",
                 sketch.id.as_str()
             )));
@@ -1543,7 +1316,7 @@ fn source_less_lanes(
                     append_spatial_vertex(&mut payload, end.get());
                 }
                 _ => {
-                    return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                    return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                         "source-less SLDPRT spatial sketch {} supports point and line geometry only",
                         sketch.id.as_str()
                     )));
@@ -1581,6 +1354,52 @@ fn source_less_lanes(
     Ok(lanes)
 }
 
+/// Build one authored configuration scalar lane from current typed values.
+pub(crate) fn generated_configuration_lane(
+    histories: &[crate::records::FeatureHistory],
+    configuration: &str,
+    payload: Vec<u8>,
+) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+    generated_native_lane(
+        histories,
+        &format!("sldprt:generated:configuration-input#{configuration}"),
+        Some(configuration.into()),
+        payload,
+    )
+}
+
+/// Re-admit newly authored bytes into their complete typed native lane.
+pub(crate) fn generated_native_lane(
+    histories: &[crate::records::FeatureHistory],
+    id: &str,
+    configuration: Option<String>,
+    payload: Vec<u8>,
+) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
+    let mut lanes = Vec::new();
+    let lane = source_less_lane(&mut lanes, configuration.as_deref().unwrap_or("0"));
+    lane.id = id.into();
+    lane.configuration = configuration;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    // The context borrows an allocation separate from mutable lane storage.
+    // Only freshly authored target bytes enter either allocation.
+    let context_bytes = payload.clone();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &context_bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    lane.classes = class_declarations(&payload, &lane.id)?;
+    lane.names = object_names(&ctx, &payload, &lane.id)?;
+    lane.scalars = named_scalars(&payload, &lane.id, &lane.names)?;
+    lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &[])?;
+    lane.references = reference_cells(&lane.scalars, &lane.classes)?;
+    lane.sketch_entities = admit_sketch_input_entities(&payload, &lane.id)?;
+    lane.native_payload = payload.into();
+    bind_scalar_operands(&ctx, histories, &mut lanes)?;
+    ctx.finish_session()?;
+    Ok(lanes.remove(0))
+}
+
 fn assemble_source_less_lanes(mut objects: Vec<(String, u64, Vec<u8>)>) -> Vec<FeatureInputLane> {
     objects.sort_by(|left, right| (&left.0, left.1).cmp(&(&right.0, right.1)));
     let mut lanes = Vec::new();
@@ -1604,7 +1423,7 @@ fn source_less_lane<'a>(
     }
     let index = lanes.len();
     lanes.push(FeatureInputLane {
-        id: format!("Contents/Config-{configuration}-ResolvedFeatures"),
+        id: format!("sldprt:generated:feature-input#{index}"),
         configuration: Some(configuration.into()),
         native_payload: Vec::new().into(),
         classes: Vec::new(),
@@ -1727,6 +1546,7 @@ mod source_less_lane_tests {
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1750,9 +1570,9 @@ mod source_less_lane_tests {
 
         assert_eq!(lanes.len(), 2);
         assert_eq!(lanes[0].configuration.as_deref(), Some("0"));
-        assert_eq!(lanes[0].native_payload, [9]);
+        assert_eq!(lanes[0].native_payload.as_slice(), [9]);
         assert_eq!(lanes[1].configuration.as_deref(), Some("1"));
-        assert_eq!(lanes[1].native_payload, [1, 2]);
+        assert_eq!(lanes[1].native_payload.as_slice(), [1, 2]);
     }
 
     #[test]
@@ -1764,7 +1584,7 @@ mod source_less_lane_tests {
             loci: vec![point.clone(), center.clone(), endpoint.clone()],
         };
 
-        let relations = generated_marker_relations(&definition);
+        let relations = generated_marker_relations(&cadmpeg_ir::CadIr::empty(), &definition);
 
         assert_eq!(relations.len(), 2);
         assert!(matches!(
@@ -1794,7 +1614,7 @@ mod source_less_lane_tests {
             ],
         };
 
-        assert!(generated_marker_relations(&definition).is_empty());
+        assert!(generated_marker_relations(&cadmpeg_ir::CadIr::empty(), &definition).is_empty());
     }
 
     #[test]
@@ -1857,7 +1677,8 @@ mod source_less_lane_tests {
             first: first.clone(),
             second: second.clone(),
         };
-        let at_intersection = generated_marker_relations(&at_intersection_definition);
+        let at_intersection =
+            generated_marker_relations(&cadmpeg_ir::CadIr::empty(), &at_intersection_definition);
         assert!(matches!(
             at_intersection.as_slice(),
             [GeneratedMarkerRelation::AtIntersection(owner, left, right)]
@@ -1869,7 +1690,8 @@ mod source_less_lane_tests {
             second: SketchLocus::Center(second.clone()),
             axis: axis.clone(),
         };
-        let symmetric = generated_marker_relations(&symmetric_definition);
+        let symmetric =
+            generated_marker_relations(&cadmpeg_ir::CadIr::empty(), &symmetric_definition);
         assert!(matches!(
             symmetric.as_slice(),
             [GeneratedMarkerRelation::Symmetric(left, _, owner)]
@@ -2119,10 +1941,12 @@ mod source_less_lane_tests {
                     SketchConstraintDefinitionInput::Angle {
                         first: first_id.clone(),
                         second: second_id.clone(),
-                        parameter: cadmpeg_ir::features::ParameterId::mint(
-                            "synthetic:test:id#angle-value",
-                        )
-                        .unwrap(),
+                        parameter: cadmpeg_ir::Dimension::Parameter(
+                            cadmpeg_ir::features::ParameterId::mint(
+                                "synthetic:test:id#angle-value",
+                            )
+                            .unwrap(),
+                        ),
                     },
                 )
                 .unwrap(),

@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::ids::{EdgeId, FaceId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, VertexId};
 
 /// Source namespaces used to derive native record ids.
 pub mod identity;
@@ -17,11 +17,12 @@ macro_rules! native_record {
         #[doc = $index_doc:literal]
         record_index,
         $(#[doc = $entity_doc:literal])*
-        $entity:ident: $entity_ty:ty,
+        $entity:ident: $entity_ty:ty $([$($entity_wire_attr:meta),*])?,
         $(
             $(#[doc = $field_doc:literal])*
             $field:ident: $field_ty:ty $([$($wire_attr:meta),*])?,
         )*
+        $(; native_wire $native_wire:path)?
     ) => {
         $(#[doc = $record_doc])*
         #[derive(Debug, Clone, PartialEq)]
@@ -60,6 +61,7 @@ macro_rules! native_record {
                 #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
                 pub(super) id: String,
                 $(#[doc = $entity_doc])*
+                $($(#[$entity_wire_attr])*)?
                 pub(super) $entity: $entity_ty,
                 #[doc = $index_doc]
                 pub(super) record_index: u32,
@@ -76,6 +78,7 @@ macro_rules! native_record {
                 #[derive(Serialize)]
                 struct Wire<'a> {
                     id: identity::NativeRecordIdentity<'a>,
+                    $($(#[$entity_wire_attr])*)?
                     $entity: &'a $entity_ty,
                     record_index: u32,
                     $(
@@ -107,6 +110,13 @@ macro_rules! native_record {
         }
 
         impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for $name {
+            $(fn rewrite_native_value<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                value: &mut serde_json::Value,
+                map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+            ) -> Result<(), cadmpeg_core::CodecError> {
+                $native_wire(ctx, value, map)
+            })?
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
                 let _depth = ctx.enter_nested("walk ASM native references")?;
                 self.source_namespace.visit($kind, self.record_index, visitor)?;
@@ -231,8 +241,8 @@ pub struct FaceSidedness {
     pub source_namespace: identity::NativeRecordNamespace,
     /// Source SAB record index.
     pub record_index: u32,
-    /// Solved B-rep face carrying the fields.
-    pub face: FaceId,
+    /// Held native face-key row emitted from this same source face record.
+    pub face_key: Option<String>,
     /// Sense token stored in the native face record before carrier normalization.
     pub native_sense: cadmpeg_ir::topology::Sense,
     /// Whether decoding reversed the native surface carrier orientation.
@@ -246,8 +256,9 @@ impl Serialize for FaceSidedness {
         #[derive(Serialize)]
         struct Wire<'a> {
             id: identity::NativeRecordIdentity<'a>,
-            face: &'a FaceId,
             record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            face_key: Option<&'a str>,
             native_sense: cadmpeg_ir::topology::Sense,
             normalized_sense: cadmpeg_ir::topology::Sense,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -257,8 +268,8 @@ impl Serialize for FaceSidedness {
             id: self
                 .source_namespace
                 .serialized_id("face-sidedness", self.record_index),
-            face: &self.face,
             record_index: self.record_index,
+            face_key: self.face_key.as_deref(),
             native_sense: self.native_sense,
             normalized_sense: self.normalized_sense(),
             containment: self.containment,
@@ -286,6 +297,41 @@ impl JsonSchema for FaceSidedness {
 }
 
 impl FaceSidedness {
+    pub(crate) fn working_native_ref(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        self.source_namespace
+            .working_id(ctx, "face-sidedness", self.record_index)
+    }
+
+    /// Resolve the source face through an actual held native reference.
+    /// The key and sidedness rows are emitted from the same parser record.
+    /// An explicit native key reference preserves that relation when either
+    /// actual held identity is independently rewritten.
+    #[must_use]
+    pub fn owns_native_ref(&self, native_ref: Option<&str>, keys: &[FaceNativeKey]) -> bool {
+        let Some(native_ref) = native_ref else {
+            return false;
+        };
+        self.source_namespace
+            .matches("face-sidedness", self.record_index, native_ref)
+            || keys.iter().any(|key| {
+                self.face_key.as_deref() == Some(native_ref)
+                    && key
+                        .source_namespace
+                        .matches("face-native-key", key.record_index, native_ref)
+            })
+    }
+
+    /// Retain the identity of this already-held source row for a neutral face.
+    pub fn retain_native_ref(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        self.source_namespace
+            .retain_id(ctx, "face-sidedness", self.record_index)
+    }
     fn normalized_sense(&self) -> cadmpeg_ir::topology::Sense {
         use cadmpeg_ir::topology::Sense;
         match (self.native_sense, self.carrier_flipped) {
@@ -310,8 +356,13 @@ impl FaceSidedness {
 pub struct FaceSidednessWire {
     #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
     id: String,
-    face: FaceId,
     record_index: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face_key"
+    )]
+    face_key: Option<String>,
     native_sense: cadmpeg_ir::topology::Sense,
     normalized_sense: cadmpeg_ir::topology::Sense,
     #[serde(
@@ -327,8 +378,8 @@ impl From<FaceSidedness> for FaceSidednessWire {
         let normalized_sense = value.normalized_sense();
         Self {
             id: value.id(),
-            face: value.face,
             record_index: value.record_index,
+            face_key: value.face_key,
             native_sense: value.native_sense,
             normalized_sense,
             containment: value.containment,
@@ -348,7 +399,7 @@ impl TryFrom<FaceSidednessWire> for FaceSidedness {
         Ok(Self {
             source_namespace,
             record_index: value.record_index,
-            face: value.face,
+            face_key: value.face_key,
             native_sense: value.native_sense,
             carrier_flipped: value.native_sense != value.normalized_sense,
             containment: value.containment,
@@ -361,10 +412,48 @@ native_record! {
     FaceNativeKey, face_native_key, "face-native-key",
     /// Source SAB face record index.
     record_index,
-    /// Solved face carrying the key.
-    face: cadmpeg_ir::ids::FaceId,
     /// Non-negative Design-join key; absence is the native `-1` null value.
     asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
+    ; native_wire identity_rewrite::rewrite_face_key_native_value
+}
+
+impl FaceNativeKey {
+    pub(crate) fn working_native_ref(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        self.source_namespace
+            .working_id(ctx, "face-native-key", self.record_index)
+    }
+
+    /// Resolve this held key through a direct neutral link or a held sidedness row.
+    #[must_use]
+    pub fn owns_native_ref(&self, native_ref: Option<&str>, sides: &[FaceSidedness]) -> bool {
+        let Some(native_ref) = native_ref else {
+            return false;
+        };
+        self.source_namespace
+            .matches("face-native-key", self.record_index, native_ref)
+            || sides.iter().any(|side| {
+                side.source_namespace
+                    .matches("face-sidedness", side.record_index, native_ref)
+                    && side.face_key.as_deref().is_some_and(|reference| {
+                        self.source_namespace.matches(
+                            "face-native-key",
+                            self.record_index,
+                            reference,
+                        )
+                    })
+            })
+    }
+
+    pub(crate) fn retain_native_ref(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        self.source_namespace
+            .retain_id(ctx, "face-native-key", self.record_index)
+    }
 }
 
 /// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
@@ -645,6 +734,111 @@ mod tests {
     use super::{EndpointSlot, TolerantCoedgeParameters, TolerantVertexTail, WireMembers};
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
+
+    #[test]
+    fn face_key_native_reference_accounts_for_zero_and_each_decimal_width() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        for record_index in [
+            0,
+            9,
+            10,
+            99,
+            100,
+            999,
+            1_000,
+            9_999,
+            10_000,
+            99_999,
+            100_000,
+            999_999,
+            1_000_000,
+            9_999_999,
+            10_000_000,
+            99_999_999,
+            100_000_000,
+            999_999_999,
+            1_000_000_000,
+            u32::MAX,
+        ] {
+            let expected = format!("f3d:asm:face-native-key#{record_index}");
+            let needed = cadmpeg_core::decode::u64_from_index(expected.len());
+            for limit in [needed - 1, needed] {
+                let native = super::FaceNativeKey {
+                    source_namespace: super::identity::NativeRecordNamespace::new(
+                        crate::asm_format!("f3d"),
+                    ),
+                    record_index,
+                    asm_face_key: None,
+                };
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = native.retain_native_ref(&ctx);
+                if limit == needed {
+                    assert_eq!(result.unwrap(), expected);
+                } else {
+                    let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
+                        panic!("native reference text exceeds the ceiling")
+                    };
+                    assert_eq!(refusal.additional, needed);
+                    assert_eq!(refusal.operation, "ASM face native reference");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn face_key_native_reference_preserves_the_callers_existing_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let native = super::FaceNativeKey {
+            source_namespace: super::identity::NativeRecordNamespace::new(crate::asm_format!(
+                "f3d"
+            )),
+            record_index: u32::MAX,
+            asm_face_key: Some(7),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let original = ctx.retain_bytes(1, "source caller refusal").unwrap_err();
+        assert_eq!(
+            native.retain_native_ref(&ctx).unwrap_err().to_string(),
+            original.to_string()
+        );
+    }
+
+    #[test]
+    fn face_key_wire_keeps_source_fields_and_refuses_the_removed_neutral_backlink() {
+        for key in [None, Some(7)] {
+            let native = super::FaceNativeKey {
+                source_namespace: super::identity::NativeRecordNamespace::new(crate::asm_format!(
+                    "f3d"
+                )),
+                record_index: 17,
+                asm_face_key: key,
+            };
+            let mut expected =
+                serde_json::json!({"id":"f3d:asm:face-native-key#17", "record_index":17});
+            if let Some(key) = key {
+                expected["asm_face_key"] = serde_json::json!(key);
+            }
+            assert_eq!(serde_json::to_value(&native).unwrap(), expected);
+            assert_eq!(
+                serde_json::from_value::<super::FaceNativeKey>(expected.clone()).unwrap(),
+                native
+            );
+            let mut backlink = expected.clone();
+            backlink["face"] = serde_json::json!("f3d:brep:entity#17");
+            assert!(serde_json::from_value::<super::FaceNativeKey>(backlink)
+                .unwrap_err()
+                .to_string()
+                .contains("face"));
+            expected["record_index"] = serde_json::json!(18);
+            assert!(serde_json::from_value::<super::FaceNativeKey>(expected).is_err());
+        }
+    }
 
     #[test]
     fn tolerant_vertex_tail_json_keeps_sentinel_and_refuses_nonfinite_value() {
@@ -947,6 +1141,7 @@ mod tests {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_containment, FaceContainment, "containment");
+cadmpeg_core::named_optional_field!(deserialize_face_key, String, "face_key");
 cadmpeg_core::named_optional_field!(deserialize_trailing, i64, "trailing");
 cadmpeg_core::named_optional_field!(deserialize_free_vertex, VertexId, "free_vertex");
 

@@ -82,15 +82,6 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterAppearanceBindingsOmitted,
         "appearance binding to a target other than a face or body",
     );
-    charge(
-        ir.model
-            .attributes
-            .iter()
-            .filter(|attribute| !attribute.id.as_str().starts_with("sldprt:"))
-            .count(),
-        SldprtLossCode::WriterAttributesOmitted,
-        "attribute outside the sldprt namespace",
-    );
     let bound = ir
         .model
         .appearance_bindings
@@ -142,5 +133,108 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
     );
+    for attribute in &ir.model.attributes {
+        if requires_attribute_omission(attribute) {
+            losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
+                "1 attribute record(s) omitted from scalar SLDPRT fields; None positions (zero-based) {}: {}",
+                MissingPositions(attribute), attribute.id
+            )));
+        } else if !(attribute.id.as_str().starts_with("sldprt:")
+            || super::custom_properties::represents(attribute)
+            || (matches!(
+                attribute.target,
+                cadmpeg_ir::attributes::AttributeTarget::Pmi(_)
+            ) && matches!(
+                attribute.name.as_str(),
+                "precision" | "basic" | "inspection" | "reference_only"
+            )))
+        {
+            losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
+                "1 attribute outside the sldprt namespace record(s) were not written by the SLDPRT semantic exporter: {}",
+                attribute.id
+            )));
+        }
+    }
     losses
+}
+
+/// Charge whole arenas the SLDPRT format writer cannot encode.
+pub(super) fn arena_losses(
+    ir: &CadIr,
+    coverage: &cadmpeg_ir::codec::write::ArenaDispositions,
+) -> Vec<LossNote> {
+    use cadmpeg_ir::codec::write::ArenaDisposition;
+    let mut losses = Vec::new();
+    macro_rules! charge {
+        ($($arena:ident),* $(,)?) => {$(
+            if coverage.$arena == ArenaDisposition::Dropped && !ir.model.$arena.is_empty() {
+                losses.push(SldprtLossCode::WriterArenaOmitted.note(format!(
+                    "model.{}: {} record(s) omitted by the SLDPRT writer", stringify!($arena), ir.model.$arena.len()
+                )));
+            }
+        )*};
+    }
+    charge!(
+        subds,
+        assets,
+        feature_input_topologies,
+        feature_result_topologies,
+        spatial_sketch_constraints,
+        spreadsheets,
+        product_definitions,
+        occurrences,
+        assembly_joints,
+        drawings,
+        semantic_annotations,
+        presentation_documents,
+        view_presentations,
+        presentation_layers,
+        pmi,
+        pcurves,
+        procedural_curves,
+        procedural_surfaces,
+        configurations
+    );
+    losses
+}
+
+pub(super) fn requires_attribute_omission(
+    attribute: &cadmpeg_ir::attributes::SourceAttribute,
+) -> bool {
+    use cadmpeg_ir::attributes::AttributeValue;
+    attribute.values.iter().any(|slot| match slot {
+        None => true,
+        Some(
+            AttributeValue::Map(_)
+            | AttributeValue::Expression(_)
+            | AttributeValue::SubReference { .. }
+            | AttributeValue::ExternalReference { .. }
+            | AttributeValue::EmptyReference
+            | AttributeValue::Json(_),
+        ) => true,
+        Some(
+            AttributeValue::Integer(_)
+            | AttributeValue::Float(_)
+            | AttributeValue::String(_)
+            | AttributeValue::Boolean(_)
+            | AttributeValue::Reference(_)
+            | AttributeValue::Vector(_),
+        ) => false,
+    })
+}
+
+struct MissingPositions<'a>(&'a cadmpeg_ir::attributes::SourceAttribute);
+
+impl std::fmt::Display for MissingPositions<'_> {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.write_str("[")?;
+        let mut separator = "";
+        for (position, value) in self.0.values.iter().enumerate() {
+            if value.is_none() {
+                write!(out, "{separator}{position}")?;
+                separator = ", ";
+            }
+        }
+        out.write_str("]")
+    }
 }

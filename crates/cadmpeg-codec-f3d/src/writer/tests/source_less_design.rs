@@ -31,63 +31,66 @@ fn generated_source_less_writes_design_type_metastream() {
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#0".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 0,
+                class_tag: (256u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(0),
                 module: "Fusion".to_owned(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![1, 2]),
                 type_guid: "11111111-2222-3333-4444-555555555555"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: 7,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#1".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 1,
+                class_tag: (257u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(1),
                 module: crate::records::entity_header::DESIGN_MODULE_SKETCH.to_owned(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![277]),
                 type_guid: "22222222-3333-4444-5555-666666666666"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                     value: "11111111-2222-3333-4444-555555555555"
                         .to_owned()
                         .try_into()
                         .expect("base GUID"),
-                    offset: 0,
+                    offset: Some(0),
                 },
                 version: 9,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#2".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 2,
+                class_tag: (258u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(2),
                 module: "FutureFeature".to_owned(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![999]),
                 type_guid: "33333333-4444-5555-6666-777777777777"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Guid {
                     value: "11111111-2222-3333-4444-555555555555"
                         .to_owned()
                         .try_into()
                         .expect("base GUID"),
-                    offset: 0,
+                    offset: Some(0),
                 },
                 version: 11,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
@@ -102,20 +105,26 @@ fn generated_source_less_writes_design_type_metastream() {
     let mut guid_module = source_less.clone();
     f3d_native_mut(&mut guid_module).design_types[2]
         .set_module("11111111-2222-3333-4444-555555555555".into());
-    let error = F3dCodec
-        .plan(EncodeInput::new(&guid_module, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a GUID-shaped Design module name must not be emitted");
-    assert!(error
-        .to_string()
-        .contains("Design type module name is GUID-shaped"));
+    for scope in [
+        cadmpeg_ir::document::ContentScope::full(),
+        cadmpeg_ir::document::ContentScope::geometry(),
+    ] {
+        guid_module.set_scope(scope).expect("empty neutral design");
+        let error = F3dCodec
+            .plan(EncodeInput::new(&guid_module, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut Vec::new()))
+            .expect_err("a GUID-shaped Design module name must not be emitted at any scope");
+        assert!(error
+            .to_string()
+            .contains("Design type module name is GUID-shaped"));
+    }
     f3d_native_mut(&mut source_less).design_types[0].set_base_type_guid(
         crate::records::entity_header::BaseTypeGuid::Guid {
             value: "22222222-3333-4444-5555-666666666666"
                 .to_owned()
                 .try_into()
                 .expect("base GUID"),
-            offset: 0,
+            offset: Some(0),
         },
     );
     let error = F3dCodec
@@ -189,41 +198,41 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     .enumerate()
     .map(|(ordinal, kind)| ConstructionRecipe {
         id: format!("f3d:generated:recipe#{ordinal}"),
-        byte_offset: 0,
+        byte_offset: Some(0),
         kind,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: format!("{}", 320 + ordinal),
-                offset: 0,
+                offset: None,
             },
             selector: None,
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 100 + i32::try_from(ordinal).unwrap(),
-            offset: 0,
+            offset: None,
         }),
     })
     .collect();
     native.persistent_references = vec![
         PersistentReference {
             id: "f3d:generated:persistent-reference#0".into(),
-            byte_offset: 0,
-            value_offset: 0,
+            byte_offset: None,
+            value_offset: None,
             kind: PersistentReferenceKind::Point,
             value: 900,
         },
         PersistentReference {
             id: "f3d:generated:persistent-reference#1".into(),
-            byte_offset: 0,
-            value_offset: 0,
+            byte_offset: None,
+            value_offset: None,
             kind: PersistentReferenceKind::CurvePrimary,
             value: 100,
         },
         PersistentReference {
             id: "f3d:generated:persistent-reference#2".into(),
-            byte_offset: 0,
-            value_offset: 0,
+            byte_offset: None,
+            value_offset: None,
             kind: PersistentReferenceKind::CurveSecondary,
             value: 500,
         },
@@ -384,24 +393,25 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     native.design_types = vec![SegmentType::try_new(
         "f3d:generated/MetaStream.dat:design-type#0".into(),
         crate::records::entity_header::SegmentTypeData {
-            byte_offset: 0,
+            class_tag: (256u32).to_string().try_into().expect("fixture class tag"),
+            byte_offset: Some(0),
             module: crate::records::entity_header::DESIGN_MODULE_SKETCH.to_owned(),
             entities: crate::records::identity::ReferenceRun::unlocated(vec![277]),
             type_guid: "22222222-3333-4444-5555-666666666666"
                 .to_owned()
                 .try_into()
                 .expect("type GUID"),
-            type_guid_offset: 0,
+            type_guid_offset: Some(0),
             base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
             version: 4,
-            version_offset: 0,
+            version_offset: Some(0),
         },
     )
     .unwrap()];
     native.design_body_members = vec![
-        DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
+        DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberContent {
             id: "f3d:generated:design-body-member#0".into(),
-            byte_offset: 0,
+            byte_offset: None,
             entity_suffix: 985,
             flags: 0,
         })
@@ -414,22 +424,26 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         })
         .unwrap(),
     ];
+    assert!(native.design_body_members[0].byte_offset().is_none());
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "f3d:generated:entity-header#0".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("0_277".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        optional_slot_present: true,
+        optional_slot_present: Some(true),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(crate::records::entity_header::DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: Some(584),
-                record_reference_offset: 0,
+                record_reference_offset: None,
                 references: vec![33, 44]
                     .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located {
+                        value,
+                        offset: Some(0),
+                    })
                     .collect(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),
@@ -442,14 +456,14 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             record_index: 33,
             class_tag: crate::records::references::DesignClassTag::try_from("350".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: None,
         },
         DesignRecordHeader {
             id: "f3d:generated:record-header#1".into(),
             record_index: 44,
             class_tag: crate::records::references::DesignClassTag::try_from("351".to_owned())
                 .unwrap(),
-            byte_offset: 0,
+            byte_offset: None,
         },
     ];
 
@@ -490,7 +504,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         assert_eq!(&bulk[57..68], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
         assert_eq!(&bulk[68..79], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
         assert_eq!(&bulk[79..90], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);
-        assert_eq!(bulk.len(), 153);
+        assert_eq!(bulk.len(), 149);
     });
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -538,109 +552,116 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#0".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 0,
+                class_tag: (256u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(0),
                 module: crate::records::entity_header::DESIGN_MODULE_SKETCH.to_owned(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![277]),
                 type_guid: crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: 1,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#1".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 1,
+                class_tag: (257u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(1),
                 module: crate::records::entity_header::DESIGN_MODULE_SKETCH.to_owned(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![33]),
                 type_guid: "60403D47-0C49-49B0-BDE8-1679608164A2"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: 1,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#2".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 2,
+                class_tag: (258u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(2),
                 module: "Geometry".into(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![100]),
                 type_guid: "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: 11,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#3".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 3,
+                class_tag: (259u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(3),
                 module: "Geometry".into(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![600]),
                 type_guid: "DCA267ED-D615-4934-B64F-AD805E8003E2"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: 2,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#4".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 4,
+                class_tag: (260u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(4),
                 module: "Geometry".into(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![601]),
                 type_guid: "F0130424-8B7E-4092-93C9-1CA807482534"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: 0,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#5".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 5,
+                class_tag: (261u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(5),
                 module: crate::records::entity_header::DESIGN_MODULE_SKETCH.to_owned(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![602]),
                 type_guid: "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B"
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: 3,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
         SegmentType::try_new(
             "f3d:generated/MetaStream.dat:design-type#6".into(),
             crate::records::entity_header::SegmentTypeData {
-                byte_offset: 6,
+                class_tag: (262u32).to_string().try_into().expect("fixture class tag"),
+                byte_offset: Some(6),
                 module: "Geometry".into(),
                 entities: crate::records::identity::ReferenceRun::unlocated(vec![101]),
                 type_guid: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE
@@ -648,30 +669,33 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                     .to_owned()
                     .try_into()
                     .expect("type GUID"),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
                 version: crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
-                version_offset: 0,
+                version_offset: Some(0),
             },
         )
         .unwrap(),
     ];
     native.design_entity_headers = vec![DesignEntityHeader {
         id: "f3d:generated:sketch-header#0".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
 
         entity_id: crate::records::identity::DesignEntityId::try_from("0_277".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        optional_slot_present: true,
+        optional_slot_present: Some(true),
         registration: crate::records::entity_header::DesignEntityRegistration::new(
             Some(crate::records::entity_header::DESIGN_MODULE_SKETCH.to_owned()),
             Some(crate::records::entity_header::SketchHeaderReferences {
                 record_reference: Some(584),
-                record_reference_offset: 0,
+                record_reference_offset: None,
                 references: vec![33]
                     .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
+                    .map(|value| crate::records::identity::Located {
+                        value,
+                        offset: Some(0),
+                    })
                     .collect(),
             }),
             crate::records::identity::ReferenceRun::unlocated(Vec::new()),
@@ -683,11 +707,11 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
                 id: "f3d:generated:sketch-point#0".into(),
                 record_index: 100,
+                byte_offset: None,
+                coordinate_offset: Some(89),
                 owner_reference: Some(277),
                 class_tag: crate::records::references::DesignClassTag::try_from("258".to_owned())
                     .unwrap(),
-                byte_offset: 0,
-                coordinate_offset: 89,
                 companion: crate::records::sketch_geometry::SketchPointCompanion {
                     incident_curves: Vec::new(),
                 },
@@ -709,8 +733,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             owner_reference: Some(277),
             class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            geometry_offset: 133,
+            byte_offset: None,
+            geometry_offset: None,
             entity_genesis: Some(901),
             primary_id: std::num::NonZeroU64::new(700).unwrap(),
             secondary_id: 701,
@@ -731,8 +755,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             owner_reference: Some(277),
             class_tag: crate::records::references::DesignClassTag::try_from("260".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            geometry_offset: 133,
+            byte_offset: None,
+            geometry_offset: None,
             entity_genesis: None,
             primary_id: std::num::NonZeroU64::new(702).unwrap(),
             secondary_id: 703,
@@ -755,8 +779,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             owner_reference: Some(277),
             class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
                 .unwrap(),
-            byte_offset: 0,
-            geometry_offset: 133,
+            byte_offset: None,
+            geometry_offset: None,
             entity_genesis: None,
             primary_id: std::num::NonZeroU64::new(704).unwrap(),
             secondary_id: 705,
@@ -784,47 +808,42 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             planar_z_noise: None,
         },
     ];
-    native.sketch_relations =
-        vec![
-            SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
-                id: "f3d:generated:sketch-relation#0".into(),
-                record_index: 33,
-                class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
-                    .unwrap(),
-                byte_offset: 0,
-                state_offset: 0,
-                owner_reference: 277,
-                owner_entity_id: None,
-                owner_reference_offset: 0,
-                auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
-                rectangular_counted_reference_count: None,
-                members: (vec![
-                    SketchRelationMember {
-                        relation_ordinal: Some(0),
-                        ..SketchRelationMember::from_index(100)
-                    },
-                    SketchRelationMember {
-                        relation_ordinal: Some(0),
-                        ..SketchRelationMember::from_index(600)
-                    },
-                ])
-                .try_into()
-                .expect("uniform member resolution"),
-                definition: crate::records::sketch_relations::SketchRelationDefinition::new(
-                    0x11, None,
-                )
+    native.sketch_relations = vec![SketchRelation::authored(
+        crate::records::sketch_relations::SketchRelationContent {
+            id: "f3d:generated:sketch-relation#0".into(),
+            record_index: 33,
+            class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+                .unwrap(),
+            owner_reference: 277,
+            owner_entity_id: None,
+            auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
+            rectangular_counted_reference_count: None,
+            members: (vec![
+                SketchRelationMember {
+                    relation_ordinal: Some(0),
+                    ..SketchRelationMember::from_index(100)
+                },
+                SketchRelationMember {
+                    relation_ordinal: Some(0),
+                    ..SketchRelationMember::from_index(600)
+                },
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
+            definition: crate::records::sketch_relations::SketchRelationDefinition::new(0x11, None)
                 .expect("valid relation definition"),
-                entity_genesis: None,
-                return_members: (vec![
-                    SketchRelationReturnMember::from_index(600),
-                    SketchRelationReturnMember::from_index(100),
-                ])
-                .try_into()
-                .expect("uniform member resolution"),
-                raw_bytes: vec![0; 160],
-            })
-            .unwrap(),
-        ];
+            entity_genesis: None,
+            return_members: (vec![
+                SketchRelationReturnMember::from_index(600),
+                SketchRelationReturnMember::from_index(100),
+            ])
+            .try_into()
+            .expect("uniform member resolution"),
+        },
+    )];
+    assert!(native.sketch_relations[0].byte_offset.is_none());
+    assert!(native.sketch_relations[0].state_offset.is_none());
+    assert!(native.sketch_relations[0].raw_bytes().is_none());
 
     let expected_geometries = native
         .sketch_curve_identities
@@ -833,9 +852,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .collect::<Vec<_>>();
     drop(native);
     let mut encoded = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
+    crate::writer::generate::write_new(&source_less, &mut encoded)
         .expect("source-less sketch BulkStream encode");
     let mut extended_source_less = source_less.clone();
     {
@@ -860,11 +877,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .any(|window| window == companion));
     }
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = None;
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require their direct owner backlink");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    let (partial, report) = super::source_less_analytic::synthesize_document(&source_less, None);
+    assert_eq!(
+        partial.ir().model.bodies.len(),
+        source_less.model.bodies.len()
+    );
+    assert!(f3d_native(partial.ir()).sketch_points.is_empty());
+    super::source_less_analytic::assert_native_omission(&report);
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
@@ -876,11 +895,12 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(vec![101]));
     f3d_native_mut(&mut source_less).design_types[2].set_version(10);
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("source-less points require the current writable class version");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let error = crate::writer::generate::write_new(&source_less, &mut Vec::new())
+        .expect_err("the native serializer requires its current writable class version");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::UnsupportedContent(_)
+    ));
     f3d_native_mut(&mut source_less).design_types[2].set_version(11);
     {
         let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
@@ -913,9 +933,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
     }
     let mut variable_relation = Vec::new();
-    F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut variable_relation))
+    crate::writer::generate::write_new(&source_less, &mut variable_relation)
         .expect("source-less variable-width sketch relation encode");
     let variable_round_trip = F3dCodec
         .decode(
@@ -930,6 +948,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert!(
         f3d_native(variable_round_trip.ir()).sketch_relations[0]
             .raw_bytes()
+            .expect("retained test source")
             .len()
             > 101
     );
@@ -982,7 +1001,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_points.len(), 1);
     assert_eq!(native.sketch_points[0].persistent_id(), Some(500));
     assert_eq!(native.sketch_points[0].entity_genesis(), Some(900));
-    assert_eq!(native.sketch_points[0].coordinate_offset, 141);
+    assert_eq!(native.sketch_points[0].coordinate_offset, Some(141));
     assert_eq!(native.sketch_points[0].owner_reference, Some(277));
     assert_eq!(native.sketch_points[0].depth(), 0.0);
     assert_eq!(
@@ -1007,7 +1026,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .find(|curve| curve.primary_id.get() == 700)
         .expect("genesis curve");
     assert_eq!(genesis_curve.entity_genesis, Some(901));
-    assert_eq!(genesis_curve.geometry_offset, 185);
+    assert_eq!(genesis_curve.geometry_offset, None);
     assert_eq!(genesis_curve.owner_reference, Some(277));
     assert!(native
         .sketch_curve_identities
@@ -1092,12 +1111,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .unwrap();
     }
     let mut extended_encoded = Vec::new();
-    F3dCodec
-        .plan(
-            EncodeInput::new(&extended_source_less, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut extended_encoded))
+    crate::writer::generate::write_new(&extended_source_less, &mut extended_encoded)
         .expect("source-less extended sketch point encode");
     let extended_round_trip = F3dCodec
         .decode(

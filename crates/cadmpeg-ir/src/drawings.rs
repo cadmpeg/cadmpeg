@@ -128,8 +128,15 @@ pub struct Drawing {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// Native drawing record supplying this entity.
-    pub native_ref: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 impl Drawing {
     /// Construct a record with absent optional content and empty collections.
@@ -140,7 +147,7 @@ impl Drawing {
         kind: DrawingKind,
         runtime_type: String,
         order: u32,
-        native_ref: String,
+        native_ref: Option<String>,
     ) -> Self {
         Self {
             id,
@@ -189,6 +196,37 @@ cadmpeg_core::named_optional_field!(
 #[cfg(test)]
 mod tests {
     use super::{Drawing, DrawingId};
+
+    #[test]
+    fn native_link_preserves_absence_and_string_and_refuses_null_or_nonstrings() {
+        let mut value = serde_json::json!({
+            "id": "synthetic:test:drawing#page", "object": "source",
+            "kind": "page", "runtime_type": "Page", "order": 0
+        });
+        let drawing: Drawing =
+            serde_json::from_value(value.clone()).expect("no native counterpart");
+        assert_eq!(drawing.native_ref, None);
+        assert_eq!(serde_json::to_value(drawing).unwrap(), value);
+
+        value["native_ref"] = serde_json::json!("test:source:drawing#one");
+        let drawing: Drawing = serde_json::from_value(value.clone()).expect("native counterpart");
+        assert_eq!(
+            drawing.native_ref.as_deref(),
+            Some("test:source:drawing#one")
+        );
+        assert_eq!(serde_json::to_value(drawing).unwrap(), value);
+
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(7),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            value["native_ref"] = invalid;
+            assert!(serde_json::from_value::<Drawing>(value.clone()).is_err());
+        }
+    }
 
     #[test]
     fn sheet_and_curves_wire_admission() {

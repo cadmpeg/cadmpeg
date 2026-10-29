@@ -5,9 +5,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_ir::codec::write::{
-    target::TargetRequest, DepthNeed, EncodeInput, Encoder, ExportPlan,
-};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use clap::ValueEnum;
@@ -16,7 +14,7 @@ use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::{ApplicationError, ConversionRefusal, DepthReport, RefusalStage};
+use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
 use crate::application::validators::validate_loaded;
 use crate::loader;
 
@@ -41,8 +39,8 @@ pub(crate) struct ExportTarget {
 impl ExportTarget {
     /// The decode depth the selected encoder plans from.
     #[must_use]
-    pub(crate) fn needs(&self) -> DepthNeed {
-        self.encoder.needs()
+    pub(crate) fn request(&self) -> cadmpeg_core::decode::DecodeDepth {
+        self.encoder.request()
     }
 }
 
@@ -196,6 +194,42 @@ impl LossPolicy {
     }
 }
 
+/// Minimum severity that a loss policy refuses.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub(crate) enum LossFloor {
+    /// Refuse all reported losses.
+    #[default]
+    Info,
+    /// Refuse warnings and more severe losses.
+    Warning,
+    /// Refuse errors and blocking losses.
+    Error,
+    /// Refuse blocking losses only.
+    Blocking,
+}
+
+impl LossFloor {
+    const fn severity(self) -> cadmpeg_ir::report::Severity {
+        use cadmpeg_ir::report::Severity;
+        match self {
+            Self::Info => Severity::Info,
+            Self::Warning => Severity::Warning,
+            Self::Error => Severity::Error,
+            Self::Blocking => Severity::Blocking,
+        }
+    }
+
+    fn rejects_severity(self, severity: cadmpeg_ir::report::Severity) -> bool {
+        severity >= self.severity()
+    }
+
+    fn rejects(self, losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
+        losses
+            .iter()
+            .any(|loss| self.rejects_severity(loss.severity))
+    }
+}
+
 /// Destination and overwrite rules for a conversion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DestinationPolicy {
@@ -300,8 +334,12 @@ impl DestinationPolicy {
 pub(crate) struct ConversionPolicy {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// Minimum loss severity that refuses conversion.
+    pub(crate) loss_floor: LossFloor,
+    /// Refuse export when validation reports carried errors.
+    pub(crate) reject_errors: bool,
+    /// Refuse an empty geometry export.
+    pub(crate) reject_empty: bool,
     /// Output destination rules.
     pub(crate) destination: DestinationPolicy,
 }
@@ -322,7 +360,7 @@ impl ResolvedDestination {
 }
 
 /// A loaded and validated conversion ready for export planning.
-/// Decode-loss refusal is complete. Check refusals run after planning.
+/// Decode-loss refusal is complete. Check and empty-geometry refusals run after planning.
 pub(crate) struct PreparedConversion {
     /// Loaded source document.
     pub(crate) document: LoadedDocument,
@@ -332,13 +370,15 @@ pub(crate) struct PreparedConversion {
     selection: TargetSelection,
     destination: ResolvedDestination,
     loss_policy: LossPolicy,
-    allow_errors: bool,
+    loss_floor: LossFloor,
+    reject_errors: bool,
+    reject_empty: bool,
 }
 
 /// Loads and validates a conversion without planning or writing it.
 ///
 /// Applies destination admission and decode-loss refusal. Runs validation.
-/// Check, plan, and export-loss refusals run in `plan`.
+/// Check, empty-geometry, plan, and export-loss refusals run in `plan`.
 /// Does not print reports or write destination artifacts.
 pub(crate) fn prepare(
     inputs: &InputCatalog,
@@ -354,13 +394,25 @@ pub(crate) fn prepare(
         .map_err(ApplicationError::from)?;
 
     let loaded = loader::load_artifact(inputs, source.path, source.options, source.forced)?;
-    let decode_report = loaded.decode_report().cloned();
+    let decode_report = loaded.current_decode_report();
 
-    if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
+    if let Some(refusal) =
+        decode_lossy_refusal(policy.losses, policy.loss_floor, decode_report, format)
+    {
         return Err(refusal.into());
     }
 
     let validation = validate_loaded(inputs, &loaded, &source.options.policy, source.work)?;
+    if source.options.depth == cadmpeg_core::decode::DecodeDepth::Container
+        && format != Format::Cadir
+    {
+        return Err(ConversionRefusal::ContainerOnlyOutput {
+            format,
+            decode_report: loaded.decode_report().cloned(),
+            validation,
+        }
+        .into());
+    }
     Ok(PreparedConversion {
         document: loaded,
         validation,
@@ -368,12 +420,14 @@ pub(crate) fn prepare(
         selection: target.selection,
         destination,
         loss_policy: policy.losses,
-        allow_errors: policy.allow_errors,
+        loss_floor: policy.loss_floor,
+        reject_errors: policy.reject_errors,
+        reject_empty: policy.reject_empty,
     })
 }
 
 impl PreparedConversion {
-    /// Plans the export before applying check and export-loss refusals.
+    /// Plans the export before applying check and empty-geometry refusals.
     /// A failed plan counts every error as carried, then applies plan refusal.
     /// A completed plan checks carried errors, then applies export-loss refusal.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
@@ -381,14 +435,14 @@ impl PreparedConversion {
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
         // second vocabulary to keep in step with the first.
-        let plan = match self.encoder.plan(
+        let mut plan = match self.encoder.plan(
             EncodeInput::new(&self.document.ir, self.document.fidelity()),
             self.selection.request(),
         ) {
             Ok(plan) => plan,
             Err(error) => {
                 let carried = self.validation.error_count();
-                if carried > 0 && !self.allow_errors {
+                if carried > 0 && self.reject_errors {
                     return Err(self.check_refusal(carried));
                 }
                 return Err(plan_refusal(
@@ -401,10 +455,16 @@ impl PreparedConversion {
         let carried = plan
             .carried_errors(&self.document.ir, &self.validation)
             .len();
-        if carried > 0 && !self.allow_errors {
+        if carried > 0 && self.reject_errors {
             return Err(self.check_refusal(carried));
         }
-        if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
+        if self.empty_geometry(plan.report()) {
+            plan.note_empty_output();
+            if self.reject_empty {
+                return Err(self.empty_geometry_refusal(plan.report().clone()));
+            }
+        }
+        if self.loss_policy.rejects_export() && self.loss_floor.rejects(&plan.report().losses) {
             return Err(ConversionRefusal::ExportLossRejected {
                 decode_report: self.document.decode_report().cloned(),
                 validation: self.validation,
@@ -426,6 +486,49 @@ impl PreparedConversion {
             validation: self.validation,
         }
         .into()
+    }
+
+    fn empty_geometry_refusal(self, export_report: ExportReport) -> ApplicationError {
+        ConversionRefusal::EmptyGeometry {
+            format: self.selection.format,
+            decode_report: self.document.decode_report().cloned(),
+            validation: self.validation,
+            export_report,
+        }
+        .into()
+    }
+
+    fn empty_geometry(&self, export: &ExportReport) -> bool {
+        let empty_output = export.losses.iter().any(|loss| {
+            loss.code.taxonomy() == cadmpeg_ir::report::loss::LossTaxonomy::NoExportableSolids
+        });
+        let model = &self.document.ir.model;
+        let no_geometry = model.bodies.is_empty()
+            && model.points.is_empty()
+            && model.curves.is_empty()
+            && model.surfaces.is_empty()
+            && model.procedural_curves.is_empty()
+            && model.procedural_surfaces.is_empty()
+            && model.subds.is_empty()
+            && model.tessellations.is_empty();
+        let own_native_content = self
+            .document
+            .ir
+            .native
+            .namespace(self.encoder.id().as_str())
+            .is_some_and(|namespace| {
+                namespace.arenas().iter().any(|(arena, records)| {
+                    records.iter().any(|record| {
+                        export.native_dispositions.record_disposition(
+                            self.encoder.id().as_str(),
+                            arena,
+                            record.id(),
+                        ) != cadmpeg_ir::codec::write::NativeDisposition::Dropped
+                    })
+                })
+            });
+        self.selection.format != Format::Cadir
+            && (empty_output || (no_geometry && !own_native_content))
     }
 
     /// Returns the selected output format.
@@ -483,8 +586,7 @@ pub(crate) enum EmittedArtifact {
     StdoutWithoutSidecar,
 }
 
-/// Restates an unsupported target or an insufficient decode depth as a typed
-/// refusal.
+/// Restates an unsupported target as a typed refusal.
 ///
 /// Resource failures retain their typed evidence; other plan failures stay
 /// operational. Export-loss refusal needs a completed plan's typed loss rows.
@@ -502,23 +604,13 @@ fn plan_refusal(
             }
             .into()
         }
-        cadmpeg_core::CodecError::InsufficientDepth {
-            format,
-            needed,
-            recorded,
-        } => ConversionRefusal::InsufficientDepth {
-            format,
-            depth: DepthReport { needed, recorded },
-            decode_report,
-            validation,
-        }
-        .into(),
         _ => ApplicationError::from(error).at_stage(RefusalStage::Plan),
     }
 }
 
 fn decode_lossy_refusal(
     policy: LossPolicy,
+    floor: LossFloor,
     report: Option<&DecodeReport>,
     format: Format,
 ) -> Option<ConversionRefusal> {
@@ -526,11 +618,12 @@ fn decode_lossy_refusal(
         return None;
     }
     let report = report?;
-    let count = report.losses.len();
-    (count > 0).then(|| ConversionRefusal::DecodeLossRejected {
-        format,
-        decode_report: report.clone(),
-    })
+    floor
+        .rejects(&report.losses)
+        .then(|| ConversionRefusal::DecodeLossRejected {
+            format,
+            decode_report: report.clone(),
+        })
 }
 
 /// Emits one built plan to its destination and maintains CADIR sidecars.

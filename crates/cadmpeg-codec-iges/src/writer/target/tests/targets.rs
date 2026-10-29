@@ -114,12 +114,9 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
         .any(|loss| loss.code == IgesLossCode::PreservedSourceUnavailable.kind()));
 }
 
-/// A dialect this codec reads but cannot write refuses under `Inherit` once its
-/// retained image is gone. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is, and the
-/// refusal names both the source's dialect and the escape.
+/// With no retained image, a read-only source dialect selects the catalog default.
 #[test]
-fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
+fn inherit_synthesizes_the_default_for_a_source_dialect_the_writer_cannot_synthesize() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(point_file_at_version_flag(1)),
@@ -138,30 +135,60 @@ fn inherit_refuses_a_source_dialect_the_writer_cannot_synthesize() {
         Some("iges:1.0-fixed-ascii".to_owned())
     );
 
-    let error = inherit(decoded.ir(), None).expect_err("1.0 is not a synthesis target");
-    let CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "iges");
+    let plan = inherit(decoded.ir(), None).expect("§5.0 selects catalog-default synthesis");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("iges:1.0-fixed-ascii")
+        serde_json::to_value(plan.report()).expect("report")["identity"]["target"],
+        "iges:5.3-fixed-ascii"
     );
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "iges:5.3-fixed-ascii"),
-        "{:?}",
-        refusal.available()
+    let displacement: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .collect();
+    assert_eq!(displacement.len(), 1);
+    assert!(displacement[0].message.contains("iges:1.0-fixed-ascii"));
+    assert!(displacement[0].message.contains("iges:5.3-fixed-ascii"));
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined {
+            reason: "preserved IGES source image is unavailable".into(),
+        })
+    );
+    let unavailable: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::PreservedSourceUnavailable.kind())
+        .collect();
+    assert_eq!(unavailable.len(), 1);
+    assert_eq!(
+        unavailable[0].message,
+        "preserved IGES source image is unavailable; semantic regeneration is required"
+    );
+    assert_eq!(
+        wire::field::<FidelityResolution>(plan.report().write_path(), "fidelity"),
+        FidelityResolution::NotProvided {}
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)
+        .expect("write the selected default");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("actual default grammar reads");
+    assert_eq!(
+        output
+            .report()
+            .dialects()
+            .expect("native classification")
+            .primary()
+            .dialect()
+            .as_str(),
+        "iges:5.3-fixed-ascii"
     );
 }
 
@@ -280,3 +307,5 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
         );
     }
 }
+
+mod fallback;

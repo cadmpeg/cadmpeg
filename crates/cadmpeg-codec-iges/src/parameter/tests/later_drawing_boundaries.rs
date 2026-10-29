@@ -328,13 +328,16 @@ fn type141_entity_table_boundary_uses_nested_curve_counts() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end: expected_start + 3,
             comment: Vec::new(),
         };
@@ -367,13 +370,16 @@ fn type141_entity_table_boundary_precedes_valid_generic_alternative() {
         directory_sequence: 5,
         line_range: 1..2,
         bytes: Vec::new(),
-        tokens: values
+        tokens: (values
             .into_iter()
             .map(|value| Token {
                 value: TokenValue::Integer(value),
                 span: 0..0,
             })
-            .collect(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(Some)
+        .collect(),
         parameter_end: values.len(),
         comment: Vec::new(),
     };
@@ -411,13 +417,16 @@ fn type141_malformed_boundary_counts_do_not_enable_generic_recovery() {
             directory_sequence: 3,
             line_range: 1..2,
             bytes: Vec::new(),
-            tokens: values
+            tokens: (values
                 .into_iter()
                 .map(|value| Token {
                     value: TokenValue::Integer(value),
                     span: 0..0,
                 })
-                .collect(),
+                .collect::<Vec<_>>())
+            .into_iter()
+            .map(Some)
+            .collect(),
             parameter_end,
             comment: Vec::new(),
         };

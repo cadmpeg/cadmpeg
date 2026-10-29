@@ -96,7 +96,7 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         wrappers: vec![
             crate::records::feature::patterns::DesignPatternAxisWrapper {
                 record_index: 11,
-                identity_offset: 23,
+                identity_offset: Some(23),
             },
         ]
         .try_into()
@@ -106,9 +106,9 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
     };
     let inline = DesignCircularPatternAxis::Inline {
         origin: crate::test_support::reals([1.0, 2.0, 3.0]),
-        origin_offset: 29,
+        origin_offset: Some(29),
         direction: cadmpeg_ir::units::UnitVector3::Z_AXIS,
-        direction_offset: 53,
+        direction_offset: Some(53),
     };
 
     let historical_only = [CircularPatternAxisCandidate {
@@ -353,19 +353,19 @@ fn run_pattern_constructions_fixture() {
         Some(DesignCircularPatternConstruction {
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
-            count_offset: u64_from_index(count_start + 40),
+            count_offset: Some(u64_from_index(count_start + 40)),
             angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
                 .expect("checked fixture value"),
             angle_record_index,
-            angle_offset: u64_from_index(angle_start + 40),
+            angle_offset: Some(u64_from_index(angle_start + 40)),
             axis: crate::records::feature::patterns::DesignCircularPatternAxis::Inline {
                 origin: crate::test_support::reals([1.0, 2.0, 3.0]),
-                origin_offset: u64_from_index(axis_start + 25),
+                origin_offset: Some(u64_from_index(axis_start + 25)),
                 direction: cadmpeg_ir::units::UnitVector3::normalized(
                     cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
                 )
                 .expect("unit axis"),
-                direction_offset: u64_from_index(axis_start + 49),
+                direction_offset: Some(u64_from_index(axis_start + 49)),
             },
             axis_record_index,
             selection_record_index,
@@ -438,9 +438,9 @@ fn run_pattern_constructions_fixture() {
     )
     .unwrap();
     assert_eq!(owner_backed.count.get(), 25);
-    assert_eq!(owner_backed.count_offset, 101);
+    assert_eq!(owner_backed.count_offset, Some(101));
     assert_eq!(owner_backed.angle.get(), std::f64::consts::TAU);
-    assert_eq!(owner_backed.angle_offset, 202);
+    assert_eq!(owner_backed.angle_offset, Some(202));
     bytes[count_start + 4] = b'3';
     bytes[angle_start + 4] = b'3';
 
@@ -523,7 +523,7 @@ fn run_pattern_constructions_fixture() {
     assert_eq!(rectangular.u_extent(), 10.0);
     assert_eq!(rectangular.v_extent(), 0.0);
     assert_eq!(rectangular.owner_record_indices, [50, 51, 52, 53]);
-    assert_eq!(rectangular.value_offsets, [501, 502, 503, 504]);
+    assert_eq!(rectangular.value_offsets, Some([501, 502, 503, 504]));
     assert_eq!(rectangular.instances(), None);
 
     append_transform_record(&mut bytes, 100, [2.0, 3.0, 4.0]);
@@ -570,9 +570,10 @@ fn run_pattern_constructions_fixture() {
 
     let mut invalid_inactive_spacing = rectangular_owners.clone();
     {
-        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::try_from(
             invalid_inactive_spacing[3].clone(),
-        );
+        )
+        .unwrap();
         wire.evaluated_value = 1.0;
         invalid_inactive_spacing[3] =
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
@@ -588,8 +589,10 @@ fn run_pattern_constructions_fixture() {
     );
     let mut duplicate_lane = rectangular_owners.clone();
     {
-        let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(duplicate_lane[3].clone());
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::try_from(
+            duplicate_lane[3].clone(),
+        )
+        .unwrap();
         wire.local_ordinal = 2;
         duplicate_lane[3] =
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
@@ -652,7 +655,7 @@ fn run_pattern_constructions_fixture() {
             .iter()
             .map(|owner| owner.offset)
             .collect::<Vec<_>>(),
-        [501, 502, 503, 504]
+        [Some(501), Some(502), Some(503), Some(504)]
     );
     assert_eq!(alignment.operand_frames(), None);
 
@@ -824,7 +827,7 @@ fn run_pattern_constructions_fixture() {
             .iter()
             .map(|owner| owner.offset)
             .collect::<Vec<_>>(),
-        [605, 606]
+        [Some(605), Some(606)]
     );
     scope
         .try_edit(|draft| {
@@ -868,8 +871,8 @@ fn run_pattern_constructions_fixture() {
             ]
         )),
         [
-            (70, 29, 40, [1.0, 2.0, 3.0]),
-            (80, 169, 180, [4.0, 5.0, 6.0]),
+            (70, Some(29), Some(40), [1.0, 2.0, 3.0]),
+            (80, Some(169), Some(180), [4.0, 5.0, 6.0]),
         ]
     );
     let mut legacy_assembly_bytes = vec![0_u8; 633];
@@ -907,8 +910,8 @@ fn run_pattern_constructions_fixture() {
     .unwrap()
     .and_then(|alignment| alignment.operand_frames())
     .expect("compact assembly operand frames");
-    assert_eq!(legacy_frames[0].reference_offset, 25);
-    assert_eq!(legacy_frames[0].transform_offset, 36);
+    assert_eq!(legacy_frames[0].reference_offset, Some(25));
+    assert_eq!(legacy_frames[0].transform_offset, Some(36));
 
     let mut dynamic_standard_bytes = assembly_bytes.clone();
     dynamic_standard_bytes[641..644].copy_from_slice(b"262");
@@ -995,10 +998,10 @@ fn run_pattern_constructions_fixture() {
     assert_eq!(axial_alignment.angle(), 0.5);
     assert_eq!(axial_alignment.offset(), [0.0, 0.0, 2.0]);
     let axial_frames = axial_alignment.operand_frames().unwrap();
-    assert_eq!(axial_frames[0].reference_offset, 29);
-    assert_eq!(axial_frames[0].transform_offset, 39);
-    assert_eq!(axial_frames[1].reference_offset, 168);
-    assert_eq!(axial_frames[1].transform_offset, 178);
+    assert_eq!(axial_frames[0].reference_offset, Some(29));
+    assert_eq!(axial_frames[0].transform_offset, Some(39));
+    assert_eq!(axial_frames[1].reference_offset, Some(168));
+    assert_eq!(axial_frames[1].transform_offset, Some(178));
 
     let mut short_axial_bytes = axial_assembly_bytes[..705].to_vec();
     short_axial_bytes.extend_from_slice(&3_u32.to_le_bytes());
@@ -1042,10 +1045,10 @@ fn run_pattern_constructions_fixture() {
     let short_axial_frames = short_axial_alignment
         .operand_frames()
         .expect("short axial operand frames");
-    assert_eq!(short_axial_frames[0].reference_offset, 29);
-    assert_eq!(short_axial_frames[0].transform_offset, 39);
-    assert_eq!(short_axial_frames[1].reference_offset, 168);
-    assert_eq!(short_axial_frames[1].transform_offset, 178);
+    assert_eq!(short_axial_frames[0].reference_offset, Some(29));
+    assert_eq!(short_axial_frames[0].transform_offset, Some(39));
+    assert_eq!(short_axial_frames[1].reference_offset, Some(168));
+    assert_eq!(short_axial_frames[1].transform_offset, Some(178));
 
     let mut first_joint_origin = scope.clone();
     first_joint_origin
@@ -1279,7 +1282,6 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
                 u_extent: 1e200,
                 v_extent: 0.,
                 owner_record_indices: [50, 51, 52, 53],
-                value_offsets: [501, 502, 503, 504],
                 instances: None,
                 instance_search_cap: None,
                 directions: Vec::new(),
@@ -1423,7 +1425,6 @@ fn rectangular_instance_fixture() -> (
                 u_extent: 1e200,
                 v_extent: 0.,
                 owner_record_indices: [50, 51, 52, 53],
-                value_offsets: [501, 502, 503, 504],
                 instances: None,
                 instance_search_cap: None,
                 directions: Vec::new(),
@@ -1618,12 +1619,12 @@ fn rectangular_pattern_direction_record_stores_origin_and_displacement() {
         direction.origin,
         crate::test_support::reals([-2.0, 1.0, 0.5])
     );
-    assert_eq!(direction.origin_offset, 25);
+    assert_eq!(direction.origin_offset, Some(25));
     assert_eq!(
         direction.displacement,
         crate::test_support::reals([0.0, -2.5, 0.0])
     );
-    assert_eq!(direction.displacement_offset, 49);
+    assert_eq!(direction.displacement_offset, Some(49));
     assert_eq!(
         direction.direction(),
         cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0))
@@ -1670,8 +1671,8 @@ fn rectangular_pattern_spacing_direction_validates_shifted_fields() {
     let direction = parse(&bytes).expect("spacing direction");
     assert_eq!(direction.distance_type, 7);
     assert_eq!(direction.selection_record_index, 23);
-    assert_eq!(direction.origin_offset, 25);
-    assert_eq!(direction.displacement_offset, 49);
+    assert_eq!(direction.origin_offset, Some(25));
+    assert_eq!(direction.displacement_offset, Some(49));
     assert_eq!(
         direction.displacement,
         crate::test_support::reals([0.0, 2.0, 0.0])
@@ -1749,7 +1750,6 @@ fn rectangular_pattern_payload_binds_secondary_vector_to_owners_and_seed() {
             u_extent: 1.7,
             v_extent: -0.9,
             owner_record_indices: [50, 51, 52, 53],
-            value_offsets: [0; 4],
             instances: None,
             instance_search_cap: None,
             directions: Vec::new(),

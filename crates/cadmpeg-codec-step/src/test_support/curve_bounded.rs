@@ -78,6 +78,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
             .points
             .push(Point::new(id(PointId::mint, "point", &key), position, None));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: id(VertexId::mint, "vertex", &key),
             point: id(PointId::mint, "point", &key),
             tolerance: None,
@@ -89,6 +90,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         let next = HOLE[(index + 1) % HOLE.len()];
         let direction = [(next[0] - x) / HOLE_SIDE, (next[1] - y) / HOLE_SIDE];
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: id(CurveId::mint, "curve", &key),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -101,6 +103,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
             source_object: None,
         });
         ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: id(PcurveId::mint, "pcurve", &key),
             geometry: PcurveGeometry::Line(
                 LinePcurve::try_new(Point2::new(x, y), Point2::new(direction[0], direction[1]))
@@ -109,6 +112,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
             metadata: PcurveMetadata::default(),
         });
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: id(EdgeId::mint, "edge", &key),
             carrier: EdgeCarrier::new(
                 Some(id(CurveId::mint, "curve", &key)),
@@ -128,6 +132,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
             Sense::Reversed => (Sense::Reversed, [HOLE_SIDE, 0.0]),
         };
         coedges.push(Coedge {
+            native_ref: None,
             id: id(CoedgeId::mint, "coedge", &key),
             owner_loop: id(LoopId::mint, "loop", "hole"),
             edge: id(EdgeId::mint, "edge", &key),
@@ -147,11 +152,13 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
     let ring = coedges.iter().map(|coedge| coedge.id.clone()).collect();
     ir.model.coedges.extend(coedges);
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: id(SurfaceId::mint, "surface", "support"),
         geometry: SurfaceGeometry::Solved(support.clone()),
         source_object: None,
     });
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: id(SurfaceId::mint, "surface", "face"),
         geometry: SurfaceGeometry::Procedural {
             construction: id(ProceduralSurfaceId::mint, "procedural-surface", "face"),
@@ -174,11 +181,13 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         None,
     ));
     ir.model.loops.push(Loop {
+        native_ref: None,
         id: id(LoopId::mint, "loop", "hole"),
         face: id(FaceId::mint, "face", "sheet"),
         boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).expect("non-empty ring")),
     });
     ir.model.faces.push(Face {
+        native_ref: None,
         id: id(FaceId::mint, "face", "sheet"),
         shell: id(ShellId::mint, "shell", "sheet"),
         surface: id(SurfaceId::mint, "surface", "face"),
@@ -199,11 +208,13 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         .expect("shell with a face"),
     );
     ir.model.regions.push(Region {
+        native_ref: None,
         id: id(RegionId::mint, "region", "sheet"),
         body: id(BodyId::mint, "body", "sheet"),
         shells: vec![id(ShellId::mint, "shell", "sheet")],
     });
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: id(BodyId::mint, "body", "sheet"),
         kind: BodyKind::Sheet,
         regions: vec![id(RegionId::mint, "region", "sheet")],

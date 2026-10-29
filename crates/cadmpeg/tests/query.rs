@@ -9,6 +9,7 @@ use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
+mod query_measure_reports;
 mod query_support;
 mod support;
 
@@ -16,7 +17,7 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
-  "ir_version": "9",
+  "ir_version": "10",
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -42,17 +43,17 @@ const CHECK_REPORT: &str = r#"{
 }"#;
 
 const CADIR_DOC: &str = r#"{
-  "ir_version": "9",
+  "ir_version": "10",
   "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
   "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
 const SIDECAR: &str = r#"{
-  "ir_version": "9",
+  "ir_version": "10",
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
-    "transfer": {"transfer": "full", "geometry_transferred": true},
+    "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": true},
     "coverage": {"streams": 7, "segments": 3},
     "losses": [{"code": {"namespace": "shared", "code": "metadata_not_transferred",
                          "kind": "metadata_not_transferred"},
@@ -120,7 +121,7 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             Some(serde_json::json!("32")),
             Some(serde_json::json!("7")),
             Some(serde_json::json!("8")),
-            Some(serde_json::json!("10")),
+            Some(serde_json::json!("9")),
             Some(serde_json::json!("12")),
             Some(serde_json::json!({})),
         ] {
@@ -150,7 +151,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.cadir.json",
         r#"{
-          "ir_version": "9",
+          "ir_version": "10",
           "source": {
             "identity": {
               "classification": "classified",
@@ -189,11 +190,11 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.fidelity.json",
         r#"{
-          "ir_version": "9",
+          "ir_version": "10",
           "ir_sha256": "abc123",
           "report": {
             "format": "f3d",
-            "transfer": {"transfer": "full", "geometry_transferred": true},
+            "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": true},
             "coverage": {},
             "losses": [],
             "dialects": {
@@ -235,7 +236,7 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         dir.path(),
         "identity.report.json",
         r#"{
-          "ir_version": "9",
+          "ir_version": "10",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -329,7 +330,7 @@ fn summary_projects_structured_target_refusals() {
         dir.path(),
         "target-refusal.json",
         r#"{
-          "ir_version": "9",
+          "ir_version": "10",
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -607,155 +608,10 @@ fn query_projects_a_real_check_report_end_to_end() {
         );
 }
 
-/// The unit cube with one face flipped: its sense disagrees with its loop
-/// winding, so the volume and centroid are unavailable with
-/// `volume.orientation-conflict` (category `input`).
-#[test]
-fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
-    let dir = tempdir().unwrap();
-    let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.faces[0].sense = match ir.model.faces[0].sense {
-        cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
-        cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
-    };
-    let model = dir.path().join("cube.cadir.json");
-    fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
-    let report = dir.path().join("cube.measure.json");
-    cadmpeg()
-        .args(["measure", model.to_str().unwrap(), "-o"])
-        .arg(&report)
-        .assert()
-        .success();
-    let measured: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    let unavailable = measured["measure"]["document"]["unavailable"]
-        .as_object()
-        .unwrap();
-    let per_category: Vec<(String, u64)> = unavailable
-        .iter()
-        .filter(|(category, _)| category.as_str() != "undefined")
-        .map(|(category, codes)| {
-            let count = codes
-                .as_object()
-                .unwrap()
-                .values()
-                .map(|count| count.as_u64().unwrap())
-                .sum();
-            (category.clone(), count)
-        })
-        .collect();
-    assert!(
-        unavailable["input"]["volume.orientation-conflict"]
-            .as_u64()
-            .unwrap()
-            >= 2
-    );
-
-    let output = cadmpeg()
-        .args(["query", "summary", "--json"])
-        .arg(&report)
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let payload = &summary["payload"];
-    assert_eq!(payload["kind"], "command report");
-    assert_eq!(payload["command"], "measure");
-    for (level, rows) in [
-        ("bodies", "1"),
-        ("faces", "0"),
-        ("edges", "0"),
-        ("surfaces", "0"),
-    ] {
-        assert_eq!(payload[format!("measure_{level}")], rows, "{level}");
-    }
-    let total: u64 = per_category.iter().map(|(_, count)| count).sum();
-    assert_eq!(payload["measure_unavailable"], total.to_string());
-    for (category, count) in &per_category {
-        assert_eq!(
-            payload[format!("measure_unavailable.{category}")],
-            count.to_string()
-        );
-    }
-    assert_eq!(payload["measure_work_exhausted"], "false");
-    assert!(payload.get("measure_unavailable.undefined").is_none());
-
-    // The unflipped cube is measured: its three equal principal moments
-    // leave three undetermined axes, which count as undefined only.
-    let cube = dir.path().join("cube_ok.cadir.json");
-    let measured_cube = dir.path().join("cube_ok.measure.json");
-    let ir = unit_cube().expect("unit cube fixture is admitted");
-    fs::write(&cube, ir.to_canonical_json().unwrap()).unwrap();
-    cadmpeg()
-        .args(["measure", cube.to_str().unwrap(), "-o"])
-        .arg(&measured_cube)
-        .assert()
-        .success();
-    cadmpeg()
-        .args(["query", "summary"])
-        .arg(&measured_cube)
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("measure_unavailable\t0\n")
-                .and(predicate::str::contains("measure_undefined\t3\n")),
-        );
-
-    cadmpeg()
-        .args(["query", "findings"])
-        .arg(&report)
-        .assert()
-        .success()
-        .stdout("severity\tcheck\tentity\tmessage\n")
-        .stderr(predicate::str::contains("this command did not check"));
-    cadmpeg()
-        .args(["query", "losses"])
-        .arg(&report)
-        .assert()
-        .success()
-        .stdout("severity\tcode\tmessage\n")
-        .stderr(predicate::str::contains(
-            "measure report has no decode stage",
-        ));
-}
-
-/// A measure report that leaves out its document's `work` reads it as
-/// absent; one that states `work: null` is refused with the key named.
-#[test]
-fn a_measure_report_states_its_work_or_leaves_it_out() {
-    let dir = tempdir().unwrap();
-    let report = |work: &str| {
-        format!(
-            r#"{{"ir_version": "9", "command": "measure", "status": "ok", "refusal": null,
-               "decode_report": null, "measure": {{"bodies": [{{}}], "faces": [],
-               "edges": [], "surfaces": [], "document": {{"unavailable": {{}}{work}}}}}}}"#
-        )
-    };
-    let left_out = write(dir.path(), "left_out.json", &report(""));
-    cadmpeg()
-        .args(["query", "summary"])
-        .arg(&left_out)
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("measure_bodies\t1")
-                .and(predicate::str::contains("measure_unavailable\t0"))
-                .and(predicate::str::contains("measure_work").not()),
-        );
-    let null = write(dir.path(), "null.json", &report(r#", "work": null"#));
-    cadmpeg()
-        .args(["query", "summary"])
-        .arg(&null)
-        .assert()
-        .code(2)
-        .stderr(predicate::str::contains(
-            "work: this key states a value or is left out",
-        ));
-}
-
 // --- query item -------------------------------------------------------------
 
 const ITEM_DOC: &str = r#"{
-  "ir_version": "9",
+  "ir_version": "10",
   "model": {
     "sketch_entities": [
       {
@@ -1480,20 +1336,20 @@ fn schema_sidecar_and_json_envelope() {
 }
 
 const FIDELITY_SIDECAR: &str = r#"{
-  "ir_version": "9",
+  "ir_version": "10",
   "ir_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
   "report": {"identity": {"classification": "unclassified", "format": "f3d"},
-             "transfer": {"transfer": "full", "geometry_transferred": true},
+             "transfer": {"scope": {"model": true, "design": true}, "geometry_transferred": true},
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
     "annotations": {"provenance": {"a:b:c#1": {"stream": "Contents/Config-0", "offset": 0}},
                     "exactness": {}},
     "retained_records": {
-      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0,
+      "f3d:source:record#r1": {"stream": "Contents/Config-0", "offset": 0, "untyped": [],
              "bytes": {"retention": "inline", "data": "QUJDRA=="}},
-      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4,
+      "f3d:source:record#r2": {"stream": "Contents/Config-0", "offset": 4, "untyped": [],
              "bytes": {"retention": "inline", "data": "RUY="}},
-      "f3d:source:record#r3": {"stream": "Other", "offset": 0,
+      "f3d:source:record#r3": {"stream": "Other", "offset": 0, "untyped": [],
              "bytes": {"retention": "digest", "byte_len": 3, "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}
     }
   }
@@ -1883,10 +1739,6 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
             format: CodecFormat::Step,
             object_id: cadmpeg_core::nonblank_literal!("orphan"),
             geometry_role: Some(SourceGeometryRole::Support),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
     ));
@@ -1991,4 +1843,98 @@ fn summary_projects_cadir_export_without_a_native_target() {
         .success()
         .stdout("severity\tcode\tmessage\n")
         .stderr("");
+}
+
+mod schema_type_identities {
+    use crate::support::cadmpeg;
+
+    #[test]
+    fn schema_type_query_exports_compiler_bound_dimension_ids_with_unchanged_schema() {
+        let result = cadmpeg()
+            .args([
+                "query",
+                "schema",
+                "types",
+                "model.sketch_constraints",
+                "--json",
+            ])
+            .output()
+            .expect("schema query executes");
+        assert!(result.status.success());
+        let result: serde_json::Value = serde_json::from_slice(&result.stdout).expect("query JSON");
+        let payload = &result["payload"];
+        let (schema, metadata) = cadmpeg_ir::schema::query::cadir();
+        let schema = schema.as_value();
+        let model_ref = schema["properties"]["model"]["$ref"]
+            .as_str()
+            .expect("model reference");
+        let model = schema.pointer(&model_ref[1..]).expect("model schema");
+        let element_ref = model["properties"]["sketch_constraints"]["items"]["$ref"]
+            .as_str()
+            .expect("arena element reference");
+        let element = schema.pointer(&element_ref[1..]).expect("element schema");
+        assert_eq!(&payload["schema"], element);
+        let references = payload["type_metadata"]["references"]
+            .as_object()
+            .expect("typed references");
+        assert!(!references.is_empty());
+        for (reference, identities) in references {
+            let original = metadata
+                .references
+                .get(reference)
+                .expect("compiler-bound reference");
+            assert_eq!(
+                identities,
+                &serde_json::to_value(original).expect("identity JSON")
+            );
+            let name = reference
+                .strip_prefix("#/$defs/")
+                .expect("local schema reference")
+                .replace("~1", "/")
+                .replace("~0", "~");
+            assert!(payload["defs"].get(&name).is_some() || element_ref == reference);
+        }
+        assert!(references
+            .values()
+            .flat_map(|value| value.as_array().expect("alias list"))
+            .any(|identity| identity["role"] == "dimension"
+                && identity["rust_type"].as_str().is_some_and(|name| name
+                    == std::any::type_name::<
+                        cadmpeg_ir::features::Dimension<cadmpeg_ir::scalar::Length>,
+                    >())));
+    }
+}
+
+#[test]
+fn effective_reports_the_resolved_display_colour_of_each_record() {
+    let dir = tempdir().unwrap();
+    let mut document =
+        serde_json::to_value(unit_cube().expect("unit cube fixture is admitted")).unwrap();
+    let color = serde_json::json!({"r": 0.25, "g": 0.5, "b": 0.75, "a": 1.0});
+    document["model"]["bodies"][0]["color"] = color.clone();
+    let body = document["model"]["bodies"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let model = write(dir.path(), "cube.cadir.json", &document.to_string());
+    let output = cadmpeg()
+        .args(["query", "effective", "--json", model.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let payload = &value["payload"];
+    assert_eq!(payload["protocol"], "cadmpeg-effective-values-v1");
+    let row = payload["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["arena"] == "bodies" && row["id"] == body.as_str())
+        .expect("the coloured body has an effective-value row");
+    assert_eq!(row["display_color"], color);
+    assert!(payload["configurations"].as_object().unwrap().is_empty());
 }

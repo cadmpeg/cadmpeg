@@ -25,7 +25,6 @@ mod tests {
     use cadmpeg_core::decode::DecodeDepth;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::write::target::TargetRequest;
-    use cadmpeg_ir::codec::write::DepthNeed;
     use cadmpeg_ir::codec::FormatId;
 
     use super::build_encoder;
@@ -66,20 +65,33 @@ mod tests {
         }
     }
 
-    /// Each encoder's decode need, pinned: a geometry writer that starts
+    /// Each encoder's decode request, pinned: a geometry writer that starts
     /// reading a design arena must raise its need here, where review sees it.
     #[test]
-    fn every_encoder_declares_its_decode_need() {
+    fn every_encoder_declares_its_decode_request() {
         for format in Format::all() {
             let encoder = build_encoder(format);
             let expected = match encoder.id().as_str() {
-                "cadir" => DepthNeed::Recorded,
-                "step" | "iges" | "rhino" => DepthNeed::AtLeast(DecodeDepth::Geometry),
-                "f3d" | "sldprt" | "fcstd" => DepthNeed::AtLeast(DecodeDepth::Full),
-                other => panic!("{other}: no pinned decode need"),
+                "cadir" => DecodeDepth::Full,
+                "step" | "iges" | "rhino" => DecodeDepth::Geometry,
+                "f3d" | "sldprt" | "fcstd" => DecodeDepth::Full,
+                other => panic!("{other}: no pinned decode request"),
             };
-            assert_eq!(encoder.needs(), expected, "{}", encoder.id());
+            assert_eq!(encoder.request(), expected, "{}", encoder.id());
         }
+    }
+
+    #[cfg(feature = "fcstd")]
+    #[test]
+    fn freecad_synthesis_catalog_covers_legacy_schemas_and_defaults_to_four() {
+        let catalog = build_encoder(Format::Fcstd).targets();
+        let mut ids = catalog
+            .iter()
+            .map(|target| target.id.as_str())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        assert_eq!(ids, ["fcstd:schema-2", "fcstd:schema-3", "fcstd:schema-4"]);
+        assert_eq!(catalog.default().unwrap().1.id.as_str(), "fcstd:schema-4");
     }
 
     /// An explicit id the catalog does not carry is refused, and the refusal

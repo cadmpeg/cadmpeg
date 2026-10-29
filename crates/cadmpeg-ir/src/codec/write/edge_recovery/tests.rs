@@ -95,6 +95,7 @@ fn attach_pcurve(ir: &mut CadIr, coedge_index: usize, reverse: bool, bow: f64) {
         id: id.clone(),
         geometry,
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     });
     ir.model.coedges[coedge_index].pcurves.push(PcurveUse {
         pcurve: id,
@@ -306,6 +307,7 @@ fn cylinder_pcurve(direction: Point2, end: Point3) -> CadIr {
             LinePcurve::try_new(Point2::new(0.0, 0.0), direction).unwrap(),
         ),
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     });
     ir.model.coedges[coedge].pcurves.push(PcurveUse {
         pcurve: id,
@@ -454,6 +456,7 @@ fn planar_circles_recover_in_both_edge_directions() {
                 .unwrap(),
             ),
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         ir.model.coedges[coedge].pcurves.push(PcurveUse {
             pcurve: id,

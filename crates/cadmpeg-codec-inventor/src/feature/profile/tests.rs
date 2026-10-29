@@ -26,7 +26,11 @@ const NAMING_TYPE: u32 = 38;
 const SKETCH_ORDINAL: u32 = 2;
 const BODY_ORDINAL: u32 = 30;
 
-fn naming_values(naming_type: i64, associative_id: i64, topology: i64) -> Vec<AttributeValue> {
+fn naming_values(
+    naming_type: i64,
+    associative_id: i64,
+    topology: i64,
+) -> Vec<Option<AttributeValue>> {
     let mut values = vec![
         AttributeValue::Reference("sat:brep:entity#-1".into()),
         AttributeValue::Integer(-1),
@@ -35,7 +39,7 @@ fn naming_values(naming_type: i64, associative_id: i64, topology: i64) -> Vec<At
         AttributeValue::Reference("sat:brep:entity#9".into()),
     ];
     values.extend([naming_type, 0, associative_id, 0, topology].map(AttributeValue::Integer));
-    values
+    values.into_iter().map(Some).collect()
 }
 
 #[test]
@@ -64,8 +68,8 @@ fn custom_edge_name_requires_its_family_version_and_exact_integer_layout() {
     values.splice(
         5..5,
         [
-            AttributeValue::String("INV_NMX_GEN_TAG".into()),
-            AttributeValue::Integer(1),
+            Some(AttributeValue::String("INV_NMX_GEN_TAG".into())),
+            Some(AttributeValue::Integer(1)),
         ],
     );
     assert_eq!(
@@ -81,16 +85,16 @@ fn custom_edge_name_requires_its_family_version_and_exact_integer_layout() {
         edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values[..11]),
         None
     );
-    values.push(AttributeValue::Integer(0));
+    values.push(Some(AttributeValue::Integer(0)));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
     values.pop();
-    values[11] = AttributeValue::Integer(1);
+    values[11] = Some(AttributeValue::Integer(1));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
-    values[11] = AttributeValue::Integer(2);
-    values[6] = AttributeValue::Integer(2);
+    values[11] = Some(AttributeValue::Integer(2));
+    values[6] = Some(AttributeValue::Integer(2));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
-    values[6] = AttributeValue::Integer(1);
-    values[5] = AttributeValue::String("other_family".into());
+    values[6] = Some(AttributeValue::Integer(1));
+    values[5] = Some(AttributeValue::String("other_family".into()));
     assert_eq!(edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values), None);
     assert_eq!(
         edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &naming_values(44, 7, 2)),
@@ -269,6 +273,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
         id: id(2).try_into().expect("synthetic identity"),
         body: id(1).try_into().expect("synthetic identity"),
         shells: vec![id(3).try_into().expect("synthetic identity")],
+        native_ref: None,
     });
     brep.shells.push(
         Shell::with_faces(
@@ -290,6 +295,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     brep.loops.push(Loop {
         id: id(5).try_into().expect("synthetic identity"),
@@ -303,6 +309,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             )
             .expect("synthetic profile fixture"),
         ),
+        native_ref: None,
     });
     let points = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
     for (i, (x, y)) in (0..4).zip(points) {
@@ -316,6 +323,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             id: id(31 + i).try_into().expect("synthetic identity"),
             point: id(41 + i).try_into().expect("synthetic identity"),
             tolerance: None,
+            native_ref: None,
         });
         brep.edges.push(Edge {
             id: id(11 + i).try_into().expect("synthetic identity"),
@@ -323,6 +331,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             start: id(31 + i).try_into().expect("synthetic identity"),
             end: id(31 + (i + 1) % 4).try_into().expect("synthetic identity"),
             tolerance: None,
+            native_ref: None,
         });
         brep.coedges.push(Coedge {
             id: id(21 + i).try_into().expect("synthetic identity"),
@@ -332,13 +341,14 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             sense: Sense::Forward,
             pcurves: vec![],
             use_curve: None,
+            native_ref: None,
         });
         let mut values = naming_values(i64::from(NAMING_TYPE), i64::from(i + 1), 2);
         values.splice(
             5..5,
             [
-                AttributeValue::String("INV_NMX_GEN_TAG".into()),
-                AttributeValue::Integer(1),
+                Some(AttributeValue::String("INV_NMX_GEN_TAG".into())),
+                Some(AttributeValue::Integer(1)),
             ],
         );
         brep.attributes.push(SourceAttribute {
@@ -348,6 +358,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             target: AttributeTarget::Edge(id(11 + i).try_into().expect("synthetic identity")),
             name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
             values,
+            native_ref: None,
         });
     }
     brep.attributes.push(SourceAttribute {
@@ -356,10 +367,11 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             .expect("synthetic identity"),
         target: AttributeTarget::Edge(id(11).try_into().expect("synthetic identity")),
         name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
-        values: vec![AttributeValue::Integer(0); 5]
+        values: vec![Some(AttributeValue::Integer(0)); 5]
             .into_iter()
-            .chain([AttributeValue::String("other_family".into())])
+            .chain([Some(AttributeValue::String("other_family".into()))])
             .collect(),
+        native_ref: None,
     });
     brep.body_native_keys.push(BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -394,8 +406,8 @@ fn custom_edge_names_restore_a_selected_loop_that_the_sketch_table_lacks() {
         values.splice(
             5..5,
             [
-                AttributeValue::String("INV_NMX_GEN_TAG".into()),
-                AttributeValue::Integer(1),
+                Some(AttributeValue::String("INV_NMX_GEN_TAG".into())),
+                Some(AttributeValue::Integer(1)),
             ],
         );
         edge.name = edge_name(super::CUSTOM_NAMING_ATTRIBUTE, &values);

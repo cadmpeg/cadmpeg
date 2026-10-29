@@ -41,22 +41,23 @@ use std::collections::BTreeMap;
 
 include!("dialect/registry_ids.rs");
 
-/// The synthesis catalog: the dialects this encoder produces for an input whose
-/// retained document graph already declares them.
-///
-/// Preservation is not listed here. [`crate::writer`] repacks the
-/// retained entry set and patches `Document.xml` in place, so it preserves every
-/// schema this codec reads — schema 2 included — while it regenerates none. The
-/// catalog is what an explicit `--to` may name; [`TargetRequest::Inherit`] asks
-/// for the retained document's own dialect instead, whatever that is.
-/// No row is a cross-format default because this writer cannot synthesize an
-/// `FCStd` document graph from another format.
-///
-/// [`TargetRequest::Inherit`]: cadmpeg_ir::codec::write::target::TargetRequest::Inherit
-pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
-    id: FcstdDialect::Schema4.id(),
-    aliases: &["4"],
-}];
+/// Schema vocabularies authored from neutral and typed native content.
+/// Schema 4 is the cross-format default; recorded source identities inherit
+/// their matching vocabulary.
+pub(crate) const TARGETS: &[TargetDescriptor] = &[
+    TargetDescriptor {
+        id: FcstdDialect::Schema4.id(),
+        aliases: &["4"],
+    },
+    TargetDescriptor {
+        id: FcstdDialect::Schema2.id(),
+        aliases: &["2"],
+    },
+    TargetDescriptor {
+        id: FcstdDialect::Schema3.id(),
+        aliases: &["3"],
+    },
+];
 
 /// Key of `Document/@SchemaVersion` in [`DialectMatch::declared`].
 ///
@@ -135,6 +136,18 @@ impl FcstdDialect {
     /// undeclared schema with the `Objects` vocabulary rather than refusing on
     /// the discriminant.
     pub(crate) fn classify(document: &DocumentFacts, schema_version: &str) -> DialectMatch {
+        Self::classify_declared(
+            schema_version,
+            document.file_version.as_str(),
+            document.program_version.as_deref(),
+        )
+    }
+
+    pub(crate) fn classify_declared(
+        schema_version: &str,
+        file_version: &str,
+        program_version: Option<&str>,
+    ) -> DialectMatch {
         let dialect = Self::from_schema_version(schema_version);
         let mut declared = BTreeMap::new();
         declared.insert(
@@ -143,12 +156,12 @@ impl FcstdDialect {
         );
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_FILE_VERSION),
-            document.file_version.as_str().to_owned(),
+            file_version.to_owned(),
         );
-        if let Some(version) = &document.program_version {
+        if let Some(version) = program_version {
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_PROGRAM_VERSION),
-                version.clone(),
+                version.to_owned(),
             );
         }
         if dialect == Self::Unknown {

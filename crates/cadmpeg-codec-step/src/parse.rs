@@ -10,7 +10,7 @@ use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -25,6 +25,7 @@ use crate::parse::schema_identifier::{
 
 mod metadata;
 mod parameters;
+pub(crate) mod parts;
 mod recovery;
 pub(crate) mod schema_identifier;
 
@@ -390,6 +391,8 @@ pub(crate) struct Exchange {
     records: BTreeMap<u64, RawRecord>,
     /// Bounded exchange statements excluded from the interpreted graph.
     omitted_spans: Vec<Range<usize>>,
+    /// Parser-only ownership index: these spans already have a shared part home.
+    shared_omitted: BTreeSet<usize>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
@@ -423,6 +426,10 @@ impl EntityIndex {
 }
 
 impl Exchange {
+    pub(super) fn shared_part_home(&self, start: usize) -> bool {
+        self.shared_omitted.contains(&start)
+    }
+
     /// HEADER records admitted with the cached schema and implementation level.
     pub(crate) fn header(&self) -> &[HeaderRecord] {
         &self.header
@@ -495,6 +502,7 @@ impl Exchange {
         self.data.clear();
         self.records.clear();
         self.omitted_spans.clear();
+        self.shared_omitted.clear();
         self.schema_identifiers.clear();
         self.entity_ids = EntityIndex::default();
         std::mem::take(&mut self.signatures)
@@ -631,6 +639,9 @@ pub(crate) fn parse_inner(
         omitted_entity_names: None,
         defer_lexical_errors: false,
         budget,
+        source: None,
+        parts: None,
+        shared_omitted: BTreeSet::new(),
     };
     parser.current = parser.lex_next()?;
     parser.exchange()
@@ -654,6 +665,9 @@ struct Parser<'input, 'ctx, 'arena> {
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
     defer_lexical_errors: bool,
     budget: &'ctx DecodeContext<'arena>,
+    source: Option<View<'input>>,
+    parts: Option<&'ctx mut cadmpeg_ir::source_fidelity::parts::PartOutput>,
+    shared_omitted: BTreeSet<usize>,
 }
 
 struct PartialNameList<'a>(&'a partials::RecordPartials);
@@ -1007,7 +1021,7 @@ impl Parser<'_, '_, '_> {
                     match message {
                         ValidationError::Invalid(message) => return self.err(message),
                         ValidationError::Resource(error) => {
-                            return Err(ParseError::Resource(error))
+                            return Err(ParseError::Resource(error));
                         }
                     }
                 }
@@ -1332,6 +1346,7 @@ impl Parser<'_, '_, '_> {
                 signatures,
                 records,
                 omitted_spans,
+                shared_omitted: self.shared_omitted,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
                 entity_ids,
@@ -1692,7 +1707,13 @@ fn validate_header(
             .zip(REQUIRED)
             .any(|(record, expected)| record.name != expected)
     {
-        push_header_metadata_diagnostic(&mut diagnostics, offset, format_args!("HEADER does not begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA; records read by name"));
+        push_header_metadata_diagnostic(
+            &mut diagnostics,
+            offset,
+            format_args!(
+                "HEADER does not begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA; records read by name"
+            ),
+        );
     }
     let mut descriptions = header
         .iter()
@@ -1709,7 +1730,10 @@ fn validate_header(
     };
     let declaration = DeclaredImplementationLevel::new(text);
     if declaration.is_unverified() {
-        let message = format!("FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar", declaration.text());
+        let message = format!(
+            "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
+            declaration.text()
+        );
         diagnostics.push(ParseDiagnostic {
             offset: description.map_or(offset, |record| record.offset),
             kind: ParseDiagnosticKind::ImplementationLevelUnverified,
@@ -1760,7 +1784,13 @@ fn validate_header(
             _ => None,
         };
         let Some(identifier) = identifier.and_then(AdmittedSchemaIdentifier::admit) else {
-            push_header_metadata_diagnostic(&mut diagnostics, schema_record.offset, format_args!("FILE_SCHEMA contains an unusable identifier; schema selected from the readable identifiers"));
+            push_header_metadata_diagnostic(
+                &mut diagnostics,
+                schema_record.offset,
+                format_args!(
+                    "FILE_SCHEMA contains an unusable identifier; schema selected from the readable identifiers"
+                ),
+            );
             continue;
         };
         let trimmed = identifier.text().trim();

@@ -80,7 +80,7 @@ pub(super) fn surface_patch_normal(
     use crate::layout::surface_patch_v7_normal_flip_prefix as layout;
     use crate::records::feature::scope::DesignFeatureKind;
     use crate::records::feature::surface_ops::DesignSurfacePatchNormalState;
-    use crate::records::identity::Located;
+    use crate::records::identity::Sourced;
     if scope.kind() != DesignFeatureKind::SurfacePatch {
         return None;
     }
@@ -96,8 +96,8 @@ pub(super) fn surface_patch_normal(
         _ => return Some(DesignSurfacePatchNormalState::Unsupported),
     }
     let admitted = || {
-        let start = usize::try_from(scope.byte_offset()).ok()?;
-        let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+        let start = usize::try_from(scope.byte_offset()?).ok()?;
+        let end = usize::try_from(scope.paired_byte_offset()?).ok()?;
         let frame = bytes.get(start..end)?;
         if View::u32_le_at(frame, layout::FOLLOWING_WORD) != Some(layout::FOLLOWING_WORD_VALUE) {
             return None;
@@ -108,11 +108,13 @@ pub(super) fn surface_patch_normal(
             _ => return None,
         };
         Some(DesignSurfacePatchNormalState::Explicit {
-            reversed: Located {
+            reversed: Sourced {
                 value: reversed,
-                offset: scope
-                    .byte_offset()
-                    .checked_add(u64::try_from(layout::NORMAL_FLIP).ok()?)?,
+                offset: Some(
+                    scope
+                        .byte_offset()?
+                        .checked_add(u64::try_from(layout::NORMAL_FLIP).ok()?)?,
+                ),
             },
         })
     };

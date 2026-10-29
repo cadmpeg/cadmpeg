@@ -138,11 +138,13 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
     );
     ir.model.faces.push(face);
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region.clone(),
         body: body.clone(),
         shells: vec![shell],
     });
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body,
         kind: BodyKind::Sheet,
         regions: vec![region],

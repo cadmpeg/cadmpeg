@@ -54,20 +54,20 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
-                operation_prefix_marker_offset: None,
+                operation_prefix_marker: None,
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: 1026,
+                operation_offset: Some(1026),
                 direction_face_extend_values: [2, 2],
                 side_extent_discriminators: [2, 0],
-                side_extent_discriminator_offsets: [1115, 1287],
+                side_extent_discriminator_offsets: Some([1115, 1287]),
                 extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
-                direction_face_extend_offsets: [1030, 1034],
+                direction_face_extend_offsets: Some([1030, 1034]),
                 direction_reversed: false,
-                direction_reversed_offset: 1038,
+                direction_reversed_offset: Some(1038),
                 solid_operation: true,
-                solid_operation_offset: 1039,
+                solid_operation_offset: Some(1039),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: 1040,
+                start_offset: Some(1040),
             });
     }
 
@@ -101,7 +101,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
 
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:group#296501".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };

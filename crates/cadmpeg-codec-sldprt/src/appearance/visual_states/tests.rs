@@ -87,7 +87,9 @@ fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_obj
         names: vec![FeatureInputName {
             id: "name".into(),
             parent: "lane".into(),
+            feature_ref: None,
             ordinal: 0,
+            sequence: 0,
             offset: 0,
             object_id: ObjectId::from_value(47),
             value: "Corner".into(),
@@ -112,7 +114,7 @@ fn feature_scope_keeps_distinct_four_word_owners_and_requires_unique_history_obj
     let mut model = cadmpeg_ir::document::Model::default();
     model.features.push(serde_json::from_value(serde_json::json!({
         "id":"sldprt:model:feature#47", "ordinal":0, "name":"Corner", "suppressed":false,
-        "definition":{"definition":"stored_geometry"}, "outputs":[], "native_ref":"history:corner"
+        "needs_recompute":false, "definition":{"definition":"stored_geometry"}, "outputs":[], "native_ref":"history:corner"
     })).unwrap());
     let run = |histories: &[FeatureHistory], lanes: &[FeatureInputLane], timestamp| {
         super::feature_faces(

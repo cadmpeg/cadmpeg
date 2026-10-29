@@ -28,21 +28,27 @@ pub(super) fn merge_archive(
     let table = xref_table_from_ir(ctx, &root.ir)?;
 
     let stack = vec![model_root];
-    MergeSession {
+    let mut session = MergeSession {
         ctx,
         scan,
         archive,
         stack,
+        untyped: cadmpeg_ir::ArenaClasses::default(),
         members: std::collections::BTreeMap::new(),
         operation_poses: std::mem::take(&mut root.operation_poses),
         operation_protected: std::collections::BTreeSet::new(),
-    }
-    .merge(
+    };
+    let merged = session.merge(
         &mut root.ir,
         &mut root.body,
         &mut root.source_fidelity,
         &table,
-    )
+    )?;
+    if !session.untyped.is_empty() {
+        root.source_fidelity
+            .mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, session.untyped)?;
+    }
+    Ok(merged)
 }
 
 /// Reassigns only repeated sibling ordinals after independent document graphs
@@ -172,6 +178,7 @@ struct MergeSession<'r, 'a> {
     scan: &'r ContainerScan<'a>,
     archive: &'r ArchiveSession<'a>,
     stack: Vec<String>,
+    untyped: cadmpeg_ir::document::ArenaClasses,
     members: std::collections::BTreeMap<String, MemberDefinition>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
@@ -313,6 +320,10 @@ impl MergeSession<'_, '_> {
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
+                        self.untyped.extend([
+                            cadmpeg_ir::document::ArenaClass::Model,
+                            cadmpeg_ir::document::ArenaClass::Design,
+                        ]);
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
@@ -335,6 +346,8 @@ impl MergeSession<'_, '_> {
                 };
                 let occurrence_start = parent_ir.model.occurrences.len();
                 let joint_start = parent_ir.model.assembly_joints.len();
+                parent_ir.scope.model |= component_ir.scope.model;
+                parent_ir.scope.design |= component_ir.scope.design;
                 parent_ir
                     .model
                     .extend_rewritten(component_ir.model, &mut scope)?;
@@ -368,14 +381,17 @@ impl MergeSession<'_, '_> {
                     &occurrence,
                 )?;
                 parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
-                if component_report.transfer.geometry_transferred() {
-                    parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
-                        parent_report.transfer.depth(),
-                        true,
-                    );
+                if component_report.transfer.geometry_transferred {
+                    parent_report.transfer.geometry_transferred = true;
                 }
                 for loss in &mut component_report.losses {
                     loss.message = format!("xref {label}: {}", loss.message);
+                    if let Some(provenance) = loss.provenance.take() {
+                        loss.provenance = Some(provenance.with_stream_prefix(
+                            self.ctx,
+                            occurrence_stream_prefix(&occurrence)?.as_str(),
+                        )?);
+                    }
                 }
                 parent_report.losses.append(&mut component_report.losses);
                 self.members
@@ -606,7 +622,7 @@ fn place_contained_poses_with_protected(
         Some(OccurrenceParent::Occurrence { occurrence }) => index.get(occurrence).copied(),
         _ => None,
     };
-    let world = |mut position: usize| -> Result<Transform, CodecError> {
+    let world = |mut position: usize| -> Result<Option<Transform>, CodecError> {
         let mut chain = Vec::new();
         for _ in 0..=ir.model.occurrences.len() {
             chain.push(position);
@@ -618,15 +634,21 @@ fn place_contained_poses_with_protected(
         chain
             .iter()
             .rev()
-            .try_fold(Transform::identity(), |world, &at| {
+            .try_fold(Some(Transform::identity()), |world, &at| {
                 let local = ir
                     .model
                     .occurrences
                     .get(at)
-                    .map_or(Transform::identity(), |occurrence| occurrence.transform);
-                world.compose(local).map_err(|_| {
-                    CodecError::malformed("F3Z occurrence world transform is not finite")
-                })
+                    .map_or(Some(Transform::identity()), |occurrence| {
+                        occurrence.transform
+                    });
+                world
+                    .zip(local)
+                    .map(|(world, local)| world.compose(local))
+                    .transpose()
+                    .map_err(|_| {
+                        CodecError::malformed("F3Z occurrence world transform is not finite")
+                    })
             })
     };
     let mut children = BTreeMap::<usize, Vec<usize>>::new();
@@ -688,7 +710,10 @@ fn place_contained_poses_with_protected(
                     let Some(occurrence) = ir.model.occurrences.get(child) else {
                         continue;
                     };
-                    let local = below.compose(occurrence.transform).map_err(|_| {
+                    let Some(transform) = occurrence.transform else {
+                        continue;
+                    };
+                    let local = below.compose(transform).map_err(|_| {
                         CodecError::malformed("F3Z contained occurrence transform is not finite")
                     })?;
                     // Only the referenced design's own records: a member nested
@@ -793,7 +818,10 @@ fn place_contained_poses_with_protected(
             }
             let parent_world = match parent_of(instance) {
                 Some(parent) => world(parent)?,
-                None => Transform::identity(),
+                None => Some(Transform::identity()),
+            };
+            let Some(parent_world) = parent_world else {
+                continue;
             };
             let local = parent_world
                 .try_inverse_affine()
@@ -825,7 +853,7 @@ fn place_contained_poses_with_protected(
     let count = placed.len() - owned_placed;
     for (position, local) in placed {
         if let Some(occurrence) = ir.model.occurrences.get_mut(position) {
-            occurrence.transform = local;
+            occurrence.transform = Some(local);
         }
     }
     if count != 0 {
@@ -1017,6 +1045,7 @@ fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Resu
         ordinal: 0,
         name: None,
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
@@ -1071,20 +1100,14 @@ fn rescope_fidelity(
     source: SourceFidelity,
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
-    let (mut annotations, records) = source.into_parts();
+    let (mut annotations, records, metadata) = source.into_parts();
     annotations
         .map_ids(|id| match rescope(id, occurrence) {
             Some(id) => Ok(id),
             None => Ok(id.to_string()),
         })?
         .map_err(CodecError::from)?;
-    // The occurrence is one owner component. Escape its separators so two
-    // different occurrences cannot share an owner by shifting a path boundary.
-    let owner = cadmpeg_ir::StreamName::try_from(format!(
-        "f3d:xref/{}/",
-        EscapedOccurrenceComponent(occurrence)
-    ))
-    .map_err(CodecError::malformed)?;
+    let owner = occurrence_stream_prefix(occurrence)?;
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
     for (id, provenance) in provenance {
@@ -1095,6 +1118,11 @@ fn rescope_fidelity(
         builder.note(&id, &stream, provenance.offset, provenance.tag.as_deref());
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
+    for (key, value) in metadata {
+        rescoped
+            .metadata
+            .insert(format!("{}{}", owner.as_str(), key), value);
+    }
     for (id, record) in records {
         let id_text = match rescope(id.as_str(), occurrence) {
             Some(id) => id,
@@ -1112,6 +1140,16 @@ fn rescope_fidelity(
         rescoped.insert_retained_record(id, record.with_owner(stream))?;
     }
     Ok(rescoped)
+}
+
+pub(crate) fn occurrence_stream_prefix(
+    occurrence: &str,
+) -> Result<cadmpeg_ir::StreamName, CodecError> {
+    cadmpeg_ir::StreamName::try_from(format!(
+        "f3d:xref/{}/",
+        EscapedOccurrenceComponent(occurrence)
+    ))
+    .map_err(CodecError::malformed)
 }
 
 fn occurrence_key(reference: &XrefReference) -> String {
@@ -1143,6 +1181,7 @@ impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
     }
 }
 
+/// The occurrence-scoped identity of an `f3d:` record id.
 fn rescope(text: &str, occurrence: &str) -> Option<String> {
     text.strip_prefix("f3d:")
         .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
@@ -1258,6 +1297,13 @@ fn typed_fields(
         }
         "design_face_operands" => typed!(crate::records::topology::face::DesignFaceOperand),
         "design_mesh_features" => typed!(crate::records::mesh::DesignMeshFeature),
+        "design_parameter_states" => typed!(crate::records::parameter_state::DesignParameterState),
+        "design_parameter_state_companions" => {
+            typed!(crate::records::parameter_state::DesignParameterStateCompanion)
+        }
+        "design_parameter_document_headers" => {
+            typed!(crate::records::parameter_state::DesignParameterDocumentHeader)
+        }
         "design_parameter_scopes" => typed!(crate::records::feature::scope::DesignParameterScope),
         "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),
         "persistent_subentity_tags" => typed!(crate::records::sketch_links::PersistentSubentityTag),
@@ -1288,7 +1334,6 @@ fn rescope_native_reference_fields(
         "body_native_keys" => &["body"],
         "edge_continuities" => &["edge"],
         "edge_ownerships" => &["edge", "owner_coedge"],
-        "face_native_keys" | "face_sidedness" => &["face"],
         "design_body_bounds" => &["body_binding_ids"],
         "design_body_recipe_operands" | "design_edge_operands" | "design_face_operands" => {
             &["recipe_id"]
@@ -1298,6 +1343,7 @@ fn rescope_native_reference_fields(
         "design_extrude_selection_members" => &["operand_identity_ids"],
         "design_edge_identity_operands" => &["resolution_identity_id"],
         "design_parameter_companions" => &["owned_recipe_ids"],
+        "design_parameters" => &["parameter_state"],
         "mesh_surface_sentinels" => &["surface"],
         "tolerant_coedge_parameters" => &["coedge"],
         "tolerant_edge_tails" => &["edge"],
@@ -1435,8 +1481,34 @@ mod tests {
     mod contained;
     mod fidelity;
     mod occurrence;
+    mod parameter_state;
 
     use super::define_member;
+
+    #[test]
+    fn occurrence_translation_overflow_is_rejected() {
+        let rows = [
+            [1.0, 0.0, 0.0, f64::MAX],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ];
+        let source = cadmpeg_ir::transform::Transform::affine(rows).unwrap();
+        let source = crate::records::xref::XrefPlacementTransform::try_from(source.rows()).unwrap();
+        let error = crate::design::components::neutral_transform(source.rows()).unwrap_err();
+        assert!(error.to_string().contains("not a finite affine transform"));
+    }
+
+    #[test]
+    fn occurrence_composition_overflow_is_rejected() {
+        let transform = cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, f64::MAX],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        let error = transform.compose(transform).unwrap_err();
+        assert_eq!(error, cadmpeg_ir::transform::TransformError::NonFinite);
+    }
 
     #[test]
     fn member_definition_keeps_a_finite_body_transform_without_preplacement() {

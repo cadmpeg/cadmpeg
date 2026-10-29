@@ -130,6 +130,8 @@ pub enum LossTaxonomy {
     /// Standalone mesh vertices were stored at reduced (f32) precision by the
     /// source archive.
     MeshVertexPrecision,
+    /// A target field stores a value at reduced precision.
+    ValueQuantized,
     /// Some source object records were not transferred to typed IR.
     ObjectRecordsUntransferred,
     /// An object family or class is not supported and was not transferred.
@@ -204,6 +206,7 @@ impl LossTaxonomy {
             Self::SourceDialectUnverified => "source_dialect_unverified",
             Self::SourceDialectDisplaced => "source_dialect_displaced",
             Self::MeshVertexPrecision => "mesh_vertex_precision",
+            Self::ValueQuantized => "value_quantized",
             Self::ObjectRecordsUntransferred => "object_records_untransferred",
             Self::UnsupportedObjectFamily => "unsupported_object_family",
             Self::AssetNotTransferred => "asset_not_transferred",
@@ -253,7 +256,8 @@ impl LossTaxonomy {
             | Self::SourceDialectDisplaced
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
-            | Self::PreservedSourceUnavailable => LossCategory::Other,
+            | Self::PreservedSourceUnavailable
+            | Self::ValueQuantized => LossCategory::Other,
             Self::MissingGeometryStream
             | Self::GeometryNotTransferred
             | Self::GeometryAgreementSampled
@@ -277,7 +281,9 @@ impl LossTaxonomy {
     /// Returns the default severity for this kind of loss.
     pub const fn default_severity(self) -> Severity {
         match self {
-            Self::CarrierSummary | Self::PassthroughRecordOmitted => Severity::Info,
+            Self::CarrierSummary | Self::PassthroughRecordOmitted | Self::ValueQuantized => {
+                Severity::Info
+            }
             Self::MissingGeometryStream | Self::NoExportableSolids | Self::IntegrityFailure => {
                 Severity::Error
             }

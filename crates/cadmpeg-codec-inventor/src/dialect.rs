@@ -180,6 +180,7 @@ impl DialectRecovery {
         for segment in &container.rse.segments {
             if let crate::rse::SegmentMetaState::Malformed {
                 declared: Some(declared),
+                framing: None,
                 ..
             } = &segment.meta
             {

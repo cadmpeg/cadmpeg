@@ -85,20 +85,19 @@
   "losses": [
     {
       "code": {
-        "code": "parameter.data-quarantined",
-        "kind": "noncanonical_source_syntax",
-        "namespace": "iges",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "code": "record.unreadable",
+        "kind": "decode_diagnostic",
+        "namespace": "decode",
+        "scope": "namespaced"
       },
-      "message": "IGES Parameter Data of D3 (P3 through P4) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
+      "message": "part iges.parameter_field stream=\"iges/parameter/729/891\" offset=63 length=2: malformed container: IGES Parameter Data D3, logical offset Some(63): a numeric field or its delimiter crosses a card boundary (numeric-crosses-card)",
       "provenance": {
+        "byte_len": 2,
         "format": "iges",
-        "offset": 792,
-        "stream": "iges",
-        "tag": "D3:parameter"
+        "offset": 63,
+        "stream": "iges/parameter/729/891"
       },
-      "severity": "warning"
+      "severity": "error"
     }
   ],
   "notes": [
@@ -111,8 +110,8 @@
     "entities=2",
     "entity.212.form.0=1",
     "entity.213.form.0=1",
-    "parameter_records=1",
-    "parameter_tokens=26",
+    "parameter_records=2",
+    "parameter_tokens=59",
     "external_references=0"
   ]
 }

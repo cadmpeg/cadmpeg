@@ -6,7 +6,7 @@ use crate::records::feature::scope::{
 use crate::records::feature::surface_ops::{
     DesignPatchContinuity, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
 };
-use crate::records::identity::Located;
+use crate::records::identity::Sourced;
 
 const PATCH_GUID: &str = "BF77AE1A-E8F6-43AB-A325-A2C984AF1C6B";
 
@@ -45,9 +45,9 @@ fn source_normal_prefixes_require_the_semantic_version_and_bounded_boolean() {
         assert_eq!(
             normal,
             Some(DesignSurfacePatchNormalState::Explicit {
-                reversed: Located {
+                reversed: Sourced {
                     value: flag,
-                    offset: 48
+                    offset: Some(48)
                 }
             })
         );
@@ -108,9 +108,9 @@ fn native_normal_state_composes_with_boundaries_and_validates_its_owner_and_offs
     );
     if let DesignScopePayloadMut::SurfacePatch(patch) = scope.payload_mut() {
         patch.normal = Some(DesignSurfacePatchNormalState::Explicit {
-            reversed: Located {
+            reversed: Sourced {
                 value: true,
-                offset: 31,
+                offset: Some(31),
             },
         });
         patch.boundaries.push(DesignSurfacePatchBoundary {
@@ -124,10 +124,8 @@ fn native_normal_state_composes_with_boundaries_and_validates_its_owner_and_offs
         });
     }
     let wire = serde_json::to_value(&scope).unwrap();
-    assert_eq!(
-        serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap(),
-        scope
-    );
+    let read = serde_json::from_value::<DesignParameterScope>(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&read).unwrap(), wire);
     for field in ["kind", "surface_patch_normal"] {
         let mut invalid = wire.clone();
         invalid[field] = if field == "kind" {

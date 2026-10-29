@@ -1,24 +1,45 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Edge operand wire: the resolved axis is whole or absent.
+//! Typed edge identities and source-only prologue framing.
 
-fn edge_identity_operand(compact: bool, local_id_offset: u64) -> super::DesignEdgeIdentityOperand {
-    let wire = serde_json::json!({
-        "id": "identity", "scope_record_index": 4, "group_record_index": 1,
-        "group_member_ordinal": 0, "record_index": 2, "byte_offset": 10,
-        "class_tag": "346", "compact_layout": compact, "local_id": 17,
-        "local_id_offset": local_id_offset,
-        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
-        "asset_id_offset": local_id_offset + 18,
-        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
-        "context_id_offset": local_id_offset + 94
-    });
-    serde_json::from_value(wire).unwrap()
+fn edge_identity_source(
+    layout: super::DesignEdgeIdentityLayout,
+) -> super::DesignEdgeIdentityOperandDraft {
+    let local_id_offset = 10 + layout.local_id_offset();
+    super::DesignEdgeIdentityOperandDraft {
+        id: "f3d:Design:edge-identity#0".into(),
+        scope_record_index: 4,
+        group_record_index: 1,
+        group_member_ordinal: 0,
+        record_index: 2,
+        byte_offset: 10,
+        class_tag: "346".to_owned().try_into().unwrap(),
+        layout,
+        local_id: 17,
+        asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        asset_id_offset: local_id_offset + 18,
+        context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        context_id_offset: local_id_offset + 94,
+        historical: None,
+        treatment_radius_candidates: Vec::new(),
+        transition_edge_candidates: Vec::new(),
+        resolved_edge_slots: Vec::new(),
+        resolved_edge_slot: None,
+        resolution_identity_id: None,
+    }
 }
 
 #[test]
 fn edge_identity_operand_borrowed_wire_matches_owned_wire_bytes() {
-    for (compact, offset) in [(false, 34), (true, 33), (true, 32)] {
-        let mut operand = edge_identity_operand(compact, offset);
+    use super::DesignEdgeIdentityLayout::{Compact, Full, Shortest};
+    for layout in [Full, Compact, Shortest] {
+        let mut operand =
+            super::DesignEdgeIdentityOperand::try_new(edge_identity_source(layout)).unwrap();
         for resolution in [None, Some("resolved#1".to_owned())] {
             operand.resolution_identity_id = resolution;
             operand.transition_edge_candidates = vec![7, 9];
@@ -39,7 +60,10 @@ fn edge_identity_operand_native_retained_limit_refuses_before_clone() {
         id: &'static str,
         value: &'a super::DesignEdgeIdentityOperand,
     }
-    let operand = edge_identity_operand(false, 34);
+    let operand = super::DesignEdgeIdentityOperand::try_new(edge_identity_source(
+        super::DesignEdgeIdentityLayout::Full,
+    ))
+    .unwrap();
     let record = NestedRecord {
         id: "f3d:native:edge-identity#0",
         value: &operand,
@@ -50,6 +74,71 @@ fn edge_identity_operand_native_retained_limit_refuses_before_clone() {
         || super::EDGE_IDENTITY_OPERAND_CLONE_COUNT.with(|count| count.set(0)),
         || super::EDGE_IDENTITY_OPERAND_CLONE_COUNT.with(std::cell::Cell::get),
     );
+}
+
+#[test]
+fn edge_identity_prologue_is_layout_evidence_instead_of_document_content() {
+    use super::DesignEdgeIdentityLayout::{Compact, Full, Shortest};
+    let mut expected = None;
+    for layout in [Full, Compact, Shortest] {
+        let source =
+            super::DesignEdgeIdentityOperand::try_new(edge_identity_source(layout)).unwrap();
+        assert_eq!(
+            source.clone().into_draft().unwrap(),
+            edge_identity_source(layout)
+        );
+        assert_eq!(
+            source.local_id_offset(),
+            Some(10 + layout.local_id_offset())
+        );
+        let wire = serde_json::to_value(&source).unwrap();
+        if let Some(expected) = &expected {
+            assert_eq!(expected, &wire);
+        } else {
+            expected = Some(wire.clone());
+        }
+        let restored: super::DesignEdgeIdentityOperand =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(restored.record_index(), 2);
+        assert_eq!(restored.local_id, 17);
+        assert_eq!(restored.byte_offset(), None);
+        assert_eq!(restored.local_id_offset(), None);
+        assert_eq!(restored.layout(), None);
+        assert!(restored.clone().into_draft().is_err());
+        assert_eq!(serde_json::to_value(&restored).unwrap(), wire);
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        source.retain_source(&mut fidelity);
+        assert_eq!(
+            fidelity.metadata["f3d:Design:edge-identity#0.local_id_offset"],
+            (10 + layout.local_id_offset()).to_string()
+        );
+        let mut reloaded_fidelity = cadmpeg_ir::SourceFidelity::default();
+        restored.retain_source(&mut reloaded_fidelity);
+        assert!(reloaded_fidelity.metadata.is_empty());
+        for field in [
+            "byte_offset",
+            "compact_layout",
+            "local_id_offset",
+            "asset_id_offset",
+            "context_id_offset",
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field] = 0.into();
+            assert!(
+                serde_json::from_value::<super::DesignEdgeIdentityOperand>(invalid).is_err(),
+                "{field}"
+            );
+        }
+        let mut invalid_source = edge_identity_source(layout);
+        invalid_source.asset_id_offset = 0;
+        assert!(super::DesignEdgeIdentityOperand::try_new(invalid_source).is_err());
+        let mut invalid_source = edge_identity_source(layout);
+        invalid_source.context_id_offset = 0;
+        assert!(super::DesignEdgeIdentityOperand::try_new(invalid_source).is_err());
+        let mut overflow = edge_identity_source(layout);
+        overflow.byte_offset = u64::MAX;
+        assert!(super::DesignEdgeIdentityOperand::try_new(overflow).is_err());
+    }
 }
 
 #[test]

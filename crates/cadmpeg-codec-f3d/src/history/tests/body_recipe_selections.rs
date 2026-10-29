@@ -85,9 +85,9 @@ fn selection_fixture() -> (
         references: vec![
             crate::records::topology::body_recipe::DesignBodyRecipeReference {
                 design_reference: 301,
-                design_reference_offset: 25,
+                design_reference_offset: Some(25),
                 form: 33,
-                form_offset: 33,
+                form_offset: Some(33),
                 candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#7").unwrap()],
                 preceding_candidate_faces: Vec::new(),
                 preceding_body_slots: Vec::new(),
@@ -134,6 +134,7 @@ fn face_geometry() -> (
     use cadmpeg_ir::ids::{BodyId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
     let body = Body {
+        native_ref: None,
         id: BodyId::mint("f3d:brep:body#1").unwrap(),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:model:region#1").unwrap()],
@@ -143,6 +144,7 @@ fn face_geometry() -> (
         visible: Some(true),
     };
     let region = Region {
+        native_ref: None,
         id: RegionId::mint("f3d:model:region#1").unwrap(),
         body: body.id.clone(),
         shells: vec![ShellId::mint("f3d:model:shell#1").unwrap()],
@@ -170,6 +172,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
         );
     }
     let inputs = super::super::FeatureBodySelectionInputs {
+        parameters: &[],
         scopes: std::slice::from_ref(&scope),
         groups: &groups,
         body_recipe_operands: &operands,
@@ -230,6 +233,7 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     };
     let (_, _, operands, _) = selection_fixture();
     let body = cadmpeg_ir::topology::Body {
+        native_ref: None,
         id: cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#1").unwrap(),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
         regions: Vec::new(),
@@ -240,22 +244,22 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
     };
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         kind: ConstructionRecipeKind::Body,
         design: Some(ConstructionRecipeDesign {
             id: RecordedValue {
                 value: "301".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(ConstructionRecipeSelector {
                 value: 9,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let link = crate::records::sketch_links::PersistentDesignLink {

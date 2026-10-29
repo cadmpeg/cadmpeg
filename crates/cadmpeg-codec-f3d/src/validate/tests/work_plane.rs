@@ -28,10 +28,9 @@ fn work_plane_validator_checks_solved_matrix_and_source_offset_for_each_form() {
                 "f3d:Design/BulkStream.dat"
             ));
             let mut bad_offset = scope.clone();
-            bad_offset
-                .work_plane_frame_mut()
-                .unwrap()
-                .work_plane_transform_offset += 1;
+            let frame = bad_offset.work_plane_frame_mut().unwrap();
+            frame.work_plane_transform_offset =
+                frame.work_plane_transform_offset.map(|offset| offset + 1);
             assert!(!super::super::valid_work_plane_construction(
                 &ctx,
                 &bad_offset,

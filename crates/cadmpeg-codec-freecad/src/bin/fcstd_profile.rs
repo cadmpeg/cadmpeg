@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::features::FeatureDefinition;
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{report::Severity, CadIr};
 use serde::Serialize;
 use serde_json::Value;
@@ -55,7 +55,6 @@ struct FixtureProfile {
     blocking_losses: usize,
     neutral_errors: usize,
     native_errors: usize,
-    exact_byte_coverage: bool,
     #[serde(flatten)]
     write: FixtureWriteFlags,
     side_entries_preserved: bool,
@@ -232,8 +231,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .and_then(|plan| plan.write_to(&mut second_write))?;
         let written =
             FcstdCodec.decode(&mut Cursor::new(&first_write), &DecodeOptions::default())?;
-        let semantic_round_trip = semantic_fingerprint(first.ir().clone())?
-            == semantic_fingerprint(written.ir().clone())?;
+        let semantic_round_trip =
+            semantic_fingerprint(first.ir())? == semantic_fingerprint(written.ir())?;
         let side_entries_preserved =
             logical_side_entries(first.ir())? == logical_side_entries(written.ir())?;
         let mut edited_ir = first.ir().clone();
@@ -298,7 +297,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .iter()
                 .filter(|finding| finding.severity >= Severity::Error)
                 .count(),
-            exact_byte_coverage: exact_byte_coverage(first.ir()),
             write: FixtureWriteFlags {
                 write_deterministic: first_write == second_write,
                 semantic_round_trip,
@@ -746,16 +744,6 @@ fn insert_map_keys(
     }
 }
 
-fn exact_byte_coverage(ir: &CadIr) -> bool {
-    ir.native
-        .namespace("fcstd")
-        .and_then(|namespace| namespace.arenas().get("byte_coverage"))
-        .is_some_and(|records| {
-            records.len() == 1
-                && records[0].field("exact").as_ref().and_then(Value::as_bool) == Some(true)
-        })
-}
-
 fn native_acceptance_matches(report: &Value, original_digest: &str, written_digest: &str) -> bool {
     report
         .get("failures")
@@ -985,8 +973,7 @@ fn design_census_matches_projection(ir: &CadIr) -> Result<bool, Box<dyn std::err
         let matching = records
             .iter()
             .filter(|record| {
-                record.get("feature").and_then(Value::as_str) == Some(feature.id.as_str())
-                    && record.get("object").and_then(Value::as_str) == feature.native_ref.as_deref()
+                record.get("object").and_then(Value::as_str) == feature.native_ref.as_deref()
             })
             .collect::<Vec<_>>();
         if matching.len() != 1 {
@@ -1085,17 +1072,7 @@ fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::erro
     Ok(false)
 }
 
-fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
-    if let Some(source) = &mut ir.source {
-        source.attributes.remove("physical_archive_bytes");
-        source.attributes.remove("physical_ledger_spans");
-        source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-    }
-    if let Some(namespace) = ir.native.0.get_mut("fcstd") {
-        namespace.arenas_mut().remove("physical_ledger");
-        namespace.arenas_mut().remove("byte_coverage");
-        namespace.arenas_mut().remove("logical_ledger");
-    }
+fn semantic_fingerprint(ir: &CadIr) -> Result<String, Box<dyn std::error::Error>> {
     Ok(ir.to_canonical_json()?)
 }
 
@@ -1241,7 +1218,6 @@ fn gates(
             && fixture.neutral_errors == 0
             && fixture.native_errors == 0
     });
-    let exact = fixtures.iter().all(|fixture| fixture.exact_byte_coverage);
     let count = |name: &str| counts.get(name).copied().unwrap_or_default();
     let required_carriers = BTreeSet::from([
         "circle", "ellipse", "line", "nurbs", "plane", "cylinder", "cone", "sphere", "torus",
@@ -1422,7 +1398,6 @@ fn gates(
             "L0",
             vec![
                 assertion("clean_decode", clean, &clean, &"all fixtures decode deterministically and validate",),
-                assertion("physical_coverage", exact, &exact, &"exact physical and logical byte partitions",),
             ],
         ),
         gate(
@@ -1533,11 +1508,10 @@ fn gates(
                     ), &format!("types={required_drawing_types:?}, drawings and annotations"),),
                 assertion("application_retention", observed.native_arenas.contains("applications")
                         && required_application_types.is_subset(&application_types)
-                        && required_application_constructs.is_subset(&application_constructs)
-                        && exact, &format!(
-                        "types={application_types:?}, constructs={application_constructs:?}, exact={exact}"
+                        && required_application_constructs.is_subset(&application_constructs), &format!(
+                        "types={application_types:?}, constructs={application_constructs:?}"
                     ), &format!(
-                        "types={required_application_types:?}, constructs={required_application_constructs:?}, exact byte coverage"
+                        "types={required_application_types:?}, constructs={required_application_constructs:?}"
                     ),),
             ],
         ),
@@ -1625,6 +1599,7 @@ mod tests {
     use cadmpeg_codec_freecad::{FcstdCodec, FcstdPropertyOwner};
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::report::export::WritePath;
     use std::io::Cursor;
 
     #[test]
@@ -1781,19 +1756,33 @@ mod tests {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode fixture");
-        let original = semantic_fingerprint(decoded.ir().clone()).expect("fingerprint fixture");
+        let original = semantic_fingerprint(decoded.ir()).expect("fingerprint fixture");
         let mut written = Vec::new();
-        FcstdCodec
-            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut written))
-            .expect("write fixture");
+        let plan = FcstdCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .expect("plan fixture write");
+        let report = plan.report().clone();
+        plan.write_to(&mut written).expect("write fixture");
         let restored = FcstdCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .expect("decode written fixture");
-        assert_eq!(
-            original,
-            semantic_fingerprint(restored.ir().clone()).expect("fingerprint written fixture")
-        );
+        match report.write_path() {
+            WritePath::VerbatimReplay { .. } | WritePath::Patched { .. } => assert_eq!(
+                original,
+                semantic_fingerprint(restored.ir()).expect("fingerprint written fixture")
+            ),
+            WritePath::Synthesized { .. } => {
+                assert!(report.synthesis_cause().is_some());
+                cadmpeg_test_support::contract::assert_written_arenas_agree(
+                    &report,
+                    decoded.ir(),
+                    restored.ir(),
+                );
+            }
+        }
 
         let mut edited = restored.ir().clone();
         FcstdCodec
@@ -1808,7 +1797,7 @@ mod tests {
             .expect("edit document label");
         assert_ne!(
             original,
-            semantic_fingerprint(edited).expect("fingerprint edited fixture")
+            semantic_fingerprint(&edited).expect("fingerprint edited fixture")
         );
     }
 

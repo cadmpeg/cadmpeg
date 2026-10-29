@@ -70,7 +70,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     .unwrap();
     let mut record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
         record_index: 100,
     };
@@ -100,22 +100,22 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     indexed_header(&mut bytes, *b"311", 104);
     let mut recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
-        byte_offset: u64_from_index(recipe_at),
+        byte_offset: Some(u64_from_index(recipe_at)),
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "2265".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 9,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let scope = DesignParameterScope::empty(
@@ -135,6 +135,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         operand
             .clone()
             .into_draft()
+            .expect("actual scanner body recipe layout")
             .selector_tail
             .map(|tail| tail.value),
         Some([7, 0, 0, 0])
@@ -143,6 +144,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         operand
             .clone()
             .into_draft()
+            .expect("actual scanner body recipe layout")
             .selector_tail
             .map(|tail| tail.offset),
         Some(220)
@@ -156,7 +158,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
     assert_eq!(operand.nested_record_index(), 103);
     assert_eq!(operand.recipe_id, recipe.id);
-    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
+    assert_eq!(operand.next_byte_offset(), Some(u64_from_index(next_at)));
     operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#0".into();
     let candidate_tags = [
         PersistentSubentityTag {
@@ -214,14 +216,17 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let empty_next_at = next_at - 24;
     let empty_recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{empty_recipe_at}"),
-        byte_offset: u64_from_index(empty_recipe_at),
+        byte_offset: Some(u64_from_index(empty_recipe_at)),
         ..recipe.clone()
     };
     let empty = parse_body_recipe_operand(&empty_bytes, &group, 0, &record, &empty_recipe)
         .expect("empty body recipe operand");
     assert!(empty.references().is_empty());
     assert_eq!(empty.nested_record_index(), 103);
-    assert_eq!(empty.next_byte_offset(), u64_from_index(empty_next_at));
+    assert_eq!(
+        empty.next_byte_offset(),
+        Some(u64_from_index(empty_next_at))
+    );
 
     let mut combine_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#80",
@@ -234,9 +239,9 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         *slot = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::Standard,
             operation: cadmpeg_ir::features::BooleanKind::Join,
-            operation_offset: 0,
+            operation_offset: Some(0),
             keep_tools: false,
-            keep_tools_offset: 0,
+            keep_tools_offset: Some(0),
             target_record_index: 0,
             tools: crate::records::feature::combine::DesignCombineTools {
                 first: crate::records::feature::combine::DesignCombineBodySelection {
@@ -251,7 +256,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     combine_recipe.design.as_mut().unwrap().selector =
         Some(crate::records::recipes::ConstructionRecipeSelector {
             value: 1,
-            byte_offset: 0,
+            byte_offset: Some(0),
         });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
@@ -294,7 +299,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         .expect("body recipe operand with nested recipe records");
     assert_eq!(
         operand.next_byte_offset(),
-        u64_from_index(next_at + nested.len())
+        Some(u64_from_index(next_at + nested.len()))
     );
 
     let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -392,28 +397,28 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     .unwrap();
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
+        byte_offset: Some(0),
         class_tag: crate::records::references::DesignClassTag::try_from("367".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
-        byte_offset: u64_from_index(recipe_at),
+        byte_offset: Some(u64_from_index(recipe_at)),
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
                 value: "301".into(),
-                offset: 0,
+                offset: Some(0),
             },
             selector: Some(crate::records::recipes::ConstructionRecipeSelector {
                 value: 6,
-                byte_offset: 0,
+                byte_offset: Some(0),
             }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
 
@@ -426,6 +431,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         operand
             .clone()
             .into_draft()
+            .expect("actual scanner body recipe layout")
             .selector_tail
             .map(|tail| tail.value),
         Some([1, 0, 0, 0])
@@ -434,12 +440,13 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         operand
             .clone()
             .into_draft()
+            .expect("actual scanner body recipe layout")
             .selector_tail
             .map(|tail| tail.offset),
         Some(208)
     );
     assert_eq!(operand.nested_record_index(), 103);
-    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
+    assert_eq!(operand.next_byte_offset(), Some(u64_from_index(next_at)));
 }
 
 #[test]
@@ -471,22 +478,22 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
         id: "stream:record-100".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let early = ConstructionRecipe {
         id: "stream:recipe-early".into(),
-        byte_offset: u64_from_index(EARLY_RECIPE_AT),
+        byte_offset: Some(u64_from_index(EARLY_RECIPE_AT)),
         kind: ConstructionRecipeKind::Body,
         design: None,
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
             value: 0,
-            offset: 0,
+            offset: Some(0),
         }),
     };
     let late = ConstructionRecipe {
         id: "stream:recipe-late".into(),
-        byte_offset: u64_from_index(LATE_RECIPE_AT),
+        byte_offset: Some(u64_from_index(LATE_RECIPE_AT)),
         recipe_index: 1,
         ..early.clone()
     };

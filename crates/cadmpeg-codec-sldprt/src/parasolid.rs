@@ -351,6 +351,7 @@ fn inflate_zlib_frame(
         return Ok(None);
     }
     let declared = u64::try_from(expected)
+        // (O-capacity): the decoded count exceeds the host or u64 count field.
         .map_err(|_| CodecError::NotImplemented("Parasolid frame length exceeds u64".into()))?;
     // A frame that declares more than the frame ceiling is not extracted; the
     // block keeps its other stream candidates.
@@ -387,6 +388,7 @@ fn inflate_zlib_frame(
             return Ok(None);
         };
         let produced_u64 = u64::try_from(produced)
+            // (O-capacity): the decoded count exceeds the host or u64 count field.
             .map_err(|_| CodecError::NotImplemented("Parasolid frame output exceeds u64".into()))?;
         if input_at > member.len() || produced_u64 > remaining {
             return Ok(None);

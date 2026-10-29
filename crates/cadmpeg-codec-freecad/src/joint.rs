@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
@@ -13,7 +12,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) fn transfer(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<Vec<JointRecord>, CodecError> {
@@ -385,11 +384,12 @@ fn joint_kind(
 }
 
 fn enumeration_value(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     property: &PropertyRecord,
 ) -> Result<String, CodecError> {
+    let property_xml = ctx.property_xml(property)?;
     let document = ctx
-        .parse_xml(property.xml.text(), "FreeCAD XML tree")
+        .parse_xml(property_xml.as_ref(), "FreeCAD XML tree")
         .map_err(|error| {
             let CodecError::Malformed(error) = error else {
                 return error;
@@ -513,6 +513,16 @@ fn enumeration_value(
 }
 
 fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+    // Persistence admission already reported this unreadable scalar. Keep the
+    // independently typed joint relation without inventing its missing value.
+    if property.body.is_none()
+        || matches!(
+            property.body,
+            Some(crate::native::PropertyBody::Unreadable(_))
+        )
+    {
+        return Ok(None);
+    }
     let (expected_type, expected_tag) = match property.name.as_str() {
         "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
         "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
@@ -614,26 +624,22 @@ pub(crate) mod tests {
     use crate::test_support::test_archive::{archive, assert_valid_document};
     use crate::FcstdCodec;
 
-    fn diagnostic_property(
-        name: &str,
-        type_name: &str,
-        xml: &str,
-    ) -> crate::native::PropertyRecord {
+    fn diagnostic_property(name: &str, type_name: &str) -> crate::native::PropertyRecord {
         crate::native::PropertyRecord {
+            dynamic: None,
             id: "property".into(),
             owner: "joint".into(),
             name: name.into(),
             type_name: type_name.into(),
             family: crate::native::PropertyFamily::Unknown,
             status: None,
-            body: crate::native::PropertyBody::Transient,
+            body: Some(crate::native::PropertyBody::Transient),
             order: 0,
-            xml: crate::native::RetainedXml::from_text(xml.into(), 0).expect("valid retained span"),
         }
     }
 
     fn scalar_property(type_name: &str, xml: &str) -> crate::native::PropertyRecord {
-        let mut property = diagnostic_property("Angle", type_name, xml);
+        let mut property = diagnostic_property("Angle", type_name);
         let document = roxmltree::Document::parse(xml).expect("valid scalar property XML");
         let values = document
             .root_element()
@@ -641,22 +647,22 @@ pub(crate) mod tests {
             .filter(roxmltree::Node::is_element)
             .enumerate()
             .map(|(order, node)| crate::native::ValueRecord {
+                parent: None,
                 tag: node.tag_name().name().into(),
                 order,
                 attributes: node
                     .attributes()
                     .map(|attribute| (attribute.name().into(), attribute.value().into()))
                     .collect(),
+                decoded_json: None,
                 text: None,
-                raw_xml: xml[node.range()].into(),
             })
             .collect();
-        property.body = crate::native::PropertyBody::Persisted {
+        property.body = Some(crate::native::PropertyBody::Persisted {
             values,
             links: Vec::new(),
             side_entries: Vec::new(),
-            dynamic: None,
-        };
+        });
         property
     }
 
@@ -1103,15 +1109,25 @@ pub(crate) mod tests {
 {property}
 </Properties></Object></ObjectData></Document>"#
             );
-            assert!(matches!(
-                FcstdCodec.decode(
-                    &mut Cursor::new(archive(&document)),
-                    &DecodeOptions::default(),
-                ),
-                Err(cadmpeg_ir::DecodeFailure::Codec(
-                    cadmpeg_core::CodecError::Malformed(_)
-                ))
-            ));
+            match FcstdCodec.decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            ) {
+                Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))) => {}
+                Ok(decoded) => {
+                    assert!(decoded
+                        .report()
+                        .losses
+                        .iter()
+                        .any(|loss| loss.code.local_code()
+                            == "metadata.persistence-payload-unresolved"));
+                    assert!(decoded
+                        .source_fidelity()
+                        .unrepresented()
+                        .contains(&cadmpeg_ir::ArenaClass::Model));
+                }
+                Err(error) => panic!("unexpected joint failure: {error}"),
+            }
         }
     }
 
@@ -1169,24 +1185,45 @@ pub(crate) mod tests {
     <Property name="Angle" type="App::PropertyAngle"><Float value="abc"/></Property>
     </Properties></Object>
     </ObjectData></Document>"#;
-        let error = FcstdCodec
+        let decoded = FcstdCodec
             .decode(
                 &mut Cursor::new(archive(document)),
                 &DecodeOptions::default(),
             )
-            .expect_err("joint with malformed numeric scalar is rejected");
-        assert!(error.to_string().contains("invalid value"), "{error}");
+            .expect("independent joint relation survives unreadable angle");
+        assert!(decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "metadata.persistence-payload-unresolved"));
+        assert!(decoded
+            .source_fidelity()
+            .unrepresented()
+            .contains(&cadmpeg_ir::ArenaClass::Model));
+        assert_eq!(decoded.ir().model.assembly_joints.len(), 1);
+        assert_eq!(
+            decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::joint::JointRecord>("joints")
+                .unwrap()[0]
+                .parameters()
+                .raw("Angle"),
+            None
+        );
     }
 
     #[test]
     fn primary_bool_values_are_retained_and_projected_exactly() {
         for (raw, expected) in [
-            ("true", true),
-            ("false", false),
-            ("1", false),
-            ("0", false),
-            ("TRUE", false),
-            ("maybe", false),
+            ("true", Some(true)),
+            ("false", Some(false)),
+            ("1", Some(true)),
+            ("0", Some(false)),
+            ("TRUE", Some(true)),
+            ("maybe", None),
         ] {
             let document = format!(
                 r#"<Document SchemaVersion="4" FileVersion="1">
@@ -1214,12 +1251,22 @@ pub(crate) mod tests {
                 .expect("native")
                 .arena_as::<crate::native::joint::JointRecord>("joints")
                 .expect("joints");
-            assert_eq!(joints[0].parameters().raw("Suppressed"), Some(raw));
             assert_eq!(
-                joints[0].parameters().bool_value("Suppressed"),
-                Some(expected)
+                joints[0].parameters().raw("Suppressed"),
+                expected.map(|_| raw)
             );
-            assert_eq!(result.ir().model.assembly_joints[0].suppressed, expected);
+            assert_eq!(joints[0].parameters().bool_value("Suppressed"), expected);
+            assert_eq!(
+                result.ir().model.assembly_joints[0].suppressed,
+                expected.unwrap_or(false)
+            );
+            assert_eq!(
+                result
+                    .source_fidelity()
+                    .unrepresented()
+                    .contains(&cadmpeg_ir::ArenaClass::Model),
+                expected.is_none()
+            );
             let restored = cadmpeg_ir::CadIr::from_json(
                 &serde_json::to_string(result.ir()).expect("CADIR serialization"),
             )
@@ -1230,8 +1277,14 @@ pub(crate) mod tests {
                 .expect("native")
                 .arena_as::<crate::native::joint::JointRecord>("joints")
                 .expect("joints");
-            assert_eq!(restored_joints[0].parameters().raw("Suppressed"), Some(raw));
-            assert_eq!(restored.model.assembly_joints[0].suppressed, expected);
+            assert_eq!(
+                restored_joints[0].parameters().raw("Suppressed"),
+                expected.map(|_| raw)
+            );
+            assert_eq!(
+                restored.model.assembly_joints[0].suppressed,
+                expected.unwrap_or(false)
+            );
         }
     }
 }

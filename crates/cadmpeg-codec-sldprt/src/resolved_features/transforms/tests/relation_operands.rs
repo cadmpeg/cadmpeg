@@ -700,6 +700,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -789,6 +790,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -867,6 +869,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
@@ -906,6 +909,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         id: "point-relation".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 4,
         family: FeatureInputRelationFamily::CircleDiameter,
         class_ref: "class".into(),
@@ -973,6 +977,7 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     let known = point("synthetic:test:id#known", 0.0, 0.0);
     let candidate = point("synthetic:test:id#candidate", 3.0, 4.0);
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -980,7 +985,6 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1523,6 +1527,7 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         family: FeatureInputRelationFamily::PointPointDistance,
         class_ref: "class".into(),
@@ -1546,6 +1551,7 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
             .collect(),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -1553,7 +1559,6 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         expression: "4mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1625,6 +1630,7 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         family: FeatureInputRelationFamily::LineLineDistance,
         class_ref: "class".into(),
@@ -1647,6 +1653,7 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
             .collect(),
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -1654,7 +1661,6 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1722,6 +1728,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         id: "relation".into(),
         parent: "lane".into(),
         ordinal: 0,
+        sequence: 0,
         offset: 0,
         family: FeatureInputRelationFamily::LineLineDistance,
         class_ref: "class".into(),
@@ -1750,6 +1757,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         ],
     };
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#distance").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -1757,7 +1765,6 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),

@@ -5,13 +5,16 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::super::{tokenize, ParameterDefect, Token, TokenValue, TokenizeFailure};
+use super::super::{
+    tokenize, FailedField, ParameterDefect, TokenValue, TokenizeFailure, TokenizedFields,
+};
 use crate::global::{GlobalTable, NumericLimits};
-use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::test_support::test_owned::{owned_test_file_with_raw_parameters, OwnedTestEntity};
 use crate::IgesCodec;
 
+/// #222: a numeric field that crosses a card fails alone; the record keeps
+/// its other fields.
 #[test]
 fn numeric_parameter_and_delimiter_must_share_a_card() {
     let mut bytes = b"116,".to_vec();
@@ -19,13 +22,23 @@ fn numeric_parameter_and_delimiter_must_share_a_card() {
     bytes.push(b'1');
     bytes.extend_from_slice(b",2,3,0;");
 
-    assert!(matches!(
-        tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later),
-        Err(TokenizeFailure::Defect(
-            ParameterDefect::NumericCrossesCard,
-            4
-        ))
-    ));
+    let fields = tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later)
+        .unwrap_or_else(|_| panic!("the field boundaries are known"));
+    assert_eq!(
+        fields.failed,
+        [FailedField {
+            index: 1,
+            span: 4..64,
+            defect: ParameterDefect::NumericCrossesCard,
+            offset: 4,
+        }]
+    );
+    assert!(fields.tokens[1].is_none());
+    assert_eq!(
+        fields.tokens[2].as_ref().map(|token| &token.value),
+        Some(&TokenValue::Integer(2))
+    );
+    assert_eq!(fields.tokens.len(), 5);
 }
 
 #[test]
@@ -37,19 +50,28 @@ fn card_crossing_checks_search_the_card_boundaries_of_a_long_record() {
     let last = bytes.len() - 1;
     bytes[last] = b';';
 
-    let (tokens, consumed) = tokenize(&bytes, &boundaries, b',', b';', GlobalTable::V5Later)
+    let fields = tokenize(&bytes, &boundaries, b',', b';', GlobalTable::V5Later)
         .unwrap_or_else(|_| panic!("no field crosses a card"));
-    assert_eq!(consumed, bytes.len());
-    assert_eq!(tokens.len(), fields_per_card * cards);
+    assert_eq!(fields.end, bytes.len());
+    assert!(fields.failed.is_empty());
+    assert_eq!(fields.tokens.len(), fields_per_card * cards);
     let one = TokenValue::real(1.0);
-    assert!(tokens.iter().all(|token| token.value == one));
+    assert!(fields
+        .tokens
+        .iter()
+        .all(|token| token.as_ref().is_some_and(|token| token.value == one)));
 
     let crossing = last - 64;
     bytes[crossing] = b'0';
+    let fields = tokenize(&bytes, &boundaries, b',', b';', GlobalTable::V5Later)
+        .unwrap_or_else(|_| panic!("the field boundaries are known"));
     assert!(matches!(
-        tokenize(&bytes, &boundaries, b',', b';', GlobalTable::V5Later),
-        Err(TokenizeFailure::Defect(ParameterDefect::NumericCrossesCard, start))
-            if start == crossing - 3
+        fields.failed.as_slice(),
+        [FailedField {
+            defect: ParameterDefect::NumericCrossesCard,
+            offset,
+            ..
+        }] if *offset == crossing - 3
     ));
 }
 
@@ -69,19 +91,23 @@ fn a_zero_hollerith_count_is_not_a_null_string() {
 
 #[test]
 fn numeric_fields_may_have_leading_but_not_embedded_or_trailing_blanks() {
-    let (tokens, _) = tokenize(b"116, 1,2,3,0;", &[64], b',', b';', GlobalTable::V5Later)
+    let fields = tokenize(b"116, 1,2,3,0;", &[64], b',', b';', GlobalTable::V5Later)
         .unwrap_or_else(|_| panic!("leading blanks are ignored"));
-    assert_eq!(tokens[1].value, TokenValue::Integer(1));
+    assert_eq!(
+        fields.tokens[1].as_ref().map(|token| &token.value),
+        Some(&TokenValue::Integer(1))
+    );
 
     for field in [b"1  ".as_slice(), b"1 2".as_slice()] {
         let bytes = [b"116,".as_slice(), field, b",2,3,0;".as_slice()].concat();
-        assert!(matches!(
-            tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later)
-                .unwrap_or_else(|_| panic!("framed field"))
-                .0[1]
-                .value,
-            TokenValue::Unreadable(ParameterDefect::NumericContainsBlanks)
-        ));
+        assert_eq!(
+            failed_defect(
+                &tokenize(&bytes, &[64], b',', b';', GlobalTable::V5Later)
+                    .unwrap_or_else(|_| panic!("framed field")),
+                1
+            ),
+            Some(ParameterDefect::NumericContainsBlanks)
+        );
     }
 }
 
@@ -93,8 +119,15 @@ fn declared_numeric_limits() -> NumericLimits {
     }
 }
 
-fn tokenize_with_declared_limits(value: &str) -> Result<Vec<Token>, TokenizeFailure> {
-    super::super::tokenize_with_limits(
+/// The defect of the failed field at `index`, which has no token.
+fn failed_defect(fields: &TokenizedFields, index: usize) -> Option<ParameterDefect> {
+    let field = fields.failed.iter().find(|field| field.index == index)?;
+    assert!(fields.tokens[index].is_none());
+    Some(field.defect)
+}
+
+fn tokenize_with_declared_limits(value: &str) -> Result<TokenizedFields, TokenizeFailure> {
+    super::super::tokenize_fields(
         format!("116,{value};").as_bytes(),
         &[],
         b',',
@@ -102,37 +135,43 @@ fn tokenize_with_declared_limits(value: &str) -> Result<Vec<Token>, TokenizeFail
         GlobalTable::V5_0,
         declared_numeric_limits(),
     )
-    .map(|(tokens, _)| tokens)
+}
+
+fn admitted_with_declared_limits(value: &str) -> bool {
+    tokenize_with_declared_limits(value).is_ok_and(|fields| fields.failed.is_empty())
 }
 
 #[test]
 fn parameter_numeric_tokens_obey_global_integer_and_real_capabilities() {
+    let out_of_range = |value: &str| {
+        failed_defect(
+            &tokenize_with_declared_limits(value).unwrap_or_else(|_| panic!("framed field")),
+            1,
+        )
+    };
     for value in ["2147483647", "-2147483647"] {
-        assert!(tokenize_with_declared_limits(value).is_ok(), "{value}");
+        assert!(admitted_with_declared_limits(value), "{value}");
     }
     for value in ["2147483648", "-2147483648"] {
-        assert!(
-            matches!(
-                tokenize_with_declared_limits(value).unwrap_or_else(|_| panic!("framed field"))[1]
-                    .value,
-                TokenValue::Unreadable(ParameterDefect::NumericOutOfRange),
-            ),
+        assert_eq!(
+            out_of_range(value),
+            Some(ParameterDefect::NumericOutOfRange),
             "{value}"
         );
     }
 
     for value in ["9.9E37", "1E38", "1.1E38", "1.23456", "1.230000"] {
-        assert!(tokenize_with_declared_limits(value).is_ok(), "{value}");
+        assert!(admitted_with_declared_limits(value), "{value}");
     }
-    assert!(matches!(
-        tokenize_with_declared_limits("1E39").unwrap_or_else(|_| panic!("framed field"))[1].value,
-        TokenValue::Unreadable(ParameterDefect::NumericOutOfRange),
-    ));
-    assert!(tokenize_with_declared_limits("1.234567D308").is_ok());
-    assert!(matches!(
-        tokenize_with_declared_limits("1D309").unwrap_or_else(|_| panic!("framed field"))[1].value,
-        TokenValue::Unreadable(ParameterDefect::NumericOutOfRange),
-    ));
+    assert_eq!(
+        out_of_range("1E39"),
+        Some(ParameterDefect::NumericOutOfRange)
+    );
+    assert!(admitted_with_declared_limits("1.234567D308"));
+    assert_eq!(
+        out_of_range("1D309"),
+        Some(ParameterDefect::NumericOutOfRange)
+    );
 }
 
 #[test]
@@ -158,12 +197,16 @@ fn parameter_numeric_capability_checks_are_proven_for_v4_and_v5_0() {
         bytes[offset..offset + old.len()].copy_from_slice(new);
 
         let result = IgesCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
             .unwrap();
         assert!(result.ir().model.points.is_empty(), "version {version}");
-        assert!(result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::ParameterLiteralUnusable.kind()
-        }), "version {version}: {:#?}", result.report().losses);
+        crate::test_support::parameter_parts::assert_one_parameter_field(&result, &bytes, 4, b"1E2,");
+        let native = result.ir().native.namespace("iges").unwrap();
+        let parameters = &native.arenas()["entities"][0].fields().unwrap()["parameters"];
+        assert_eq!(parameters.as_array().unwrap().len(), 4);
+        assert!(parameters[1].is_null());
+        assert_eq!(parameters[2]["value"]["value"], 2.0);
+        assert_eq!(parameters[3]["value"]["value"], 3.0);
     }
 }
 
@@ -173,9 +216,12 @@ fn a_hollerith_payload_may_cross_a_card_but_its_header_may_not() {
     payload_crosses.extend(std::iter::repeat_n(b'0', 56));
     payload_crosses.push(b'1');
     payload_crosses.extend_from_slice(b",4Habcd,;");
-    let (tokens, _) = tokenize(&payload_crosses, &[64], b',', b';', GlobalTable::V5Later)
+    let fields = tokenize(&payload_crosses, &[64], b',', b';', GlobalTable::V5Later)
         .unwrap_or_else(|_| panic!("a Hollerith payload may cross its card boundary"));
-    assert!(matches!(tokens[2].value, TokenValue::String(ref value) if **value == b"abcd"));
+    assert!(matches!(
+        fields.tokens[2].as_ref().map(|token| &token.value),
+        Some(TokenValue::String(value)) if **value == b"abcd"
+    ));
 
     let mut header_crosses = b"116,".to_vec();
     header_crosses.extend(std::iter::repeat_n(b'0', 57));
@@ -193,11 +239,11 @@ fn a_hollerith_payload_may_cross_a_card_but_its_header_may_not() {
 #[test]
 fn hollerith_string_bytes_follow_the_declared_dialect() {
     let bytes = b"116,3Ha\0c,2,3,0;";
-    let (tokens, _) = tokenize(bytes, &[64], b',', b';', GlobalTable::V4_0)
+    let fields = tokenize(bytes, &[64], b',', b';', GlobalTable::V4_0)
         .unwrap_or_else(|_| panic!("IGES 4.0 permits ASCII control bytes in strings"));
     assert!(matches!(
-        tokens[1].value,
-        TokenValue::String(ref value) if **value == b"a\0c"
+        fields.tokens[1].as_ref().map(|token| &token.value),
+        Some(TokenValue::String(value)) if **value == b"a\0c"
     ));
 
     assert!(matches!(
@@ -243,26 +289,49 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
     let mut x = String::with_capacity(60);
     x.extend(std::iter::repeat_n('0', 59));
     x.push('1');
+    let bytes = owned_test_file_with_raw_parameters(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "SPLIT".into(),
+        status: "00010000",
+        parameters: format!("116,{x},2,3,0;"),
+    }]);
     let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file_with_raw_parameters(&[OwnedTestEntity {
-                entity_type: 116,
-                form: 0,
-                label: "SPLIT".into(),
-                status: "00010000",
-                parameters: format!("116,{x},2,3,0;"),
-            }])),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
 
     assert!(result.ir().model.points.is_empty());
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(
-        result.report().losses[0].code,
-        IgesLossCode::ParameterDataQuarantined.kind()
+        result.report().losses[0].code.local_code(),
+        "record.unreadable"
+    );
+    assert_eq!(
+        result.report().losses[0].severity,
+        cadmpeg_ir::report::Severity::Error
     );
     assert!(result.report().losses[0]
         .message
         .contains("numeric field or its delimiter crosses a card boundary"));
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas()["entities"][0].fields().unwrap();
+    let parameters = &fields["parameters"];
+    assert_eq!(parameters.as_array().unwrap().len(), 5);
+    assert!(parameters[1].is_null());
+    for (index, value) in [(0, 116), (2, 2), (3, 3), (4, 0)] {
+        assert_eq!(parameters[index]["value"]["value"], value);
+    }
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    let fidelity = result.source_fidelity();
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
+    assert_eq!(
+        crate::test_support::given_up_count(result.report(), "iges.parameter_field"),
+        1
+    );
+    assert_eq!(part.offset(), 4);
+    assert_eq!(part.byte_len(), 61);
+    assert_eq!(part.data(), Some(format!("{x},").as_bytes()));
 }

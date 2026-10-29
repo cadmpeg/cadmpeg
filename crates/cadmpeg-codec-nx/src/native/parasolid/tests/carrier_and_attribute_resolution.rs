@@ -173,7 +173,8 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
                 .ir()
                 .native
                 .namespace("nx")
-                .expect("required invariant")
+                .expect("nx namespace")
+                .clone()
                 .arena_as::<super::super::ParasolidOffsetSurfaceRecord>(
                     "parasolid_offset_surface_records",
                 )
@@ -223,7 +224,8 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
@@ -281,7 +283,8 @@ fn decode_emits_rolling_ball_blend_surface() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
@@ -334,7 +337,8 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidIntersectionRecord>("parasolid_intersection_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
@@ -408,7 +412,8 @@ fn decode_emits_charted_surface_intersection_construction() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidTermUseRecord>("parasolid_term_use_records")
         .expect("required invariant");
     assert_eq!(terms.len(), 2);
@@ -423,7 +428,8 @@ fn decode_emits_charted_surface_intersection_construction() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidSupportUvRecord>("parasolid_support_uv_records")
         .expect("required invariant");
     assert_eq!(support_uv.len(), 1);
@@ -446,7 +452,8 @@ fn decode_emits_charted_surface_intersection_construction() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidChartRecord>("parasolid_chart_records")
         .expect("required invariant");
     assert_eq!(charts.len(), 1);
@@ -526,7 +533,8 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidBlendBoundRecord>("parasolid_blend_bound_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
@@ -568,7 +576,8 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);

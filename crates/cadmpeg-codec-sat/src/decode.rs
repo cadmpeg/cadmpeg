@@ -31,6 +31,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, C
     }
 }
 
+struct FramedStream {
+    brep: AsmBrep,
+    has_entities: bool,
+}
+
 fn decode_asm_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -77,6 +82,7 @@ fn decode_asm_binary(
                 CodecError::malformed(format_args!("SAB framing failed: {error}"))
             })
         })?;
+        let has_entities = !records.is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -86,7 +92,7 @@ fn decode_asm_binary(
             cadmpeg_asm::asm_format!("sat"),
             DecodePurpose::Model,
         )?;
-        Some(brep)
+        Some(FramedStream { brep, has_entities })
     };
     let mut attributes = BTreeMap::new();
     header_attributes(&header.metadata, Family::Asm, &mut attributes);
@@ -159,6 +165,7 @@ fn decode_acis_binary(
                 CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
             })
         })?;
+        let has_entities = !records.is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -168,7 +175,7 @@ fn decode_acis_binary(
             cadmpeg_asm::asm_format!("sat"),
             DecodePurpose::Model,
         )?;
-        Some(brep)
+        Some(FramedStream { brep, has_entities })
     };
     let mut attributes = BTreeMap::new();
     header_attributes(&header.metadata, Family::Acis, &mut attributes);
@@ -283,15 +290,19 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         }
     }
     let payload = match records {
-        Some(records) => Some(decode_with_header(
-            ctx,
-            &records,
-            bytes,
-            Some(&header),
-            "stream",
-            cadmpeg_asm::asm_format!("sat"),
-            DecodePurpose::Model,
-        )?),
+        Some(records) => {
+            let has_entities = !records.is_empty();
+            let brep = decode_with_header(
+                ctx,
+                &records,
+                bytes,
+                Some(&header),
+                "stream",
+                cadmpeg_asm::asm_format!("sat"),
+                DecodePurpose::Model,
+            )?;
+            Some(FramedStream { brep, has_entities })
+        }
         None => None,
     };
     let mut result = build_result(
@@ -370,11 +381,18 @@ fn retain_source<'a>(
     extents: impl IntoIterator<Item = (&'a str, std::ops::Range<usize>)>,
 ) -> Result<(), CodecError> {
     let mut retained = Vec::new();
+    let mut untyped = Vec::new();
     for (id, span) in extents {
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(span.len()),
             "SAT recovered source bytes",
         )?;
+        if !matches!(
+            id,
+            "sat:source:header#0" | "sat:source:concatenated-streams#0"
+        ) {
+            untyped.push(id.to_owned());
+        }
         retained.push(cadmpeg_ir::UnknownRecord::retained(
             cadmpeg_ir::ids::UnknownId::mint(id.to_owned()).map_err(CodecError::malformed)?,
             cadmpeg_core::decode::u64_from_index(span.start),
@@ -387,7 +405,13 @@ fn retain_source<'a>(
     }
     result
         .source_fidelity
-        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)
+        .attach_native_unknown_records(&mut result.ir, FORMAT, retained, ctx)?;
+    for id in untyped {
+        result
+            .source_fidelity
+            .mark_untyped(&id, [cadmpeg_ir::ArenaClass::Model])?;
+    }
+    Ok(())
 }
 
 /// Refusal for bytes whose SAT discriminant matched but whose stream did not
@@ -412,7 +436,7 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 
 fn build_result(
     ctx: &DecodeContext<'_>,
-    payload: Option<AsmBrep>,
+    payload: Option<FramedStream>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
@@ -429,6 +453,10 @@ fn build_result(
             })?,
         cadmpeg_core::text::named_entries("the acis header", attributes)?,
     ));
+    ir.scope = cadmpeg_ir::ContentScope {
+        model: payload.is_some(),
+        design: ctx.depth().required_scope().design,
+    };
     let mut losses = Vec::new();
     if text_dialect.is_none() {
         crate::loss::binary_header_losses(header, &mut losses);
@@ -452,12 +480,15 @@ fn build_result(
         }
     }
 
-    let Some(brep) = payload else {
+    let Some(FramedStream { brep, has_entities }) = payload else {
         return Ok(Decoded {
             ir,
             body: DecodeBody {
                 losses,
-                ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {})
+                ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+                    scope: cadmpeg_ir::ContentScope::container(),
+                    geometry_transferred: false,
+                })
             },
             source_fidelity: cadmpeg_ir::SourceFidelity::default(),
         });
@@ -499,13 +530,12 @@ fn build_result(
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
     losses.extend(dialect_loss(kernel));
-    if !geometry_transferred {
+    if has_entities && !geometry_transferred {
         let branch = text_dialect.map_or(String::new(), |dialect| {
             format!(" The stream ends with `{}`.", terminator_line(dialect))
         });
         losses.push(SatLossCode::GeometryFramedWithoutCarriers.note(format!(
-            "the stream framed but its records decoded no surfaces, points, or faces; its \
-             version or branch is outside the ASM decoders' coverage.{branch}"
+            "the framed stream contains entity records but decoded no surfaces, points, or faces.{branch}"
         )));
     }
     if stats.unknown_surface_faces() > 0 {
@@ -537,9 +567,10 @@ fn build_result(
     let body = DecodeBody {
         coverage,
         losses,
-        ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(
+        ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: ir.scope,
             geometry_transferred,
-        ))
+        })
     };
 
     let mut annotations = AnnotationBuilder::new();
@@ -559,7 +590,19 @@ fn build_result(
         }
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
+    let untyped = unknowns
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            // Invalid native tolerance evidence does not omit the owning geometry.
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().to_string())
+        .collect::<Vec<_>>();
     source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, unknowns, ctx)?;
+    for id in untyped {
+        source_fidelity.mark_untyped(&id, [cadmpeg_ir::ArenaClass::Model])?;
+    }
     Ok(Decoded {
         ir,
         body,

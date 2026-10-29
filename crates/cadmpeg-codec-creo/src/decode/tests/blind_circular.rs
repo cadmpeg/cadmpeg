@@ -279,8 +279,10 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(8.0)
-                        .expect("nonzero length fixture"),
+                    length: cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::NonZeroLength::new(8.0)
+                            .expect("nonzero length fixture")
+                    ),
                 },
                 draft: None,
             },
@@ -622,6 +624,7 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -715,6 +718,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
 
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("creo:visibgeom:surface#11".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -737,6 +741,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         });
     for (id, x) in [(3, -9.0), (4, -8.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -814,6 +819,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -951,6 +957,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1036,6 +1043,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (12, 1.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1056,6 +1064,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1153,6 +1162,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     let mut ir = CadIr::empty();
     for (id, radius) in [(11, 15.0), (13, 1.0)] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -1173,6 +1183,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
     ] {
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1380,15 +1391,19 @@ fn asymmetric_cap_planes_define_two_sided_extent() {
             ExtrudeExtent::TwoSided {
                 first: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(3.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(3.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
                 second: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(2.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(2.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -1410,8 +1425,10 @@ fn one_negative_cap_offset_reverses_blind_direction() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(48.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -1436,8 +1453,10 @@ fn zero_offset_support_plane_does_not_obscure_blind_cap() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(48.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(48.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },
@@ -1463,8 +1482,10 @@ fn interior_axis_normal_planes_do_not_shorten_blind_extent() {
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: cadmpeg_ir::scalar::NonZeroLength::new(38.0)
-                            .expect("nonzero length fixture"),
+                        length: cadmpeg_ir::Dimension::Literal(
+                            cadmpeg_ir::scalar::NonZeroLength::new(38.0)
+                                .expect("nonzero length fixture")
+                        ),
                     },
                     draft: None,
                 },

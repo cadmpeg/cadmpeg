@@ -29,6 +29,8 @@ use cadmpeg_core::CodecError;
 
 use crate::index::identities::BorrowedIdentities;
 
+mod surface_cache;
+
 /// A curve point as the checks measure it: the finite point, or the point an
 /// evaluation outside the finite range reached, whose mismatch is then the
 /// finding's measure. An evaluation with no value has no point.
@@ -126,6 +128,7 @@ pub(super) fn check_procedural_support_consistency(
     evaluations: &ModelEvaluationPass,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    surface_cache::check(ctx, index, evaluations, findings)?;
     let ir = index.ir();
     let model = PassEvaluator {
         index,

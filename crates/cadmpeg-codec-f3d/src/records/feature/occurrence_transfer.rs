@@ -21,6 +21,8 @@ pub(crate) struct DesignOccurrenceTransfer {
     pub(crate) component_record_index: u64,
     pub(crate) target_owner: DesignPasteOwner,
     pub(crate) target_transform: SketchPlacementMatrix,
+    /// Byte offset of the target transform of a located scope.
+    #[serde(skip)]
     pub(crate) target_transform_offset: Option<u64>,
     pub(crate) source: DesignOccurrenceTransferSource,
 }
@@ -36,7 +38,9 @@ pub(crate) enum DesignOccurrenceTransferSource {
     },
     Copy {
         source_transform: SketchPlacementMatrix,
-        source_transform_offset: u64,
+        /// Byte offset of the source transform of a located scope.
+        #[serde(skip)]
+        source_transform_offset: Option<u64>,
     },
 }
 
@@ -108,9 +112,11 @@ impl DesignOccurrenceTransfer {
             || !u32::try_from(self.component_record_index)
                 .ok()
                 .is_some_and(|index| has_type(index, COMPONENT_TYPE))
-            || !self
-                .record_indices()
-                .all(|index| record_offset(index).is_some_and(|at| at < scope.byte_offset()))
+            || !self.record_indices().all(|index| {
+                record_offset(index)
+                    .zip(scope.byte_offset())
+                    .is_some_and(|(at, start)| at < start)
+            })
             || !before(self.occurrence_record_index, self.relation_record_index)
             || !owner_valid(&self.target_owner)
         {
@@ -167,12 +173,22 @@ impl DesignOccurrenceTransfer {
                 return false;
             }
         }
-        let target_at = match (&self.source, scope.kind_name(), scope.frame_length()) {
-            (DesignOccurrenceTransferSource::Cut { .. }, "CutPaste", 277) => None,
-            (DesignOccurrenceTransferSource::Cut { .. }, "CutPaste", 405) => {
+        if !matches!(
+            (&self.source, scope.kind_name()),
+            (DesignOccurrenceTransferSource::Cut { .. }, "CutPaste")
+                | (DesignOccurrenceTransferSource::Copy { .. }, "CopyPaste")
+        ) {
+            return false;
+        }
+        let (Some(start), Some(frame_length)) = (scope.byte_offset(), scope.frame_length()) else {
+            return true;
+        };
+        let target_at = match (&self.source, frame_length) {
+            (DesignOccurrenceTransferSource::Cut { .. }, 277) => None,
+            (DesignOccurrenceTransferSource::Cut { .. }, 405) => {
                 Some(u64_from_index(cut_prefix::LEN))
             }
-            (DesignOccurrenceTransferSource::Cut { .. }, "CutPaste", 409) => {
+            (DesignOccurrenceTransferSource::Cut { .. }, 409) => {
                 Some(u64_from_index(cut_prefix::LEN) + 4)
             }
             (
@@ -180,12 +196,11 @@ impl DesignOccurrenceTransfer {
                     source_transform_offset,
                     ..
                 },
-                "CopyPaste",
                 length @ (525 | 529),
             ) => {
                 let source_at = u64_from_index(copy_prefix::SOURCE_TRANSFORM)
                     + if length == 525 { 0 } else { 4 };
-                if scope.byte_offset().checked_add(source_at) != Some(*source_transform_offset) {
+                if start.checked_add(source_at) != *source_transform_offset {
                     return false;
                 }
                 Some(source_at + u64_from_index(copy_prefix::LEN - copy_prefix::SOURCE_TRANSFORM))
@@ -193,7 +208,7 @@ impl DesignOccurrenceTransfer {
             _ => return false,
         };
         match target_at {
-            Some(offset) => scope.byte_offset().checked_add(offset) == self.target_transform_offset,
+            Some(offset) => start.checked_add(offset) == self.target_transform_offset,
             None => {
                 self.target_transform_offset.is_none()
                     && self.target_transform == SketchPlacementMatrix::IDENTITY
@@ -203,7 +218,7 @@ impl DesignOccurrenceTransfer {
 }
 
 rewrite_native_record!(DesignPasteOwner, []; {collection, context, component});
-rewrite_native_record!(DesignOccurrenceTransfer, []; {relation_record_index, occurrence_record_index, component_record_index, target_owner, target_transform, target_transform_offset, source});
+rewrite_native_record!(DesignOccurrenceTransfer, []; {relation_record_index, occurrence_record_index, component_record_index, target_owner, target_transform, source});
 rewrite_native_enum!(DesignOccurrenceTransferSource, []; {Cut {removal_record_index, source_relation_record_index, source_owner, occurrence_key}, Copy {source_transform, source_transform_offset}});
 
 #[cfg(test)]

@@ -222,14 +222,14 @@ mod tests {
     fn deltas_inspection_counts_only_owned_instances() {
         let file = crate::test_support::test_prt::single_part_prt();
         crate::test_support::with_decode_context(|_ctx| {
-            let scan = crate::decode::Scan {
-                container: crate::container::scan_bytes(file).unwrap(),
-                streams: vec![crate::test_support::owned_deltas::stream(
+            let scan = crate::decode::Scan::new(
+                crate::container::scan_bytes(file).unwrap(),
+                vec![crate::test_support::owned_deltas::stream(
                     crate::test_support::test_pmarks::complete(
                         crate::test_support::owned_deltas::body_stream(36),
                     ),
                 )],
-            };
+            );
             let summary = super::summarize(&scan).unwrap();
             let attributes = &summary.entries.last().unwrap().attributes;
             assert_eq!(

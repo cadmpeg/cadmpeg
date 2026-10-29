@@ -112,6 +112,18 @@ struct PresentationDocumentWire {
     native_ref: Option<String>,
 }
 
+impl crate::schema::EntitySchema for PresentationDocument {
+    const KIND: crate::schema::EntityKind = crate::schema::EntityKind::PresentationDocument;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+
+    fn native_reference(&self) -> Option<&str> {
+        self.native_ref.as_deref()
+    }
+}
+
 impl PresentationDocument {
     /// Construct document presentation with no persisted states.
     #[must_use]
@@ -336,8 +348,22 @@ pub enum PresentationItem {
 pub struct PresentationLayer {
     /// Stable layer identity.
     pub id: LayerId,
+    /// Typed native record from which this neutral record was projected.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
     /// Layer name.
     pub name: String,
+    /// Containing layer, when this layer belongs to a hierarchy.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_parent"
+    )]
+    pub parent: Option<LayerId>,
     /// Optional layer description.
     #[serde(
         default,
@@ -478,7 +504,9 @@ mod tests {
     fn source_layer_items_validate_without_fabricated_geometry() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: LayerId::mint("test:presentation:layer#construction").expect("valid identity"),
+            parent: None,
             name: "construction".into(),
             description: None,
             visible: None,
@@ -496,7 +524,9 @@ mod tests {
     fn empty_layer_name_is_valid() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: LayerId::mint("test:presentation:layer#unnamed").expect("valid identity"),
+            parent: None,
             name: String::new(),
             description: None,
             visible: None,
@@ -514,7 +544,9 @@ mod tests {
     fn missing_typed_layer_item_is_invalid() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
+            native_ref: None,
             id: LayerId::mint("test:presentation:layer#missing").expect("valid identity"),
+            parent: None,
             name: "missing".into(),
             description: None,
             visible: None,
@@ -587,6 +619,7 @@ cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref"
 cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
 cadmpeg_core::named_optional_field!(deserialize_expanded, bool, "expanded");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_parent, LayerId, "parent");
 cadmpeg_core::named_optional_field!(deserialize_display_mode, String, "display_mode");
 cadmpeg_core::named_optional_field!(deserialize_selection_style, String, "selection_style");
 cadmpeg_core::named_optional_field!(deserialize_description, String, "description");

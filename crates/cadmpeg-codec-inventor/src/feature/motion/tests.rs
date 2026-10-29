@@ -177,14 +177,17 @@ fn one_transform_moves_every_selected_persistent_body_in_millimetres() {
         [props[2].id(), props[3].id()]
     );
     assert_eq!(native.as_str(), props[0].id());
-    assert_eq!(translation.get(), Vector3::new(10.0, -20.0, 30.0));
+    assert_eq!(
+        translation.map(|component| component.literal().expect("literal translation").get()),
+        [10.0, -20.0, 30.0]
+    );
     assert!(rotation.is_none());
-    assert_eq!(copies, 0);
+    assert_eq!(copies, 0.into());
 }
 
 fn apply_motion(point: Vector3, translation: FiniteVector3, rotation: &AxisAngle) -> Vector3 {
     let a = rotation.direction.get();
-    let angle = rotation.angle.get();
+    let angle = rotation.angle.literal().expect("literal angle").get();
     let c = angle.cos();
     let s = angle.sin();
     let dot = a.x * point.x + a.y * point.y + a.z * point.z;
@@ -215,7 +218,11 @@ fn axis_angle_and_translation_preserve_rotation_about_an_offset_axis() {
     .expect("valid synthetic motion");
     let rotation = rotation.expect("valid synthetic motion");
     assert_eq!(rotation.origin, FinitePoint3::ZERO);
-    assert!((rotation.angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert!(
+        (rotation.angle.literal().expect("literal angle").get() - std::f64::consts::FRAC_PI_2)
+            .abs()
+            < 1e-12
+    );
     let reached = apply_motion(Vector3::new(10.0, 20.0, 30.0), translation, &rotation);
     assert!((reached.x - 0.0).abs() < 1e-12);
     assert!((reached.y + 10.0).abs() < 1e-12);
@@ -233,7 +240,10 @@ fn half_turns_and_small_rotations_do_not_lose_the_axis() {
         }
         let (_, rotation) = rigid_motion(rows).expect("valid synthetic motion");
         let rotation = rotation.expect("valid synthetic motion");
-        assert!((rotation.angle.get() - std::f64::consts::PI).abs() < 1e-12);
+        assert!(
+            (rotation.angle.literal().expect("literal angle").get() - std::f64::consts::PI).abs()
+                < 1e-12
+        );
         let expected = [0, 1, 2].map(|i| if i == axis { 1.0 } else { 0.0 });
         let actual = rotation.direction.get();
         assert_eq!([actual.x, actual.y, actual.z], expected);
@@ -247,7 +257,17 @@ fn half_turns_and_small_rotations_do_not_lose_the_axis() {
         [0.0, 0.0, 0.0, 1.0],
     ])
     .expect("valid synthetic motion");
-    assert!((rotation.expect("valid synthetic motion").angle.get() - angle).abs() < 1e-24);
+    assert!(
+        (rotation
+            .expect("valid synthetic motion")
+            .angle
+            .literal()
+            .expect("literal angle")
+            .get()
+            - angle)
+            .abs()
+            < 1e-24
+    );
 }
 
 #[test]
@@ -480,7 +500,7 @@ fn a_face_translation_keeps_the_face_selection_and_affected_body_distinct() {
         panic!("face translation")
     };
     assert_eq!(native, props[0].id());
-    assert_eq!(distance.get(), 20.0);
+    assert_eq!(distance.literal().expect("literal distance").get(), 20.0);
     assert_eq!(direction.get(), Vector3::new(1.0, 0.0, 0.0));
     let face_item = props.pop().expect("synthetic face item");
     props.push(property(
@@ -533,35 +553,38 @@ fn validation_detects_changed_translation_rotation_selection_and_copy_count() {
     for changed in [
         FeatureOperation::MoveBody {
             bodies: bodies.clone(),
-            translation: FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
-                .expect("valid synthetic motion"),
+            translation: [1.0, 0.0, 0.0].map(|component| {
+                cadmpeg_ir::scalar::Length::new(component)
+                    .expect("valid synthetic motion")
+                    .into()
+            }),
             rotation: rotation.clone(),
-            copies,
+            copies: copies.clone(),
         },
         FeatureOperation::MoveBody {
             bodies: BodySelection::Native("other".into()),
-            translation,
+            translation: translation.clone(),
             rotation: rotation.clone(),
-            copies,
+            copies: copies.clone(),
         },
         FeatureOperation::MoveBody {
             bodies: bodies.clone(),
-            translation,
+            translation: translation.clone(),
             rotation: Some(AxisAngle {
                 origin: FinitePoint3::ZERO,
                 direction: FeatureDirection3::from(
                     UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0))
                         .expect("valid synthetic motion"),
                 ),
-                angle: Angle::new(1.0).expect("valid synthetic motion"),
+                angle: Angle::new(1.0).expect("valid synthetic motion").into(),
             }),
-            copies,
+            copies: copies.clone(),
         },
         FeatureOperation::MoveBody {
             bodies,
             translation,
             rotation,
-            copies: 1,
+            copies: 1.into(),
         },
     ] {
         assert!(!index.matches(&source, &FeatureDefinition::Operation(changed)));

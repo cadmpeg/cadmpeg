@@ -1803,6 +1803,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             ctx,
             ir,
             Curve {
+                native_ref: None,
                 parameter_range: None,
                 id: id.clone(),
                 geometry: geometry.clone(),
@@ -1812,10 +1813,6 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{curve_id}"
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             },
@@ -2409,6 +2406,7 @@ mod tests {
         });
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#10".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -2490,6 +2488,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -2503,6 +2502,7 @@ mod tests {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -2541,12 +2541,14 @@ mod tests {
         };
         let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
         source_carriers.record_surface(&Surface {
+            native_ref: None,
             id: id.clone(),
             geometry: plane(1.0),
             source_object: None,
         });
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id,
             geometry: plane(25.4),
             source_object: None,
@@ -2585,6 +2587,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#7".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -2613,6 +2616,7 @@ mod tests {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#8".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -2702,6 +2706,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#1".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
@@ -2718,6 +2723,7 @@ mod tests {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#2".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -2828,6 +2834,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -2841,6 +2848,7 @@ mod tests {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -2939,6 +2947,7 @@ mod tests {
             });
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint("creo:visibgeom:surface#43".to_string()).expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -3107,6 +3116,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -3120,6 +3130,7 @@ mod tests {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -3288,6 +3299,7 @@ mod tests {
     /// onto the plane x = 0.
     fn overflowing_plane_surface(face_id: u32) -> Surface {
         Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -3304,6 +3316,7 @@ mod tests {
 
     fn unit_plane_surface(face_id: u32) -> Surface {
         Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -3554,6 +3567,7 @@ mod tests {
             panic!("the plane fixture is solved");
         };
         Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(

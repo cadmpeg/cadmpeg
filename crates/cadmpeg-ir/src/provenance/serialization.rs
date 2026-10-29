@@ -37,12 +37,15 @@ impl Serialize for Provenance<SourceLocation> {
             stream: Option<&'a StreamName>,
             offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
+            byte_len: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             tag: Option<&'a str>,
         }
         Wire {
             format: &self.location.format,
             stream: self.location.stream.as_ref(),
             offset: self.offset,
+            byte_len: self.location.byte_len,
             tag: self.tag.as_deref(),
         }
         .serialize(serializer)

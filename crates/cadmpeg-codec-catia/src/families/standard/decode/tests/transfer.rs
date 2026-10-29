@@ -52,6 +52,7 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
     use cadmpeg_ir::topology::{Body, BodyKind};
     let source_id = "catia:standard:body#source";
     let body = Body {
+        native_ref: None,
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("catia:standard:region#source").unwrap()],
@@ -1083,6 +1084,7 @@ fn population_scope_prefixes_rewritten_body_ids() {
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
     let body = Body {
+        native_ref: None,
         id: BodyId::mint("catia:standard:body#0").expect("identity"),
         kind: BodyKind::Solid,
         regions: Vec::new(),

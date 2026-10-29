@@ -117,8 +117,8 @@ pub(super) fn hole_extent(
     scope: &DesignParameterScope,
     type_version: Option<u32>,
 ) -> Option<hole::DesignHoleExtent> {
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let start = usize::try_from(scope.byte_offset()?).ok()?;
+    let end = usize::try_from(scope.paired_byte_offset()?).ok()?;
     let bytes = bytes.get(..end)?;
     let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
     let after_index = after_tag.checked_add(4)?;
@@ -167,7 +167,7 @@ fn hole_extent_payload(
         let value = View::u32_le_at(bytes, cursor)?;
         let offset = u64::try_from(cursor).ok()?;
         cursor = cursor.checked_add(4)?;
-        Some(crate::records::identity::Located { value, offset })
+        Some(crate::records::identity::Sourced::at(value, offset))
     } else {
         None
     };
@@ -242,20 +242,22 @@ fn exact_hole_face_selection(
             };
             let next = DesignHoleFaceSelection {
                 record_index: frame.record_index,
-                byte_offset: frame.byte_offset,
+                byte_offset: Some(frame.byte_offset),
                 class_tag,
                 asset_id,
-                asset_id_offset: frame.asset_id_offset,
+                asset_id_offset: Some(frame.asset_id_offset),
                 context_id,
-                context_id_offset: frame.context_id_offset,
+                context_id_offset: Some(frame.context_id_offset),
                 identity_record_index: frame.identity_record_index,
-                identity_record_offset: frame.identity_record_offset,
+                identity_record_offset: Some(frame.identity_record_offset),
                 primary_identity: frame.primary_identity,
-                primary_identity_offset: frame.primary_identity_offset,
-                secondary: frame.secondary,
+                primary_identity_offset: Some(frame.primary_identity_offset),
+                secondary: frame
+                    .secondary
+                    .map(|secondary| secondary.map(crate::records::identity::Sourced::from)),
                 historical_face_candidates: Vec::new(),
                 next_record_index: frame.next_record_index,
-                next_byte_offset: frame.next_byte_offset,
+                next_byte_offset: Some(frame.next_byte_offset),
             };
             if candidate.replace(next).is_some() {
                 return None;
@@ -295,9 +297,9 @@ fn hole_construction_frame_at(
             let tangent_point_data = finite_reals_at(body, tangent_point_data_at)?;
             Some(hole::DesignHoleTangentPoint {
                 prefix,
-                data: crate::records::identity::Located {
+                data: crate::records::identity::Sourced {
                     value: tangent_point_data,
-                    offset: u64::try_from(tangent_point_data_at).ok()?,
+                    offset: Some(u64::try_from(tangent_point_data_at).ok()?),
                 },
             })
         } else if version == 1 {
@@ -326,9 +328,9 @@ fn hole_construction_frame_at(
             let reference_at = cursor;
             let reference = take_reference(body, &mut cursor)?;
             let target = u32::try_from(reference.target()?).ok()?;
-            input_records.push(crate::records::identity::Located {
+            input_records.push(crate::records::identity::Sourced {
                 value: target,
-                offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
+                offset: Some(u64::try_from(reference_at.checked_add(1)?).ok()?),
             });
         }
         if (version == 4 && cursor != paired_at)
@@ -338,18 +340,18 @@ fn hole_construction_frame_at(
         }
         Some(Ok(DesignHoleConstruction {
             point_record_index,
-            point_record_byte_offset: u64::try_from(start).ok()?,
+            point_record_byte_offset: Some(u64::try_from(start).ok()?),
             position,
-            position_offset: u64::try_from(position_at).ok()?,
+            position_offset: Some(u64::try_from(position_at).ok()?),
             direction,
-            direction_offset: u64::try_from(direction_at).ok()?,
+            direction_offset: Some(u64::try_from(direction_at).ok()?),
             point_parameters,
-            point_parameter_offsets: [
+            point_parameter_offsets: Some([
                 u64::try_from(point_parameters_at).ok()?,
                 u64::try_from(point_parameters_at.checked_add(8)?).ok()?,
-            ],
+            ]),
             reference_type,
-            reference_type_offset: u64::try_from(reference_type_at).ok()?,
+            reference_type_offset: Some(u64::try_from(reference_type_at).ok()?),
             tangent_point_data,
             input_records,
             face_selection: None,

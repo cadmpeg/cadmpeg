@@ -72,9 +72,11 @@ fn set_extent(scope: &mut DesignParameterScope, control: u8, saved: bool) {
         slot.extent = Some(crate::records::feature::hole::DesignHoleExtent {
             leading_word: None,
             extent_control: Some(control),
-            saved_non_distance_depth: saved.then(|| crate::records::identity::Located {
-                value: cadmpeg_ir::scalar::FiniteReal::try_from(1.0).unwrap(),
-                offset: 5,
+            saved_non_distance_depth: saved.then(|| {
+                crate::records::identity::Sourced::at(
+                    cadmpeg_ir::scalar::FiniteReal::try_from(1.0).unwrap(),
+                    5,
+                )
             }),
         });
     }
@@ -169,8 +171,12 @@ fn hole_extent_projection_checks_distance_shoulder_and_through_all() {
         else {
             panic!()
         };
+        let depth = parameters
+            .iter()
+            .find(|parameter| parameter.source_kind() == "HoleDepth")
+            .unwrap();
         assert!(
-            matches!(extent, Some(LinearTermination::Blind {length}) if (length.get()-10.0).abs() < EPS_HOLE_EXTENT_TEST)
+            matches!(&extent, Some(LinearTermination::Blind {length}) if *length == super::super::dimension_bindings::parameter(depth) && (super::super::design_positive_length(depth).unwrap().get()-10.0).abs() < EPS_HOLE_EXTENT_TEST)
         );
         if drilled {
             assert!(matches!(

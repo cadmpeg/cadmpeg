@@ -17,7 +17,7 @@ fn refuses_wrapped_offset(
         id: "f3d:BulkStream.dat:design-record-header#0".to_owned(),
         record_index: 7,
         class_tag: "298".to_owned().try_into().expect("fixture class tag"),
-        byte_offset: 0,
+        byte_offset: Some(0),
     };
     let definition = SketchRelationDefinition::new(parsed.state, None)
         .expect("fixture constraint mask is admitted");

@@ -23,6 +23,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(definition),
         native_ref: Some(native_ref.into()),
     };
@@ -85,6 +86,7 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: vec![FeatureInputSurfaceSelection {
+            sequence: 0,
             id: "seed".into(),
             parent: "lane".into(),
             ordinal: 0,

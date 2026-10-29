@@ -22,7 +22,7 @@ pub(crate) mod scope;
 pub(crate) mod sheet_metal;
 pub(crate) mod surface_ops;
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 pub(crate) mod thread;

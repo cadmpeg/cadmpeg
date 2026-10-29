@@ -4,7 +4,6 @@
 //! Dump-test byte builders shared by owner suites.
 
 use crate::chunks::{parse_header, ArchiveVersion, TCODE_CRC, TCODE_ENDOFFILE, TCODE_SHORT};
-use crate::loss::Diagnostics;
 use crate::settings;
 use crate::wire::Uuid;
 use crate::MAGIC;
@@ -165,7 +164,7 @@ pub(crate) fn descriptor(
         history: None,
         unknown_trailer: Vec::new(),
         checksum_warnings: crate::loss::Diagnostics::new(),
-        warnings: Diagnostics::new(),
+        warnings: crate::loss::Diagnostics::new(),
     }
 }
 
@@ -1183,7 +1182,10 @@ pub(crate) fn polyedge_segment_parameter(
     else {
         return None;
     };
-    parameters.get("segment_0_object").cloned()
+    parameters
+        .get("segment_0_object")
+        .and_then(|dimension| dimension.value_from(&result.ir().model.parameters))
+        .and_then(|expression| expression.literal_text())
 }
 
 /// Append a little-endian `i32`.

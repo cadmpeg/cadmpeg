@@ -212,12 +212,13 @@ fn topology_vertex(
 
     let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
     let point = Point::new(point_id.clone(), position, None);
-    sequences.record_point(&point_id, stem);
+    sequences.record_point(&point_id, &crate::ids::Stem::directory(list));
     let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
     ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
     ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().vertices.push(Vertex {
+        native_ref: None,
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
@@ -326,6 +327,7 @@ fn project_pcurve_uses(
         let id = crate::ids::pcurve(&id_stem.slot(index));
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
+            native_ref: None,
             id: id.clone(),
             geometry,
             metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
@@ -1470,6 +1472,7 @@ pub(super) fn project(
 
                             ctx.charge_entities(1, "iges_geometry_brep")?;
                             candidate.model_mut().edges.push(Edge {
+                                native_ref: None,
                                 id: id.clone(),
                                 carrier,
                                 start: vertex_ids
@@ -1520,6 +1523,7 @@ pub(super) fn project(
 
                         ctx.charge_entities(1, "iges_geometry_brep")?;
                         candidate.model_mut().coedges.push(Coedge {
+                            native_ref: None,
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
@@ -1585,6 +1589,7 @@ pub(super) fn project(
 
                     ctx.charge_entities(1, "iges_geometry_brep")?;
                     candidate.model_mut().loops.push(Loop {
+                        native_ref: None,
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary,
@@ -1613,6 +1618,7 @@ pub(super) fn project(
 
                 ctx.charge_entities(1, "iges_geometry_brep")?;
                 candidate.model_mut().faces.push(Face {
+                    native_ref: None,
                     id: face_id.clone(),
                     shell: shell_id.clone(),
                     surface: surface_id,
@@ -1681,6 +1687,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
@@ -1689,6 +1696,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
+            native_ref: None,
             id: body_id,
             kind: definition.kind,
             regions: body_regions,

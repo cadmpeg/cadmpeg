@@ -28,9 +28,15 @@ fn pipe_source_uses_structural_prefixes_and_canonical_owners() {
                         panic!("complete Pipe source")
                     };
                     assert_eq!(pipe.is_hollow, hollow);
-                    assert_eq!(pipe.operation_offset, if legacy { 26 } else { 22 });
-                    assert_eq!(pipe.is_hollow_offset, pipe.operation_offset - 1);
-                    assert_eq!(pipe.opaque_post_operation_offset, pipe.operation_offset + 4);
+                    assert_eq!(pipe.operation_offset, Some(if legacy { 26 } else { 22 }));
+                    assert_eq!(
+                        pipe.is_hollow_offset,
+                        pipe.operation_offset.map(|offset| offset - 1)
+                    );
+                    assert_eq!(
+                        pipe.opaque_post_operation_offset,
+                        pipe.operation_offset.map(|offset| offset + 4)
+                    );
                     assert_eq!(pipe.opaque_post_operation, [1, 1]);
                     assert_eq!(pipe.record_indexes, [100, 103, 106, 109]);
                     for (ordinal, expected) in [1.0, 0.0, 0.6, 0.15].into_iter().enumerate() {
@@ -42,10 +48,12 @@ fn pipe_source_uses_structural_prefixes_and_canonical_owners() {
                         assert_eq!(owner.evaluated_value().get(), expected);
                         assert_eq!(
                             owner.evaluated_value_offset(),
-                            cadmpeg_core::decode::u64_from_index(fixture.lane_starts[ordinal] + 40)
+                            Some(cadmpeg_core::decode::u64_from_index(
+                                fixture.lane_starts[ordinal] + 40
+                            ))
                         );
-                        assert_eq!(owner.local_ordinal(), u32::try_from(ordinal).unwrap());
-                        assert_eq!(owner.frame_length(), if variant { 104 } else { 103 });
+                        assert_eq!(owner.local_ordinal(), Some(u32::try_from(ordinal).unwrap()));
+                        assert_eq!(owner.frame_length(), Some(if variant { 104 } else { 103 }));
                     }
                 }
             }
@@ -198,7 +206,7 @@ fn pipe_source_preserves_optional_point_versions_and_shifted_links() {
             let selection = pipe.point_selection.as_ref().unwrap();
             assert_eq!(
                 selection.prefix_reference_offset,
-                if legacy { 33 } else { 29 }
+                Some(if legacy { 33 } else { 29 })
             );
             assert_eq!(selection.point_data.point_record_index, 500);
             assert_eq!(
@@ -498,17 +506,17 @@ fn pipe_prefixes_keep_independent_hollow_and_opaque_fields() {
         assert_eq!(actual.operation, *operation);
         assert_eq!(
             actual.operation_offset,
-            u64::try_from(17 + operation_at).unwrap()
+            Some(u64::try_from(17 + operation_at).unwrap())
         );
         assert_eq!(actual.is_hollow, *hollow);
         assert_eq!(
             actual.is_hollow_offset,
-            u64::try_from(16 + operation_at).unwrap()
+            Some(u64::try_from(16 + operation_at).unwrap())
         );
         assert_eq!(actual.opaque_post_operation, [1, 1]);
         assert_eq!(
             actual.opaque_post_operation_offset,
-            u64::try_from(21 + operation_at).unwrap()
+            Some(u64::try_from(21 + operation_at).unwrap())
         );
         let mut altered = bytes.clone();
         altered[17 + operation_at + 4..17 + operation_at + 6].copy_from_slice(&[0, 255]);

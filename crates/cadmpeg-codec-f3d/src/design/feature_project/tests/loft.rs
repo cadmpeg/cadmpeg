@@ -22,7 +22,7 @@ fn loft_input(
         .try_edit(|draft| {
             draft.payload = DesignScopePayload::Loft(Some(DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 128,
+                operation_offset: Some(128),
             }));
         })
         .unwrap();

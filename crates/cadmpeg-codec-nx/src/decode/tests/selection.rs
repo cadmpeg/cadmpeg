@@ -72,7 +72,11 @@ fn append_design_intent_losses(
     ir: &cadmpeg_ir::document::CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    crate::decode::report::append_design_intent_losses(ir, losses).unwrap();
+    crate::decode::report::append_design_intent_losses(
+        &mut cadmpeg_ir::ArenaClasses::default(),
+        ir,
+        losses,
+    );
 }
 
 #[test]
@@ -1232,8 +1236,9 @@ fn decode_retains_unsupported_named_stream_payloads() {
         result
             .source_fidelity()
             .retained_records()
-            .values()
-            .map(cadmpeg_ir::RetainedSourceRecord::byte_len)
+            .iter()
+            .filter(|(id, _)| unknowns.iter().any(|unknown| &unknown.id == *id))
+            .map(|(_, record)| record.byte_len())
             .collect::<Vec<_>>(),
         vec![
             cadmpeg_core::decode::u64_from_index(structure.len()),
@@ -1282,11 +1287,12 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let namespace = result
+    let namespace = &result
         .ir()
         .native
         .namespace("nx")
-        .expect("NX native namespace");
+        .expect("nx namespace")
+        .clone();
     assert_eq!(namespace.arenas()["saved_toggle_streams"].len(), 1);
     assert_eq!(namespace.arenas()["saved_toggle_entries"].len(), 1);
     assert!(result.ir().native_unknowns("nx").unwrap().is_empty());
@@ -1355,6 +1361,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     let mut ir = CadIr::empty();
     for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint(format!("test:test:feature#{ordinal}")).expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
@@ -1375,6 +1382,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         });
     }
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#sketch").expect("identity grammar"),
         ordinal: 3,
         name: None,
@@ -1393,6 +1401,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#incomplete-delete").expect("identity grammar"),
         ordinal: 10,
         name: None,
@@ -1432,6 +1441,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     .enumerate()
     {
         ir.model.features.push(Feature {
+            needs_recompute: false,
             id: FeatureId::mint(format!("test:test:feature#unresolved-{ordinal}"))
                 .expect("identity grammar"),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal) + 4,
@@ -1448,6 +1458,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         });
     }
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#incomplete-block").expect("identity grammar"),
         ordinal: 9,
         name: None,
@@ -1468,6 +1479,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#incomplete-sweep").expect("identity grammar"),
         ordinal: 11,
         name: None,
@@ -1599,6 +1611,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#active").expect("identity grammar"),
             ordinal: 0,
             name: Some("active".into()),
@@ -1622,6 +1635,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive").expect("identity grammar"),
             ordinal: 1,
             name: Some("inactive".into()),
@@ -1644,6 +1658,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive-native").expect("identity grammar"),
             ordinal: 2,
             name: Some("inactive-native".into()),
@@ -1663,6 +1678,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive-datum-csys").expect("identity grammar"),
             ordinal: 3,
             name: Some("inactive-datum-csys".into()),
@@ -1681,6 +1697,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#inactive-sketch").expect("identity grammar"),
             ordinal: 4,
             name: Some("inactive-sketch".into()),
@@ -1715,6 +1732,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.extend([
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#retained-input").expect("identity grammar"),
             ordinal: 0,
             name: Some("Retained history input".into()),
@@ -1738,6 +1756,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             native_ref: None,
         },
         Feature {
+            needs_recompute: false,
             id: FeatureId::mint("test:test:feature#unresolved").expect("identity grammar"),
             ordinal: 1,
             name: Some("unresolved".into()),
@@ -1785,6 +1804,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
         "reference".to_string(),
     );
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#local-pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
@@ -1825,6 +1845,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     };
 
     let feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#pattern-construction").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),
@@ -1875,6 +1896,7 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#construction-trim").expect("identity grammar"),
         ordinal: 0,
         name: Some("TRIMMED_SH".into()),
@@ -1928,6 +1950,7 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         "reference".to_string(),
     );
     let mut feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("test:test:feature#local-pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("Pattern Geometry".into()),

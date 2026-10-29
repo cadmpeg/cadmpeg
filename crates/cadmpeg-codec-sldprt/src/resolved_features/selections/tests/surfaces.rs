@@ -1,7 +1,8 @@
 //! Surface-selection and component-path tests.
 
 use super::super::super::CLASS_MARKER;
-use super::super::selection_vector_tail;
+use super::helpers::selection_vector_tail;
+use super::helpers::surface_reference_matches_at;
 use crate::classification::FeatureClass;
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -28,7 +29,6 @@ use crate::resolved_features::selections::inline_surface_reference_at;
 use crate::resolved_features::selections::mirror_pattern_component_path_at;
 use crate::resolved_features::selections::operation_surface_selection_candidates;
 use crate::resolved_features::selections::planar_surface_selection_candidates;
-use crate::resolved_features::selections::surface_reference_matches_at;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
 use std::collections::BTreeMap;
 
@@ -206,10 +206,12 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         configuration: None,
         native_payload: payload.clone().into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            offset: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -274,10 +276,12 @@ fn operation_surface_selection_scans_inline_component_faces_and_rejects_collisio
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            offset: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -517,10 +521,12 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            offset: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
             name: "moCompFace_c".into(),
         }],
         names: Vec::new(),
@@ -1033,14 +1039,18 @@ fn face_reference_plane_owns_its_counted_surface_path() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            feature_ref: None,
             id: "face-plane-data".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: vec![
             FeatureInputName {
+                sequence: 0,
+                feature_ref: None,
                 id: "producer-40-name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -1049,6 +1059,8 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 value: "Producer40".into(),
             },
             FeatureInputName {
+                sequence: 8,
+                feature_ref: None,
                 id: "producer-41-name".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -1057,6 +1069,8 @@ fn face_reference_plane_owns_its_counted_surface_path() {
                 value: "Producer41".into(),
             },
             FeatureInputName {
+                sequence: 16,
+                feature_ref: None,
                 id: "plane-name".into(),
                 parent: "lane".into(),
                 ordinal: 2,
@@ -1173,10 +1187,12 @@ fn face_reference_plane_accepts_a_component_face_path() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(class_offset)).unwrap(),
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            feature_ref: None,
             id: "component-face".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: cadmpeg_core::decode::u64_from_index(class_offset),
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -1272,13 +1288,18 @@ fn projected_split_line_consumes_self_owned_surface_identity_paths() {
         native_payload: payload.clone().into(),
         classes: vec![
             FeatureInputClass {
+                sequence: 0,
+                offset: 0,
+                feature_ref: None,
                 id: "surface-class".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: 0,
                 name: class_name.into(),
             },
             FeatureInputClass {
+                sequence: u32::try_from(cadmpeg_core::decode::u64_from_index(payload.len()))
+                    .unwrap(),
+                feature_ref: None,
                 id: "projection-class".into(),
                 parent: "lane".into(),
                 ordinal: 1,
@@ -1359,10 +1380,12 @@ fn generated_surface_identities_are_producer_outputs() {
         configuration: None,
         native_payload: payload.into(),
         classes: vec![FeatureInputClass {
+            sequence: 0,
+            offset: 0,
+            feature_ref: None,
             id: "class".into(),
             parent: "lane".into(),
             ordinal: 0,
-            offset: 0,
             name: class_name.into(),
         }],
         names: Vec::new(),
@@ -1377,7 +1400,9 @@ fn generated_surface_identities_are_producer_outputs() {
         sketch_entities: Vec::new(),
     };
 
-    let identities = generated_surface_identities(&lane).unwrap();
+    let identities = generated_surface_identities(&lane.id, &lane.classes, &lane.native_payload)
+        .unwrap()
+        .records;
 
     assert_eq!(identities.len(), 2, "{identities:#?}");
     assert!(identities.iter().all(|identity| {
@@ -1422,6 +1447,8 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
         native_payload: Vec::new().into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
+            sequence: 0,
+            feature_ref: None,
             id: "name".into(),
             parent: "lane".into(),
             ordinal: 0,
@@ -1446,9 +1473,11 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
     assert_eq!(resolved[0].source_id, FeatureSource::from_value(233));
 
     lane.names.push(FeatureInputName {
+        feature_ref: None,
         id: "ambiguous-name".into(),
         parent: "lane".into(),
         ordinal: 1,
+        sequence: 1,
         offset: 1,
         object_id: ObjectId::from_value(234),
         value: "Producer".into(),

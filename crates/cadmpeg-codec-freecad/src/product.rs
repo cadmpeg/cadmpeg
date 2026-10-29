@@ -54,7 +54,11 @@ pub(crate) fn transfer(
         let mut owned = Vec::new();
         owned.extend_from_slice(source);
         if owned.iter().any(|property| {
-            matches!(property.body, crate::native::PropertyBody::Unreadable(_))
+            (property.body.is_none()
+                || matches!(
+                    property.body,
+                    Some(crate::native::PropertyBody::Unreadable(_))
+                ))
                 && matches!(
                     property.name.as_str(),
                     "Group"
@@ -115,6 +119,7 @@ pub(crate) fn transfer(
                 external_document: prototype_link.and_then(|link| link.document()).cloned(),
                 local_transform,
                 placement_property,
+                scale,
                 array: crate::native::LinkArray::new(
                     element_count,
                     parse_placement_list(&owned, entries)?,
@@ -134,7 +139,6 @@ pub(crate) fn transfer(
                     copy_on_change_touched,
                 )
                 .map_err(malformed)?,
-                scale,
             })),
             ProductKind::Group => ProductNode::Group(ContainerNode {
                 members,
@@ -197,7 +201,7 @@ fn product_record_index(
 
 /// Project the lossless native product records into reusable definitions and placed uses.
 pub(crate) fn transfer_neutral(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     records: &[ProductNodeRecord],
     joints: &[JointRecord],
     objects: &[ObjectRecord],
@@ -276,6 +280,22 @@ pub(crate) fn transfer_neutral(
             }
         }
     }
+    // Explicit typed controls distinguish standalone product definitions from
+    // application objects used only to carry geometry or native organization.
+    for object in objects {
+        if crate::writer::products::metadata::included(properties, object.id().as_str(), true)?
+            == Some(true)
+        {
+            component_objects.push(object.id().as_str());
+        }
+    }
+    let mut controlled_components = Vec::new();
+    for object in component_objects {
+        if crate::writer::products::metadata::included(properties, object, true)? != Some(false) {
+            controlled_components.push(object);
+        }
+    }
+    let mut component_objects = controlled_components;
     component_objects.sort_unstable_by(Ord::cmp);
     component_objects.dedup();
 
@@ -375,11 +395,31 @@ pub(crate) fn transfer_neutral(
         OccurrenceId::mint(crate::native::model_id("occurrence", object, "container"))
             .map_err(CodecError::malformed)
     };
+    let parent_occurrence_id = |object: &str| -> Result<OccurrenceId, CodecError> {
+        if let Some(record) = record_by_object
+            .get(object)
+            .filter(|record| matches!(record.node, ProductNode::Occurrence(_)))
+        {
+            let owned = properties_by_owner
+                .get(object)
+                .map_or(&[][..], Vec::as_slice);
+            let cardinality = restored_cardinality(record, owned)?;
+            let key = if occurrence_count(record, cardinality)?.get() > 1 {
+                "0"
+            } else {
+                "instance"
+            };
+            OccurrenceId::mint(crate::native::model_id("occurrence", object, key))
+                .map_err(CodecError::malformed)
+        } else {
+            container_occurrence_id(object)
+        }
+    };
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records.iter().filter(|record| {
         matches!(
             record.node,
-            ProductNode::Part(_) | ProductNode::LinkGroup { .. }
+            ProductNode::Part(_) | ProductNode::LinkGroup { .. } | ProductNode::Occurrence(_)
         )
     }) {
         // Ordinary document groups organize objects without owning placements.
@@ -409,6 +449,11 @@ pub(crate) fn transfer_neutral(
         matches!(record.node, ProductNode::Occurrence(_))
             && !element_objects.contains(record.object.as_str())
     }) {
+        if crate::writer::products::metadata::included(properties, &record.object, false)?
+            == Some(false)
+        {
+            continue;
+        }
         let owned = properties_by_owner
             .get(record.object.as_str())
             .map_or(&[][..], Vec::as_slice);
@@ -418,7 +463,7 @@ pub(crate) fn transfer_neutral(
         let expanded = bool_property(owned, "ShowElement")? != Some(false);
         let parent = parent_by_object
             .get(record.object.as_str())
-            .map(|object| container_occurrence_id(object))
+            .map(|object| parent_occurrence_id(object))
             .transpose()?;
         let mut record_prototype_transform = None;
         for index in 0..count {
@@ -437,13 +482,9 @@ pub(crate) fn transfer_neutral(
                 None
             };
             let scale_transform = link_scale_transform(record.scale().unwrap_or([1.0; 3]))?;
-            let local_transform = record
+            let placement = record
                 .local_transform()
-                .map(crate::native::frame::FiniteFrame::transform)
-                .unwrap_or_default()
-                .compose(scale_transform)
-                .and_then(|transform| transform.compose(element_transform.unwrap_or_default()))
-                .map_err(|error| malformed(error.to_string()))?;
+                .map(crate::native::frame::FiniteFrame::transform);
             let prototype_transform = match record_prototype_transform {
                 Some(transform) => transform,
                 None => *record_prototype_transform.insert(linked_prototype_transform(
@@ -471,10 +512,23 @@ pub(crate) fn transfer_neutral(
                     .map(cadmpeg_ir::units::FiniteVector::get)
             } else {
                 None
-            }
-            .unwrap_or([1.0; 3]);
-            let local_transform = local_transform
-                .compose(link_scale_transform(element_scale)?)
+            };
+            let placed = placement.is_some()
+                || element_transform.is_some()
+                || record.scale().is_some()
+                || element_scale.is_some();
+            let element_scale_transform = link_scale_transform(element_scale.unwrap_or([1.0; 3]))?;
+            let local_transform = placed
+                .then(|| {
+                    placement
+                        .unwrap_or_else(Transform::identity)
+                        .compose(scale_transform)
+                        .and_then(|transform| {
+                            transform.compose(element_transform.unwrap_or_else(Transform::identity))
+                        })
+                        .and_then(|transform| transform.compose(element_scale_transform))
+                })
+                .transpose()
                 .map_err(|error| malformed(error.to_string()))?;
             let copy_on_change = record
                 .copy_on_change_policy()
@@ -530,12 +584,19 @@ pub(crate) fn transfer_neutral(
                         record.id
                     ))
                 })?,
-                transform: local_transform,
-                linked_prototype: (record.link_transform() == Some(true))
-                    .then_some(prototype_transform),
-                scale: [FiniteReal::ONE; 3],
+                transform: if record.link_transform() == Some(true) && prototype_transform.is_none()
+                {
+                    None
+                } else {
+                    local_transform
+                },
+                linked_prototype: if record.link_transform() == Some(true) {
+                    prototype_transform
+                } else {
+                    None
+                },
                 name: Some(record.object.clone()),
-                visible: None,
+                visible: record.element_visibility().get(index).copied(),
                 link: LinkState::new(
                     record.linked_subelements().to_vec(),
                     element_object
@@ -595,7 +656,12 @@ pub(crate) fn transfer_neutral(
             id: definition_id(object)?,
             kind,
             source_name: source_object.map(|object| object.name().to_owned()),
-            label: metadata_string(ctx, owned, "Label")?,
+            label: match metadata_string(ctx, owned, "CadmpegProductLabel")? {
+                Some(label) => {
+                    serde_json::from_str::<Option<String>>(&label).unwrap_or(Some(label))
+                }
+                None => metadata_string(ctx, owned, "Label")?,
+            },
             description: metadata_string(ctx, owned, "Description")?,
             part_number: metadata_string(ctx, owned, part_number_carrier)?
                 .filter(|value| !value.is_empty()),
@@ -624,16 +690,18 @@ pub(crate) fn transfer_neutral(
         .iter()
         .filter(|object| placed_objects.contains(**object))
     {
+        if crate::writer::products::metadata::included(properties, object, false)? == Some(false) {
+            continue;
+        }
         let record = record_by_object.get(*object).copied();
         let local_transform = record
             .and_then(ProductNodeRecord::local_transform)
             .map(crate::native::frame::FiniteFrame::transform)
-            .or_else(|| placements_by_object.get(*object).copied())
-            .unwrap_or_default();
+            .or_else(|| placements_by_object.get(*object).copied());
         let parent = parent_by_object.get(*object).copied();
         let parent = match parent {
             Some(parent) => OccurrenceParent::Occurrence {
-                occurrence: container_occurrence_id(parent)?,
+                occurrence: parent_occurrence_id(parent)?,
             },
             None => OccurrenceParent::Root {},
         };
@@ -646,7 +714,6 @@ pub(crate) fn transfer_neutral(
             ordinal: 0,
             transform: local_transform,
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: Some((*object).to_owned()),
             visible: None,
             link: None,
@@ -665,6 +732,7 @@ pub(crate) fn transfer_neutral(
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
     }
+    crate::writer::products::metadata::apply(properties, &mut definitions, &mut occurrences)?;
     Ok((definitions, occurrences))
 }
 
@@ -704,13 +772,13 @@ fn linked_prototype_transform(
     records: &HashMap<&str, &ProductNodeRecord>,
     placements: &HashMap<&str, Transform>,
     stack: &mut Vec<String>,
-) -> Result<Transform, CodecError> {
+) -> Result<Option<Transform>, CodecError> {
     let _depth = ctx.enter_nested("resolve FCStd nested link transform")?;
     if record.link_transform() != Some(true) || record.external_document().is_some() {
-        return Ok(Transform::identity());
+        return Ok(None);
     }
     let Some(prototype) = record.prototype() else {
-        return Ok(Transform::identity());
+        return Ok(None);
     };
     if stack.iter().any(|object| object == &record.object) {
         return Err(CodecError::malformed(format_args!(
@@ -718,21 +786,26 @@ fn linked_prototype_transform(
             record.object
         )));
     }
-
     stack.push(record.object.clone());
-    let target_record = records.get(prototype).copied();
-    let placement = target_record
+    let target = records.get(prototype).copied();
+    let placement = target
         .and_then(ProductNodeRecord::local_transform)
         .map(crate::native::frame::FiniteFrame::transform)
-        .or_else(|| placements.get(prototype).copied())
-        .unwrap_or_default();
-    let nested = target_record.map_or(Ok(Transform::identity()), |target| {
-        linked_prototype_transform(ctx, target, records, placements, stack)
-    });
+        .or_else(|| placements.get(prototype).copied());
+    let nested = target
+        .filter(|target| target.link_transform() == Some(true))
+        .map(|target| linked_prototype_transform(ctx, target, records, placements, stack));
     stack.pop();
-    placement
-        .compose(nested?)
-        .map_err(|error| malformed(error.to_string()))
+    match nested {
+        Some(nested) => match (placement, nested?) {
+            (Some(placement), Some(nested)) => placement
+                .compose(nested)
+                .map(Some)
+                .map_err(|error| malformed(error.to_string())),
+            _ => Ok(None),
+        },
+        None => Ok(placement),
+    }
 }
 
 fn link_scale_transform([x, y, z]: [f64; 3]) -> Result<Transform, CodecError> {
@@ -1160,7 +1233,7 @@ fn product_kind(kind: &str) -> Option<ProductKind> {
 }
 
 fn metadata_string(
-    ctx: &DecodeContext<'_>,
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
     name: &str,
 ) -> Result<Option<String>, CodecError> {
@@ -1170,7 +1243,8 @@ fn metadata_string(
     if property.type_name != "App::PropertyString" {
         return Ok(None);
     }
-    let document = match ctx.parse_xml(property.xml.text(), "FreeCAD XML tree") {
+    let property_xml = ctx.property_xml(property)?;
+    let document = match ctx.parse_xml(property_xml.as_ref(), "FreeCAD XML tree") {
         Ok(tree) => tree,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {

@@ -132,9 +132,4 @@ impl DesignCanvasGeometryLayout {
             30
         }
     }
-    pub(crate) fn from_prefix(prefix: u64) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|layout| cadmpeg_core::decode::u64_from_index(layout.offsets().prefix) == prefix)
-    }
 }

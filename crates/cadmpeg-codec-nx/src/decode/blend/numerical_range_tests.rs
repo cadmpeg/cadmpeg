@@ -35,6 +35,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let id = SurfaceId::mint("nx:test:surface#1").unwrap();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: id.clone(),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
@@ -389,6 +390,7 @@ fn overflowing_plane_model() -> (cadmpeg_ir::CadIr, SurfaceId, SurfaceGeometry) 
     ));
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: geometry.clone(),
         source_object: None,
@@ -452,6 +454,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
         ));
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: geometry.clone(),
             source_object: None,

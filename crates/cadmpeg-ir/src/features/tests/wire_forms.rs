@@ -19,6 +19,7 @@ fn a_standalone_feature_wire_declares_no_regeneration_parent() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+        needs_recompute: false,
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
@@ -134,15 +135,21 @@ fn feature_extents_round_trip_through_json() {
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::scalar::NonZeroLength::new(12.5).unwrap(),
+                    length: crate::features::Dimension::Literal(
+                        crate::scalar::NonZeroLength::new(12.5).unwrap(),
+                    ),
                 },
-                draft: Some(crate::scalar::SlopeAngle::new(0.1).unwrap()),
+                draft: Some(crate::features::Dimension::Literal(
+                    crate::scalar::SlopeAngle::new(0.1).unwrap(),
+                )),
             },
         },
         ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::scalar::NonZeroLength::new(25.0).unwrap(),
+                    length: crate::features::Dimension::Literal(
+                        crate::scalar::NonZeroLength::new(25.0).unwrap(),
+                    ),
                 },
                 draft: None,
             },
@@ -150,16 +157,22 @@ fn feature_extents_round_trip_through_json() {
         ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
                 termination: LinearTermination::Blind {
-                    length: crate::scalar::NonZeroLength::new(10.0).unwrap(),
+                    length: crate::features::Dimension::Literal(
+                        crate::scalar::NonZeroLength::new(10.0).unwrap(),
+                    ),
                 },
-                draft: Some(crate::scalar::SlopeAngle::new(0.2).unwrap()),
+                draft: Some(crate::features::Dimension::Literal(
+                    crate::scalar::SlopeAngle::new(0.2).unwrap(),
+                )),
             },
             second: ExtrudeSide {
                 termination: LinearTermination::ToFace {
                     face: FaceSelection::Faces(vec![
                         FaceId::mint("synthetic:test:face#0").expect("valid identity")
                     ]),
-                    offset: Some(Length::new(-2.0).unwrap()),
+                    offset: Some(crate::features::Dimension::Literal(
+                        Length::new(-2.0).unwrap(),
+                    )),
                 },
                 draft: None,
             },
@@ -180,20 +193,28 @@ fn feature_extents_round_trip_through_json() {
     let revolve_extents = vec![
         RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(std::f64::consts::PI).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(std::f64::consts::PI).unwrap(),
+                ),
             },
         },
         RevolveExtent::Symmetric {
             termination: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                ),
             },
         },
         RevolveExtent::TwoSided {
             first: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(0.25).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(0.25).unwrap(),
+                ),
             },
             second: AngularTermination::Angle {
-                angle: crate::scalar::PositiveAngle::new(0.75).unwrap(),
+                angle: crate::features::Dimension::Literal(
+                    crate::scalar::PositiveAngle::new(0.75).unwrap(),
+                ),
             },
         },
     ];
@@ -208,23 +229,28 @@ fn feature_extents_round_trip_through_json() {
 fn termination_families_preserve_wire_and_reject_cross_family_variants() {
     use crate::features::{AngularTermination, LinearTermination};
 
-    let blind_wire = serde_json::json!({"kind": "blind", "length": 12.5});
+    let blind_wire =
+        serde_json::json!({"kind": "blind", "length": {"kind":"literal","value":12.5}});
     let blind: LinearTermination = serde_json::from_value(blind_wire.clone()).unwrap();
     assert_eq!(
         blind,
         LinearTermination::Blind {
-            length: crate::scalar::NonZeroLength::new(12.5).unwrap()
+            length: crate::features::Dimension::Literal(
+                crate::scalar::NonZeroLength::new(12.5).unwrap()
+            )
         }
     );
     assert_eq!(serde_json::to_value(blind).unwrap(), blind_wire);
     assert!(serde_json::from_value::<AngularTermination>(blind_wire).is_err());
 
-    let angle_wire = serde_json::json!({"kind": "angle", "angle": 1.25});
+    let angle_wire = serde_json::json!({"kind": "angle", "angle": {"kind":"literal","value":1.25}});
     let angle: AngularTermination = serde_json::from_value(angle_wire.clone()).unwrap();
     assert_eq!(
         angle,
         AngularTermination::Angle {
-            angle: crate::scalar::PositiveAngle::new(1.25).unwrap()
+            angle: crate::features::Dimension::Literal(
+                crate::scalar::PositiveAngle::new(1.25).unwrap()
+            )
         }
     );
     assert_eq!(serde_json::to_value(angle).unwrap(), angle_wire);
@@ -391,8 +417,13 @@ fn generated_sweep_sections_round_trip_and_validate() {
             op: crate::features::SolidSweepOperation::NewBody,
             section: SweepSection::Generated(GeneratedSweepSection::CircularRegion {
                 region: crate::features::SweepCircularRegion::new(
-                    crate::scalar::PositiveLength::new(3.0).unwrap(),
-                    Some(crate::scalar::PositiveLength::new(1.0).unwrap()),
+                    (crate::features::Dimension::Literal(
+                        crate::scalar::PositiveLength::new(3.0).unwrap(),
+                    ))
+                    .into(),
+                    Some(crate::features::Dimension::Literal(
+                        crate::scalar::PositiveLength::new(1.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
             }),
@@ -435,6 +466,8 @@ fn generated_sweep_sections_round_trip_and_validate() {
             source_text: None,
             source_content: FeatureContent::default(),
 
+            needs_recompute: false,
+
             evaluation: crate::features::FeatureEvaluation::from_definition(definition),
             native_ref: None,
         });
@@ -445,13 +478,19 @@ fn generated_sweep_sections_round_trip_and_validate() {
     assert!(report.is_ok(), "{report:#?}");
 
     assert!(crate::features::SweepCircularRegion::new(
-        crate::scalar::PositiveLength::new(2.0).unwrap(),
-        Some(crate::scalar::PositiveLength::new(2.0).unwrap()),
+        (crate::features::Dimension::Literal(crate::scalar::PositiveLength::new(2.0).unwrap()))
+            .into(),
+        Some(crate::features::Dimension::Literal(
+            crate::scalar::PositiveLength::new(2.0).unwrap()
+        )),
     )
     .is_err());
     assert!(crate::features::SweepCircularRegion::new(
-        crate::scalar::PositiveLength::new(3.0).unwrap(),
-        Some(crate::scalar::PositiveLength::new(3.5).unwrap()),
+        (crate::features::Dimension::Literal(crate::scalar::PositiveLength::new(3.0).unwrap()))
+            .into(),
+        Some(crate::features::Dimension::Literal(
+            crate::scalar::PositiveLength::new(3.5).unwrap()
+        )),
     )
     .is_err());
     // The mode is fixed at construction: there is no mutator left to refuse a
@@ -500,6 +539,8 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         source_text: None,
         source_content: FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     });
@@ -529,16 +570,18 @@ fn flex_modes_round_trip_and_validate() {
 
     let modes = vec![
         FlexMode::Bending {
-            angle: Angle::new(0.5).unwrap(),
+            angle: crate::features::Dimension::Literal(Angle::new(0.5).unwrap()),
         },
         FlexMode::Twisting {
-            angle: Angle::new(1.0).unwrap(),
+            angle: crate::features::Dimension::Literal(Angle::new(1.0).unwrap()),
         },
         FlexMode::Tapering {
-            factor: crate::scalar::PositiveReal::new(1.5).unwrap(),
+            factor: crate::features::Dimension::Literal(
+                crate::scalar::PositiveReal::new(1.5).unwrap(),
+            ),
         },
         FlexMode::Stretching {
-            distance: Length::new(12.0).unwrap(),
+            distance: crate::features::Dimension::Literal(Length::new(12.0).unwrap()),
         },
     ];
     let json = serde_json::to_string(&modes).unwrap();
@@ -554,14 +597,14 @@ fn unresolved_hole_and_flex_wire_forms_preserve_their_layout() {
 
     let counterbore = serde_json::json!({
         "kind": "partial_counterbore",
-        "dimension": {"kind": "diameter", "diameter": 10.0}
+        "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}}
     });
     let kind: HoleKind = serde_json::from_value(counterbore.clone()).unwrap();
     assert_eq!(
         kind,
-        HoleKind::PartialCounterbore(PartialPair::First(
+        HoleKind::PartialCounterbore(PartialPair::First(crate::features::Dimension::Literal(
             crate::scalar::PositiveLength::new(10.0).unwrap()
-        ))
+        )))
     );
     assert_eq!(serde_json::to_value(kind).unwrap(), counterbore);
 
@@ -605,7 +648,7 @@ fn unresolved_flex_wire_forms_reject_cross_family_payloads() {
     assert!(serde_json::from_value::<FlexMode>(serde_json::json!({
         "kind": "unresolved",
         "form": "twisting",
-        "factor": 2.0
+        "factor": {"kind":"literal","value":2.0}
     }))
     .is_err());
 }
@@ -650,12 +693,12 @@ fn hole_construction_forms_preserve_the_nested_shape_wire_layout() {
         "shape": {
             "construction": {
                 "construction": "native_thread",
-                "major_diameter": 8.0,
-                "thread_depth": 12.0,
-                "pitch": 1.25,
-                "drill_point_angle": 2.0
+                "major_diameter": {"kind":"literal","value":8.0},
+                "thread_depth": {"kind":"literal","value":12.0},
+                "pitch": {"kind":"literal","value":1.25},
+                "drill_point_angle": {"kind":"literal","value":2.0}
             },
-            "diameter": 6.0
+            "diameter": {"kind":"literal","value":6.0}
         }
     });
     let definition: FeatureDefinition = serde_json::from_value(native_thread.clone()).unwrap();
@@ -701,7 +744,7 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
 
     let hole = serde_json::json!({
         "definition": "hole",
-        "shape": {"construction": {"construction": "form", "kind": {"kind": "simple"}}, "diameter": 3.0}
+        "shape": {"construction": {"construction": "form", "kind": {"kind": "simple"}}, "diameter": {"kind":"literal","value":3.0}}
     });
     assert!(serde_json::from_value::<FeatureDefinition>(hole.clone()).is_ok());
 
@@ -722,7 +765,7 @@ fn an_unknown_key_beside_the_hole_shape_is_rejected_by_name() {
 
 #[test]
 fn hole_wire_rejects_cross_form_thread_fields() {
-    use crate::features::{holes::HoleSpecification, FeatureDefinition};
+    use crate::features::{holes::HoleSpecification, FeatureDefinition, FeatureOperation};
 
     let specification = |kind| {
         serde_json::json!({
@@ -770,16 +813,22 @@ fn hole_wire_rejects_cross_form_thread_fields() {
     let mut native_with_standard = serde_json::json!({
         "definition": "hole",
         "shape": {
-            "kind": {
-                "kind": "threaded",
-                "major_diameter": 8.0,
-                "thread_depth": 12.0,
-                "drill_point_angle": 2.0
-            }
+            "construction": {
+                "construction": "native_thread",
+                "major_diameter": {"kind":"literal","value":8.0},
+                "thread_depth": {"kind":"literal","value":12.0},
+                "drill_point_angle": {"kind":"literal","value":2.0}
+            },
+            "diameter": {"kind":"literal","value":6.0}
         }
     });
-    native_with_standard["shape"]["specification"] = specification("threaded");
-    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard).is_err());
+    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard.clone()).is_ok());
+    native_with_standard["shape"]["construction"]["specification"] = specification("threaded");
+    assert!(serde_json::from_value::<FeatureDefinition>(native_with_standard.clone()).is_err());
+    let error = serde_json::from_value::<FeatureOperation>(native_with_standard)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("unknown field `specification`"), "{error}");
 }
 
 #[test]
@@ -919,8 +968,8 @@ fn scale_factor_forms_name_themselves_on_the_wire() {
 
     for wire in [
         serde_json::json!({"kind": "unresolved"}),
-        serde_json::json!({"kind": "uniform", "factor": 2.0}),
-        serde_json::json!({"kind": "per_axis", "factors": [1.0, 2.0, 3.0]}),
+        serde_json::json!({"kind": "uniform", "factor": {"kind":"literal","value":2.0}}),
+        serde_json::json!({"kind": "per_axis", "factors": [{"kind":"literal","value":1.0}, {"kind":"literal","value":2.0}, {"kind":"literal","value":3.0}]}),
     ] {
         let factors: ScaleFactors = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(factors).unwrap(), wire);
@@ -937,8 +986,8 @@ fn scale_factor_wire_rejects_mixed_and_partial_forms() {
     for wire in [
         serde_json::json!({"uniform": 2.0, "x": 1.0}),
         serde_json::json!({"x": 1.0, "z": 3.0}),
-        serde_json::json!({"kind": "uniform", "factor": 2.0, "factors": [1.0, 2.0, 3.0]}),
-        serde_json::json!({"kind": "per_axis", "factors": [1.0, 3.0]}),
+        serde_json::json!({"kind": "uniform", "factor": {"kind":"literal","value":2.0}, "factors": [{"kind":"literal","value":1.0}, {"kind":"literal","value":2.0}, {"kind":"literal","value":3.0}]}),
+        serde_json::json!({"kind": "per_axis", "factors": [{"kind":"literal", "value":1.0}, {"kind":"literal", "value":3.0}]}),
         serde_json::json!({}),
     ] {
         assert!(serde_json::from_value::<ScaleFactors>(wire).is_err());
@@ -1266,7 +1315,7 @@ fn an_unresolved_form_refuses_a_dimension_beside_it() {
     };
 
     let error = serde_json::from_value::<RadiusSpec>(
-        serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": 1}),
+        serde_json::json!({"kind": "unresolved", "form": "chordal", "radius": {"kind":"literal","value":1}}),
     )
     .unwrap_err()
     .to_string();
@@ -1372,8 +1421,8 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
 
     let error = serde_json::from_value::<HoleKind>(serde_json::json!({
         "kind": "partial_counterbore",
-        "diameter": 10.0,
-        "counter_bore_depth": 4.0
+        "diameter": {"kind":"literal","value":10.0},
+        "counter_bore_depth": {"kind":"literal","value":4.0}
     }))
     .unwrap_err()
     .to_string();
@@ -1382,10 +1431,10 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     let error = serde_json::from_value::<HoleShape>(serde_json::json!({
         "construction": {
             "construction": "form",
-            "kind": {"kind": "partial_counterbore", "dimension": {"kind": "diameter", "diameter": 10.0}}
+            "kind": {"kind": "partial_counterbore", "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}}}
         },
-        "diameter": 2.0,
-        "counter_bore_depth": 4.0
+        "diameter": {"kind":"literal","value":2.0},
+        "counter_bore_depth": {"kind":"literal","value":4.0}
     }))
     .unwrap_err()
     .to_string();
@@ -1394,9 +1443,9 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
     let error = serde_json::from_value::<HoleShape>(serde_json::json!({
         "construction": {
             "construction": "native_thread",
-            "major_diameter": 8.0,
-            "thread_depth": 12.0,
-            "drill_point_angle": 2.0,
+            "major_diameter": {"kind":"literal","value":8.0},
+            "thread_depth": {"kind":"literal","value":12.0},
+            "drill_point_angle": {"kind":"literal","value":2.0},
             "specification": {
                 "kind": "clearance",
                 "standard": "ISO metric",
@@ -1406,7 +1455,7 @@ fn an_unknown_hole_wire_key_is_rejected_by_name() {
                 "depth": {"kind": "hole_depth"}
             }
         },
-        "diameter": 2.0
+        "diameter": {"kind":"literal","value":2.0}
     }))
     .unwrap_err()
     .to_string();
@@ -1436,36 +1485,44 @@ fn every_partial_hole_pair_round_trips_under_its_own_dimension_key() {
 
     let cases = [
         (
-            HoleKind::PartialCounterbore(PartialPair::First(diameter)),
+            HoleKind::PartialCounterbore(PartialPair::First(crate::features::Dimension::Literal(
+                diameter,
+            ))),
             serde_json::json!({
                 "kind": "partial_counterbore",
-                "dimension": {"kind": "diameter", "diameter": 10.0}
+                "dimension": {"kind": "diameter", "diameter": {"kind": "literal", "value": 10.0}}
             }),
         ),
         (
-            HoleKind::PartialCounterbore(PartialPair::Second(depth)),
+            HoleKind::PartialCounterbore(PartialPair::Second(crate::features::Dimension::Literal(
+                depth,
+            ))),
             serde_json::json!({
                 "kind": "partial_counterbore",
-                "dimension": {"kind": "depth", "depth": 4.0}
+                "dimension": {"kind": "depth", "depth": {"kind": "literal", "value": 4.0}}
             }),
         ),
         (
-            HoleKind::PartialCountersink(PartialPair::First(diameter)),
+            HoleKind::PartialCountersink(PartialPair::First(crate::features::Dimension::Literal(
+                diameter,
+            ))),
             serde_json::json!({
                 "kind": "partial_countersink",
-                "dimension": {"kind": "diameter", "diameter": 10.0}
+                "dimension": {"kind": "diameter", "diameter": {"kind": "literal", "value": 10.0}}
             }),
         ),
         (
-            HoleKind::PartialCountersink(PartialPair::Second(angle)),
+            HoleKind::PartialCountersink(PartialPair::Second(crate::features::Dimension::Literal(
+                angle,
+            ))),
             serde_json::json!({
                 "kind": "partial_countersink",
-                "dimension": {"kind": "angle", "angle": 1.5}
+                "dimension": {"kind": "angle", "angle": {"kind": "literal", "value": 1.5}}
             }),
         ),
     ];
     for (kind, wire) in cases {
-        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+        assert_eq!(serde_json::to_value(&kind).unwrap(), wire);
         assert_eq!(serde_json::from_value::<HoleKind>(wire).unwrap(), kind);
     }
 }
@@ -1478,14 +1535,14 @@ fn a_partial_hole_dimension_carries_exactly_one_measurement() {
         (
             serde_json::json!({
                 "kind": "partial_counterbore",
-                "dimension": {"kind": "diameter", "diameter": 10.0, "depth": 4.0}
+                "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}, "depth": {"kind":"literal","value":4.0}}
             }),
             "depth",
         ),
         (
             serde_json::json!({
                 "kind": "partial_countersink",
-                "dimension": {"kind": "diameter", "diameter": 10.0, "angle": 1.5}
+                "dimension": {"kind": "diameter", "diameter": {"kind":"literal","value":10.0}, "angle": {"kind":"literal","value":1.5}}
             }),
             "angle",
         ),
@@ -1539,10 +1596,10 @@ fn an_unknown_key_beside_the_helix_shape_is_rejected_by_name() {
         "definition": "helix",
         "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis_direction": {"x": 0.0, "y": 0.0, "z": 1.0},
-        "radius": 2.0,
-        "shape": {"kind": "spiral", "radial_growth": 1.5},
-        "revolutions": 4.0,
-        "start_angle": 0.0,
+        "radius": {"kind":"literal","value":2.0},
+        "shape": {"kind": "spiral", "radial_growth": {"kind":"literal","value":1.5},
+            "revolutions": {"kind":"literal","value":4.0}},
+        "start_angle": {"kind":"literal","value":0.0},
         "clockwise": false
     });
     assert_key_beside_the_nested_field_is_rejected(&helix);
@@ -1555,7 +1612,7 @@ fn an_unknown_key_beside_the_wrap_mode_is_rejected_by_name() {
         "definition": "wrap",
         "profile": {"kind": "native", "value": "wrap:profile"},
         "face": {"kind": "native", "value": "wrap:face"},
-        "mode": {"emboss": {"depth": 2.5}}
+        "mode": {"emboss": {"depth": {"kind":"literal","value":2.5}}}
     });
     assert_key_beside_the_nested_field_is_rejected(&wrap);
 
@@ -1589,7 +1646,7 @@ fn an_unknown_key_beside_the_extrude_direction_is_rejected_by_name() {
         "start": {"kind": "profile_plane"},
         "extent": {
             "kind": "one_sided",
-            "side": {"termination": {"kind": "blind", "length": 4.0}}
+            "side": {"termination": {"kind": "blind", "length": {"kind":"literal","value":4.0}}}
         },
         "op": "new_body"
     });
@@ -1617,7 +1674,7 @@ fn an_unknown_key_beside_the_draft_anchor_is_rejected_by_name() {
             "tool": {"kind": "native", "value": "draft:parting-tool"},
             "pull": {"direction": {"x": 0.0, "y": 0.0, "z": 1.0}}
         },
-        "angle": 0.1,
+        "angle": {"kind":"literal","value":0.1},
         "outward": false
     });
     assert_key_beside_the_nested_field_is_rejected(&draft);
@@ -1639,7 +1696,7 @@ fn an_unknown_key_inside_the_extrude_direction_is_rejected_by_name() {
         "start": {"kind": "profile_plane"},
         "extent": {
             "kind": "one_sided",
-            "side": {"termination": {"kind": "blind", "length": 4.0}}
+            "side": {"termination": {"kind": "blind", "length": {"kind":"literal","value":4.0}}}
         },
         "op": "new_body"
     });

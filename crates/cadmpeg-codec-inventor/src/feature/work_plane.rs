@@ -67,6 +67,7 @@ pub(super) fn project(
         ordinal: label.map_or(0, |label| u64::from(label.index)),
         name: label.and_then(|label| label.name()).map(str::to_owned),
         suppressed: None,
+        needs_recompute: false,
         dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: Some(tag.into()),

@@ -78,7 +78,7 @@ fn links_hold(
             let mut matching_owners = owners.iter().filter(|owner| {
                 design_stream(owner.id()) == stream
                     && owner.record_index() == reference.value
-                    && owner.scope_record_index() == scope.record_index
+                    && owner.scope_record_index() == Some(scope.record_index)
             });
             let Some(owner) = matching_owners.next() else {
                 return false;

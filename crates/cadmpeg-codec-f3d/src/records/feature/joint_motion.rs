@@ -12,6 +12,7 @@ cadmpeg_core::named_optional_field!(deserialize_rest, DesignJointRest, "rest");
 /// and its joint record. A joint without freedom entries has no motion record
 /// here: it is rigid.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DesignJointMotion {
     /// Globally unique deterministic identifier for this native motion.
     pub(crate) id: String,
@@ -42,6 +43,7 @@ pub(crate) struct DesignJointMotion {
 /// The two limit flags and the maximum and minimum after a joint record's
 /// self-reference, with its rest flag and rest value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DesignJointLimitLanes {
     /// Byte offset of the first of the two flag bytes.
     pub(crate) flags_offset: u64,

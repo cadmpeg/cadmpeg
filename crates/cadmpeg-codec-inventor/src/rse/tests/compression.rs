@@ -66,7 +66,7 @@ fn dispatch_rejects_unknown_methods_and_mismatched_payloads() {
             .expect("context");
         assert!(
             matches!(parse_meta_stream(&ctx, root).expect("declaration"),
-            SegmentMetaState::Malformed { declared: Some(_), detail }
+            SegmentMetaState::Malformed { declared: Some(_), detail, .. }
                 if detail.contains("unsupported RSe compression method"))
         );
         let mut bytes = bulk(1);
@@ -171,5 +171,21 @@ fn both_streams_reject_expansion_limit_violations() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn expanded_record_bytes_keep_the_exact_rse_compressed_source() {
+    for method in [1, 2] {
+        let bytes = bulk(method);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("bulk source");
+        let envelope = parse_bulk_stream(&ctx, root).expect("expanded bulk");
+        assert_eq!(envelope.expanded.window().len(), 19);
+        assert_eq!(
+            envelope.expanded.window().get(..6),
+            Some(b"framed".as_slice())
+        );
     }
 }

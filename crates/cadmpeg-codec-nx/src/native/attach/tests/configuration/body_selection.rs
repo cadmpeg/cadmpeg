@@ -277,6 +277,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let bound = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
     ir.model.bodies.extend([
         Body {
+            native_ref: None,
             id: bound.clone(),
             kind: BodyKind::Solid,
             regions: vec![
@@ -288,6 +289,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
             visible: None,
         },
         Body {
+            native_ref: None,
             id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
             regions: vec![
@@ -355,6 +357,7 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
     ir.model.bodies.extend(body_ids.iter().map(|id| Body {
+        native_ref: None,
         id: BodyId::mint(id.clone()).expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![
@@ -493,6 +496,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         })
     );
     let feature = Feature {
+        needs_recompute: false,
         id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,

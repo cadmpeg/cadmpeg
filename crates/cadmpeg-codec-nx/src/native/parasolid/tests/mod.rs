@@ -8,11 +8,16 @@ use std::io::Cursor;
 
 use crate::parasolid::Stream;
 
-fn stream(subtype: crate::parasolid::ParasolidSubtype, schema: &str, inflated: Vec<u8>) -> Stream {
+fn stream(
+    subtype: crate::parasolid::ParasolidSubtype,
+    schema: &str,
+    inflated: Vec<u8>,
+) -> Stream<'static> {
     Stream {
+        source: None,
         file_offset: 0,
         consumed: 0,
-        inflated,
+        inflated: inflated.into(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
             schema: Some(
@@ -762,7 +767,8 @@ fn topology_retains_entity_attribute_list_references() {
         .ir()
         .native
         .namespace("nx")
-        .expect("required invariant")
+        .expect("nx namespace")
+        .clone()
         .arena_as::<super::ParasolidTopologyAttributeListReference>(
             "parasolid_topology_attribute_list_references",
         )
@@ -785,9 +791,9 @@ fn topology_retains_entity_attribute_list_references() {
     );
     assert_eq!(
         result.ir().model.attributes[0].values,
-        [cadmpeg_ir::attributes::AttributeValue::String(
+        [Some(cadmpeg_ir::attributes::AttributeValue::String(
             "deadbeef".into()
-        )]
+        ))]
     );
 }
 
@@ -999,6 +1005,7 @@ mod attribute_wire;
 mod carrier_and_attribute_resolution;
 
 mod delta_events;
+mod source_prefix;
 
 mod group_members;
 

@@ -11435,6 +11435,250 @@ type = "f64[3]"
 source = "spec"
 anchor = "the coordinates begin at marker +66"
 
+
+[[record]]
+name = "unqlite_hash_pager_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs"
+kind = "byte"
+section = "1"
+anchor = "The pager header starts with the seven bytes `unqlite`"
+size = 29
+endianness = "big"
+
+[[record.field]]
+name = "signature"
+offset = 0
+type = "bytes[7]"
+source = "spec"
+anchor = "seven bytes `unqlite`"
+
+[[record.field]]
+name = "magic"
+offset = 7
+type = "u32"
+source = "spec"
+anchor = "magic u32 `db7c2712` at +7"
+
+[[record.field]]
+name = "creation_time"
+offset = 11
+type = "u32"
+source = "spec"
+anchor = "DOS creation time u32 at +11"
+
+[[record.field]]
+name = "sector_size"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "sector size u32 at +15"
+
+[[record.field]]
+name = "page_size"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "page size u32 at +19"
+
+[[record.field]]
+name = "engine_length"
+offset = 23
+type = "u16"
+source = "spec"
+anchor = "engine-name length u16 at +23"
+
+[[record.field]]
+name = "engine"
+offset = 25
+type = "bytes[4]"
+source = "spec"
+anchor = "The hash engine name is `hash`."
+
+[[record]]
+name = "unqlite_hash_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs"
+kind = "byte"
+section = "1"
+anchor = "Hash page 1 starts with magic u32"
+size = 44
+endianness = "big"
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "magic u32 `fa782dcb` at +0"
+
+[[record.field]]
+name = "hash_check"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "hash-function check u32 at +4"
+
+[[record.field]]
+name = "free_page"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "free-page head u64 at +8"
+
+[[record.field]]
+name = "split_bucket"
+offset = 16
+type = "u64"
+source = "spec"
+anchor = "split bucket u64 at +16"
+
+[[record.field]]
+name = "maximum_split"
+offset = 24
+type = "u64"
+source = "spec"
+anchor = "maximum split bucket u64 at +24"
+
+[[record.field]]
+name = "next_map"
+offset = 32
+type = "u64"
+source = "spec"
+anchor = "next bucket-map page u64 at +32"
+
+[[record.field]]
+name = "map_count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "bucket-map count u32 at +40"
+
+[[record]]
+name = "unqlite_bucket_map"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs"
+kind = "byte"
+section = "1"
+anchor = "A bucket-map record stores logical bucket"
+size = 16
+endianness = "big"
+
+[[record.field]]
+name = "logical"
+offset = 0
+type = "u64"
+source = "spec"
+anchor = "logical bucket u64 at +0"
+
+[[record.field]]
+name = "physical"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "physical page u64 at +8"
+
+[[record]]
+name = "unqlite_bucket_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs"
+kind = "byte"
+section = "1"
+anchor = "A bucket-page header stores first-cell offset"
+size = 12
+endianness = "big"
+
+[[record.field]]
+name = "first_cell"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "first-cell offset u16 at +0"
+
+[[record.field]]
+name = "first_free"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "first-free-block offset u16 at +2"
+
+[[record.field]]
+name = "slave_page"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "slave-page number u64 at +4"
+
+[[record]]
+name = "unqlite_cell_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs"
+kind = "byte"
+section = "1"
+anchor = "A cell header stores key hash"
+size = 26
+endianness = "big"
+
+[[record.field]]
+name = "hash"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "key hash u32 at +0"
+
+[[record.field]]
+name = "key_length"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "key byte length u32 at +4"
+
+[[record.field]]
+name = "value_length"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "value byte length u64 at +8"
+
+[[record.field]]
+name = "next_cell"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "next-cell offset u16 at +16"
+
+[[record.field]]
+name = "overflow"
+offset = 18
+type = "u64"
+source = "spec"
+anchor = "overflow-page number u64 at +18"
+
+[[record]]
+name = "unqlite_first_overflow_header"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/pmi/database/read.rs"
+kind = "byte"
+section = "1"
+anchor = "its first overflow page stores next-overflow-page"
+size = 18
+endianness = "big"
+
+[[record.field]]
+name = "next"
+offset = 0
+type = "u64"
+source = "spec"
+anchor = "next-overflow-page u64 at +0"
+
+[[record.field]]
+name = "value_page"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "value-start page u64 at +8"
+
+[[record.field]]
+name = "value_offset"
+offset = 16
+type = "u16"
+source = "spec"
+anchor = "value-start offset u16 at +16"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

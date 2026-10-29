@@ -82,6 +82,7 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
                         id: format!("relation-{position}-{ordinal}"),
                         parent: id.clone(),
                         ordinal,
+                        sequence: ordinal,
                         offset: 0,
                         family: if next(3) == 0 {
                             FeatureInputRelationFamily::PointPointDistance
@@ -127,12 +128,13 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
             .collect::<Vec<_>>();
         let parameters = (0..12)
             .map(|ordinal| DesignParameter {
+                driving: true,
                 id: ParameterId::mint(format!("synthetic:test:id#parameter-{ordinal}")).unwrap(),
                 owner: (next(5) != 0)
                     .then(|| feature_ids[usize::try_from(next(4)).unwrap()].clone()),
                 ordinal,
                 name: "radial".into(),
-                expression: String::new(),
+                expression: String::new().into(),
                 display: [
                     None,
                     Some(DimensionDisplay::Radius),
@@ -141,7 +143,6 @@ fn marker_circle_inputs_match_the_parameter_and_lane_scans() {
                 value: Some(ParameterValue::Length(
                     Length::new(f64::from(next(5)) - 1.0).unwrap(),
                 )),
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: None,

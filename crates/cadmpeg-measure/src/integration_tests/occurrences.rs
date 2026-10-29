@@ -8,7 +8,6 @@ use cadmpeg_ir::products::{
     ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
     PrototypeReference,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -69,9 +68,8 @@ fn placing(
             }
         }),
         ordinal: 0,
-        transform: Transform::affine(transform).expect("transform"),
+        transform: Some(Transform::affine(transform).expect("transform")),
         linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
         name: None,
         visible: None,
         link: None,
@@ -317,11 +315,15 @@ fn a_scaled_occurrence_in_the_chain_gives_no_rows() {
         .iter_mut()
         .find(|occurrence| occurrence.id == occurrence_id("top"))
         .expect("top");
-    top.scale = [
-        FiniteReal::new(2.0).expect("scale"),
-        FiniteReal::ONE,
-        FiniteReal::ONE,
-    ];
+    let scale = Transform::affine([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("scale");
+    top.transform = top
+        .transform
+        .map(|transform| transform.compose(scale).expect("finite scaled placement"));
     let report = in_occurrence(&ir, "inner");
     assert_no_rows(
         &report,

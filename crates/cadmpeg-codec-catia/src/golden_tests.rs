@@ -27,6 +27,17 @@ fn harness() -> Harness {
     Harness::new(env!("CARGO_MANIFEST_DIR"), FIXTURE_EXTENSION, REGENERATE)
 }
 
+fn inputs() -> Vec<(String, Vec<u8>)> {
+    let mut inputs = harness().fixture_inputs();
+    let mut body = crate::test_support::test_container::summary_preview_segment();
+    body.extend(crate::test_support::test_container::external_reference_segment("Support.CATPart"));
+    inputs.push((
+        "external_preview".into(),
+        crate::test_support::test_container::outer_body_catpart(&body),
+    ));
+    inputs
+}
+
 /// The branches this codec pins, in golden-directory order.
 fn branches() -> [Branch; 2] {
     [
@@ -51,8 +62,11 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match CatiaCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    let value = match cadmpeg_test_support::golden::decode(
+        &CatiaCodec,
+        &mut Cursor::new(bytes.to_vec()),
+        &DecodeOptions::default(),
+    ) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
             serde_json::json!({
@@ -70,22 +84,75 @@ fn decode_snapshot(bytes: &[u8]) -> String {
 /// Every committed golden still matches what the codec produces.
 #[test]
 fn golden_snapshots_hold() {
-    harness().check(&branches());
+    harness().check_inputs(&inputs(), &branches());
 }
 
 /// Putting the same bytes through a branch twice produces identical text.
 #[test]
 fn golden_output_is_deterministic() {
-    harness().check_determinism(&branches());
+    harness().check_determinism_inputs(&inputs(), &branches());
 }
 
 /// A geometry-depth decode agrees with the full decode outside the design
 /// arenas. This codec has no geometry-depth cut, so every input delivers full.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
+    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
         &CatiaCodec,
-        &harness().fixture_inputs(),
+        &inputs(),
+        |result| {
+            // #209 §1.3: B1 is concrete retained source state, independent of losses.
+            let fidelity = result.source_fidelity();
+            let expected: cadmpeg_ir::ArenaClasses = fidelity
+                .retained_records()
+                .values()
+                .flat_map(|record| record.untyped().iter().copied())
+                .collect();
+            assert_eq!(fidelity.unrepresented(), expected);
+            let restored: cadmpeg_ir::SourceFidelity = serde_json::from_value(
+                serde_json::to_value(fidelity).expect("fixture value is valid"),
+            )
+            .expect("fixture value is valid");
+            assert_eq!(restored.retained_records(), fidelity.retained_records());
+            assert_eq!(restored.unrepresented(), fidelity.unrepresented());
+        },
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    // The external-preview source has model content and no design part (§1.1).
+    assert_eq!(summary.cut, 1, "{summary:?}");
+}
+
+#[test]
+fn independently_decoded_preview_has_a_neutral_asset_home() {
+    let (_, bytes) = inputs()
+        .into_iter()
+        .find(|(name, _)| name == "external_preview")
+        .expect("fixture value is valid");
+    let result = cadmpeg_test_support::golden::decode(
+        &CatiaCodec,
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    )
+    .expect("authored preview document decodes");
+    assert!(result.ir().model.assets.iter().any(|asset| asset
+        .media_type
+        .as_ref()
+        .map(cadmpeg_core::text::NonBlankString::as_str)
+        == Some("image/jpeg")));
+    assert!(result
+        .ir()
+        .native
+        .namespace("catia")
+        .expect("fixture value is valid")
+        .arenas()
+        .get("external_references")
+        .is_some_and(|records| !records.is_empty()));
+    assert!(result.ir().scope.model);
+    assert!(!result.ir().scope.design);
+}
+
+/// Check 8 (#246): no native row of a decoded golden holds the id of a
+/// neutral record, and every neutral `native_ref` names an actual native row.
+#[test]
+fn goldens_hold_no_native_back_links() {
+    cadmpeg_test_support::native_linkage::assert_golden_native_linkage(&CatiaCodec, &inputs());
 }

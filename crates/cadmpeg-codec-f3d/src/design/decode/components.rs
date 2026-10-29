@@ -740,7 +740,7 @@ impl StreamComponents {
             Item = (u64, &'a crate::records::recipes::DesignComponentNamingSpace),
         >,
     ) {
-        let mut root_offsets = std::collections::BTreeMap::<u64, u64>::new();
+        let mut root_offsets = std::collections::BTreeMap::<u64, Option<u64>>::new();
         for (frame_entity, space) in definitions {
             if let Some(earlier) = root_offsets.get(&frame_entity) {
                 self.revised_definitions += 1;
@@ -838,7 +838,10 @@ pub(crate) fn decode_local_components(
             components
                 .root_entities
                 .insert(space.component_record_index);
-            let Ok(offset) = usize::try_from(space.byte_offset) else {
+            let Some(offset) = space
+                .byte_offset
+                .and_then(|offset| usize::try_from(offset).ok())
+            else {
                 continue;
             };
             let Some(frame) = frames
@@ -1260,13 +1263,13 @@ mod tests {
                 id: format!(
                     "f3d:Design/BulkStream.dat:design-component-naming-space#{byte_offset}"
                 ),
-                byte_offset,
+                byte_offset: Some(byte_offset),
                 component_record_index: 17,
                 context_uuid: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     context_uuid.to_owned(),
                 )
                 .unwrap(),
-                context_uuid_offset: byte_offset + 12,
+                context_uuid_offset: Some(byte_offset + 12),
                 name: Some("Feet".to_owned()),
                 name_offset: Some(byte_offset + 88),
             }
@@ -1692,15 +1695,16 @@ mod tests {
         bytes[355..359].copy_from_slice(&20_u32.to_le_bytes());
         let mut meta = MetaStream {
             types: vec![SegmentTypeData {
-                byte_offset: 0,
+                byte_offset: Some(0),
+                class_tag: "256".to_owned().try_into().unwrap(),
                 type_guid: super::OCCURRENCE_PLACEMENT_TYPE_GUID
                     .to_owned()
                     .try_into()
                     .unwrap(),
-                type_guid_offset: 0,
+                type_guid_offset: Some(0),
                 base_type_guid: BaseTypeGuid::Absent,
                 version: 0,
-                version_offset: 0,
+                version_offset: Some(0),
                 module: "Component".to_owned(),
                 entities: ReferenceRun::unlocated(vec![20]),
             }],

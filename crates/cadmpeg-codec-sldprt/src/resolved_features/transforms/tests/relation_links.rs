@@ -306,7 +306,9 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
         .unwrap(),
         Some(SketchConstraintDefinitionInput::ArcAngle {
             entity: SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
-            angle: PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            angle: cadmpeg_ir::Dimension::Literal(
+                PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap()
+            ),
         })
     );
 }
@@ -781,6 +783,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
             parent: "lane".into(),
             feature_ref: Some("feature-native".into()),
             ordinal: 0,
+            sequence: 0,
             offset: 0,
             object_id: 0,
             name: "name".into(),
@@ -861,6 +864,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
         classes: Vec::new(),
         names: Vec::new(),
         scalars: vec![FeatureInputScalar {
+            sequence: 0,
             id: "distance".into(),
             parent: "lane".into(),
             feature_ref: Some("feature-native".into()),

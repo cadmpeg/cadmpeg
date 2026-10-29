@@ -257,12 +257,12 @@ fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end:
     let Some(first_count) = record
         .tokens()
         .get(primary_end)
+        .and_then(Option::as_ref)
         .and_then(|token| match &token.value {
             crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
             crate::parameter::TokenValue::Omitted
             | crate::parameter::TokenValue::Real(_)
-            | crate::parameter::TokenValue::String(_)
-            | crate::parameter::TokenValue::Unreadable(_) => None,
+            | crate::parameter::TokenValue::String(_) => None,
         })
     else {
         return false;
@@ -282,12 +282,12 @@ fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end:
     let Some(second_count) = record
         .tokens()
         .get(first_end)
+        .and_then(Option::as_ref)
         .and_then(|token| match &token.value {
             crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
             crate::parameter::TokenValue::Omitted
             | crate::parameter::TokenValue::Real(_)
-            | crate::parameter::TokenValue::String(_)
-            | crate::parameter::TokenValue::Unreadable(_) => None,
+            | crate::parameter::TokenValue::String(_) => None,
         })
     else {
         return false;

@@ -452,6 +452,25 @@ fn source_parameter_interval(geometry: &CurveGeometry, carrier_interval: [f64; 2
     }
 }
 
+fn retain_curve_interval(
+    ir: &mut CadIr,
+    id: &CurveId,
+    interval: [f64; 2],
+) -> Result<(), CodecError> {
+    let interval = IncreasingParameterInterval::new(interval)
+        .ok_or_else(|| CodecError::malformed("IGES directrix has no finite increasing interval"))?;
+    let curve = ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == *id)
+        .ok_or_else(|| CodecError::malformed("IGES directrix has no neutral curve"))?;
+    if curve.parameter_range.is_none() {
+        curve.parameter_range = Some(interval);
+    }
+    Ok(())
+}
+
 fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeometry> {
     ir.model
         .curves
@@ -1475,6 +1494,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame),
@@ -1640,6 +1660,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -1850,7 +1871,8 @@ pub(super) fn project(
 
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
-                    parameter_range: None,
+                    native_ref: None,
+                    parameter_range: IncreasingParameterInterval::new(carrier_interval),
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
@@ -1872,6 +1894,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -1921,6 +1944,7 @@ pub(super) fn project(
             ctx,
         )?
         .unwrap_or(cached_interval);
+        retain_curve_interval(ir, &directrix_id, carrier_interval)?;
         let source_interval = curve_geometry(ir, &directrix_id)
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
@@ -2076,7 +2100,8 @@ pub(super) fn project(
         if entry.transform != 0 {
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
-                parameter_range: None,
+                native_ref: None,
+                parameter_range: IncreasingParameterInterval::new(cached_interval),
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
                 source_object: Some(source_object(entry)?),
@@ -2086,6 +2111,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -2096,8 +2122,8 @@ pub(super) fn project(
             ))
         })?;
         let bounds = RecordBounds::try_new([
-            Some(carrier_interval[0]),
-            Some(carrier_interval[1]),
+            Some(cached_interval[0]),
+            Some(cached_interval[1]),
             None,
             None,
         ])
@@ -2283,7 +2309,8 @@ pub(super) fn project(
 
                 ctx.charge_entities(1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
-                    parameter_range: None,
+                    native_ref: None,
+                    parameter_range: IncreasingParameterInterval::new(carrier_interval),
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
@@ -2323,6 +2350,7 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
+                native_ref: None,
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: procedural_id.clone(),
@@ -2376,6 +2404,7 @@ pub(super) fn project(
             ctx,
         )?
         .unwrap_or(cached_interval);
+        retain_curve_interval(ir, &generatrix_id, carrier_interval)?;
         let source_interval = curve_geometry(ir, &generatrix_id)
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
@@ -2474,6 +2503,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -2506,7 +2536,8 @@ pub(super) fn project(
 
             ctx.charge_entities(1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
-                parameter_range: None,
+                native_ref: None,
+                parameter_range: IncreasingParameterInterval::new(cached_interval),
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
                 source_object: Some(source_object(entry)?),
@@ -2547,8 +2578,8 @@ pub(super) fn project(
                 )
                 .and_then(|admitted_payload| {
                     RecordBounds::try_new([
-                        Some(carrier_interval[0]),
-                        Some(carrier_interval[1]),
+                        Some(cached_interval[0]),
+                        Some(cached_interval[1]),
                         None,
                         None,
                     ])
@@ -2986,6 +3017,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry)?),
@@ -3153,6 +3185,7 @@ pub(super) fn project(
 
         ctx.charge_entities(1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: surface_id.clone(),
             geometry,
             source_object: Some(source_object(entry)?),

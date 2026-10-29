@@ -9,7 +9,10 @@ use cadmpeg_core::{CodecError, ContainerEntry};
 mod entry;
 mod index;
 mod local;
+mod member;
 mod probe;
+
+pub use member::{MemberFrame, MemberPayload};
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,12 +339,6 @@ impl<'a> ArchiveSnapshot<'a> {
                 entry.name
             )));
         }
-        if entry.encrypted {
-            return Err(CodecError::NotImplemented(format!(
-                "encrypted ZIP entry {}",
-                entry.name
-            )));
-        }
         let end = entry.data_end()?;
         let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
         let absolute_start = archive_start
@@ -360,6 +357,21 @@ impl<'a> ArchiveSnapshot<'a> {
             start: absolute_start,
             end: absolute_end,
         };
+        self.open_payload(ctx, entry, range)
+    }
+
+    fn open_payload(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &EntryRecord,
+        range: ByteRange,
+    ) -> Result<View<'a>, CodecError> {
+        if entry.encrypted {
+            return Err(CodecError::NotImplemented(format!(
+                "encrypted ZIP entry {}",
+                entry.name
+            )));
+        }
         match entry.compression {
             ZipCompression::Unsupported(method) => Err(CodecError::NotImplemented(format!(
                 "ZIP compression {method:?} for {}",

@@ -715,7 +715,12 @@ fn native_namespace_binds_two_definition_value_chains() {
         0
     );
     let mut native = crate::native::CatiaNative::load(
-        decoded.ir().native.namespace("catia").expect("namespace"),
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load definition-chain evaluation");
     assert_eq!(
@@ -808,9 +813,15 @@ fn native_namespace_binds_two_definition_value_chains() {
         ),
         0
     );
-    let atom_native =
-        crate::native::CatiaNative::load(atom.ir().native.namespace("catia").expect("namespace"))
-            .expect("load definition-chain atom");
+    let atom_native = crate::native::CatiaNative::load(
+        &atom
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load definition-chain atom");
     assert_eq!(
         atom_native.entity_records[0]
             .definition_chain_value()
@@ -854,9 +865,15 @@ fn native_namespace_binds_two_definition_value_chains() {
         ),
         1
     );
-    let nested_native =
-        crate::native::CatiaNative::load(nested.ir().native.namespace("catia").expect("namespace"))
-            .expect("load nested definition-chain selector");
+    let nested_native = crate::native::CatiaNative::load(
+        &nested
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
+    )
+    .expect("load nested definition-chain selector");
     assert_eq!(
         nested_native.entity_records[0]
             .definition_chain_value()
@@ -889,7 +906,10 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         panic!("expected one typed definition-chain parameter");
     };
     assert_eq!(parameter.name, "FeatureFEDGE");
-    assert_eq!(parameter.expression, "12.5");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), parameter),
+        "12.5"
+    );
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Real(
@@ -927,7 +947,10 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         boolean_parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Boolean(true))
     );
-    assert_eq!(boolean_parameter.expression, "true");
+    assert_eq!(
+        crate::test_support::parameter_projection::expression_text(decoded.ir(), boolean_parameter),
+        "true"
+    );
     assert_eq!(boolean_parameter.properties["value_type"], "Boolean");
     assert_eq!(
         boolean_parameter.properties["catia_definition_value_kind"],
@@ -978,7 +1001,11 @@ fn typed_definition_chain_values_transfer_as_parameters() {
         panic!("expected one unset definition-chain parameter");
     };
     assert!(unset_parameter.value.is_none());
-    assert!(unset_parameter.expression.is_empty());
+    assert!(unset_parameter
+        .expression
+        .literal_text()
+        .expect("literal expression")
+        .is_empty());
     assert_eq!(
         wire::coverage_count(
             unset.report(),
@@ -1104,7 +1131,12 @@ fn literal_owner_slots_remain_unassigned() {
     );
 
     let native = crate::native::CatiaNative::load(
-        decoded.ir().native.namespace("catia").expect("namespace"),
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load literal owner slot");
     let record = &native.object_graphs[0].records[0];
@@ -1171,7 +1203,12 @@ fn native_namespace_binds_and_validates_definition_values() {
         0
     );
     let mut native = crate::native::CatiaNative::load(
-        decoded.ir().native.namespace("catia").expect("namespace"),
+        &decoded
+            .ir()
+            .native
+            .namespace("catia")
+            .expect("catia namespace")
+            .clone(),
     )
     .expect("load definition-bound value");
     assert_eq!(

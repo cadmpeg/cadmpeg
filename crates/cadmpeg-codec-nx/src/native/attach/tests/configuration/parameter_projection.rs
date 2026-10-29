@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::attach::expressions::attach_block_dimension_parameter_consumers;
 use crate::native::attach::expressions::attach_expression_parameters;
 use crate::native::attach::expressions::expression_parameter_id;
 use crate::native::attach::parameter_owner_dependencies;
@@ -36,7 +35,14 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     crate::test_support::with_decode_context(|ctx| {
-        attach_expression_parameters(ctx, &mut ir, &expressions, &[], &[], &mut annotations)
+        attach_expression_parameters(
+            ctx,
+            &mut ir,
+            &expressions,
+            &[],
+            &mut annotations,
+            &mut Vec::new(),
+        )
     })
     .expect("valid exactness fields");
     let parameter_owners = ir
@@ -64,19 +70,6 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             })
             .collect::<Vec<_>>()
     );
-    attach_block_dimension_parameter_consumers(&mut ir, &[dimensions], &mut annotations)
-        .expect("valid exactness fields");
-    assert_eq!(ir.model.parameters.len(), 3);
-    for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
-        assert_eq!(
-            parameter.properties[format!("block_dimension.{ordinal}").as_str()],
-            "dimensions"
-        );
-        assert_eq!(
-            parameter.properties["consumer.0"],
-            "nx:feature-history:feature#1-4"
-        );
-    }
 }
 
 #[test]
@@ -104,7 +97,14 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
     crate::test_support::with_decode_context(|ctx| {
-        attach_expression_parameters(ctx, &mut ir, &expressions, &[], &[], &mut annotations)
+        attach_expression_parameters(
+            ctx,
+            &mut ir,
+            &expressions,
+            &[],
+            &mut annotations,
+            &mut Vec::new(),
+        )
     })
     .expect("valid exactness fields");
 
@@ -127,11 +127,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             .map(String::as_str),
         Some("inch")
     );
-    assert!(
-        crate::decode::feature_completeness::incomplete_expression_parameters(&ir)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(crate::decode::feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 }
 
 #[test]
@@ -153,7 +149,14 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
     crate::test_support::with_decode_context(|ctx| {
-        attach_expression_parameters(ctx, &mut ir, &[expression], &[], &[], &mut annotations)
+        attach_expression_parameters(
+            ctx,
+            &mut ir,
+            &[expression],
+            &[],
+            &mut annotations,
+            &mut Vec::new(),
+        )
     })
     .expect("valid exactness fields");
 
@@ -166,7 +169,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         Some("custom/unit")
     );
     assert_eq!(
-        crate::decode::feature_completeness::incomplete_expression_parameters(&ir).unwrap(),
+        crate::decode::feature_completeness::incomplete_expression_parameters(&ir),
         [ir.model.parameters[0].id.clone()].into()
     );
 }

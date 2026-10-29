@@ -136,10 +136,13 @@ fn fixture(cut: bool, identity: bool, shift: usize) -> (Vec<u8>, DesignParameter
     )
     .unwrap()
     .unwrap();
-    assert_eq!(scope.paired_byte_offset(), u64::try_from(paired).unwrap());
+    assert_eq!(
+        scope.paired_byte_offset(),
+        Some(u64::try_from(paired).unwrap())
+    );
     assert_eq!(
         scope.reference_count_offset(),
-        u64::try_from(count_at).unwrap()
+        Some(u64::try_from(count_at).unwrap())
     );
     (bytes, scope)
 }
@@ -191,7 +194,7 @@ fn occurrence_transfer_decodes_copy_placements_without_guessing_source_occurrenc
 fn occurrence_transfer_rejects_changed_relation_marker_and_source_owner() {
     let (mut bytes, scope) = fixture(false, false, 0);
     let records = IndexedRecordOffsets::build(&bytes);
-    bytes[usize::try_from(scope.byte_offset()).unwrap() + 177] = 0;
+    bytes[usize::try_from(scope.byte_offset().unwrap()).unwrap() + 177] = 0;
     assert!(exact_occurrence_transfer(&bytes, &records, &scope, &types()).is_none());
 
     let (mut bytes, scope) = fixture(true, false, 0);
@@ -205,7 +208,7 @@ fn occurrence_transfer_rejects_changed_relation_marker_and_source_owner() {
 fn occurrence_transfer_rejects_non_rigid_and_truncated_placement() {
     let (mut bytes, scope) = fixture(false, false, 0);
     let records = IndexedRecordOffsets::build(&bytes);
-    let at = usize::try_from(scope.byte_offset()).unwrap() + 190;
+    let at = usize::try_from(scope.byte_offset().unwrap()).unwrap() + 190;
     bytes[at..at + 8].copy_from_slice(&f64::NAN.to_le_bytes());
     assert!(exact_occurrence_transfer(&bytes, &records, &scope, &types()).is_none());
     assert!(exact_occurrence_transfer(&bytes[..at + 8], &records, &scope, &types()).is_none());

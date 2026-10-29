@@ -54,6 +54,8 @@ pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> impl std::f
 /// string form (via [`CatiaLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum CatiaLossCode {
+    /// A typed source record cannot yet construct its neutral counterpart.
+    NeutralRecordUnprojected,
     /// The storage layout matched no declared dialect's structural invariants.
     SourceDialectUnverified,
     /// A decode route refused source records and then transferred no model, so
@@ -135,6 +137,7 @@ impl CatiaLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [CatiaLossCode] = &[
+        Self::NeutralRecordUnprojected,
         Self::SourceDialectUnverified,
         Self::SourceRouteFellThrough,
         Self::SourceAnnotationCollision,
@@ -178,6 +181,7 @@ impl CatiaLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::NeutralRecordUnprojected => "projection.record-unprojected",
             Self::TopologyStandardSearchBounded => "topology.standard-search-bounded",
             Self::TopologyPlanarBoundaryBounded => "topology.planar-boundary-bounded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -251,6 +255,7 @@ impl CatiaLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::NeutralRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceRouteFellThrough
             | Self::SourceAnnotationCollision
@@ -316,8 +321,171 @@ impl CatiaLossCode {
     }
 }
 
+/// Classes with source records represented only by bytes, rather than typed records.
+///
+/// Codes absent from this table describe retained typed content, metadata, or export
+/// loss. Native retention below is checked separately from neutral projection.
+#[cfg(test)]
+const UNREPRESENTED: &[(CatiaLossCode, cadmpeg_ir::ArenaClass)] = &[
+    (
+        CatiaLossCode::HistoryModelingScopeUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CatiaLossCode::HistoryObjectRecordsUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CatiaLossCode::HistoryLegacyRunsUnresolved,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CatiaLossCode::HistoryConfigurationRowOrderBounded,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CatiaLossCode::HistoryRelationDependenciesBounded,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CatiaLossCode::SourceCatalogScanBounded,
+        cadmpeg_ir::ArenaClass::Design,
+    ),
+    (
+        CatiaLossCode::SourceRouteFellThrough,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::SourceCatalogScanBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::GeometryUnresolvedCarriers,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::GeometryPlaneParametersInvalid,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::GeometryAnalyticPayloadInvalid,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::GeometryParameterRangeInvalid,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::GeometryPcurveRechartNonFinite,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyBoundaryGraphNotEmitted,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyFbbRowsWithheld,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyStandardSearchBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyPlanarBoundaryBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyE5GraphUnclosed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyObjectStreamWorkSliceExhausted,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyB5GraphUnclosed,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyB5PopulationBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyZeroEntityCandidatesBounded,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyZeroEntityNotTransferred,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::TopologyZeroEntityFaceUnresolved,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::AttributesMaterialsMetadataNotTransferred,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+    (
+        CatiaLossCode::AttributesVisualizationUnbound,
+        cadmpeg_ir::ArenaClass::Model,
+    ),
+];
+
+/// Independent fixture oracle for codes that prove an omitted source record.
+/// Production fidelity is collected at actual decoding/retention branches.
+#[cfg(test)]
+pub(crate) fn unrepresented(
+    losses: &[LossNote],
+    _native: Option<&cadmpeg_ir::native::NativeNamespace>,
+) -> cadmpeg_ir::ArenaClasses {
+    let mut classes = cadmpeg_ir::ArenaClasses::default();
+    for (code, class) in UNREPRESENTED {
+        if losses.iter().any(|loss| loss.code == code.kind()) {
+            classes.insert(*class);
+        }
+    }
+
+    classes
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn retained_records_and_diagnostics_do_not_exclude_source_classes() {
+        let losses = [
+            super::CatiaLossCode::TopologyB5GaugeSubstituted.note("typed record retained"),
+            super::CatiaLossCode::SourceDialectUnverified.note("decode diagnostic"),
+        ];
+        assert!(super::unrepresented(&losses, None).is_empty());
+    }
+
+    #[test]
+    fn source_only_losses_declare_their_classes() {
+        for (code, class) in super::UNREPRESENTED {
+            let losses = [code.note("source record is not typed")];
+            let classes = super::unrepresented(&losses, None);
+            assert!(classes.contains(class), "{code:?} must declare {class:?}");
+        }
+        assert!(super::unrepresented(&[], None).is_empty());
+    }
+
+    /// These emit sites retain the actual semantic source records, so the
+    /// projection event alone never declares missing source content.
+    #[test]
+    fn typed_native_reductions_do_not_declare_opaque_source() {
+        for code in [
+            super::CatiaLossCode::GeometryLineProfileNotTransferred,
+            super::CatiaLossCode::AttributesDimensionQuantityUnresolved,
+        ] {
+            assert!(
+                super::unrepresented(&[code.note("typed semantic source remains held")], None)
+                    .is_empty()
+            );
+        }
+    }
+
     use super::CatiaLossCode;
     use std::collections::BTreeSet;
 
@@ -328,6 +496,7 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "projection.record-unprojected",
                 "source.dialect-unverified",
                 "source.route-fell-through",
                 "source.annotation-identity-collision",

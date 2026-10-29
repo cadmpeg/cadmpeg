@@ -78,12 +78,16 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             ))),
         }
     }
+    ir.scope = ctx.depth().required_scope();
     Ok(Decoded {
-        ir,
         body: DecodeBody {
             losses,
-            ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), geometry_transferred))
+            ..DecodeBody::new(DecodeTransfer {
+                scope: ir.scope,
+                geometry_transferred,
+            })
         },
+        ir,
         source_fidelity: SourceFidelity::with_annotations(annotations),
     })
 }

@@ -72,6 +72,7 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
 #[test]
 fn cylindrical_support_point_defines_its_radial_axis() {
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#support").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -115,6 +116,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
     .unwrap();
     let mut faces = [
         Face {
+            native_ref: None,
             id: FaceId::mint("test:model:entity#bore").expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[0].id.clone(),
@@ -125,6 +127,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             tolerance: None,
         },
         Face {
+            native_ref: None,
             id: FaceId::mint("test:model:entity#boss").expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[1].id.clone(),
@@ -135,6 +138,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             tolerance: None,
         },
         Face {
+            native_ref: None,
             id: FaceId::mint("test:model:entity#coaxial-bore-segment").expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surfaces[2].id.clone(),
@@ -152,6 +156,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             Vector3::new(0.0, 0.0, 1.0),
             2.0,
             &HoleTopology {
+                parameters: &[],
                 surfaces: &surfaces,
                 faces: &faces,
                 loops: &[],
@@ -171,6 +176,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
         bore_carrier_placements(
             2.0,
             &HoleTopology {
+                parameters: &[],
                 surfaces: &surfaces,
                 faces: &faces,
                 loops: &[],
@@ -191,6 +197,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
         bore_carrier_placements(
             2.0,
             &HoleTopology {
+                parameters: &[],
                 surfaces: &surfaces,
                 faces: &faces,
                 loops: &[],
@@ -246,6 +253,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
+            native_ref: None,
             id: FaceId::mint(format!("test:model:entity#face-{index}")).expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
@@ -298,6 +306,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         &identities,
         &faces,
         &surfaces,
+        &[],
     );
     let updated_hole_evaluation = &mut hole.evaluation;
     let mut updated_hole_definition = updated_hole_evaluation.definition().clone();
@@ -321,6 +330,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         &identities,
         &faces,
         &surfaces,
+        &[],
     );
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         hole.evaluation.definition()
@@ -365,6 +375,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
+            native_ref: None,
             id: FaceId::mint(format!("test:model:entity#face-{index}")).expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface: surface.id.clone(),
@@ -376,6 +387,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         })
         .collect::<Vec<_>>();
     let topology = HoleTopology {
+        parameters: &[],
         surfaces: &surfaces,
         faces: &faces,
         loops: &[],
@@ -400,8 +412,12 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
-        depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+        diameter: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+        ),
+        depth: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+        ),
     };
     placements
         .get_or_insert_default()
@@ -412,8 +428,8 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         });
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
-        shape.diameter(),
+        shape.exit_kind().clone(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_placed_evaluation.set_definition(updated_placed_definition);
@@ -432,14 +448,18 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::Counterbore {
-        diameter: cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
-        depth: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+        diameter: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap(),
+        ),
+        depth: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+        ),
     };
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
-        shape.diameter(),
+        shape.exit_kind().clone(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_unplaced_evaluation.set_definition(updated_unplaced_definition);
@@ -508,6 +528,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
     )
     .unwrap();
     let unmatched_topology = HoleTopology {
+        parameters: &[],
         surfaces: &unmatched_surfaces,
         faces: &faces,
         loops: &[],
@@ -551,6 +572,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let surface = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -564,6 +586,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         source_object: None,
     };
     let cone = Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -579,6 +602,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         source_object: None,
     };
     let face = Face {
+        native_ref: None,
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: surface.id.clone(),
@@ -592,6 +616,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         tolerance: None,
     };
     let loop_ = Loop {
+        native_ref: None,
         id: LoopId::mint("test:model:entity#loop").expect("identity grammar"),
         face: face.id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -603,6 +628,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         ),
     };
     let coedge = Coedge {
+        native_ref: None,
         id: CoedgeId::mint("test:model:entity#coedge").expect("identity grammar"),
         owner_loop: loop_.id.clone(),
         edge: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
@@ -612,6 +638,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         use_curve: None,
     };
     let edge = Edge {
+        native_ref: None,
         id: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
         start: VertexId::mint("test:model:entity#start").expect("identity grammar"),
@@ -620,11 +647,13 @@ fn hole_topology_uses_exact_cylinder_spans() {
     };
     let vertices = [
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:entity#start").expect("identity grammar"),
             point: PointId::mint("test:model:entity#start-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:entity#end").expect("identity grammar"),
             point: PointId::mint("test:model:entity#end-point").expect("identity grammar"),
             tolerance: None,
@@ -653,6 +682,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let coedges = [coedge];
     let edges = [edge];
     let topology = HoleTopology {
+        parameters: &[],
         surfaces: &surfaces,
         faces: &faces,
         loops: &loops,
@@ -670,7 +700,9 @@ fn hole_topology_uses_exact_cylinder_spans() {
             unreachable!();
         };
         *extent = Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+            ),
         });
         *bottom = Some(HoleBottom::Flat);
     });
@@ -698,7 +730,9 @@ fn hole_topology_uses_exact_cylinder_spans() {
             unreachable!();
         };
         *extent = Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(9.0).unwrap(),
+            ),
         });
     });
     project_hole_topology_axes(&ctx, std::slice::from_mut(&mut unplaced), &topology).unwrap();
@@ -727,20 +761,26 @@ fn hole_topology_uses_exact_cylinder_spans() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        drill_point_angle: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        ),
     };
     *extent = Some(LinearTermination::Blind {
-        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+        length: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+        ),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        included_angle: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        ),
         depth_to_tip: false,
     });
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
-        shape.diameter(),
+        shape.exit_kind().clone(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_drilled_evaluation.set_definition(updated_drilled_definition);
@@ -775,6 +815,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     )
     .unwrap();
     let wrong_topology = HoleTopology {
+        parameters: &[],
         surfaces: &wrong_surfaces,
         faces: &faces,
         loops: &loops,
@@ -820,8 +861,8 @@ fn hole_topology_uses_exact_cylinder_spans() {
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         shape.construction().clone(),
-        *shape.exit_kind(),
-        edited_diameter,
+        shape.exit_kind().clone(),
+        edited_diameter.cloned(),
     )
     .unwrap();
     updated_hole_evaluation.set_definition(updated_hole_definition);
@@ -831,7 +872,10 @@ fn hole_topology_uses_exact_cylinder_spans() {
     else {
         unreachable!();
     };
-    let diameter = shape.diameter();
+    let diameter = shape
+        .diameter()
+        .and_then(cadmpeg_ir::Dimension::literal)
+        .copied();
     assert_eq!(
         diameter,
         Some(cadmpeg_ir::scalar::PositiveLength::new(4.0).unwrap())
@@ -839,7 +883,9 @@ fn hole_topology_uses_exact_cylinder_spans() {
     assert_eq!(
         *extent,
         Some(LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()
+            length: cadmpeg_ir::Dimension::Literal(
+                cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()
+            )
         })
     );
 }
@@ -875,13 +921,19 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
         panic!("ordinary hole form");
     };
     *kind = HoleKind::SimpleDrilled {
-        drill_point_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        drill_point_angle: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        ),
     };
     *extent = Some(LinearTermination::Blind {
-        length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+        length: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
+        ),
     });
     *bottom = Some(HoleBottom::Angled {
-        included_angle: cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        included_angle: cadmpeg_ir::Dimension::Literal(
+            cadmpeg_ir::scalar::InteriorAngle::new(2.0).unwrap(),
+        ),
         depth_to_tip: false,
     });
     placements
@@ -890,8 +942,8 @@ fn seeded_hole_axes_partition_complete_topology_by_distinct_directions() {
 
     *shape = cadmpeg_ir::features::holes::HoleShape::new(
         edited_construction,
-        *shape.exit_kind(),
-        shape.diameter(),
+        shape.exit_kind().clone(),
+        shape.diameter().cloned(),
     )
     .unwrap();
     updated_horizontal_evaluation.set_definition(updated_horizontal_definition);
@@ -984,6 +1036,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .iter()
         .enumerate()
         .map(|(index, (origin, axis))| Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:entity#seed-surface-{index}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -1006,6 +1059,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         .iter()
         .enumerate()
         .map(|(index, surface)| Face {
+            native_ref: None,
             id: FaceId::mint(format!("test:model:entity#seed-face-{index}"))
                 .expect("identity grammar"),
             shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
@@ -1018,6 +1072,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         })
         .collect::<Vec<_>>();
     let topology = HoleTopology {
+        parameters: &[],
         surfaces: &surfaces,
         faces: &faces,
         loops: &[],

@@ -205,16 +205,14 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
         .unwrap();
     assert_eq!(turned.name.as_deref(), Some("42"));
     assert_eq!(
-        turned.transform.affine_rows(),
-        [
-            [0.0, -1.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 200.0],
-            [0.0, 0.0, 1.0, 0.0]
-        ]
-    );
-    assert_eq!(
-        turned.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-        [2.0; 3]
+        turned
+            .transform
+            .map(cadmpeg_ir::transform::Transform::affine_rows),
+        Some([
+            [0.0, -2.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0, 200.0],
+            [0.0, 0.0, 2.0, 0.0]
+        ])
     );
 
     let bracket = &model.tessellations[0];

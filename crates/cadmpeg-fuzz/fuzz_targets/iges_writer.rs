@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzzes IGES semantic planning, versioned synthesis, rejection, and replay.
+//! Fuzzes IGES semantic planning, versioned synthesis, reported omissions, and guarded replay.
 
 #![no_main]
 
 use std::io::Cursor;
 
 use cadmpeg_codec_iges::{IgesCodec, IgesVersion};
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
+use cadmpeg_ir::{ArenaClass, CadIr, SourceFidelity, UnknownRecord};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -35,6 +35,7 @@ fuzz_target!(|data: &[u8]| {
     };
     let encoder = IgesCodec;
 
+    let mut fidelity = None;
     if control & 0x80 != 0 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -63,21 +64,24 @@ fuzz_target!(|data: &[u8]| {
             // already own the fixture identity. Neither reaches this export probe.
             return;
         }
-        assert!(encoder
-            .plan(
-                EncodeInput::new(&ir, Some(&source_fidelity)),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
-            )
-            .is_err());
-        return;
+        source_fidelity
+            .mark_untyped("iges:fuzz:unsupported#0", [ArenaClass::Model])
+            .expect("the unsupported source record was retained");
+        fidelity = Some(source_fidelity);
     }
 
     let Ok(plan) = encoder.plan(
-        EncodeInput::new(&ir, None),
+        EncodeInput::new(&ir, fidelity.as_ref()),
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     ) else {
         return;
     };
+    if fidelity.is_some() {
+        assert!(matches!(
+            plan.report().write_path(),
+            WritePath::Synthesized { .. }
+        ));
+    }
     let mut encoded = Vec::new();
     if plan.write_to(&mut encoded).is_err() {
         return;
@@ -85,12 +89,14 @@ fuzz_target!(|data: &[u8]| {
 
     let codec = IgesCodec;
     let mut inspect = Cursor::new(encoded.as_slice());
-    assert!(codec
-        .inspect(
-            &mut inspect,
-            &cadmpeg_core::decode::InspectOptions::default()
-        )
-        .is_ok());
+    assert!(
+        codec
+            .inspect(
+                &mut inspect,
+                &cadmpeg_core::decode::InspectOptions::default()
+            )
+            .is_ok()
+    );
     let mut decode = Cursor::new(encoded.as_slice());
     let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
@@ -119,7 +125,8 @@ fuzz_target!(|data: &[u8]| {
             TargetRequest::Explicit(version.descriptor().id.as_str()),
         )
         .expect("writer output must plan after the optional source edit");
-    if control & 0x40 == 0 {
+    let replayable = control & 0x40 == 0 && source_fidelity.unrepresented().is_empty();
+    if replayable {
         assert!(matches!(
             replay.report().write_path(),
             WritePath::VerbatimReplay { .. }
@@ -134,7 +141,7 @@ fuzz_target!(|data: &[u8]| {
     replay
         .write_to(&mut replayed)
         .expect("writer output must serialize after the optional source edit");
-    if control & 0x40 == 0 {
+    if replayable {
         assert_eq!(replayed, encoded);
     } else {
         let mut edited_decode = Cursor::new(replayed);

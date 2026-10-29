@@ -3,9 +3,9 @@
 use super::{auxiliary_links_hold, links_hold};
 use crate::records::feature::emboss::DesignEmbossConstruction;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
-use crate::records::identity::{Located, RecordedValue, ReferenceRun};
+use crate::records::identity::{Located, RecordedValue, ReferenceRun, Sourced};
 use crate::records::parameters::{
-    DesignParameter, DesignParameterDraft, DesignParameterOwner, DesignParameterOwnerWire,
+    DesignParameter, DesignParameterDraft, DesignParameterOwner, DesignParameterOwnerContent,
     DesignParameterSource,
 };
 use crate::records::topology::construction::{
@@ -37,34 +37,13 @@ fn scope() -> DesignParameterScope {
             draft.payload = DesignScopePayload::Emboss(Some(DesignEmbossConstruction {
                 control_words: [1, 0],
                 native_pair: [17, 23],
-                depth_owner: Located {
-                    value: 60,
-                    offset: 29,
-                },
-                auxiliary_group: Located {
-                    value: 72,
-                    offset: 40,
-                },
-                horizontal_owner: Located {
-                    value: 63,
-                    offset: 51,
-                },
-                rotation_owner: Located {
-                    value: 69,
-                    offset: 82,
-                },
-                face_group: Located {
-                    value: 48,
-                    offset: 93,
-                },
-                vertical_owner: Located {
-                    value: 66,
-                    offset: 104,
-                },
-                profile_group: Located {
-                    value: 41,
-                    offset: 119,
-                },
+                depth_owner: Sourced::at(60, 29),
+                auxiliary_group: Sourced::at(72, 40),
+                horizontal_owner: Sourced::at(63, 51),
+                rotation_owner: Sourced::at(69, 82),
+                face_group: Sourced::at(48, 93),
+                vertical_owner: Sourced::at(66, 104),
+                profile_group: Sourced::at(41, 119),
                 sketch_profile: None,
             }));
         })
@@ -98,14 +77,11 @@ fn parameter(owner: u32, kind: &str, value: f64, unit: &str) -> DesignParameter 
 fn owner(index: u32, value: f64) -> DesignParameterOwner {
     serde_json::from_value(serde_json::json!({
         "id": format!("{STREAM}:design-parameter-owner#{index}"),
-        "byte_offset": 2000,
-        "frame_length": 104,
         "class_tag": "901",
         "record_index": index,
         "scope_record_index": 40,
         "local_ordinal": 1,
         "evaluated_value": value,
-        "evaluated_value_offset": 2040,
         "parameter_record_index": index + 1,
         "owned_ordinal": 1,
         "variant": 0,
@@ -196,8 +172,8 @@ fn emboss_links_require_unique_scalar_owners_roles_units_and_group_members() {
     let mut duplicated = owners.clone();
     duplicated.push(owners[0].clone());
     assert!(!links_hold(&scope, &parameters, &duplicated, &groups));
-    let mut wrong_scope: DesignParameterOwnerWire = owners[0].clone().into();
-    wrong_scope.scope_record_index = 80;
+    let mut wrong_scope = DesignParameterOwnerContent::from(owners[0].clone());
+    wrong_scope.scope_record_index = Some(80);
     let mut changed_owners = owners.clone();
     changed_owners[0] = wrong_scope.try_into().unwrap();
     assert!(!links_hold(&scope, &parameters, &changed_owners, &groups));
@@ -297,7 +273,7 @@ fn emboss_validation_reports_missing_profile_and_face_operand_frames() {
             .design_record_headers
             .push(crate::records::decal::DesignRecordHeader {
                 id: format!("{STREAM}:record#72"),
-                byte_offset: 4000,
+                byte_offset: Some(4000),
                 class_tag: "904".to_owned().try_into().unwrap(),
                 record_index: 72,
             });
@@ -322,7 +298,7 @@ fn emboss_auxiliary_members_require_record_headers_without_contour_frames() {
                 .design_record_headers
                 .push(crate::records::decal::DesignRecordHeader {
                     id: format!("{STREAM}:record#{index}"),
-                    byte_offset: offset,
+                    byte_offset: Some(offset),
                     class_tag: "904".to_owned().try_into().unwrap(),
                     record_index: index,
                 });

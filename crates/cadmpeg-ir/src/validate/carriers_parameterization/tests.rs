@@ -277,6 +277,7 @@ fn cube_with_one_coedge_pcurve(
     let id = crate::ids::PcurveId::mint("synthetic:cube:pcurve#nested").expect("valid identity");
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: id.clone(),
         geometry,
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
@@ -549,6 +550,7 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     curve.source_object = None;
     ir.model.curves.push(curve);
     ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: "test:model:pcurve#orphan".try_into().unwrap(),
         geometry: line_pcurve_leaf(),
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
@@ -589,6 +591,7 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
         let mut ir = unit_cube().unwrap();
         let root = CurveId::mint("test:model:curve#root").unwrap();
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: root.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))

@@ -90,7 +90,7 @@ fn surface_trim_output_carries_its_scope_identifier() {
             format!(
                 "{}:design-surface-trim-operation#{}",
                 crate::ids::native_scope(ENTRY),
-                scope.byte_offset(),
+                scope.byte_offset().expect("decoded scope offset"),
             ),
         );
     });

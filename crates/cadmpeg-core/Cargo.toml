@@ -29,6 +29,7 @@ serde.workspace = true
 schemars = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
+trybox.workspace = true
 
 [dev-dependencies]
 toml.workspace = true

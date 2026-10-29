@@ -18,11 +18,12 @@ fn drawing_direction_vector_refuses_nonfinite_components() {
         ("valueZ".into(), "0".into()),
     ]);
     let value = |attributes| crate::native::ValueRecord {
+        parent: None,
         tag: "PropertyVector".into(),
         order: 0,
         attributes,
+        decoded_json: None,
         text: None,
-        raw_xml: String::new(),
     };
     assert_eq!(
         super::vector_value(&value(attributes.clone())),
@@ -102,9 +103,26 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         Some("fcstd:native:object#Model")
     );
     assert!(view.parameters.contains_key("Direction"));
+    assert_eq!(view.parameters["Scale"], "2.0");
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let scale = properties
+        .iter()
+        .find(|property| property.owner.ends_with("#View") && property.name == "Scale")
+        .expect("native scale");
     assert_eq!(
-        view.parameters["Scale"],
-        r#"<Float value="2" min="0.1" max="10" step="0.1"/>"#
+        scale.values()[0].attributes,
+        std::collections::BTreeMap::from([
+            ("value".into(), "2".into()),
+            ("min".into(), "0.1".into()),
+            ("max".into(), "10".into()),
+            ("step".into(), "0.1".into()),
+        ])
     );
     assert_eq!(result.ir().model.drawings.len(), 3);
     let neutral_page = result
@@ -353,7 +371,27 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(15.0)
     );
-    assert_eq!(drawing.parameters["ScaleType"], r#"<Integer value="1"/>"#);
+    assert_eq!(drawing.parameters["ScaleType"], "1");
+    let properties = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let scale_type = properties
+        .iter()
+        .find(|property| property.name == "ScaleType")
+        .expect("native scale type");
+    assert_eq!(
+        scale_type
+            .values()
+            .iter()
+            .filter(|value| value.tag == "Enum")
+            .map(|value| value.attributes["value"].as_str())
+            .collect::<Vec<_>>(),
+        ["Page", "Custom"]
+    );
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }

@@ -27,7 +27,11 @@ pub(super) fn patch_material_assignments(
     edits: &[DesignMaterialAssignment],
 ) -> Result<(), CodecError> {
     for assignment in edits {
-        let suffix_start = usize::try_from(assignment.entity_suffix_offset).map_err(|_| {
+        let suffix_start = usize::try_from(source_position(
+            assignment.entity_suffix_offset,
+            "material-assignment suffix offset",
+        )?)
+        .map_err(|_| {
             CodecError::Malformed("material-assignment suffix offset exceeds address space".into())
         })?;
         bytes
@@ -36,20 +40,26 @@ pub(super) fn patch_material_assignments(
             .copy_from_slice(&assignment.entity_id.suffix().to_le_bytes());
         patch_utf16_if_changed(
             bytes,
-            assignment.entity_id_offset,
+            source_position(
+                assignment.entity_id_offset,
+                "material-assignment entity id offset",
+            )?,
             assignment.entity_id.as_str(),
             "material-assignment entity id",
         )?;
         patch_utf16_if_changed(
             bytes,
-            assignment.visual_guid_offset,
+            source_position(
+                assignment.visual_guid_offset,
+                "material-assignment visual token offset",
+            )?,
             &assignment.visual_guid,
             "material-assignment visual token",
         )?;
         if let Some(field) = &assignment.physical_token {
             patch_utf16_if_changed(
                 bytes,
-                field.offset,
+                source_position(field.offset, "material-assignment string offset")?,
                 &field.value,
                 "material-assignment physical token",
             )?;
@@ -57,7 +67,7 @@ pub(super) fn patch_material_assignments(
         if let Some(field) = &assignment.visual_preset {
             patch_utf16_if_changed(
                 bytes,
-                field.offset,
+                source_position(field.offset, "material-assignment string offset")?,
                 &field.value,
                 "material-assignment visual preset",
             )?;
@@ -73,13 +83,16 @@ pub(super) fn patch_lost_edge_references(
     for reference in edits {
         patch_bytes_at(
             bytes,
-            reference.class_tag_offset(),
+            source_position(reference.class_tag_offset(), "lost-edge class tag offset")?,
             reference.class_tag.as_bytes(),
             "lost-edge class tag",
         )?;
         patch_u32_at(
             bytes,
-            reference.record_index_offset(),
+            source_position(
+                reference.record_index_offset(),
+                "lost-edge record index offset",
+            )?,
             reference.record_index,
             "lost-edge record index",
         )?;
@@ -110,7 +123,10 @@ pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
                 .encode_utf16()
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
-            patch_bytes_at(bytes, guid.offset, &encoded, "ACT channel GUID")?;
+            let offset = guid.offset.ok_or_else(|| {
+                CodecError::UnsupportedContent("ACT channel source location is unavailable".into())
+            })?;
+            patch_bytes_at(bytes, offset, &encoded, "ACT channel GUID")?;
         }
     }
     Ok(())
@@ -121,6 +137,12 @@ pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[ByteEdit]) -> Result<()
         patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
     Ok(())
+}
+
+fn source_position(value: Option<u64>, field: &str) -> Result<u64, CodecError> {
+    value.ok_or_else(|| {
+        CodecError::UnsupportedContent(format!("F3D patch requires an actual source {field}"))
+    })
 }
 
 pub(super) fn patch_act_links(
@@ -150,17 +172,23 @@ pub(super) fn patch_act_links(
                 "ACT registry flag",
             ),
         ] {
-            patch_u32_at(bytes, offset, value, field)?;
+            patch_u32_at(bytes, source_position(offset, field)?, value, field)?;
         }
         patch_utf16_if_changed(
             bytes,
-            root.layout().entity_id_offset(),
+            source_position(
+                root.layout().entity_id_offset(),
+                "ACT root entity-id offset",
+            )?,
             root.layout().entity_id(),
             "ACT component-link entity id",
         )?;
         patch_utf16_if_changed(
             bytes,
-            root.layout().display_name_offset(),
+            source_position(
+                root.layout().display_name_offset(),
+                "ACT root display-name offset",
+            )?,
             root.layout().display_name(),
             "ACT component-link display name",
         )?;
@@ -537,8 +565,7 @@ pub(super) fn patch_history_states(
         }
     }
     for state in &edits.states {
-        let first_tag = state
-            .byte_offset
+        let first_tag = source_position(state.byte_offset, "ASM state byte offset")?
             .checked_add(u64_from_index(DELTA_HEADER_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM history offset exceeds address space".into())
@@ -558,20 +585,32 @@ pub(super) fn patch_history_states(
         }
     }
     for board in &edits.boards {
-        AsmEditSet::patch_tagged_i64(bytes, board.byte_offset, 1, 0x0c, board.owner_ref)?;
-        AsmEditSet::patch_tagged_i64(bytes, board.byte_offset, 2, 0x04, board.number)?;
+        AsmEditSet::patch_tagged_i64(
+            bytes,
+            source_position(board.byte_offset, "ASM board byte offset")?,
+            1,
+            0x0c,
+            board.owner_ref,
+        )?;
+        AsmEditSet::patch_tagged_i64(
+            bytes,
+            source_position(board.byte_offset, "ASM board byte offset")?,
+            2,
+            0x04,
+            board.number,
+        )?;
     }
     for change in &edits.changes {
         AsmEditSet::patch_tagged_i64(
             bytes,
-            change.byte_offset,
+            source_position(change.byte_offset, "ASM entity-change byte offset")?,
             1,
             0x0c,
             change.old_ref().unwrap_or(-1),
         )?;
         AsmEditSet::patch_tagged_i64(
             bytes,
-            change.byte_offset,
+            source_position(change.byte_offset, "ASM entity-change byte offset")?,
             2,
             0x0c,
             change.new_ref().unwrap_or(-1),
@@ -630,7 +669,7 @@ pub(crate) fn patch_sketch_curves(
                 let normal = normal.as_raw();
                 let scalar_count = line_scalar_count(bytes, start)?;
                 if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
-                    return Err(CodecError::NotImplemented(
+                    return Err(CodecError::UnsupportedContent(
                         "F3D compact planar-line edits require the implicit +Z normal".into(),
                     ));
                 }

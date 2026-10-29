@@ -70,6 +70,7 @@ fn ruled(top_v: f64) -> CadIr {
             None,
         ));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertices[i].clone(),
             point,
             tolerance: None,
@@ -87,6 +88,7 @@ fn ruled(top_v: f64) -> CadIr {
     ];
     for (i, geometry) in geometries.into_iter().enumerate() {
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: curves[i].clone(),
             geometry: CurveGeometry::Solved(geometry),
             parameter_range: (i < 2)
@@ -105,6 +107,7 @@ fn ruled(top_v: f64) -> CadIr {
     .enumerate()
     {
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edges[i].clone(),
             carrier: EdgeCarrier::new(Some(curves[i].clone()), Some(range)).unwrap(),
             start: vertices[start].clone(),
@@ -136,6 +139,7 @@ fn ruled(top_v: f64) -> CadIr {
     for (i, (edge, sense, origin, direction, range)) in uses.into_iter().enumerate() {
         let pcurve = PcurveId::mint(id("pcurve", i)).unwrap();
         ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve.clone(),
             geometry: PcurveGeometry::Line(
                 LinePcurve::try_new(
@@ -152,6 +156,7 @@ fn ruled(top_v: f64) -> CadIr {
             _ => i,
         };
         ir.model.coedges.push(Coedge {
+            native_ref: None,
             id: coedges[i].clone(),
             owner_loop: loop_id.clone(),
             edge: edges[edge].clone(),

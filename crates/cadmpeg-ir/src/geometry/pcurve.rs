@@ -2302,6 +2302,14 @@ impl PcurveGeometry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Pcurve {
+    /// Native record projected into this neutral record, when present.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+
     /// Arena id.
     pub id: PcurveId,
     /// Parameter-space shape.
@@ -2626,3 +2634,5 @@ cadmpeg_core::named_optional_field!(
 mod tests;
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");

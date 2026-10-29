@@ -41,8 +41,8 @@ impl Serialize for FeatureEquationCurve {
             x_expression: &'a str,
             y_expression: &'a str,
             z_expression: &'a str,
-            start: f64,
-            end: f64,
+            start: &'a super::Dimension<crate::scalar::FiniteReal>,
+            end: &'a super::Dimension<crate::scalar::FiniteReal>,
         }
         let [start, end] = self.domain.endpoints();
         Wire {

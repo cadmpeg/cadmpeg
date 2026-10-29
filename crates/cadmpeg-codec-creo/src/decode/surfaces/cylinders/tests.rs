@@ -189,6 +189,7 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
 
 fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -209,6 +210,7 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
 
 fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
     cadmpeg_ir::geometry::Surface {
+        native_ref: None,
         id: cadmpeg_ir::ids::SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
             .expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(

@@ -86,14 +86,82 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
         .as_ref()
         .expect("source metadata")
         .attributes;
-    assert_eq!(attributes["png_preview_count"], "1");
-    assert_eq!(attributes["png_preview_0_width"], "640");
-    assert_eq!(attributes["png_preview_0_height"], "480");
-    assert_eq!(attributes["png_preview_0_color_type"], "6");
-    assert_eq!(attributes["bmp_thumbnail_count"], "1");
-    assert_eq!(attributes["bmp_thumbnail_0_width"], "320");
-    assert_eq!(attributes["bmp_thumbnail_0_height"], "-200");
-    assert_eq!(attributes["bmp_thumbnail_0_compression"], "1");
+    let png_assets = decoded
+        .ir()
+        .model
+        .assets
+        .iter()
+        .filter(|asset| {
+            asset
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("preview.png")
+        })
+        .collect::<Vec<_>>();
+    let bmp_assets = decoded
+        .ir()
+        .model
+        .assets
+        .iter()
+        .filter(|asset| {
+            asset
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("thumbnail.dib")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(png_assets.len().to_string(), "1");
+    let cadmpeg_ir::assets::AssetContent::Embedded { data: png_data } = &png_assets[0].content
+    else {
+        panic!("embedded PNG")
+    };
+    let png_data = png_data.as_bytes();
+    assert_eq!(
+        cadmpeg_core::decode::View::u32_be_at(png_data, 16)
+            .unwrap()
+            .to_string(),
+        "640"
+    );
+    assert_eq!(
+        cadmpeg_core::decode::View::u32_be_at(png_data, 20)
+            .unwrap()
+            .to_string(),
+        "480"
+    );
+    assert_eq!(png_data[25].to_string(), "6");
+    assert_eq!(bmp_assets.len().to_string(), "1");
+    let cadmpeg_ir::assets::AssetContent::Embedded { data: bmp_data } = &bmp_assets[0].content
+    else {
+        panic!("embedded thumbnail")
+    };
+    let bmp_data = bmp_data.as_bytes();
+    assert_eq!(
+        cadmpeg_core::decode::View::i32_le_at(bmp_data, 8)
+            .unwrap()
+            .to_string(),
+        "320"
+    );
+    assert_eq!(
+        cadmpeg_core::decode::View::i32_le_at(bmp_data, 12)
+            .unwrap()
+            .to_string(),
+        "-200"
+    );
+    assert_eq!(
+        cadmpeg_core::decode::View::u32_le_at(bmp_data, 20)
+            .unwrap()
+            .to_string(),
+        "1"
+    );
+    assert_eq!(png_data, png);
+    assert_eq!(bmp_data, bmp);
+    assert!(attributes
+        .keys()
+        .all(|key| !key.as_str().starts_with("png_preview_")
+            && !key.as_str().starts_with("bmp_thumbnail_")
+            && !matches!(key.as_str(), "block_count" | "compound_stream_count")));
     assert_eq!(
         decoded.report().dialects().unwrap().primary().declared()["sw_version"],
         "34000"

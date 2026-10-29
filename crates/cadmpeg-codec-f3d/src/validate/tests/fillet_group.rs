@@ -169,7 +169,6 @@ fn fillet_variable_radius_midpoints_keep_order_validation() {
 
 #[test]
 fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
-    use crate::records::parameters::DesignParameterOwnerWire;
     use crate::records::topology::fillet::DesignFilletRadiusLaw;
     let mut native = native();
     let mut second = native.design_construction_operand_groups[0].clone();
@@ -193,8 +192,8 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
         let unit = matches!(kind, "StartRadius" | "EndRadius" | "MidRadius").then_some("mm");
         add_radius_parameter(&mut native, index, kind, 0.4, unit);
         let owner = native.design_parameter_owners.pop().unwrap();
-        let mut wire = DesignParameterOwnerWire::from(owner);
-        wire.local_ordinal = u32::try_from(ordinal).unwrap();
+        let mut wire = crate::records::parameters::DesignParameterOwnerContent::from(owner);
+        wire.local_ordinal = Some(u32::try_from(ordinal).unwrap());
         native
             .design_parameter_owners
             .push(wire.try_into().unwrap());

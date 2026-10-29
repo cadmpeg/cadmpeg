@@ -24,6 +24,7 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
         let directrix = CurveId::mint("test:model:curve#directrix").unwrap();
         let direction = plane.frame().binormal().into();
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: directrix.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(plane.origin().get(), *plane.frame().reference().as_raw())

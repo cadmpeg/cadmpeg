@@ -76,7 +76,7 @@ pub(crate) fn project_local_components(
                 let Some(guid) = path.occurrence_guids().first() else {
                     continue;
                 };
-                let key = guid.value.as_str().to_ascii_lowercase();
+                let key = guid.as_str().to_ascii_lowercase();
                 let root = projector
                     .native_by_guid
                     .get(&(stream.to_owned(), key))
@@ -141,6 +141,34 @@ pub(crate) fn project_local_components(
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
     projector.finish()
+}
+
+/// Give a single-component document's ACT root label its neutral product home.
+/// Existing component definitions retain their independently proved ownership.
+pub(crate) fn project_single_root_component(
+    model: &mut cadmpeg_ir::document::Model,
+    links: &[crate::records::act::ActComponentLink],
+) {
+    if !model.product_definitions.is_empty() || !model.occurrences.is_empty() {
+        return;
+    }
+    let mut roots = links.iter().filter(|link| link.tracks_document_root());
+    let (Some(root), None) = (roots.next(), roots.next()) else {
+        return;
+    };
+    model.product_definitions.push(ProductDefinition {
+        id: crate::ids::neutral_act_root_product_id(root),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: (!root.layout().display_name().trim().is_empty())
+            .then(|| root.layout().display_name().to_owned()),
+        description: None,
+        part_number: None,
+        bom_properties: BTreeMap::new(),
+        bodies: model.bodies.iter().map(|body| body.id.clone()).collect(),
+        sketches: Vec::new(),
+        native_ref: Some(root.id().clone()),
+    });
 }
 
 /// Reason a local occurrence carrier stays unplaced.
@@ -320,9 +348,8 @@ impl<'a> Projector<'a> {
                     prototype: PrototypeReference::Local { definition },
                     parent: OccurrenceParent::Root {},
                     ordinal: 0,
-                    transform,
+                    transform: Some(transform),
                     linked_prototype: None,
-                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                     name: None,
                     visible: None,
                     link: None,
@@ -450,9 +477,8 @@ impl<'a> Projector<'a> {
                         prototype: PrototypeReference::Local { definition },
                         parent: OccurrenceParent::Root {},
                         ordinal: 0,
-                        transform: cadmpeg_ir::transform::Transform::identity(),
+                        transform: Some(cadmpeg_ir::transform::Transform::identity()),
                         linked_prototype: None,
-                        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                         name: None,
                         visible: None,
                         link: None,
@@ -622,19 +648,15 @@ impl<'a> Projector<'a> {
                         native_id.clone()
                     };
                     if nested {
-                        let transform = operation_placements
-                            .get(carrier.id.as_str())
-                            .copied()
-                            .map_or_else(
-                                || {
-                                    neutral_transform(
-                                        carrier
-                                            .transform()
-                                            .map_or(IDENTITY, |frame| frame.value.into()),
-                                    )
-                                },
-                                Ok,
-                            )?;
+                        let transform = match operation_placements.get(carrier.id.as_str()).copied()
+                        {
+                            Some(placement) => placement,
+                            None => Some(neutral_transform(
+                                carrier
+                                    .transform()
+                                    .map_or(IDENTITY, |frame| frame.value.into()),
+                            )?),
+                        };
                         let definition = self.naming_space_definition(stream, target);
                         self.occurrences.insert(
                             id.as_str().to_owned(),
@@ -648,7 +670,6 @@ impl<'a> Projector<'a> {
                                     ordinal: 0,
                                     transform,
                                     linked_prototype: None,
-                                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                                     name: None,
                                     visible: None,
                                     link: None,
@@ -1092,9 +1113,8 @@ impl ComponentInserts {
                 prototype: PrototypeReference::Unresolved {},
                 parent: OccurrenceParent::Root {},
                 ordinal,
-                transform: insert.transform,
+                transform: Some(insert.transform),
                 linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
                 name: Some(insert.name.clone()),
                 visible: None,
                 link: None,
@@ -1102,6 +1122,11 @@ impl ComponentInserts {
             });
         }
         Ok(occurrences)
+    }
+
+    /// Source occurrence records whose model content has no typed projection.
+    pub(crate) fn has_untyped_occurrences(&self) -> bool {
+        self.unplaced != 0 || self.unordered != 0
     }
 
     /// Losses for the inserts that project no occurrence.
@@ -1187,7 +1212,7 @@ pub(crate) fn neutral_transform(
 ) -> Result<cadmpeg_ir::transform::Transform, cadmpeg_core::CodecError> {
     neutral_affine(transform).ok_or_else(|| {
         cadmpeg_core::CodecError::NotImplemented(
-            "F3D placement must project to a finite affine transform".into(),
+            "F3D placement is not a finite affine transform".into(),
         )
     })
 }
@@ -1298,20 +1323,34 @@ mod tests {
     }
 
     fn binding(offset: u64, entity_suffix: u64, body: &str) -> DesignBodyBinding {
-        serde_json::from_value(serde_json::json!({
-            "id": format!("{STREAM}:design-body-binding#{offset}"),
-            "stream": "Design/BulkStream.dat",
-            "pair_count": 1,
-            "pair_ordinal": 0,
-            "asm_body_key": 11,
-            "asm_body_key_offset": offset,
-            "entity_suffix": entity_suffix,
-            "entity_suffix_offset": offset + 8,
-            "blob_name": "BREP.",
-            "blob_name_offset": offset + 32,
-            "body": body,
-            "component_owner": crate::records::body_ownership::membership(&ownership_layout(entity_suffix, if entity_suffix < DOCUMENT_ROOT { 159 } else { 276 })).unwrap().proof(900, 0, 0).unwrap(),
-        }))
+        DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
+            id: format!("{STREAM}:design-body-binding#{offset}"),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            map_ordinal: 0,
+            asm_body_key: 11,
+            asm_body_key_offset: offset,
+            entity_suffix,
+            entity_suffix_offset: offset + 8,
+            blob_name: "BREP.".into(),
+            blob_name_offset: offset + 32,
+            body: Some(body.try_into().unwrap()),
+            component_owner: Some(
+                crate::records::body_ownership::membership(&ownership_layout(
+                    entity_suffix,
+                    if entity_suffix < DOCUMENT_ROOT {
+                        159
+                    } else {
+                        276
+                    },
+                ))
+                .unwrap()
+                .proof(900, 0, 0)
+                .unwrap(),
+            ),
+            component_owner_unresolved: false,
+        })
         .unwrap()
     }
 
@@ -1487,13 +1526,18 @@ mod tests {
                     child.id,
                     crate::ids::nested_xref_occurrence_id(&parent, 0, 0)
                 );
-                assert_eq!(child.transform.rows()[0][3], 20.0);
+                assert_eq!(child.transform.unwrap().rows()[0][3], 20.0);
                 let parent = local
                     .occurrences
                     .iter()
                     .find(|occurrence| occurrence.id == parent)
                     .unwrap();
-                let world = parent.transform.compose(child.transform).unwrap().rows();
+                let world = parent
+                    .transform
+                    .unwrap()
+                    .compose(child.transform.unwrap())
+                    .unwrap()
+                    .rows();
                 assert_eq!(
                     [world[0][3], world[1][3]],
                     if index == 0 {
@@ -1543,7 +1587,10 @@ mod tests {
             let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
             assert_eq!(projection.occurrences.len(), 1);
             assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
-            assert_eq!(projection.occurrences[0].transform.rows()[0][3], 20.0);
+            assert_eq!(
+                projection.occurrences[0].transform.unwrap().rows()[0][3],
+                20.0
+            );
             assert_eq!(projection.losses.len(), usize::from(unresolved));
             if unresolved {
                 assert_eq!(
@@ -1599,7 +1646,7 @@ mod tests {
             .find(|occurrence| occurrence.native_ref.is_some())
             .unwrap();
         assert_eq!(
-            occurrence.transform.rows(),
+            occurrence.transform.unwrap().rows(),
             [
                 [0.0, -1.0, 0.0, 20.0],
                 [1.0, 0.0, 0.0, 30.0],
@@ -1847,7 +1894,7 @@ mod tests {
         );
         assert_eq!(
             root_occurrence.transform,
-            cadmpeg_ir::transform::Transform::identity()
+            Some(cadmpeg_ir::transform::Transform::identity())
         );
         let in_root = OccurrenceParent::Occurrence {
             occurrence: root_occurrence.id.clone(),
@@ -1866,9 +1913,12 @@ mod tests {
         }
         assert_eq!(
             first.transform,
-            cadmpeg_ir::transform::Transform::identity()
+            Some(cadmpeg_ir::transform::Transform::identity())
         );
-        let rows = second.transform.rows();
+        let rows = second
+            .transform
+            .expect("source occurrence placement")
+            .rows();
         let expected = [
             [0.0, -1.0, 0.0, 4.2],
             [1.0, 0.0, 0.0, 9.8],
@@ -2116,6 +2166,7 @@ mod tests {
                 .find(|occurrence| &occurrence.id == id)
                 .unwrap()
                 .transform
+                .unwrap()
                 .rows()
         };
         let rows = transform(&parent);
@@ -2331,7 +2382,7 @@ mod tests {
                 component_guid: carriers[2].component_guid.clone(),
                 occurrence_guid: carriers[2].occurrence_guid.clone(),
                 transform: transform.try_into().unwrap(),
-                transform_offset: 0,
+                transform_offset: Some(0),
             });
         }
         let bodies = BTreeSet::new();
@@ -2365,7 +2416,8 @@ mod tests {
         assert!((rows[0][3] - 30.0).abs() < TOLERANCE);
         assert!((rows[1][3] - 60.0).abs() < TOLERANCE);
         assert!(
-            (graph.occurrence(&child).unwrap().transform.rows()[0][3] - 20.0).abs() < TOLERANCE
+            (graph.occurrence(&child).unwrap().transform.unwrap().rows()[0][3] - 20.0).abs()
+                < TOLERANCE
         );
     }
 
@@ -2534,9 +2586,9 @@ mod tests {
                 source_occurrence_guid: SOURCE.to_owned().try_into().expect("GUID"),
                 copied_occurrence_guid: COPY.to_owned().try_into().expect("GUID"),
                 source_transform: identity_matrix().try_into().unwrap(),
-                source_transform_offset: 0,
+                source_transform_offset: Some(0),
                 copied_transform: identity_matrix().try_into().unwrap(),
-                copied_transform_offset: 0,
+                copied_transform_offset: Some(0),
             });
         }
 
@@ -2571,7 +2623,7 @@ mod tests {
                 component_guid: COMPONENT.to_owned().try_into().expect("GUID"),
                 occurrence_guid: OCCURRENCE.to_owned().try_into().expect("GUID"),
                 transform: identity_matrix().try_into().unwrap(),
-                transform_offset: 473,
+                transform_offset: Some(473),
             });
         }
         let native_occurrence = DesignComponentOccurrence::try_new(
@@ -2612,6 +2664,7 @@ mod tests {
         ));
 
         let mut feature = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
             ordinal: 1,
             name: None,
@@ -2624,7 +2677,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "DerivedInstance".into(),
-                    parameters: std::collections::BTreeMap::new(),
+                    parameters: (std::collections::BTreeMap::new()),
                 }),
             ),
             native_ref: None,
@@ -2679,7 +2732,7 @@ mod tests {
                     carrier_record_index: record_index + 2,
                     occurrence_identity: None,
                     neutron_role: role.into(),
-                    neutron_role_offset: 0,
+                    neutron_role_offset: Some(0),
                     placement: None,
                 },
             );
@@ -2703,11 +2756,11 @@ mod tests {
         {
             construction.placement = Some(
                 crate::records::feature::assembly_features::DesignComponentInsertMatrix {
-                    scope: crate::records::identity::Located {
+                    scope: crate::records::identity::Sourced {
                         value: matrix.try_into().unwrap(),
-                        offset: 0,
+                        offset: Some(0),
                     },
-                    carrier_offset: None,
+                    carrier: None,
                 },
             );
         }
@@ -2800,6 +2853,7 @@ mod tests {
                     }),
                 ),
                 native_ref: Some(scope.id.clone()),
+                needs_recompute: false,
             };
             let losses = crate::xref::bind_component_insert_features(
                 std::slice::from_mut(&mut feature),
@@ -2914,7 +2968,10 @@ mod tests {
             Some(placed.id.as_str())
         );
         assert_eq!(
-            occurrences[0].transform.rows()[0][3],
+            occurrences[0]
+                .transform
+                .expect("source occurrence placement")
+                .rows()[0][3],
             10.0,
             "translation projects to millimetres"
         );
@@ -2936,6 +2993,7 @@ mod tests {
         );
         let occurrences = inserts.unresolved_occurrences(0).unwrap();
         let mut feature = Feature {
+            needs_recompute: false,
             id: FeatureId::mint("f3d:model:feature#insert").expect("identity grammar"),
             ordinal: 1,
             name: None,
@@ -2948,7 +3006,7 @@ mod tests {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: "ComponentInsert".into(),
-                    parameters: std::collections::BTreeMap::new(),
+                    parameters: (std::collections::BTreeMap::new()),
                 }),
             ),
             native_ref: Some(scope.id.clone()),

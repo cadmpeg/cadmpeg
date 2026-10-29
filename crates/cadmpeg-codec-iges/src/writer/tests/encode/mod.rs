@@ -78,12 +78,10 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 }),
             "{version:?} output has no Type 102 entity"
         );
-        assert!(round_trip.ir().model.curves.iter().any(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .and_then(|source| source.name.as_deref())
-                == Some("COMPOSIT")
+        assert!(round_trip.ir().model.attributes.iter().any(|attribute| {
+            attribute.name == "name"
+                && attribute.values == [Some(cadmpeg_ir::attributes::AttributeValue::String("COMPOSIT".to_owned()))]
+                && matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if round_trip.ir().model.curves.iter().any(|curve| curve.id == *id))
         }));
         let validation =
             cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
@@ -226,6 +224,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
+            native_ref: None,
             id: SurfaceId::mint(format!("test:model:surface#{version:?}"))
                 .expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -298,13 +297,9 @@ fn encode_rejects_open_shells_before_iges_5_3() {
         )
         .unwrap();
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
-        let error = plan_at(version, decoded.ir(), None)
-            .expect_err("legacy target must reject an open shell");
-        assert!(
-            error
-                .to_string()
-                .contains("does not define emitted entity Type 514 Form 2"),
-            "{version:?}: {error}"
+        crate::writer::tests::assert_degraded_plan(
+            plan_at(version, decoded.ir(), None),
+            "does not define emitted entity Type 514 Form 2",
         );
     }
 }
@@ -423,38 +418,32 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
 }
 
 #[test]
-fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
+fn encode_omits_unsupported_curve_geometry_with_an_error_loss() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("unsupported curve geometry was accepted")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("does not encode this curve geometry"),
-        "{error}"
+    super::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, &ir, None),
+        "does not encode this curve geometry",
     );
 }
 
 #[test]
-fn encode_refuses_an_empty_source_less_model() {
+fn encode_writes_an_empty_source_less_model_with_a_loss() {
     let ir = CadIr::empty();
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("empty semantic output was accepted")
-    };
-    assert!(
-        error.to_string().contains("refuses an empty model"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("an empty document is writable");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
 }
 
 #[test]
-fn encode_refuses_a_native_curve_without_neutral_geometry() {
+fn encode_neutral_deletion_overrides_a_native_curve_without_neutral_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
@@ -467,19 +456,23 @@ fn encode_refuses_a_native_curve_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native curve was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native curve entity D1 without neutral geometry"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None)
+        .expect("neutral deletions take precedence over retained native records");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.curves.is_empty());
 }
 
 #[test]
-fn encode_refuses_a_native_point_without_neutral_geometry() {
+fn encode_neutral_deletion_overrides_a_native_point_without_neutral_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
         .unwrap();
@@ -490,34 +483,42 @@ fn encode_refuses_a_native_point_without_neutral_geometry() {
     ir.model.regions.clear();
     ir.model.shells.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native point was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native point entity D1 without neutral geometry"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None)
+        .expect("neutral deletions take precedence over retained native records");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.points.is_empty());
 }
 
 #[test]
-fn encode_refuses_a_native_surface_without_neutral_geometry() {
+fn encode_neutral_deletion_overrides_a_native_surface_without_neutral_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.model.surfaces.clear();
 
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("native surface was silently omitted from semantic output")
-    };
-    assert!(
-        error
-            .to_string()
-            .contains("native surface entity D1 without neutral geometry"),
-        "{error}"
-    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None)
+        .expect("neutral deletions take precedence over retained native records");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::NoExportableSolids.kind() }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.surfaces.is_empty());
 }
 
 #[test]
@@ -576,6 +577,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#plane").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -588,6 +590,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#nurbs").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
@@ -735,6 +738,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -748,6 +752,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                 cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -763,6 +768,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -776,6 +782,7 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
             source_object: None,
         },
         Surface {
+            native_ref: None,
             id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
                 cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
@@ -791,13 +798,9 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         },
     ]);
 
-    let error = plan_at(IgesVersion::V5_3, &ir, None)
-        .expect_err("standalone pointer-defined analytic surface must be refused");
-    assert!(
-        error.to_string().contains(
-            "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
-        ),
-        "{error}"
+    crate::writer::tests::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, &ir, None),
+        "requires B-rep topology",
     );
 }
 
@@ -811,6 +814,7 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.surfaces.push(Surface {
+        native_ref: None,
         id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -824,13 +828,9 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         source_object: None,
     });
 
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("free analytic surface must not inherit B-rep eligibility");
-    assert!(
-        error
-            .to_string()
-            .contains("analytic surface test:model:surface#free-sphere requires B-rep topology"),
-        "{error}"
+    crate::writer::tests::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, decoded.ir(), None),
+        "requires B-rep topology",
     );
 }
 
@@ -843,13 +843,9 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
         )
         .unwrap();
 
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("a cylindrical face without axial bounds must be refused");
-    assert!(
-        error
-            .to_string()
-            .contains("boundary loop that repeats one seam edge without axial bounds"),
-        "{error}"
+    crate::writer::tests::assert_degraded_plan(
+        plan_at(IgesVersion::V5_3, decoded.ir(), None),
+        "without axial bounds",
     );
 }
 
@@ -899,6 +895,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -918,6 +915,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             None,
         ));
         ir.model.vertices.push(Vertex {
+            native_ref: None,
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
             tolerance: None,
@@ -926,6 +924,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     for index in 0..4 {
         let end = (index + 1) % 4;
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve_ids[index].clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -938,6 +937,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             source_object: None,
         });
         ir.model.edges.push(Edge {
+            native_ref: None,
             id: edge_ids[index].clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_ids[index].clone()),
@@ -959,6 +959,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             Point2::new(end_position.x, end_position.y)
         };
         ir.model.pcurves.push(Pcurve {
+            native_ref: None,
             id: pcurve_ids[index].clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::from_lanes(
@@ -988,6 +989,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             let split_pcurve_id =
                 PcurveId::mint("test:model:pcurve#sheet:split").expect("identity grammar");
             ir.model.pcurves.push(Pcurve {
+                native_ref: None,
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {
                     nurbs: PcurveNurbs::from_lanes(
@@ -1015,6 +1017,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             });
         }
         ir.model.coedges.push(Coedge {
+            native_ref: None,
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_ids[index].clone(),
@@ -1025,6 +1028,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         });
     }
     ir.model.loops.push(Loop {
+        native_ref: None,
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1033,6 +1037,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         ),
     });
     ir.model.faces.push(Face {
+        native_ref: None,
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: surface_id,
@@ -1048,11 +1053,13 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         face_id,
     ));
     ir.model.regions.push(Region {
+        native_ref: None,
         id: region_id,
         body: body_id.clone(),
         shells: vec![shell_id],
     });
     ir.model.bodies.push(Body {
+        native_ref: None,
         id: body_id,
         kind: BodyKind::Sheet,
         regions: vec![RegionId::mint("test:model:region#sheet").expect("identity grammar")],
@@ -1559,6 +1566,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
     let end_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, end).unwrap();
     let pcurve_id = PcurveId::mint("test:model:pcurve#brep:source-less").expect("identity grammar");
     decoded.ir_mut().model.pcurves.push(Pcurve {
+        native_ref: None,
         id: pcurve_id.clone(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(

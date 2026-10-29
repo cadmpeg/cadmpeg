@@ -10,6 +10,30 @@ use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+// Configuration records store differences, so these unchanged definition
+// snapshots are errors even after their reference dependencies resolve.
+fn assert_redundant_configuration_definitions(
+    report: &crate::report::check::ValidationReport,
+    configuration: &str,
+    features: &[&str],
+) {
+    assert_eq!(
+        report.findings.len(),
+        features.len(),
+        "{:#?}",
+        report.findings
+    );
+    for feature in features {
+        assert!(report.findings.iter().any(|finding| {
+            finding.check == crate::report::check::Check::ReferentialIntegrity
+                && finding.severity == crate::report::Severity::Error
+                && finding.entity.as_deref() == Some(configuration)
+                && finding.related == [*feature]
+                && finding.message == "inactive configuration repeats the base feature state instead of storing a difference"
+        }), "{:#?}", report.findings);
+    }
+}
+
 #[test]
 fn historical_vertex_selection_requires_input_state_membership() {
     use crate::features::{
@@ -48,6 +72,8 @@ fn historical_vertex_selection_requires_input_state_membership() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+
+        needs_recompute: false,
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
@@ -131,7 +157,9 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
-                        length: crate::scalar::NonZeroLength::new(10.0).unwrap(),
+                        length: crate::features::Dimension::Literal(
+                            crate::scalar::NonZeroLength::new(10.0).unwrap(),
+                        ),
                     },
                     draft: None,
                 },
@@ -185,6 +213,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
         native_ref: None,
     });
@@ -201,7 +231,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 }
 
 #[test]
-fn feature_history_rejects_dangling_and_forward_dependencies() {
+fn feature_history_preserves_cycles_and_rejects_dangling_records() {
     use crate::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition,
         FeatureId, FeatureOperation, FeatureSourceContent, LinearTermination, ParameterId,
@@ -229,6 +259,8 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ])
         .try_into()
         .unwrap(),
+
+        needs_recompute: false,
 
         evaluation: crate::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -276,6 +308,8 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Marker".into(),
@@ -287,7 +321,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
     ir.finalize();
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     for fragment in [
-        "does not precede",
+        "dependency cycle",
         "missing output body",
         "missing profile face",
         "missing termination face",
@@ -325,6 +359,8 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
@@ -341,9 +377,9 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             ordinal: 0,
             name: name.into(),
             expression: "1mm".into(),
+            driving: true,
             display: None,
             value: None,
-            dependencies: crate::features::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -362,7 +398,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
 }
 
 #[test]
-fn parameter_dependencies_must_exist_and_precede_consumers() {
+fn parameter_token_dependencies_must_resolve_and_preserve_forward_references() {
     use crate::features::{
         DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
     };
@@ -381,6 +417,8 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+
+        needs_recompute: false,
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -405,10 +443,15 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             owner: Some(owner.clone()),
             ordinal,
             name: format!("P{ordinal}"),
-            expression: String::new(),
+            expression: crate::features::Expression {
+                tokens: dependencies
+                    .into_iter()
+                    .map(crate::features::ExpressionToken::Parameter)
+                    .collect(),
+            },
+            driving: true,
             display: None,
             value: None,
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -417,17 +460,17 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
     let findings = validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings;
-    assert!(findings
+    assert!(!findings
         .iter()
         .any(|finding| finding.message.contains("does not precede its consumer")));
-    let dependency_order = findings
-        .iter()
-        .find(|finding| finding.message.contains("does not precede its consumer"))
-        .expect("dependency order finding");
-    assert_eq!(dependency_order.entity.as_deref(), Some(first.as_str()));
     assert_eq!(
-        dependency_order.related,
-        vec!["synthetic:test:parameter#second"]
+        ir.model.parameters[0]
+            .expression
+            .dependencies()
+            .next()
+            .unwrap()
+            .as_str(),
+        "synthetic:test:parameter#second"
     );
     let missing = findings
         .iter()
@@ -465,6 +508,8 @@ fn document_parameters_can_feed_feature_parameters() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
@@ -481,9 +526,9 @@ fn document_parameters_can_feed_feature_parameters() {
         ordinal: 0,
         name: "Width".into(),
         expression: "60 mm".into(),
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -493,10 +538,15 @@ fn document_parameters_can_feed_feature_parameters() {
         owner: Some(owner),
         ordinal: 0,
         name: "Distance".into(),
-        expression: "Width / 2".into(),
+        expression: crate::features::Expression {
+            tokens: vec![
+                crate::features::ExpressionToken::Parameter(document),
+                crate::features::ExpressionToken::Text(" / 2".into()),
+            ],
+        },
+        driving: true,
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::try_from(vec![document]).unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -520,6 +570,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
     let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -539,7 +590,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
             reference: Some(DatumPlaneReference::Feature {
                 feature: principal.clone(),
             }),
-            distance: Length::new(5.0).unwrap(),
+            distance: crate::features::Dimension::Literal(Length::new(5.0).unwrap()),
         }),
     ));
     ir.model.features.push(feature(
@@ -568,7 +619,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::DatumOffsetPlane {
                 reference: Some(DatumPlaneReference::Feature { feature: offset }),
-                distance: Length::new(5.0).unwrap(),
+                distance: crate::features::Dimension::Literal(Length::new(5.0).unwrap()),
             },
         ));
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
@@ -627,6 +678,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -645,6 +698,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+
+        needs_recompute: false,
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -694,12 +749,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         parameter_values: BTreeMap::new(),
         feature_states: BTreeMap::from([(
             extrude.clone(),
-            ConfigurationFeatureState {
-                evaluation: crate::features::ConfigurationEvaluation::Active {
-                    outputs: crate::features::DistinctMembers::default(),
-                },
-                dependencies: crate::features::DistinctMembers::default(),
-                definition: ir.model.features[1].evaluation.definition().clone(),
+            ConfigurationFeatureState::Definition {
+                definition: Box::new(ir.model.features[1].evaluation.definition().clone()),
             },
         )]),
         native_ref: None,
@@ -710,25 +761,18 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .findings
         .iter()
         .any(|finding| finding.message == message));
-    let configuration_message = format!(
-        "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-        extrude.as_str(),
-        source.as_str()
+    // Configuration differences hold the definition itself; dependency and
+    // output snapshots are not a second authoritative graph.
+    let state = &ir.model.configurations[0].feature_states[&extrude];
+    assert!(state.definition().is_some());
+    let wire = serde_json::to_value(state).unwrap();
+    assert!(wire.get("dependencies").is_none());
+    assert!(wire.get("outputs").is_none());
+    assert_redundant_configuration_definitions(
+        &validate_neutral(&ir, Vec::new()).unwrap(),
+        "synthetic:test:configuration#vertex",
+        &[extrude.as_str()],
     );
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .findings
-        .iter()
-        .any(|finding| finding.message == configuration_message));
-
-    let state = ir.model.configurations[0]
-        .feature_states
-        .get_mut(&extrude)
-        .expect("configured extrude");
-    state.dependencies.insert(source);
-    assert!(validate_neutral(&ir, Vec::new())
-        .expect("validate the neutral model")
-        .is_ok());
 }
 
 #[test]
@@ -751,6 +795,8 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
                 position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -769,6 +815,8 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+
+        needs_recompute: false,
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
@@ -828,6 +876,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     let profile =
         FeatureId::mint("synthetic:test:feature#6-profile-consumer").expect("identity grammar");
     let feature = |id, ordinal, definition| Feature {
+        needs_recompute: false,
         id,
         ordinal,
         name: None,
@@ -861,7 +910,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 reference: Some(DatumPlaneReference::Feature {
                     feature: source.clone(),
                 }),
-                distance: Length::new(5.0).unwrap(),
+                distance: crate::features::Dimension::Literal(Length::new(5.0).unwrap()),
             }),
         ),
         feature(
@@ -916,7 +965,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: crate::scalar::NonZeroLength::new(5.0).unwrap(),
+                            length: crate::features::Dimension::Literal(
+                                crate::scalar::NonZeroLength::new(5.0).unwrap(),
+                            ),
                         },
                         draft: None,
                     },
@@ -956,12 +1007,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         .map(|(feature, index)| {
             (
                 feature,
-                ConfigurationFeatureState {
-                    evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: crate::features::DistinctMembers::default(),
-                    },
-                    dependencies: crate::features::DistinctMembers::default(),
-                    definition: ir.model.features[index].evaluation.definition().clone(),
+                ConfigurationFeatureState::Definition {
+                    definition: Box::new(ir.model.features[index].evaluation.definition().clone()),
                 },
             )
         })
@@ -983,37 +1030,25 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         "sketch block instance omits block feature `{}` from its dependencies",
         block.as_str()
     )));
-    for feature in [&offset, &derived, &pattern, &profile] {
-        assert!(findings.contains(&format!(
-            "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-            feature.as_str(),
-            source.as_str()
-        )));
+    for state in ir.model.configurations[0].feature_states.values() {
+        let wire = serde_json::to_value(state).unwrap();
+        assert!(wire.get("dependencies").is_none());
+        assert!(wire.get("outputs").is_none());
     }
-    assert!(findings.contains(&format!(
-        "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-        instance.as_str(),
-        block.as_str()
-    )));
-
     ir.model.features[1].dependencies.insert(source.clone());
     ir.model.features[5].dependencies.insert(block.clone());
-    for feature in [&offset, &derived, &pattern, &profile] {
-        ir.model.configurations[0]
-            .feature_states
-            .get_mut(feature)
-            .expect("configuration feature state")
-            .dependencies
-            .insert(source.clone());
-    }
-    ir.model.configurations[0]
-        .feature_states
-        .get_mut(&instance)
-        .expect("block-instance state")
-        .dependencies
-        .insert(block);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
-    assert!(report.is_ok(), "{:#?}", report.findings);
+    assert_redundant_configuration_definitions(
+        &report,
+        "synthetic:test:configuration#offset-plane",
+        &[
+            offset.as_str(),
+            derived.as_str(),
+            pattern.as_str(),
+            instance.as_str(),
+            profile.as_str(),
+        ],
+    );
 }
 
 #[test]
@@ -1036,6 +1071,8 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+
+        needs_recompute: false,
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1073,6 +1110,8 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
+
+        needs_recompute: false,
 
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -1144,6 +1183,8 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::ReferenceImage {
                 asset: asset_id,
@@ -1161,7 +1202,9 @@ fn reference_images_require_valid_assets_and_plane_placements() {
                     Point2::new(10.0, 5.0),
                 ])
                 .unwrap(),
-                opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
+                opacity: Some(crate::features::Dimension::Literal(
+                    crate::scalar::Fraction::new(0.75).unwrap(),
+                )),
             }),
         ),
         native_ref: None,
@@ -1217,12 +1260,16 @@ fn decals_require_valid_assets_faces_and_opacity() {
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
+        needs_recompute: false,
+
         evaluation: crate::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Decal {
                 asset: asset_id,
                 faces: FaceSelection::Faces(vec![face_id]),
                 mapping: DecalMapping::FitToFaces,
-                opacity: Some(crate::scalar::Fraction::new(0.75).unwrap()),
+                opacity: Some(crate::features::Dimension::Literal(
+                    crate::scalar::Fraction::new(0.75).unwrap(),
+                )),
             }),
         ),
         native_ref: None,
@@ -1266,6 +1313,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
             native_ref: None,
         });
     ir.model.features.push(Feature {
+        needs_recompute: false,
         id: feature_id,
         ordinal: 0,
         name: None,

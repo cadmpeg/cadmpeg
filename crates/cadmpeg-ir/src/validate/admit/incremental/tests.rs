@@ -43,10 +43,6 @@ fn sourced_point(id: &str) -> crate::topology::Point {
         format: crate::CodecFormat::Rhino,
         geometry_role: None,
         object_id: cadmpeg_core::nonblank_literal!("synthetic"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     });
     point
@@ -80,6 +76,7 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
             "test:model:vertex#rejected"
         };
         candidate.model.vertices.push(crate::topology::Vertex {
+            native_ref: None,
             id: id.try_into().unwrap(),
             point: target.try_into().unwrap(),
             tolerance: None,
@@ -103,11 +100,13 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
                 id.try_into().unwrap(),
             ));
         candidate.model.regions.push(crate::topology::Region {
+            native_ref: None,
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id],
         });
         candidate.model.bodies.push(crate::topology::Body {
+            native_ref: None,
             id: body_id,
             kind: crate::topology::BodyKind::General,
             regions: vec![region_id],

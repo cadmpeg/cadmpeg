@@ -46,6 +46,83 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
+/// Canonicalize only declared references and retain every referenced geometric
+/// payload. Record indices may change during synthesis; graph aliasing and all
+/// construction parameters and carrier values must survive.
+fn construction_graph<T>(ir: &cadmpeg_ir::CadIr, value: T) -> serde_json::Value
+where
+    T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities + serde::Serialize,
+{
+    fn rewrite<T>(value: T, refs: &mut Vec<String>) -> serde_json::Value
+    where
+        T: cadmpeg_ir::schema::rewrite::typed::RewriteIdentities + serde::Serialize,
+    {
+        let value = cadmpeg_ir::schema::rewrite::identities(
+            &cadmpeg_test_support::service_decode_context(),
+            value,
+            |id| {
+                let index = match refs.iter().position(|known| known == id) {
+                    Some(index) => index,
+                    None => {
+                        refs.push(id.to_owned());
+                        refs.len() - 1
+                    }
+                };
+                Ok(format!("test:geometry:reference#{index}"))
+            },
+        )
+        .expect("typed geometry reference rewrite");
+        serde_json::to_value(value).expect("typed geometry serialization")
+    }
+    let mut refs = Vec::new();
+    let root = rewrite(value, &mut refs);
+    let mut records = Vec::new();
+    let mut index = 0;
+    while index < refs.len() {
+        let id = refs[index].clone();
+        let (kind, payload) = if let Some(record) = ir
+            .model
+            .curves
+            .iter()
+            .find(|record| record.id.as_str() == id)
+        {
+            ("curve", rewrite(record.geometry.clone(), &mut refs))
+        } else if let Some(record) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|record| record.id.as_str() == id)
+        {
+            ("surface", rewrite(record.geometry.clone(), &mut refs))
+        } else if let Some(record) = ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|record| record.id.as_str() == id)
+        {
+            (
+                "procedural_curve",
+                rewrite(record.definition().clone(), &mut refs),
+            )
+        } else if let Some(record) = ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|record| record.id.as_str() == id)
+        {
+            (
+                "procedural_surface",
+                rewrite(record.definition().clone(), &mut refs),
+            )
+        } else {
+            panic!("construction references missing typed geometry {id}");
+        };
+        records.push((kind, payload));
+        index += 1;
+    }
+    serde_json::json!({"root": root, "references": records})
+}
+
 #[test]
 fn transform_decodes_column_major_basis_and_scaled_translation() {
     use cadmpeg_asm::sab::{Record, Token};
@@ -236,8 +313,13 @@ fn decode_retains_generated_helix_construction() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated helix decode");
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        &edited_definition
+        construction_graph(
+            regenerated.ir(),
+            regenerated.ir().model.procedural_curves[0]
+                .definition()
+                .clone()
+        ),
+        construction_graph(&edited, edited_definition)
     );
     assert_eq!(
         regenerated.ir().model.procedural_curves[0]
@@ -245,12 +327,20 @@ fn decode_retains_generated_helix_construction() {
             .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.012)
     );
-    assert!(regenerated
+    let regenerated_owner = regenerated
+        .ir()
+        .model
+        .procedural_curve_owner(&regenerated.ir().model.procedural_curves[0].id)
+        .expect("regenerated helix has a solved carrier owner");
+    let regenerated_cache = &regenerated
         .ir()
         .model
         .curves
         .iter()
-        .any(|curve| curve.geometry == edited_cache));
+        .find(|curve| curve.id == *regenerated_owner)
+        .expect("helix carrier")
+        .geometry;
+    assert_eq!(regenerated_cache.solved(), edited_cache.solved());
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -504,8 +594,13 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated vector-offset decode");
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        &edited_definition
+        construction_graph(
+            regenerated.ir(),
+            regenerated.ir().model.procedural_curves[0]
+                .definition()
+                .clone()
+        ),
+        construction_graph(&edited, edited_definition)
     );
     assert_eq!(
         regenerated.ir().model.procedural_curves[0]
@@ -666,8 +761,13 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated subset decode");
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        &expected_edit
+        construction_graph(
+            regenerated.ir(),
+            regenerated.ir().model.procedural_curves[0]
+                .definition()
+                .clone()
+        ),
+        construction_graph(&edited, expected_edit)
     );
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1120,8 +1220,13 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated compound intcurve decode");
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        &expected_edit
+        construction_graph(
+            regenerated.ir(),
+            regenerated.ir().model.procedural_curves[0]
+                .definition()
+                .clone()
+        ),
+        construction_graph(&edited, expected_edit)
     );
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1290,8 +1395,13 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated two-sided offset decode");
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].definition(),
-        &expected_edit
+        construction_graph(
+            regenerated.ir(),
+            regenerated.ir().model.procedural_curves[0]
+                .definition()
+                .clone()
+        ),
+        construction_graph(&edited, expected_edit)
     );
 
     let (mut source_less, _, _) = result.into_parts();
@@ -1418,8 +1528,13 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         .decode(&mut Cursor::new(retained_bytes), &DecodeOptions::default())
         .expect("retained embedded offset-support round trip");
     assert_eq!(
-        retained_round_trip.ir().model.procedural_curves[0].definition(),
-        &expected_retained
+        construction_graph(
+            retained_round_trip.ir(),
+            retained_round_trip.ir().model.procedural_curves[0]
+                .definition()
+                .clone()
+        ),
+        construction_graph(&retained, expected_retained)
     );
 
     let (mut source_less, _, _) = result.into_parts();

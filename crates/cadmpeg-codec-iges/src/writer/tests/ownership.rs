@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact domains and source dependencies at semantic export.
 #![allow(clippy::unwrap_used)]
+use crate::loss::IgesLossCode;
+
 use crate::{IgesCodec, IgesVersion};
 use cadmpeg_ir::codec::{
     write::{target::TargetRequest, EncodeInput, Encoder},
@@ -34,6 +36,7 @@ fn rectangle() -> CadIr {
     let mut ir = CadIr::empty();
     let id = "test:model:surface#rectangle".try_into().unwrap();
     ir.model.surfaces.push(Surface {
+        native_ref: None,
         id,
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(basis)),
         source_object: None,
@@ -102,10 +105,6 @@ fn support_association() -> SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Step,
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("support"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -160,10 +159,12 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
 fn support_only_surface_export_refuses_an_empty_transfer() {
     let mut ir = rectangle();
     ir.model.surfaces[0].source_object = Some(support_association());
-    assert!(matches!(
-        super::super::synthesize(&ir, IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3)
+        .expect("support-only geometry produces an empty valid file");
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::NoExportableSolids.kind()));
 }
 
 #[test]
@@ -174,10 +175,12 @@ fn support_only_point_export_refuses_an_empty_transfer() {
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    assert!(matches!(
-        super::super::synthesize(&ir, IgesVersion::V5_3),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3)
+        .expect("support-only geometry produces an empty valid file");
+    assert!(synthesis
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::NoExportableSolids.kind()));
 }
 
 #[test]
@@ -532,6 +535,7 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     .unwrap();
     let curve_id: cadmpeg_ir::ids::CurveId = "test:model:curve#duplicate".try_into().unwrap();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
         id: curve_id.clone(),
         geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(
             cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(carrier),

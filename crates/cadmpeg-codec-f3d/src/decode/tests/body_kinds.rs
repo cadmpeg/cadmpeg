@@ -80,11 +80,13 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
         None,
     ));
     ir.model.vertices.push(Vertex {
+        native_ref: None,
         id: vertex.clone(),
         point,
         tolerance: None,
     });
     ir.model.edges.push(Edge {
+        native_ref: None,
         id: edge.clone(),
         carrier: EdgeCarrier::Free,
         start: vertex.clone(),
@@ -92,6 +94,7 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
         tolerance: None,
     });
     ir.model.coedges.push(Coedge {
+        native_ref: None,
         id: coedge.clone(),
         owner_loop: apex_loop.clone(),
         edge,
@@ -101,6 +104,7 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
         use_curve: None,
     });
     ir.model.loops.push(Loop {
+        native_ref: None,
         id: apex_loop,
         face: top,
         boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge], Vec::new()).unwrap()),

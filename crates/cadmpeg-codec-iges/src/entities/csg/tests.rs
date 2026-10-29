@@ -51,6 +51,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     let curve_id = CurveId::mint("iges:model:curve#D1").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
+        native_ref: None,
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -78,21 +79,25 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     ]);
     ir.model.vertices.extend([
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#closed-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#closed-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#open-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#closed-point").expect("identity grammar"),
             tolerance: None,
         },
         Vertex {
+            native_ref: None,
             id: VertexId::mint("test:model:vertex#open-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#open-point").expect("identity grammar"),
             tolerance: None,
@@ -100,6 +105,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
     ]);
     ir.model.edges.extend([
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#closed-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve_id.clone()),
@@ -111,6 +117,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
             tolerance: None,
         },
         Edge {
+            native_ref: None,
             id: EdgeId::mint("test:model:edge#open-occurrence").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
                 .unwrap(),
@@ -162,6 +169,42 @@ fn decode_types_all_csg_primitive_solids_and_defaults() {
             ]
             .map(str::to_owned)
         )
+    );
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some("iges:solid:primitive#D5"))
+        .unwrap();
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Primitive { solid, .. },
+    ) = feature.evaluation.definition()
+    else {
+        panic!("the IGES wedge has a typed primitive construction");
+    };
+    let cadmpeg_ir::features::PrimitiveSolidKind::Wedge {
+        xmin,
+        ymin,
+        zmin,
+        x2min,
+        z2min,
+        xmax,
+        ymax,
+        zmax,
+        x2max,
+        z2max,
+    } = solid.kind()
+    else {
+        panic!("Type 152 maps to the wedge variant");
+    };
+    assert_eq!(
+        [xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max].map(|dimension| result
+            .ir()
+            .dimension_value(dimension)
+            .unwrap()
+            .get()),
+        [0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 3.0, 2.0, 1.0, 2.0]
     );
     assert!(
         result.report().losses.is_empty(),

@@ -79,6 +79,81 @@ pub(crate) fn fixture_with_ufrx(ufrx: &[u8]) -> Vec<u8> {
     file
 }
 
+/// Two independent, actual regular CFB property streams.
+pub(crate) fn fixture_with_property_set_peers(first: &[u8], second: &[u8]) -> Vec<u8> {
+    assert!(first.len() <= 4096 && second.len() <= 4096);
+    let mut file = fixture(true);
+    file.resize(3 * SECTOR_SIZE + 8192, 0);
+    let directory = sector_mut(&mut file, 0);
+    directory[2 * 128..2 * 128 + 64].fill(0);
+    directory_entry(directory, 2, "PropertiesA", 2, NO_STREAM, 2, 4096);
+    put_u32(directory, 128 + 72, 3);
+    directory_entry(directory, 3, "PropertiesZ", 2, NO_STREAM, 10, 4096);
+    directory[3 * 128 + 67] = 0;
+    let fat = sector_mut(&mut file, 1);
+    for sector in 2..18 {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector == 9 || sector == 17 {
+                END_OF_CHAIN
+            } else {
+                u32::try_from(sector + 1).expect("the fat sector index fits u32")
+            },
+        );
+    }
+    file[1536..1536 + first.len()].copy_from_slice(first);
+    file[5632..5632 + second.len()].copy_from_slice(second);
+    file
+}
+
+/// The existing field-authored `RSe` envelope plus a schema-15 model-state stream.
+pub(crate) fn model_state_envelope_fixture() -> Vec<u8> {
+    const STREAM_LEN: usize = 4096;
+    const DIRECTORY_INDEX: usize = 10;
+    let mut file = primary_envelope_fixture();
+    let bytes = crate::external_reference::model_state_fixture();
+    assert!(bytes.len() <= STREAM_LEN);
+    let start = file.len() / SECTOR_SIZE - 1;
+    let fat_sector = u32::from_le_bytes(file[76..80].try_into().expect("fixture value is valid"));
+    let fat_start =
+        SECTOR_SIZE * (usize::try_from(fat_sector).expect("fixture value is valid") + 1);
+    for ordinal in 0..STREAM_LEN / SECTOR_SIZE {
+        put_u32(
+            &mut file,
+            fat_start + (start + ordinal) * 4,
+            if ordinal + 1 == STREAM_LEN / SECTOR_SIZE {
+                END_OF_CHAIN
+            } else {
+                u32::try_from(start + ordinal + 1).expect("fixture value is valid")
+            },
+        );
+    }
+    // CFB directory names compare by UTF-16 length before text. UFRxDoc is
+    // shorter than RSeStorage, so it is the left sibling in the root tree.
+    put_u32(
+        &mut file,
+        SECTOR_SIZE + 128 + 68,
+        u32::try_from(DIRECTORY_INDEX).expect("fixture value is valid"),
+    );
+    directory_node(
+        &mut file[SECTOR_SIZE..4 * SECTOR_SIZE],
+        DIRECTORY_INDEX,
+        "UFRxDoc",
+        2,
+        NO_STREAM,
+        NO_STREAM,
+        NO_STREAM,
+        u32::try_from(start).expect("fixture value is valid"),
+        u64::try_from(STREAM_LEN).expect("fixture value is valid"),
+    );
+    file[SECTOR_SIZE + DIRECTORY_INDEX * 128 + 67] = 0;
+    let old_len = file.len();
+    file.resize(old_len + STREAM_LEN, 0);
+    file[old_len..old_len + bytes.len()].copy_from_slice(&bytes);
+    file
+}
+
 fn directory_entry(
     directory: &mut [u8],
     index: usize,
@@ -312,6 +387,88 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     methods: [u8; 2],
     base: Option<&BaseEnvelopeRecords>,
 ) -> Vec<u8> {
+    primary_envelope_with_segment(
+        declarations,
+        carrier,
+        design,
+        BodyBreaks {
+            database: break_database_body,
+            metadata: break_metadata_body,
+        },
+        methods,
+        &DESIGN_SEGMENT,
+        base,
+    )
+}
+
+/// Actual `AmDc` source metadata and compressed bodies for assembly controls.
+pub(crate) fn assembly_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
+    assembly_envelope(records, "AmDcSegment", "AmDcSegmentType")
+}
+
+pub(crate) fn assembly_graphics_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
+    assembly_envelope(records, "AmGRxSegment", "AmGRxSegmentType")
+}
+
+pub(crate) fn design_view_envelope_fixture(records: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
+    assembly_envelope(records, "FWxDesignView", "FWxDesignViewType")
+}
+
+pub(crate) fn presentation_envelope_fixture(
+    kind: &crate::rse::SegmentKind,
+    records: &[([u8; 16], Vec<u8>)],
+) -> Vec<u8> {
+    match kind {
+        crate::rse::SegmentKind::PmApp => {
+            assembly_envelope(records, "PmAppSegment", "PmAppSegmentType")
+        }
+        crate::rse::SegmentKind::PmGraphics => {
+            assembly_envelope(records, "PmGRxSegment", "PmGRxSegmentType")
+        }
+        _ => panic!("presentation fixture grammar"),
+    }
+}
+
+fn assembly_envelope(
+    records: &[([u8; 16], Vec<u8>)],
+    display_name: &'static str,
+    type_name: &'static str,
+) -> Vec<u8> {
+    let identity = SegmentIdentity {
+        display_name,
+        segment_id: [0x5b; 16],
+        type_name,
+    };
+    primary_envelope_with_segment(
+        EnvelopeDeclarations::default(),
+        &kernel_carrier_fixture(&[]),
+        records,
+        BodyBreaks {
+            database: false,
+            metadata: false,
+        },
+        [1, 1],
+        &identity,
+        None,
+    )
+}
+
+/// Which compressed bodies a fixture corrupts.
+#[derive(Clone, Copy)]
+struct BodyBreaks {
+    database: bool,
+    metadata: bool,
+}
+
+fn primary_envelope_with_segment(
+    declarations: EnvelopeDeclarations,
+    carrier: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
+    breaks: BodyBreaks,
+    methods: [u8; 2],
+    design_identity: &SegmentIdentity,
+    base: Option<&BaseEnvelopeRecords>,
+) -> Vec<u8> {
     const ROOT: usize = 0;
     const RSE_STORAGE: usize = 1;
     const V1: usize = 2;
@@ -328,6 +485,10 @@ fn primary_envelope_fixture_with_carrier_and_failures(
     const END_OF_CHAIN: u32 = 0xffff_fffe;
     const FREE_SECTOR: u32 = 0xffff_ffff;
     const FAT_SECTOR: u32 = 0xffff_fffd;
+    let BodyBreaks {
+        database: break_database_body,
+        metadata: break_metadata_body,
+    } = breaks;
 
     let mut brep_records = vec![(CARRIER_TYPE_ID, carrier)];
     if let Some(base) = base {
@@ -358,7 +519,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         registry_fixture(&[&BREP_SEGMENT], 18)
     } else {
         registry_fixture(
-            &[&BREP_SEGMENT, &DESIGN_SEGMENT],
+            &[&BREP_SEGMENT, design_identity],
             base.map_or(18, |base| base.design_version),
         )
     };
@@ -391,7 +552,7 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         streams.push((
             DESIGN_META,
             "Mdc",
-            meta_stream_fixture(&DESIGN_SEGMENT, &records, declarations, methods[0], base),
+            meta_stream_fixture(design_identity, &records, declarations, methods[0], base),
         ));
     }
 
@@ -1041,4 +1202,36 @@ pub(crate) fn parse<T>(bytes: &[u8], parser: impl FnOnce(&DecodeContext<'_>, Vie
     let policy = DecodePolicy::default();
     let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("view");
     parser(&ctx, source)
+}
+
+pub(crate) fn primary_envelope_fixture_with_revisions(revisions: &[u8]) -> Vec<u8> {
+    const MINI_SECTOR_SIZE: usize = 64;
+    const DIRECTORY_ENTRY_SIZE: usize = 128;
+    const STREAM_START: usize = 116;
+    const STREAM_LENGTH: usize = 120;
+    assert!(revisions.len() <= MINI_SECTOR_SIZE);
+    let mut file = primary_envelope_fixture();
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::service())
+        .expect("the fixture fits the service policy");
+    let snapshot = cadmpeg_container::compound::CompoundSnapshot::new(&ctx, root)
+        .expect("the fixture is a compound file");
+    let stream = snapshot
+        .stream("RSeStorage/RSeDbRevisionInfo")
+        .expect("the fixture holds the revision info stream");
+    let directory = SECTOR_SIZE
+        + cadmpeg_core::decode::index_from_u32(stream.id().directory_id()) * DIRECTORY_ENTRY_SIZE;
+    let root_mini_start = View::u32_le_at(&file, SECTOR_SIZE + STREAM_START)
+        .expect("the root entry carries a mini stream start");
+    let mini_start = View::u32_le_at(&file, directory + STREAM_START)
+        .expect("the revision stream entry carries a start");
+    let physical = (cadmpeg_core::decode::index_from_u32(root_mini_start) + 1) * SECTOR_SIZE
+        + cadmpeg_core::decode::index_from_u32(mini_start) * MINI_SECTOR_SIZE;
+    drop(snapshot);
+    drop(ctx);
+    file[physical..physical + MINI_SECTOR_SIZE].fill(0);
+    file[physical..physical + revisions.len()].copy_from_slice(revisions);
+    file[directory + STREAM_LENGTH..directory + STREAM_LENGTH + size_of::<u64>()]
+        .copy_from_slice(&cadmpeg_core::decode::u64_from_index(revisions.len()).to_le_bytes());
+    file
 }

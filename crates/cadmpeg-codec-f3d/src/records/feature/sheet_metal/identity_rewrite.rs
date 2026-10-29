@@ -9,11 +9,11 @@ use super::{
     DesignSheetMetalHeightDatum,
 };
 
-rewrite_native_record!(DesignBaseFlangeOperation, []; {thickness, thickness_offset, profile_group_record_index, profile_record_index, thickness_record_index, settings_record_index});
+rewrite_native_record!(DesignBaseFlangeOperation, []; {thickness, profile_group_record_index, profile_record_index, thickness_record_index, settings_record_index});
 rewrite_native_scalar!(DesignBendPosition);
 rewrite_native_scalar!(DesignEdgeFlangeEdge);
 rewrite_native_scalar!(DesignEdgeFlangeHeightExtent);
-rewrite_native_record!(DesignEdgeFlangeOperation, []; {selection, height_owner_record_index, angle_owner_record_index, auxiliary_reference_record_indices, settings_record_index, bend_radius, bend_radius_offset, height_datum, bend_position});
+rewrite_native_record!(DesignEdgeFlangeOperation, []; {selection, height_owner_record_index, angle_owner_record_index, auxiliary_reference_record_indices, settings_record_index, bend_radius, height_datum, bend_position});
 rewrite_native_record!(DesignEdgeFlangeSelection, []; {shape, aggregate_group_record_index});
 rewrite_native_enum!(DesignEdgeFlangeShape, []; {
     FullEdge {edges, height},

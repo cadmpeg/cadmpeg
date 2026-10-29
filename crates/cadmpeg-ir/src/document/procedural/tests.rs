@@ -15,6 +15,7 @@ fn curves(count: usize) -> (Model, Vec<(CurveId, ProceduralCurve)>) {
         .map(|index| {
             let owner = CurveId::mint(format!("test:model:curve#{index:04}")).unwrap();
             model.curves.push(Curve {
+                native_ref: None,
                 id: owner.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 parameter_range: None,
@@ -36,6 +37,7 @@ fn surfaces(count: usize) -> (Model, Vec<(SurfaceId, ProceduralSurface)>) {
         .map(|index| {
             let owner = SurfaceId::mint(format!("test:model:surface#{index:04}")).unwrap();
             model.surfaces.push(Surface {
+                native_ref: None,
                 id: owner.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,

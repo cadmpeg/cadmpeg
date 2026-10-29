@@ -238,6 +238,7 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
             .geometry = circle();
         let pcurve = cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#periodic").unwrap();
         ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+            native_ref: None,
             id: pcurve.clone(),
             geometry: spline(),
             metadata: PcurveMetadata::default(),
@@ -485,6 +486,7 @@ fn reflected_conic_emission_uses_a_rational_spline() {
     ir.model.edges[0].set_param_range(Some(ParameterInterval::new([10.0, 20.0]).unwrap()));
     let pcurve_id = cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#reflected").unwrap();
     ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+        native_ref: None,
         id: pcurve_id.clone(),
         geometry: reflected,
         metadata: PcurveMetadata::default(),

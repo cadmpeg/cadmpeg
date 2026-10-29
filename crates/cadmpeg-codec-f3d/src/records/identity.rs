@@ -22,6 +22,14 @@ pub(crate) struct DesignSecondaryIdentity<Id> {
 }
 
 impl<Id> DesignSecondaryIdentity<Id> {
+    /// The same identities in another representation.
+    pub(crate) fn map<U>(self, mut convert: impl FnMut(Id) -> U) -> DesignSecondaryIdentity<U> {
+        DesignSecondaryIdentity {
+            identity: convert(self.identity),
+            curve_identity: self.curve_identity.map(convert),
+        }
+    }
+
     pub(super) fn from_wire(
         identity: Option<Id>,
         curve_identity: Option<Id>,
@@ -101,6 +109,55 @@ impl<T, O> Located<T, O> {
             (Some(value), Some(offset)) => Ok(Some(Self { value, offset })),
             _ => Err(format!("{field} and {field}_offset must occur together")),
         }
+    }
+}
+
+/// A source value and the byte offset of its encoding. The wire carries the
+/// value only, and a value read from the wire has no offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Sourced<T> {
+    pub(crate) value: T,
+    pub(crate) offset: Option<u64>,
+}
+
+impl<T> Sourced<T> {
+    /// A decoded value at its source offset.
+    pub(crate) fn at(value: T, offset: u64) -> Self {
+        Self {
+            value,
+            offset: Some(offset),
+        }
+    }
+}
+
+impl<T> From<Located<T>> for Sourced<T> {
+    fn from(located: Located<T>) -> Self {
+        Self::at(located.value, located.offset)
+    }
+}
+
+impl<T: Serialize> Serialize for Sourced<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wire<'a, T> {
+            value: &'a T,
+        }
+        Wire { value: &self.value }.serialize(serializer)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Sourced<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire<T> {
+            value: T,
+        }
+        let wire = Wire::<T>::deserialize(deserializer)?;
+        Ok(Self {
+            value: wire.value,
+            offset: None,
+        })
     }
 }
 
@@ -292,31 +349,18 @@ impl NonEmptyByteSpan {
 
 /// A value with its source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RecordedValue<T> {
+pub(crate) struct RecordedValue<T, O = u64> {
     pub(crate) value: T,
-    pub(crate) offset: u64,
+    pub(crate) offset: O,
 }
 
-impl<T> RecordedValue<T> {
-    pub(super) fn from_wire(
-        value: Option<T>,
-        offset: Option<u64>,
-        field: &str,
-    ) -> Result<Option<Self>, String> {
-        match (value, offset) {
-            (Some(value), Some(offset)) => Ok(Some(Self { value, offset })),
-            (Some(_), None) => Err(format!("{field} requires {field}_offset")),
-            (None, None) => Ok(None),
-            (None, Some(_)) => Err(format!("{field}_offset requires {field}")),
-        }
-    }
-}
-
-/// A value that its record form may leave without a source encoding location.
+/// A value that its record form may store as a member or fix in its
+/// envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MaybeRecordedValue<T> {
-    /// The form stores the value at a known offset.
-    Located(RecordedValue<T>),
+    /// The form stores the value as a member, at its offset in a located
+    /// record.
+    Located(RecordedValue<T, Option<u64>>),
     /// The form fixes the value in its envelope and stores no member for it.
     Unlocated(T),
 }
@@ -330,43 +374,35 @@ impl<T: Copy> MaybeRecordedValue<T> {
         }
     }
 
-    /// The source encoding location, when the form stores one.
+    /// The source encoding location of a stored member of a located record.
+    #[cfg(test)]
     pub(super) fn offset(&self) -> Option<u64> {
         match self {
-            Self::Located(recorded) => Some(recorded.offset),
+            Self::Located(recorded) => recorded.offset,
             Self::Unlocated(_) => None,
         }
     }
 
+    /// Whether the form stores the value as a member.
+    pub(super) fn is_stored(&self) -> bool {
+        matches!(self, Self::Located(_))
+    }
+
     pub(super) fn from_wire(
         value: Option<T>,
-        offset: Option<u64>,
+        stored: bool,
         field: &str,
     ) -> Result<Option<Self>, String> {
-        match (value, offset) {
-            (Some(value), Some(offset)) => Ok(Some(Self::Located(RecordedValue { value, offset }))),
-            (Some(value), None) => Ok(Some(Self::Unlocated(value))),
-            (None, None) => Ok(None),
-            (None, Some(_)) => Err(format!("{field}_offset requires {field}")),
+        match (value, stored) {
+            (Some(value), true) => Ok(Some(Self::Located(RecordedValue {
+                value,
+                offset: None,
+            }))),
+            (Some(value), false) => Ok(Some(Self::Unlocated(value))),
+            (None, false) => Ok(None),
+            (None, true) => Err(format!("{field}_stored requires {field}")),
         }
     }
-}
-
-// The wire adapter receives the optional field by reference, including its absence.
-#[cfg(test)]
-#[allow(clippy::ref_option)]
-pub(super) fn serialize_absent_u64_offset<S: serde::Serializer>(
-    value: &Option<u64>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_u64(value.unwrap_or(0))
-}
-
-pub(super) fn deserialize_absent_u64_offset<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<u64>, D::Error> {
-    let offset = u64::deserialize(deserializer)?;
-    Ok((offset != 0).then_some(offset))
 }
 
 /// A finite row-major affine placement.
@@ -411,6 +447,23 @@ pub(super) struct NativeRecordId {
 }
 
 impl NativeRecordId {
+    /// Admit a document identity without deriving a physical location from its key.
+    pub(super) fn from_content(text: String, kind: &str) -> Result<Self, String> {
+        cadmpeg_ir::ids::Identity::new(text.clone())
+            .map_err(|_| "native id is not a valid document identity")?;
+        let stream = crate::ids::native_stream(&text).ok_or("id must contain a native stream")?;
+        let suffix = text
+            .strip_prefix(stream)
+            .and_then(|suffix| suffix.strip_prefix(':'))
+            .and_then(|suffix| suffix.strip_prefix(kind))
+            .and_then(|suffix| suffix.strip_prefix('#'));
+        if suffix.is_none_or(str::is_empty) {
+            return Err(format!("id must identify {kind}"));
+        }
+        let stream_end = stream.len();
+        Ok(Self { text, stream_end })
+    }
+
     pub(super) fn try_new(
         text: String,
         kind: &str,

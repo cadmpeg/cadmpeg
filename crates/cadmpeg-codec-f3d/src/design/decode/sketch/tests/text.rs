@@ -9,6 +9,14 @@ const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
 use crate::design::decode::sketch::decode_sketch_points_from_stream;
 
+/// Decode the sketch points of one stream.
+fn points_from_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<crate::records::sketch_geometry::SketchPoint>, cadmpeg_core::CodecError> {
+    decode_sketch_points_from_stream(bytes, meta, "Design/BulkStream.dat")
+}
+
 use crate::design::decode::sketch::decode_sketch_texts_from_stream;
 
 use crate::design::decode::sketch::decode_sketch_curve_identities_from_stream;
@@ -31,16 +39,28 @@ fn text_fixture_records_preserve_styles_and_refuse_unrepresented_orientation() {
             "{}",
             case.label
         );
-        assert_eq!(text.raw_bytes, case.source_hex, "{}", case.label);
+        assert_eq!(
+            text.raw_bytes.data(),
+            Some(case.source_hex.as_ref()),
+            "{}",
+            case.label
+        );
         assert_eq!(
             super::super::sketch_text_neutral_state(&text),
             Some(case.neutral_state),
             "{}",
             case.label
         );
+        let wire = serde_json::to_value(&text).unwrap();
         let replay: crate::records::sketch_geometry::SketchText =
-            serde_json::from_value(serde_json::to_value(&text).unwrap()).unwrap();
-        assert_eq!(replay, text, "{}", case.label);
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&replay).unwrap(),
+            wire,
+            "{}",
+            case.label
+        );
+        assert_eq!(replay.raw_bytes.data(), None, "{}", case.label);
     }
 }
 
@@ -67,7 +87,7 @@ fn txt_tag_font_weight_is_retained_without_a_neutral_weight_assignment() {
         .unwrap()
         .unwrap();
         assert_eq!(text.font_weight, weight);
-        assert_eq!(text.raw_bytes.as_ref(), bytes);
+        assert_eq!(text.raw_bytes.data(), Some(bytes.as_slice()));
         assert!(cadmpeg_ir::sketches::SketchFontWeight::try_from(text.font_weight).is_err());
     }
 }
@@ -161,7 +181,7 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
             }),
             Some(322)
         );
-        assert_eq!(text.raw_bytes, bytes);
+        assert_eq!(text.raw_bytes.data(), Some(bytes.as_slice()));
     }
 }
 
@@ -174,7 +194,11 @@ fn sketch_text_stream_decodes_its_text_records() {
     let bytes = indexed_sketch_text_record(1);
     let types = (0..32)
         .map(|ordinal| SegmentTypeData {
-            byte_offset: 0,
+            class_tag: (ordinal + 256)
+                .to_string()
+                .try_into()
+                .expect("fixture class tag"),
+            byte_offset: Some(0),
             type_guid: (if ordinal == 31 {
                 "E0618268-3A06-450E-9E94-7CF4C2E66802"
             } else {
@@ -183,10 +207,10 @@ fn sketch_text_stream_decodes_its_text_records() {
             .to_owned()
             .try_into()
             .unwrap(),
-            type_guid_offset: 0,
+            type_guid_offset: Some(0),
             base_type_guid: BaseTypeGuid::Absent,
             version: 3,
-            version_offset: 0,
+            version_offset: Some(0),
             module: "Geometry".into(),
             entities: ReferenceRun::located(if ordinal == 31 {
                 vec![Located {
@@ -326,20 +350,26 @@ fn indexed_sketch_fixture() -> (
         bytes
     };
     let design_type =
-        |type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| SegmentTypeData {
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().expect("type GUID"),
-            type_guid_offset: 0,
-            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
-            version,
-            version_offset: 0,
-            module: module.into(),
-            entities: crate::records::identity::ReferenceRun::located(
-                entity_ids
-                    .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
-                    .collect(),
-            ),
+        |class_tag: u32, type_guid: &str, version: u32, module: &str, entity_ids: Vec<u64>| {
+            SegmentTypeData {
+                class_tag: (class_tag)
+                    .to_string()
+                    .try_into()
+                    .expect("fixture class tag"),
+                byte_offset: Some(0),
+                type_guid: type_guid.to_owned().try_into().expect("type GUID"),
+                type_guid_offset: Some(0),
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                version,
+                version_offset: Some(0),
+                module: module.into(),
+                entities: crate::records::identity::ReferenceRun::located(
+                    entity_ids
+                        .into_iter()
+                        .map(|value| crate::records::identity::Located { value, offset: 0 })
+                        .collect(),
+                ),
+            }
         };
 
     let mut bytes = record_prefix(256, PARENT);
@@ -365,36 +395,42 @@ fn indexed_sketch_fixture() -> (
     let meta = MetaStream {
         types: vec![
             design_type(
+                256,
                 crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                 0,
                 "Fusion",
                 vec![PARENT],
             ),
             design_type(
+                257,
                 "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB",
                 10,
                 "Geometry",
                 vec![POINT],
             ),
             design_type(
+                258,
                 "DCA267ED-D615-4934-B64F-AD805E8003E2",
                 2,
                 "Geometry",
                 vec![CURVE],
             ),
             design_type(
+                259,
                 "E0618268-3A06-450E-9E94-7CF4C2E66802",
                 4,
                 "Geometry",
                 vec![TEXT],
             ),
             design_type(
+                260,
                 "00000000-0000-0000-0000-000000000004",
                 0,
                 "Fusion",
                 Vec::new(),
             ),
             design_type(
+                261,
                 crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.0,
                 crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.1,
                 crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE.2,
@@ -446,20 +482,17 @@ fn sketch_records_use_the_primary_index_live_copy() {
 
     let (bytes, mut meta, live_point_at, live_curve_at, live_text_at, nested_at) =
         indexed_sketch_fixture();
-    let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-        .expect("indexed sketch points");
+    let points = points_from_stream(&bytes, &meta).expect("indexed sketch points");
     assert_eq!(points.len(), 1);
-    assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
+    assert_eq!(points[0].byte_offset, Some(u64_from_index(live_point_at)));
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
     meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
         .to_owned()
         .try_into()
         .expect("type GUID");
-    assert!(
-        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat",)
-            .expect("structurally point-shaped foreign type")
-            .is_empty()
-    );
+    assert!(points_from_stream(&bytes, &meta)
+        .expect("structurally point-shaped foreign type")
+        .is_empty());
     meta.types[1].type_guid = crate::design::decode::sketch::CURRENT_SKETCH_POINT_TYPE
         .0
         .to_owned()
@@ -468,14 +501,14 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut malformed_point = bytes.clone();
     malformed_point[live_point_at + 70] = 0;
     assert!(matches!(
-        decode_sketch_points_from_stream(&malformed_point, &meta, "Design/BulkStream.dat",),
+        points_from_stream(&malformed_point, &meta),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
     let curves = decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch curves");
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].byte_offset, u64_from_index(live_curve_at));
+    assert_eq!(curves[0].byte_offset, Some(u64_from_index(live_curve_at)));
     assert!(matches!(
         curves[0].geometry,
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
@@ -484,25 +517,29 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
-    assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
+    assert_eq!(texts[0].byte_offset, Some(u64_from_index(live_text_at)));
     assert_eq!(texts[0].text, "live text");
 
     let mut mismatched_primary = bytes.clone();
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(&mismatched_primary, &meta, "Design/BulkStream.dat",),
+        points_from_stream(&mismatched_primary, &meta),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
     assert!(matches!(
-        decode_sketch_points_from_stream(&mismatched_secondary, &meta, "Design/BulkStream.dat",),
+        points_from_stream(&mismatched_secondary, &meta),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
 }
 
+/// #225 comment 6358238990 item 4 and #214: the point is parsed inside its
+/// record scope; its source offsets are `record_layout` pointers and not on
+/// the document wire; the point and companion grammars consume every byte of
+/// their frames.
 #[test]
 fn sketch_text_record_decodes_typed_content_and_metrics() {
     let bytes = sketch_text_record(
@@ -649,7 +686,7 @@ fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
     );
     // Frame text stores 128 more bytes than path text.
     assert_eq!(
-        text.raw_bytes.len(),
+        usize::try_from(text.raw_bytes.byte_len()).unwrap(),
         sketch_text_record(
             &[("textex_tag", 109), ("txt_tag_base", 305)],
             [None, None],

@@ -74,6 +74,7 @@ serde_json = { version = "1", features = ["float_roundtrip", "raw_value", "unbou
 serde-value = "0.7"
 schemars = "1.2"
 thiserror = "2"
+trybox = { version = "=0.1.2", default-features = false }
 sha2 = "0.11"
 sha1 = "0.11"
 memchr = "2"
@@ -195,6 +196,11 @@ cast_lossless = "deny"
 
 # Roundtrip tests compare decoded floats for byte-exact equality.
 float_cmp = "allow"
+
+# docs/source-policy.md §Checked arithmetic bans production `saturating_*`
+# calls, the only fix these two lints suggest. Checked arithmetic stays.
+manual_saturating_arithmetic = "allow"
+implicit_saturating_sub = "allow"
 
 # Decode functions are long and match-heavy, and format field names are
 # near-identical.

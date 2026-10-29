@@ -1,16 +1,419 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "10",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "fcstd:model:attribute#0:Comment:property",
+          "name": "Comment",
+          "native_ref": "fcstd:native:property#0:Comment",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Company:property",
+          "name": "Company",
+          "native_ref": "fcstd:native:property#0:Company",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreatedBy:property",
+          "name": "CreatedBy",
+          "native_ref": "fcstd:native:property#0:CreatedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:CreationDate:property",
+          "name": "CreationDate",
+          "native_ref": "fcstd:native:property#0:CreationDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Id:property",
+          "name": "Id",
+          "native_ref": "fcstd:native:property#0:Id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#0:Label",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "sketch_conics"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedBy:property",
+          "name": "LastModifiedBy",
+          "native_ref": "fcstd:native:property#0:LastModifiedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LastModifiedDate:property",
+          "name": "LastModifiedDate",
+          "native_ref": "fcstd:native:property#0:LastModifiedDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:License:property",
+          "name": "License",
+          "native_ref": "fcstd:native:property#0:License",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "All rights reserved"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:LicenseURL:property",
+          "name": "LicenseURL",
+          "native_ref": "fcstd:native:property#0:LicenseURL",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "__elided_authoring_path_sha256:ec1ef47ab3cdc361e6423591cb34d5619dbc08299f8f3761ee9fb45645a3314c"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:ShowHidden:property",
+          "name": "ShowHidden",
+          "native_ref": "fcstd:native:property#0:ShowHidden",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:TipName:property",
+          "name": "TipName",
+          "native_ref": "fcstd:native:property#0:TipName",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UseHasher:property",
+          "name": "UseHasher",
+          "native_ref": "fcstd:native:property#0:UseHasher",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:ArcFitTolerance:property",
+          "name": "ArcFitTolerance",
+          "native_ref": "fcstd:native:property#ConicWitness:ArcFitTolerance",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 1e-6
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:AttacherType:property",
+          "name": "AttacherType",
+          "native_ref": "fcstd:native:property#ConicWitness:AttacherType",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:FullyConstrained:property",
+          "name": "FullyConstrained",
+          "native_ref": "fcstd:native:property#ConicWitness:FullyConstrained",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#ConicWitness:Label2",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:MakeInternals:property",
+          "name": "MakeInternals",
+          "native_ref": "fcstd:native:property#ConicWitness:MakeInternals",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:MapPathParameter:property",
+          "name": "MapPathParameter",
+          "native_ref": "fcstd:native:property#ConicWitness:MapPathParameter",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "float",
+              "value": 0.0
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:MapReversed:property",
+          "name": "MapReversed",
+          "native_ref": "fcstd:native:property#ConicWitness:MapReversed",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": false
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#ConicWitness:Visibility",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#ConicWitness:_ExternalGeoVersion:property",
+          "name": "_ExternalGeoVersion",
+          "native_ref": "fcstd:native:property#ConicWitness:_ExternalGeoVersion",
+          "target": {
+            "id": "fcstd:design:feature#ConicWitness",
+            "kind": "feature"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Label2",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Label:property",
+          "name": "Label",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Label",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CorpusMetadata"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:License:property",
+          "name": "License",
+          "native_ref": "fcstd:native:property#CorpusMetadata:License",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "CC0-1.0"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Purpose:property",
+          "name": "Purpose",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Purpose",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "Rotated and bounded sketch conic parameterization"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#CorpusMetadata:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#CorpusMetadata:Visibility",
+          "target": {
+            "id": {
+              "source_id": "fcstd:native:object#CorpusMetadata"
+            },
+            "kind": "source"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
           "kind": "wire",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:1",
           "regions": [
             "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7%40location1",
             "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11%40location1",
@@ -209,6 +612,7 @@
           },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9%40location1",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:10%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:14",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8%40location1",
           "tolerance": 1e-7
         },
@@ -222,6 +626,7 @@
           },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:11",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
@@ -235,6 +640,7 @@
           },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16%40location1",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:17%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:7",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15%40location1",
           "tolerance": 1e-7
         },
@@ -248,6 +654,7 @@
           },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20%40location1",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:21%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:3",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19%40location1",
           "tolerance": 1e-7
         },
@@ -261,6 +668,7 @@
           },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:23",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
@@ -274,6 +682,7 @@
           },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:21",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
@@ -287,6 +696,7 @@
           },
           "end": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
           "id": "fcstd:model:edge#ConicWitness:Shape:ConicWitness.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:18",
           "start": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
           "tolerance": 1e-7
         }
@@ -304,14 +714,11 @@
           "id": "fcstd:design:feature#ConicWitness",
           "name": "ConicWitness",
           "native_ref": "fcstd:native:object#ConicWitness",
-          "ordinal": 1,
+          "needs_recompute": false,
+          "ordinal": 0,
           "outputs": [
             "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1"
           ],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
           "source_tag": "Sketcher::SketchObject",
           "suppressed": null
         }
@@ -324,6 +731,7 @@
       "points": [
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:20",
           "position": {
             "x": 6.368670388392447,
             "y": 4.841491245888317,
@@ -336,6 +744,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:12",
           "position": {
             "x": 6.825256883914576,
             "y": 35.86650393919383,
@@ -348,6 +757,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:9",
           "position": {
             "x": 38.434720873714745,
             "y": 32.02165247596257,
@@ -360,6 +770,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:8",
           "position": {
             "x": 37.46149067127983,
             "y": 37.148506816578966,
@@ -372,6 +783,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:19%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:5",
           "position": {
             "x": 61.52011141943519,
             "y": 18.52513376432717,
@@ -384,6 +796,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:22",
           "position": {
             "x": -2.050487265820181,
             "y": 7.73275513466638,
@@ -396,6 +809,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:20%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:4",
           "position": {
             "x": 58.79180943082936,
             "y": 22.104726953447198,
@@ -408,6 +822,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:19",
           "position": {
             "x": 12.0,
             "y": 10.0,
@@ -420,6 +835,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:16",
           "position": {
             "x": 39.49056154779882,
             "y": 3.670291523041618,
@@ -432,6 +848,7 @@
         },
         {
           "id": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:15",
           "position": {
             "x": 29.911448138968304,
             "y": 4.490999737757602,
@@ -452,6 +869,7 @@
         {
           "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
           "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:13",
           "shells": [
             "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:11%40location1"
           ]
@@ -459,6 +877,7 @@
         {
           "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
           "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:10",
           "shells": [
             "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:14%40location1"
           ]
@@ -466,6 +885,7 @@
         {
           "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
           "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:6",
           "shells": [
             "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:18%40location1"
           ]
@@ -473,6 +893,7 @@
         {
           "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
           "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:2",
           "shells": [
             "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:22%40location1"
           ]
@@ -480,6 +901,7 @@
         {
           "body": "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1",
           "id": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:17",
           "shells": [
             "fcstd:model:shell#ConicWitness:Shape:ConicWitness.Shape.brp:7%40location1"
           ]
@@ -495,6 +917,7 @@
               "kind": "wire_edge"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:13",
           "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:11%40location1"
         },
         {
@@ -505,6 +928,7 @@
               "kind": "wire_edge"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:10",
           "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:14%40location1"
         },
         {
@@ -515,6 +939,7 @@
               "kind": "wire_edge"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:6",
           "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:18%40location1"
         },
         {
@@ -525,6 +950,7 @@
               "kind": "wire_edge"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:2",
           "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:22%40location1"
         },
         {
@@ -543,6 +969,7 @@
               "kind": "wire_edge"
             }
           ],
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:17",
           "region": "fcstd:model:region#ConicWitness:Shape:ConicWitness.Shape.brp:7%40location1"
         }
       ],
@@ -754,51 +1181,61 @@
       "vertices": [
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:20",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:1%40location1",
           "tolerance": 1.00000001e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:12",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:15%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:9",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:15%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:16%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:8",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:19%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:5",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:19%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:22",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:2%40location1",
           "tolerance": 1.00000001e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:20%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:4",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:20%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:19",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:16",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:8%40location1",
           "tolerance": 1e-7
         },
         {
           "id": "fcstd:model:vertex#ConicWitness:Shape:ConicWitness.Shape.brp:9%40location1",
+          "native_ref": "fcstd:native:shape-payload#ConicWitness:Shape:ConicWitness.Shape.brp:topology-use:15",
           "point": "fcstd:model:point#ConicWitness:Shape:ConicWitness.Shape.brp:9%40location1",
           "tolerance": 1e-7
         }
@@ -811,7 +1248,6 @@
           "annotations": 0,
           "applications": 2,
           "attachments": 1,
-          "byte_coverage": 1,
           "carrier_census": 1,
           "design_census": 1,
           "document": 1,
@@ -823,38 +1259,35 @@
           "gui_properties": 0,
           "gui_view_providers": 0,
           "joints": 0,
-          "logical_ledger": 111,
           "objects": 2,
-          "physical_ledger": 29,
           "product_nodes": 0,
           "properties": 54,
           "shape_payloads": 2,
-          "string_tables": 1
+          "string_tables": 1,
+          "topology_uses": 23
         }
       },
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "2e259183256247afa1d93dcdbc6bc9330e6c6cb4a03ec21cd3b84e9603613feb",
-          "byte_coverage": "edcb0b94a889f2f1270ecd01f01e1457ceed91f6e42b5c0007ad00d17a3e1e90",
+          "applications": "44f1f7cdf70b7b105d12605d346564df3297f4826b1e903ea66760ae33cf6396",
           "carrier_census": "74a544b49d198f9eb666e61a12f02b598b97fd56324565317344719e3b579232",
-          "design_census": "6aab1e7e760c27e30a6ff788d331977bfc7363c608bcde38c2e1667f812e2282",
+          "design_census": "56dfa42051e3640473f5eade878c18e0753b1b25ada4c96a094d751fe7ab22c2",
           "document": "34498b8c571f85211f1db295da7381181f01755fd29e3205ed257c1b3de8bae9",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "element_maps": "1826f93201211ae78c708064a9d46d2d66a087612a7ed99d00cb3fb2e4c78c7d",
-          "entries": "ddb7fb7cd41f14db86ff74cccf08fa8b21f674c0f4ccca5c79d3543f8d1df374",
-          "extensions": "f5dc45425f64eea3113eff9c16def71dbcce9c837a0f87f2787a5a291e781f63",
+          "element_maps": "69586dd793bdece5899bd9bf005daa166b5d854b6308c34e37716ab9062e0587",
+          "entries": "2f67c9ca692578fc06d3f08be15d9cf068971cd570694c8233da781cf5b4d7c9",
+          "extensions": "399981942546cfde6eea562c9c180b61f9de115b22fbe8a495cc7b854a97b9f6",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "logical_ledger": "066fb9fd5bd17f7f2ee21637dcae301a6ad0313d628ea0e2b870e9d049a46ea4",
-          "objects": "48dd2b6d54b542c7d98220c7c48bfa44b43a72b5027743d479dd912fff5d7830",
-          "physical_ledger": "c3fe2f7131da19d4ff368f764390c3a6de884ddb603b301a6ae73e7f71a53255",
+          "objects": "3e3f3045d0ac2ffb6785fe2a605c148b8624ff3a663984a3d0b4d0be12ab0a07",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "a3f2563079b2c8e7d779dd8a501568cf48a4393e57b996586c2396425690a182",
+          "properties": "2592fcb8c07dcfdcdbf5d47cd8322246acfac230d1a14e4fd834e9fd7d8fc340",
           "shape_payloads": "9ff907d131a3b203cd6ace078cd764701e76e4dca6a0a9841ee03ccb4e37fe95",
-          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f"
+          "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
+          "topology_uses": "c4e3139c2e16e6ff477f295700ec32aba1f61b5e050f9f919797ef3768e0a04b"
         }
       },
       "__arena_values": {
@@ -949,16 +1382,15 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "scope": {
+      "design": true,
+      "model": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,Sketcher",
-        "archive_entry_count": "4",
         "document_kind": "application-document",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "2",
-        "physical_archive_bytes": "4309",
-        "physical_ledger_spans": "29",
         "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
@@ -1001,22 +1433,172 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ConicWitness:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ConicWitness:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ConicWitness:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ConicWitness:ExternalTypes (App::PropertyIntegerList) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ConicWitness:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#ConicWitness:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.property-unprojected",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
       "document root=Document",
       "document kind=application-document",
       "object count=2",
-      "physical ledger spans=29 coverage=exact",
       "ProgramVersion=1.1R20260414 (Git shallow)"
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "scope": {
+        "design": true,
+        "model": true
+      }
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {},
+    "metadata": {
+      "document_local_sha256": "9c455d16bf262ef25514f91e2f7b30172943151e13ebd0bbf1799ddd7302126d",
+      "fcstd.archive_entry_count": "4",
+      "fcstd.object_count": "2"
+    },
+    "retained_records": {
+      "fcstd:source:image#archive": {
+        "bytes": {
+          "data": "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",
+          "retention": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      }
+    },
+    "unrepresented": []
   }
 }

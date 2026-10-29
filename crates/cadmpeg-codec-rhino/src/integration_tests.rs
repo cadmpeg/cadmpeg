@@ -28,15 +28,30 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 mod angular_dimension_userdata;
 mod annotations_userdata;
 mod definition_diagnostics;
+mod dense_ordinals;
 mod dimension_userdata;
 mod fixtures;
+mod geometry_output;
 mod hatch_userdata;
 mod layer_userdata;
 mod measured_geometry;
 mod mesh_modifiers_userdata;
 mod mesh_userdata;
+mod native_linkage;
 mod object_attributes_userdata;
+mod scope_and_v1_eof;
 mod settings_userdata;
+mod source_arc_reads;
+mod source_line_reads;
+mod source_nurbs_reads;
+mod source_nurbs_surface_reads;
+mod source_point_reads;
+mod source_polycurve_model_reads;
+mod source_polycurve_polyline_reads;
+mod source_polycurve_reads;
+mod source_polyline_reads;
+mod standalone_line;
+mod standalone_line_closure;
 mod undeclared_archive_word;
 mod unit_binding;
 mod unknown_userdata;
@@ -74,6 +89,31 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         let result = decode(bytes.clone());
         assert_eq!(result.ir().model.points.len(), 1);
         assert_valid(&result);
+        let scan =
+            crate::container::scan_owned(bytes.clone()).expect("bounded original point source");
+        assert_eq!(
+            scan.tables
+                .iter()
+                .map(|table| table.typecode)
+                .collect::<Vec<_>>(),
+            [0x1000_0014, 0x1000_0015, 0x1000_0013]
+        );
+        assert_eq!(scan.objects.len(), 1);
+        assert!(scan.history.is_empty());
+        let object = &scan.objects[0];
+        let range = object.range();
+        assert!(range.start < range.end && range.end <= bytes.len());
+        assert!(object
+            .framed()
+            .expect("original point record")
+            .history
+            .is_none());
+        assert_eq!(
+            cadmpeg_ir::document::ArenaName::parse("points")
+                .expect("registered geometry arena")
+                .class(),
+            cadmpeg_ir::ArenaClass::Model
+        );
         let container = EditableDecodeResult::from(
             RhinoCodec
                 .decode(
@@ -86,6 +126,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
                 .expect("container-only 3DM decode"),
         );
         assert!(container.report().container_only());
+        assert!(!container.report().geometry_transferred());
         assert!(container.ir().model.points.is_empty());
     }
 }
@@ -1907,3 +1948,5 @@ fn opennurbs_object_walk_and_transfer_floor() {
         assert_eq!(decode_counts(&path), Some((version, 1, 1)));
     }
 }
+
+mod image_native_linkage;

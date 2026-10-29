@@ -33,6 +33,7 @@ fn planar_fixture() -> (Sketch, Feature, FeatureInputLane) {
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
+        needs_recompute: false,
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Sketch {
                 sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
@@ -314,6 +315,7 @@ fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecErr
     )
     .with_geometry_ref(Some("relation".into()));
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -323,14 +325,13 @@ fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecErr
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
     let expected = SketchConstraintDefinitionInput::Diameter {
         entity: entity.id().clone(),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -386,6 +387,7 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#point-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -395,7 +397,6 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -403,7 +404,7 @@ fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), C
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(entities[0].id().clone()),
         second: SketchLocus::Entity(entities[1].id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -460,6 +461,7 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#line-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -469,14 +471,13 @@ fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), Co
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
     let expected = SketchConstraintDefinitionInput::Distance {
         entities: vec![entities[0].id().clone(), entities[1].id().clone()],
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -529,6 +530,7 @@ fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), Cod
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -538,14 +540,13 @@ fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), Cod
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
     let expected = SketchConstraintDefinitionInput::RepeatedDiameter {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -604,6 +605,7 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         })
         .collect();
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#line-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -613,14 +615,13 @@ fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecE
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
     let expected = SketchConstraintDefinitionInput::Distance {
         entities: vec![entities[0].id().clone(), entities[1].id().clone()],
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
@@ -702,6 +703,7 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
         entities.push(entity);
     }
     let parameter = DesignParameter {
+        driving: true,
         id: ParameterId::mint("synthetic:test:id#marker-dimension").unwrap(),
         owner: None,
         ordinal: 0,
@@ -711,7 +713,6 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
         value: Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
         )),
-        dependencies: DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -719,7 +720,7 @@ fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<()
     let expected = SketchConstraintDefinitionInput::DistanceLoci {
         first: SketchLocus::Entity(entities[0].id().clone()),
         second: SketchLocus::Entity(entities[1].id().clone()),
-        parameter: parameter.id.clone(),
+        parameter: cadmpeg_ir::Dimension::Parameter(parameter.id.clone()),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;

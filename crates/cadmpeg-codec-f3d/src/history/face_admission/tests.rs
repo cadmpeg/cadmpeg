@@ -61,6 +61,7 @@ fn resolved_face_operations_require_current_or_emitted_historical_membership() {
                     heal: true,
                 },
             )),
+            needs_recompute: false,
         }];
         let mut losses = Vec::new();
         super::admit_feature_input_faces(&mut features, &topologies, &[], &mut losses).unwrap();
@@ -155,6 +156,7 @@ fn hole_keeps_a_surviving_current_face_and_refuses_an_unemitted_history() {
     let topologies = [input(&feature, 2)];
     let face = FaceId::mint("f3d:brep:entity#2").unwrap();
     let current = [cadmpeg_ir::topology::Face {
+        native_ref: None,
         id: face.clone(),
         shell: cadmpeg_ir::ids::ShellId::mint("test:brep:shell#1").unwrap(),
         surface: cadmpeg_ir::ids::SurfaceId::mint("test:brep:surface#1").unwrap(),
@@ -195,6 +197,7 @@ fn feature_admission_keeps_extrude_face_operands_native_without_an_input_topolog
     let id = FeatureId::mint("f3d:model:feature#extrude").unwrap();
     let topology = input(&id, 2);
     let mut features = [Feature {
+        needs_recompute: false,
         id,
         ordinal: 0,
         name: None,
@@ -283,6 +286,7 @@ fn feature_gate_changes_hole_namespace() {
     let id = FeatureId::mint("f3d:model:feature#hole").unwrap();
     let topology = input(&id, 2);
     let original = Feature {
+        needs_recompute: false,
         id,
         ordinal: 0,
         name: None,
@@ -305,7 +309,9 @@ fn feature_gate_changes_hole_namespace() {
                         cadmpeg_ir::features::holes::HoleKind::Simple,
                     ),
                     None,
-                    Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
+                    Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+                    )),
                 )
                 .unwrap(),
                 extent: None,

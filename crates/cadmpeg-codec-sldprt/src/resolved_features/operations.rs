@@ -42,10 +42,12 @@ fn feature_operation_code(
     form_padding: Option<usize>,
 ) -> Option<u32> {
     let name_offset = usize::try_from(name.offset).ok()?;
-    let direct_class = lane
-        .classes
-        .iter()
-        .find(|class| class.offset + 6 + u64_from_index(class.name.len()) == name.offset);
+    let direct_class = lane.classes.iter().find(|class| {
+        class
+            .offset
+            .checked_add(6 + u64_from_index(class.name.len()))
+            == Some(name.offset)
+    });
     if let Some(class) = direct_class {
         let class_offset = usize::try_from(class.offset).ok()?;
         if lane
@@ -348,6 +350,23 @@ pub(crate) fn ambiguous_thin_join_operation(
         })
 }
 
+/// History feature ids whose inline thin join operation is ambiguous.
+pub(crate) fn ambiguous_thin_features(
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> std::collections::BTreeSet<String> {
+    let lane_names = lanes
+        .iter()
+        .map(|lane| (lane, FeatureObjectNames::new(&lane.names)))
+        .collect::<Vec<_>>();
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| ambiguous_thin_join_operation(feature, &lane_names))
+        .map(|feature| feature.id.clone())
+        .collect()
+}
+
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -526,8 +545,8 @@ pub(crate) fn enrich_history_split_lines(
         let names = FeatureObjectNames::new(&lane.names);
         let mut objects = Vec::new();
         for feature in histories.iter().flat_map(|history| &history.features) {
-            if let Some(name) = names.of(feature) {
-                objects.push((name.offset, feature));
+            if let Some(offset) = names.of(feature).map(|name| name.offset) {
+                objects.push((offset, feature));
             }
         }
         objects.sort_unstable_by_key(|(left, _)| *left);

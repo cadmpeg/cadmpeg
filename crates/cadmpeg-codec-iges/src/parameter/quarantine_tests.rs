@@ -52,10 +52,8 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
     let result = decode(bytes.clone());
     let native = result.ir().native.namespace("iges").unwrap();
     let entity = &native.arenas()["entities"][0];
-    assert!(!entity.fields().unwrap()["parameter_bytes"]
-        .as_str()
-        .unwrap()
-        .is_empty());
+    let (_, retained_parameters) = crate::test_support::retained_fixed_ascii(&result);
+    assert!(!retained_parameters.records[0].bytes.is_empty());
     assert_eq!(
         entity.fields().unwrap()["parameters"]
             .as_array()
@@ -63,20 +61,16 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
             .len(),
         5
     );
-    assert_eq!(
-        entity.fields().unwrap()["parameters"][3]["value"]["kind"],
-        "unreadable"
-    );
+    assert!(entity.fields().unwrap()["parameters"][3].is_null());
+    for (index, value) in [(0, 116), (1, 1), (2, 2), (4, 0)] {
+        assert_eq!(
+            entity.fields().unwrap()["parameters"][index]["value"]["value"],
+            value
+        );
+    }
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert!(result.ir().model.points.is_empty());
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterLiteralUnusable),
-        1
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::GeometryNotProjected),
-        1
-    );
+    crate::test_support::parameter_parts::assert_one_parameter_field(&result, &bytes, 8, b"3x4,");
     assert!(matches!(
         IgesCodec.decode(&mut Cursor::new(bytes), &strict_options()),
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
@@ -137,13 +131,14 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
         1
     );
-    assert!(result
-        .report()
-        .transfer_ledger
-        .entries
-        .iter()
-        .any(|entry| entry.source == "D3:parameter"
-            && entry.target() == Some("iges:quarantine:parameter#3")));
+    assert!(cadmpeg_ir::index::ModelIndex::build(result.ir()).contains(
+        "iges:quarantine:parameter#3",
+        cadmpeg_ir::index::StandardIndex
+    ));
+    assert!(serde_json::to_value(result.report())
+        .unwrap()
+        .get("transfer_ledger")
+        .is_none());
 }
 
 #[test]
@@ -219,68 +214,23 @@ fn every_token_defect_key_names_its_own_failure() {
 }
 
 #[test]
-fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
-    let mut bytes = owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "POINT".into(),
-            status: "00000000",
-            parameters: "116,1,2,3,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "ORPHAN".into(),
-            status: "00000000",
-            parameters: "116,4,5,6,0;".into(),
-        },
-    ]);
-    let directory = bytes
-        .chunks_exact(81)
-        .position(|line| line[72] == b'D')
-        .expect("Directory card");
-    let start_field = (directory + 2) * 81 + 8;
-    bytes[start_field..start_field + 8].copy_from_slice(b"       0");
-    let second_card = parameter_card_offset(&bytes) + 81 + 64;
-    bytes[second_card..second_card + 8].copy_from_slice(b"      99");
-
-    let result = decode(bytes);
-
-    let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(quarantined.len(), 1);
-    assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
-    assert_eq!(quarantined[0].fields().unwrap()["defect"], "no-owned-cards");
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::CardFramingRecovered),
-        1
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        1
-    );
-    assert_eq!(result.report().losses.len(), 2);
-}
-
-#[test]
 fn a_non_ascii_literal_retains_its_framed_record() {
     let mut bytes = point_file("116,1,2,3,0;");
     let card_offset = parameter_card_offset(&bytes);
     bytes[card_offset + 4] = 0xff;
-    let result = decode(bytes);
+    let result = decode(bytes.clone());
     assert!(result.ir().native.namespace("iges").unwrap().arenas()
         ["quarantined_parameter_records"]
         .is_empty());
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::ParameterLiteralUnusable),
-        1
-    );
-    assert_eq!(
-        code_count(result.report(), IgesLossCode::GeometryNotProjected),
-        1
-    );
+    crate::test_support::parameter_parts::assert_one_parameter_field(&result, &bytes, 4, b"\xff,");
+    let native = result.ir().native.namespace("iges").unwrap();
+    let fields = native.arenas()["entities"][0].fields().unwrap();
+    assert_eq!(fields["parameters"].as_array().unwrap().len(), 5);
+    assert!(fields["parameters"][1].is_null());
+    for (index, value) in [(0, 116), (2, 2), (3, 3), (4, 0)] {
+        assert_eq!(fields["parameters"][index]["value"]["value"], value);
+    }
+    assert!(result.ir().model.points.is_empty());
 }
 
 #[test]
@@ -302,7 +252,7 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
 }
 
 #[test]
-fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
+fn two_declared_ranges_claiming_one_card_share_one_given_up_source_part() {
     let mut bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 116,
@@ -326,25 +276,43 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
         .expect("Directory card");
     bytes[start_field..start_field + 8].copy_from_slice(b"       1");
 
-    let result = decode(bytes);
+    let result = decode(bytes.clone());
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.ir().model.points.is_empty());
-    assert_eq!(quarantined.len(), 2);
-    for record in quarantined {
-        assert_eq!(record.fields().unwrap()["defect"], "ownership-conflict");
-    }
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    let fidelity = result.source_fidelity();
+    let parts = crate::test_support::given_up_parts(fidelity);
+    assert_eq!(parts.len(), 1);
+    let part = parts[0];
+    assert!(!part.untyped().is_empty());
+    assert_eq!(
+        crate::test_support::given_up_count(result.report(), "iges.parameter_record"),
+        1
+    );
+    let start = parameter_card_offset(&bytes);
+    assert_eq!(part.offset(), u64::try_from(start).unwrap());
+    assert_eq!(part.byte_len(), 81);
+    assert_eq!(part.data(), Some(&bytes[start..start + 81]));
+    let unreadable: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(unreadable.len(), 1);
+    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+    assert!(unreadable[0].message.contains("ownership-conflict"));
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
-        2
+        0
     );
     assert_eq!(
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
         1
     );
-    assert_eq!(result.report().losses.len(), 3);
+    assert_eq!(result.report().losses.len(), 2);
 }
 
 #[test]
@@ -402,7 +370,10 @@ fn parameter_quarantine_record_names_its_identity_and_owned_range() {
         failing_offset: None,
         defect: super::ParameterDefect::NoOwnedCards,
     };
-    assert_eq!(record.identity(), "iges:quarantine:parameter#3");
+    assert_eq!(
+        serde_json::to_value(&record).unwrap()["id"],
+        "iges:quarantine:parameter#3"
+    );
     let loss = record.loss_note().unwrap();
     assert_eq!(
         loss.provenance.unwrap().tag.as_deref(),

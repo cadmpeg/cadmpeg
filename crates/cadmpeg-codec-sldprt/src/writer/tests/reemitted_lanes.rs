@@ -48,7 +48,15 @@ fn a_reemitted_lane_keeps_a_reclassified_markers_code() {
     let mut payload = lane.native_payload.to_vec();
     payload[167..171].copy_from_slice(&1u32.to_le_bytes());
     lane.native_payload = payload.into();
-    let written = crate::writer::resolved_feature_payload(&lane, &[], &[]).unwrap();
+    let written = crate::writer::resolved_feature_payload(
+        &lane,
+        &[],
+        &[],
+        crate::writer::ClassLayouts::Authored,
+        &std::collections::BTreeSet::new(),
+    )
+    .map(|(payload, _)| payload)
+    .unwrap();
     assert_eq!(&written[167..171], &1u32.to_le_bytes());
 }
 
@@ -69,21 +77,43 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
     let coordinates =
         crate::resolved_features::markers::marker_coordinates(&payload, 150).expect("coordinates");
     assert_eq!(&payload[150 + 58..150 + 66], &coordinates[0].to_le_bytes());
-    let mut markers =
-        crate::resolved_features::markers::admit_sketch_input_entities(&payload, &lane.id).unwrap();
+    let staged = crate::resolved_features::write_prepare::generated_native_lane(
+        &[],
+        &lane.id,
+        lane.configuration.clone(),
+        payload.clone(),
+    )
+    .unwrap();
+    let mut markers = staged.sketch_entities;
     markers[0].feature_ref = None;
     markers[0].coordinates_m = Some(coordinates);
     lane.sketch_entities = markers;
-    lane.classes = crate::resolved_features::names::class_declarations(&payload, &lane.id).unwrap();
+    lane.classes = staged.classes;
     lane.native_payload = payload.clone().into();
-    let written = crate::writer::resolved_feature_payload(&lane, &[], &[]).unwrap();
+    let written = crate::writer::resolved_feature_payload(
+        &lane,
+        &[],
+        &[],
+        crate::writer::ClassLayouts::Authored,
+        &std::collections::BTreeSet::new(),
+    )
+    .map(|(payload, _)| payload)
+    .unwrap();
     assert_eq!(&written[150 + 48..150 + 170], &payload[150 + 48..150 + 170]);
     // A change to coordinates this layout keeps elsewhere is refused, not
     // written at +66 and +74.
     let mut edited = lane.clone();
     edited.sketch_entities[0].coordinates_m =
         cadmpeg_ir::units::FiniteVector::new([coordinates[0] + 0.001, coordinates[1]]);
-    let error = crate::writer::resolved_feature_payload(&edited, &[], &[]).unwrap_err();
+    let error = crate::writer::resolved_feature_payload(
+        &edited,
+        &[],
+        &[],
+        crate::writer::ClassLayouts::Authored,
+        &std::collections::BTreeSet::new(),
+    )
+    .map(|(payload, _)| payload)
+    .unwrap_err();
     assert!(
         error.to_string().contains("keeps them elsewhere"),
         "{error}"

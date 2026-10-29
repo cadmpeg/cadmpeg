@@ -456,15 +456,6 @@ pub(super) struct CreoFaceComponentRecord<'a> {
     curve_ids: &'a [u32],
 }
 
-#[derive(Serialize)]
-pub(super) struct CreoFaceAdmissionRejectionRecord {
-    pub(super) id: String,
-    pub(super) face_id: u32,
-    pub(super) reason: &'static str,
-    pub(super) boundary_half_edges: Vec<CreoHalfEdgeRef>,
-    pub(super) vertex_ids: Vec<u32>,
-}
-
 #[derive(Debug, Serialize)]
 pub(super) struct CreoExpandedSectionRecord {
     pub(super) id: String,
@@ -3927,7 +3918,7 @@ mod tests {
     fn native_feature_reference_row_preserves_name_bytes() {
         let records = reference_name_records();
         assert_eq!(records[0].name, "A\u{fffd}");
-        assert_eq!(records[0].name_bytes, b"A\xff");
+        assert_eq!(records[0].name_bytes.as_ref(), b"A\xff");
     }
 
     #[test]
@@ -3939,7 +3930,7 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].owner_feature_id, 2);
         assert_eq!(records[0].header, [0, 0]);
-        assert_eq!(records[0].body, (&payload[3..]));
+        assert_eq!(records[0].body.as_ref(), &payload[3..]);
     }
     mod projection_admission;
 }

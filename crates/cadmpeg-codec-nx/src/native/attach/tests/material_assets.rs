@@ -13,10 +13,7 @@ fn material_asset_attachment_preserves_tiff() {
     let textures =
         crate::native::om::material_texture::material_texture_assets(&container).unwrap();
     assert_eq!(textures.len(), 1);
-    let scan = crate::decode::Scan {
-        container,
-        streams: Vec::new(),
-    };
+    let scan = crate::decode::Scan::new(container, Vec::new());
 
     let ir = crate::test_support::with_decode_context(|ctx| {
         let mut ir = CadIr::empty();
@@ -44,10 +41,7 @@ fn material_asset_attachment_retains_the_tiff_copy() {
     let container = crate::container::scan_bytes(file.as_slice()).unwrap();
     let textures =
         crate::native::om::material_texture::material_texture_assets(&container).unwrap();
-    let scan = crate::decode::Scan {
-        container,
-        streams: Vec::new(),
-    };
+    let scan = crate::decode::Scan::new(container, Vec::new());
     let copy = cadmpeg_core::decode::u64_from_index(texture.len());
     for (limit, admitted) in [(copy, true), (copy - 1, false)] {
         crate::test_support::with_decode_context_over(

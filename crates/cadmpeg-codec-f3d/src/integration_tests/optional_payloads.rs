@@ -5,6 +5,7 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::{Codec, DecodeOptions};
 
@@ -89,6 +90,7 @@ fn damage_entry(bytes: &mut [u8], name: &str, defect: Defect) {
     let central = usize::try_from(entry.central_start).unwrap();
     let local = usize::try_from(entry.header_start).unwrap();
     let payload = usize::try_from(entry.data_start.expect("readable frame")).unwrap();
+    drop(ctx);
     match defect {
         Defect::Crc => bytes[payload] ^= 1,
         Defect::Encryption => {
@@ -115,7 +117,7 @@ fn damage_entry(bytes: &mut [u8], name: &str, defect: Defect) {
 }
 
 #[test]
-fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
+fn unreadable_assets_keep_geometry_and_native_write_omits_unrepresented_payloads() {
     for name in [
         "FusionAssetName[Active]/Previews/thumbnail.png",
         "FusionAssetName[Active]/Images.BlobParts/image.png",
@@ -152,13 +154,30 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
                 .values()
                 .any(|record| record.data() == Some(changed.as_slice())));
             let mut replayed = Vec::new();
-            crate::test_support::plan_inherited_write(
-                decoded.ir(),
-                decoded.source_fidelity(),
-                &mut replayed,
-            )
-            .unwrap();
-            assert_eq!(replayed, changed);
+            let plan = F3dCodec
+                .plan(
+                    cadmpeg_ir::codec::write::EncodeInput::new(
+                        decoded.ir(),
+                        Some(decoded.source_fidelity()),
+                    ),
+                    cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+                )
+                .unwrap();
+            assert!(matches!(
+                plan.report().write_path(),
+                cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+            ));
+            plan.write_to(&mut replayed).unwrap();
+            assert_ne!(replayed, changed);
+            let output = super::decode(replayed);
+            assert_eq!(
+                output.ir().model.bodies.len(),
+                decoded.ir().model.bodies.len()
+            );
+            assert_eq!(
+                output.ir().model.points[0].position(),
+                decoded.ir().model.points[0].position()
+            );
         }
     }
 }

@@ -51,7 +51,7 @@ pub(super) fn valid(
                 records
                     .next()
                     .is_none()
-                    .then_some((record.type_id.clone(), record.payload_len))
+                    .then_some((record.type_id.clone(), record.payload_len()))
             },
             &data.pm_dc_transforms,
         ) else {

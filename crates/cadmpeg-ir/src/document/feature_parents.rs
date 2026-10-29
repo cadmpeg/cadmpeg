@@ -6,6 +6,16 @@ use std::collections::HashMap;
 use super::Model;
 use crate::features::{FeatureDefinition, FeatureId, FeatureOperation};
 
+impl super::FeatureRegenerationParents {
+    pub(crate) fn owners(&self) -> impl Iterator<Item = &FeatureId> {
+        self.0.keys()
+    }
+
+    pub(crate) fn remove_owner(&mut self, owner: &FeatureId) {
+        self.0.remove(owner);
+    }
+}
+
 /// A rejected parent relation expressed through borrowed model identities.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ParentError<'a> {
@@ -149,6 +159,7 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: crate::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
             ),

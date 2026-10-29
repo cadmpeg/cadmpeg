@@ -24,6 +24,7 @@ use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
+        needs_recompute: false,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -37,7 +38,7 @@ fn feature(id: &str, ordinal: u64) -> Feature {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "test".into(),
-                parameters: std::collections::BTreeMap::new(),
+                parameters: (std::collections::BTreeMap::new()),
             }),
         ),
         native_ref: None,
@@ -124,7 +125,7 @@ fn member_definition_preserves_the_body_transform_inside_each_placement() {
 fn saved_edge_loss_counts_final_archive_ownership_once() {
     use crate::loss::F3dLossCode;
     use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::codec::DecodeBody;
     use cadmpeg_ir::report::decode::DecodeTransfer;
 
@@ -150,10 +151,14 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             })
             .collect();
         let member_loss = crate::decode::saved_free_edge_bodies_loss(&member).unwrap();
-        let mut report = DecodeBody::new(DecodeTransfer::at(DecodeDepth::Full, true));
+        let mut report = DecodeBody::new(DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: true,
+        });
         report.losses = vec![member_loss.clone(), member_loss];
         let other_loss = F3dLossCode::XrefMemberMissing.note("missing member".to_owned());
         report.losses.push(other_loss.clone());
@@ -175,6 +180,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             scan: &scan,
             archive: &archive,
             stack: vec!["root.f3d".to_owned()],
+            untyped: cadmpeg_ir::ArenaClasses::default(),
             members: std::collections::BTreeMap::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
@@ -215,9 +221,8 @@ fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
             prototype: PrototypeReference::Unresolved {},
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -230,9 +235,8 @@ fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
                 occurrence: root_child.clone(),
             },
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -258,6 +262,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     let mut merged = Model::default();
     let mut component = Model::default();
     component.bodies = vec![Body {
+        native_ref: None,
         id: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:brep:entity#2").expect("identity grammar")],
@@ -267,6 +272,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
         visible: None,
     }];
     component.regions = vec![Region {
+        native_ref: None,
         id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
         body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
         shells: Vec::new(),
@@ -300,6 +306,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let source_id = "f3d:model:body#source";
     let body = Body {
+        native_ref: None,
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
         regions: vec![RegionId::mint("f3d:model:region#source").unwrap()],
@@ -607,23 +614,41 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
             .collect::<Vec<_>>(),
         [0, 1, 0, 1, 0]
     );
-    assert_eq!(parent.parameters[1].expression, "Span / 2");
-    assert_eq!(parent.parameters[3].expression, "Span / 2");
+    let rendered = |parameter: &cadmpeg_ir::features::DesignParameter| {
+        parameter.expression.render_with(|id| {
+            parent
+                .parameters
+                .iter()
+                .find(|candidate| &candidate.id == id)
+                .map(|candidate| candidate.name.clone())
+        })
+    };
+    assert_eq!(rendered(&parent.parameters[1]).as_deref(), Some("Span / 2"));
+    assert_eq!(rendered(&parent.parameters[3]).as_deref(), Some("Span / 2"));
     assert_eq!(parent.parameters[0].owner, None);
     let scope = parent.parameters[2].owner.as_ref().unwrap();
     assert_eq!(parent.parameters[3].owner.as_ref(), Some(scope));
     assert_ne!(parent.parameters[4].owner.as_ref(), Some(scope));
     assert_eq!(
-        parent.parameters[1].dependencies.as_slice(),
-        std::slice::from_ref(&parent.parameters[0].id)
+        parent.parameters[1]
+            .expression
+            .dependencies()
+            .collect::<Vec<_>>(),
+        [&parent.parameters[0].id]
     );
     assert_eq!(
-        parent.parameters[3].dependencies.as_slice(),
-        std::slice::from_ref(&parent.parameters[2].id)
+        parent.parameters[3]
+            .expression
+            .dependencies()
+            .collect::<Vec<_>>(),
+        [&parent.parameters[2].id]
     );
     assert_eq!(
-        parent.parameters[4].dependencies.as_slice(),
-        std::slice::from_ref(&parent.parameters[2].id)
+        parent.parameters[4]
+            .expression
+            .dependencies()
+            .collect::<Vec<_>>(),
+        [&parent.parameters[2].id]
     );
     let container = parent
         .features
@@ -853,9 +878,8 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             prototype: PrototypeReference::Unresolved {},
             parent: OccurrenceParent::Root {},
             ordinal: index,
-            transform,
+            transform: Some(transform),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -869,26 +893,29 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             document: ExternalDocument::path("member.f3d"),
             object: None,
         };
-        child.transform = Transform::affine([
-            [1.0, 0.0, 0.0, 20.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .unwrap();
+        child.transform = Some(
+            Transform::affine([
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap(),
+        );
         child.native_ref = Some(table.references[0].id.clone());
         ir.model.occurrences.extend([group, child]);
     }
     let mut report =
-        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::at(
-            cadmpeg_core::decode::DecodeDepth::Full,
-            false,
-        ));
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: false,
+        });
     let mut fidelity = cadmpeg_ir::SourceFidelity::default();
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
         archive: &archive,
         stack: vec!["root.f3d".to_owned()],
+        untyped: cadmpeg_ir::ArenaClasses::default(),
         members: std::collections::BTreeMap::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
@@ -949,7 +976,7 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
             .unwrap();
         let rows = body_world.rows();
         translations.push([rows[0][3], rows[1][3]]);
-        assert_eq!(imported.transform.rows()[1][3], 5.0);
+        assert_eq!(imported.transform.unwrap().rows()[1][3], 5.0);
     }
     let references: Vec<XrefReference> = ir
         .native
@@ -963,8 +990,14 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     assert_eq!(references[0].transform.unwrap().rows(), child_matrix);
     assert_eq!(translations, [[25.0, 60.0], [100.0, 5.0]]);
     assert_eq!(member_definitions[0], member_definitions[1]);
-    assert_eq!(ir.model.occurrences[1].transform.rows()[0][3], 20.0);
-    assert_eq!(ir.model.occurrences[3].transform.rows()[0][3], 20.0);
+    assert_eq!(
+        ir.model.occurrences[1].transform.unwrap().rows()[0][3],
+        20.0
+    );
+    assert_eq!(
+        ir.model.occurrences[3].transform.unwrap().rows()[0][3],
+        20.0
+    );
 }
 
 #[test]
@@ -1106,9 +1139,8 @@ fn repeated_member_constraints_keep_shared_definitions_and_instance_local_operan
             },
             parent: OccurrenceParent::Root {},
             ordinal: 0,
-            transform: Transform::identity(),
+            transform: Some(Transform::identity()),
             linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
             name: None,
             visible: None,
             link: None,
@@ -1171,7 +1203,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         DesignComponentOccurrencePlacement,
     };
     use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::products::{
         AssemblyJoint, ExternalDocument, JointConnector, JointId, JointOperand, Occurrence,
@@ -1256,8 +1288,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             let mut occurrence = serde_json::from_value::<Occurrence>(serde_json::json!({
                 "id":format!("f3d:model:occurrence#{name}"),
                 "prototype":{"scope":"local", "definition":definition},
-                "parent":parent, "ordinal":0, "transform":Transform::identity(),
-                "scale":[1.0, 1.0, 1.0]
+                "parent":parent, "ordinal":0, "transform":Transform::identity()
             }))
             .unwrap();
             occurrence.native_ref = native.map(str::to_owned);
@@ -1360,7 +1391,7 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         ir.model.occurrences.push(serde_json::from_value(serde_json::json!({
             "id":placing, "prototype":{"scope":"external", "document":ExternalDocument::path("member.f3d")},
             "parent":{"kind":"root"}, "ordinal":0, "transform":Transform::identity(),
-            "scale":[1.0, 1.0, 1.0], "native_ref":reference.id
+            "native_ref":reference.id
         })).unwrap());
         let root_operand = JointOperand::root("object", keys.clone());
         ir.model.assembly_joints.push(joint(
@@ -1368,14 +1399,17 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             JointOperand::occurrence(placing.clone(), "object", keys.clone()),
             root_operand.clone(),
         ));
-        let mut report =
-            cadmpeg_ir::codec::DecodeBody::new(DecodeTransfer::at(DecodeDepth::Full, false));
+        let mut report = cadmpeg_ir::codec::DecodeBody::new(DecodeTransfer {
+            scope: cadmpeg_ir::document::ContentScope::full(),
+            geometry_transferred: false,
+        });
         assert_eq!(
             MergeSession {
                 ctx: &ctx,
                 scan: &scan,
                 archive: &archive,
                 stack: vec!["root.f3d".into()],
+                untyped: cadmpeg_ir::ArenaClasses::default(),
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),

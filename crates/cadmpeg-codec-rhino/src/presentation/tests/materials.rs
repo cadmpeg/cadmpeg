@@ -234,7 +234,6 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
         assert_eq!(material.textures[2].legacy_file_path, "environment.png");
         assert_eq!(material.textures[2].texture_type, 86);
         assert_eq!(material.textures[2].mode, 1);
-        assert_eq!(material.textures[0].source_offset, 77);
         assert_eq!(material.textures[0].wrap, [0, 0, 0]);
         assert_eq!(
             material.textures[0].uvw_transform[0],
@@ -331,4 +330,72 @@ fn physically_based_material_version_one_defaults_alpha() {
         .expect("version one physically based material");
     assert_eq!(material.revision.version(), 1);
     assert_eq!(material.revision.alpha(), crate::test_support::finite(1.0));
+}
+
+#[test]
+fn typed_material_handoff_keeps_absent_fresnel_values_and_ordered_texture_identities() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let bytes = v2_v3_material_payload(1);
+    let mut material = parse_material(
+        &ctx,
+        &bytes,
+        MaterialParseInput {
+            range: 0..bytes.len(),
+            archive: ArchiveVersion::V3,
+            writer_version: None,
+            source_offset: 77,
+            physically_based: None,
+        },
+        &mut Vec::new(),
+    )
+    .unwrap();
+    let texture = super::texture_payload(0, &[]);
+    material.textures = [0x44, 0x11]
+        .into_iter()
+        .map(|identity| {
+            let mut texture = crate::presentation::parse_texture(
+                &ctx,
+                &texture,
+                0..texture.len(),
+                ArchiveVersion::V8,
+                42,
+                &mut Vec::new(),
+            )
+            .unwrap();
+            texture.source_uuid = Some(Uuid::from_wire([identity; 16]).to_string());
+            texture
+        })
+        .collect();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.native
+        .namespace_mut("rhino")
+        .set_arena(&ctx, "materials", &[&material])
+        .unwrap();
+    let native = ir.native.clone();
+    let handoff = crate::presentation::MaterialProjection::from(material);
+    assert_eq!(ir.native, native);
+    assert_eq!(handoff.name, "old steel");
+    assert_eq!(handoff.diffuse, [5, 6, 7, 8]);
+    assert_eq!(handoff.archive_index, Some(7));
+    assert_eq!(
+        handoff.properties[0],
+        (
+            "index_of_refraction",
+            Some(crate::test_support::finite(1.45))
+        )
+    );
+    assert_eq!(
+        handoff.properties[1],
+        ("reflectivity", Some(crate::test_support::finite(0.0)))
+    );
+    assert_eq!(handoff.properties[4], ("reflection_glossiness", None));
+    assert_eq!(handoff.properties[5], ("refraction_glossiness", None));
+    assert_eq!(handoff.properties[6], ("fresnel_index_of_refraction", None));
+    assert_eq!(
+        handoff.texture_source_uuids,
+        [
+            Some("44444444-4444-4444-4444-444444444444".to_owned()),
+            Some("11111111-1111-1111-1111-111111111111".to_owned()),
+        ]
+    );
 }

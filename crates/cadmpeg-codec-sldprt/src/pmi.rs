@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic dimension records stored in `PMISemanticDataDB`.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i64};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
@@ -16,7 +16,11 @@ use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::PmiDimension;
 
+mod database;
+#[cfg(test)]
 mod patch_slots;
+pub(crate) mod write;
+#[cfg(test)]
 use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
 
 fn exact_count(value: f64) -> Option<i64> {
@@ -28,22 +32,28 @@ fn exact_count(value: f64) -> Option<i64> {
     (value.fract() == 0.0).then_some(count)
 }
 
-fn dimension_subtype(
-    record: &PmiDimension,
-    empty_subtype_is_count: bool,
-) -> cadmpeg_ir::features::PmiDimensionSubtype {
-    use cadmpeg_ir::features::PmiDimensionSubtype;
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DimensionSubtype {
+    Linear,
+    Angle,
+    Diameter,
+    Radial,
+    Ordinate,
+    Count,
+    Native(String),
+}
 
+fn dimension_subtype(record: &PmiDimension, empty_subtype_is_count: bool) -> DimensionSubtype {
     match record.subtype.as_str() {
-        "Linear" => PmiDimensionSubtype::Linear,
-        "Angle" => PmiDimensionSubtype::Angle,
-        "Diameter" => PmiDimensionSubtype::Diameter,
-        "Radial" => PmiDimensionSubtype::Radial,
-        "Ordinate" => PmiDimensionSubtype::Ordinate,
+        "Linear" => DimensionSubtype::Linear,
+        "Angle" => DimensionSubtype::Angle,
+        "Diameter" => DimensionSubtype::Diameter,
+        "Radial" => DimensionSubtype::Radial,
+        "Ordinate" => DimensionSubtype::Ordinate,
         "" if empty_subtype_is_count && exact_count(record.value.get()).is_some() => {
-            PmiDimensionSubtype::Count
+            DimensionSubtype::Count
         }
-        other => PmiDimensionSubtype::Native(other.to_owned()),
+        other => DimensionSubtype::Native(other.to_owned()),
     }
 }
 
@@ -181,143 +191,164 @@ pub(crate) fn enrich_history_parameters_with_features(
                 && neutral_parameter_is_count(neutral, name, None)
         });
         let expression = match dimension_subtype(record, empty_subtype_is_count) {
-            cadmpeg_ir::features::PmiDimensionSubtype::Linear
-            | cadmpeg_ir::features::PmiDimensionSubtype::Ordinate => {
+            DimensionSubtype::Linear | DimensionSubtype::Ordinate => {
                 format!("{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Angle => record.value.get().to_string(),
-            cadmpeg_ir::features::PmiDimensionSubtype::Diameter => {
+            DimensionSubtype::Angle => record.value.get().to_string(),
+            DimensionSubtype::Diameter => {
                 format!("<MOD-DIAM>{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Radial => {
+            DimensionSubtype::Radial => {
                 format!("R{millimetres}mm")
             }
-            cadmpeg_ir::features::PmiDimensionSubtype::Count => {
-                match exact_count(record.value.get()) {
-                    Some(count) => count.to_string(),
-                    None => continue,
-                }
-            }
-            cadmpeg_ir::features::PmiDimensionSubtype::Native(_) => continue,
+            DimensionSubtype::Count => match exact_count(record.value.get()) {
+                Some(count) => count.to_string(),
+                None => continue,
+            },
+            DimensionSubtype::Native(_) => continue,
         };
-        let parameters = &mut histories[*history_index].features[*feature_index].parameters;
-        if parameters.contains_key(name) {
+        let feature = &mut histories[*history_index].features[*feature_index];
+        if feature.parameters.contains_key(name) {
             continue;
         }
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name.to_owned()) else {
             continue;
         };
-        parameters.insert(name, expression);
+        // This temporary parameter comes solely from the agreed PMI record.
+        // Its reference-only state supplies the driving role; an actual
+        // Keywords dimension was handled above and keeps its own Driven fact.
+        feature
+            .dimension_properties
+            .entry(name.as_str().to_owned())
+            .or_default()
+            .insert(
+                cadmpeg_core::nonblank_literal!("Driven"),
+                record.reference_only.to_string(),
+            );
+        feature.parameters.insert(name, expression);
     }
 }
 
+/// Stable neutral identity of one semantic source occurrence.
+pub(crate) fn annotation_id(record: &PmiDimension) -> Result<cadmpeg_ir::ids::PmiId, CodecError> {
+    cadmpeg_ir::ids::PmiId::mint(format!("sldprt:model:pmi#{}", record.guid))
+        .map_err(CodecError::malformed)
+}
+
+#[cfg(test)]
 pub(crate) fn patch_payload(
     ir: &cadmpeg_ir::CadIr,
     block_id: &str,
     payload: &mut [u8],
-) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{ParameterValue, PmiDimensionSubtype};
-
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::{
+        attributes::{AttributeTarget, AttributeValue},
+        pmi::{PmiDefinition, PmiQuantity},
+    };
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(());
     };
-    let native =
-        crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
-    let records_by_id = native
-        .pmi_dimensions
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<HashMap<_, _>>();
+    let native = crate::native::SldprtNative::load(namespace)?;
     for record in native
         .pmi_dimensions
         .iter()
         .filter(|record| record.parent == block_id)
     {
-        if record.item_count.get() != 1 {
-            continue;
-        }
-        let mut parameters = ir.model.parameters.iter().filter_map(|parameter| {
-            let semantic = parameter.pmi.as_ref()?;
-            (semantic.native_ref == record.id
-                || records_by_id
-                    .get(semantic.native_ref.as_str())
-                    .is_some_and(|bound| equivalent_dimensions(record, bound)))
-            .then_some((parameter, semantic))
-        });
-        let Some((parameter, semantic)) = parameters.next() else {
-            continue;
-        };
-        if parameters.next().is_some() {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "multiple parameters reference PMI record {}",
-                record.id
-            )));
-        }
-        let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
-        let subtype = dimension_subtype(record, empty_subtype_is_count);
-        if semantic.subtype != subtype {
-            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT PMI record {} changes dimension subtype",
-                record.id
-            )));
-        }
-        let native_value = match (&subtype, &parameter.value) {
-            (PmiDimensionSubtype::Angle, Some(ParameterValue::Angle(angle))) => angle.get(),
-            (
-                PmiDimensionSubtype::Linear
-                | PmiDimensionSubtype::Diameter
-                | PmiDimensionSubtype::Radial
-                | PmiDimensionSubtype::Ordinate,
-                Some(ParameterValue::Length(length)),
-            ) => length.get() / 1000.0,
-            (PmiDimensionSubtype::Count, Some(ParameterValue::Integer(count))) => {
-                f64_from_i64(*count).ok_or_else(|| {
-                    cadmpeg_core::CodecError::NotImplemented(format!(
-                        "SLDPRT PMI record {} has a count beyond exact float range",
-                        record.id
-                    ))
-                })?
-            }
-            _ => {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
-                    record.id
-                )));
-            }
-        };
-        FloatPatchSlot::read(payload, record.offset)?.write(native_value);
-        IntegerPatchSlot::read(payload, record.offset, "valPrecision")?
-            .write(semantic.precision)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        for (field, value) in [
-            ("isBasic", semantic.basic),
-            ("isInspection", semantic.inspection),
-            ("isReferenceOnly", semantic.reference_only),
-        ] {
-            BooleanPatchSlot::read(payload, record.offset, field)?.write(value);
-        }
-        if semantic.display_text.as_deref() != record.display_text() {
-            let (Some((previous, offset)), Some(text)) = (
-                record.display_text.as_ref(),
-                semantic.display_text.as_deref(),
-            ) else {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} changes optional display text",
-                    record.id
+        let id = annotation_id(record)?;
+        let annotation = ir.model.pmi.iter().find(|annotation| annotation.id == id);
+        let (value, precision, basic, inspection, reference_only, text) = if ir.scope.model {
+            let Some(annotation) = annotation else {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT PMI deletion of {id} requires synthesis"
                 )));
             };
-            if text.len() != previous.len() {
-                return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-                    "SLDPRT PMI record {} changes display-text width",
-                    record.id
+            let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT PMI occurrence {id} changed semantic family"
                 )));
+            };
+            let value = dimension
+                .resolved_nominal(ir)
+                .map(|value| match value.quantity {
+                    PmiQuantity::Length => value.value.get() * 0.001,
+                    PmiQuantity::Angle | PmiQuantity::Ratio => value.value.get(),
+                })
+                .ok_or_else(|| {
+                    CodecError::UnsupportedContent(format!(
+                        "SLDPRT PMI occurrence {id} has no evaluated nominal"
+                    ))
+                })?;
+            let attribute = |name: &str| {
+                ir.model
+                    .attributes
+                    .iter()
+                    .find(|attribute| {
+                        attribute.target == AttributeTarget::Pmi(id.clone())
+                            && attribute.name == name
+                    })
+                    .and_then(|attribute| attribute.values.first().and_then(Option::as_ref))
+            };
+            let precision = match attribute("precision") {
+                Some(AttributeValue::Integer(value)) => *value,
+                _ => 6,
+            };
+            let flag = |name| matches!(attribute(name), Some(AttributeValue::Boolean(true)));
+            let text = ir
+                .model
+                .pmi
+                .iter()
+                .find_map(|annotation| match &annotation.definition {
+                    PmiDefinition::Presentation {
+                        text, semantics, ..
+                    } if semantics.contains(&id) => text.clone(),
+                    _ => None,
+                });
+            (
+                value,
+                precision,
+                flag("basic"),
+                flag("inspection"),
+                flag("reference_only"),
+                text,
+            )
+        } else {
+            (
+                record.value.get(),
+                record.precision,
+                record.basic,
+                record.inspection,
+                record.reference_only,
+                record.display_text().map(str::to_owned),
+            )
+        };
+        let map_offset = record.offset;
+        FloatPatchSlot::read(payload, map_offset)?.write(value);
+        IntegerPatchSlot::read(payload, map_offset, "valPrecision")?
+            .write(precision)
+            .map_err(CodecError::malformed)?;
+        for (field, value) in [
+            ("isBasic", basic),
+            ("isInspection", inspection),
+            ("isReferenceOnly", reference_only),
+        ] {
+            BooleanPatchSlot::read(payload, map_offset, field)?.write(value);
+        }
+        match (record.display_text.as_ref(), text.as_deref()) {
+            (Some((previous, offset)), Some(text)) if previous.len() == text.len() => {
+                patch_bytes(payload, *offset, text.as_bytes(), &record.id)?;
             }
-            patch_bytes(payload, *offset, text.as_bytes(), &record.id)?;
+            (None, None) => {}
+            _ => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT PMI occurrence {id} requires a different text layout"
+                )))
+            }
         }
     }
     Ok(())
 }
 
+#[cfg(test)]
 fn patch_bytes(
     payload: &mut [u8],
     offset: u64,
@@ -345,162 +376,217 @@ fn patch_bytes(
     Ok(())
 }
 
+#[derive(Debug)]
+pub(crate) struct ProjectedDimensions {
+    pub(crate) annotations: Vec<cadmpeg_ir::pmi::PmiAnnotation>,
+    pub(crate) attributes: Vec<cadmpeg_ir::attributes::SourceAttribute>,
+    pub(crate) losses: Vec<LossNote>,
+}
+
 pub(crate) fn apply_to_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &mut Vec<cadmpeg_ir::features::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<ProjectedDimensions, CodecError> {
     use cadmpeg_ir::{
+        attributes::{AttributeTarget, AttributeValue, SourceAttribute},
         features::{
-            DesignParameter, DimensionDisplay, ParameterId, ParameterPmi, ParameterValue,
-            PmiDimensionSubtype,
+            DesignParameter, Dimension, DimensionDisplay, Expression, ParameterId, ParameterValue,
         },
-        scalar::Length,
+        ids::{AttributeId, PmiId},
+        pmi::{
+            DimensionKind, PmiAnnotation, PmiDefinition, PmiDimension as NeutralDimension,
+            PmiQuantity, PmiValue,
+        },
     };
-
-    let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
+    let mut result = ProjectedDimensions {
+        annotations: Vec::new(),
+        attributes: Vec::new(),
+        losses: Vec::new(),
+    };
+    let mut owners = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
     for feature in features {
         if let Some(name) = feature.name.as_deref() {
-            feature_names.entry(name).or_default().push(feature);
+            owners.entry(name).or_default().push(feature);
         }
     }
-    for record in agreed_dimension_records(records) {
-        let Some((name, owner_name)) = record.cad_text.split_once('@') else {
-            continue;
-        };
-        let Some([owner]) = feature_names.get(owner_name).map(Vec::as_slice) else {
-            continue;
-        };
-        let existing_parameter = parameters.iter().position(|parameter| {
-            parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name
+    let agreed = agreed_dimension_records(records)
+        .into_iter()
+        .map(|record| record.cad_text.as_str())
+        .collect::<HashSet<_>>();
+    let mut ordered = records.iter().collect::<Vec<_>>();
+    ordered.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    for record in ordered {
+        let owner = record.cad_text.split_once('@').and_then(|(name, owner)| {
+            let [owner] = owners.get(owner)?.as_slice() else {
+                return None;
+            };
+            Some((name, *owner))
         });
-        let empty_subtype_is_count = neutral_parameter_is_count(
-            owner,
-            name,
-            existing_parameter.and_then(|index| parameters[index].value.as_ref()),
-        );
-        let subtype = dimension_subtype(record, empty_subtype_is_count);
-        let millimetres = record.value.get() * 1000.0;
-        let (expression, display, value) = match subtype {
-            PmiDimensionSubtype::Linear => (
-                format!("{millimetres}mm"),
+        let existing = owner.and_then(|(name, owner)| {
+            parameters.iter().position(|parameter| {
+                parameter.owner.as_ref() == Some(&owner.id) && parameter.name == name
+            })
+        });
+        let count = owner.is_some_and(|(name, owner)| {
+            neutral_parameter_is_count(
+                owner,
+                name,
+                existing.and_then(|index| parameters[index].value.as_ref()),
+            )
+        });
+        let subtype = dimension_subtype(record, count);
+        let (kind, source_value, display) = match &subtype {
+            DimensionSubtype::Linear => (
+                DimensionKind::Size,
+                PmiValue::new(record.value.get() * 1000.0, PmiQuantity::Length),
                 None,
-                Some(ParameterValue::Length(
-                    Length::new(millimetres).ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SolidWorks projected length must be finite".into(),
-                        )
-                    })?,
-                )),
             ),
-            PmiDimensionSubtype::Angle => (
-                record.value.get().to_string(),
+            DimensionSubtype::Ordinate => (
+                DimensionKind::Location,
+                PmiValue::new(record.value.get() * 1000.0, PmiQuantity::Length),
                 None,
-                Some(ParameterValue::Angle(
-                    cadmpeg_ir::scalar::Angle::from_assigned_real(record.value),
-                )),
             ),
-            PmiDimensionSubtype::Diameter => (
-                format!("<MOD-DIAM>{millimetres}mm"),
+            DimensionSubtype::Angle => (
+                DimensionKind::Angular,
+                PmiValue::new(record.value.get(), PmiQuantity::Angle),
+                None,
+            ),
+            DimensionSubtype::Diameter => (
+                DimensionKind::Diameter,
+                PmiValue::new(record.value.get() * 1000.0, PmiQuantity::Length),
                 Some(DimensionDisplay::Diameter),
-                Some(ParameterValue::Length(
-                    Length::new(millimetres).ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SolidWorks projected length must be finite".into(),
-                        )
-                    })?,
-                )),
             ),
-            PmiDimensionSubtype::Radial => (
-                format!("R{millimetres}mm"),
+            DimensionSubtype::Radial => (
+                DimensionKind::Radius,
+                PmiValue::new(record.value.get() * 1000.0, PmiQuantity::Length),
                 Some(DimensionDisplay::Radius),
-                Some(ParameterValue::Length(
-                    Length::new(millimetres).ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SolidWorks projected length must be finite".into(),
-                        )
-                    })?,
-                )),
             ),
-            PmiDimensionSubtype::Ordinate => (
-                format!("{millimetres}mm"),
+            DimensionSubtype::Count => (
+                DimensionKind::Other("count".into()),
+                PmiValue::new(record.value.get(), PmiQuantity::Ratio),
                 None,
-                Some(ParameterValue::Length(
-                    Length::new(millimetres).ok_or_else(|| {
-                        cadmpeg_core::CodecError::Malformed(
-                            "SolidWorks projected length must be finite".into(),
-                        )
-                    })?,
-                )),
             ),
-            PmiDimensionSubtype::Count => {
-                let Some(count) = exact_count(record.value.get()) else {
-                    continue;
-                };
-                (
-                    count.to_string(),
-                    None,
-                    Some(ParameterValue::Integer(count)),
-                )
+            DimensionSubtype::Native(kind) => {
+                result.losses.push(SldprtLossCode::PmiDimensionUnbound.note(format!("PMI record {} has source subtype {kind:?} without a known neutral quantity; its typed native value is retained", record.id)));
+                (DimensionKind::Other(kind.clone()), None, None)
             }
-            PmiDimensionSubtype::Native(_) => (record.value.get().to_string(), None, None),
         };
-        let semantic = ParameterPmi {
-            subtype,
-            precision: record.precision,
-            display_text: record.display_text().map(str::to_owned),
-            basic: record.basic,
-            inspection: record.inspection,
-            reference_only: record.reference_only,
-            native_ref: record.id.clone(),
+        let id = annotation_id(record)?;
+        let parameter = match (existing, owner, source_value) {
+            (Some(index), _, _) => Some(index),
+            (None, Some((name, owner)), Some(value))
+                if record.item_count.get() == 1 && agreed.contains(record.cad_text.as_str()) =>
+            {
+                let ordinal = parameters
+                    .iter()
+                    .filter(|parameter| parameter.owner.as_ref() == Some(&owner.id))
+                    .map(|parameter| parameter.ordinal)
+                    .max()
+                    .map_or(Some(0), |ordinal| ordinal.checked_add(1))
+                    .ok_or_else(|| {
+                        CodecError::malformed("SLDPRT PMI parameter ordinal overflows")
+                    })?;
+                let cache = match subtype {
+                    DimensionSubtype::Count => {
+                        exact_count(value.value.get()).map(ParameterValue::Integer)
+                    }
+                    _ => cadmpeg_ir::features::DimensionValue::to_parameter_value(&value),
+                };
+                let expression = cache.as_ref().map_or_else(
+                    || Expression::text(record.value.get().to_string()),
+                    |value| {
+                        Expression::text(crate::history::literals::format_parameter_value(value))
+                    },
+                );
+                let index = parameters.len();
+                parameters.push(DesignParameter {
+                    id: ParameterId::compose(
+                        &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
+                        cadmpeg_ir::ids::IdentityKey::try_new(format!("pmi:{}", record.guid))
+                            .map_err(CodecError::malformed)?,
+                    ),
+                    owner: Some(owner.id.clone()),
+                    ordinal,
+                    name: name.to_owned(),
+                    expression,
+                    driving: !record.reference_only,
+                    display,
+                    value: cache,
+                    properties: BTreeMap::new(),
+                    pmi: None,
+                    native_ref: None,
+                });
+                Some(index)
+            }
+            _ => None,
         };
-        if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
-            // Keywords is the authoritative design value when it already
-            // supplied this parameter. PMI still contributes its semantic
-            // annotation and source identity.
-            parameter.pmi = Some(semantic);
-            continue;
-        }
-        let ordinal = match parameters
-            .iter()
-            .filter(|parameter| parameter.owner.as_ref() == Some(&owner.id))
-            .map(|parameter| parameter.ordinal)
-            .max()
-        {
-            Some(ordinal) => ordinal.checked_add(1).ok_or_else(|| {
-                cadmpeg_core::CodecError::Malformed("SLDPRT PMI parameter ordinal overflows".into())
-            })?,
-            None => 0,
+        let nominal = match parameter {
+            Some(index) if source_value.is_some() => {
+                if parameters[index].pmi.is_none() {
+                    parameters[index].pmi = Some(id.clone());
+                }
+                if let (Some(source), Some(current)) =
+                    (source_value, parameters[index].value.as_ref())
+                {
+                    use cadmpeg_ir::features::DimensionValue;
+                    if let Some(current) = PmiValue::from_parameter_value(current) {
+                        if source != current {
+                            result.losses.push(SldprtLossCode::PmiDimensionUnbound.note(format!("PMI record {} nominal differs from its canonical design parameter {}; the annotation binds that parameter", record.id, parameters[index].id)));
+                        }
+                    }
+                }
+                Some(Dimension::Parameter(parameters[index].id.clone()))
+            }
+            _ => source_value.map(Dimension::Literal),
         };
-        parameters.push(DesignParameter {
-            id: ParameterId::compose(
-                &cadmpeg_ir::identity_namespace!("sldprt", "model", "parameter"),
-                cadmpeg_ir::identity_key!("pmi:").then(
-                    cadmpeg_ir::ids::IdentityKey::try_new(record.guid.clone()).map_err(
-                        |error| {
-                            cadmpeg_core::CodecError::malformed(format_args!(
-                                "SLDPRT PMI record guid is not identity key text: {error}"
-                            ))
-                        },
-                    )?,
-                ),
-            ),
-            owner: Some(
-                cadmpeg_ir::features::FeatureId::mint(owner.id.as_str().to_owned())
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-            ),
-            ordinal,
-            name: name.to_owned(),
-            expression,
-            display,
-            value,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            properties: BTreeMap::new(),
-            pmi: Some(semantic),
+        result.annotations.push(PmiAnnotation {
             native_ref: None,
+            id: id.clone(),
+            name: None,
+            visible: None,
+            targets: Vec::new(),
+            definition: PmiDefinition::Dimension(
+                NeutralDimension::new(kind, nominal, None).map_err(CodecError::malformed)?,
+            ),
         });
+        if let Some(text) = record.display_text().filter(|text| !text.is_empty()) {
+            result.annotations.push(PmiAnnotation {
+                native_ref: None,
+                id: PmiId::mint(format!("sldprt:model:pmi#presentation:{}", record.guid))
+                    .map_err(CodecError::malformed)?,
+                name: None,
+                visible: None,
+                targets: Vec::new(),
+                definition: PmiDefinition::Presentation {
+                    text: Some(text.to_owned()),
+                    placement: None,
+                    semantics: vec![id.clone()],
+                },
+            });
+        }
+        for (name, value) in [
+            ("precision", AttributeValue::Integer(record.precision)),
+            ("basic", AttributeValue::Boolean(record.basic)),
+            ("inspection", AttributeValue::Boolean(record.inspection)),
+            (
+                "reference_only",
+                AttributeValue::Boolean(record.reference_only),
+            ),
+        ] {
+            result.attributes.push(SourceAttribute::new(
+                ctx,
+                AttributeId::mint(format!("sldprt:model:attribute#pmi:{}:{name}", record.guid))
+                    .map_err(CodecError::malformed)?,
+                None,
+                AttributeTarget::Pmi(id.clone()),
+                name.to_owned(),
+                vec![value],
+            )?);
+        }
     }
-    Ok(())
+    Ok(result)
 }
 
 /// Parse work one `PMISemanticDataDB` section may spend per payload byte. One
@@ -594,6 +680,7 @@ pub(crate) fn dimensions(
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
+    untyped_sections: &mut std::collections::BTreeSet<String>,
 ) -> Result<Vec<PmiDimension>, CodecError> {
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
@@ -606,7 +693,8 @@ pub(crate) fn dimensions(
         }
         collect_dimensions(
             ctx,
-            source.payload(),
+            scan.section_view(source)
+                .ok_or_else(|| CodecError::malformed("PMI section lacks its source view"))?,
             source.source_stream(),
             source.native_id().as_str(),
             annotations,
@@ -614,6 +702,7 @@ pub(crate) fn dimensions(
             DimensionOutput {
                 records: &mut records,
                 seen: &mut seen,
+                untyped_sections: Some(untyped_sections),
             },
         )?;
     }
@@ -627,7 +716,7 @@ pub(crate) fn dimensions(
 /// placeholders; production decode supplies real block identities.
 pub(crate) fn parse_payload(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    payload: View<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiDimension>, CodecError> {
     let mut annotations = Annotations::default();
@@ -644,6 +733,7 @@ pub(crate) fn parse_payload(
         DimensionOutput {
             records: &mut records,
             seen: &mut seen,
+            untyped_sections: None,
         },
     )?;
     records.sort_by(|left, right| left.id.cmp(&right.id));
@@ -653,22 +743,117 @@ pub(crate) fn parse_payload(
 struct DimensionOutput<'a> {
     records: &'a mut Vec<PmiDimension>,
     seen: &'a mut HashSet<String>,
+    untyped_sections: Option<&'a mut std::collections::BTreeSet<String>>,
 }
 
 fn collect_dimensions(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    payload: View<'_>,
+    stream: &cadmpeg_ir::StreamName,
+    parent: &str,
+    annotations: &mut Annotations,
+    losses: &mut Vec<LossNote>,
+    mut output: DimensionOutput<'_>,
+) -> Result<(), CodecError> {
+    let images = match database::read::images(ctx, payload) {
+        Ok(Some(images)) => images,
+        Ok(None) => {
+            return collect_dimension_maps(
+                ctx,
+                payload,
+                stream,
+                parent,
+                annotations,
+                losses,
+                output,
+            )
+        }
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(error) => {
+            if let Some(sections) = output.untyped_sections.as_deref_mut() {
+                sections.insert(parent.to_owned());
+            }
+            losses.push(
+                SldprtLossCode::PmiSemanticRecordMalformed
+                    .note(format!("PMISemanticDataDB section {parent}: {error}")),
+            );
+            // Retain independent readable maps when its database graph failed.
+            return collect_dimension_maps(
+                ctx,
+                payload,
+                stream,
+                parent,
+                annotations,
+                losses,
+                output,
+            );
+        }
+    };
+    for image in images {
+        if !write::valid_guid(&image.key) {
+            if let Some(sections) = output.untyped_sections.as_deref_mut() {
+                sections.insert(parent.to_owned());
+            }
+            losses.push(SldprtLossCode::PmiSemanticRecordUntyped.note(format!(
+                "PMISemanticDataDB key {:?} has no typed semantic representation",
+                image.key
+            )));
+            continue;
+        }
+        let first = output.records.len();
+        collect_dimension_maps(
+            ctx,
+            image.encoded,
+            stream,
+            parent,
+            &mut Annotations::default(),
+            losses,
+            DimensionOutput {
+                records: output.records,
+                seen: output.seen,
+                untyped_sections: output.untyped_sections.as_deref_mut(),
+            },
+        )?;
+        for record in &mut output.records[first..] {
+            record.offset = image.original_pointer(record.offset)?;
+            if let Some((_, offset)) = &mut record.display_text {
+                *offset = image.original_pointer(*offset)?;
+            }
+            crate::annotations::note(
+                annotations,
+                &record.id,
+                stream,
+                record.offset,
+                "messagepack_dim_sem_data",
+                Exactness::ByteExact,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_dimension_maps(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
     stream: &cadmpeg_ir::StreamName,
     parent: &str,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
     output: DimensionOutput<'_>,
 ) -> Result<(), CodecError> {
-    let DimensionOutput { records, seen } = output;
+    let payload = source.window();
+    let DimensionOutput {
+        records,
+        seen,
+        mut untyped_sections,
+    } = output;
     let mut candidates = candidate_maps(payload);
     let Some(work_limit) = payload.len().checked_mul(PMI_PARSE_WORK_PER_PAYLOAD_BYTE) else {
         let skipped = candidates.count();
         if skipped > 0 {
+            if let Some(sections) = untyped_sections.as_deref_mut() {
+                sections.insert(parent.to_owned());
+            }
             losses.push(parse_capped_loss(parent, payload.len(), 0, skipped));
         }
         return Ok(());
@@ -679,8 +864,17 @@ fn collect_dimensions(
         if seen.contains(&normalized) {
             continue;
         }
-        match extract_dimension(ctx, payload, offset, &normalized, parent, &work) {
+        match extract_dimension(ctx, source, offset, &normalized, parent, &work) {
             Ok(Some(record)) => {
+                if record.item_count.get() != 1 {
+                    if let Some(sections) = untyped_sections.as_deref_mut() {
+                        sections.insert(parent.to_owned());
+                    }
+                    losses.push(SldprtLossCode::PmiSemanticRecordUntyped.note(format!(
+                        "PMI record {} contains {} additional semantic dimension item(s) without typed payloads",
+                        record.id, record.item_count.get() - 1
+                    )));
+                }
                 crate::annotations::note(
                     annotations,
                     record.id.clone(),
@@ -691,13 +885,26 @@ fn collect_dimensions(
                 )?;
                 records.push(record);
             }
-            Ok(None) => {}
+            Ok(None) => {
+                if let Some(sections) = untyped_sections.as_deref_mut() {
+                    sections.insert(parent.to_owned());
+                }
+                losses.push(SldprtLossCode::PmiSemanticRecordUntyped.note(format!(
+                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) has no supported typed semantic record"
+                )));
+            }
             Err(PmiParseError::Malformed(message)) => {
+                if let Some(sections) = untyped_sections.as_deref_mut() {
+                    sections.insert(parent.to_owned());
+                }
                 losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
                     "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
                 )));
             }
             Err(PmiParseError::Capped) => {
+                if let Some(sections) = untyped_sections.as_deref_mut() {
+                    sections.insert(parent.to_owned());
+                }
                 let skipped = candidates.count() + 1;
                 losses.push(parse_capped_loss(parent, payload.len(), offset, skipped));
                 return Ok(());
@@ -747,18 +954,19 @@ impl From<CodecError> for PmiParseError {
 /// Malformed candidates carry a loss; resource refusals end the decode.
 fn extract_dimension(
     ctx: &DecodeContext<'_>,
-    payload: &[u8],
+    source: View<'_>,
     offset: usize,
     guid: &str,
     parent: &str,
     work: &WorkBudget,
 ) -> Result<Option<PmiDimension>, PmiParseError> {
+    let payload = source.window();
     let mut cursor = offset;
     let parse = Parse {
         shape: Shape::Record,
         work,
     };
-    let Some(outer_value) = parse_value(ctx, payload, &mut cursor, 0, parse)? else {
+    let Some(outer_value) = parse_value(ctx, source, &mut cursor, 0, parse)? else {
         if work.exhausted() {
             return Err(PmiParseError::Capped);
         }
@@ -824,6 +1032,21 @@ fn extract_dimension(
     let reference_field = item
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
+    let identity_start = offset.checked_sub(36).ok_or("PMI map lacks its GUID key")?;
+    let identity = payload
+        .get(
+            identity_start
+                ..identity_start
+                    .checked_add(36)
+                    .ok_or("PMI GUID source offset overflows")?,
+        )
+        .ok_or("PMI GUID key lies outside its source")?;
+    let actual_guid = std::str::from_utf8(identity)
+        .map_err(|_| PmiParseError::from("PMI GUID key is not UTF-8"))?
+        .to_ascii_lowercase();
+    if actual_guid != guid {
+        return Err("PMI GUID key differs from its record identity".into());
+    }
     let id = format!("sldprt:pmi:dimension#{guid}");
     let display_text = match outer.get("dimText") {
         Some(SpannedValue {
@@ -844,19 +1067,14 @@ fn extract_dimension(
             .unwrap_or_default()
             .to_owned(),
         value,
-        value_offset: u64_from_index(value_field.data_offset),
         precision: int_from(precision_field)
             .ok_or_else(|| "valPrecision is not an integer".to_string())?,
-        precision_offset: u64_from_index(precision_field.data_offset),
         display_text,
         basic: bool_from(basic_field).ok_or_else(|| "basic is not a boolean".to_string())?,
-        basic_offset: u64_from_index(basic_field.data_offset),
         inspection: bool_from(inspection_field)
             .ok_or_else(|| "inspection is not a boolean".to_string())?,
-        inspection_offset: u64_from_index(inspection_field.data_offset),
         reference_only: bool_from(reference_field)
             .ok_or_else(|| "reference_only is not a boolean".to_string())?,
-        reference_only_offset: u64_from_index(reference_field.data_offset),
     }))
 }
 
@@ -925,7 +1143,7 @@ fn guid_before(payload: &[u8], offset: usize) -> Option<&str> {
 /// budget then reads exhausted.
 fn parse_value<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     depth: usize,
     parse: Parse<'_>,
@@ -986,7 +1204,7 @@ fn parse_value<'a>(
 }
 
 fn parse_scalar<'a>(
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     marker: Marker,
     start: usize,
@@ -1154,14 +1372,14 @@ fn opaque(start: usize) -> SpannedValue<'static> {
 /// fields.
 fn parse_map<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     len: usize,
     depth: usize,
     start: usize,
     parse: Parse<'_>,
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
-    let Some(remaining) = bytes.len().checked_sub(*cursor) else {
+    let Some(remaining) = bytes.window().len().checked_sub(*cursor) else {
         return Ok(None);
     };
     // Each entry is at least a one-byte key marker and a one-byte value marker.
@@ -1201,7 +1419,7 @@ fn parse_map<'a>(
 
 fn parse_array<'a>(
     ctx: &DecodeContext<'_>,
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     len: usize,
     depth: usize,
@@ -1210,7 +1428,7 @@ fn parse_array<'a>(
 ) -> Result<Option<SpannedValue<'a>>, CodecError> {
     // Every element encodes as at least one marker byte, so a length exceeding
     // the unread input cannot be satisfied and is rejected before allocating.
-    let Some(remaining) = bytes.len().checked_sub(*cursor) else {
+    let Some(remaining) = bytes.window().len().checked_sub(*cursor) else {
         return Ok(None);
     };
     let Some(len) = cadmpeg_core::decode::bounded_len(u64_from_index(len), 1, remaining) else {
@@ -1243,7 +1461,7 @@ fn parse_array<'a>(
 
 /// A skipped string is not validated; any other string charges its length.
 fn parse_string<'a>(
-    bytes: &'a [u8],
+    bytes: View<'a>,
     cursor: &mut usize,
     len: usize,
     start: usize,
@@ -1251,7 +1469,7 @@ fn parse_string<'a>(
 ) -> Option<SpannedValue<'a>> {
     let data_offset = *cursor;
     let end = cursor.checked_add(len)?;
-    let value = bytes.get(*cursor..end)?;
+    let value = bytes.window().get(*cursor..end)?;
     let kind = if parse.shape == Shape::Skip {
         ValueKind::Opaque
     } else {
@@ -1268,41 +1486,41 @@ fn parse_string<'a>(
     })
 }
 
-fn skip_bytes(bytes: &[u8], cursor: &mut usize, len: usize) -> Option<()> {
+fn skip_bytes(bytes: View<'_>, cursor: &mut usize, len: usize) -> Option<()> {
     let end = cursor.checked_add(len)?;
     // discarded-value: the skipped range is proven to lie in the record; ? states the refusal and the slice has no reader
-    let _ = bytes.get(*cursor..end)?;
+    let _ = bytes.window().get(*cursor..end)?;
     *cursor = end;
     Some(())
 }
 
-fn take_u8(bytes: &[u8], cursor: &mut usize) -> Option<u8> {
-    let value = *bytes.get(*cursor)?;
+fn take_u8(bytes: View<'_>, cursor: &mut usize) -> Option<u8> {
+    let value = *bytes.window().get(*cursor)?;
     *cursor += 1;
     Some(value)
 }
 
-fn take_u16(bytes: &[u8], cursor: &mut usize) -> Option<u16> {
-    let mut view = View::over_retained(bytes);
-    view.seek(*cursor)?;
+fn take_u16(bytes: View<'_>, cursor: &mut usize) -> Option<u16> {
+    let mut view = bytes;
+    view.seek(bytes.start().checked_add(*cursor)?)?;
     let value = view.u16_be()?;
-    *cursor = view.position();
+    *cursor = view.position().checked_sub(bytes.start())?;
     Some(value)
 }
 
-fn take_u32(bytes: &[u8], cursor: &mut usize) -> Option<u32> {
-    let mut view = View::over_retained(bytes);
-    view.seek(*cursor)?;
+fn take_u32(bytes: View<'_>, cursor: &mut usize) -> Option<u32> {
+    let mut view = bytes;
+    view.seek(bytes.start().checked_add(*cursor)?)?;
     let value = view.u32_be()?;
-    *cursor = view.position();
+    *cursor = view.position().checked_sub(bytes.start())?;
     Some(value)
 }
 
-fn take_u64(bytes: &[u8], cursor: &mut usize) -> Option<u64> {
-    let mut view = View::over_retained(bytes);
-    view.seek(*cursor)?;
+fn take_u64(bytes: View<'_>, cursor: &mut usize) -> Option<u64> {
+    let mut view = bytes;
+    view.seek(bytes.start().checked_add(*cursor)?)?;
     let value = view.u64_be()?;
-    *cursor = view.position();
+    *cursor = view.position().checked_sub(bytes.start())?;
     Some(value)
 }
 

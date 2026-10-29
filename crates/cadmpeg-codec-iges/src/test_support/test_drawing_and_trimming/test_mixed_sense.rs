@@ -156,6 +156,7 @@ pub(crate) fn composite_edge_outer_loop_model() -> CadIr {
             transition: CompositeCurveTransition::Continuous,
         }];
         ir.model.curves.push(Curve {
+            native_ref: None,
             id: composite,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments: segments.try_into().expect("one segment"),

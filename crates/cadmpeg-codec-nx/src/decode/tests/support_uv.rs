@@ -360,6 +360,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         ir.model.surfaces.extend([
             Surface {
+                native_ref: None,
                 id: support.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
@@ -389,6 +390,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: offset.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: offset_construction.clone(),
@@ -397,6 +399,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 source_object: None,
             },
             Surface {
+                native_ref: None,
                 id: plane.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -428,6 +431,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
             None,
         ));
         ir.model.curves.push(Curve {
+            native_ref: None,
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),

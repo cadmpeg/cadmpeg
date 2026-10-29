@@ -29,9 +29,10 @@ fn model() -> cadmpeg_ir::CadIr {
             target: AttributeTarget::Face(ir.model.faces[index].id.clone()),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
-                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
-                AttributeValue::String(guid.into()),
+                Some(AttributeValue::String("NEUTRON_Material_attrib_def".into())),
+                Some(AttributeValue::String(guid.into())),
             ],
+            native_ref: None,
         });
     }
     for (index, token) in [VISUAL, REVISION].into_iter().enumerate() {
@@ -49,6 +50,7 @@ fn model() -> cadmpeg_ir::CadIr {
             base_color: None,
             properties: Default::default(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     ir

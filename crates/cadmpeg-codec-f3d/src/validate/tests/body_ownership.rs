@@ -7,15 +7,16 @@ fn registration(entity: u64, guid: &str, module: &str, version: u32, offset: u64
     SegmentType::try_new(
         format!("f3d:Design/MetaStream.dat:design-type#{offset}"),
         SegmentTypeData {
-            byte_offset: offset,
+            byte_offset: Some(offset),
+            class_tag: (256 + offset / 100).to_string().try_into().unwrap(),
             type_guid: guid.to_owned().try_into().unwrap(),
-            type_guid_offset: offset + 4,
+            type_guid_offset: Some(offset + 4),
             base_type_guid: BaseTypeGuid::Guid {
                 value: CONTAINER_BASE_GUID.to_owned().try_into().unwrap(),
-                offset: offset + 44,
+                offset: Some(offset + 44),
             },
             version,
-            version_offset: offset + 80,
+            version_offset: Some(offset + 80),
             module: module.into(),
             entities: crate::records::identity::ReferenceRun::unlocated(vec![entity]),
         },
@@ -96,8 +97,8 @@ fn validator_and_decoder_admit_the_same_component_membership_tail() {
     }) {
         let mut binding: crate::records::bodies::DesignBodyBinding = serde_json::from_value(serde_json::json!({
                 "id": "f3d:Design/BulkStream.dat:design-body-binding#1000", "stream": "Design/BulkStream.dat",
-                "pair_count": 1, "pair_ordinal": 0, "asm_body_key": 0, "asm_body_key_offset": 1000,
-                "entity_suffix": 900, "entity_suffix_offset": 1008, "blob_name": "BREP.synthetic.smb", "blob_name_offset": 1050,
+                "map_ordinal": 0, "pair_count": 1, "pair_ordinal": 0, "asm_body_key": 0,
+                "entity_suffix": 900, "blob_name": "BREP.synthetic.smb",
                 "component_owner": crate::records::body_ownership::membership(&layout(if bodies.is_empty() { &[900] } else { bodies }, form)).unwrap().proof(60, 500, 0).unwrap()
             })).unwrap();
         if bodies.is_empty() {

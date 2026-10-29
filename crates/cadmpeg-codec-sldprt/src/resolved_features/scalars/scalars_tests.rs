@@ -33,6 +33,7 @@ fn named_scalar_identity_decodes_record_fields() {
     assert_eq!(
         named_scalars(&payload, "lane", &names).unwrap(),
         vec![crate::records::FeatureInputScalar {
+            sequence: 0,
             id: "sldprt:feature-input:scalar#lane:32".into(),
             parent: "lane".into(),
             feature_ref: None,
@@ -253,9 +254,11 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
 
     let mut names = (0u32..1000)
         .map(|index| FeatureInputName {
+            feature_ref: None,
             id: format!("name#{index}"),
             parent: "lane".into(),
             ordinal: index,
+            sequence: index,
             offset: u64::from(index),
             object_id: ObjectId::from_value(index + 1),
             value: format!("F{index}"),
@@ -295,9 +298,11 @@ fn indexed_feature_objects_match_the_linear_scans() {
         classes: Vec::new(),
         names: (0u32..400)
             .map(|index| FeatureInputName {
+                feature_ref: None,
                 id: format!("name#{index}"),
                 parent: "lane".into(),
                 ordinal: index,
+                sequence: index,
                 offset: u64::from(next(2_000)),
                 object_id: if next(4) == 0 {
                     None

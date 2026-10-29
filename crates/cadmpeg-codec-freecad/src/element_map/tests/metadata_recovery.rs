@@ -108,6 +108,11 @@ fn unreadable_naming_carriers_keep_geometry_and_contiguous_table_indices() {
         assert_eq!(tables.len(), 1);
         assert_eq!(tables[0].index, 0);
         assert_eq!(tables[0].entries(), None);
+        assert_eq!(
+            recovered.source_fidelity().unrepresented(),
+            [cadmpeg_ir::ArenaClass::Model].into_iter().collect(),
+            "unreadable inline naming content is recorded on its retained source image"
+        );
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
     }
 }

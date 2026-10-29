@@ -404,8 +404,8 @@ pub(super) fn draft_operand_candidates(
     let names = FeatureObjectNames::new(&lane.names);
     let mut objects = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        if let Some(name) = names.of(feature) {
-            objects.push((name.offset, feature));
+        if let Some(position) = names.of(feature).map(|name| name.offset) {
+            objects.push((position, feature));
         }
     }
     objects.sort_unstable_by_key(|(left, _)| *left);
@@ -595,6 +595,8 @@ mod tests {
             native_payload: payload.into(),
             classes: Vec::new(),
             names: vec![FeatureInputName {
+                sequence: u32::try_from(u64_from_index(object_start)).unwrap(),
+                feature_ref: None,
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -670,13 +672,17 @@ mod tests {
             configuration: None,
             native_payload: payload.into(),
             classes: vec![FeatureInputClass {
+                sequence: u32::try_from(u64_from_index(class_offset)).unwrap(),
+                offset: u64_from_index(class_offset),
+                feature_ref: None,
                 id: "plane-ref".into(),
                 parent: "lane".into(),
                 ordinal: 0,
-                offset: u64_from_index(class_offset),
                 name: class_name.into(),
             }],
             names: vec![FeatureInputName {
+                sequence: u32::try_from(u64_from_index(object_start)).unwrap(),
+                feature_ref: None,
                 id: "name".into(),
                 parent: "lane".into(),
                 ordinal: 0,
@@ -738,6 +744,7 @@ mod tests {
             source_tag: Some("Draft".into()),
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Draft {
                     faces: FaceSelection::Unresolved,
@@ -745,7 +752,9 @@ mod tests {
                         plane: FaceSelection::Unresolved,
                         pull: None,
                     },
-                    angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
+                    angle: Some(cadmpeg_ir::Dimension::Literal(
+                        cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap(),
+                    )),
                     outward: None,
                 }),
             ),
