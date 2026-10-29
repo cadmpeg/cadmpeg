@@ -208,7 +208,12 @@ pub(crate) fn write_semantic(
         .target
         .map(|native| &native.act_table_references[..])
         .unwrap_or_default();
-    if baseline_act_table_references != target_act_table_references {
+    if baseline_act_table_references.len() != target_act_table_references.len()
+        || !baseline_act_table_references
+            .iter()
+            .zip(target_act_table_references)
+            .all(|(before, after)| before.content_eq(after))
+    {
         return Err(CodecError::UnsupportedContent(
             "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
         ));

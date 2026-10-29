@@ -307,7 +307,7 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
                 entities: ReferenceRun::from_columns(
                     wire.entity_ids,
                     wire.entity_id_offsets,
-                    "entity_id",
+                    "entity_ids/entity_id_offsets",
                 )?,
             },
         })

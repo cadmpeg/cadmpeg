@@ -74,6 +74,18 @@ struct AsmHistorySerde {
         deserialize_with = "deserialize_byte_offset_u64"
     )]
     byte_offset: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stream_size"
+    )]
+    stream_size: Option<i64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_history_entry_count"
+    )]
+    history_entry_count: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     binding_budget_exceeded: bool,
     states: Vec<AsmDeltaState>,
@@ -85,10 +97,22 @@ impl TryFrom<AsmHistorySerde> for AsmHistory {
     type Error = String;
 
     fn try_from(wire: AsmHistorySerde) -> Result<Self, Self::Error> {
+        let preamble = match (wire.stream_size, wire.history_entry_count) {
+            (Some(stream_size), Some(history_entry_count)) => Some(AsmPreamble {
+                stream_size,
+                history_entry_count,
+            }),
+            (None, None) => None,
+            _ => {
+                return Err(
+                    "asm history stream_size and history_entry_count must be paired".into(),
+                );
+            }
+        };
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
-            preamble: None,
+            preamble,
             binding_budget_exceeded: wire.binding_budget_exceeded,
             states: wire.states,
             topology_scope: wire.topology_scope,
@@ -99,9 +123,13 @@ impl TryFrom<AsmHistorySerde> for AsmHistory {
 
 impl From<AsmHistory> for AsmHistorySerde {
     fn from(history: AsmHistory) -> Self {
+        let stream_size = history.stream_size();
+        let history_entry_count = history.history_entry_count();
         Self {
             id: history.id,
             byte_offset: history.byte_offset,
+            stream_size,
+            history_entry_count,
             binding_budget_exceeded: history.binding_budget_exceeded,
             states: history.states,
             topology_scope: history.topology_scope,
@@ -1089,6 +1117,8 @@ mod tests {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_edge_sample_tangent, Vector3, "tangent");
+cadmpeg_core::named_optional_field!(deserialize_stream_size, i64, "stream_size");
+cadmpeg_core::named_optional_field!(deserialize_history_entry_count, i64, "history_entry_count");
 cadmpeg_core::named_optional_field!(deserialize_previous_ref, i64, "previous_ref");
 cadmpeg_core::named_optional_field!(deserialize_next_ref, i64, "next_ref");
 cadmpeg_core::named_optional_field!(deserialize_partner_ref, i64, "partner_ref");

@@ -200,6 +200,12 @@ type F3dFamilyRow = FamilyRow<F3dNative, (), cadmpeg_ir::NativeNamespace, ()>;
 #[derive(Serialize)]
 struct FlatAsmHistory<'a> {
     id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stream_size: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    history_entry_count: Option<i64>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     binding_budget_exceeded: bool,
     #[serde(skip_serializing_if = "crate::history_records::is_default")]
@@ -211,6 +217,9 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
     fn from(history: &'a AsmHistory) -> Self {
         Self {
             id: &history.id,
+            byte_offset: history.byte_offset,
+            stream_size: history.stream_size(),
+            history_entry_count: history.history_entry_count(),
             binding_budget_exceeded: history.binding_budget_exceeded,
             topology_scope: history.topology_scope,
             states: EmptyList,
@@ -222,6 +231,8 @@ impl<'a> From<&'a AsmHistory> for FlatAsmHistory<'a> {
 pub(crate) struct FlatAsmDeltaState<'a> {
     id: &'a str,
     parent: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     state_id: i64,
     version_flag: i64,
     state_flag: i64,
@@ -244,6 +255,7 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
         Self {
             id: &state.id,
             parent: &state.parent,
+            byte_offset: state.byte_offset,
             state_id: state.state_id,
             version_flag: state.version_flag,
             state_flag: state.state_flag,
@@ -263,6 +275,8 @@ impl<'a> From<&'a AsmDeltaState> for FlatAsmDeltaState<'a> {
 struct FlatAsmBulletinBoard<'a> {
     id: &'a str,
     parent: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    byte_offset: Option<u64>,
     owner_ref: i64,
     number: i64,
     changes: EmptyList,
@@ -273,6 +287,7 @@ impl<'a> From<&'a AsmBulletinBoard> for FlatAsmBulletinBoard<'a> {
         Self {
             id: &board.id,
             parent: &board.parent,
+            byte_offset: board.byte_offset,
             owner_ref: board.owner_ref,
             number: board.number,
             changes: EmptyList,
