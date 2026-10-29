@@ -287,20 +287,36 @@ fn unproved_global_integer_capacity_keeps_the_existing_uncredited_handoff() {
         sections.global.start() + values.value_extent.start
             ..sections.global.start() + values.value_extent.end
     };
+    let neutral = bytes.clone();
     bytes[range].copy_from_slice(&8_i32.to_be_bytes());
-    let arena = DecodeArena::new();
-    let (ctx, source) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
-        .expect("edited source");
-    let (normalized, _) =
-        crate::binary::parts::normalize(source, &ctx).expect("unchanged admitted source semantics");
-    let records = normalized.admission.parameters;
+    // The Binary Flag Section supersedes Global field 7 (IGES 5.3 Appendix
+    // H.2.3): the declared 8-bit capacity hands off as the neutral 32 does.
+    let normalize = |bytes: &[u8]| {
+        let arena = DecodeArena::new();
+        let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("edited source");
+        let (normalized, _) = crate::binary::parts::normalize(source, &ctx)
+            .expect("unchanged admitted source semantics");
+        let captures = ctx.take_record_captures().expect("one drain");
+        (normalized.admission.parameters, captures)
+    };
+    let (records, captures) = normalize(&bytes);
+    let (_, neutral_captures) = normalize(&neutral);
     assert_eq!(records.len(), 2);
     for (index, expected) in [110, 1, 2, 3, 4, 5, 6].into_iter().enumerate() {
         assert_eq!(records[0].integer(index), Some(expected));
     }
-    let captures = ctx.take_record_captures().expect("one drain");
     assert_eq!(captures.len(), 2);
-    assert!(captures.iter().all(|capture| capture.reads().is_empty()));
+    assert_eq!(
+        captures
+            .iter()
+            .map(|capture| capture.reads().clone())
+            .collect::<Vec<_>>(),
+        neutral_captures
+            .iter()
+            .map(|capture| capture.reads().clone())
+            .collect::<Vec<_>>()
+    );
     let decoded = crate::test_support::decode(bytes.clone());
     assert_eq!(decoded.ir().model.curves.len(), 1);
     assert_eq!(decoded.ir().model.points.len(), 3);

@@ -69,7 +69,7 @@ fn speculative_dependency_reads_add_no_record_credit_and_keep_committed_neighbor
 fn source_global(sections: &crate::binary::BinarySections<'_>) -> crate::global::ResolvedGlobal {
     let values = crate::binary::tests::global_values(sections);
     let text = crate::binary::normalize_global(&values).expect("same Global grammar");
-    crate::global::parse_stream(&text)
+    crate::global::parse_binary_stream(&text)
         .expect("actual Global interpretation")
         .0
 }

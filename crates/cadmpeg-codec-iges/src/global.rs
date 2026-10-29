@@ -98,6 +98,35 @@ struct NumericDeclarations {
     double_significance: Supplied<u32>,
 }
 
+/// The source of the numeric context of a Global section.
+#[derive(Debug)]
+enum NumericContext {
+    /// Global fields 7 to 11 declare the sender numeric context.
+    Declared(NumericDeclarations),
+    /// The Binary Flag Section supersedes Global fields 7 to 11 (IGES 5.3
+    /// Appendix H.2.3), and the decoder ignores them.
+    BinaryFlagSection,
+}
+
+impl NumericContext {
+    fn precision(&self) -> RealPrecision {
+        match self {
+            Self::Declared(declarations) => declarations.precision(),
+            Self::BinaryFlagSection => RealPrecision {
+                single_significance: FALLBACK_SIGNIFICANCE,
+                double_significance: FALLBACK_SIGNIFICANCE,
+            },
+        }
+    }
+
+    fn limits(&self) -> NumericLimits {
+        match self {
+            Self::Declared(declarations) => declarations.limits(),
+            Self::BinaryFlagSection => NumericLimits::default(),
+        }
+    }
+}
+
 impl NumericDeclarations {
     fn precision(&self) -> RealPrecision {
         RealPrecision {
@@ -250,7 +279,7 @@ pub(crate) struct ResolvedGlobal {
     receiver_product: Option<String>,
     native_file_name: Option<String>,
     units_name: Option<String>,
-    numeric: NumericDeclarations,
+    numeric: NumericContext,
     minimum_resolution: NonNegativeReal,
     length_factor_mm: Option<PositiveReal>,
     line_weight_scale: Option<LineWeightScale>,
@@ -855,10 +884,17 @@ fn unframed_loss(raw: &RawGlobal) -> Option<LossNote> {
     ))
 }
 
+/// The IGES form of the file that holds a Global section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalForm {
+    Ascii,
+    Binary,
+}
+
 /// Resolve a raw Global record that no part holds.
-fn resolve_unparted(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
+fn resolve_unparted(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNote>) {
     let suffix = unframed_loss(&raw);
-    let (global, mut losses) = resolve(raw);
+    let (global, mut losses) = resolve_form(raw, form);
     if let Some(loss) = suffix {
         losses.insert(0, loss);
     }
@@ -879,13 +915,27 @@ pub(crate) fn given_up() -> (ResolvedGlobal, Vec<LossNote>) {
 
 /// Recover the Global field boundaries, then resolve every field once.
 pub(crate) fn parse(scan: &CardScan) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    Ok(resolve_unparted(parse_raw(scan)?))
+    Ok(resolve_unparted(parse_raw(scan)?, GlobalForm::Ascii))
 }
 
+#[cfg(test)]
 pub(crate) fn parse_stream(bytes: &[u8]) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
-    Ok(resolve_unparted(parse_raw_with(bytes, |_, frame| {
-        Ok(frame.window_value(bytes))
-    })?))
+    Ok(resolve_unparted(
+        parse_raw_with(bytes, |_, frame| Ok(frame.window_value(bytes)))?,
+        GlobalForm::Ascii,
+    ))
+}
+
+/// Resolve the normalized Global payload of a Binary file. Global fields 7
+/// to 11 stay read values; the Binary Flag Section supersedes them as the
+/// numeric context.
+pub(crate) fn parse_binary_stream(
+    bytes: &[u8],
+) -> Result<(ResolvedGlobal, Vec<LossNote>), CodecError> {
+    Ok(resolve_unparted(
+        parse_raw_with(bytes, |_, frame| Ok(frame.window_value(bytes)))?,
+        GlobalForm::Binary,
+    ))
 }
 
 fn date_value_is_valid(bytes: &[u8], accepts_four_digit_date: bool) -> bool {
@@ -1263,6 +1313,36 @@ impl Resolution {
         }
     }
 
+    /// The sender numeric context that Global fields 7 to 11 declare.
+    fn numeric_declarations(&mut self, global_table: GlobalTable) -> NumericDeclarations {
+        let integer_bits = self
+            .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |value| {
+                value > 0 && u32::try_from(value).is_ok()
+            })
+            .and_then(|value| u32::try_from(value).ok());
+        let single_magnitude =
+            self.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
+        let single_significance = self.significance(FIELD_SINGLE_SIGNIFICANCE).value();
+        let double_magnitude =
+            self.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
+        let double_significance = if global_table == GlobalTable::V5_0
+            && matches!(
+                self.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
+                Supplied::Absent
+            ) {
+            Supplied::Absent
+        } else {
+            self.significance(FIELD_DOUBLE_SIGNIFICANCE)
+        };
+        NumericDeclarations {
+            integer_bits,
+            single_magnitude,
+            double_magnitude,
+            single_significance,
+            double_significance,
+        }
+    }
+
     fn minimum_resolution(&mut self, global_table: GlobalTable) -> NonNegativeReal {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
             SuppliedReal::Absent if global_table.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
@@ -1475,6 +1555,10 @@ impl Resolution {
 }
 
 fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
+    resolve_form(raw, GlobalForm::Ascii)
+}
+
+fn resolve_form(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNote>) {
     let RawGlobal {
         parameter_delimiter,
         record_delimiter,
@@ -1520,24 +1604,11 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table);
     resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table);
     resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
-    let integer_bits = resolution
-        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |value| {
-            value > 0 && u32::try_from(value).is_ok()
-        })
-        .and_then(|value| u32::try_from(value).ok());
-    let single_magnitude =
-        resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE).value();
-    let double_magnitude =
-        resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
-    let double_significance = if global_table == GlobalTable::V5_0
-        && matches!(
-            resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
-            Supplied::Absent
-        ) {
-        Supplied::Absent
-    } else {
-        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
+    let numeric = match form {
+        GlobalForm::Binary => NumericContext::BinaryFlagSection,
+        GlobalForm::Ascii => {
+            NumericContext::Declared(resolution.numeric_declarations(global_table))
+        }
     };
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => {
@@ -1588,13 +1659,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         receiver_product,
         native_file_name,
         units_name,
-        numeric: NumericDeclarations {
-            integer_bits,
-            single_magnitude,
-            double_magnitude,
-            single_significance,
-            double_significance,
-        },
+        numeric,
         minimum_resolution,
         length_factor_mm,
         line_weight_scale,
@@ -1685,11 +1750,14 @@ impl ResolvedGlobal {
         &self,
         uses_double_precision: bool,
     ) -> Vec<LossNote> {
+        let NumericContext::Declared(numeric) = &self.numeric else {
+            return Vec::new();
+        };
         if self.global_table() != GlobalTable::V5_0 || !uses_double_precision {
             return Vec::new();
         }
         let mut losses = Vec::new();
-        if matches!(self.numeric.double_magnitude, Supplied::Absent) {
+        if matches!(numeric.double_magnitude, Supplied::Absent) {
             let note = global_loss_note(
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 FIELD_DOUBLE_MAGNITUDE,
@@ -1699,7 +1767,7 @@ impl ResolvedGlobal {
 
             losses.push(note);
         }
-        if matches!(self.numeric.double_significance, Supplied::Absent) {
+        if matches!(numeric.double_significance, Supplied::Absent) {
             let note = global_loss_note(
                 IgesLossCode::GlobalSemanticContextSubstituted,
                 FIELD_DOUBLE_SIGNIFICANCE,
