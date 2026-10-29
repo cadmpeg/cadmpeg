@@ -73,6 +73,8 @@ pub(crate) enum FreecadLossCode {
     FeatureCyclicHistory,
     /// Feature retains its native kind without a complete neutral operation.
     FeatureNativeKindRetained,
+    /// A revolution has no complete admitted angular construction.
+    FeatureRevolutionNotTransferred,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// Cached sketch geometry has no matching live external reference.
@@ -141,6 +143,7 @@ impl FreecadLossCode {
         Self::PersistenceCountNoncanonical,
         Self::FeatureCyclicHistory,
         Self::FeatureNativeKindRetained,
+        Self::FeatureRevolutionNotTransferred,
         Self::SketchNativeGeometry,
         Self::SketchNativeConstraint,
         Self::SketchExternalReferenceUnresolved,
@@ -194,6 +197,7 @@ impl FreecadLossCode {
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
+            Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
@@ -228,6 +232,7 @@ impl FreecadLossCode {
             | Self::MeshPlacementBounded
             | Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
+            | Self::FeatureRevolutionNotTransferred
             | Self::SketchNativeGeometry
             | Self::SketchNativeConstraint
             | Self::PcurveLocationAmbiguous
@@ -294,9 +299,9 @@ impl FreecadLossCode {
             | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
-            Self::FeatureCyclicHistory | Self::FeatureNativeKindRetained => {
-                LossTaxonomy::FeatureHistoryRetained
-            }
+            Self::FeatureCyclicHistory
+            | Self::FeatureNativeKindRetained
+            | Self::FeatureRevolutionNotTransferred => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry

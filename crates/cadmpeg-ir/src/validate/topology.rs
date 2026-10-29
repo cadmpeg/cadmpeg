@@ -3196,6 +3196,16 @@ fn check_feature_references(
             FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
             FeatureOperation::Revolve { construction, .. } => {
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
+                if construction
+                    .extent()
+                    .is_some_and(|extent| !extent.angles_within_turn())
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "revolution angular travel must not exceed one turn",
+                    );
+                }
             }
             FeatureOperation::Sweep {
                 path,
