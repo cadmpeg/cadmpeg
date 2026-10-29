@@ -108,7 +108,7 @@ fn gui_only_provider_uses_its_actual_xml_owner_and_keeps_typed_values() {
     let root = ctx.name_stream(root, "GuiDocument.xml").unwrap();
     let entries = BTreeMap::from([("GuiDocument.xml".into(), root)]);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let graph = crate::gui::transfer(
+    let graph = crate::gui::tests::transfer(
         &ctx,
         &mut ir,
         root.window(),
@@ -255,7 +255,7 @@ fn gui_state_and_provider_property_values_keep_separate_source_owners() {
     let root = ctx.name_stream(root, "GuiDocument.xml").unwrap();
     let entries = BTreeMap::from([("GuiDocument.xml".into(), root)]);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let graph = crate::gui::transfer(
+    let graph = crate::gui::tests::transfer(
         &ctx,
         &mut ir,
         root.window(),
@@ -330,7 +330,7 @@ fn gui_state_xml_and_offsets_leave_native_records_without_losing_empty_or_nested
     let entries = BTreeMap::from([("GuiDocument.xml".into(), root)]);
     let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let graph = crate::gui::transfer(
+    let graph = crate::gui::tests::transfer(
         &ctx,
         &mut ir,
         root.window(),
@@ -490,7 +490,7 @@ fn gui_property_wrappers_move_to_real_layouts_with_nested_values_empty_payload_a
     let entries = BTreeMap::from([("GuiDocument.xml".into(), view)]);
     let sources = crate::entry_sources::EntrySources::new(&ctx, &entries).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let graph = crate::gui::transfer(
+    let graph = crate::gui::tests::transfer(
         &ctx,
         &mut ir,
         view.window(),
@@ -760,7 +760,7 @@ fn complete_typed_gui_properties_keep_exact_layouts_and_real_side_entry_views() 
         ("side.bin".into(), side_view),
     ]);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let graph = crate::gui::transfer(
+    let graph = crate::gui::tests::transfer(
         &ctx,
         &mut ir,
         view.window(),

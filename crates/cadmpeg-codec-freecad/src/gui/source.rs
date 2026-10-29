@@ -69,7 +69,14 @@ impl<'a> Source<'a> {
         match self.parsed {
             Parsed::Admitted { xml, .. } => {
                 let source = crate::persistence::source::Source::new(ctx, self.source, &xml)?;
-                match super::transfer_document(ir, &xml, sources, Some(&source)) {
+                match super::transfer_document(
+                    ctx,
+                    ir,
+                    &xml,
+                    sources,
+                    Some(&source),
+                    super::GuiOrigins::Admitted,
+                ) {
                     Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
                         Ok(super::source_only_graph(None, &error))
                     }

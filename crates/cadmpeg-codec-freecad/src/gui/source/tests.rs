@@ -80,7 +80,7 @@ fn same_dom_transfer_preserves_native_graph_model_and_existing_source_only_error
         let mut original_ir = CadIr::empty();
         let graph = source.transfer(&ctx, &mut ir, &sources).unwrap();
         let original =
-            super::super::transfer(&legacy_ctx, &mut original_ir, bytes, &sources).unwrap();
+            super::super::tests::transfer(&legacy_ctx, &mut original_ir, bytes, &sources).unwrap();
         assert_eq!(graph_value(&graph), graph_value(&original));
         assert_eq!(ir.model, original_ir.model);
         assert_eq!(graph.provider_sources, original.provider_sources);

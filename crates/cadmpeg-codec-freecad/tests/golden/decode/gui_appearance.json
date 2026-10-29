@@ -9,6 +9,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -22,6 +23,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -35,6 +37,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -48,6 +51,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -61,6 +65,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -74,6 +79,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -87,6 +93,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -100,6 +107,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -113,6 +121,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -126,6 +135,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -139,6 +149,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -152,6 +163,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -165,6 +177,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -178,6 +191,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -191,6 +205,7 @@
             "precedence": "edge_array_over_line"
           },
           "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -204,6 +219,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:25",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -217,6 +233,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:26",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -230,6 +247,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:27",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -243,6 +261,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:28",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -256,6 +275,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:29",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -269,6 +289,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:30",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -282,6 +303,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:31",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -295,6 +317,7 @@
             "precedence": "face_over_object"
           },
           "id": "fcstd:appearance:binding#shape-material:ColoredModel:32",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -308,6 +331,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -321,6 +345,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -334,6 +359,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -347,6 +373,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -360,6 +387,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -373,6 +401,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -386,6 +415,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -399,6 +429,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -412,6 +443,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -425,6 +457,7 @@
             "precedence": "vertex_array_over_point"
           },
           "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
@@ -443,6 +476,7 @@
           },
           "id": "fcstd:appearance:edge#ColoredModel",
           "name": "ColoredModel line appearance",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColor",
           "properties": {
             "line_width": 2.5
           },
@@ -457,6 +491,7 @@
           },
           "id": "fcstd:appearance:edge#ColoredModel:1",
           "name": "ColoredModel Edge1 appearance",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:LineColorArray",
           "properties": {
             "line_width": 2.5
           },
@@ -471,6 +506,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:1",
           "name": "ColoredModel face 1 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -489,6 +525,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:2",
           "name": "ColoredModel face 2 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -507,6 +544,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:3",
           "name": "ColoredModel face 3 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -525,6 +563,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:4",
           "name": "ColoredModel face 4 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -543,6 +582,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:5",
           "name": "ColoredModel face 5 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -561,6 +601,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:6",
           "name": "ColoredModel face 6 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -579,6 +620,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:7",
           "name": "ColoredModel face 7 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -597,6 +639,7 @@
           },
           "id": "fcstd:appearance:shape-material#ColoredModel:8",
           "name": "ColoredModel face 8 material",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:ShapeAppearance",
           "properties": {
             "ambient_packed": 1431655935.0,
             "emissive_packed": 255.0,
@@ -615,6 +658,7 @@
           },
           "id": "fcstd:appearance:vertex#ColoredModel",
           "name": "ColoredModel point appearance",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColor",
           "properties": {
             "point_size": 4.0
           },
@@ -629,6 +673,7 @@
           },
           "id": "fcstd:appearance:vertex#ColoredModel:1",
           "name": "ColoredModel Vertex1 appearance",
+          "native_ref": "fcstd:native:gui-property#ColoredModel:PointColorArray",
           "properties": {
             "point_size": 4.0
           },

@@ -91,16 +91,16 @@ pub(super) fn project(
         &typed_properties,
         &drawings,
     )?;
-    if let Some(gui) = super::target::projection::gui_xml_lossy(namespace, &mut losses)? {
+    if let Some(gui) = super::target::projection::gui_xml_lossy(ctx, namespace, &mut losses)? {
         let documents = namespace.arena_as::<native::DocumentFacts>("document")?;
         let version = documents
             .first()
             .and_then(|document| document.program_version.as_deref());
         let entries = std::collections::BTreeMap::new();
-        let graph = crate::gui::transfer(
+        let graph = crate::gui::transfer_rendered(
             ctx,
             &mut projected,
-            gui.as_bytes(),
+            gui.xml.as_bytes(),
             &crate::gui::GuiSources {
                 entries: &entries,
                 objects: &objects,
@@ -109,6 +109,7 @@ pub(super) fn project(
                 topology_occurrences: &topology_occurrences,
                 requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
             },
+            &gui.origins,
         )?;
         losses.extend(graph.losses);
     }

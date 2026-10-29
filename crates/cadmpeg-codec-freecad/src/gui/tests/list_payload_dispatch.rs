@@ -61,7 +61,7 @@ fn unknown_runtime_keeps_multiple_opaque_members_without_list_dispatch() {
         ("second.bin".into(), second),
     ]);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let graph = crate::gui::transfer(
+    let graph = crate::gui::tests::transfer(
         &context,
         &mut ir,
         gui.window(),

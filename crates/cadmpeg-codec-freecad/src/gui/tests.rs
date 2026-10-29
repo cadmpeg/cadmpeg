@@ -68,10 +68,12 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
     let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
     super::transfer_primitive_appearance(
+        &cadmpeg_test_support::service_decode_context(),
         &ir,
         &mut plan,
         &mut losses,
         super::PrimitiveAppearanceSource {
+            native_origin: None,
             provider_name: "Model",
             object_id: "fcstd:object#Model",
             packed_color: 0xff00_00ff,
@@ -168,10 +170,12 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
         super::transfer_primitive_appearance(
+            &cadmpeg_test_support::service_decode_context(),
             &ir,
             &mut plan,
             &mut losses,
             super::PrimitiveAppearanceSource {
+                native_origin: None,
                 provider_name: "Model",
                 object_id: "shape",
                 packed_color: 0x1122_3344,
@@ -1973,3 +1977,16 @@ mod metadata_recovery;
 mod topology_appearance;
 
 mod list_payload_dispatch;
+
+mod native_linkage;
+
+/// Test adapter for source-less GUI fixture transfer; production source transfer
+/// keeps its genuine Source/DOM, and typed writer projections carry origins.
+pub(crate) fn transfer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    bytes: &[u8],
+    sources: &super::GuiSources<'_, '_>,
+) -> Result<super::Graph, cadmpeg_core::CodecError> {
+    super::transfer_with_origins(ctx, ir, bytes, sources, super::GuiOrigins::Admitted)
+}
