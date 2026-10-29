@@ -575,3 +575,5 @@ fn a_scope_capture_with_a_pointer_the_scope_does_not_hold_fails() {
         serde_json::from_value(wire).expect("the edited sidecar is admitted");
     findings_name_only(&loaded_findings(&native, &fidelity), SCOPE_MESSAGE, &scope);
 }
+
+mod header_offsets;

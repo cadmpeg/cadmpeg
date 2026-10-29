@@ -1920,14 +1920,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             })
                         })
                         && instances.frames().all(|frame| {
-                            records_by_index
-                                .get(&(native_stream, frame.record_index))
-                                .is_some_and(|header| {
-                                    source_position_before(
-                                        header.byte_offset,
-                                        frame.transform.offset,
-                                    )
-                                })
+                            records_by_index.contains_key(&(native_stream, frame.record_index))
                         })
                         && component_link
                 });

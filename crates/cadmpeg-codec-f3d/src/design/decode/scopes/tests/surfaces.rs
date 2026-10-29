@@ -214,13 +214,35 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
     let serialized = serde_json::to_value(&construction).expect("serialize legacy form");
     assert!(serialized.get("form").is_none());
+    let read = serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+        .expect("deserialize legacy form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize legacy form"),
-            &construction
-        ),
-        construction
+        serde_json::to_value(&read).expect("reserialize"),
+        serialized
+    );
+    // The passive references repeat after the four 15-byte elements, the
+    // eleven-byte marked null and the u32 count.
+    const PASSIVE_REPEAT: usize = 24 + 4 * 15 + 11 + 4;
+    assert_eq!(
+        crate::records::source_offsets::collect(&mut construction.clone()),
+        [
+            ("bodies.0.entity.offset", 24 + 1),
+            ("bodies.1.entity.offset", 24 + 15 + 1),
+            ("bodies.0.reference.offset", 24 + 2 * 15 + 1),
+            ("bodies.1.reference.offset", 24 + 3 * 15 + 1),
+            ("metadata_record_offset", PASSIVE_REPEAT + 2 * 11 + 1 + 1),
+            (
+                "bodies.0.result.offset",
+                PASSIVE_REPEAT + 2 * 11 + 1 + 15 + 4 + 1
+            ),
+            (
+                "bodies.1.result.offset",
+                PASSIVE_REPEAT + 2 * 11 + 1 + 15 + 4 + 11 + 1
+            ),
+        ]
+        .map(|(name, offset)| (name.to_owned(), u64_from_index(offset)))
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>()
     );
 
     // The ordinary form is sized by its kind offset, so a shorter scope
@@ -435,13 +457,28 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         .expect("body-snapshot Base Feature frame is canonical");
     let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
     assert!(serialized.get("form").is_none());
+    let read = serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+        .expect("deserialize snapshot form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize snapshot form"),
-            &construction
-        ),
-        construction
+        serde_json::to_value(&read).expect("reserialize"),
+        serialized
+    );
+    // The linkage-tail anchor `A = 184 + 15N` of the eight-byte form.
+    const LINKAGE: usize = 184 + 15 * 2;
+    assert_eq!(
+        crate::records::source_offsets::collect(&mut construction.clone()),
+        [
+            ("bodies.0.offset", 24 + 1),
+            ("bodies.1.offset", 24 + 15 + 1),
+            ("related_guid_offsets.0", 32 + 15 * 2 + 4),
+            ("related_guid_offsets.1", 32 + 15 * 2 + 4 + 72 + 4),
+            ("related_guid_offsets.2", LINKAGE + 57 + 4),
+            ("linkage_record_offset", LINKAGE + 20),
+            ("auxiliary_record_offset", LINKAGE + 39),
+        ]
+        .map(|(name, offset)| (name.to_owned(), u64_from_index(offset)))
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>()
     );
     let DesignBaseFeatureConstruction::BodySnapshot {
         bodies,
@@ -1279,13 +1316,30 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     assert_eq!(class_365_construction, construction);
 
     let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
+    let read = serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+        .expect("deserialize body-reference form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize body-reference form"),
-            &construction
-        ),
-        construction
+        serde_json::to_value(&read).expect("reserialize"),
+        serialized
+    );
+    assert_eq!(
+        crate::records::source_offsets::collect(&mut construction.clone()),
+        [
+            (
+                "parameter_body_record_offset",
+                class_377::PARAMETER_BODY_RECORD
+            ),
+            ("body", class_377::BODY_ENTITY_SUFFIX),
+            (
+                "tag_body_based_on_faces_offset",
+                class_377::TAG_BODY_BASED_ON_FACES_VALUE
+            ),
+            ("auxiliary_record_offset", class_377::AUXILIARY_RECORD),
+            ("envelope_guid_offset", class_377::ENVELOPE_GUID),
+        ]
+        .map(|(name, offset)| (name.to_owned(), u64_from_index(offset)))
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>()
     );
 
     let mut nonzero_field = bytes.clone();

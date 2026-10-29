@@ -167,6 +167,13 @@ where
         &located,
         &pointers.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
     );
+    assert_eq!(
+        crate::records::source_offsets::collect(&mut located.clone()),
+        pointers
+            .iter()
+            .map(|(name, offset)| ((*name).to_owned(), *offset))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    );
     located
 }
 
@@ -189,15 +196,4 @@ where
         missing.retain(|key| !baseline.contains(key));
         assert_eq!(missing, vec![(*name).to_owned()], "capture without {name}");
     }
-}
-
-/// `read`, a record read from its wire, with the source offsets that
-/// `located` holds.
-pub(crate) fn relocated<T>(mut read: T, located: &T) -> T
-where
-    T: Clone + crate::records::source_offsets::SourceOffsets,
-{
-    let pointers = crate::records::source_offsets::collect(&mut located.clone());
-    crate::records::source_offsets::restore(&mut read, &pointers);
-    read
 }

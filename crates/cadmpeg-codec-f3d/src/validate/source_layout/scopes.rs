@@ -260,10 +260,14 @@ fn scope_layout_holds(
     let copy_paste_bodies = scope.copy_paste_bodies_operation().is_none_or(
         records::feature::body_ops::DesignCopyPasteBodiesOperation::source_layout_valid,
     );
+    let copy_paste_headers = scope
+        .copy_paste_bodies_operation()
+        .is_none_or(|operation| copy_paste_headers_hold(ctx, scope, operation));
     let pattern = scope
         .rectangular_pattern_construction()
         .and_then(|construction| construction.instances())
         .is_none_or(|instances| pattern_instances_layout_holds(ctx, scope, instances));
+    let coil = coil_operation_layout_holds(scope, frame);
     frame_valid
         && entity
         && base_flange
@@ -281,7 +285,59 @@ fn scope_layout_holds(
         && extrude
         && surfaces
         && copy_paste_bodies
+        && copy_paste_headers
         && pattern
+        && coil
+}
+
+/// The source offset of the record header with `record_index` in the stream
+/// of `scope`: the offset that the header identifier names.
+fn record_header_offset(
+    ctx: &Ctx<'_, '_>,
+    scope: &DesignParameterScope,
+    record_index: u32,
+) -> Option<u64> {
+    let header = ctx
+        .records_by_index
+        .get(&(design_stream(&scope.id), record_index))?;
+    header
+        .id
+        .rsplit_once(":design-record-header#")?
+        .1
+        .parse()
+        .ok()
+}
+
+/// The `CopyPasteBodies` body group and relation offsets are the offsets of
+/// the record headers they name.
+fn copy_paste_headers_hold(
+    ctx: &Ctx<'_, '_>,
+    scope: &DesignParameterScope,
+    operation: &records::feature::body_ops::DesignCopyPasteBodiesOperation,
+) -> bool {
+    operation.body_group_byte_offset().is_some_and(|offset| {
+        record_header_offset(ctx, scope, operation.body_group_record_index) == Some(offset)
+    }) && operation.relation_byte_offset().is_some_and(|offset| {
+        record_header_offset(ctx, scope, operation.relation_record_index) == Some(offset)
+    })
+}
+
+/// The ten-reference `CoilPrimitive` form is the long form exactly when its
+/// operation is at the long-form prologue offset.
+fn coil_operation_layout_holds(scope: &DesignParameterScope, frame: LocatedScopeFrame) -> bool {
+    if scope.kind() != records::feature::scope::DesignFeatureKind::CoilPrimitive
+        || scope.reference_members().len() != 10
+    {
+        return true;
+    }
+    let long_form_offset = scope.coil_operation_offset().is_some()
+        && scope.coil_operation_offset()
+            == frame
+                .byte_offset()
+                .checked_add(cadmpeg_core::decode::u64_from_index(
+                    crate::layout::coil_long_scope_fixed_prologue::OPERATION,
+                ));
+    long_form_offset == scope.coil_long_form()
 }
 
 /// A `Component Insert` matrix sits at the delta its frame names, and a
@@ -534,28 +590,36 @@ fn pattern_instances_layout_holds(
     scope: &DesignParameterScope,
     instances: &records::feature::patterns::DesignRectangularPatternInstances,
 ) -> bool {
+    let frames_follow_headers = instances.frames().all(|frame| {
+        frame.transform.offset.is_some_and(|offset| {
+            record_header_offset(ctx, scope, frame.record_index)
+                .is_some_and(|header| header < offset)
+        })
+    });
     let records::feature::patterns::DesignRectangularPatternInstances::Components {
         generated, ..
     } = instances
     else {
-        return true;
+        return frames_follow_headers;
     };
     let stream = design_stream(&scope.id);
-    generated.iter().all(|row| {
-        row.instance.transform.offset.is_some_and(|offset| {
-            ctx.native
-                .design_component_occurrences
-                .iter()
-                .any(|occurrence| {
-                    design_stream(&occurrence.id) == stream
-                        && occurrence
-                            .occurrence_guid
-                            .as_str()
-                            .eq_ignore_ascii_case(row.occurrence_guid.as_str())
-                        && occurrence.transform().map(|transform| transform.offset) == Some(offset)
-                })
+    frames_follow_headers
+        && generated.iter().all(|row| {
+            row.instance.transform.offset.is_some_and(|offset| {
+                ctx.native
+                    .design_component_occurrences
+                    .iter()
+                    .any(|occurrence| {
+                        design_stream(&occurrence.id) == stream
+                            && occurrence
+                                .occurrence_guid
+                                .as_str()
+                                .eq_ignore_ascii_case(row.occurrence_guid.as_str())
+                            && occurrence.transform().map(|transform| transform.offset)
+                                == Some(offset)
+                    })
+            })
         })
-    })
 }
 
 /// An edge-treatment vertex operand has the identity of its envelope offset,

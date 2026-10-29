@@ -2928,7 +2928,6 @@ impl DesignParameterScope {
             .is_some_and(|section| !section.is_stored())
     }
 
-    #[cfg(test)]
     pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
         self.coil()
             .and_then(|coil| coil.operation.and_then(|field| field.offset))

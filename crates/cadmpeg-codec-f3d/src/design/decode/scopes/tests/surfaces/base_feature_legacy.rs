@@ -289,13 +289,29 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         Some(u64_from_index(compact::TAG_BODY_BASED_ON_FACES_VALUE))
     );
     let serialized = serde_json::to_value(&compact_construction).expect("serialize compact form");
+    let read = serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+        .expect("deserialize compact form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize compact form"),
-            &compact_construction
-        ),
-        compact_construction
+        serde_json::to_value(&read).expect("reserialize"),
+        serialized
+    );
+    assert_eq!(
+        crate::records::source_offsets::collect(&mut compact_construction.clone()),
+        [
+            ("mode", compact::MODE),
+            ("bodies.0.entity.offset", compact::BODY_ENTITY_SUFFIX),
+            ("bodies.0.parameter_body", compact::PARAMETER_BODY_RECORD),
+            ("bodies.0.auxiliary", compact::AUXILIARY_RECORD),
+            ("scope_reference_offset", compact::SCOPE_REFERENCE),
+            ("envelope_guid_offset", compact::ENVELOPE_GUID),
+            (
+                "tag_body_based_on_faces_offset",
+                compact::TAG_BODY_BASED_ON_FACES_VALUE
+            ),
+        ]
+        .map(|(name, offset)| (name.to_owned(), u64_from_index(offset)))
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>()
     );
 
     compact_bytes[compact::MODE] = 1;
@@ -430,13 +446,37 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     assert_eq!(auxiliary_records, &[303, 304]);
     assert_eq!(*scope_reference, 300);
     let serialized = serde_json::to_value(&expanded_construction).expect("serialize expanded form");
+    let read = serde_json::from_value::<DesignBaseFeatureConstruction>(serialized.clone())
+        .expect("deserialize expanded form");
     assert_eq!(
-        crate::records::feature::test_support::relocated(
-            serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-                .expect("deserialize expanded form"),
-            &expanded_construction
-        ),
-        expanded_construction
+        serde_json::to_value(&read).expect("reserialize"),
+        serialized
+    );
+    assert_eq!(
+        crate::records::source_offsets::collect(&mut expanded_construction.clone()),
+        [
+            ("bodies.0.entity.offset", expanded::BODY_ENTITY_ONE_SUFFIX),
+            ("bodies.1.entity.offset", expanded::BODY_ENTITY_TWO_SUFFIX),
+            (
+                "bodies.0.parameter_body",
+                expanded::PARAMETER_BODY_ONE_RECORD
+            ),
+            (
+                "bodies.1.parameter_body",
+                expanded::PARAMETER_BODY_TWO_RECORD
+            ),
+            ("bodies.0.auxiliary", expanded::AUXILIARY_BODY_ONE_RECORD),
+            ("bodies.1.auxiliary", expanded::AUXILIARY_BODY_TWO_RECORD),
+            ("scope_reference_offset", expanded::SCOPE_REFERENCE),
+            ("envelope_guid_offset", expanded::ENVELOPE_GUID),
+            (
+                "tag_body_based_on_faces_offset",
+                expanded::TAG_BODY_BASED_ON_FACES_VALUE
+            ),
+        ]
+        .map(|(name, offset)| (name.to_owned(), u64_from_index(offset)))
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>()
     );
 
     let mut invalid_mode = compact_bytes;
