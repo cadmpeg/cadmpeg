@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Kept native states equal the pairs, except where a given-up stub links the pair.
+//! Each kept native state names one pair; a pair may have no state.
 
 use std::collections::HashSet;
 
@@ -14,32 +14,13 @@ use crate::test_support::test_fixtures::{
 use crate::InventorCodec;
 
 const PAIR_TOKEN: &str = "seg";
-const MISSING: &str = "Inventor segment metadata states do not cover paired segments exactly";
 const UNPAIRED: &str = "Inventor segment metadata state has no paired segment";
-
-#[test]
-fn a_pair_without_a_state_or_a_linking_stub_needs_its_state() {
-    let pairs = HashSet::from(["seg"]);
-    let mut findings = Vec::new();
-    super::validate_segment_states(&mut findings, &pairs, &HashSet::new(), [], [], "metadata");
-    assert_eq!(findings.len(), 1);
-    assert!(findings[0]
-        .message
-        .contains("states do not cover paired segments exactly"));
-}
 
 #[test]
 fn every_kept_metadata_state_still_needs_its_actual_pair() {
     let pairs = HashSet::from(["seg"]);
     let mut findings = Vec::new();
-    super::validate_segment_states(
-        &mut findings,
-        &pairs,
-        &HashSet::from(["seg"]),
-        ["orphan"],
-        [],
-        "metadata",
-    );
+    super::validate_segment_states(&mut findings, &pairs, ["orphan"], [], "metadata");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("has no paired segment"));
 }
@@ -48,14 +29,7 @@ fn every_kept_metadata_state_still_needs_its_actual_pair() {
 fn duplicate_kept_metadata_states_are_still_rejected() {
     let pairs = HashSet::from(["seg"]);
     let mut findings = Vec::new();
-    super::validate_segment_states(
-        &mut findings,
-        &pairs,
-        &HashSet::new(),
-        ["seg", "seg"],
-        [],
-        "metadata",
-    );
+    super::validate_segment_states(&mut findings, &pairs, ["seg", "seg"], [], "metadata");
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("repeats"));
 }
@@ -78,12 +52,7 @@ fn segment_state_findings(ir: &CadIr) -> Vec<Finding> {
         .validate_native(&ctx, ir)
         .expect("validation")
         .into_iter()
-        .filter(|finding| {
-            finding
-                .message
-                .ends_with("states do not cover paired segments exactly")
-                || finding.message.ends_with("state has no paired segment")
-        })
+        .filter(|finding| finding.message.ends_with("state has no paired segment"))
         .collect()
 }
 
@@ -139,19 +108,6 @@ fn a_missing_state_whose_segment_record_a_given_up_stub_links_is_accepted() {
 }
 
 #[test]
-fn a_missing_state_without_a_linking_stub_is_refused() {
-    let mut ir = decoded();
-    remove_metadata_state(&mut ir);
-    add_stub(
-        &mut ir,
-        vec![Identity::new("inventor:rse:segment-meta#seg".to_owned()).expect("other id")],
-    );
-    let findings = segment_state_findings(&ir);
-    assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].message, MISSING);
-}
-
-#[test]
 fn an_extra_state_that_matches_no_pair_is_refused() {
     let mut ir = decoded();
     edit_metadata_states(&mut ir, |states| {
@@ -168,20 +124,29 @@ fn an_extra_state_that_matches_no_pair_is_refused() {
 #[test]
 fn a_given_up_type_table_links_its_segment_record_and_its_missing_states_validate() {
     let design = vec![([0x11; 16], Vec::new()); 300];
-    let ir = decode(primary_envelope_fixture_with_design(&[], &design));
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(primary_envelope_fixture_with_design(&[], &design)),
+            &DecodeOptions::default(),
+        )
+        .expect("given-up type table decodes");
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0]
+        .message
+        .contains("inventor.meta_forward_section"));
+    let ir = decoded.ir();
     let namespace = ir.native.namespace("inventor").expect("namespace");
     let metadata = namespace
         .arena_as::<serde_json::Value>("segment_meta")
         .expect("metadata states");
     assert!(metadata.iter().all(|state| state["token"] != "dc"));
-    let stubs = namespace
-        .arena_as::<NativeUnknownRecord>("unknowns")
-        .expect("stubs");
-    assert!(stubs.iter().any(|stub| stub
-        .links
-        .iter()
-        .any(|link| link.as_str() == crate::rse::segment_record_id("dc"))));
-    assert!(segment_state_findings(&ir).is_empty());
+    assert!(segment_state_findings(ir).is_empty());
 }
 
 use super::face_property_is_admitted;
