@@ -23,7 +23,7 @@ pub(super) struct NativeGenerationIndex<'a> {
 }
 
 impl<'a> NativeGenerationIndex<'a> {
-    pub(super) fn new(native: &'a F3dNative) -> Self {
+    pub(super) fn new(target: &'a cadmpeg_ir::CadIr, native: &'a F3dNative) -> Self {
         macro_rules! first_by_id {
             ($items:expr, $field:ident) => {{
                 let mut map = HashMap::new();
@@ -40,11 +40,25 @@ impl<'a> NativeGenerationIndex<'a> {
                 .or_default()
                 .push(wire);
         }
+        let native_face_keys: HashMap<_, _> = native
+            .face_native_keys
+            .iter()
+            .map(|record| (record.id(), record))
+            .collect();
+        let face_native_keys = target
+            .model
+            .faces
+            .iter()
+            .filter_map(|face| {
+                let record = native_face_keys.get(face.native_ref.as_deref()?)?;
+                Some((face.id.as_str(), *record))
+            })
+            .collect();
         Self {
             edge_continuities: first_by_id!(&native.edge_continuities, edge),
             edge_ownerships: &native.edge_ownerships,
             face_sidedness: first_by_id!(&native.face_sidedness, face),
-            face_native_keys: first_by_id!(&native.face_native_keys, face),
+            face_native_keys,
             tolerant_coedges: first_by_id!(&native.tolerant_coedge_parameters, coedge),
             tolerant_edges: first_by_id!(&native.tolerant_edge_tails, edge),
             tolerant_vertices: first_by_id!(&native.tolerant_vertex_tails, vertex),

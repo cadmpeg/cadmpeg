@@ -79,6 +79,7 @@
       ],
       "faces": [
         {
+          "native_ref": "f3d:asm:face-native-key#4",
           "id": "f3d:brep:entity#4",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#6",
@@ -441,7 +442,6 @@
         "face_native_keys": [
           {
             "id": "f3d:asm:face-native-key#4",
-            "face": "f3d:brep:entity#4",
             "record_index": 4
           }
         ],
@@ -693,7 +693,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "active_brep_sha256": "06392ed0764d5875f6b190f837c13eafdff9d9c6639df14bd12ff4f50f18b870",
-      "document_local_sha256": "8114320577bbb5309a50492e62a505fdc60d60c9e41e3db475cecad8fc522de2",
+      "document_local_sha256": "76ac4238894da79631c1721daec5399248ba695515f5acb31b093e77a566ef67",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000.byte_offset": "1803",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716.byte_offset": "1716",
       "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001947.byte_offset": "1947",

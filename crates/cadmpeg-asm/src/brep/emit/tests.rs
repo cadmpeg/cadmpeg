@@ -137,6 +137,7 @@ fn face_sidedness_retains_the_decode_time_carrier_flip() {
             &reach,
             &inward,
             crate::asm_format!("f3d"),
+            super::super::DecodePurpose::Model,
         )
         .unwrap();
         assert_eq!(out.faces.len(), 1);
@@ -1153,6 +1154,7 @@ fn faces_sharing_one_name_record_charge_each_name_copy() {
             &reach,
             &HashSet::new(),
             crate::asm_format!("f3d"),
+            super::super::DecodePurpose::Model,
         );
         result.map(|()| out)
     };
@@ -1464,5 +1466,239 @@ fn a_reversed_subset_record_localizes_its_cache_and_edge_ranges() {
                 assert!(distance < 1.0e-12, "{label} at {local}: {distance}");
             }
         }
+    }
+}
+
+#[test]
+fn face_join_key_projection_links_inward_and_retains_the_native_slot() {
+    for format in [
+        crate::asm_format!("f3d"),
+        crate::asm_format!("sat"),
+        crate::asm_format!("inventor"),
+    ] {
+        for key in [7, -1] {
+            let records = [Record {
+                index: 4,
+                name: "face".into(),
+                tokens: vec![
+                    Token::Ref(-1),
+                    Token::Long(key),
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Ref(-1),
+                    Token::Ref(1),
+                    Token::Ref(-1),
+                    Token::Ref(2),
+                    Token::False,
+                    Token::False,
+                ]
+                .into(),
+                offset: 0,
+                len: 0,
+            }];
+            let by_index = records.iter().map(|record| (4, record)).collect();
+            let reach = Reachable {
+                faces: HashSet::from([4]),
+                ..Reachable::default()
+            };
+            let mut out = AsmBrep::default();
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            emit_faces(
+                &ctx,
+                &mut out,
+                &records,
+                &by_index,
+                &reach,
+                &HashSet::new(),
+                format,
+                super::super::DecodePurpose::Model,
+            )
+            .unwrap();
+            assert_eq!(out.faces.len(), 1);
+            assert_eq!(out.face_native_keys.len(), 1);
+            let native = &out.face_native_keys[0];
+            assert_eq!(
+                out.faces[0].native_ref.as_deref(),
+                Some(native.id().as_str())
+            );
+            assert_eq!(native.record_index, 4);
+            assert_eq!(native.asm_face_key, u64::try_from(key).ok());
+            let wire = serde_json::to_value(native).unwrap();
+            assert!(wire.get("face").is_none());
+            assert_eq!(wire["id"], format!("{format}:asm:face-native-key#4"));
+            if key == -1 {
+                assert!(wire.get("asm_face_key").is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn face_native_reference_obeys_its_exact_retained_byte_floor_before_projection() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let records = [Record {
+        index: 4,
+        name: "face".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(7),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(1),
+            Token::Ref(-1),
+            Token::Ref(2),
+            Token::False,
+            Token::False,
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    }];
+    let by_index = records.iter().map(|record| (4, record)).collect();
+    let reach = Reachable {
+        faces: HashSet::from([4]),
+        ..Reachable::default()
+    };
+    let needed = cadmpeg_core::decode::u64_from_index("f3d:asm:face-native-key#4".len());
+    for limit in [needed - 1, needed] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut out = AsmBrep::default();
+        let result = emit_faces(
+            &ctx,
+            &mut out,
+            &records,
+            &by_index,
+            &reach,
+            &HashSet::new(),
+            crate::asm_format!("f3d"),
+            super::super::DecodePurpose::Model,
+        );
+        if limit == needed {
+            result.unwrap();
+            assert_eq!(
+                out.faces[0].native_ref.as_deref(),
+                Some("f3d:asm:face-native-key#4")
+            );
+        } else {
+            let Err(CodecError::ResourceLimit(refusal)) = result else {
+                panic!("reference text must fit")
+            };
+            assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+            assert_eq!(refusal.operation, "ASM face native reference");
+            assert!(out.faces.is_empty());
+            assert!(out.face_native_keys.is_empty());
+            assert!(out.face_sidedness.is_empty());
+        }
+    }
+}
+
+#[test]
+fn history_face_native_references_keep_values_in_actual_working_storage() {
+    use super::super::DecodePurpose;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    for key in [7, -1] {
+        let records = [Record {
+            index: 4,
+            name: "face".into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Long(key),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(1),
+                Token::Ref(-1),
+                Token::Ref(2),
+                Token::False,
+                Token::False,
+            ]
+            .into(),
+            offset: 0,
+            len: 0,
+        }];
+        let by_index = records.iter().map(|record| (4, record)).collect();
+        let reach = Reachable {
+            faces: HashSet::from([4]),
+            ..Reachable::default()
+        };
+        let native = super::super::records::FaceNativeKey {
+            source_namespace: super::super::records::identity::NativeRecordNamespace::new(
+                crate::asm_format!("f3d"),
+            ),
+            record_index: 4,
+            asm_face_key: u64::try_from(key).ok(),
+        };
+        let expected = native.id();
+        let needed = cadmpeg_core::decode::u64_from_index(expected.len());
+        let mut outputs = Vec::new();
+        for purpose in [DecodePurpose::Model, DecodePurpose::History] {
+            for limit in [0, needed] {
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let mut out = AsmBrep::default();
+                let result = emit_faces(
+                    &ctx,
+                    &mut out,
+                    &records,
+                    &by_index,
+                    &reach,
+                    &HashSet::new(),
+                    crate::asm_format!("f3d"),
+                    purpose,
+                );
+                if purpose == DecodePurpose::Model && limit == 0 {
+                    assert!(matches!(result, Err(CodecError::ResourceLimit(_))));
+                    assert!(out.faces.is_empty());
+                    assert!(out.face_native_keys.is_empty());
+                    continue;
+                }
+                result.unwrap();
+                assert_eq!(out.faces.len(), 1);
+                assert_eq!(out.face_native_keys, [native.clone()]);
+                assert_eq!(out.faces[0].native_ref.as_deref(), Some(expected.as_str()));
+                assert_eq!(
+                    ctx.retained_bytes_available(),
+                    if purpose == DecodePurpose::Model {
+                        0
+                    } else {
+                        limit
+                    }
+                );
+                assert!(ctx.resource_refusal().is_none());
+                outputs.push(
+                    serde_json::to_value((&out.faces, &out.face_native_keys, &out.face_sidedness))
+                        .unwrap(),
+                );
+            }
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let Err(CodecError::ResourceLimit(refusal)) =
+                ctx.retain_bytes(1, "history face caller prior refusal")
+            else {
+                panic!("caller fixture must refuse")
+            };
+            let mut out = AsmBrep::default();
+            assert!(
+                matches!(emit_faces(&ctx, &mut out, &records, &by_index, &reach, &HashSet::new(), crate::asm_format!("f3d"), purpose), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+            );
+            assert!(out.faces.is_empty());
+            assert!(out.face_native_keys.is_empty());
+            assert_eq!(ctx.resource_refusal(), Some(refusal));
+        }
+        assert_eq!(outputs.len(), 3);
+        assert!(outputs.windows(2).all(|pair| pair[0] == pair[1]));
     }
 }

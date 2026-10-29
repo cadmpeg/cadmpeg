@@ -83,6 +83,7 @@
       ],
       "faces": [
         {
+          "native_ref": "f3d:asm:face-native-key#4",
           "id": "f3d:brep:entity#4",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#8",
@@ -95,6 +96,7 @@
           }
         },
         {
+          "native_ref": "f3d:asm:face-native-key#5",
           "id": "f3d:brep:entity#5",
           "shell": "f3d:brep:entity#3",
           "surface": "f3d:brep:entity#9",
@@ -600,12 +602,10 @@
         "face_native_keys": [
           {
             "id": "f3d:asm:face-native-key#4",
-            "face": "f3d:brep:entity#4",
             "record_index": 4
           },
           {
             "id": "f3d:asm:face-native-key#5",
-            "face": "f3d:brep:entity#5",
             "record_index": 5
           }
         ],
@@ -904,7 +904,7 @@
     "metadata": {
       "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "active_brep_sha256": "e8043e23f485d1d39528ffdb7c2ba06c14e886850bf71ff6dc9bf506b1743631",
-      "document_local_sha256": "604e12c0a31d8076a57fcb51e7178c147eff3dd457803796d34679742853ca17"
+      "document_local_sha256": "e3dc209fea2f6e89d5494695dc59457f834658fd98d22696694239e9cb33d1d9"
     },
     "retained_records": {
       "f3d:file:source-image#0": {

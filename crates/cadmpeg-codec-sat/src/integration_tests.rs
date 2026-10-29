@@ -264,3 +264,35 @@ End-of-ACIS-data\n";
         Some(source.as_slice())
     );
 }
+
+#[test]
+fn face_key_native_reference_resolves_in_text_and_both_binary_kernel_forms() {
+    use crate::test_support::test_streams::{
+        binary_sphere_stream, text_sphere_stream, BinaryFixtureKind,
+    };
+    for bytes in [
+        text_sphere_stream(1.0),
+        binary_sphere_stream(BinaryFixtureKind::Asm),
+        binary_sphere_stream(BinaryFixtureKind::Acis),
+    ] {
+        let decoded = decode_bytes(&bytes);
+        assert_eq!(decoded.ir().model.faces.len(), 1);
+        let keys: Vec<cadmpeg_asm::brep::records::FaceNativeKey> = decoded
+            .ir()
+            .native
+            .namespace("sat")
+            .unwrap()
+            .arena_as("face_native_keys")
+            .unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(
+            decoded.ir().model.faces[0].native_ref.as_deref(),
+            Some(keys[0].id().as_str())
+        );
+        assert_eq!(keys[0].asm_face_key, None);
+        assert!(serde_json::to_value(&keys[0])
+            .unwrap()
+            .get("face")
+            .is_none());
+    }
+}

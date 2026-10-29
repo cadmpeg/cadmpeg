@@ -21,21 +21,23 @@ use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeom
 use super::attributes::source_less_body_key;
 /// Each face has one signed native key slot; keys are not globally unique.
 pub(super) fn validate_source_less_face_keys(native: &F3dNative) -> Result<(), CodecError> {
-    let mut faces = BTreeSet::new();
+    let mut records = BTreeSet::new();
     for record in &native.face_native_keys {
-        if !faces.insert(&record.face) {
+        if !records.insert(record.id()) {
             return Err(CodecError::InvalidInput(format!(
-                "F3D face {} has multiple native join-key records",
-                record.face,
+                "multiple F3D native face key records have identity {}",
+                record.id(),
             )));
         }
+    }
+    for record in &native.face_native_keys {
         if record
             .asm_face_key
             .is_some_and(|key| i64::try_from(key).is_err())
         {
             return Err(CodecError::InvalidInput(format!(
-                "F3D face {} join key exceeds its signed 64-bit native slot",
-                record.face,
+                "F3D native face key {} exceeds its signed 64-bit native slot",
+                record.id(),
             )));
         }
     }

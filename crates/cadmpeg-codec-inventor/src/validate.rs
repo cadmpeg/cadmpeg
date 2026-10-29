@@ -1514,10 +1514,10 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         .model
         .faces
         .iter()
-        .map(|face| &face.id)
+        .filter_map(|face| face.native_ref.as_deref())
         .collect::<HashSet<_>>();
     for record in &data.face_native_keys {
-        if !neutral_faces.contains(&record.face) {
+        if !neutral_faces.contains(record.id().as_str()) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor ASM face-native-key record does not resolve to a neutral face".into(),

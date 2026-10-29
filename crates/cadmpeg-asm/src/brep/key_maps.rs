@@ -11,9 +11,19 @@ use std::collections::HashMap;
 
 /// Face id to ASM face key, for the records that state a key.
 #[must_use]
-pub fn face_keys(records: &[FaceNativeKey]) -> HashMap<FaceId, u64> {
-    records
+pub fn face_keys(
+    faces: &[cadmpeg_ir::topology::Face],
+    records: &[FaceNativeKey],
+) -> HashMap<FaceId, u64> {
+    let native: HashMap<_, _> = records
         .iter()
-        .filter_map(|record| record.asm_face_key.map(|key| (record.face.clone(), key)))
+        .filter_map(|record| record.asm_face_key.map(|key| (record.id(), key)))
+        .collect();
+    faces
+        .iter()
+        .filter_map(|face| {
+            let owner = face.native_ref.as_deref()?;
+            native.get(owner).map(|key| (face.id.clone(), *key))
+        })
         .collect()
 }

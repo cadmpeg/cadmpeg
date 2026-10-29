@@ -130,6 +130,7 @@
             "classification": "unspecified",
             "loops": []
           },
+          "native_ref": "sat:asm:face-native-key#4",
           "sense": "forward",
           "shell": "sat:brep:entity#3",
           "surface": "sat:brep:entity#5"
@@ -219,7 +220,6 @@
         "edge_ownerships": [],
         "face_native_keys": [
           {
-            "face": "sat:brep:entity#4",
             "id": "sat:asm:face-native-key#4",
             "record_index": 4
           }

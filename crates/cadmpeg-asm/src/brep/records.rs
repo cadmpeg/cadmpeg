@@ -17,7 +17,7 @@ macro_rules! native_record {
         #[doc = $index_doc:literal]
         record_index,
         $(#[doc = $entity_doc:literal])*
-        $entity:ident: $entity_ty:ty,
+        $entity:ident: $entity_ty:ty $([$($entity_wire_attr:meta),*])?,
         $(
             $(#[doc = $field_doc:literal])*
             $field:ident: $field_ty:ty $([$($wire_attr:meta),*])?,
@@ -60,6 +60,7 @@ macro_rules! native_record {
                 #[cfg_attr(feature = "schema", schemars(with = "cadmpeg_ir::ids::Identity"))]
                 pub(super) id: String,
                 $(#[doc = $entity_doc])*
+                $($(#[$entity_wire_attr])*)?
                 pub(super) $entity: $entity_ty,
                 #[doc = $index_doc]
                 pub(super) record_index: u32,
@@ -76,6 +77,7 @@ macro_rules! native_record {
                 #[derive(Serialize)]
                 struct Wire<'a> {
                     id: identity::NativeRecordIdentity<'a>,
+                    $($(#[$entity_wire_attr])*)?
                     $entity: &'a $entity_ty,
                     record_index: u32,
                     $(
@@ -361,10 +363,26 @@ native_record! {
     FaceNativeKey, face_native_key, "face-native-key",
     /// Source SAB face record index.
     record_index,
-    /// Solved face carrying the key.
-    face: cadmpeg_ir::ids::FaceId,
     /// Non-negative Design-join key; absence is the native `-1` null value.
     asm_face_key: Option<u64> [serde(default, skip_serializing_if = "Option::is_none")],
+}
+
+impl FaceNativeKey {
+    pub(crate) fn working_native_ref(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        self.source_namespace
+            .working_id(ctx, "face-native-key", self.record_index)
+    }
+
+    pub(crate) fn retain_native_ref(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<String, cadmpeg_core::CodecError> {
+        self.source_namespace
+            .retain_id(ctx, "face-native-key", self.record_index)
+    }
 }
 
 /// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
@@ -645,6 +663,111 @@ mod tests {
     use super::{EndpointSlot, TolerantCoedgeParameters, TolerantVertexTail, WireMembers};
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
+
+    #[test]
+    fn face_key_native_reference_accounts_for_zero_and_each_decimal_width() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        for record_index in [
+            0,
+            9,
+            10,
+            99,
+            100,
+            999,
+            1_000,
+            9_999,
+            10_000,
+            99_999,
+            100_000,
+            999_999,
+            1_000_000,
+            9_999_999,
+            10_000_000,
+            99_999_999,
+            100_000_000,
+            999_999_999,
+            1_000_000_000,
+            u32::MAX,
+        ] {
+            let expected = format!("f3d:asm:face-native-key#{record_index}");
+            let needed = cadmpeg_core::decode::u64_from_index(expected.len());
+            for limit in [needed - 1, needed] {
+                let native = super::FaceNativeKey {
+                    source_namespace: super::identity::NativeRecordNamespace::new(
+                        crate::asm_format!("f3d"),
+                    ),
+                    record_index,
+                    asm_face_key: None,
+                };
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_retained_bytes = limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+                let result = native.retain_native_ref(&ctx);
+                if limit == needed {
+                    assert_eq!(result.unwrap(), expected);
+                } else {
+                    let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result else {
+                        panic!("native reference text exceeds the ceiling")
+                    };
+                    assert_eq!(refusal.additional, needed);
+                    assert_eq!(refusal.operation, "ASM face native reference");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn face_key_native_reference_preserves_the_callers_existing_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let native = super::FaceNativeKey {
+            source_namespace: super::identity::NativeRecordNamespace::new(crate::asm_format!(
+                "f3d"
+            )),
+            record_index: u32::MAX,
+            asm_face_key: Some(7),
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let original = ctx.retain_bytes(1, "source caller refusal").unwrap_err();
+        assert_eq!(
+            native.retain_native_ref(&ctx).unwrap_err().to_string(),
+            original.to_string()
+        );
+    }
+
+    #[test]
+    fn face_key_wire_keeps_source_fields_and_refuses_the_removed_neutral_backlink() {
+        for key in [None, Some(7)] {
+            let native = super::FaceNativeKey {
+                source_namespace: super::identity::NativeRecordNamespace::new(crate::asm_format!(
+                    "f3d"
+                )),
+                record_index: 17,
+                asm_face_key: key,
+            };
+            let mut expected =
+                serde_json::json!({"id":"f3d:asm:face-native-key#17", "record_index":17});
+            if let Some(key) = key {
+                expected["asm_face_key"] = serde_json::json!(key);
+            }
+            assert_eq!(serde_json::to_value(&native).unwrap(), expected);
+            assert_eq!(
+                serde_json::from_value::<super::FaceNativeKey>(expected.clone()).unwrap(),
+                native
+            );
+            let mut backlink = expected.clone();
+            backlink["face"] = serde_json::json!("f3d:brep:entity#17");
+            assert!(serde_json::from_value::<super::FaceNativeKey>(backlink)
+                .unwrap_err()
+                .to_string()
+                .contains("face"));
+            expected["record_index"] = serde_json::json!(18);
+            assert!(serde_json::from_value::<super::FaceNativeKey>(expected).is_err());
+        }
+    }
 
     #[test]
     fn tolerant_vertex_tail_json_keeps_sentinel_and_refuses_nonfinite_value() {

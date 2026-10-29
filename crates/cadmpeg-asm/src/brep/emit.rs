@@ -4944,6 +4944,7 @@ pub(super) fn emit_faces(
     reach: &Reachable,
     inward_normal_surfaces: &HashSet<i64>,
     format: IdFormat,
+    purpose: super::DecodePurpose,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Reachable {
         faces: kept_faces,
@@ -4980,8 +4981,32 @@ pub(super) fn emit_faces(
                     Sense::Reversed => Sense::Forward,
                 };
             }
+            let name = attribute_name(r)?;
+            let color = attribute_color(r);
+            let native_key = if let Some(Token::Long(key)) = r.chunk(1) {
+                Some(FaceNativeKey {
+                    source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
+                        format,
+                    ),
+                    record_index: u32::try_from(r.index).map_err(|_| {
+                        cadmpeg_core::CodecError::malformed(
+                            "ASM native record index exceeds the u32 range",
+                        )
+                    })?,
+                    asm_face_key: u64::try_from(*key).ok(),
+                })
+            } else {
+                None
+            };
+            let native_ref = native_key
+                .as_ref()
+                .map(|key| match purpose {
+                    super::DecodePurpose::Model => key.retain_native_ref(ctx),
+                    super::DecodePurpose::History => key.working_native_ref(ctx),
+                })
+                .transpose()?;
             out.faces.push(Face {
-                native_ref: None,
+                native_ref,
                 id: <FaceId>::from(id(format, i)),
                 shell: ShellId::from(id(
                     format,
@@ -4990,8 +5015,8 @@ pub(super) fn emit_faces(
                 surface: <SurfaceId>::from(id(format, surface)),
                 sense,
                 loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
-                name: attribute_name(r)?,
-                color: attribute_color(r),
+                name,
+                color,
                 tolerance: None,
             });
             let containment = match (r.chunk(9), r.chunk(10)) {
@@ -5013,20 +5038,8 @@ pub(super) fn emit_faces(
                 carrier_flipped,
                 containment,
             });
-            if let Some(Token::Long(key)) = r.chunk(1) {
-                let face_id = <FaceId>::from(id(format, i));
-                out.face_native_keys.push(FaceNativeKey {
-                    source_namespace: crate::brep::records::identity::NativeRecordNamespace::new(
-                        format,
-                    ),
-                    face: face_id,
-                    record_index: u32::try_from(r.index).map_err(|_| {
-                        cadmpeg_core::CodecError::malformed(
-                            "ASM native record index exceeds the u32 range",
-                        )
-                    })?,
-                    asm_face_key: u64::try_from(*key).ok(),
-                });
+            if let Some(key) = native_key {
+                out.face_native_keys.push(key);
             }
         }
     }

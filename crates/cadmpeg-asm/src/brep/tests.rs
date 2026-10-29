@@ -1383,11 +1383,15 @@ fn the_join_projections_read_the_key_records() {
     brep.face_native_keys.push(records::FaceNativeKey {
         source_namespace: namespace,
         record_index: 1,
-        face: face.clone(),
         asm_face_key: Some(7),
     });
+    let mut example = cadmpeg_ir::examples::unit_cube().expect("valid unit cube fixture");
+    let mut projected = example.model.faces.remove(0);
+    projected.id = face.clone();
+    projected.native_ref = Some(brep.face_native_keys[0].id());
+    brep.faces.push(projected);
     assert_eq!(
-        super::key_maps::face_keys(&brep.face_native_keys),
+        super::key_maps::face_keys(&brep.faces, &brep.face_native_keys),
         std::collections::HashMap::from([(face, 7)])
     );
 }
