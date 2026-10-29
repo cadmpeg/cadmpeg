@@ -191,7 +191,7 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         .reports
         .export
         .expect("the refusal retains the completed export plan report");
-    assert_step_native_omission(&report);
+    assert_step_native_omission(report);
 }
 
 /// Without export-loss rejection the same STEP plan succeeds and retains

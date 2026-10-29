@@ -13,14 +13,16 @@ use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
 fn freecad_bad_direct_property_has_one_home_and_keeps_the_real_neutral_peer() {
     let bad = "<Property name='Bad' type='App::PropertyInteger'><Integer value='9223372036854775808'/></Property>";
     let raw_value = "<Integer value='9223372036854775808'/>";
-    let value_start = bad.find(raw_value).unwrap();
+    let value_start = bad
+        .find(raw_value)
+        .expect("the bad property holds the raw value");
     let good =
         "<Property name='Good' type='App::PropertyString'><String value='A&amp;B'/></Property>";
     let document = format!("<Document SchemaVersion='4' FileVersion='1'><Properties Count='2'>{bad}{good}</Properties><Objects Count='0'/><ObjectData Count='0'/></Document>");
     let bytes = archive(&[RawEntry::stored("Document.xml", document.as_bytes())]);
     let arena = DecodeArena::new();
-    let (ctx, root) =
-        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("the archive fits the service policy");
     let source = ArchiveSnapshot::new(&ctx, root).expect("independent source ZIP index");
     let member = source
         .open(&ctx, "Document.xml")
@@ -43,11 +45,14 @@ fn freecad_bad_direct_property_has_one_home_and_keeps_the_real_neutral_peer() {
         [Some(AttributeValue::String("A&B".into()))]
     );
     let native_id = peers[0].native_ref.as_deref().expect("actual native peer");
-    assert!(
-        decoded.ir().native.namespace("fcstd").unwrap().arenas()["properties"]
-            .iter()
-            .any(|record| record.id() == native_id)
-    );
+    assert!(decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("the decode holds the fcstd namespace")
+        .arenas()["properties"]
+        .iter()
+        .any(|record| record.id() == native_id));
     assert!(!decoded
         .ir()
         .model
@@ -74,19 +79,31 @@ fn freecad_bad_direct_property_has_one_home_and_keeps_the_real_neutral_peer() {
     assert_eq!(retained.len(), 1);
     assert_eq!(
         retained[0].offset(),
-        u64::try_from(member.start() + document.find(bad).unwrap() + value_start).unwrap()
+        u64::try_from(
+            member.start()
+                + document
+                    .find(bad)
+                    .expect("the document holds the bad property")
+                + value_start
+        )
+        .expect("the retained offset fits u64")
     );
     assert!(retained[0].untyped().contains(&ArenaClass::Model));
     assert!(retained[0].untyped().contains(&ArenaClass::Design));
-    let property = decoded.ir().native.namespace("fcstd").unwrap().arenas()["properties"]
+    let property = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("the decode holds the fcstd namespace")
+        .arenas()["properties"]
         .iter()
         .find(|record| {
             record
                 .fields()
                 .is_ok_and(|fields| fields.get("name").is_some_and(|name| name == "Bad"))
         })
-        .unwrap();
-    let fields = property.fields().unwrap();
+        .expect("the bad property keeps a native record");
+    let fields = property.fields().expect("the native property fields read");
     assert_eq!(fields["type_name"], "App::PropertyInteger");
     for key in ["values", "links", "side_entries"] {
         assert!(fields[key].is_null());
