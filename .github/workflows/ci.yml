@@ -217,6 +217,45 @@ jobs:
           eval "$(scripts/base-build.sh)"
           python3 scripts/check-decode-nonregression.py
 
+  # The contract suite runs every golden in release (#216 §9.4); `cargo
+  # test-fast` runs its fixed sample.
+  contract:
+    needs: changes
+    if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || needs.changes.outputs.rust == 'true') }}
+    name: contract suite (release)
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Require valid gate selection
+        shell: bash
+        run: test "${{ needs.changes.result }}" = success
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          # The base build is the merge base with main.
+          fetch-depth: 0
+
+      - name: Install pinned toolchain
+        uses: ./.github/actions/pinned-rust
+
+      - name: Match cargo's job count to the runner
+        uses: ./.github/actions/cargo-job-count
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: contract
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Contract suite
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          eval "$(scripts/base-build.sh)"
+          cargo test --release -p cadmpeg --test contract
+
   test:
     needs: changes
     if: ${{ always() && needs.changes.result != 'cancelled' && (needs.changes.result != 'success' || (needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true)) }}

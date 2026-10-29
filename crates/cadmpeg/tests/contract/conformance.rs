@@ -44,7 +44,7 @@ fn decode_findings(
     findings
 }
 
-fn fixtures(format: &str) -> Vec<PathBuf> {
+pub(super) fn fixtures(format: &str) -> Vec<PathBuf> {
     let root = workspace();
     let (directory, extension) = match format {
         "step" => (

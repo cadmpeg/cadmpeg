@@ -4,6 +4,7 @@
 mod conformance;
 mod golden_data;
 mod partial_parts;
+mod w_closure;
 
 #[cfg(feature = "step")]
 mod one_home;
