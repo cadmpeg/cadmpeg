@@ -51,8 +51,8 @@ fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) 
         |ctx, sources| {
             crate::brep::parse_payloads(
                 ctx,
-                &[property.property.clone()],
-                &[entry.record.clone()],
+                std::slice::from_ref(&property.property),
+                std::slice::from_ref(&entry.record),
                 sources,
             )
         },

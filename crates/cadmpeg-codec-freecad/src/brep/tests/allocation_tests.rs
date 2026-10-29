@@ -137,8 +137,8 @@ fn uppercase_binary_shape_extension_selects_binary_reader() {
         |ctx, sources| {
             super::super::parse_payloads(
                 ctx,
-                &[property.property.clone()],
-                &[entry.record.clone()],
+                std::slice::from_ref(&property.property),
+                std::slice::from_ref(&entry.record),
                 sources,
             )
         },

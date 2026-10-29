@@ -219,8 +219,7 @@ pub(crate) fn with_decode_sources<T>(
             )
         })
         .collect();
-    let reader = crate::property_reader::PropertyReader::fixtures(&context, properties)
-        .expect("property Views belong to the real source session");
+    let reader = crate::property_reader::PropertyReader::fixtures(&context, properties);
     let sources = crate::entry_sources::EntrySources::new(&entries);
     use_sources(&reader, &sources)
 }

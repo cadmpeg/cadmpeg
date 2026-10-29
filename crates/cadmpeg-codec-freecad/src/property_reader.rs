@@ -35,11 +35,11 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
         context: &'ctx DecodeContext<'arena>,
         document: View<'ctx>,
         ranges: &'ctx BTreeMap<String, ValueSourceRanges>,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             context,
             trees: PropertyTrees::Source { document, ranges },
-        })
+        }
     }
 
     pub(crate) fn typed(context: &'ctx DecodeContext<'arena>) -> Self {
@@ -53,11 +53,11 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
     pub(crate) fn fixtures(
         context: &'ctx DecodeContext<'arena>,
         sources: BTreeMap<String, View<'ctx>>,
-    ) -> Result<Self, CodecError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             context,
             trees: PropertyTrees::Fixtures(sources),
-        })
+        }
     }
 
     pub(crate) fn property_xml(

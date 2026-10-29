@@ -792,14 +792,9 @@ fn linked_prototype_transform(
         .and_then(ProductNodeRecord::local_transform)
         .map(crate::native::frame::FiniteFrame::transform)
         .or_else(|| placements.get(prototype).copied());
-    let nested = if let Some(target) = target.filter(|target| target.link_transform() == Some(true))
-    {
-        Some(linked_prototype_transform(
-            ctx, target, records, placements, stack,
-        ))
-    } else {
-        None
-    };
+    let nested = target
+        .filter(|target| target.link_transform() == Some(true))
+        .map(|target| linked_prototype_transform(ctx, target, records, placements, stack));
     stack.pop();
     match nested {
         Some(nested) => match (placement, nested?) {

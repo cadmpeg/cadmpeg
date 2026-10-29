@@ -25,7 +25,7 @@ fn unknown_occurrence_pose_is_omitted_and_known_sibling_round_trips() {
             label: None,
             description: None,
             part_number: None,
-            bom_properties: Default::default(),
+            bom_properties: std::collections::BTreeMap::default(),
             bodies,
             native_ref: None,
         });
@@ -112,7 +112,7 @@ fn unknown_ancestor_omits_descendants_and_keeps_known_local_frames() {
             label: None,
             description: None,
             part_number: None,
-            bom_properties: Default::default(),
+            bom_properties: std::collections::BTreeMap::default(),
             bodies,
             native_ref: None,
         });

@@ -34,7 +34,8 @@ fn real_record_callback_keeps_later_typed_parameters_and_one_exact_failed_statem
         [4., 5., 6.]
     );
     let start = source.find(defective).expect("literal failed statement");
-    assert_eq!(exchange.omitted_spans(), [start..start + defective.len()]);
+    let span = start..start + defective.len();
+    assert_eq!(exchange.omitted_spans(), [span]);
     assert!(exchange.shared_part_home(start));
     assert!(!diagnostics
         .iter()

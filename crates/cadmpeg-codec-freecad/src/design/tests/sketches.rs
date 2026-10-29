@@ -363,8 +363,7 @@ fn sketch_keeps_no_profiles_when_endpoint_matching_spends_the_work_limit() {
     let graph = crate::persistence::parse_document(&xml, crate::persistence::Vocabulary::Objects)
         .expect("persistence graph");
     let reader =
-        crate::property_reader::PropertyReader::source(&ctx, source, &graph.property_sources)
-            .expect("original property ranges");
+        crate::property_reader::PropertyReader::source(&ctx, source, &graph.property_sources);
     let sketch = &graph.objects[0];
     let owned = graph
         .properties

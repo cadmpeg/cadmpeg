@@ -123,7 +123,7 @@ impl<'a> ArchiveSnapshot<'a> {
     pub fn open_member(
         &self,
         ctx: &DecodeContext<'a>,
-        payload: MemberPayload<'a>,
+        payload: &MemberPayload<'a>,
     ) -> Result<View<'a>, CodecError> {
         let entry = self.frame_entry(&payload.0)?;
         let view = payload.view();

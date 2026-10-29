@@ -389,6 +389,7 @@ fn transfer_schema_one(
     let lookups = GuiLookups {
         shapes: ShapeIndex::new(properties, payloads, sources.topology_occurrences),
         topology: TopologyIndex::new(ir),
+        origins,
     };
     let mut provider_names = HashSet::new();
     let mut view_provider_data = xml
@@ -769,7 +770,6 @@ fn transfer_schema_one(
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ctx,
-        origins,
         ir,
         &mut plan,
         &graph,
@@ -4066,7 +4066,6 @@ fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String
 
 fn transfer_shape_appearances(
     ctx: &DecodeContext<'_>,
-    origins: GuiOrigins<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     graph: &Graph,
@@ -4097,7 +4096,7 @@ fn transfer_shape_appearances(
         let Some(materials) = material_lists.get(&property.id) else {
             continue;
         };
-        let native_origin = origins.property(property, provider.order)?;
+        let native_origin = lookups.origins.property(property, provider.order)?;
         let body_ids = match displayed_shape_payload(object_id, &lookups.shapes)? {
             Some(payload) => lookups
                 .topology
@@ -4168,13 +4167,16 @@ fn transfer_shape_appearances(
             } else {
                 bind_material_faces(
                     ctx,
-                    native_origin,
                     ir,
                     &lookups.topology,
                     plan,
                     &group[index],
-                    &appearance_id,
-                    (&provider_key, object_id),
+                    &MaterialFaceBinding {
+                        origin: native_origin,
+                        appearance_id: &appearance_id,
+                        provider_key: &provider_key,
+                        object_id,
+                    },
                 )?;
             }
         }
@@ -4185,6 +4187,7 @@ fn transfer_shape_appearances(
 struct GuiLookups<'s, 'i> {
     shapes: ShapeIndex<'s>,
     topology: TopologyIndex<'i>,
+    origins: GuiOrigins<'s>,
 }
 
 struct ShapeIndex<'s> {
@@ -4431,17 +4434,27 @@ fn material_appearance(
     })
 }
 
+struct MaterialFaceBinding<'a> {
+    origin: GuiPropertyOrigin<'a>,
+    appearance_id: &'a AppearanceId,
+    provider_key: &'a IdentityKey,
+    object_id: &'a str,
+}
+
 fn bind_material_faces(
     ctx: &DecodeContext<'_>,
-    origin: GuiPropertyOrigin<'_>,
     ir: &CadIr,
     topology: &TopologyIndex<'_>,
     plan: &mut AppearancePlan,
     topology_ids: &[&str],
-    appearance_id: &AppearanceId,
-    provider: (&IdentityKey, &str),
+    binding: &MaterialFaceBinding<'_>,
 ) -> Result<(), CodecError> {
-    let (provider_key, object_id) = provider;
+    let MaterialFaceBinding {
+        origin,
+        appearance_id,
+        provider_key,
+        object_id,
+    } = *binding;
     let mut bound = HashSet::new();
     for &topology_id in topology_ids {
         if !bound.insert(topology_id) {

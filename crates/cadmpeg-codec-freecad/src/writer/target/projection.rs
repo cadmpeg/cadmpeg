@@ -70,8 +70,10 @@ pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecErr
             },
             &properties,
             &payloads,
-            &[],
-            &entry_sources,
+            crate::entry_sources::ArchiveEntries {
+                records: &[],
+                sources: &entry_sources,
+            },
             version,
         )?;
     }

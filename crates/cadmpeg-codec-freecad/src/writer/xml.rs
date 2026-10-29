@@ -180,7 +180,7 @@ pub(crate) fn native_named(
         );
     };
     native_values(
-        PersistedProperty {
+        &PersistedProperty {
             id: &property_record.id,
             name: &property_record.name,
             type_name: &property_record.type_name,
@@ -197,7 +197,7 @@ pub(crate) fn native_named(
 /// Serialize a GUI property's actual typed fields without a source-XML adapter.
 pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Result<Option<String>, CodecError> {
     native_values(
-        PersistedProperty {
+        &PersistedProperty {
             id: &property.id,
             name: &property.name,
             type_name: &property.type_name,
@@ -224,7 +224,7 @@ struct PersistedProperty<'a> {
 }
 
 fn native_values(
-    property: PersistedProperty<'_>,
+    property: &PersistedProperty<'_>,
     names: &std::collections::HashMap<String, String>,
 ) -> Result<Option<String>, CodecError> {
     let values = property.values;
@@ -303,7 +303,7 @@ fn property_header(
         result.push('"');
     }
     result.push('>');
-    result.push_str(&content);
+    result.push_str(content);
     result.push_str("</Property>");
     result
 }
@@ -321,8 +321,7 @@ fn value_content(
             || value.attributes.keys().any(|name| !valid_name(name))
         {
             return Err(CodecError::malformed(format_args!(
-                "property {} has an invalid typed value tree",
-                id
+                "property {id} has an invalid typed value tree"
             )));
         }
         children.entry(value.parent).or_default().push(index);

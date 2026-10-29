@@ -284,7 +284,7 @@ fn unverified_file_version_withholds_only_nonempty_inline_legacy_maps() {
                     ctx,
                     b"<Document/>",
                     None,
-                    &[property.clone()],
+                    std::slice::from_ref(&property),
                     &entries,
                     entry_sources,
                     &mut losses,
@@ -972,11 +972,13 @@ fn parse(
         &admitted_xml,
         file_version,
         &records,
-        &entries
-            .iter()
-            .map(|entry| entry.record.clone())
-            .collect::<Vec<_>>(),
-        entry_sources,
+        crate::entry_sources::ArchiveEntries {
+            records: &entries
+                .iter()
+                .map(|entry| entry.record.clone())
+                .collect::<Vec<_>>(),
+            sources: entry_sources,
+        },
         losses,
         None,
     )

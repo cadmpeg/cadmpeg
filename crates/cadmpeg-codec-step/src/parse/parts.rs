@@ -14,7 +14,7 @@ pub(super) enum RecordAttempt {
 }
 
 /// Parse source-addressed bare STEP, retaining shared homes separately from the
-/// transient RawRecord graph. Simple and complex entities use independently
+/// transient `RawRecord` graph. Simple and complex entities use independently
 /// observed statement or parent boundaries. A missing terminator never creates
 /// a continuation boundary inside an unfinished literal or comment.
 pub(crate) fn parse(
@@ -39,7 +39,7 @@ pub(crate) fn parse(
     Ok((exchange, diagnostics, parts))
 }
 
-impl<'input, 'ctx, 'arena> Parser<'input, 'ctx, 'arena> {
+impl<'input> Parser<'input, '_, '_> {
     pub(super) fn record_attempt(&mut self) -> Result<RecordAttempt, ParseError> {
         let Some((extent, spec, end)) = self.entity_part()? else {
             return self

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Current native_ref inverses checked against actual serialized shape uses.
+//! Current `native_ref` inverses checked against actual serialized shape uses.
 
 use super::super::brep::EmittedTopologyUse;
 use super::super::xml::Object;
@@ -161,9 +161,19 @@ impl<'a> TopologyJoin<'a> {
                         if shell
                             .faces()
                             .iter()
-                            .map(|id| id.as_str())
-                            .chain(shell.wire_edges().iter().map(|id| id.as_str()))
-                            .chain(shell.free_vertices().iter().map(|id| id.as_str()))
+                            .map(cadmpeg_ir::ids::FaceId::as_str)
+                            .chain(
+                                shell
+                                    .wire_edges()
+                                    .iter()
+                                    .map(cadmpeg_ir::ids::EdgeId::as_str),
+                            )
+                            .chain(
+                                shell
+                                    .free_vertices()
+                                    .iter()
+                                    .map(cadmpeg_ir::ids::VertexId::as_str),
+                            )
                             .any(|member| {
                                 uses.binary_search_by(|entry| entry.0.cmp(member)).is_err()
                             })

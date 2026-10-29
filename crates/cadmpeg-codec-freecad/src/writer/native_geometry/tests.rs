@@ -63,6 +63,7 @@ fn typed_native_geometry_projects_under_the_actual_source_free_encode_context() 
 #[test]
 fn source_free_reprojection_preserves_existing_opaque_source_use_identities() {
     use crate::native::source_use::SourceUseSelector;
+    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let input = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd"
@@ -78,7 +79,6 @@ fn source_free_reprojection_preserves_existing_opaque_source_use_identities() {
         .arena_as::<SourceUseSelector>("topology_uses")
         .unwrap();
     assert!(!rows.is_empty());
-    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let original = rows
         .iter()
         .enumerate()

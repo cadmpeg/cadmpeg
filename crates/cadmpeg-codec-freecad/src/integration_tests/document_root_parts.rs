@@ -131,7 +131,10 @@ fn a_readable_deflated_document_entry_outlives_failed_root_metadata() {
         .unwrap();
     assert_eq!(entries.len(), 2);
     assert_eq!(
-        entries.iter().map(|entry| entry.name()).collect::<Vec<_>>(),
+        entries
+            .iter()
+            .map(crate::native::EntryRecord::name)
+            .collect::<Vec<_>>(),
         ["Document.xml", "peer.bin"]
     );
     let arena = DecodeArena::new();

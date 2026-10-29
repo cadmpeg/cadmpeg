@@ -9,9 +9,7 @@ use cadmpeg_core::CodecError;
 use crate::native::element_map::{
     ElementMapGroup, ElementMapNode, ElementMapNodes, ElementMapRecord, ElementMappedName,
 };
-use crate::native::{
-    EntryRecord, PropertyRecord, StringTableEntry, StringTableRecord, StringTables,
-};
+use crate::native::{PropertyRecord, StringTableEntry, StringTableRecord, StringTables};
 
 fn recover_metadata<T>(
     result: Result<T, CodecError>,
@@ -64,16 +62,19 @@ enum ElementMapCarrier<'a, 'input> {
 }
 
 /// Recover every string table and element map carried by `Document.xml`.
-pub(crate) fn parse<'input>(
-    ctx: &crate::property_reader::PropertyReader<'_, 'input>,
+pub(crate) fn parse(
+    ctx: &crate::property_reader::PropertyReader<'_, '_>,
     xml: &roxmltree::Document<'_>,
     file_version: Option<usize>,
     properties: &[PropertyRecord],
-    entries: &[EntryRecord],
-    sources: &crate::entry_sources::EntrySources<'_>,
+    archive: crate::entry_sources::ArchiveEntries<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     mut fidelity: Option<&mut cadmpeg_ir::SourceFidelity>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
+    let crate::entry_sources::ArchiveEntries {
+        records: entries,
+        sources,
+    } = archive;
     // Orphan carriers are diagnosed once; each marker still proves its own
     // framing so a damaged table cannot erase independently framed peers.
     // discarded-value: framing errors become diagnostics; node admission below is authoritative

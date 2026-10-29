@@ -127,7 +127,7 @@ fn zstd_member_with_a_window_past_the_allowance_is_skipped_without_fusing() {
         .read_member_header(frame)
         .expect("actual local header");
     let outcome = ctx
-        .run_part(|| snapshot.open_member(&ctx, payload))
+        .run_part(|| snapshot.open_member(&ctx, &payload))
         .expect("Part refusal does not escape its owner");
     let Err(CodecError::ResourceLimit(refusal)) = outcome else {
         panic!("a window past the per-expansion allowance must give up its part");

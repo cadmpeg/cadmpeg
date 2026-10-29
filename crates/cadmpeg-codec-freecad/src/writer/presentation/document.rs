@@ -135,7 +135,7 @@ pub(super) fn write(
             }
             let content = original
                 .filter(|original| original.kind == tag)
-                .map(|original| descendants(original))
+                .map(descendants)
                 .transpose()?
                 .unwrap_or_default();
             states.push_str(&state(tag, &attributes, &content)?);

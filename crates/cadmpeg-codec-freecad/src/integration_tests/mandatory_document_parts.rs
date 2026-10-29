@@ -62,7 +62,7 @@ fn bounded_xml_utf8_and_schema_failures_preserve_the_same_successful_peer() {
             .filter(|entry| entry.name() != "Document.xml")
             .cloned()
             .collect::<Vec<_>>();
-        assert_eq!(peers, [expected_peer.clone()]);
+        assert_eq!(peers, std::slice::from_ref(expected_peer));
         let document_entry = entries
             .iter()
             .find(|entry| entry.name() == "Document.xml")
