@@ -132,6 +132,17 @@ split-debuginfo = "unpacked"
 [profile.dev.package.sha2]
 opt-level = 3
 
+# Golden, sweep, and source-scan tests spend their time in serde_json and
+# proc-macro2. Dependencies rebuild only when the lockfile changes.
+[profile.dev.package."*"]
+opt-level = 2
+
+# Every codec's tests run cadmpeg-ir's exact arithmetic and evaluation. At
+# opt-level 1 the workspace suite takes half the CPU time; a rebuild of this
+# crate takes about 100 s longer. Debug assertions and overflow checks stay on.
+[profile.dev.package.cadmpeg-ir]
+opt-level = 1
+
 [profile.test]
 # Test failures need `file:line` in the backtrace; they do not need variable
 # and type DWARF. This drops the rest.
