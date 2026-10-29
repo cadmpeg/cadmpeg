@@ -527,7 +527,7 @@ impl PreparedConversion {
                     })
                 })
             });
-        self.selection.format.transfers_geometry()
+        self.selection.format != Format::Cadir
             && (empty_output || (no_geometry && !own_native_content))
     }
 

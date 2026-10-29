@@ -44,7 +44,7 @@ fn format_five_point_reference_uses_an_actual_nonrecord_source_offset() {
 fn source_global(sections: &crate::binary::BinarySections<'_>) -> crate::global::ResolvedGlobal {
     let values = crate::binary::tests::global_values(sections);
     let text = crate::binary::normalize_global(&values).expect("same Global grammar");
-    crate::global::parse_stream(&text)
+    crate::global::parse_binary_stream(&text)
         .expect("actual Global interpretation")
         .0
 }
