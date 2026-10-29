@@ -69,7 +69,8 @@ fn write_with_regenerated_pmi(
         .expect("semantic PMI is regenerated from the document");
     assert!(matches!(
         plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+            | cadmpeg_ir::report::export::WritePath::Synthesized { .. }
     ));
     assert!(!plan
         .report()

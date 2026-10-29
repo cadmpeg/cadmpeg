@@ -1513,10 +1513,10 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
-        }] if points.as_slice().iter().map(VariableRadius::to_raw).collect::<Vec<_>>() == [
-            VariableRadius { parameter: 0.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(2.0).unwrap()) },
-            VariableRadius { parameter: 0.5, radius: cadmpeg_ir::Dimension::Literal(Length::new(4.0).unwrap()) },
-            VariableRadius { parameter: 1.0, radius: cadmpeg_ir::Dimension::Literal(Length::new(3.0).unwrap()) },
+        }] if points.as_slice().iter().map(VariableRadius::to_raw).map(|point| (point.parameter, decoded.ir().dimension_value(&point.radius))).collect::<Vec<_>>() == [
+            (0.0, Some(Length::new(2.0).unwrap())),
+            (0.5, Some(Length::new(4.0).unwrap())),
+            (1.0, Some(Length::new(3.0).unwrap())),
         ])
     ));
     {

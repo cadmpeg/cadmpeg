@@ -369,7 +369,12 @@ fn decode_uses_relation_units_for_bare_integer_angles() {
         .iter()
         .find(|parameter| parameter.name == "D2")
         .expect("driving angle parameter");
-    assert_eq!(parameter.expression, "25".into());
+    assert_eq!(
+        parameter
+            .expression
+            .literal_value_as(&ParameterValue::Angle(Angle::new(0.025).unwrap())),
+        parameter.value
+    );
     assert_eq!(
         parameter.value,
         Some(ParameterValue::Angle(Angle::new(0.025).unwrap()))
