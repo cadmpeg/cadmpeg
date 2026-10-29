@@ -7119,6 +7119,19 @@ Unstated regions:
 - `0..101` (101 B): Scope envelope or uninterpreted bytes.
 - `299..620` (321 B): Scope envelope follows the edge groups.
 
+## `operation_table_header`
+
+Spec §1.4 · layout: byte offsets · size: 15 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref/operation_pose.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `class_tag_length` | `u32` | little | spec | a three-digit LP-ASCII class tag · value `3` |
+| 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit LP-ASCII class tag |
+| 7 | 8 | `record_index` | `u64` | little | spec | a u64 indexed record identity |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

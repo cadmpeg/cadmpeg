@@ -130,6 +130,7 @@ fn with_owned(
 ) -> XrefReference {
     XrefReference {
         current_pose: None,
+        operation_pose: None,
         contained_poses,
         owned_poses,
         id: "f3d:xref:reference#0-occurrence-0".to_owned(),
