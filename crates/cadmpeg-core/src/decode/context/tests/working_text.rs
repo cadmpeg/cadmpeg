@@ -70,24 +70,32 @@ fn encode_working_text_preserves_the_live_output_account_and_entity_slot() {
     policy.limits.max_retained_bytes = 8;
     policy.limits.max_entities = 1;
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = crate::encode::EncodeSession::from_context(&ctx).unwrap();
-    ctx.retain_bytes(3, "held typed output").unwrap();
+    let session = crate::encode::EncodeSession::from_context(&ctx)
+        .expect("encode session opens from a fresh context");
+    ctx.retain_bytes(3, "held typed output")
+        .expect("three retained bytes fit the eight-byte ceiling");
     let mut output = session.buffer();
-    output.append(b"12", "actual live output").unwrap();
+    output
+        .append(b"12", "actual live output")
+        .expect("two output bytes fit the remaining ceiling");
     assert_eq!(ctx.retained_bytes_available(), 3);
     let mut text = String::from("held");
     ctx.reserve_text_working(&mut text, 64, "temporary encode text")
-        .unwrap();
+        .expect("working text needs no retained allowance");
     assert_eq!(text, "held");
     assert!(text.capacity() >= 68);
     assert_eq!(ctx.retained_bytes_available(), 3);
     assert_eq!(ctx.resource_refusal(), None);
     assert_eq!(ctx.retained_bytes_available(), 3);
-    ctx.charge_entities(1, "the actual output record").unwrap();
-    session.finish().unwrap();
+    ctx.charge_entities(1, "the actual output record")
+        .expect("one entity fits the ceiling");
+    session
+        .finish()
+        .expect("the session finishes without a refusal");
     drop(output);
     assert_eq!(ctx.retained_bytes_available(), 5);
-    ctx.finish_session().unwrap();
+    ctx.finish_session()
+        .expect("the session finishes without a refusal");
 }
 
 #[test]
@@ -98,14 +106,18 @@ fn encode_text_allocation_failure_records_absolute_usage_and_fuses_both_helpers(
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 8;
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = crate::encode::EncodeSession::from_context(&ctx).unwrap();
-    ctx.retain_bytes(3, "held typed output").unwrap();
+    let session = crate::encode::EncodeSession::from_context(&ctx)
+        .expect("encode session opens from a fresh context");
+    ctx.retain_bytes(3, "held typed output")
+        .expect("three retained bytes fit the eight-byte ceiling");
     let mut output = session.buffer();
-    output.append(b"12", "actual live output").unwrap();
+    output
+        .append(b"12", "actual live output")
+        .expect("two output bytes fit the remaining ceiling");
     let mut text = String::from("held");
     let crate::CodecError::ResourceLimit(refusal) = ctx
         .reserve_text_working(&mut text, usize::MAX, "actual encode text overflow")
-        .unwrap_err()
+        .expect_err("a usize::MAX text reservation is refused")
     else {
         panic!("the fallible reservation latches an allocation refusal");
     };
@@ -145,9 +157,11 @@ fn encode_text_observes_an_entity_refusal_before_even_an_empty_reservation() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = crate::encode::EncodeSession::from_context(&ctx).unwrap();
-    let crate::CodecError::ResourceLimit(refusal) =
-        ctx.charge_entities(1, "actual emitted record").unwrap_err()
+    let session = crate::encode::EncodeSession::from_context(&ctx)
+        .expect("encode session opens from a fresh context");
+    let crate::CodecError::ResourceLimit(refusal) = ctx
+        .charge_entities(1, "actual emitted record")
+        .expect_err("one entity exceeds a zero-entity ceiling")
     else {
         panic!("the caller's entity ceiling refuses its actual record");
     };

@@ -7,12 +7,14 @@ fn remaining_retained_bytes_follow_actual_charges_and_live_capacity_release() {
     limits.max_retained_bytes = 8;
     let account = OperationBudget::new(limits, 0);
     assert_eq!(account.retained_bytes_available(), 8);
-    account.charge_retained(3, "three retained fields").unwrap();
+    account
+        .charge_retained(3, "three retained fields")
+        .expect("three retained bytes fit the eight-byte ceiling");
     assert_eq!(account.retained_bytes_available(), 5);
     assert_eq!(
         account
             .reserve_retained(2, 4, "live encoded allocation")
-            .unwrap(),
+            .expect("a four-byte reservation fits the remaining allowance"),
         4
     );
     assert_eq!(account.retained_bytes_available(), 1);
@@ -52,7 +54,7 @@ fn reading_an_inconsistent_allowance_never_replaces_the_existing_session_failure
     let account = OperationBudget::new(limits, 0);
     let prior = account
         .charge_entities(0, 1, "first actual entity refusal")
-        .unwrap_err();
+        .expect_err("one entity exceeds a zero-entity ceiling");
     account.state().retained = 9;
     assert_eq!(account.retained_bytes_available(), 0);
     assert_eq!(account.fused(), Some(prior));

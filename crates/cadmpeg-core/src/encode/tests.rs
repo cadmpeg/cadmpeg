@@ -520,26 +520,32 @@ fn source_free_encode_helpers_use_absolute_retention_on_the_same_actual_account(
         ctx.retained_bytes_available(),
         policy.limits.max_retained_bytes
     );
-    let session = EncodeSession::from_context(&ctx).unwrap();
+    let session =
+        EncodeSession::from_context(&ctx).expect("encode session opens from a fresh context");
     assert!(std::sync::Arc::ptr_eq(
         &ctx.operation_budget(),
         &session.account
     ));
     ctx.retain_bytes(DECODE_FLOOR + 1, "actual retained encode helper")
-        .unwrap();
+        .expect("the encode allowance exceeds the decode floor");
     let available = policy.limits.max_retained_bytes - DECODE_FLOOR - 1;
     assert_eq!(ctx.retained_bytes_available(), available);
     let mut output = session.buffer();
-    output.append(b"abc", "simultaneous encoded bytes").unwrap();
+    output
+        .append(b"abc", "simultaneous encoded bytes")
+        .expect("three output bytes fit the remaining allowance");
     assert_eq!(output.as_bytes(), b"abc");
     assert!(ctx.retained_bytes_available() < available);
     drop(output);
     assert_eq!(ctx.retained_bytes_available(), available);
-    session.finish().unwrap();
-    ctx.finish_session().unwrap();
+    session
+        .finish()
+        .expect("the session finishes without a refusal");
+    ctx.finish_session()
+        .expect("the context finishes without a refusal");
     let crate::CodecError::ResourceLimit(error) = decode
         .retain_bytes(DECODE_FLOOR + 1, "unchanged decode allowance")
-        .unwrap_err()
+        .expect_err("the decode allowance stays at its floor")
     else {
         panic!("decode proportional refusal");
     };
@@ -557,10 +563,15 @@ fn output_refusal_is_observed_by_source_free_helpers_without_a_new_account() {
     policy.limits.max_retained_bytes = 4;
     let arena = DecodeArena::new();
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&ctx).unwrap();
+    let session =
+        EncodeSession::from_context(&ctx).expect("encode session opens from a fresh context");
     let mut output = session.buffer();
-    output.append(b"1234", "full retained output").unwrap();
-    let error = output.append(b"5", "fifth output byte").unwrap_err();
+    output
+        .append(b"1234", "full retained output")
+        .expect("four output bytes fit the four-byte ceiling");
+    let error = output
+        .append(b"5", "fifth output byte")
+        .expect_err("the fifth output byte exceeds the ceiling");
     assert_eq!((error.limit, error.used, error.additional), (4, 4, 1));
     assert!(
         matches!(ctx.retain_bytes(0,"ignored output refusal"),Err(crate::CodecError::ResourceLimit(actual)) if actual==error)
@@ -576,12 +587,14 @@ fn encode_helper_working_overflow_reports_absolute_usage_and_fuses_the_same_sess
     policy.limits.max_retained_bytes = 32 * 1024 * 1024;
     let arena = DecodeArena::new();
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&ctx).unwrap();
-    ctx.retain_bytes(5, "five held report bytes").unwrap();
+    let session =
+        EncodeSession::from_context(&ctx).expect("encode session opens from a fresh context");
+    ctx.retain_bytes(5, "five held report bytes")
+        .expect("five retained bytes fit the ceiling");
     let mut values = Vec::<u64>::new();
     let crate::CodecError::ResourceLimit(error) = ctx
         .reserve_working(&mut values, usize::MAX, "actual working size overflow")
-        .unwrap_err()
+        .expect_err("a usize::MAX working reservation is refused")
     else {
         panic!("working allocation refusal");
     };
@@ -603,10 +616,11 @@ fn encode_helper_allocation_observes_the_existing_shared_refusal_before_cloning(
     policy.limits.max_retained_bytes = 4;
     let arena = DecodeArena::new();
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&ctx).unwrap();
+    let session =
+        EncodeSession::from_context(&ctx).expect("encode session opens from a fresh context");
     let crate::CodecError::ResourceLimit(error) = ctx
         .retain_bytes(5, "first absolute helper refusal")
-        .unwrap_err()
+        .expect_err("five retained bytes exceed the four-byte ceiling")
     else {
         panic!("actual caller ceiling");
     };
@@ -625,12 +639,18 @@ fn failed_backing_allocation_reports_only_live_bytes_and_keeps_the_first_refusal
     let mut policy = crate::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::MAX;
     let ctx = crate::decode::DecodeContext::for_encode(&arena, &policy);
-    ctx.retain_bytes(3, "held decoded record").unwrap();
-    let session = EncodeSession::from_context(&ctx).unwrap();
+    ctx.retain_bytes(3, "held decoded record")
+        .expect("three retained bytes fit an unbounded ceiling");
+    let session =
+        EncodeSession::from_context(&ctx).expect("encode session opens from a fresh context");
     let mut survivor = session.buffer();
-    survivor.append(b"keep", "independent live bytes").unwrap();
+    survivor
+        .append(b"keep", "independent live bytes")
+        .expect("four live bytes fit an unbounded ceiling");
     let mut buffer = session.buffer();
-    buffer.append(b"old", "existing target bytes").unwrap();
+    buffer
+        .append(b"old", "existing target bytes")
+        .expect("three live bytes fit an unbounded ceiling");
     let old_capacity = buffer.bytes.capacity();
     let old_charge = buffer.capacity();
     let survivor_charge = survivor.capacity();
