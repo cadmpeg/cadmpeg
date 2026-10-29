@@ -325,8 +325,8 @@ pub(in crate::design) fn parse_design_parameter(
                 == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         // The earlier discriminated family writes the document trailer as
         // six zero bytes and `01 00 01`.
-        let earlier_family = family_discriminator
-            .is_some_and(|discriminator| matches!(discriminator.code(), 0..=4));
+        let earlier_family =
+            family_discriminator.is_some_and(|discriminator| matches!(discriminator.code(), 0..=4));
         let valid_expression_trailer = if document {
             expression_trailer == [0, 0, 0, 0, 0, 0, 0, 0, 1]
                 || long_document_trailer
