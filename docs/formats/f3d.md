@@ -339,6 +339,8 @@ An exact intcurve cache and the point records of its incident edge vertices use 
 
 The Design body-map carriers classify binary BREP entries by complete basename. Each basename occurs in exactly one carrier record and resolves to exactly one archive entry. In each Design stream, one or more modern body-map records select the model `.smbh` set. When that stream has no modern map record, its snapshot body-map records select the model `.smb` set. Modern maps with zero pairs and empty basenames select an empty physical model-body set. Snapshot maps do not add physical bodies when modern maps exist. If all selected modern maps are empty and no physical body members are declared, the local physical-body set is final and empty. Outgoing document references make such a document an assembly; optional document-type metadata is not required. A profile that registers neither body-map family has no Design-level partition; every binary BREP in the manifest-selected Design asset contributes to the model. History streams are selected independently by the header flag ([`asm.md`](asm.md) §1) and every selected history graph is decoded.
 
+An `int_int_cur` support slot names its own surface and parameter curve. The two slots retain their serialized order. A `rot_spl_sur` or `rotsur` support uses the profile parameter as U and the rotation angle as V. Its solved surface cache uses its stored B-spline parameterization. Angular knot values delimit spans; a rational circular span is not linear in the rotation angle. The support pcurve is in the construction chart and does not assert an identity map to the cache chart.
+
 ---
 
 ## 3. Materials and appearance (non-B-rep)
@@ -2144,6 +2146,8 @@ A Design Mirror scope stores one seed group with role `0x0000000400000000` or `0
 A plane entity selection with no primary or persistent historical candidate can name one of the three Design Geometry origin planes. Primary identities `42`, `43`, and `44` select the XY, XZ, and YZ planes, respectively. Each plane has origin `(0, 0, 0)` and canonical unit normal `(+z)`, `(+y)`, or `(+x)`, respectively. Historical candidates take precedence when the same numeric value occurs in the ASM namespace.
 
 A sketch rectangular-pattern direction's evaluated distance is the source distance scalar. A relation with a non-empty counted reference run stores adjacent spacing; a relation with an empty run stores the total seed-to-final-instance span. Count includes the seed. The neutral adjacent spacing is the scalar for the first form and `evaluated_distance / (count - 1)` for the second. A count-one direction has zero generated displacement.
+
+A `Sweep` construction with operation Join, Cut, or Intersect stores one body operand group with role `0x0000000400000000` or `0x0000000800000000`. These roles do not select the result operation; the scope operation field selects it. A NewBody construction has no body group. A construction with one profile group and no guide-face group has one or two path groups. Each body group has a nonempty ordered member run.
 
 A guide-surface `Sweep` has two role-`0x0000004100000000` groups: one carries the persistent profile selection and the other carries the scope's sketch-profile record. Its sole role-`0x0000000500000000` group identifies the path, and one role-`0x0000001100000000` group identifies the guide faces that constrain the section frame.
 

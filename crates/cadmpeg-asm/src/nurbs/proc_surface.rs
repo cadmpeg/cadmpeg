@@ -1775,6 +1775,7 @@ fn revision_loft_profile_data(
                 surface,
                 chart,
                 bounds: support_bounds,
+                ..
             } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
                 Ok(surface) => surface,
                 Err(error) => return Some(Err(error)),
@@ -3435,6 +3436,7 @@ fn taper_spl_sur(
             surface: support,
             chart,
             bounds: support_bounds,
+            ..
         } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
             Ok(support) => support,
             Err(error) => return Some(Err(error)),

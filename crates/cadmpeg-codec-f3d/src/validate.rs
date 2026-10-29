@@ -4873,6 +4873,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         || matches!(
                             group.role(),
                             DesignOperandRole::BODIES_A
+                                | DesignOperandRole::BODIES_B
                                 | DesignOperandRole::ROLE_0X5
                                 | DesignOperandRole::FACES
                                 | DesignOperandRole::PROFILE
@@ -5284,6 +5285,8 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .count()
                             == 1
                 });
+                let body_count = role_count(DesignOperandRole::BODIES_A)
+                    + role_count(DesignOperandRole::BODIES_B);
                 let common_roles =
                     (profile_count == 1 && guide_surface_count == 0 && matches!(path_count, 1 | 2))
                         || (profile_count == 2
@@ -5294,14 +5297,14 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && match operation {
                         records::feature::extrude::DesignExtrudeOperation::NewBody => {
                             groups.len() == path_count + profile_count + guide_surface_count
-                                && role_count(DesignOperandRole::BODIES_A) == 0
+                                && body_count == 0
                         }
                         records::feature::extrude::DesignExtrudeOperation::Join
                         | records::feature::extrude::DesignExtrudeOperation::Cut
                         | records::feature::extrude::DesignExtrudeOperation::Intersect => {
                             guide_surface_count == 0
                                 && groups.len() == path_count + 2
-                                && role_count(DesignOperandRole::BODIES_A) == 1
+                                && body_count == 1
                         }
                     }
             }
